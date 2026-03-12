@@ -89,6 +89,43 @@ test("workspace server serves UI static assets", async () => {
   }
 });
 
+test("workspace server serves UI entrypoint on /workspace/ui/ with trailing slash", async () => {
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({ port, host: "127.0.0.1" });
+
+  try {
+    const response = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui/"
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.match(response.headers["content-type"] ?? "", /text\/html/i);
+    assert.match(response.body, /FigmaPipe Workspace/i);
+  } finally {
+    await server.app.close();
+  }
+});
+
+test("workspace server returns deterministic 404 for unknown UI-prefixed route", async () => {
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({ port, host: "127.0.0.1" });
+
+  try {
+    const response = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui/unknown-asset"
+    });
+
+    assert.equal(response.statusCode, 404);
+    const body = response.json();
+    assert.equal(body.error, "NOT_FOUND");
+    assert.match(body.message, /Unknown route/i);
+  } finally {
+    await server.app.close();
+  }
+});
+
 test("workspace server exposes listening address metadata and clears it after close", async () => {
   const server = await createWorkspaceServer({ port: 0, host: "127.0.0.1" });
 
@@ -351,6 +388,27 @@ test("workspace server rejects empty body on submit", async () => {
     assert.equal(response.statusCode, 400);
     const body = response.json();
     assert.equal(body.error, "VALIDATION_ERROR");
+  } finally {
+    await server.app.close();
+  }
+});
+
+test("workspace server treats whitespace-only submit payload as empty body", async () => {
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({ port, host: "127.0.0.1" });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: "   "
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json();
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.issues));
   } finally {
     await server.app.close();
   }

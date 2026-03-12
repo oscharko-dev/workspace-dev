@@ -145,3 +145,21 @@ test("isolation: cleanup works after removeAllInstances", async () => {
   assert.equal(getProjectInstance("cleanup-a"), undefined);
   assert.equal(getProjectInstance("cleanup-b"), undefined);
 });
+
+test("isolation: child startup errors are surfaced and do not leave active instances", async () => {
+  await assert.rejects(
+    () =>
+      createProjectInstance("project-bad-host", {
+        workDir: "/tmp",
+        host: "invalid-hostname.workspace-dev.invalid"
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Instance for 'project-bad-host' failed:/);
+      return true;
+    }
+  );
+
+  assert.equal(getProjectInstance("project-bad-host"), undefined);
+  assert.equal(listProjectInstances().size, 0);
+});
