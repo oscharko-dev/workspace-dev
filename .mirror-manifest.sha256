@@ -41,7 +41,7 @@ b7361b6375c9785c88df2e2b33e3e13313381e257177450d57f4c57b5715944b  ./docs/local-r
 465879632783ceb4f56a8c02264c0a9a3573b746bafa73a3697d781afa00d15e  ./features/workspace-mode-lock.feature
 d58e3cd049e696853da888cbec06ed4597a16c6ac67555b39256dd51e1d6691e  ./openvex.template.json
 b9c08f33487aa4203f06960baf679fa295556fb4d7b8c8fcdecc2b69b49a7815  ./package.json
-2182ff9a41511623216c8b94bc8df5557309bcbe641a23aa3647f04a11f2fea7  ./pnpm-lock.yaml
+fdb6f47df28d6eb97f5b8c1226c2d55fe441a3e43c44baf0684393fcce1876d8  ./pnpm-lock.yaml
 148290415316cdf057b550f8200657818edacf3bd62fa7023cb50467074294e9  ./scripts/changesets-publish.mjs
 7bb9ccef7bf80df845d7b4d250cd44e2560f0f7047da05a32f7abff8841e807e  ./scripts/check-boundary.mjs
 c9a59f73d18555fa0ebd33d2ae81e1fc01857b0e3791eeec738cb66f6c7d995d  ./scripts/check-coverage-thresholds.mjs
