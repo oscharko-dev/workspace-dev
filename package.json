@@ -1,6 +1,6 @@
 {
   "name": "workspace-dev",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local mode-locked workspace status server for FigmaPipe development",
   "type": "module",
   "license": "MIT",
