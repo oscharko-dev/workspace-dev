@@ -1,6 +1,7 @@
 4ab99c8c506593037c4f8084250f82c6ddc78e868071f9d1d040950b12fbe901  ./.attw.json
 7dd5cd533dff2d3e2408b6091b11ce311f3709995b6b0a215dfed6ee24b309a7  ./.changeset/config.json
 da7cfd0ff7048ae6e926b4b9508a942af7c43bbb45b7cd4e06064c208f34bb62  ./.changeset/release-gate-hardening.md
+72a1109c3ae3969747a087862ab71a881fe7377793dc04a3d4b23591f8a8ede1  ./.eslintrc.cjs
 5627ab1aea414ab369196ea21f727495b5a802934e4208b674073f0c32b12c14  ./.github/workflows/changesets-release.yml
 ef44ca5275fe4a9bac4884178a26f35e21acdb434611f09e843df47b41708a1b  ./.github/workflows/release-gate.yml
 b0475acecb5f659b5999da8f26a965d0c3312d3ec5ad0ac9ffb025b4e6b43008  ./ARCHITECTURE.md
@@ -76,3 +77,4 @@ ec8efef84559cefc7f79da27e6008fc598e8ba8da1f6d96ebb1505442a0c8bbd  ./src/schemas.
 bca9e99e61b85366dec79a07d5f8651c077edfc879b0fdd15c4dcaf7a79ae7ad  ./src/server.test.ts
 34a490dc7807f6c2a0666d621bc554af4f4d6f7100f6f4534b5f0f380add8022  ./src/server.ts
 43b675e77b503edad62bb7a02c2321eecf5830dcefc29d1146c822bc313cecd7  ./tsconfig.json
+c93473c07285d81cac1baa3846da2ccdf94e1bb7ecad761b8df49a96a00913fe  ./tsup.config.ts
