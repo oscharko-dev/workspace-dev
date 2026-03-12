@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1
+
+### Patch Changes
+
+- 9dd1edd: Harden npm release readiness for `workspace-dev`:
+
+  - add release governance changelog (`CHANGELOG.md`)
+  - add explicit `sideEffects` metadata
+  - add CommonJS guard export paths with ESM migration guidance
+  - add quality signals (`publint`, `attw`, `size-limit`) and REUSE metadata
+  - add package-local changesets release workflow with OIDC provenance publish
+
 All notable user-facing changes to `workspace-dev` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
@@ -10,6 +22,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ## [Unreleased]
 
 ### Changed
+
 - Added explicit npm release-hardening metadata (`sideEffects`, publish quality scripts, REUSE metadata).
 - Added CommonJS guard exports that fail fast with a clear migration message to ESM imports.
 - Added package-local changesets release automation with OIDC and provenance publishing.
@@ -17,6 +30,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ## [0.1.0] - 2026-03-11
 
 ### Added
+
 - Initial `workspace-dev` package release for local mode-locked workspace validation.
 - Public status and validation server endpoints (`/workspace`, `/healthz`, `/workspace/submit`).
 - Runtime mode lock enforcement for `rest + deterministic`.
