@@ -144,10 +144,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify changeset commands are available
+      - name: Verify changeset CLI commands are available (non-publishing)
         run: |
-          pnpm changeset version --help
-          pnpm changeset publish --help
+          pnpm exec changeset --version
+          pnpm exec changeset version --help
 
       - name: Verify release workflow includes changesets publish path
         run: |

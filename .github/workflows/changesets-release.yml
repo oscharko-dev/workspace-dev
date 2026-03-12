@@ -113,11 +113,18 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release evidence directory
+        shell: bash
+        run: |
+          EVIDENCE_DIR="${RUNNER_TEMP}/release-evidence"
+          mkdir -p "${EVIDENCE_DIR}/sbom"
+          echo "RELEASE_EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
+
       - name: Generate CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
 
       - name: Generate SPDX SBOM
-        run: pnpm run sbom:spdx
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
 
       - name: Generate OpenVEX artifact
         shell: bash
@@ -133,7 +140,7 @@ jobs:
             -e "s|__TIMESTAMP__|${generated_at}|g" \
             -e "s|__PACKAGE_NAME__|${package_name}|g" \
             -e "s|__PACKAGE_VERSION__|${package_version}|g" \
-            openvex.template.json > openvex.json
+            openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
 
       - name: Create release PR or publish package
         uses: changesets/action@v1
@@ -151,8 +158,8 @@ jobs:
         with:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
-            artifacts/sbom
-            openvex.json
+            ${{ env.RELEASE_EVIDENCE_DIR }}/sbom
+            ${{ env.RELEASE_EVIDENCE_DIR }}/openvex.json
           if-no-files-found: ignore
 
       - name: Release summary

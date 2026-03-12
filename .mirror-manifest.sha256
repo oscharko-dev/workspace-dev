@@ -2,8 +2,9 @@
 7dd5cd533dff2d3e2408b6091b11ce311f3709995b6b0a215dfed6ee24b309a7  ./.changeset/config.json
 da7cfd0ff7048ae6e926b4b9508a942af7c43bbb45b7cd4e06064c208f34bb62  ./.changeset/release-gate-hardening.md
 72a1109c3ae3969747a087862ab71a881fe7377793dc04a3d4b23591f8a8ede1  ./.eslintrc.cjs
-5627ab1aea414ab369196ea21f727495b5a802934e4208b674073f0c32b12c14  ./.github/workflows/changesets-release.yml
-ef44ca5275fe4a9bac4884178a26f35e21acdb434611f09e843df47b41708a1b  ./.github/workflows/release-gate.yml
+d415efcaa53d777f18e28443d5ff0c4a95c2c7223ae0237f695e9b51385ae1a0  ./.github/workflows/changesets-release.yml
+76f4734f6a2d74a28d7189a41f7f82526c7bcc5bce52ffcf57eda677a504b976  ./.github/workflows/release-gate.yml
+de498f1df51fcb13b18896354535f2bf9bdb88be078a72a7f8dbd58c5f9f581a  ./.gitignore
 b0475acecb5f659b5999da8f26a965d0c3312d3ec5ad0ac9ffb025b4e6b43008  ./ARCHITECTURE.md
 8e5e190ad79916b2ffbc3a460851530f62247ffdab8d1b26fb9ae391c9fb29b1  ./CHANGELOG.md
 2f1d20d5a54fd150a49376290ae944fdd91f7e85d4d669a0f185b0b67b5fff6f  ./CODE_OF_CONDUCT.md

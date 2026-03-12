@@ -1,0 +1,7 @@
+# Local and CI-generated content
+node_modules/
+artifacts/
+coverage/
+openvex.json
+*.tgz
+pnpm-debug.log*
