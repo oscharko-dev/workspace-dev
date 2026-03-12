@@ -46,7 +46,7 @@ fceb9730d56dd92d960120a24bae47a25b44940bbccbe4d4ddc402fec2a600dc  ./dist/isolate
 f57a48258d127b29c96ad6510415bf7b4a1d6dcf923fa52f666ec30901367906  ./docs/local-runtime.md
 465879632783ceb4f56a8c02264c0a9a3573b746bafa73a3697d781afa00d15e  ./features/workspace-mode-lock.feature
 d58e3cd049e696853da888cbec06ed4597a16c6ac67555b39256dd51e1d6691e  ./openvex.template.json
-e234d4afb1fc7a0d8caff9a6613083a9718c4a32d1e38870db23ce8dd9709845  ./package.json
+9f1a45763458437f73c75122008cf38d513eb3bc19d436717f908beb9ae41181  ./package.json
 fdb6f47df28d6eb97f5b8c1226c2d55fe441a3e43c44baf0684393fcce1876d8  ./pnpm-lock.yaml
 46b86f83197c0750df5ada5478c2ae384b0184cf414d92207736f22bacd0cb3f  ./scripts/changesets-publish.mjs
 7bb9ccef7bf80df845d7b4d250cd44e2560f0f7047da05a32f7abff8841e807e  ./scripts/check-boundary.mjs

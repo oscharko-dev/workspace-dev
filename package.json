@@ -1,6 +1,6 @@
 {
   "name": "workspace-dev",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Local mode-locked workspace status server for FigmaPipe development",
   "type": "module",
   "license": "MIT",
@@ -100,8 +100,7 @@
   "engineStrict": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oscharko-dev/FigmaPipe.git",
-    "directory": "packages/workspace-dev"
+    "url": "git+https://github.com/oscharko-dev/workspace-dev.git"
   },
   "publishConfig": {
     "access": "public",
