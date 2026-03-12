@@ -2,8 +2,8 @@
 7dd5cd533dff2d3e2408b6091b11ce311f3709995b6b0a215dfed6ee24b309a7  ./.changeset/config.json
 da7cfd0ff7048ae6e926b4b9508a942af7c43bbb45b7cd4e06064c208f34bb62  ./.changeset/release-gate-hardening.md
 72a1109c3ae3969747a087862ab71a881fe7377793dc04a3d4b23591f8a8ede1  ./.eslintrc.cjs
-b1ee60bc92be31b1efbffda1631353a58c4891aa1f09b3697fa2e867c2063159  ./.github/workflows/changesets-release.yml
-a1ce317755bde48e0acc26e14e8ece5626f10c034d6f461930c1ab12a20e486e  ./.github/workflows/release-gate.yml
+bc577c7bb5c3210201fcf9147fb09890b43def17c770d56ec4070274208d2c33  ./.github/workflows/changesets-release.yml
+55be347659f085eb7708e31c9005c0a5a71099793d0c2771e168cfd39be15c46  ./.github/workflows/release-gate.yml
 de498f1df51fcb13b18896354535f2bf9bdb88be078a72a7f8dbd58c5f9f581a  ./.gitignore
 b0475acecb5f659b5999da8f26a965d0c3312d3ec5ad0ac9ffb025b4e6b43008  ./ARCHITECTURE.md
 8e5e190ad79916b2ffbc3a460851530f62247ffdab8d1b26fb9ae391c9fb29b1  ./CHANGELOG.md
@@ -43,7 +43,7 @@ f18f844f06709b016800bdaface6d864fa11d56d711b963188e538efbb26a4e1  ./dist/isolate
 b7361b6375c9785c88df2e2b33e3e13313381e257177450d57f4c57b5715944b  ./docs/local-runtime.md
 465879632783ceb4f56a8c02264c0a9a3573b746bafa73a3697d781afa00d15e  ./features/workspace-mode-lock.feature
 d58e3cd049e696853da888cbec06ed4597a16c6ac67555b39256dd51e1d6691e  ./openvex.template.json
-b9c08f33487aa4203f06960baf679fa295556fb4d7b8c8fcdecc2b69b49a7815  ./package.json
+810c825a0c8030b2d0a5571f242b059e3014fb8f48ebcb79f0a5ced82a3393c0  ./package.json
 fdb6f47df28d6eb97f5b8c1226c2d55fe441a3e43c44baf0684393fcce1876d8  ./pnpm-lock.yaml
 148290415316cdf057b550f8200657818edacf3bd62fa7023cb50467074294e9  ./scripts/changesets-publish.mjs
 7bb9ccef7bf80df845d7b4d250cd44e2560f0f7047da05a32f7abff8841e807e  ./scripts/check-boundary.mjs

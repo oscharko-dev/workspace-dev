@@ -1,6 +1,6 @@
 {
   "name": "workspace-dev",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Local mode-locked workspace status server for FigmaPipe development",
   "type": "module",
   "license": "MIT",
@@ -75,7 +75,7 @@
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",
-    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap"
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap"
   },
   "devDependencies": {
     "@cyclonedx/cyclonedx-npm": "^4.1.1",

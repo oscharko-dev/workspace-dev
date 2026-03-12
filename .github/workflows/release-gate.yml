@@ -74,6 +74,9 @@ jobs:
       - name: Enforce license allowlist
         run: pnpm run verify:licenses
 
+      - name: Verify package tarball contents
+        run: pnpm run verify:pack
+
       - name: Verify reproducible build
         run: pnpm run verify:reproducible-build
 

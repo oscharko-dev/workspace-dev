@@ -59,6 +59,7 @@ jobs:
           pnpm run lint:types-publish
           pnpm run lint:size
           pnpm run verify:licenses
+          pnpm run verify:pack
           pnpm run verify:reproducible-build
           pnpm run verify:fips
           pnpm run sbom:cyclonedx
