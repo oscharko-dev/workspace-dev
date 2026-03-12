@@ -1,0 +1,155 @@
+name: workspace-dev mirror release gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Enforce dependency vulnerability gate
+        run: pnpm audit --audit-level high
+
+      - name: Verify npm signature attestations
+        run: npm audit signatures
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Canonical tests
+        run: pnpm run test
+
+      - name: Run tests with flaky retry
+        run: pnpm run test:flaky-retry
+
+      - name: Run BDD contract tests
+        run: pnpm run test:bdd
+
+      - name: Run property-based fuzz tests
+        run: pnpm run test:property-based
+
+      - name: Enforce architecture boundaries
+        run: pnpm run lint:boundaries
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Validate package metadata with publint
+        run: pnpm run lint:publint
+
+      - name: Validate published type resolution
+        run: pnpm run lint:types-publish
+
+      - name: Enforce package size budget
+        run: pnpm run lint:size
+
+      - name: Enforce TypeScript style
+        run: pnpm run lint:ts-style
+
+      - name: Enforce zero telemetry policy
+        run: pnpm run lint:no-telemetry
+
+      - name: Enforce license allowlist
+        run: pnpm run verify:licenses
+
+      - name: Verify reproducible build
+        run: pnpm run verify:reproducible-build
+
+      - name: Verify offline install + dual module smoke
+        run: pnpm run verify:airgap
+
+      - name: Generate CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx
+
+      - name: Generate SPDX SBOM
+        run: pnpm run sbom:spdx
+
+      - name: Upload flaky retry artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-flaky-retry-node-${{ matrix.node-version }}
+          path: artifacts/testing
+          if-no-files-found: ignore
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-sbom-node-${{ matrix.node-version }}
+          path: artifacts/sbom
+          if-no-files-found: ignore
+
+  fips-smoke:
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: FIPS smoke check (skip when unsupported)
+        run: pnpm run verify:fips
+
+  release-readiness:
+    runs-on: ubuntu-latest
+    needs: [quality, fips-smoke]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify changeset commands are available
+        run: |
+          pnpm changeset version --help
+          pnpm changeset publish --help
+
+      - name: Verify release workflow includes changesets publish path
+        run: |
+          test -f ".github/workflows/changesets-release.yml"
+          grep -q "changesets/action" ".github/workflows/changesets-release.yml"

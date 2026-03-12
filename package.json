@@ -1,0 +1,128 @@
+{
+  "name": "workspace-dev",
+  "version": "0.1.0",
+  "description": "Local mode-locked workspace status server for FigmaPipe development",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "bin": {
+    "workspace-dev": "./dist/cli.js",
+    "figmapipe-workspace-dev": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./contracts": {
+      "import": {
+        "types": "./dist/contracts/index.d.ts",
+        "default": "./dist/contracts/index.js"
+      },
+      "require": {
+        "types": "./dist/contracts/index.d.cts",
+        "default": "./dist/contracts/index.cjs"
+      }
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "COMPLIANCE.md",
+    "ARCHITECTURE.md",
+    "COMPATIBILITY.md",
+    "SLA.md",
+    "ESCROW.md",
+    "ZERO_TELEMETRY.md",
+    "SUPPORT.md",
+    "CONTRACT_CHANGELOG.md",
+    "REUSE.toml"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && node scripts/create-cjs-types.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts integration/**/*.test.ts",
+    "test:ci": "pnpm run test",
+    "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
+    "test:bdd": "tsx --test src/bdd-contract.test.ts",
+    "test:property-based": "tsx --test src/mode-lock.fuzz.test.ts",
+    "test:coverage": "c8 --all --src src --include \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" --reporter=text-summary --reporter=lcov --reporter=json-summary --report-dir coverage tsx --test src/**/*.test.ts integration/**/*.test.ts && node scripts/check-coverage-thresholds.mjs",
+    "lint:boundaries": "node scripts/check-boundary.mjs",
+    "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\"",
+    "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
+    "lint:publint": "publint",
+    "lint:types-publish": "attw --pack . --config-path .attw.json",
+    "lint:size": "size-limit",
+    "verify:licenses": "node scripts/check-license-allowlist.mjs",
+    "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs",
+    "verify:airgap": "node scripts/verify-airgap-install.mjs",
+    "verify:pack": "bash scripts/validate-pack.sh",
+    "verify:fips": "node scripts/fips-smoke.mjs",
+    "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
+    "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
+    "release:changesets:publish": "node scripts/changesets-publish.mjs",
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "^4.1.1",
+    "@changesets/cli": "^2.30.0",
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@size-limit/file": "^11.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.1",
+    "@typescript-eslint/parser": "^8.46.1",
+    "@types/node": "^22.13.4",
+    "c8": "^11.0.0",
+    "eslint": "^8.57.1",
+    "fast-check": "^4.6.0",
+    "publint": "^0.3.15",
+    "size-limit": "^11.2.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "engineStrict": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oscharko-dev/FigmaPipe.git",
+    "directory": "packages/workspace-dev"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "keywords": [
+    "figma",
+    "workspace",
+    "local-dev",
+    "mode-lock",
+    "deterministic"
+  ],
+  "size-limit": [
+    {
+      "path": "dist/index.js",
+      "limit": "15 KB"
+    },
+    {
+      "path": "dist/contracts/index.js",
+      "limit": "5 KB"
+    }
+  ]
+}

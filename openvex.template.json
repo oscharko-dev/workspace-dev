@@ -1,0 +1,22 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/__REPOSITORY__/attestations/openvex/__COMMIT_SHA__",
+  "author": "https://github.com/__REPOSITORY__",
+  "timestamp": "__TIMESTAMP__",
+  "version": 1,
+  "tooling": "github-actions",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-0000-0000"
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/__PACKAGE_NAME__@__PACKAGE_VERSION__"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "Template placeholder. Replace with vulnerability-specific assertions for audited releases."
+    }
+  ]
+}

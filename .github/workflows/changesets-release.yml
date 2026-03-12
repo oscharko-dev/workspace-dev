@@ -1,0 +1,168 @@
+name: workspace-dev mirror changesets release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  quality-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Set reproducible build metadata
+        shell: bash
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+          echo "TZ=UTC" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Enforce dependency vulnerability gate
+        run: pnpm audit --audit-level high
+
+      - name: Verify npm signature attestations
+        run: npm audit signatures
+
+      - name: Run release quality gates
+        run: |
+          pnpm run typecheck
+          pnpm run test
+          pnpm run test:flaky-retry
+          pnpm run test:bdd
+          pnpm run test:property-based
+          pnpm run lint:boundaries
+          pnpm run lint:ts-style
+          pnpm run lint:no-telemetry
+          pnpm run build
+          pnpm run lint:publint
+          pnpm run lint:types-publish
+          pnpm run lint:size
+          pnpm run verify:licenses
+          pnpm run verify:reproducible-build
+          pnpm run verify:fips
+          pnpm run sbom:cyclonedx
+          pnpm run sbom:spdx
+          pnpm run verify:airgap
+
+      - name: Upload release evidence artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-release-evidence-node-${{ matrix.node-version }}
+          path: |
+            artifacts/testing
+            artifacts/reproducibility
+            artifacts/sbom
+          if-no-files-found: ignore
+
+  release:
+    runs-on: ubuntu-latest
+    needs: quality-matrix
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set reproducible build metadata
+        shell: bash
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+          echo "TZ=UTC" >> "$GITHUB_ENV"
+
+      - name: Determine release metadata
+        id: release_meta
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "npm_tag=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx
+
+      - name: Generate SPDX SBOM
+        run: pnpm run sbom:spdx
+
+      - name: Generate OpenVEX artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="${{ steps.release_meta.outputs.version }}"
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          sed \
+            -e "s|__REPOSITORY__|${{ github.repository }}|g" \
+            -e "s|__COMMIT_SHA__|${{ github.sha }}|g" \
+            -e "s|__TIMESTAMP__|${generated_at}|g" \
+            -e "s|__PACKAGE_NAME__|${package_name}|g" \
+            -e "s|__PACKAGE_VERSION__|${package_version}|g" \
+            openvex.template.json > openvex.json
+
+      - name: Create release PR or publish package
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm run release:changesets:publish
+          commit: "chore(release): version workspace-dev"
+          title: "chore(release): version workspace-dev"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release evidence artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-release-evidence-${{ github.run_id }}
+          path: |
+            artifacts/sbom
+            openvex.json
+          if-no-files-found: ignore
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## workspace-dev Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version (current package.json) | \`${{ steps.release_meta.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm tag lane | \`${{ steps.release_meta.outputs.npm_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"
