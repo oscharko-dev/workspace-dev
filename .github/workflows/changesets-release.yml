@@ -142,15 +142,26 @@ jobs:
             -e "s|__PACKAGE_VERSION__|${package_version}|g" \
             openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
 
-      - name: Create release PR or publish package
-        uses: changesets/action@v1
-        with:
-          version: pnpm changeset version
-          publish: pnpm run release:changesets:publish
-          commit: "chore(release): version workspace-dev"
-          title: "chore(release): version workspace-dev"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply pending changesets and publish package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGESET_COUNT="$(find .changeset -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')"
+          echo "Detected ${CHANGESET_COUNT} pending changeset file(s)."
+
+          if [[ "$CHANGESET_COUNT" != "0" ]]; then
+            pnpm changeset version
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            if ! git diff --quiet; then
+              git add -A
+              git commit -m "chore(release): version workspace-dev [skip ci]"
+              git push origin HEAD:main
+            fi
+          fi
+
+          pnpm run release:changesets:publish
 
       - name: Upload release evidence artifacts
         uses: actions/upload-artifact@v4

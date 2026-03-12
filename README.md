@@ -1,6 +1,6 @@
 # workspace-dev
 
-Local mode-locked workspace status and validation server for Design2Code development.
+Local mode-locked workspace status and validation server for FigmaPipe development.
 
 The package exposes deterministic local endpoints and does not execute Figma fetch, LLM codegen, or filesystem output.
 

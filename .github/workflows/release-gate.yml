@@ -152,4 +152,4 @@ jobs:
       - name: Verify release workflow includes changesets publish path
         run: |
           test -f ".github/workflows/changesets-release.yml"
-          grep -q "changesets/action" ".github/workflows/changesets-release.yml"
+          grep -q "pnpm run release:changesets:publish" ".github/workflows/changesets-release.yml"
