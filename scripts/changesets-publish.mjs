@@ -8,11 +8,11 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 
-const run = (command, args) =>
+const run = (command, args, env = process.env) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: packageRoot,
-      env: process.env,
+      env,
       stdio: "inherit"
     });
 
@@ -25,6 +25,20 @@ const run = (command, args) =>
       reject(new Error(`Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}`));
     });
   });
+
+const resolvePublishEnv = () => {
+  const publishEnv = { ...process.env };
+
+  // Enforce OIDC trusted publishing in GitHub Actions.
+  if (publishEnv.GITHUB_ACTIONS === "true") {
+    delete publishEnv.NODE_AUTH_TOKEN;
+    delete publishEnv.NPM_TOKEN;
+    delete publishEnv.npm_config__authToken;
+    delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+  }
+
+  return publishEnv;
+};
 
 const main = async () => {
   const packageJsonPath = path.resolve(packageRoot, "package.json");
@@ -46,7 +60,7 @@ const main = async () => {
     "--provenance",
     "--tag",
     npmTag
-  ]);
+  ], resolvePublishEnv());
 };
 
 main().catch((error) => {

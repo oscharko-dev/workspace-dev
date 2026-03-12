@@ -91,7 +91,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: "https://registry.npmjs.org"
           cache: pnpm
 
       - name: Install dependencies
@@ -144,8 +143,24 @@ jobs:
             -e "s|__PACKAGE_VERSION__|${package_version}|g" \
             openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
 
+      - name: Enforce npm trusted publisher auth mode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Trusted publishing must not use token auth fallback. Force a clean npm config.
+          TRUSTED_NPMRC="${RUNNER_TEMP}/npm-trusted-publisher.npmrc"
+          echo "registry=https://registry.npmjs.org/" > "${TRUSTED_NPMRC}"
+          echo "NPM_CONFIG_USERCONFIG=${TRUSTED_NPMRC}" >> "$GITHUB_ENV"
+
+          echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
+        id: npm_auth_mode
+
       - name: Apply pending changesets and publish package
         shell: bash
+        env:
+          NODE_AUTH_TOKEN: ""
+          NPM_TOKEN: ""
         run: |
           set -euo pipefail
 
@@ -185,4 +200,5 @@ jobs:
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Version (current package.json) | \`${{ steps.release_meta.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| npm tag lane | \`${{ steps.release_meta.outputs.npm_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"

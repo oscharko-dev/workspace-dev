@@ -2,7 +2,7 @@
 7dd5cd533dff2d3e2408b6091b11ce311f3709995b6b0a215dfed6ee24b309a7  ./.changeset/config.json
 da7cfd0ff7048ae6e926b4b9508a942af7c43bbb45b7cd4e06064c208f34bb62  ./.changeset/release-gate-hardening.md
 72a1109c3ae3969747a087862ab71a881fe7377793dc04a3d4b23591f8a8ede1  ./.eslintrc.cjs
-21403c09bfca401d5b4b624588e79bd2c65175a6fed26d4705ac7792beda6ac9  ./.github/workflows/changesets-release.yml
+a952a1e205f26b209f292192af946d4636fc1fd0ebeb5e00af3c7d92eadfdbc6  ./.github/workflows/changesets-release.yml
 55be347659f085eb7708e31c9005c0a5a71099793d0c2771e168cfd39be15c46  ./.github/workflows/release-gate.yml
 de498f1df51fcb13b18896354535f2bf9bdb88be078a72a7f8dbd58c5f9f581a  ./.gitignore
 b1fa3788037d36a076367bbed8783e6c074874c76ec76e9a3446cf99bac79056  ./ARCHITECTURE.md
@@ -48,7 +48,7 @@ f57a48258d127b29c96ad6510415bf7b4a1d6dcf923fa52f666ec30901367906  ./docs/local-r
 d58e3cd049e696853da888cbec06ed4597a16c6ac67555b39256dd51e1d6691e  ./openvex.template.json
 e234d4afb1fc7a0d8caff9a6613083a9718c4a32d1e38870db23ce8dd9709845  ./package.json
 fdb6f47df28d6eb97f5b8c1226c2d55fe441a3e43c44baf0684393fcce1876d8  ./pnpm-lock.yaml
-148290415316cdf057b550f8200657818edacf3bd62fa7023cb50467074294e9  ./scripts/changesets-publish.mjs
+d752f3f8b74081666bf107dd31d1ec44f0d951156f775ccdf8ac78c6ee8ff06b  ./scripts/changesets-publish.mjs
 7bb9ccef7bf80df845d7b4d250cd44e2560f0f7047da05a32f7abff8841e807e  ./scripts/check-boundary.mjs
 c9a59f73d18555fa0ebd33d2ae81e1fc01857b0e3791eeec738cb66f6c7d995d  ./scripts/check-coverage-thresholds.mjs
 e123cf9c8d8706d485cb1886555e891912bf78b83bcddc2c4520edfc5a8194aa  ./scripts/check-license-allowlist.mjs
