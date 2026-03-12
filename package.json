@@ -1,6 +1,6 @@
 {
   "name": "workspace-dev",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Local mode-locked workspace status server for FigmaPipe development",
   "type": "module",
   "license": "MIT",
@@ -53,7 +53,7 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && node scripts/create-cjs-types.mjs",
+    "build": "tsup --config tsup.config.ts && node scripts/create-cjs-types.mjs && node scripts/copy-ui-assets.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts integration/**/*.test.ts",
     "test:ci": "pnpm run test",

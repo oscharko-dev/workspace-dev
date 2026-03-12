@@ -77,6 +77,7 @@ Environment variables:
 
 Capabilities:
   - GET /workspace          Server status (mode info, uptime)
+  - GET /workspace/ui       Storybook-inspired local UI shell
   - GET /healthz            Health check probe
   - POST /workspace/submit  Mode-locked request validation (execution not implemented)
 

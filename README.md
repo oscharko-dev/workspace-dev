@@ -27,11 +27,32 @@ npx figmapipe-workspace-dev start
 
 Server defaults to `http://127.0.0.1:1983`.
 
+### Local UI
+
+After starting the server, open:
+
+- `http://127.0.0.1:1983/workspace/ui`
+
+The UI follows the full FigmaPipe workspace layout style, but only runtime-supported
+`workspace-dev` capabilities are active.
+
 ## API Surface
 
 - `GET /workspace` - runtime status
+- `GET /workspace/ui` - local UI entrypoint
 - `GET /healthz` - readiness probe
 - `POST /workspace/submit` - request validation + mode-lock enforcement (returns deterministic `501` for execution path)
+
+## Feature Matrix (workspace-dev vs full runtime)
+
+| Area | workspace-dev |
+| --- | --- |
+| Health and status polling | ✅ Active |
+| Mode-locked submit validation | ✅ Active |
+| Figma fetch execution | ❌ Not available in workspace-dev runtime |
+| LLM code generation | ❌ Not available in workspace-dev runtime |
+| Git push / PR automation | ❌ Not available in workspace-dev runtime |
+| Live edit / rich preview pipeline | ❌ Not available in workspace-dev runtime |
 
 ## Module Usage
 

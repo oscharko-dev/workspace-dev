@@ -2,7 +2,10 @@
 var CONTRACT_VERSION = "1.0.0";
 
 // src/server.ts
+import { access, readFile } from "fs/promises";
 import { createServer } from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // src/error-sanitization.ts
 var EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -87,8 +90,8 @@ function getWorkspaceDefaults() {
 function isRecord(input) {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
-function pushIssue(issues, path2, message) {
-  issues.push({ path: path2, message });
+function pushIssue(issues, path3, message) {
+  issues.push({ path: path3, message });
 }
 function parseStringField({
   input,
@@ -182,9 +185,17 @@ function formatZodError(validationError) {
 }
 
 // src/server.ts
+var MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 var DEFAULT_HOST = "127.0.0.1";
 var DEFAULT_PORT = 1983;
 var MAX_REQUEST_BODY_BYTES = 1048576;
+var UI_ROUTE_PREFIX = "/workspace/ui";
+var UI_ASSET_DEFINITIONS = [
+  { name: "index.html", contentType: "text/html; charset=utf-8" },
+  { name: "app.css", contentType: "text/css; charset=utf-8" },
+  { name: "app.js", contentType: "application/javascript; charset=utf-8" }
+];
+var uiAssetsPromise = null;
 function sendJson({
   response,
   statusCode,
@@ -194,6 +205,71 @@ function sendJson({
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload)}
 `);
+}
+function sendText({
+  response,
+  statusCode,
+  contentType,
+  payload
+}) {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", contentType);
+  response.end(payload);
+}
+function resolveUiAssetName(pathname) {
+  if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
+    return "index.html";
+  }
+  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
+    return null;
+  }
+  const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
+  if (requestedAsset === "app.css" || requestedAsset === "app.js") {
+    return requestedAsset;
+  }
+  return null;
+}
+async function fileExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function resolveUiSourceDir() {
+  const candidates = [path.resolve(MODULE_DIR, "ui"), path.resolve(MODULE_DIR, "../ui-src")];
+  for (const candidate of candidates) {
+    if (await fileExists(path.join(candidate, "index.html"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+async function loadUiAssets() {
+  const sourceDir = await resolveUiSourceDir();
+  if (!sourceDir) {
+    throw new Error("UI assets not found. Expected dist/ui or ui-src to be present.");
+  }
+  const assets = /* @__PURE__ */ new Map();
+  for (const assetDefinition of UI_ASSET_DEFINITIONS) {
+    const assetPath = path.join(sourceDir, assetDefinition.name);
+    const content = await readFile(assetPath, "utf8");
+    assets.set(assetDefinition.name, {
+      contentType: assetDefinition.contentType,
+      content
+    });
+  }
+  return assets;
+}
+async function getUiAssets() {
+  if (!uiAssetsPromise) {
+    uiAssetsPromise = loadUiAssets().catch((error) => {
+      uiAssetsPromise = null;
+      throw error;
+    });
+  }
+  return await uiAssetsPromise;
 }
 async function readJsonBody(request) {
   let body = "";
@@ -290,6 +366,41 @@ var createWorkspaceServer = async (options = {}) => {
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
     const pathname = requestUrl.pathname;
+    const uiAssetName = method === "GET" ? resolveUiAssetName(pathname) : null;
+    if (uiAssetName) {
+      try {
+        const uiAssets = await getUiAssets();
+        const uiAsset = uiAssets.get(uiAssetName);
+        if (!uiAsset) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`
+            }
+          });
+          return;
+        }
+        sendText({
+          response,
+          statusCode: 200,
+          contentType: uiAsset.contentType,
+          payload: uiAsset.content
+        });
+        return;
+      } catch {
+        sendJson({
+          response,
+          statusCode: 503,
+          payload: {
+            error: "UI_ASSETS_UNAVAILABLE",
+            message: "workspace-dev UI assets are not available in this runtime."
+          }
+        });
+        return;
+      }
+    }
     if (method === "GET" && pathname === "/workspace") {
       const status = {
         running: true,
@@ -412,15 +523,15 @@ import { fork } from "child_process";
 import { existsSync } from "fs";
 import { mkdir, rm } from "fs/promises";
 import { createRequire } from "module";
-import path from "path";
+import path2 from "path";
 var PACKAGE_NAME = "workspace-dev";
 var resolvePackageRoot = () => {
-  const fromCwdRequire = createRequire(path.resolve(process.cwd(), "__workspace-dev-resolver__.cjs"));
+  const fromCwdRequire = createRequire(path2.resolve(process.cwd(), "__workspace-dev-resolver__.cjs"));
   const candidateSpecifiers = [`${PACKAGE_NAME}/package.json`, "./package.json"];
   for (const specifier of candidateSpecifiers) {
     try {
       const resolved = fromCwdRequire.resolve(specifier);
-      return path.dirname(resolved);
+      return path2.dirname(resolved);
     } catch {
     }
   }
@@ -473,11 +584,11 @@ var resolveTsExecArgv = () => {
   return args;
 };
 var resolveEntryPoint = () => {
-  const jsPath = path.join(packageRoot, "dist", "isolated-server-entry.js");
+  const jsPath = path2.join(packageRoot, "dist", "isolated-server-entry.js");
   if (existsSync(jsPath)) {
     return { path: jsPath, execArgv: [] };
   }
-  const tsPath = path.join(packageRoot, "src", "isolated-server-entry.ts");
+  const tsPath = path2.join(packageRoot, "src", "isolated-server-entry.ts");
   if (existsSync(tsPath)) {
     return { path: tsPath, execArgv: resolveTsExecArgv() };
   }
@@ -494,7 +605,7 @@ var createProjectInstance = async (projectKey, options = {}) => {
   }
   registerParentCleanup();
   const baseDir = options.workDir ?? process.cwd();
-  const workDir = path.join(baseDir, ".figmapipe", projectKey);
+  const workDir = path2.join(baseDir, ".figmapipe", projectKey);
   await mkdir(workDir, { recursive: true });
   const host = options.host ?? "127.0.0.1";
   const entryPoint = resolveEntryPoint();

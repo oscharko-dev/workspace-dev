@@ -6,6 +6,7 @@
 It provides deterministic HTTP behavior for:
 
 - `GET /workspace`
+- `GET /workspace/ui` (with static assets under `/workspace/ui/*`)
 - `GET /healthz`
 - `POST /workspace/submit` (validation + mode lock only)
 

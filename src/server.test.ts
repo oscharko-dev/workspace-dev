@@ -41,6 +41,54 @@ test("workspace server healthz endpoint", async () => {
   }
 });
 
+test("workspace server serves UI entrypoint on /workspace/ui", async () => {
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({ port, host: "127.0.0.1" });
+
+  try {
+    const response = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui"
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.match(response.headers["content-type"] ?? "", /text\/html/i);
+    assert.match(response.body, /FigmaPipe Workspace/i);
+    assert.match(response.body, /Input/i);
+    assert.match(response.body, /Figma Auth Matrix/i);
+    assert.match(response.body, /Git \/ PR Config/i);
+    assert.match(response.body, /Live Preview/i);
+    assert.match(response.body, /Job Status/i);
+  } finally {
+    await server.app.close();
+  }
+});
+
+test("workspace server serves UI static assets", async () => {
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({ port, host: "127.0.0.1" });
+
+  try {
+    const cssResponse = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui/app.css"
+    });
+    assert.equal(cssResponse.statusCode, 200);
+    assert.match(cssResponse.headers["content-type"] ?? "", /text\/css/i);
+    assert.match(cssResponse.body, /\.workspace-grid/i);
+
+    const jsResponse = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui/app.js"
+    });
+    assert.equal(jsResponse.statusCode, 200);
+    assert.match(jsResponse.headers["content-type"] ?? "", /javascript/i);
+    assert.match(jsResponse.body, /const endpoints/i);
+  } finally {
+    await server.app.close();
+  }
+});
+
 test("workspace server exposes listening address metadata and clears it after close", async () => {
   const server = await createWorkspaceServer({ port: 0, host: "127.0.0.1" });
 

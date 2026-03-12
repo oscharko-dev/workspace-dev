@@ -4,7 +4,8 @@ export { CONTRACT_VERSION, WorkspaceFigmaSourceMode, WorkspaceJobInput, Workspac
 /**
  * Workspace-dev HTTP server.
  *
- * Provides the `/workspace` endpoint and a mode-locked submission validation path.
+ * Provides a local UI shell (`/workspace/ui`), the `/workspace` status endpoint,
+ * and a mode-locked submission validation path.
  * Binds to 127.0.0.1:1983 by default (configurable via options).
  *
  * All incoming requests are validated at runtime without external dependencies.

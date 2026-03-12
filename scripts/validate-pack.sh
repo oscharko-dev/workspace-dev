@@ -54,6 +54,9 @@ REQUIRED_FILES=(
   "dist/contracts/index.cjs"
   "dist/contracts/index.d.ts"
   "dist/contracts/index.d.cts"
+  "dist/ui/index.html"
+  "dist/ui/app.css"
+  "dist/ui/app.js"
 )
 
 MISSING=()
@@ -75,6 +78,7 @@ echo "  ✓ All required files present (${#REQUIRED_FILES[@]} checked)"
 # --- Forbidden patterns ----------------------------------------------------
 FORBIDDEN_PATTERNS=(
   "src/"
+  "ui-src/"
   ".env"
   ".env.*"
   "*.test.ts"

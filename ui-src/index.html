@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>workspace-dev UI</title>
+    <link rel="stylesheet" href="/workspace/ui/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">FP</div>
+        <div>
+          <h1>FigmaPipe Workspace</h1>
+          <p>Storybook-inspired local workspace shell powered by workspace-dev</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" class="ghost" disabled>Dark mode</button>
+        <button type="button" class="ghost" disabled>Dashboard</button>
+        <button type="button" class="ghost" id="refresh-runtime">Refresh</button>
+        <button type="submit" class="primary" form="workspace-submit-form">Generate</button>
+      </div>
+    </header>
+
+    <p class="context-strip">
+      Runtime: <code>workspace-dev</code> (<span id="runtime-mode">polling</span>). Only mode-locked local features are active.
+    </p>
+
+    <main class="workspace-grid">
+      <section class="card">
+        <div class="section-head">
+          <h2>Input</h2>
+          <p>Configure LLM and Figma settings</p>
+        </div>
+
+        <form id="workspace-submit-form" class="fields-grid">
+          <div class="field">
+            <label for="figma-source-mode">Figma source mode</label>
+            <select id="figma-source-mode" disabled>
+              <option>rest</option>
+            </select>
+            <small>Locked by workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="llm-codegen-mode">LLM codegen mode</label>
+            <select id="llm-codegen-mode" disabled>
+              <option>deterministic</option>
+            </select>
+            <small>Locked by workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="llm-api-url">LLM API URL</label>
+            <input id="llm-api-url" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="llm-api-key">LLM API key</label>
+            <input id="llm-api-key" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="api-key-mode">API key mode</label>
+            <input id="api-key-mode" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="model-deployment">Model / deployment</label>
+            <input id="model-deployment" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field field--active">
+            <label for="figma-file-key">Figma file key</label>
+            <input
+              id="figma-file-key"
+              name="figmaFileKey"
+              placeholder="Enter Figma file key"
+              autocomplete="off"
+              required
+            />
+            <small>Used for /workspace/submit validation requests</small>
+          </div>
+
+          <div class="field">
+            <label for="figma-access-token">Figma access token</label>
+            <input id="figma-access-token" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="figma-oauth-token">Figma OAuth token (MCP optional)</label>
+            <input id="figma-oauth-token" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+
+          <div class="field">
+            <label for="figma-oauth-profile">Figma OAuth profile ID</label>
+            <input id="figma-oauth-profile" value="Not available in workspace-dev runtime" disabled />
+            <small>Not available in workspace-dev runtime</small>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Figma Auth Matrix</h2>
+          <p>REST PAT controls file access. MCP auth lanes are displayed as unavailable in workspace-dev.</p>
+        </div>
+        <div class="triplet-grid">
+          <article class="status-card">
+            <h3>REST + PAT</h3>
+            <p>Status: <span class="badge badge--ok" id="status-rest-pat">READY</span></p>
+          </article>
+          <article class="status-card">
+            <h3>MCP Desktop</h3>
+            <p>Status: <span class="badge badge--warn">OPTIONAL</span></p>
+            <p class="muted">Not available in workspace-dev runtime</p>
+          </article>
+          <article class="status-card">
+            <h3>MCP Remote OAuth</h3>
+            <p>Status: <span class="badge badge--warn">OPTIONAL</span></p>
+            <p class="muted">Not available in workspace-dev runtime</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Git / PR Config</h2>
+          <p>Repository and branch integration</p>
+        </div>
+        <div class="fields-grid">
+          <div class="field"><label>Git provider</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Repo URL</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Base branch</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Auth token</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Repo owner</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Repo name</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>API base URL</label><input value="Not available in workspace-dev runtime" disabled /></div>
+          <div class="field"><label>Offline mode</label><input value="Not available in workspace-dev runtime" disabled /></div>
+        </div>
+      </section>
+
+      <section class="card card--left">
+        <div class="section-head">
+          <h2>Live Preview</h2>
+          <p>Preview of generated output</p>
+        </div>
+        <div class="preview-box">
+          <p id="preview-message">No job started yet. Preview appears after Generate.</p>
+        </div>
+        <pre class="payload" id="submit-payload">{}</pre>
+      </section>
+
+      <section class="card card--right">
+        <div class="section-head">
+          <h2>Job Status</h2>
+          <p>Current pipeline status</p>
+        </div>
+        <div class="job-status">
+          <p>Health: <span class="badge" id="health-status">UNKNOWN</span></p>
+          <p>Workspace: <span class="badge" id="workspace-status">UNKNOWN</span></p>
+          <p>Submit: <span class="badge" id="submit-status">IDLE</span></p>
+        </div>
+        <pre class="payload" id="workspace-payload">{}</pre>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>FigmaPipe • workspace-dev local runtime UI</span>
+      <span id="footer-version">v0.1</span>
+    </footer>
+
+    <script type="module" src="/workspace/ui/app.js"></script>
+  </body>
+</html>
+

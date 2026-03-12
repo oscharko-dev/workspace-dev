@@ -47,7 +47,10 @@ module.exports = __toCommonJS(src_exports);
 var CONTRACT_VERSION = "1.0.0";
 
 // src/server.ts
+var import_promises = require("fs/promises");
 var import_node_http = require("http");
+var import_node_path = __toESM(require("path"), 1);
+var import_node_url = require("url");
 
 // src/error-sanitization.ts
 var EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -132,8 +135,8 @@ function getWorkspaceDefaults() {
 function isRecord(input) {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
-function pushIssue(issues, path2, message) {
-  issues.push({ path: path2, message });
+function pushIssue(issues, path3, message) {
+  issues.push({ path: path3, message });
 }
 function parseStringField({
   input,
@@ -227,9 +230,18 @@ function formatZodError(validationError) {
 }
 
 // src/server.ts
+var import_meta = {};
+var MODULE_DIR = typeof __dirname === "string" ? __dirname : import_node_path.default.dirname((0, import_node_url.fileURLToPath)(import_meta.url));
 var DEFAULT_HOST = "127.0.0.1";
 var DEFAULT_PORT = 1983;
 var MAX_REQUEST_BODY_BYTES = 1048576;
+var UI_ROUTE_PREFIX = "/workspace/ui";
+var UI_ASSET_DEFINITIONS = [
+  { name: "index.html", contentType: "text/html; charset=utf-8" },
+  { name: "app.css", contentType: "text/css; charset=utf-8" },
+  { name: "app.js", contentType: "application/javascript; charset=utf-8" }
+];
+var uiAssetsPromise = null;
 function sendJson({
   response,
   statusCode,
@@ -239,6 +251,71 @@ function sendJson({
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload)}
 `);
+}
+function sendText({
+  response,
+  statusCode,
+  contentType,
+  payload
+}) {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", contentType);
+  response.end(payload);
+}
+function resolveUiAssetName(pathname) {
+  if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
+    return "index.html";
+  }
+  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
+    return null;
+  }
+  const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
+  if (requestedAsset === "app.css" || requestedAsset === "app.js") {
+    return requestedAsset;
+  }
+  return null;
+}
+async function fileExists(filePath) {
+  try {
+    await (0, import_promises.access)(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function resolveUiSourceDir() {
+  const candidates = [import_node_path.default.resolve(MODULE_DIR, "ui"), import_node_path.default.resolve(MODULE_DIR, "../ui-src")];
+  for (const candidate of candidates) {
+    if (await fileExists(import_node_path.default.join(candidate, "index.html"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+async function loadUiAssets() {
+  const sourceDir = await resolveUiSourceDir();
+  if (!sourceDir) {
+    throw new Error("UI assets not found. Expected dist/ui or ui-src to be present.");
+  }
+  const assets = /* @__PURE__ */ new Map();
+  for (const assetDefinition of UI_ASSET_DEFINITIONS) {
+    const assetPath = import_node_path.default.join(sourceDir, assetDefinition.name);
+    const content = await (0, import_promises.readFile)(assetPath, "utf8");
+    assets.set(assetDefinition.name, {
+      contentType: assetDefinition.contentType,
+      content
+    });
+  }
+  return assets;
+}
+async function getUiAssets() {
+  if (!uiAssetsPromise) {
+    uiAssetsPromise = loadUiAssets().catch((error) => {
+      uiAssetsPromise = null;
+      throw error;
+    });
+  }
+  return await uiAssetsPromise;
 }
 async function readJsonBody(request) {
   let body = "";
@@ -335,6 +412,41 @@ var createWorkspaceServer = async (options = {}) => {
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
     const pathname = requestUrl.pathname;
+    const uiAssetName = method === "GET" ? resolveUiAssetName(pathname) : null;
+    if (uiAssetName) {
+      try {
+        const uiAssets = await getUiAssets();
+        const uiAsset = uiAssets.get(uiAssetName);
+        if (!uiAsset) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`
+            }
+          });
+          return;
+        }
+        sendText({
+          response,
+          statusCode: 200,
+          contentType: uiAsset.contentType,
+          payload: uiAsset.content
+        });
+        return;
+      } catch {
+        sendJson({
+          response,
+          statusCode: 503,
+          payload: {
+            error: "UI_ASSETS_UNAVAILABLE",
+            message: "workspace-dev UI assets are not available in this runtime."
+          }
+        });
+        return;
+      }
+    }
     if (method === "GET" && pathname === "/workspace") {
       const status = {
         running: true,
@@ -455,17 +567,17 @@ var createWorkspaceServer = async (options = {}) => {
 // src/isolation.ts
 var import_node_child_process = require("child_process");
 var import_node_fs = require("fs");
-var import_promises = require("fs/promises");
+var import_promises2 = require("fs/promises");
 var import_node_module = require("module");
-var import_node_path = __toESM(require("path"), 1);
+var import_node_path2 = __toESM(require("path"), 1);
 var PACKAGE_NAME = "workspace-dev";
 var resolvePackageRoot = () => {
-  const fromCwdRequire = (0, import_node_module.createRequire)(import_node_path.default.resolve(process.cwd(), "__workspace-dev-resolver__.cjs"));
+  const fromCwdRequire = (0, import_node_module.createRequire)(import_node_path2.default.resolve(process.cwd(), "__workspace-dev-resolver__.cjs"));
   const candidateSpecifiers = [`${PACKAGE_NAME}/package.json`, "./package.json"];
   for (const specifier of candidateSpecifiers) {
     try {
       const resolved = fromCwdRequire.resolve(specifier);
-      return import_node_path.default.dirname(resolved);
+      return import_node_path2.default.dirname(resolved);
     } catch {
     }
   }
@@ -518,11 +630,11 @@ var resolveTsExecArgv = () => {
   return args;
 };
 var resolveEntryPoint = () => {
-  const jsPath = import_node_path.default.join(packageRoot, "dist", "isolated-server-entry.js");
+  const jsPath = import_node_path2.default.join(packageRoot, "dist", "isolated-server-entry.js");
   if ((0, import_node_fs.existsSync)(jsPath)) {
     return { path: jsPath, execArgv: [] };
   }
-  const tsPath = import_node_path.default.join(packageRoot, "src", "isolated-server-entry.ts");
+  const tsPath = import_node_path2.default.join(packageRoot, "src", "isolated-server-entry.ts");
   if ((0, import_node_fs.existsSync)(tsPath)) {
     return { path: tsPath, execArgv: resolveTsExecArgv() };
   }
@@ -539,8 +651,8 @@ var createProjectInstance = async (projectKey, options = {}) => {
   }
   registerParentCleanup();
   const baseDir = options.workDir ?? process.cwd();
-  const workDir = import_node_path.default.join(baseDir, ".figmapipe", projectKey);
-  await (0, import_promises.mkdir)(workDir, { recursive: true });
+  const workDir = import_node_path2.default.join(baseDir, ".figmapipe", projectKey);
+  await (0, import_promises2.mkdir)(workDir, { recursive: true });
   const host = options.host ?? "127.0.0.1";
   const entryPoint = resolveEntryPoint();
   return new Promise((resolve, reject) => {
@@ -561,7 +673,7 @@ var createProjectInstance = async (projectKey, options = {}) => {
     child.on("exit", () => {
       clearTimeout(timeout);
       activeInstances.delete(projectKey);
-      void (0, import_promises.rm)(workDir, { recursive: true, force: true }).catch(() => {
+      void (0, import_promises2.rm)(workDir, { recursive: true, force: true }).catch(() => {
       });
     });
     child.on("message", (msg) => {
@@ -624,7 +736,7 @@ var removeProjectInstance = async (projectKey) => {
   });
   activeInstances.delete(projectKey);
   try {
-    await (0, import_promises.rm)(inst.workDir, { recursive: true, force: true });
+    await (0, import_promises2.rm)(inst.workDir, { recursive: true, force: true });
   } catch {
   }
   return true;

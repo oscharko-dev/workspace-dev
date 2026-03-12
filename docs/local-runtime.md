@@ -8,6 +8,7 @@ It is a local-first Node.js server that provides status and request validation.
 ## Capabilities
 
 - Start local server on localhost
+- Serve local workspace UI on `/workspace/ui`
 - Enforce mode lock (`rest` + `deterministic`)
 - Validate submit request payloads at runtime with internal zero-dependency validators
 - Provide per-project isolation using child processes

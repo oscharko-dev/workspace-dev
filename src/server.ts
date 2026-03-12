@@ -1,22 +1,43 @@
 /**
  * Workspace-dev HTTP server.
  *
- * Provides the `/workspace` endpoint and a mode-locked submission validation path.
+ * Provides a local UI shell (`/workspace/ui`), the `/workspace` status endpoint,
+ * and a mode-locked submission validation path.
  * Binds to 127.0.0.1:1983 by default (configurable via options).
  *
  * All incoming requests are validated at runtime without external dependencies.
  * Invalid requests receive deterministic error responses with structured issues.
  */
 
+import { access, readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { WorkspaceStartOptions, WorkspaceStatus } from "./contracts/index.js";
 import { sanitizeErrorMessage } from "./error-sanitization.js";
 import { enforceModeLock, getWorkspaceDefaults } from "./mode-lock.js";
 import { SubmitRequestSchema, formatZodError } from "./schemas.js";
 
+const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 1983;
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
+const UI_ROUTE_PREFIX = "/workspace/ui";
+
+type UiAssetName = "index.html" | "app.css" | "app.js";
+
+interface UiAsset {
+  contentType: string;
+  content: string;
+}
+
+const UI_ASSET_DEFINITIONS: Array<{ name: UiAssetName; contentType: string }> = [
+  { name: "index.html", contentType: "text/html; charset=utf-8" },
+  { name: "app.css", contentType: "text/css; charset=utf-8" },
+  { name: "app.js", contentType: "application/javascript; charset=utf-8" }
+];
+
+let uiAssetsPromise: Promise<Map<UiAssetName, UiAsset>> | null = null;
 
 interface InjectResponse {
   statusCode: number;
@@ -60,6 +81,88 @@ function sendJson({
   response.statusCode = statusCode;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload)}\n`);
+}
+
+function sendText({
+  response,
+  statusCode,
+  contentType,
+  payload
+}: {
+  response: ServerResponse;
+  statusCode: number;
+  contentType: string;
+  payload: string;
+}): void {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", contentType);
+  response.end(payload);
+}
+
+function resolveUiAssetName(pathname: string): UiAssetName | null {
+  if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
+    return "index.html";
+  }
+
+  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
+    return null;
+  }
+
+  const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
+  if (requestedAsset === "app.css" || requestedAsset === "app.js") {
+    return requestedAsset;
+  }
+
+  return null;
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveUiSourceDir(): Promise<string | null> {
+  const candidates = [path.resolve(MODULE_DIR, "ui"), path.resolve(MODULE_DIR, "../ui-src")];
+  for (const candidate of candidates) {
+    if (await fileExists(path.join(candidate, "index.html"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function loadUiAssets(): Promise<Map<UiAssetName, UiAsset>> {
+  const sourceDir = await resolveUiSourceDir();
+  if (!sourceDir) {
+    throw new Error("UI assets not found. Expected dist/ui or ui-src to be present.");
+  }
+
+  const assets = new Map<UiAssetName, UiAsset>();
+  for (const assetDefinition of UI_ASSET_DEFINITIONS) {
+    const assetPath = path.join(sourceDir, assetDefinition.name);
+    const content = await readFile(assetPath, "utf8");
+    assets.set(assetDefinition.name, {
+      contentType: assetDefinition.contentType,
+      content
+    });
+  }
+
+  return assets;
+}
+
+async function getUiAssets(): Promise<Map<UiAssetName, UiAsset>> {
+  if (!uiAssetsPromise) {
+    uiAssetsPromise = loadUiAssets().catch((error) => {
+      uiAssetsPromise = null;
+      throw error;
+    });
+  }
+
+  return await uiAssetsPromise;
 }
 
 async function readJsonBody(
@@ -185,6 +288,43 @@ export const createWorkspaceServer = async (
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
     const pathname = requestUrl.pathname;
+    const uiAssetName = method === "GET" ? resolveUiAssetName(pathname) : null;
+
+    if (uiAssetName) {
+      try {
+        const uiAssets = await getUiAssets();
+        const uiAsset = uiAssets.get(uiAssetName);
+        if (!uiAsset) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`
+            }
+          });
+          return;
+        }
+
+        sendText({
+          response,
+          statusCode: 200,
+          contentType: uiAsset.contentType,
+          payload: uiAsset.content
+        });
+        return;
+      } catch {
+        sendJson({
+          response,
+          statusCode: 503,
+          payload: {
+            error: "UI_ASSETS_UNAVAILABLE",
+            message: "workspace-dev UI assets are not available in this runtime."
+          }
+        });
+        return;
+      }
+    }
 
     if (method === "GET" && pathname === "/workspace") {
       const status: WorkspaceStatus = {
