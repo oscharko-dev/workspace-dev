@@ -2,7 +2,7 @@
 7dd5cd533dff2d3e2408b6091b11ce311f3709995b6b0a215dfed6ee24b309a7  ./.changeset/config.json
 da7cfd0ff7048ae6e926b4b9508a942af7c43bbb45b7cd4e06064c208f34bb62  ./.changeset/release-gate-hardening.md
 72a1109c3ae3969747a087862ab71a881fe7377793dc04a3d4b23591f8a8ede1  ./.eslintrc.cjs
-bc577c7bb5c3210201fcf9147fb09890b43def17c770d56ec4070274208d2c33  ./.github/workflows/changesets-release.yml
+21403c09bfca401d5b4b624588e79bd2c65175a6fed26d4705ac7792beda6ac9  ./.github/workflows/changesets-release.yml
 55be347659f085eb7708e31c9005c0a5a71099793d0c2771e168cfd39be15c46  ./.github/workflows/release-gate.yml
 de498f1df51fcb13b18896354535f2bf9bdb88be078a72a7f8dbd58c5f9f581a  ./.gitignore
 b0475acecb5f659b5999da8f26a965d0c3312d3ec5ad0ac9ffb025b4e6b43008  ./ARCHITECTURE.md
