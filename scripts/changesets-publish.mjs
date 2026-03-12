@@ -28,9 +28,12 @@ const run = (command, args, env = process.env) =>
 
 const resolvePublishEnv = () => {
   const publishEnv = { ...process.env };
+  const publishAuthMode = String(
+    publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
+  ).trim();
 
-  // Enforce OIDC trusted publishing in GitHub Actions.
-  if (publishEnv.GITHUB_ACTIONS === "true") {
+  // Enforce OIDC trusted publishing in GitHub Actions when explicitly configured.
+  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode === "trusted-publisher-oidc") {
     delete publishEnv.NODE_AUTH_TOKEN;
     delete publishEnv.NPM_TOKEN;
     delete publishEnv.npm_config__authToken;

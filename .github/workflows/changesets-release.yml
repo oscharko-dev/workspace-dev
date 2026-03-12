@@ -143,24 +143,36 @@ jobs:
             -e "s|__PACKAGE_VERSION__|${package_version}|g" \
             openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
 
-      - name: Enforce npm trusted publisher auth mode
+      - name: Configure npm publish auth mode
+        id: npm_auth_mode
         shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
-          # Trusted publishing must not use token auth fallback. Force a clean npm config.
-          TRUSTED_NPMRC="${RUNNER_TEMP}/npm-trusted-publisher.npmrc"
-          echo "registry=https://registry.npmjs.org/" > "${TRUSTED_NPMRC}"
-          echo "NPM_CONFIG_USERCONFIG=${TRUSTED_NPMRC}" >> "$GITHUB_ENV"
+          AUTH_NPMRC="${RUNNER_TEMP}/npm-publish.npmrc"
+          {
+            echo "registry=https://registry.npmjs.org/"
+            if [[ -n "${NPM_TOKEN:-}" ]]; then
+              echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
+              echo "always-auth=true"
+            fi
+          } > "${AUTH_NPMRC}"
+          echo "NPM_CONFIG_USERCONFIG=${AUTH_NPMRC}" >> "$GITHUB_ENV"
 
-          echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
-        id: npm_auth_mode
+          if [[ -n "${NPM_TOKEN:-}" ]]; then
+            echo "auth_mode=npm-token" >> "$GITHUB_OUTPUT"
+          else
+            echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
         run: |
           set -euo pipefail
 
