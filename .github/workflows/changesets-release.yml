@@ -93,6 +93,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Upgrade npm for trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@11
+          npm --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -146,33 +153,20 @@ jobs:
       - name: Configure npm publish auth mode
         id: npm_auth_mode
         shell: bash
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
-          AUTH_NPMRC="${RUNNER_TEMP}/npm-publish.npmrc"
-          {
-            echo "registry=https://registry.npmjs.org/"
-            if [[ -n "${NPM_TOKEN:-}" ]]; then
-              echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
-              echo "always-auth=true"
-            fi
-          } > "${AUTH_NPMRC}"
-          echo "NPM_CONFIG_USERCONFIG=${AUTH_NPMRC}" >> "$GITHUB_ENV"
-
-          if [[ -n "${NPM_TOKEN:-}" ]]; then
-            echo "auth_mode=npm-token" >> "$GITHUB_OUTPUT"
-          else
-            echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
-          fi
+          TRUSTED_NPMRC="${RUNNER_TEMP}/npm-trusted-publisher.npmrc"
+          echo "registry=https://registry.npmjs.org/" > "${TRUSTED_NPMRC}"
+          echo "NPM_CONFIG_USERCONFIG=${TRUSTED_NPMRC}" >> "$GITHUB_ENV"
+          echo "auth_mode=trusted-publisher-oidc" >> "$GITHUB_OUTPUT"
 
       - name: Apply pending changesets and publish package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          WORKSPACE_DEV_PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
+          NODE_AUTH_TOKEN: ""
+          NPM_TOKEN: ""
+          WORKSPACE_DEV_PUBLISH_AUTH_MODE: trusted-publisher-oidc
         run: |
           set -euo pipefail
 
