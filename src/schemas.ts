@@ -44,11 +44,7 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
-function pushIssue(
-  issues: ValidationIssue[],
-  path: PathSegment[],
-  message: string
-): void {
+function pushIssue(issues: ValidationIssue[], path: PathSegment[], message: string): void {
   issues.push({ path, message });
 }
 
@@ -56,29 +52,31 @@ function parseStringField({
   input,
   key,
   required,
-  issues
+  issues,
+  minLength = 1
 }: {
   input: Record<string, unknown>;
   key: keyof WorkspaceJobInput;
   required: boolean;
   issues: ValidationIssue[];
+  minLength?: number;
 }): string | undefined {
   const value = input[key];
 
   if (value === undefined) {
     if (required) {
-      pushIssue(issues, [key], `${key} is required`);
+      pushIssue(issues, [key], `${String(key)} is required`);
     }
     return undefined;
   }
 
   if (typeof value !== "string") {
-    pushIssue(issues, [key], `${key} must be a string`);
+    pushIssue(issues, [key], `${String(key)} must be a string`);
     return undefined;
   }
 
-  if (key === "figmaFileKey" && value.length < 1) {
-    pushIssue(issues, [key], "figmaFileKey must not be empty");
+  if (value.trim().length < minLength) {
+    pushIssue(issues, [key], `${String(key)} must not be empty`);
     return undefined;
   }
 
@@ -95,9 +93,14 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
 
   const allowedKeys = new Set([
     "figmaFileKey",
+    "figmaAccessToken",
+    "repoUrl",
+    "repoToken",
+    "enableGitPr",
     "figmaSourceMode",
     "llmCodegenMode",
-    "projectName"
+    "projectName",
+    "targetPath"
   ]);
 
   for (const key of Object.keys(input)) {
@@ -112,6 +115,34 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: true,
     issues
   });
+  const figmaAccessToken = parseStringField({
+    input,
+    key: "figmaAccessToken",
+    required: true,
+    issues
+  });
+  const repoUrl = parseStringField({
+    input,
+    key: "repoUrl",
+    required: false,
+    issues
+  });
+  const repoToken = parseStringField({
+    input,
+    key: "repoToken",
+    required: false,
+    issues
+  });
+  const rawEnableGitPr = input.enableGitPr;
+  const enableGitPr =
+    rawEnableGitPr === undefined
+      ? false
+      : typeof rawEnableGitPr === "boolean"
+        ? rawEnableGitPr
+        : (() => {
+            pushIssue(issues, ["enableGitPr"], "enableGitPr must be a boolean");
+            return false;
+          })();
   const figmaSourceMode = parseStringField({
     input,
     key: "figmaSourceMode",
@@ -130,8 +161,23 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
+  const targetPath = parseStringField({
+    input,
+    key: "targetPath",
+    required: false,
+    issues
+  });
 
-  if (issues.length > 0 || figmaFileKey === undefined) {
+  if (enableGitPr) {
+    if (!repoUrl) {
+      pushIssue(issues, ["repoUrl"], "repoUrl is required when enableGitPr=true");
+    }
+    if (!repoToken) {
+      pushIssue(issues, ["repoToken"], "repoToken is required when enableGitPr=true");
+    }
+  }
+
+  if (issues.length > 0 || !figmaFileKey || !figmaAccessToken) {
     return { success: false, error: { issues } };
   }
 
@@ -139,9 +185,14 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     success: true,
     data: {
       figmaFileKey,
+      figmaAccessToken,
+      repoUrl,
+      repoToken,
+      enableGitPr,
       figmaSourceMode,
       llmCodegenMode,
-      projectName
+      projectName,
+      targetPath
     }
   };
 }
@@ -160,6 +211,8 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
   const figmaSourceMode = input.figmaSourceMode;
   const llmCodegenMode = input.llmCodegenMode;
   const uptimeMs = input.uptimeMs;
+  const outputRoot = input.outputRoot;
+  const previewEnabled = input.previewEnabled;
 
   if (typeof running !== "boolean") pushIssue(issues, ["running"], "running must be a boolean");
   if (typeof url !== "string") pushIssue(issues, ["url"], "url must be a string");
@@ -176,6 +229,12 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
   if (typeof uptimeMs !== "number" || uptimeMs < 0) {
     pushIssue(issues, ["uptimeMs"], "uptimeMs must be a non-negative number");
   }
+  if (typeof outputRoot !== "string" || outputRoot.length < 1) {
+    pushIssue(issues, ["outputRoot"], "outputRoot must be a non-empty string");
+  }
+  if (typeof previewEnabled !== "boolean") {
+    pushIssue(issues, ["previewEnabled"], "previewEnabled must be a boolean");
+  }
 
   if (issues.length > 0) {
     return { success: false, error: { issues } };
@@ -190,14 +249,14 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
       port: port as number,
       figmaSourceMode: "rest",
       llmCodegenMode: "deterministic",
-      uptimeMs: uptimeMs as number
+      uptimeMs: uptimeMs as number,
+      outputRoot: outputRoot as string,
+      previewEnabled: previewEnabled as boolean
     }
   };
 }
 
-function parseErrorResponse(
-  input: unknown
-): ValidationResult<{ error: string; message: string }> {
+function parseErrorResponse(input: unknown): ValidationResult<{ error: string; message: string }> {
   const issues: ValidationIssue[] = [];
   if (!isRecord(input)) {
     pushIssue(issues, [], "Expected an object body.");

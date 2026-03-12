@@ -1,0 +1,539 @@
+import type { DesignIR, DesignTokens, FigmaMcpEnrichment, ScreenElementIR, ScreenIR } from "./types.js";
+import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
+
+interface FigmaColor {
+  r: number;
+  g: number;
+  b: number;
+  a?: number;
+}
+
+interface FigmaPaint {
+  type?: string;
+  color?: FigmaColor;
+  opacity?: number;
+}
+
+interface FigmaNode {
+  id: string;
+  name?: string;
+  type: string;
+  children?: FigmaNode[];
+  fillGeometry?: Array<{
+    path?: string;
+    windingRule?: string;
+  }>;
+  strokeGeometry?: Array<{
+    path?: string;
+    windingRule?: string;
+  }>;
+  layoutMode?: "HORIZONTAL" | "VERTICAL" | "NONE";
+  itemSpacing?: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  paddingLeft?: number;
+  fills?: FigmaPaint[];
+  strokes?: FigmaPaint[];
+  strokeWeight?: number;
+  absoluteBoundingBox?: { x: number; y: number; width: number; height: number };
+  characters?: string;
+  style?: {
+    fontSize?: number;
+    fontWeight?: number;
+    fontFamily?: string;
+    lineHeightPx?: number;
+    textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT";
+  };
+  cornerRadius?: number;
+}
+
+interface FigmaFile {
+  name?: string;
+  document?: FigmaNode;
+}
+
+interface WeightedColor {
+  color: string;
+  weight: number;
+}
+
+const toHexColor = (color?: FigmaColor, opacity?: number): string | undefined => {
+  if (!color) {
+    return undefined;
+  }
+
+  const alpha = typeof opacity === "number" ? opacity : (color.a ?? 1);
+  if (alpha <= 0) {
+    return undefined;
+  }
+
+  const blendOnWhite = (channel: number): number => {
+    if (alpha >= 1) {
+      return channel;
+    }
+    return channel * alpha + (1 - alpha);
+  };
+
+  const toHex = (value: number): string => Math.round(value * 255).toString(16).padStart(2, "0");
+  return `#${toHex(blendOnWhite(color.r))}${toHex(blendOnWhite(color.g))}${toHex(blendOnWhite(color.b))}`;
+};
+
+const parseHex = (hex: string): { r: number; g: number; b: number } => {
+  const normalized = hex.replace("#", "");
+  const r = Number.parseInt(normalized.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(normalized.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(normalized.slice(4, 6), 16) / 255;
+  return { r, g, b };
+};
+
+const luminance = (hex: string): number => {
+  const { r, g, b } = parseHex(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const saturation = (hex: string): number => {
+  const { r, g, b } = parseHex(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) {
+    return 0;
+  }
+  const lightness = (max + min) / 2;
+  if (lightness <= 0.5) {
+    return (max - min) / (max + min);
+  }
+  return (max - min) / (2 - max - min);
+};
+
+const uniqueByColor = (entries: WeightedColor[]): WeightedColor[] => {
+  const weights = new Map<string, number>();
+  for (const entry of entries) {
+    weights.set(entry.color, (weights.get(entry.color) ?? 0) + entry.weight);
+  }
+  return [...weights.entries()].map(([color, weight]) => ({ color, weight }));
+};
+
+const collectNodes = (node: FigmaNode, predicate: (candidate: FigmaNode) => boolean): FigmaNode[] => {
+  const collected: FigmaNode[] = [];
+  if (predicate(node)) {
+    collected.push(node);
+  }
+  if (!node.children) {
+    return collected;
+  }
+  for (const child of node.children) {
+    collected.push(...collectNodes(child, predicate));
+  }
+  return collected;
+};
+
+const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
+  const name = (node.name ?? "").toLowerCase();
+  const hasSolidFill = Boolean(node.fills?.find((item) => item.type === "SOLID" && item.color));
+  const isInputRoot =
+    name.includes("muiformcontrolroot") || name.includes("textfield") || name.includes("input field");
+
+  if (node.type === "TEXT") {
+    return "text";
+  }
+  if (isInputRoot) {
+    return "input";
+  }
+  if (
+    name.includes("muioutlinedinputroot") ||
+    name.includes("muioutlinedinputinput") ||
+    name.includes("muiinputadornmentroot") ||
+    name.includes("muiselectselect")
+  ) {
+    return "container";
+  }
+  if (
+    name.includes("cta") ||
+    ((name.includes("button") || name.includes("muibutton")) &&
+      (hasSolidFill || name.includes("zur übersicht") || name.includes("termin vereinbaren")))
+  ) {
+    return "button";
+  }
+  if (node.type === "RECTANGLE" && name.includes("image")) {
+    return "image";
+  }
+
+  return "container";
+};
+
+const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: number; left: number } => {
+  return {
+    top: node.paddingTop ?? 0,
+    right: node.paddingRight ?? 0,
+    bottom: node.paddingBottom ?? 0,
+    left: node.paddingLeft ?? 0
+  };
+};
+
+const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
+  const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+  const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
+
+  return {
+    id: node.id,
+    name: node.name ?? node.type,
+    nodeType: node.type,
+    type: determineElementType(node),
+    text: node.characters,
+    x: node.absoluteBoundingBox?.x,
+    y: node.absoluteBoundingBox?.y,
+    width: node.absoluteBoundingBox?.width,
+    height: node.absoluteBoundingBox?.height,
+    fillColor: toHexColor(fill?.color, fill?.opacity),
+    strokeColor: toHexColor(stroke?.color, stroke?.opacity),
+    strokeWidth: node.strokeWeight,
+    fontSize: node.style?.fontSize,
+    fontWeight: node.style?.fontWeight,
+    fontFamily: node.style?.fontFamily,
+    lineHeight: node.style?.lineHeightPx,
+    textAlign: node.style?.textAlignHorizontal,
+    vectorPaths: [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
+      .map((item) => item.path)
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+    layoutMode: node.layoutMode ?? "NONE",
+    gap: node.itemSpacing ?? 0,
+    padding: mapPadding(node),
+    cornerRadius: node.cornerRadius,
+    children:
+      depth >= 14
+        ? []
+        : node.children?.slice(0, 60).map((child) => mapElement(child, depth + 1))
+  };
+};
+
+const isScreenLikeNode = (node: FigmaNode | undefined): node is FigmaNode => {
+  if (!node) {
+    return false;
+  }
+  return node.type === "FRAME" || node.type === "COMPONENT" || node.type === "SECTION";
+};
+
+const isGenericFrameName = (name: string | undefined): boolean => {
+  if (!name) {
+    return true;
+  }
+  const normalized = name.trim();
+  if (!normalized) {
+    return true;
+  }
+  return /^t\d+$/i.test(normalized) || /^frame\s*\d*$/i.test(normalized) || /^group\s*\d*$/i.test(normalized);
+};
+
+const unwrapScreenRoot = (candidate: FigmaNode): { node: FigmaNode; name: string } => {
+  let current = candidate;
+  const preferredName = candidate.name ?? `Screen_${candidate.id}`;
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!current.children || current.children.length !== 1) {
+      break;
+    }
+
+    const child = current.children[0];
+    if (!isScreenLikeNode(child)) {
+      break;
+    }
+
+    const parentWidth = current.absoluteBoundingBox?.width ?? 0;
+    const childWidth = child.absoluteBoundingBox?.width ?? 0;
+    const parentHeight = current.absoluteBoundingBox?.height ?? 0;
+    const childHeight = child.absoluteBoundingBox?.height ?? 0;
+
+    const hasCenteringPadding =
+      (current.paddingLeft ?? 0) > 0 ||
+      (current.paddingRight ?? 0) > 0 ||
+      (current.paddingTop ?? 0) > 0 ||
+      (current.paddingBottom ?? 0) > 0;
+    const isVisiblySmallerChild =
+      parentWidth > 0 &&
+      childWidth > 0 &&
+      parentHeight > 0 &&
+      childHeight > 0 &&
+      (childWidth / parentWidth < 0.95 || childHeight / parentHeight < 0.95);
+    const childLooksGeneric = isGenericFrameName(child.name);
+
+    if (!hasCenteringPadding && !isVisiblySmallerChild && !childLooksGeneric) {
+      break;
+    }
+
+    current = child;
+  }
+
+  const resolvedName = isGenericFrameName(current.name) ? preferredName : (current.name ?? preferredName);
+  return { node: current, name: resolvedName };
+};
+
+const extractScreens = (file: FigmaFile): ScreenIR[] => {
+  const root = file.document;
+  if (!root?.children?.length) {
+    return [];
+  }
+
+  const screens: ScreenIR[] = [];
+  for (const page of root.children) {
+    if (!page.children) {
+      continue;
+    }
+
+    for (const child of page.children) {
+      if (child.type !== "FRAME" && child.type !== "COMPONENT" && child.type !== "SECTION") {
+        continue;
+      }
+
+      const normalized = unwrapScreenRoot(child);
+      const sourceNode = normalized.node;
+      const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
+      screens.push({
+        id: sourceNode.id,
+        name: normalized.name,
+        layoutMode: sourceNode.layoutMode ?? "NONE",
+        gap: sourceNode.itemSpacing ?? 0,
+        width: sourceNode.absoluteBoundingBox?.width,
+        height: sourceNode.absoluteBoundingBox?.height,
+        fillColor: toHexColor(fill?.color, fill?.opacity),
+        padding: mapPadding(sourceNode),
+        children: (sourceNode.children ?? []).slice(0, 40).map((node) => mapElement(node))
+      });
+    }
+  }
+
+  return screens;
+};
+
+const deriveTokens = (file: FigmaFile): DesignTokens => {
+  const nodes = file.document ? collectNodes(file.document, () => true) : [];
+
+  const textNodes = nodes.filter((node) => node.type === "TEXT");
+  const textColorWeighted = uniqueByColor(
+    textNodes
+      .map((node) => {
+        const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+        const color = toHexColor(fill?.color, fill?.opacity);
+        if (!color) {
+          return undefined;
+        }
+        const weight = Math.max(1, node.absoluteBoundingBox?.width ?? 1);
+        return { color, weight };
+      })
+      .filter((entry): entry is WeightedColor => Boolean(entry))
+  );
+
+  const surfaceColorWeighted = uniqueByColor(
+    nodes
+      .filter((node) => node.type === "FRAME" || node.type === "RECTANGLE")
+      .map((node) => {
+        const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+        const color = toHexColor(fill?.color, fill?.opacity);
+        if (!color) {
+          return undefined;
+        }
+        const area = (node.absoluteBoundingBox?.width ?? 1) * (node.absoluteBoundingBox?.height ?? 1);
+        return { color, weight: Math.max(1, area) };
+      })
+      .filter((entry): entry is WeightedColor => Boolean(entry))
+  );
+
+  const buttonColors = uniqueByColor(
+    nodes
+      .filter((node) => (node.name ?? "").toLowerCase().includes("button"))
+      .map((node) => {
+        const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+        const color = toHexColor(fill?.color, fill?.opacity);
+        if (!color) {
+          return undefined;
+        }
+        return { color, weight: 2 };
+      })
+      .filter((entry): entry is WeightedColor => Boolean(entry))
+  );
+
+  const largeTextAccentColors = uniqueByColor(
+    textNodes
+      .filter((node) => (node.style?.fontSize ?? 0) >= 28)
+      .map((node) => {
+        const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+        const color = toHexColor(fill?.color, fill?.opacity);
+        if (!color) {
+          return undefined;
+        }
+        return { color, weight: 1 };
+      })
+      .filter((entry): entry is WeightedColor => Boolean(entry))
+  );
+
+  const sortedSurfaces = [...surfaceColorWeighted].sort((a, b) => b.weight - a.weight);
+  const backgroundCandidate =
+    sortedSurfaces.find((entry) => luminance(entry.color) > 0.82) ??
+    sortedSurfaces.find((entry) => luminance(entry.color) > 0.72) ??
+    sortedSurfaces.at(0) ??
+    { color: "#f7f8fb", weight: 1 };
+
+  const sortedTextColors = [...textColorWeighted].sort((a, b) => a.weight - b.weight);
+  const textCandidate =
+    [...sortedTextColors].sort((a, b) => luminance(a.color) - luminance(b.color)).at(0) ??
+    { color: "#1f2937", weight: 1 };
+
+  const primaryCandidate =
+    [...buttonColors].sort((a, b) => b.weight - a.weight).at(0) ??
+    [...largeTextAccentColors]
+      .filter((entry) => saturation(entry.color) > 0.35)
+      .sort((a, b) => b.weight - a.weight)
+      .at(0) ??
+    [...surfaceColorWeighted]
+      .filter((entry) => saturation(entry.color) > 0.45 && luminance(entry.color) > 0.25)
+      .sort((a, b) => b.weight - a.weight)
+      .at(0) ??
+    { color: "#d4001a", weight: 1 };
+
+  const secondaryCandidate =
+    [...largeTextAccentColors]
+      .filter((entry) => entry.color !== primaryCandidate.color && saturation(entry.color) > 0.25)
+      .sort((a, b) => b.weight - a.weight)
+      .at(0) ??
+    [...surfaceColorWeighted]
+      .filter((entry) => entry.color !== primaryCandidate.color && saturation(entry.color) > 0.25)
+      .sort((a, b) => b.weight - a.weight)
+      .at(0) ??
+    { color: "#5f8f2f", weight: 1 };
+
+  const textNode = textNodes.find((node) => node.style?.fontFamily);
+
+  const spacings = nodes
+    .map((node) => node.itemSpacing)
+    .filter((value): value is number => typeof value === "number" && value > 0)
+    .sort((a, b) => a - b);
+
+  const radii = nodes
+    .map((node) => node.cornerRadius)
+    .filter((value): value is number => typeof value === "number" && value >= 0)
+    .sort((a, b) => a - b);
+
+  const headingSizes = textNodes
+    .filter((node) => (node.style?.fontSize ?? 0) >= 20)
+    .map((node) => node.style?.fontSize ?? 24)
+    .sort((a, b) => b - a);
+
+  const bodySizes = textNodes
+    .filter((node) => (node.style?.fontSize ?? 0) < 20)
+    .map((node) => node.style?.fontSize ?? 14)
+    .sort((a, b) => a - b);
+
+  return {
+    palette: {
+      primary: primaryCandidate.color,
+      secondary: secondaryCandidate.color,
+      background: backgroundCandidate.color,
+      text: textCandidate.color
+    },
+    borderRadius: radii.find((radius) => radius > 0) ?? 8,
+    spacingBase: spacings.find((spacing) => spacing >= 8) ?? 8,
+    fontFamily: textNode?.style?.fontFamily ?? "Roboto, Arial, sans-serif",
+    headingSize: headingSizes[0] ?? 24,
+    bodySize: bodySizes[Math.floor(bodySizes.length / 2)] ?? 14
+  };
+};
+
+export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
+  return figmaToDesignIrWithOptions(figmaJson);
+};
+
+interface FigmaToIrOptions {
+  mcpEnrichment?: FigmaMcpEnrichment;
+}
+
+const isGenericElementName = (name: string): boolean => {
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === "container" ||
+    normalized === "styled(div)" ||
+    normalized === "vector" ||
+    normalized === "frame" ||
+    normalized.startsWith("frame ")
+  );
+};
+
+const inferTypeFromSemanticHint = (
+  semanticName: string | undefined,
+  semanticType: string | undefined
+): ScreenElementIR["type"] | undefined => {
+  const combined = `${semanticName ?? ""} ${semanticType ?? ""}`.toLowerCase();
+  if (!combined.trim()) {
+    return undefined;
+  }
+  if (combined.includes("text")) {
+    return "text";
+  }
+  if (
+    combined.includes("input") ||
+    combined.includes("select") ||
+    combined.includes("formcontrol") ||
+    combined.includes("textfield")
+  ) {
+    return "input";
+  }
+  if (combined.includes("button") || combined.includes("cta")) {
+    return "button";
+  }
+  if (combined.includes("image") || combined.includes("icon")) {
+    return "image";
+  }
+  return undefined;
+};
+
+const applyMcpHintToElement = (
+  element: ScreenElementIR,
+  hintsById: Map<string, FigmaMcpEnrichment["nodeHints"][number]>
+): ScreenElementIR => {
+  const hint = hintsById.get(element.id);
+  const inferredType = hint ? inferTypeFromSemanticHint(hint.semanticName, hint.semanticType) : undefined;
+
+  const nextName =
+    hint?.semanticName && (isGenericElementName(element.name) || hint.semanticName.length > element.name.length + 2)
+      ? hint.semanticName
+      : element.name;
+
+  return {
+    ...element,
+    name: nextName,
+    type: inferredType ?? element.type,
+    children: (element.children ?? []).map((child) => applyMcpHintToElement(child, hintsById))
+  };
+};
+
+const applyMcpEnrichmentToIr = (ir: DesignIR, enrichment: FigmaMcpEnrichment): DesignIR => {
+  if (enrichment.nodeHints.length === 0) {
+    return ir;
+  }
+
+  const hintsById = new Map(enrichment.nodeHints.map((hint) => [hint.nodeId, hint]));
+  return {
+    ...ir,
+    screens: ir.screens.map((screen) => ({
+      ...screen,
+      children: screen.children.map((child) => applyMcpHintToElement(child, hintsById))
+    }))
+  };
+};
+
+export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
+  const parsed = figmaJson as FigmaFile;
+  const screens = extractScreens(parsed);
+  if (screens.length === 0) {
+    throw new Error("No top-level frames/components found in Figma file");
+  }
+  const baseIr: DesignIR = {
+    sourceName: parsed.name ?? "Figma File",
+    screens,
+    tokens: applySparkasseThemeDefaults(deriveTokens(parsed))
+  };
+
+  if (!options?.mcpEnrichment) {
+    return baseIr;
+  }
+  return applyMcpEnrichmentToIr(baseIr, options.mcpEnrichment);
+};

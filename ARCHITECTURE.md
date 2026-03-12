@@ -2,64 +2,59 @@
 
 ## Purpose
 
-`workspace-dev` is a local-only developer runtime for FigmaPipe contract validation.
+`workspace-dev` is an autonomous local generator runtime for a reduced FigmaPipe workspace flow.
+
 It provides deterministic HTTP behavior for:
 
 - `GET /workspace`
-- `GET /workspace/ui` (with static assets under `/workspace/ui/*`)
+- `GET /workspace/ui` and `GET /workspace/:figmaFileKey`
 - `GET /healthz`
-- `POST /workspace/submit` (validation + mode lock only)
+- `POST /workspace/submit` (starts real job execution)
+- `GET /workspace/jobs/:id`
+- `GET /workspace/jobs/:id/result`
+- `GET /workspace/repros/:id/*`
 
-Execution of Figma fetch, LLM code generation, and filesystem output is intentionally out of scope.
+## Runtime Architecture (No FigmaPipe backend dependency)
 
-## Runtime Architecture (Zero Runtime Dependencies)
+`workspace-dev` runs as a single Node.js process with:
 
-- Network stack: Node.js built-ins (`node:http`, `URL`, `fetch` for local inject testing only).
-- Validation stack: internal manual schema validators (`src/schemas.ts`).
-- Process isolation: per-project child processes (`src/isolation.ts` + `src/isolated-server-entry.ts`).
-- No external runtime packages in `dependencies`.
+- local in-process job engine (no Redis, no Postgres, no external worker)
+- Figma REST fetch (`figma.source`) with retry + timeout
+- deterministic IR derivation (`ir.derive`)
+- template bootstrap from bundled React+TypeScript+MUI v7 template (`template.prepare`)
+- deterministic local code generation (`codegen.generate`)
+- project validation (`validate.project`: install, lint, typecheck, build)
+- local repro export (`repro.export`)
+- optional git/pr stage (`git.pr`) when enabled explicitly
+- integrated preview file serving from generated artifacts
 
-This design is intentional for enterprise air-gap compatibility and supply-chain minimization.
+## Hard mode lock
 
-## Module and Artifact Strategy
+The runtime enforces:
 
-- Build tool: `tsup`.
-- Outputs:
-  - ESM: `dist/**/*.js`
-  - CJS: `dist/**/*.cjs`
-  - Type declarations:
-    - ESM types: `dist/**/*.d.ts`
-    - CJS types: `dist/**/*.d.cts`
-- Package exports use split `import`/`require` conditions with matching type conditions.
+- `figmaSourceMode=rest`
+- `llmCodegenMode=deterministic`
 
-This provides true dual ESM/CJS interoperability without guard-throw wrappers.
+Blocked modes (`mcp`, `hybrid`, `llm_strict`) fail with `MODE_LOCK_VIOLATION`.
 
-## Security Boundaries and Threat Assumptions
+## Artifact model
 
-- Default bind host is `127.0.0.1`.
-- Mode lock is enforced at runtime:
-  - `figmaSourceMode=rest`
-  - `llmCodegenMode=deterministic`
-- Request body size is limited to 1 MiB.
-- Error messages are sanitized before emission to reduce accidental PII or secret leakage.
-- No telemetry or call-home SDKs are permitted (`lint:no-telemetry`).
+Default output root is `.workspace-dev` in the current project.
 
-Threat model assumptions:
+- `.workspace-dev/jobs/<jobId>/figma.json`
+- `.workspace-dev/jobs/<jobId>/design-ir.json`
+- `.workspace-dev/jobs/<jobId>/generated-app/*`
+- `.workspace-dev/repros/<jobId>/*`
 
-- The process runs in trusted local developer environments.
-- Host-level compromise is out of scope.
-- Network-exposed production deployment is out of scope for this package.
+## Security boundaries
 
-## Air-Gap and Install Behavior
+- Server binds to localhost by default (`127.0.0.1`).
+- Secrets are accepted at submit-time and used in-memory.
+- Job APIs expose only sanitized request metadata.
+- No core imports from `services/api` or `services/web`.
 
-- No `preinstall`/`install`/`postinstall` scripts.
-- Zero runtime dependencies.
-- Offline installation from packed tarball is verified via `verify:airgap`.
-- SBOM generation (CycloneDX + SPDX) is provided for release evidence.
+## Operational model
 
-## Reproducibility and Compliance Controls
-
-- Reproducible build check: `verify:reproducible-build`.
-- License allowlist gate for package/runtime tree: `verify:licenses`.
-- FIPS smoke gate (skip when host OpenSSL FIPS module is unavailable): `verify:fips`.
-- OIDC trusted publishing + provenance via CI workflows and `publishConfig.provenance=true`.
+- Package source: private monorepo (`packages/workspace-dev`)
+- Public distribution: mirrored public repository + npm package publish
+- On-prem FigmaPipe runtime remains independent

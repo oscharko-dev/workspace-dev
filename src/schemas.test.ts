@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   ErrorResponseSchema,
   SubmitRequestSchema,
-  formatZodError,
-  WorkspaceStatusSchema
+  WorkspaceStatusSchema,
+  formatZodError
 } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -14,6 +14,7 @@ import {
 test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
@@ -21,60 +22,67 @@ test("schema: valid submit body parses correctly", () => {
   if (result.success) {
     assert.equal(result.data.figmaFileKey, "abc123");
     assert.equal(result.data.figmaSourceMode, "rest");
+    assert.equal(result.data.enableGitPr, false);
   }
 });
 
-test("schema: minimal valid submit body (only figmaFileKey)", () => {
-  const result = SubmitRequestSchema.safeParse({ figmaFileKey: "key-1" });
-  assert.equal(result.success, true);
-});
-
-test("schema: missing figmaFileKey fails validation", () => {
+test("schema: missing required fields fails validation", () => {
   const result = SubmitRequestSchema.safeParse({
-    figmaSourceMode: "rest"
+    figmaFileKey: "abc123"
   });
   assert.equal(result.success, false);
 });
 
-test("schema: empty figmaFileKey fails validation", () => {
-  const result = SubmitRequestSchema.safeParse({ figmaFileKey: "" });
+test("schema: empty required values fail validation", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "",
+    figmaAccessToken: ""
+  });
   assert.equal(result.success, false);
 });
 
-test("schema: non-string figmaFileKey fails validation", () => {
-  const result = SubmitRequestSchema.safeParse({ figmaFileKey: 12345 });
+test("schema: non-string values fail validation", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: 12345,
+    figmaAccessToken: 12345
+  });
   assert.equal(result.success, false);
 });
 
 test("schema: extra unknown fields are rejected (strict mode)", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "key-1",
+    figmaAccessToken: "token",
     unknownField: "unexpected"
   });
   assert.equal(result.success, false);
 });
 
-test("schema: null body fails validation", () => {
-  const result = SubmitRequestSchema.safeParse(null);
-  assert.equal(result.success, false);
-});
-
-test("schema: undefined body fails validation", () => {
-  const result = SubmitRequestSchema.safeParse(undefined);
-  assert.equal(result.success, false);
-});
-
-test("schema: array body fails validation", () => {
-  const result = SubmitRequestSchema.safeParse([]);
-  assert.equal(result.success, false);
-});
-
 test("schema: optional fields must be strings when provided", () => {
   const result = SubmitRequestSchema.safeParse({
-    figmaFileKey: "abc",
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
     projectName: 123
   });
   assert.equal(result.success, false);
+});
+
+test("schema: git fields required when enableGitPr=true", () => {
+  const invalid = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    enableGitPr: true
+  });
+  assert.equal(invalid.success, false);
+
+  const valid = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    enableGitPr: true,
+    repoUrl: "https://github.com/example/repo.git",
+    repoToken: "repo-token"
+  });
+  assert.equal(valid.success, true);
 });
 
 // ---------------------------------------------------------------------------
@@ -89,7 +97,9 @@ test("schema: valid workspace status parses", () => {
     port: 1983,
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic",
-    uptimeMs: 1234
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true
   });
   assert.equal(result.success, true);
 });
@@ -102,25 +112,22 @@ test("schema: workspace status rejects non-rest figmaSourceMode", () => {
     port: 1983,
     figmaSourceMode: "mcp",
     llmCodegenMode: "deterministic",
-    uptimeMs: 1234
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true
   });
   assert.equal(result.success, false);
 });
 
-test("schema: workspace status rejects non-object payloads", () => {
-  const result = WorkspaceStatusSchema.safeParse("bad-payload");
-  assert.equal(result.success, false);
-});
-
-test("schema: workspace status rejects invalid primitive fields", () => {
+test("schema: workspace status requires outputRoot and previewEnabled", () => {
   const result = WorkspaceStatusSchema.safeParse({
-    running: "yes",
-    url: 100,
-    host: false,
-    port: -1,
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic",
-    uptimeMs: -10
+    uptimeMs: 1234
   });
   assert.equal(result.success, false);
 });

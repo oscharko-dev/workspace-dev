@@ -7,57 +7,162 @@
  *
  * Alias:
  *   figmapipe-workspace-dev start [--port 1983] [--host 127.0.0.1]
- *
- * Environment variables:
- *   FIGMAPIPE_WORKSPACE_PORT  - Override default port (1983)
- *   FIGMAPIPE_WORKSPACE_HOST  - Override default host (127.0.0.1)
  */
 
 import { createWorkspaceServer } from "./server.js";
 
 const DEFAULT_PORT = 1983;
 const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
+const DEFAULT_FIGMA_TIMEOUT_MS = 30_000;
+const DEFAULT_FIGMA_RETRIES = 3;
 
-const parseArgs = (argv: string[]): { command: string; port: number; host: string } => {
+interface CliOptions {
+  command: string;
+  port: number;
+  host: string;
+  outputRoot: string;
+  figmaTimeoutMs: number;
+  figmaRetries: number;
+  enablePreview: boolean;
+}
+
+const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+};
+
+const parseIntInRange = ({
+  raw,
+  fallback,
+  min,
+  max
+}: {
+  raw: string | undefined;
+  fallback: number;
+  min: number;
+  max: number;
+}): number => {
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+};
+
+const parseArgs = (argv: string[]): CliOptions => {
   const args = argv.slice(2);
   const command = args[0] ?? "start";
 
-  let port = DEFAULT_PORT;
-  let host = DEFAULT_HOST;
+  let port = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PORT,
+    fallback: DEFAULT_PORT,
+    min: 1,
+    max: 65535
+  });
+  let host = process.env.FIGMAPIPE_WORKSPACE_HOST?.trim() || DEFAULT_HOST;
+  let outputRoot = process.env.FIGMAPIPE_WORKSPACE_OUTPUT_ROOT?.trim() || DEFAULT_OUTPUT_ROOT;
+  let figmaTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS,
+    fallback: DEFAULT_FIGMA_TIMEOUT_MS,
+    min: 1_000,
+    max: 120_000
+  });
+  let figmaRetries = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_RETRIES,
+    fallback: DEFAULT_FIGMA_RETRIES,
+    min: 1,
+    max: 10
+  });
+  let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
 
-  const envPort = process.env.FIGMAPIPE_WORKSPACE_PORT;
-  if (envPort) {
-    const parsed = parseInt(envPort, 10);
-    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 65535) {
-      port = parsed;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--port") {
+      port = parseIntInRange({
+        raw: args[index + 1],
+        fallback: port,
+        min: 1,
+        max: 65535
+      });
+      index += 1;
+      continue;
     }
-  }
 
-  const envHost = process.env.FIGMAPIPE_WORKSPACE_HOST;
-  if (envHost?.trim()) {
-    host = envHost.trim();
-  }
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--port" && args[i + 1]) {
-      const parsed = parseInt(args[i + 1], 10);
-      if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 65535) {
-        port = parsed;
-        i++;
+    if (arg === "--host") {
+      const nextValue = args[index + 1]?.trim();
+      if (nextValue) {
+        host = nextValue;
       }
+      index += 1;
+      continue;
     }
-    if (args[i] === "--host" && args[i + 1]) {
-      host = args[i + 1].trim();
-      i++;
+
+    if (arg === "--output-root") {
+      const nextValue = args[index + 1]?.trim();
+      if (nextValue) {
+        outputRoot = nextValue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-timeout-ms") {
+      figmaTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaTimeoutMs,
+        min: 1_000,
+        max: 120_000
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-retries") {
+      figmaRetries = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaRetries,
+        min: 1,
+        max: 10
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--preview") {
+      enablePreview = parseBooleanLike(args[index + 1], enablePreview);
+      index += 1;
+      continue;
     }
   }
 
-  return { command, port, host };
+  return {
+    command,
+    port,
+    host,
+    outputRoot,
+    figmaTimeoutMs,
+    figmaRetries,
+    enablePreview
+  };
 };
 
 const printHelp = (): void => {
   console.log(`
-workspace-dev - Local workspace status and validation server
+workspace-dev - autonomous local workspace generator
 
 Usage:
   workspace-dev start [options]
@@ -67,51 +172,64 @@ Alias:
   figmapipe-workspace-dev start [options]
 
 Options:
-  --port <port>    Port to listen on (default: ${DEFAULT_PORT})
-  --host <host>    Host to bind to (default: ${DEFAULT_HOST})
-  --help           Show this help message
+  --port <port>              Port to listen on (default: ${DEFAULT_PORT})
+  --host <host>              Host to bind to (default: ${DEFAULT_HOST})
+  --output-root <path>       Output root for jobs/repros (default: ${DEFAULT_OUTPUT_ROOT})
+  --figma-timeout-ms <ms>    Figma request timeout (default: ${DEFAULT_FIGMA_TIMEOUT_MS})
+  --figma-retries <count>    Figma max retries (default: ${DEFAULT_FIGMA_RETRIES})
+  --preview <true|false>     Enable preview export/serving (default: true)
+  --help                     Show this help message
 
 Environment variables:
-  FIGMAPIPE_WORKSPACE_PORT    Override default port
-  FIGMAPIPE_WORKSPACE_HOST    Override default host
+  FIGMAPIPE_WORKSPACE_PORT
+  FIGMAPIPE_WORKSPACE_HOST
+  FIGMAPIPE_WORKSPACE_OUTPUT_ROOT
+  FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
+  FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
 
 Capabilities:
-  - GET /workspace          Server status (mode info, uptime)
-  - GET /workspace/ui       Storybook-inspired local UI shell
-  - GET /healthz            Health check probe
-  - POST /workspace/submit  Mode-locked request validation (execution not implemented)
+  - GET /workspace                 Runtime status
+  - GET /workspace/ui              Local workspace UI
+  - GET /workspace/:figmaFileKey   Deep-linkable workspace UI
+  - POST /workspace/submit         Start autonomous generation job
+  - GET /workspace/jobs/:id        Poll job status and stages
+  - GET /workspace/jobs/:id/result Fetch compact result payload
+  - GET /workspace/repros/:id/     Open generated local preview
 
-Note:
-  This server validates requests but does not execute Figma fetch,
-  code generation, or filesystem output.
-
-Examples:
-  workspace-dev start
-  workspace-dev start --port 3000
-  FIGMAPIPE_WORKSPACE_PORT=8080 workspace-dev start
+Mode lock is always enforced:
+  figmaSourceMode=rest
+  llmCodegenMode=deterministic
 `);
 };
 
 const main = async (): Promise<void> => {
-  const { command, port, host } = parseArgs(process.argv);
+  const options = parseArgs(process.argv);
 
-  if (command === "--help" || command === "help") {
+  if (options.command === "--help" || options.command === "help") {
     printHelp();
     process.exit(0);
   }
 
-  if (command !== "start") {
-    console.error(`Unknown command: ${command}`);
+  if (options.command !== "start") {
+    console.error(`Unknown command: ${options.command}`);
     console.error('Use "workspace-dev start" to start the server.');
     console.error('Use "workspace-dev --help" for usage information.');
     process.exit(1);
   }
 
-  console.log(`[workspace-dev] Starting on http://${host}:${port}/workspace`);
-  console.log("[workspace-dev] Mode: figmaSourceMode=rest, llmCodegenMode=deterministic");
+  console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
+  console.log("[workspace-dev] Mode lock: figmaSourceMode=rest, llmCodegenMode=deterministic");
 
   try {
-    const server = await createWorkspaceServer({ host, port });
+    const server = await createWorkspaceServer({
+      host: options.host,
+      port: options.port,
+      outputRoot: options.outputRoot,
+      figmaRequestTimeoutMs: options.figmaTimeoutMs,
+      figmaMaxRetries: options.figmaRetries,
+      enablePreview: options.enablePreview
+    });
 
     const shutdown = async (signal: string): Promise<void> => {
       console.log(`\n[workspace-dev] Received ${signal}, shutting down...`);
@@ -127,6 +245,8 @@ const main = async (): Promise<void> => {
     });
 
     console.log(`[workspace-dev] Server ready at ${server.url}/workspace`);
+    console.log(`[workspace-dev] Output root: ${options.outputRoot}`);
+    console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[workspace-dev] Failed to start: ${message}`);

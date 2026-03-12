@@ -1,17 +1,5 @@
 # Changelog
 
-## 0.1.1
-
-### Patch Changes
-
-- 1dfac48: Harden npm release readiness for `workspace-dev`:
-
-  - add release governance changelog (`CHANGELOG.md`)
-  - add explicit `sideEffects` metadata
-  - add CommonJS guard export paths with ESM migration guidance
-  - add quality signals (`publint`, `attw`, `size-limit`) and REUSE metadata
-  - add package-local changesets release workflow with OIDC provenance publish
-
 All notable user-facing changes to `workspace-dev` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
@@ -19,16 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
-## [Unreleased]
+## [0.3.0] - 2026-03-12
 
 ### Changed
-- Added explicit npm release-hardening metadata (`sideEffects`, publish quality scripts, REUSE metadata).
-- Added CommonJS guard exports that fail fast with a clear migration message to ESM imports.
-- Added package-local changesets release automation with OIDC and provenance publishing.
+
+- Switched generation runtime to parity-aligned deterministic pipeline:
+  - `figma.source`
+  - `ir.derive`
+  - `template.prepare`
+  - `codegen.generate`
+  - `validate.project`
+  - `repro.export`
+  - optional `git.pr`
+- Bundled FigmaPipe React + TypeScript + MUI v7 template into `workspace-dev`.
+- Replaced simplified generator with parity deterministic IR + codegen core.
+- Added optional Git/PR flow (`enableGitPr`) with contract-safe repo credential handling.
+- UI now exposes explicit Git/PR toggle and keeps `Generate` CTA visible in header and form.
+- Added no-store cache headers for UI and preview routes to avoid stale asset rendering.
+
+## [0.2.0] - 2026-03-12
+
+### Changed
+
+- `workspace-dev` evolved from validator-only runtime to autonomous local generator.
+- `POST /workspace/submit` now accepts jobs (`202`) and starts real local execution.
+- Added async job polling endpoints (`/workspace/jobs/:id`, `/workspace/jobs/:id/result`).
+- Added integrated local preview serving (`/workspace/repros/:id/*`).
+- Updated UI to reduced but functional workspace flow with required inputs:
+  - `figmaFileKey`
+  - `figmaAccessToken`
+  - `repoUrl`
+  - `repoToken`
+- Added deterministic local artifact pipeline:
+  - Figma REST fetch
+  - IR derivation
+  - local code generation
+  - local preview export
+
+### Maintained constraints
+
+- Mode lock remains strict:
+  - `figmaSourceMode=rest`
+  - `llmCodegenMode=deterministic`
+- No MCP, no hybrid, no `llm_strict`.
+- No dependency on FigmaPipe backend services.
+
+## [0.1.1] - 2026-03-12
+
+### Changed
+
+- Hardened npm release readiness for `workspace-dev`:
+  - release governance changelog
+  - `sideEffects` metadata
+  - CJS guard export paths with ESM migration guidance
+  - package quality checks (`publint`, `attw`, `size-limit`)
+  - package-local changesets + OIDC provenance publish
 
 ## [0.1.0] - 2026-03-11
 
 ### Added
+
 - Initial `workspace-dev` package release for local mode-locked workspace validation.
-- Public status and validation server endpoints (`/workspace`, `/healthz`, `/workspace/submit`).
-- Runtime mode lock enforcement for `rest + deterministic`.
+- Public status and validation endpoints (`/workspace`, `/healthz`, `/workspace/submit`).

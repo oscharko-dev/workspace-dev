@@ -147,7 +147,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   const result = await runCliToExit({ args: ["--help"] });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /workspace-dev start/i);
-  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PORT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
+  assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
 
 test("cli contract: unknown command exits with code 1", async () => {
@@ -175,7 +176,7 @@ test("cli contract: CLI flag overrides environment port", async () => {
     const response = await fetch(`http://127.0.0.1:${cliPort}/workspace`);
     assert.equal(response.status, 200);
 
-    const body = await response.json() as Record<string, unknown>;
+    const body = (await response.json()) as Record<string, unknown>;
     assert.equal(body.port, cliPort);
   } finally {
     child.kill("SIGTERM");

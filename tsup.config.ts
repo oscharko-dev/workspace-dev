@@ -16,6 +16,7 @@ export default defineConfig({
   },
   platform: "node",
   target: "node22",
+  external: ["typescript"],
   sourcemap: true,
   clean: true,
   splitting: false,

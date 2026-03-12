@@ -5,6 +5,8 @@
 | workspace-dev | Contract API | Min Node | Supports |
 |---------------|--------------|----------|----------|
 | 0.1.x         | 1.0.0        | 22.0.0   | rest + deterministic |
+| 0.2.x         | 2.0.0        | 22.0.0   | autonomous local generation |
+| 0.3.x         | 2.1.0        | 22.0.0   | parity pipeline + optional git.pr |
 
 ## Runtime Matrix
 
@@ -35,7 +37,7 @@ See [CONTRACT_CHANGELOG.md](../../CONTRACT_CHANGELOG.md) for authoritative versi
 | New optional field | Minor bump | Add `projectName` to `WorkspaceJobInput` |
 | New endpoint | Minor bump | Add `GET /workspace/version` |
 | Remove or rename field | Major bump | Remove `figmaFileKey` |
-| Change response code | Major bump | Change `501` to `200` |
+| Change response code | Major bump | Change `501` to `202` |
 | Change error code | Major bump | Rename `MODE_LOCK_VIOLATION` |
 
 ## Enforcement
@@ -49,4 +51,4 @@ See [CONTRACT_CHANGELOG.md](../../CONTRACT_CHANGELOG.md) for authoritative versi
 1. Install `workspace-dev` as a dev dependency.
 2. Replace API calls with local `workspace-dev start`.
 3. Use mode configuration `rest` + `deterministic` only.
-4. `workspace-dev` validates requests but does not execute fetch/codegen/output.
+4. `workspace-dev` runs autonomous local fetch/IR/codegen/validation/export without FigmaPipe API services.

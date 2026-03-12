@@ -2,24 +2,25 @@
 
 ## Overview
 
-`workspace-dev` runs without Kubernetes or container orchestration.
-It is a local-first Node.js server that provides status and request validation.
+`workspace-dev` runs as a local Node.js runtime without Kubernetes or external backend infrastructure.
 
 ## Capabilities
 
-- Start local server on localhost
-- Serve local workspace UI on `/workspace/ui`
+- Start local runtime on localhost
+- Serve reduced workspace UI on `/workspace/ui` and `/workspace/:figmaFileKey`
 - Enforce mode lock (`rest` + `deterministic`)
-- Validate submit request payloads at runtime with internal zero-dependency validators
-- Provide per-project isolation using child processes
+- Execute autonomous job lifecycle (`queued -> running -> completed|failed`)
+- Fetch Figma file over REST
+- Derive deterministic IR and generate local code artifacts
+- Export and serve local preview from `.workspace-dev/repros/<jobId>`
 
 ## Explicit Non-Goals
 
-- No Figma fetch execution
-- No code generation execution
-- No filesystem output writes
-- No Redis/Postgres dependency for this package runtime
-- No MCP or LLM runtime integration
+- No MCP mode
+- No hybrid mode
+- No `llm_strict`
+- No Redis/Postgres queueing stack
+- No dependency on FigmaPipe API services
 
 ## On-Prem Boundary
 
@@ -27,8 +28,8 @@ It is a local-first Node.js server that provides status and request validation.
 
 1. Binds to localhost by default (`127.0.0.1`).
 2. Requires no backend infrastructure.
-3. Validates and rejects unsupported runtime modes.
-4. Does not perform external execution stages.
+3. Executes deterministic generation only.
+4. Writes output under project-local `.workspace-dev`.
 
 ## Separation from Full FigmaPipe
 
@@ -37,6 +38,7 @@ It is a local-first Node.js server that provides status and request validation.
 | Runtime | Local Node.js process | Multi-service runtime |
 | Database | None | PostgreSQL |
 | Queue | None | Redis/BullMQ |
-| Codegen | Not implemented | Deterministic + LLM |
-| Figma | Validation only | REST + MCP |
-| Isolation | child process per project | platform-managed |
+| Source modes | REST only | REST + MCP + Hybrid |
+| Codegen modes | Deterministic only | Deterministic + LLM |
+| Preview | Local static export | Full platform preview |
+| Git automation | Optional `git.pr` (opt-in) | Available in full stack |

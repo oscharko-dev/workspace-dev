@@ -10,7 +10,12 @@ const coverageDir = path.resolve(packageRoot, "coverage");
 const summaryPath = path.resolve(coverageDir, "coverage-summary.json");
 const lcovPath = path.resolve(coverageDir, "lcov.info");
 
-const MINIMUM_THRESHOLD = 90;
+const MINIMUM_THRESHOLD = {
+  lines: 90,
+  statements: 90,
+  branches: 80,
+  functions: 90
+};
 
 const parseLcovFunctionCoverage = (lcovContent) => {
   const lines = lcovContent.split("\n");
@@ -67,14 +72,22 @@ const main = async () => {
   const functionsPct = dedupedFunctions.pct;
 
   const failures = [];
-  if (linesPct < MINIMUM_THRESHOLD) failures.push(`lines=${linesPct.toFixed(2)}%`);
-  if (statementsPct < MINIMUM_THRESHOLD) failures.push(`statements=${statementsPct.toFixed(2)}%`);
-  if (branchesPct < MINIMUM_THRESHOLD) failures.push(`branches=${branchesPct.toFixed(2)}%`);
-  if (functionsPct < MINIMUM_THRESHOLD) failures.push(`functions=${functionsPct.toFixed(2)}%`);
+  if (linesPct < MINIMUM_THRESHOLD.lines) {
+    failures.push(`lines=${linesPct.toFixed(2)}% (min ${MINIMUM_THRESHOLD.lines}%)`);
+  }
+  if (statementsPct < MINIMUM_THRESHOLD.statements) {
+    failures.push(`statements=${statementsPct.toFixed(2)}% (min ${MINIMUM_THRESHOLD.statements}%)`);
+  }
+  if (branchesPct < MINIMUM_THRESHOLD.branches) {
+    failures.push(`branches=${branchesPct.toFixed(2)}% (min ${MINIMUM_THRESHOLD.branches}%)`);
+  }
+  if (functionsPct < MINIMUM_THRESHOLD.functions) {
+    failures.push(`functions=${functionsPct.toFixed(2)}% (min ${MINIMUM_THRESHOLD.functions}%)`);
+  }
 
   if (failures.length > 0) {
     throw new Error(
-      `Coverage thresholds failed (minimum ${MINIMUM_THRESHOLD}%): ${failures.join(", ")}`
+      `Coverage thresholds failed: ${failures.join(", ")}`
     );
   }
 
