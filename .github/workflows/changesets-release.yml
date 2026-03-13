@@ -253,17 +253,17 @@ jobs:
             if [[ "${VERSION_EXISTS}" == "false" ]]; then
               echo "No changesets found and current version is not published yet. Keeping package version as-is for first publish."
             else
-              echo "No changesets found and current version already exists on npm. Applying automatic patch version bump."
-              npm version patch --no-git-tag-version
+              echo "No changesets found and current version already exists on npm. Applying automatic patch version bump based on latest published version."
+              LATEST_PUBLISHED_VERSION="$(npm view "${PACKAGE_NAME}" version --registry=https://registry.npmjs.org/)"
+              NEXT_PATCH_VERSION="$(node -e 'const raw=String(process.argv[1] ?? "").trim(); const match=raw.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/); if (!match) { console.error(`Unsupported published version format: ${raw}`); process.exit(1); } const major=Number(match[1]); const minor=Number(match[2]); const patch=Number(match[3]); console.log(`${major}.${minor}.${patch + 1}`);' "${LATEST_PUBLISHED_VERSION}")"
+              echo "Latest published version: ${LATEST_PUBLISHED_VERSION}; next patch: ${NEXT_PATCH_VERSION}"
+              npm version "${NEXT_PATCH_VERSION}" --no-git-tag-version
             fi
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet; then
-            git add -A
-            git commit -m "chore(release): version workspace-dev [skip ci]"
-            git push origin HEAD:main
+            echo "Workflow-local version bump detected."
+            echo "Skipping direct git push to main because branch protection requires pull-request based updates."
           fi
 
           pnpm run release:changesets:publish
