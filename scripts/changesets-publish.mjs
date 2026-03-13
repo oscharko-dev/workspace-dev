@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
+const REQUIRED_DIST_FILES = [
+  "dist/cli.js",
+  "dist/index.js",
+  "dist/index.cjs",
+  "dist/contracts/index.js",
+  "dist/contracts/index.cjs"
+];
 
 const run = (command, args, env = process.env) =>
   new Promise((resolve, reject) => {
@@ -59,6 +66,29 @@ const resolvePublishEnv = () => {
   return publishEnv;
 };
 
+const assertPathExists = async (relativePath) => {
+  const absolutePath = path.resolve(packageRoot, relativePath);
+  try {
+    const fileStat = await stat(absolutePath);
+    if (!fileStat.isFile()) {
+      throw new Error(`Expected file but found non-file entry: ${relativePath}`);
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Missing required publish artifact '${relativePath}': ${reason}`);
+  }
+};
+
+const ensurePublishArtifacts = async () => {
+  console.log("[changesets-publish] Building package artifacts before publish.");
+  await run("pnpm", ["run", "build"]);
+
+  for (const relativePath of REQUIRED_DIST_FILES) {
+    await assertPathExists(relativePath);
+  }
+  console.log("[changesets-publish] Verified required dist artifacts for publish.");
+};
+
 const main = async () => {
   const packageJsonPath = path.resolve(packageRoot, "package.json");
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
@@ -71,6 +101,7 @@ const main = async () => {
   const npmTag = packageVersion.includes("-") ? "next" : "latest";
 
   console.log(`[changesets-publish] Publishing ${packageJson.name}@${packageVersion} with npm tag '${npmTag}'.`);
+  await ensurePublishArtifacts();
   await run("pnpm", [
     "changeset",
     "publish",

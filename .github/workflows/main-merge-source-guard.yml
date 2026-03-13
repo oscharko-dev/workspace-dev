@@ -8,11 +8,11 @@ jobs:
   allow-only-dev:
     runs-on: ubuntu-latest
     steps:
-      - name: Enforce dev as the only source branch for main
+      - name: Enforce dev-gate as the only source branch for main
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ github.head_ref }}" != "dev" ]]; then
-            echo "Only branch 'dev' may merge into 'main'. Current source branch: '${{ github.head_ref }}'." >&2
+          if [[ "${{ github.head_ref }}" != "dev-gate" ]]; then
+            echo "Only branch 'dev-gate' may merge into 'main'. Current source branch: '${{ github.head_ref }}'." >&2
             exit 1
           fi

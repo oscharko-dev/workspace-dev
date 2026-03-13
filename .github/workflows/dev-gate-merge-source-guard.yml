@@ -1,0 +1,18 @@
+name: dev-gate merge source guard
+
+on:
+  pull_request:
+    branches: [dev-gate]
+
+jobs:
+  allow-only-dev-to-dev-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce dev as the only source branch for dev-gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.head_ref }}" != "dev" ]]; then
+            echo "Only branch 'dev' may merge into 'dev-gate'. Current source branch: '${{ github.head_ref }}'." >&2
+            exit 1
+          fi
