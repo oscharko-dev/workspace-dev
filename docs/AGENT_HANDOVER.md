@@ -54,7 +54,7 @@ Run in this repository root:
 ## 5) Release operator checklist
 
 1. Ensure working tree is clean.
-2. Run full release gates (`pnpm run prepublishOnly`).
+2. Run full release gates (`pnpm run release:quality-gates`).
 3. Confirm npm Trusted Publisher is configured for this repository/workflow.
 4. Trigger `changesets-release` workflow when release criteria are met.
 5. Keep legacy FullVersion repository in deprecated/frozen mode.

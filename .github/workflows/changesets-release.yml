@@ -54,6 +54,7 @@ jobs:
           pnpm run test:flaky-retry
           pnpm run test:bdd
           pnpm run test:property-based
+          pnpm run ui:lint
           pnpm run lint:boundaries
           pnpm run lint:ts-style
           pnpm run lint:no-telemetry
