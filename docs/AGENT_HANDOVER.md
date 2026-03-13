@@ -31,7 +31,7 @@ Run in this repository root:
   - `src/parity-template.test.ts` validates deterministic SHA-256 snapshots of bundled template files
 - Governance/docs cleanup:
   - repository references target `oscharko-dev/workspace-dev`
-  - deprecated monorepo/mirror references removed from active docs
+  - deprecated monorepo references removed from active docs
 - Supply-chain hardening:
   - `.github/CODEOWNERS`
   - lockfile host allowlist gate (`scripts/check-lockfile-host-allowlist.mjs`)

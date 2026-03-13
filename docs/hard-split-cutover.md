@@ -33,7 +33,7 @@ git push -u origin HEAD:main
 Apply in the old monorepo repository:
 
 1. Mark repository status as deprecated/read-only for FullVersion.
-2. Disable deploy/release workflows (`release`, deploy lanes, customer registry release, mirror, old npm publish).
+2. Disable deploy/release workflows (`release`, deploy lanes, customer registry release, old npm publish).
 3. Keep only archival/security visibility workflows as required by policy.
 
 ## 4) Validate standalone release line
