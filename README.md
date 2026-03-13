@@ -66,6 +66,8 @@ Optional Git/PR input:
 - `enableGitPr` (default `false`)
 - `repoUrl` (required only when `enableGitPr=true`)
 - `repoToken` (required only when `enableGitPr=true`)
+- `projectName` (optional)
+- `targetPath` (optional, defaults to `figma-generated`)
 
 With `enableGitPr=false`, generation is local-only.
 
@@ -73,6 +75,7 @@ With `enableGitPr=false`, generation is local-only.
 
 - `GET /workspace` - runtime status
 - `GET /healthz` - health check
+- `GET /workspace/:figmaFileKey` - deep-link to workspace UI for a Figma file key
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
@@ -83,8 +86,10 @@ With `enableGitPr=false`, generation is local-only.
 By default, generated files are written under:
 
 - `.workspace-dev/jobs/<jobId>/generated-app`
+- `.workspace-dev/jobs/<jobId>/figma.json`
 - `.workspace-dev/jobs/<jobId>/design-ir.json`
 - `.workspace-dev/repros/<jobId>/`
+- `.workspace-dev/jobs/<jobId>/repo/` (only when `enableGitPr=true`)
 
 ## CLI
 
@@ -147,7 +152,8 @@ curl -sS http://127.0.0.1:1983/workspace/jobs/<jobId>
 ## Security notes
 
 - Tokens are used in process memory for runtime execution.
-- Tokens are not persisted in cleartext job artifacts.
+- Token-like values are redacted in public job logs and error surfaces.
+- If `enableGitPr=true`, a temporary authenticated clone is created under `.workspace-dev/jobs/<jobId>/repo/` during execution; treat the output root as sensitive local state.
 - Local runtime defaults to `127.0.0.1`.
 
 ## Migration note (v1.0.0)
