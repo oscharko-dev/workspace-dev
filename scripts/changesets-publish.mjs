@@ -32,8 +32,18 @@ const resolvePublishEnv = () => {
     publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
 
-  // Enforce OIDC trusted publishing in GitHub Actions when explicitly configured.
-  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode === "trusted-publisher-oidc") {
+  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode !== "trusted-publisher-oidc") {
+    throw new Error(
+      "Trusted publishing is mandatory in GitHub Actions. Set WORKSPACE_DEV_PUBLISH_AUTH_MODE=trusted-publisher-oidc."
+    );
+  }
+
+  if (publishEnv.GITHUB_ACTIONS === "true") {
+    if (!publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL || !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+      throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
+    }
+
+    // Enforce OIDC trusted publishing and prevent token fallback in CI.
     delete publishEnv.NODE_AUTH_TOKEN;
     delete publishEnv.NPM_TOKEN;
     delete publishEnv.npm_config__authToken;
