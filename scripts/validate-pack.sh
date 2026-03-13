@@ -55,8 +55,6 @@ REQUIRED_FILES=(
   "dist/contracts/index.d.ts"
   "dist/contracts/index.d.cts"
   "dist/ui/index.html"
-  "dist/ui/app.css"
-  "dist/ui/app.js"
 )
 
 MISSING=()
@@ -74,6 +72,27 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   exit 1
 fi
 echo "  ✓ All required files present (${#REQUIRED_FILES[@]} checked)"
+
+ASSET_DIR="$PACK_ROOT/dist/ui/assets"
+if [[ ! -d "$ASSET_DIR" ]]; then
+  echo "FAIL: dist/ui/assets directory missing from pack"
+  exit 1
+fi
+
+JS_ASSET_COUNT=$(find "$ASSET_DIR" -type f -name "*.js" | wc -l | tr -d ' ')
+CSS_ASSET_COUNT=$(find "$ASSET_DIR" -type f -name "*.css" | wc -l | tr -d ' ')
+
+if [[ "$JS_ASSET_COUNT" -lt 1 ]]; then
+  echo "FAIL: dist/ui/assets does not contain any JavaScript bundles"
+  exit 1
+fi
+
+if [[ "$CSS_ASSET_COUNT" -lt 1 ]]; then
+  echo "FAIL: dist/ui/assets does not contain any CSS bundles"
+  exit 1
+fi
+
+echo "  ✓ UI bundle assets present (js=$JS_ASSET_COUNT, css=$CSS_ASSET_COUNT)"
 
 # --- Forbidden paths/patterns ----------------------------------------------
 FORBIDDEN_ROOT_PATHS=(

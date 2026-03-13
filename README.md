@@ -26,6 +26,23 @@ Default runtime URL: `http://127.0.0.1:1983/workspace`
 - UI: `http://127.0.0.1:1983/workspace/ui`
 - Deep link by file key: `http://127.0.0.1:1983/workspace/<figmaFileKey>`
 
+## Frontend stack
+
+The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
+
+- Vite 8 build output is emitted into `dist/ui`
+- Runtime serves `index.html` and hashed bundles under `/workspace/ui/assets/*`
+- API contracts remain unchanged (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
+
+Useful scripts:
+
+- `pnpm run ui:dev`
+- `pnpm run ui:build`
+- `pnpm run ui:typecheck`
+- `pnpm run ui:lint`
+- `pnpm run ui:test`
+- `pnpm run ui:test:e2e`
+
 ## Scope and mode lock
 
 `workspace-dev` enforces:

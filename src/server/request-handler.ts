@@ -4,9 +4,9 @@ import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { enforceModeLock } from "../mode-lock.js";
 import { SubmitRequestSchema, formatZodError } from "../schemas.js";
-import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
-import { isWorkspaceProjectRoute, parseJobRoute, parseReproRoute, resolveUiAssetName } from "./routes.js";
-import { getUiAssets } from "./ui-assets.js";
+import { sendBuffer, sendJson, readJsonBody } from "./http-helpers.js";
+import { isWorkspaceProjectRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath } from "./routes.js";
+import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
 interface CreateWorkspaceRequestHandlerInput {
   host: string;
@@ -128,12 +128,15 @@ export function createWorkspaceRequestHandler({
         return;
       }
 
-      const uiAssetName = resolveUiAssetName(pathname);
+      const uiAssetPath = resolveUiAssetPath(pathname);
       const shouldServeWorkspaceAlias = isWorkspaceProjectRoute(pathname);
-      if (uiAssetName || shouldServeWorkspaceAlias) {
+      if (uiAssetPath || shouldServeWorkspaceAlias) {
         try {
           const uiAssets = await getUiAssets(moduleDir);
-          const uiAsset = uiAssets.get(uiAssetName ?? "index.html");
+          const uiAsset = getUiAsset({
+            assets: uiAssets,
+            assetPath: uiAssetPath ?? "index.html"
+          });
           if (!uiAsset) {
             sendJson({
               response,
@@ -146,7 +149,7 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
-          sendText({
+          sendBuffer({
             response,
             statusCode: 200,
             contentType: uiAsset.contentType,
