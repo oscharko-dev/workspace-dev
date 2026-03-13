@@ -278,7 +278,7 @@ button.primary {
 
 .footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   border-top: 1px solid var(--border);
   color: var(--muted);
   padding: 0.5rem 0.9rem 0.8rem;
