@@ -6,15 +6,9 @@ export const UI_ROUTE_PREFIX = "/workspace/ui";
 export const JOB_ROUTE_PREFIX = "/workspace/jobs/";
 export const REPRO_ROUTE_PREFIX = "/workspace/repros/";
 
-export type UiAssetName = "index.html" | "app.css" | "app.js";
+export type UiAssetPath = string;
 
 export interface UiAsset {
   contentType: string;
-  content: string;
+  content: Buffer;
 }
-
-export const UI_ASSET_DEFINITIONS: Array<{ name: UiAssetName; contentType: string }> = [
-  { name: "index.html", contentType: "text/html; charset=utf-8" },
-  { name: "app.css", contentType: "text/css; charset=utf-8" },
-  { name: "app.js", contentType: "application/javascript; charset=utf-8" }
-];

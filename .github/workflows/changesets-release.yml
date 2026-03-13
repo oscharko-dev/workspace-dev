@@ -193,7 +193,7 @@ jobs:
         run: |
           set -euo pipefail
           package_name="$(node -p "require('./package.json').name")"
-          package_version="${{ steps.release_meta.outputs.version }}"
+          package_version="$(node -p "require('./package.json').version")"
           generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           sed \
@@ -226,16 +226,43 @@ jobs:
 
           CHANGESET_COUNT="$(find .changeset -maxdepth 1 -type f -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')"
           echo "Detected ${CHANGESET_COUNT} pending changeset file(s)."
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          echo "Current package target: ${PACKAGE_NAME}@${PACKAGE_VERSION}"
+
+          VERSION_EXISTS="false"
+          NPM_VIEW_ERR_FILE="${RUNNER_TEMP}/npm-view-version.err"
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>"${NPM_VIEW_ERR_FILE}"; then
+            VERSION_EXISTS="true"
+          else
+            if grep -Eq "E404|No match found|is not in this registry" "${NPM_VIEW_ERR_FILE}"; then
+              VERSION_EXISTS="false"
+            else
+              echo "Failed to query npm for ${PACKAGE_NAME}@${PACKAGE_VERSION}."
+              cat "${NPM_VIEW_ERR_FILE}" >&2
+              exit 1
+            fi
+          fi
+          echo "Version already published: ${VERSION_EXISTS}"
 
           if [[ "$CHANGESET_COUNT" != "0" ]]; then
+            echo "Applying semantic version changes from changesets."
             pnpm changeset version
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            if ! git diff --quiet; then
-              git add -A
-              git commit -m "chore(release): version workspace-dev [skip ci]"
-              git push origin HEAD:main
+          else
+            if [[ "${VERSION_EXISTS}" == "false" ]]; then
+              echo "No changesets found and current version is not published yet. Keeping package version as-is for first publish."
+            else
+              echo "No changesets found and current version already exists on npm. Applying automatic patch version bump."
+              npm version patch --no-git-tag-version
             fi
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add -A
+            git commit -m "chore(release): version workspace-dev [skip ci]"
+            git push origin HEAD:main
           fi
 
           pnpm run release:changesets:publish
@@ -254,11 +281,18 @@ jobs:
         if: always()
         shell: bash
         run: |
+          CURRENT_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$CURRENT_VERSION" == *-* ]]; then
+            CURRENT_NPM_TAG="next"
+          else
+            CURRENT_NPM_TAG="latest"
+          fi
+
           echo "## workspace-dev Release Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version (current package.json) | \`${{ steps.release_meta.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| npm tag lane | \`${{ steps.release_meta.outputs.npm_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"

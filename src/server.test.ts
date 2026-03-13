@@ -96,6 +96,12 @@ const createTempOutputRoot = async (): Promise<string> => {
   return await mkdtemp(path.join(os.tmpdir(), "workspace-dev-test-"));
 };
 
+const extractUiAssetUrls = ({ html }: { html: string }): string[] => {
+  const matches = [...html.matchAll(/(?:src|href)=["'](\/workspace\/ui\/assets\/[^"']+)["']/g)];
+  const urls = new Set(matches.map((match) => match[1]).filter((entry): entry is string => Boolean(entry)));
+  return [...urls];
+};
+
 test("workspace server starts and responds on /workspace", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -193,20 +199,31 @@ test("workspace server serves UI static assets", async () => {
   });
 
   try {
-    const cssResponse = await server.app.inject({
+    const uiResponse = await server.app.inject({
       method: "GET",
-      url: "/workspace/ui/app.css"
+      url: "/workspace/ui"
     });
-    assert.equal(cssResponse.statusCode, 200);
-    assert.match(cssResponse.headers["content-type"] ?? "", /text\/css/i);
+    assert.equal(uiResponse.statusCode, 200);
+    assert.match(uiResponse.headers["content-type"] ?? "", /text\/html/i);
 
-    const jsResponse = await server.app.inject({
-      method: "GET",
-      url: "/workspace/ui/app.js"
-    });
-    assert.equal(jsResponse.statusCode, 200);
-    assert.match(jsResponse.headers["content-type"] ?? "", /javascript/i);
-    assert.match(jsResponse.body, /workspace\/jobs/i);
+    const assetUrls = extractUiAssetUrls({ html: uiResponse.body });
+    assert.ok(assetUrls.length > 0, "Expected UI entrypoint to reference bundled assets.");
+    assert.ok(assetUrls.some((url) => url.endsWith(".css")), "Expected at least one bundled CSS asset.");
+    assert.ok(assetUrls.some((url) => url.endsWith(".js")), "Expected at least one bundled JS asset.");
+
+    for (const url of assetUrls) {
+      const assetResponse = await server.app.inject({
+        method: "GET",
+        url
+      });
+      assert.equal(assetResponse.statusCode, 200, `Expected ${url} to be served`);
+      if (url.endsWith(".css")) {
+        assert.match(assetResponse.headers["content-type"] ?? "", /text\/css/i);
+      }
+      if (url.endsWith(".js")) {
+        assert.match(assetResponse.headers["content-type"] ?? "", /javascript/i);
+      }
+    }
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

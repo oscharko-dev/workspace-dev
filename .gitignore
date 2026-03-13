@@ -3,6 +3,8 @@ node_modules/
 dist/
 artifacts/
 coverage/
+.workspace-dev/
+test-results/
 openvex.json
 *.tgz
 pnpm-debug.log*

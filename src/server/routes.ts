@@ -1,6 +1,6 @@
-import { JOB_ROUTE_PREFIX, REPRO_ROUTE_PREFIX, UI_ROUTE_PREFIX, type UiAssetName } from "./constants.js";
+import { JOB_ROUTE_PREFIX, REPRO_ROUTE_PREFIX, UI_ROUTE_PREFIX, type UiAssetPath } from "./constants.js";
 
-export function resolveUiAssetName(pathname: string): UiAssetName | null {
+export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
   if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
     return "index.html";
   }
@@ -10,11 +10,15 @@ export function resolveUiAssetName(pathname: string): UiAssetName | null {
   }
 
   const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
-  if (requestedAsset === "app.css" || requestedAsset === "app.js") {
-    return requestedAsset;
+  if (requestedAsset.length === 0) {
+    return "index.html";
   }
 
-  return null;
+  if (requestedAsset.includes("..")) {
+    return null;
+  }
+
+  return requestedAsset;
 }
 
 export function isWorkspaceProjectRoute(pathname: string): boolean {

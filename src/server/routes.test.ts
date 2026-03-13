@@ -4,16 +4,16 @@ import {
   isWorkspaceProjectRoute,
   parseJobRoute,
   parseReproRoute,
-  resolveUiAssetName
+  resolveUiAssetPath
 } from "./routes.js";
 
-test("resolveUiAssetName handles index, known assets, and unknown paths", () => {
-  assert.equal(resolveUiAssetName("/workspace/ui"), "index.html");
-  assert.equal(resolveUiAssetName("/workspace/ui/"), "index.html");
-  assert.equal(resolveUiAssetName("/workspace/ui/app.css"), "app.css");
-  assert.equal(resolveUiAssetName("/workspace/ui/app.js"), "app.js");
-  assert.equal(resolveUiAssetName("/workspace/ui/unknown.svg"), null);
-  assert.equal(resolveUiAssetName("/other"), null);
+test("resolveUiAssetPath resolves index and nested asset paths", () => {
+  assert.equal(resolveUiAssetPath("/workspace/ui"), "index.html");
+  assert.equal(resolveUiAssetPath("/workspace/ui/"), "index.html");
+  assert.equal(resolveUiAssetPath("/workspace/ui/assets/main-HASH.js"), "assets/main-HASH.js");
+  assert.equal(resolveUiAssetPath("/workspace/ui/assets/chunks/vendor-HASH.js"), "assets/chunks/vendor-HASH.js");
+  assert.equal(resolveUiAssetPath("/workspace/ui/../index.html"), null);
+  assert.equal(resolveUiAssetPath("/other"), null);
 });
 
 test("isWorkspaceProjectRoute accepts only workspace key routes", () => {
