@@ -12,7 +12,7 @@ This policy covers:
 
 ## Support Channels
 
-- General support: GitHub issues in the `oscharko-dev/FigmaPipe` repository
+- General support: GitHub issues in the `oscharko-dev/workspace-dev` repository
 - Release operations support: maintainers listed in repository ownership controls
 - Security escalation: [security@oscharko.dev](mailto:security@oscharko.dev)
 

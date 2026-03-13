@@ -645,7 +645,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     if (isAddrInUse) {
       throw new Error(
         `Port ${port} is already in use. ` +
-          `Another instance of workspace-dev (or figmapipe-workspace-dev) or another service may be running on this port. ` +
+          `Another instance of workspace-dev or another service may be running on this port. ` +
           `Use FIGMAPIPE_WORKSPACE_PORT to configure an alternative port.`
       );
     }

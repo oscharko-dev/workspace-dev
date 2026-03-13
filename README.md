@@ -119,10 +119,11 @@ curl -sS http://127.0.0.1:1983/workspace/jobs/<jobId>
 - Tokens are not persisted in cleartext job artifacts.
 - Local runtime defaults to `127.0.0.1`.
 
-## Legacy binary alias
+## Migration note (v1.0.0)
 
-Backward-compatible alias remains available:
+- The legacy CLI alias `figmapipe-workspace-dev` was removed.
+- Use `workspace-dev` exclusively:
 
 ```bash
-npx figmapipe-workspace-dev start
+npx workspace-dev start
 ```

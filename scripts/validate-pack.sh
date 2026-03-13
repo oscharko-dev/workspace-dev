@@ -4,7 +4,7 @@
 #
 # Runs `pnpm pack`, unpacks the tarball, and enforces:
 #   ✓ Required files are present (dist/, README.md, LICENSE, package.json)
-#   ✗ Forbidden patterns are absent (src/, .env*, *.test.*, node_modules/, .mirror-allowlist)
+#   ✗ Forbidden patterns are absent (src/, .env*, *.test.*, node_modules/)
 #
 # Exit code 0 = pack is clean.  Non-zero = violation found.
 # =============================================================================
@@ -75,27 +75,35 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
 fi
 echo "  ✓ All required files present (${#REQUIRED_FILES[@]} checked)"
 
-# --- Forbidden patterns ----------------------------------------------------
-FORBIDDEN_PATTERNS=(
-  "src/"
-  "ui-src/"
-  ".env"
-  ".env.*"
-  "*.test.ts"
-  "*.test.js"
-  "node_modules/"
-  ".mirror-allowlist"
-  "scripts/"
+# --- Forbidden paths/patterns ----------------------------------------------
+FORBIDDEN_ROOT_PATHS=(
+  "src"
+  "ui-src"
+  "node_modules"
+  "scripts"
   "tsconfig.json"
   ".npmignore"
+  ".env"
+)
+
+FORBIDDEN_FILE_GLOBS=(
+  "*.test.ts"
+  "*.test.js"
+  ".env.*"
 )
 
 VIOLATIONS=()
-for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
-  # Use find with appropriate matching
+
+for rel_path in "${FORBIDDEN_ROOT_PATHS[@]}"; do
+  if [[ -e "$PACK_ROOT/$rel_path" ]]; then
+    VIOLATIONS+=("$PACK_ROOT/$rel_path")
+  fi
+done
+
+for glob in "${FORBIDDEN_FILE_GLOBS[@]}"; do
   while IFS= read -r match; do
     [[ -n "$match" ]] && VIOLATIONS+=("$match")
-  done < <(find "$PACK_ROOT" -path "*/$pattern" -o -name "$pattern" 2>/dev/null | head -20)
+  done < <(find "$PACK_ROOT" -type f -name "$glob" 2>/dev/null | head -20)
 done
 
 if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then

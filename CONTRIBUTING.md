@@ -5,10 +5,9 @@ Thank you for your interest in contributing.
 ## Development Setup
 
 ```bash
-git clone https://github.com/oscharko-dev/FigmaPipe.git
-cd FigmaPipe
+git clone https://github.com/oscharko-dev/workspace-dev.git
+cd workspace-dev
 pnpm install
-cd packages/workspace-dev
 pnpm test
 pnpm typecheck
 pnpm lint:boundaries
@@ -16,12 +15,12 @@ pnpm lint:boundaries
 
 ## Pull Request Process
 
-1. Create a feature branch from `dev`.
-2. Make changes in `packages/workspace-dev/`.
+1. Create a feature branch from `main`.
+2. Make changes in this repository root.
 3. Add or update tests for behavior changes.
 4. If public contracts change (`src/contracts/`), add an entry to `CONTRACT_CHANGELOG.md`.
 5. Ensure `pnpm test`, `pnpm typecheck`, and `pnpm lint:boundaries` pass.
-6. Open a PR targeting `dev` with clear change rationale.
+6. Open a PR targeting `main` with clear change rationale.
 
 ## Boundary Rules
 

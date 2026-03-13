@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Boundary check: ensures packages/workspace-dev has no imports from
+ * Boundary check: ensures workspace-dev has no imports from
  * internal services, infrastructure, or other monorepo-internal modules.
  *
  * Also verifies that package.json keeps zero runtime dependencies.

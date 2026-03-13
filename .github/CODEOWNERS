@@ -1,0 +1,8 @@
+# Default owner for all repository paths.
+* @oscharko-dev
+
+# Release and supply-chain critical paths.
+.github/workflows/ @oscharko-dev
+package.json @oscharko-dev
+pnpm-lock.yaml @oscharko-dev
+scripts/ @oscharko-dev

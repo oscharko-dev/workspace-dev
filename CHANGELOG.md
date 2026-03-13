@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
+## [1.0.0] - 2026-03-13
+
+### Changed
+
+- Promoted `workspace-dev` to standalone OSS package release line.
+- Removed legacy CLI alias `figmapipe-workspace-dev`; only `workspace-dev` remains.
+- Replaced monorepo-coupled template parity test with self-contained template integrity snapshots.
+- Updated governance and contribution docs for standalone repository operations.
+
+### Migration notes
+
+- Replace all `figmapipe-workspace-dev` invocations with `workspace-dev`.
+- No HTTP API contract changes in `/workspace` runtime endpoints.
+
 ## [0.3.0] - 2026-03-12
 
 ### Changed

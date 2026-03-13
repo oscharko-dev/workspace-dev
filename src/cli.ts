@@ -4,9 +4,6 @@
  *
  * Usage:
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
- *
- * Alias:
- *   figmapipe-workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
 import { createWorkspaceServer } from "./server.js";
@@ -167,9 +164,6 @@ workspace-dev - autonomous local workspace generator
 Usage:
   workspace-dev start [options]
   workspace-dev --help
-
-Alias:
-  figmapipe-workspace-dev start [options]
 
 Options:
   --port <port>              Port to listen on (default: ${DEFAULT_PORT})

@@ -1,14 +1,13 @@
 {
   "name": "workspace-dev",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Autonomous local workspace runtime for REST + deterministic Figma-to-code generation",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "bin": {
-    "workspace-dev": "./dist/cli.js",
-    "figmapipe-workspace-dev": "./dist/cli.js"
+    "workspace-dev": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -70,6 +69,7 @@
     "lint:types-publish": "attw --pack . --config-path .attw.json",
     "lint:size": "size-limit",
     "verify:licenses": "node scripts/check-license-allowlist.mjs",
+    "verify:lockfile-hosts": "node scripts/check-lockfile-host-allowlist.mjs",
     "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs",
     "verify:airgap": "node scripts/verify-airgap-install.mjs",
     "verify:pack": "bash scripts/validate-pack.sh",
@@ -77,7 +77,7 @@
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",
-    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap"
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap"
   },
   "devDependencies": {
     "@cyclonedx/cyclonedx-npm": "^4.1.1",

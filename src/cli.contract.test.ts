@@ -208,6 +208,6 @@ test("cli contract: published binaries and quickstart command are in sync", asyn
 
   assert.equal(packageJson.name, "workspace-dev");
   assert.equal(packageJson.bin?.["workspace-dev"], "./dist/cli.js");
-  assert.equal(packageJson.bin?.["figmapipe-workspace-dev"], "./dist/cli.js");
+  assert.equal(packageJson.bin?.["figmapipe-workspace-dev"], undefined);
   assert.match(readme, /npx workspace-dev start/i);
 });

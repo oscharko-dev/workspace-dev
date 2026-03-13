@@ -1,4 +1,4 @@
-name: workspace-dev mirror changesets release
+name: workspace-dev changesets release
 
 on:
   push:
@@ -40,6 +40,9 @@ jobs:
 
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
+
+      - name: Enforce lockfile host allowlist
+        run: pnpm run verify:lockfile-hosts
 
       - name: Verify npm signature attestations
         run: npm audit signatures

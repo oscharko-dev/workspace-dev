@@ -55,6 +55,7 @@ Default output root is `.workspace-dev` in the current project.
 
 ## Operational model
 
-- Package source: private monorepo (`packages/workspace-dev`)
-- Public distribution: mirrored public repository + npm package publish
-- On-prem FigmaPipe runtime remains independent
+- Source repository: standalone `workspace-dev` repository
+- Distribution: npm package publish via OIDC trusted publishing
+- On-prem FigmaPipe runtime remains independent and out of package scope
+- Cutover procedure: `docs/hard-split-cutover.md`

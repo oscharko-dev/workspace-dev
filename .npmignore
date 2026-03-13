@@ -1,0 +1,8 @@
+# FigmaPipe workspace-dev NPM Ignore Rules
+
+# Exclude source code, tests, and config since we publish transpiled JS
+src/
+scripts/
+tsconfig.json
+.mirror-allowlist
+*.test.ts
