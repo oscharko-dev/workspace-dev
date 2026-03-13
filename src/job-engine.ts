@@ -31,6 +31,15 @@ const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
   return error instanceof Error && "stage" in error && "code" in error;
 };
 
+const isPerfValidationEnabled = (): boolean => {
+  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+  if (!raw) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
   const resolvedPaths = resolveAbsoluteOutputRoot({ outputRoot: paths.outputRoot });
   const jobs = new Map<string, JobRecord>();
@@ -210,6 +219,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         action: async () => {
           await runProjectValidation({
             generatedProjectDir,
+            enablePerfValidation: isPerfValidationEnabled(),
             onLog: (message) => {
               pushLog({
                 job,

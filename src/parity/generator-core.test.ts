@@ -124,6 +124,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
 
   const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
   assert.ok(appContent.includes("HashRouter"));
+  assert.ok(appContent.includes("Suspense"));
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
@@ -142,4 +143,20 @@ test("generateArtifacts rejects non-deterministic mode in workspace-dev", async 
       }),
     /Only deterministic code generation is supported/
   );
+});
+
+test("createDeterministicAppFile uses lazy route-level loading for non-initial screens", () => {
+  const ir = createIr();
+  const appFile = createDeterministicAppFile([
+    ir.screens[0],
+    {
+      ...ir.screens[0],
+      id: "screen-2",
+      name: "Settings"
+    }
+  ]);
+
+  assert.ok(appFile.content.includes("Suspense"));
+  assert.ok(appFile.content.includes("const LazySettingsScreen = lazy"));
+  assert.ok(appFile.content.includes('element={<LazySettingsScreen />}'));
 });

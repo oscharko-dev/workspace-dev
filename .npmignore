@@ -6,3 +6,5 @@ scripts/
 tsconfig.json
 .mirror-allowlist
 *.test.ts
+node_modules/
+template/**/node_modules/

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+
+- Template web-performance pipeline:
+  - `perf-budget.json` policy
+  - `scripts/perf-runner.mjs`
+  - scripts `perf:baseline` and `perf:assert`
+- Field metric hook for CWV reporting in template app (`web-vitals` for INP/LCP/CLS).
+- CI `performance-web` jobs in release workflows with artifact upload.
+
+### Changed
+
+- Deterministic app generation now uses route-level lazy loading for non-initial screens (`React.lazy` + `Suspense`).
+- `validate.project` can execute optional performance assertion when `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION=true` (or `FIGMAPIPE_ENABLE_PERF_VALIDATION=true`).
+
 ## [1.0.0] - 2026-03-13
 
 ### Changed

@@ -251,7 +251,8 @@ export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile =
 };
 
 const makeAppFile = (screens: ScreenIR[]): string => {
-  const imports = screens
+  const eagerImports = screens
+    .slice(0, 1)
     .map((screen) => {
       const componentName = toComponentName(screen.name);
       const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
@@ -259,27 +260,48 @@ const makeAppFile = (screens: ScreenIR[]): string => {
     })
     .join("\n");
 
-  const routes = screens
+  const lazyImports = screens
+    .slice(1)
     .map((screen) => {
       const componentName = toComponentName(screen.name);
+      const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
+      return `const Lazy${componentName}Screen = lazy(async () => await import("./screens/${fileName}"));`;
+    })
+    .join("\n");
+
+  const routes = screens
+    .map((screen, index) => {
+      const componentName = toComponentName(screen.name);
       const routePath = `/${sanitizeFileName(screen.name).toLowerCase()}`;
-      return `        <Route path="${routePath}" element={<${componentName}Screen />} />`;
+      const routeComponent = index === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
+      return `          <Route path="${routePath}" element={<${routeComponent} />} />`;
     })
     .join("\n");
 
   const firstRoute = screens.length > 0 ? `/${sanitizeFileName(screens[0].name).toLowerCase()}` : "/";
 
-  return `import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
-${imports}
+  return `import { Suspense, lazy } from "react";
+import { Box, CircularProgress } from "@mui/material";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+${eagerImports}
+${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
+
+const routeLoadingFallback = (
+  <Box sx={{ display: "grid", minHeight: "50vh", placeItems: "center" }}>
+    <CircularProgress size={32} />
+  </Box>
+);
 
 export default function App(): JSX.Element {
   return (
     <HashRouter>
-      <Routes>
+      <Suspense fallback={routeLoadingFallback}>
+        <Routes>
 ${routes}
-        <Route path="/" element={<Navigate to="${firstRoute}" replace />} />
-        <Route path="*" element={<Navigate to="${firstRoute}" replace />} />
-      </Routes>
+          <Route path="/" element={<Navigate to="${firstRoute}" replace />} />
+          <Route path="*" element={<Navigate to="${firstRoute}" replace />} />
+        </Routes>
+      </Suspense>
     </HashRouter>
   );
 }

@@ -80,10 +80,58 @@ jobs:
             artifacts/sbom
           if-no-files-found: ignore
 
+  performance-web:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
+
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
+      - name: Build template app
+        run: pnpm --dir template/react-mui-app run build
+
+      - name: Capture web performance baseline (warn-only)
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_STRICT: "false"
+        run: pnpm --dir template/react-mui-app run perf:baseline
+
+      - name: Assert web performance budgets and regression (warn-only)
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_STRICT: "false"
+        run: pnpm --dir template/react-mui-app run perf:assert
+
+      - name: Upload web performance artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-performance-web-${{ github.run_id }}
+          path: template/react-mui-app/artifacts/performance
+          if-no-files-found: ignore
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: quality-matrix
+    needs: [quality-matrix, performance-web]
     steps:
       - uses: actions/checkout@v4
 
