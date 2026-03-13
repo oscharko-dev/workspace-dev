@@ -2,7 +2,7 @@ name: OSSF Scorecard
 
 on:
   push:
-    branches: [dev-gate]
+    branches: [dev]
   schedule:
     - cron: "30 5 * * 1"
   workflow_dispatch:
