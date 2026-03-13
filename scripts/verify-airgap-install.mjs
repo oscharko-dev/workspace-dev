@@ -9,6 +9,22 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 
+const resolveCommandEnv = () => {
+  const commandEnv = {
+    ...process.env,
+    npm_config_registry: "http://127.0.0.1:9",
+    npm_config_audit: "false",
+    npm_config_fund: "false"
+  };
+
+  // npm publish --dry-run propagates this flag into lifecycle scripts.
+  // The airgap check must perform a real local install of the tarball.
+  delete commandEnv.npm_config_dry_run;
+  delete commandEnv.NPM_CONFIG_DRY_RUN;
+
+  return commandEnv;
+};
+
 const run = ({
   command,
   args,
@@ -17,12 +33,7 @@ const run = ({
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: {
-        ...process.env,
-        npm_config_registry: "http://127.0.0.1:9",
-        npm_config_audit: "false",
-        npm_config_fund: "false"
-      },
+      env: resolveCommandEnv(),
       stdio: "inherit"
     });
 
