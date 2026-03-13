@@ -22,6 +22,14 @@ export default defineConfig({
   splitting: false,
   outDir: "dist",
   cjsInterop: true,
+  esbuildOptions(options, context) {
+    if (context.format === "cjs") {
+      options.logOverride = {
+        ...(options.logOverride ?? {}),
+        "empty-import-meta": "silent"
+      };
+    }
+  },
   outExtension({ format }) {
     return {
       js: format === "cjs" ? ".cjs" : ".js"

@@ -1,5 +1,6 @@
 # Local and CI-generated content
 node_modules/
+dist/
 artifacts/
 coverage/
 openvex.json
