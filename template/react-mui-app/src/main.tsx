@@ -7,7 +7,12 @@ import { appTheme } from "./theme/theme";
 
 startWebVitalsReporting();
 
-createRoot(document.getElementById("root")!).render(
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  throw new Error("Missing #root mount element.");
+}
+
+createRoot(rootElement).render(
   <React.StrictMode>
     <ThemeProvider theme={appTheme}>
       <CssBaseline />

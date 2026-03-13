@@ -52,7 +52,7 @@ export const runProjectValidationWithDeps = async ({
       cwd: generatedProjectDir,
       command: "pnpm",
       args: command.args,
-      env: command.env
+      ...(command.env ? { env: command.env } : {})
     });
 
     if (!result.success) {

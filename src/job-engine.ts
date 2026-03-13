@@ -286,16 +286,18 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
         job.gitPr = {
           status: "executed",
-          prUrl: gitResult.prUrl,
           branchName: gitResult.branchName,
           scopePath: gitResult.scopePath,
           changedFiles: gitResult.changedFiles
         };
+        if (gitResult.prUrl) {
+          job.gitPr.prUrl = gitResult.prUrl;
+        }
       }
 
       job.status = "completed";
       job.finishedAt = nowIso();
-      job.currentStage = undefined;
+      delete job.currentStage;
       pushLog({
         job,
         level: "info",
@@ -331,19 +333,27 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const submitJob = (input: WorkspaceJobInput) => {
     const jobId = randomUUID();
     const acceptedModes = toAcceptedModes();
+    const request: WorkspaceJobStatus["request"] = {
+      figmaFileKey: input.figmaFileKey,
+      enableGitPr: input.enableGitPr === true,
+      figmaSourceMode: acceptedModes.figmaSourceMode,
+      llmCodegenMode: acceptedModes.llmCodegenMode
+    };
+    if (input.repoUrl) {
+      request.repoUrl = input.repoUrl;
+    }
+    if (input.projectName) {
+      request.projectName = input.projectName;
+    }
+    if (input.targetPath) {
+      request.targetPath = input.targetPath;
+    }
+
     const job: JobRecord = {
       jobId,
       status: "queued",
       submittedAt: nowIso(),
-      request: {
-        figmaFileKey: input.figmaFileKey,
-        repoUrl: input.repoUrl,
-        enableGitPr: input.enableGitPr === true,
-        figmaSourceMode: acceptedModes.figmaSourceMode,
-        llmCodegenMode: acceptedModes.llmCodegenMode,
-        projectName: input.projectName,
-        targetPath: input.targetPath
-      },
+      request,
       stages: createInitialStages(),
       logs: [],
       artifacts: {
@@ -384,15 +394,21 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       return undefined;
     }
 
-    return {
+    const result: WorkspaceJobResult = {
       jobId: job.jobId,
       status: job.status,
       summary: toJobSummary(job),
       artifacts: { ...job.artifacts },
-      preview: { ...job.preview },
-      gitPr: job.gitPr ? { ...job.gitPr } : undefined,
-      error: job.error ? { ...job.error } : undefined
+      preview: { ...job.preview }
     };
+    if (job.gitPr) {
+      result.gitPr = { ...job.gitPr };
+    }
+    if (job.error) {
+      result.error = { ...job.error };
+    }
+
+    return result;
   };
 
   const resolvePreviewAsset = async (

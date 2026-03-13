@@ -26,17 +26,25 @@ const resolveGitProvider = (repoUrl: string): "github" | "unsupported" => {
 const parseGithubRepo = (repoUrl: string): { owner: string; name: string } | undefined => {
   const httpsMatch = repoUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/i);
   if (httpsMatch) {
+    const [, owner, name] = httpsMatch;
+    if (!owner || !name) {
+      return undefined;
+    }
     return {
-      owner: httpsMatch[1],
-      name: httpsMatch[2]
+      owner,
+      name
     };
   }
 
   const sshMatch = repoUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
   if (sshMatch) {
+    const [, owner, name] = sshMatch;
+    if (!owner || !name) {
+      return undefined;
+    }
     return {
-      owner: sshMatch[1],
-      name: sshMatch[2]
+      owner,
+      name
     };
   }
 
@@ -259,13 +267,16 @@ export const runGitPrFlowWithDeps = async ({
     onLog(`PR creation failed (${prResponse.status}): ${redactValue({ value: failureText, secret: repoToken })}`);
   }
 
-  return {
+  const result: GitPrExecutionResult = {
     status: "executed",
-    prUrl,
     branchName,
     scopePath,
     changedFiles
   };
+  if (prUrl) {
+    result.prUrl = prUrl;
+  }
+  return result;
 };
 
 export const runGitPrFlow = async ({

@@ -66,10 +66,10 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const startedAt = Date.now();
   const defaults = getWorkspaceDefaults();
   const runtime = resolveRuntimeSettings({
-    figmaRequestTimeoutMs: options.figmaRequestTimeoutMs,
-    figmaMaxRetries: options.figmaMaxRetries,
-    enablePreview: options.enablePreview,
-    fetchImpl: options.fetchImpl
+    ...(options.figmaRequestTimeoutMs !== undefined ? { figmaRequestTimeoutMs: options.figmaRequestTimeoutMs } : {}),
+    ...(options.figmaMaxRetries !== undefined ? { figmaMaxRetries: options.figmaMaxRetries } : {}),
+    ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });
 
   let resolvedPort = port;
@@ -114,8 +114,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   }
 
   const addresses = toAddressList(server);
-  if (addresses.length > 0) {
-    resolvedPort = addresses[0].port;
+  const firstAddress = addresses.at(0);
+  if (firstAddress) {
+    resolvedPort = firstAddress.port;
   }
 
   const app = buildApp({

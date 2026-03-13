@@ -174,37 +174,72 @@ const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: numb
 const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
   const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
   const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
-
-  return {
+  const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
+    .map((item) => item.path)
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  const element: ScreenElementIR = {
     id: node.id,
     name: node.name ?? node.type,
     nodeType: node.type,
     type: determineElementType(node),
-    text: node.characters,
-    x: node.absoluteBoundingBox?.x,
-    y: node.absoluteBoundingBox?.y,
-    width: node.absoluteBoundingBox?.width,
-    height: node.absoluteBoundingBox?.height,
-    fillColor: toHexColor(fill?.color, fill?.opacity),
-    strokeColor: toHexColor(stroke?.color, stroke?.opacity),
-    strokeWidth: node.strokeWeight,
-    fontSize: node.style?.fontSize,
-    fontWeight: node.style?.fontWeight,
-    fontFamily: node.style?.fontFamily,
-    lineHeight: node.style?.lineHeightPx,
-    textAlign: node.style?.textAlignHorizontal,
-    vectorPaths: [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
-      .map((item) => item.path)
-      .filter((item): item is string => typeof item === "string" && item.trim().length > 0),
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
-    padding: mapPadding(node),
-    cornerRadius: node.cornerRadius,
-    children:
-      depth >= 14
-        ? []
-        : node.children?.slice(0, 60).map((child) => mapElement(child, depth + 1))
+    padding: mapPadding(node)
   };
+  if (node.characters !== undefined) {
+    element.text = node.characters;
+  }
+  if (node.absoluteBoundingBox?.x !== undefined) {
+    element.x = node.absoluteBoundingBox.x;
+  }
+  if (node.absoluteBoundingBox?.y !== undefined) {
+    element.y = node.absoluteBoundingBox.y;
+  }
+  if (node.absoluteBoundingBox?.width !== undefined) {
+    element.width = node.absoluteBoundingBox.width;
+  }
+  if (node.absoluteBoundingBox?.height !== undefined) {
+    element.height = node.absoluteBoundingBox.height;
+  }
+  const fillColor = toHexColor(fill?.color, fill?.opacity);
+  if (fillColor) {
+    element.fillColor = fillColor;
+  }
+  const strokeColor = toHexColor(stroke?.color, stroke?.opacity);
+  if (strokeColor) {
+    element.strokeColor = strokeColor;
+  }
+  if (node.strokeWeight !== undefined) {
+    element.strokeWidth = node.strokeWeight;
+  }
+  if (node.style?.fontSize !== undefined) {
+    element.fontSize = node.style.fontSize;
+  }
+  if (node.style?.fontWeight !== undefined) {
+    element.fontWeight = node.style.fontWeight;
+  }
+  if (node.style?.fontFamily !== undefined) {
+    element.fontFamily = node.style.fontFamily;
+  }
+  if (node.style?.lineHeightPx !== undefined) {
+    element.lineHeight = node.style.lineHeightPx;
+  }
+  if (node.style?.textAlignHorizontal !== undefined) {
+    element.textAlign = node.style.textAlignHorizontal;
+  }
+  if (vectorPaths.length > 0) {
+    element.vectorPaths = vectorPaths;
+  }
+  if (node.cornerRadius !== undefined) {
+    element.cornerRadius = node.cornerRadius;
+  }
+  if (depth >= 14) {
+    element.children = [];
+  } else if (node.children?.length) {
+    element.children = node.children.slice(0, 60).map((child) => mapElement(child, depth + 1));
+  }
+
+  return element;
 };
 
 const isScreenLikeNode = (node: FigmaNode | undefined): node is FigmaNode => {
@@ -288,17 +323,25 @@ const extractScreens = (file: FigmaFile): ScreenIR[] => {
       const normalized = unwrapScreenRoot(child);
       const sourceNode = normalized.node;
       const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
-      screens.push({
+      const screen: ScreenIR = {
         id: sourceNode.id,
         name: normalized.name,
         layoutMode: sourceNode.layoutMode ?? "NONE",
         gap: sourceNode.itemSpacing ?? 0,
-        width: sourceNode.absoluteBoundingBox?.width,
-        height: sourceNode.absoluteBoundingBox?.height,
-        fillColor: toHexColor(fill?.color, fill?.opacity),
         padding: mapPadding(sourceNode),
         children: (sourceNode.children ?? []).slice(0, 40).map((node) => mapElement(node))
-      });
+      };
+      if (sourceNode.absoluteBoundingBox?.width !== undefined) {
+        screen.width = sourceNode.absoluteBoundingBox.width;
+      }
+      if (sourceNode.absoluteBoundingBox?.height !== undefined) {
+        screen.height = sourceNode.absoluteBoundingBox.height;
+      }
+      const fillColor = toHexColor(fill?.color, fill?.opacity);
+      if (fillColor) {
+        screen.fillColor = fillColor;
+      }
+      screens.push(screen);
     }
   }
 
