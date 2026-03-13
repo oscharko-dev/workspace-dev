@@ -35,12 +35,12 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = 
   "package.json": "6b871e33b7ab7ac806ad322e73b02b1bf209c47d1cad873e6de767980bbc565e",
   "pnpm-lock.yaml": "0201c6906f12ff329a20ad30ecc2b4b300128de33f285d60246f3e9618a7741d",
   "vite.config.ts": "b1e4685d9f2abca26f4cca73de471abd27393a9d2a34a997a1402decdf12e2ec",
-  "tsconfig.json": "369ee58e34e4c0cc9835c47970cdd6ae0b445f6e3ca5bc7e0ebaa1fcc5956005",
+  "tsconfig.json": "f921bebd56ac845e889a55e8c44b804a0f70b5f51e5c221c3dd0aae7fe7cb5b0",
   "eslint.config.js": "92fe7ae585f43eb52a90982c3eba9e0fa025c109ce8711ed1f290a9939190091",
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
   "scripts/perf-runner.mjs": "4a074b06746828f5ef34dd7dcb5c02ff46dd3400bdfaadb3da58b7f8765e6c8f",
   "src/App.tsx": "a125f5c96f5bc7bf4e7351ff69f80afea511622a5ad9ff1394c243aaa56cb67a",
-  "src/main.tsx": "6d42a116c827063a93bcf9cc7b3ce23e73fd5521317e1e2df79b4987e0ac399e",
+  "src/main.tsx": "b0eb6415571d137571820c60016e3e97e4f04afe8e6f1562824ff4745a3925e8",
   "src/performance/report-web-vitals.ts": "4a818db2533f3290aac059f7117beacb45cb8b604a643ad0f227ca8d3d213e5d",
   "src/theme/theme.ts": "db3d5849c0f85cc08e324eba84169ad1a3e9ea5c45652449dd41a8031550cd34"
 };

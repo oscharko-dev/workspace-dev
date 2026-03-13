@@ -77,6 +77,9 @@ jobs:
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile
 
+      - name: Typecheck template app
+        run: pnpm --dir template/react-mui-app run typecheck
+
       - name: Build template app
         run: pnpm --dir template/react-mui-app run build
 

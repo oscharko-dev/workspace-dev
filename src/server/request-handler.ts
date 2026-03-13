@@ -190,9 +190,13 @@ export function createWorkspaceRequestHandler({
       }
 
       const { figmaSourceMode, llmCodegenMode } = parsed.data;
+      const modeLockInput = {
+        ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
+        ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {})
+      };
 
       try {
-        enforceModeLock({ figmaSourceMode, llmCodegenMode });
+        enforceModeLock(modeLockInput);
       } catch (error) {
         sendJson({
           response,

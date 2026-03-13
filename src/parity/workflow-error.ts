@@ -15,7 +15,9 @@ export class WorkflowError extends Error {
     super(message, { cause });
     this.name = "WorkflowError";
     this.code = code;
-    this.stage = stage;
+    if (stage !== undefined) {
+      this.stage = stage;
+    }
     this.retryable = retryable;
   }
 }
@@ -28,25 +30,27 @@ export const toWorkflowError = (
   value: unknown,
   fallback: { code: string; message: string; stage?: string; retryable?: boolean }
 ): WorkflowError => {
+  const fallbackWithDefinedOptionals = {
+    code: fallback.code,
+    ...(fallback.stage !== undefined ? { stage: fallback.stage } : {}),
+    ...(fallback.retryable !== undefined ? { retryable: fallback.retryable } : {})
+  };
+
   if (isWorkflowError(value)) {
     return value;
   }
 
   if (value instanceof Error) {
     return new WorkflowError({
-      code: fallback.code,
+      ...fallbackWithDefinedOptionals,
       message: value.message,
-      stage: fallback.stage,
-      retryable: fallback.retryable,
       cause: value
     });
   }
 
   return new WorkflowError({
-    code: fallback.code,
+    ...fallbackWithDefinedOptionals,
     message: fallback.message,
-    stage: fallback.stage,
-    retryable: fallback.retryable,
     cause: value
   });
 };

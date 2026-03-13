@@ -181,19 +181,33 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     return { success: false, error: { issues } };
   }
 
+  const data: WorkspaceJobInput = {
+    figmaFileKey,
+    figmaAccessToken,
+    enableGitPr
+  };
+  if (repoUrl !== undefined) {
+    data.repoUrl = repoUrl;
+  }
+  if (repoToken !== undefined) {
+    data.repoToken = repoToken;
+  }
+  if (figmaSourceMode !== undefined) {
+    data.figmaSourceMode = figmaSourceMode;
+  }
+  if (llmCodegenMode !== undefined) {
+    data.llmCodegenMode = llmCodegenMode;
+  }
+  if (projectName !== undefined) {
+    data.projectName = projectName;
+  }
+  if (targetPath !== undefined) {
+    data.targetPath = targetPath;
+  }
+
   return {
     success: true,
-    data: {
-      figmaFileKey,
-      figmaAccessToken,
-      repoUrl,
-      repoToken,
-      enableGitPr,
-      figmaSourceMode,
-      llmCodegenMode,
-      projectName,
-      targetPath
-    }
+    data
   };
 }
 
