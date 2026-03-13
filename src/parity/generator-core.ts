@@ -13,7 +13,7 @@ import { isLlmClientError, type LlmClient } from "./llm.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { WorkflowError } from "./workflow-error.js";
 
-type TypeScriptRuntime = typeof import("typescript");
+type TypeScriptRuntime = typeof ts;
 
 interface GenerateArtifactsInput {
   projectDir: string;
