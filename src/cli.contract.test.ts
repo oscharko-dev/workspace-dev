@@ -185,6 +185,26 @@ test("cli contract: CLI flag overrides environment port", async () => {
   }
 });
 
+test("cli contract: perf validation flag is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--perf-validation", "true"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Perf validation enabled: true/i);
+    assert.match(output, /Perf validation enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
 test("cli contract: port collision returns deterministic error", async () => {
   const collisionPort = await acquireFreePort();
   const running = await createWorkspaceServer({ host: "127.0.0.1", port: collisionPort });

@@ -74,6 +74,8 @@
     "verify:airgap": "node scripts/verify-airgap-install.mjs",
     "verify:pack": "bash scripts/validate-pack.sh",
     "verify:fips": "node scripts/fips-smoke.mjs",
+    "perf:web:baseline": "pnpm --dir template/react-mui-app run perf:baseline",
+    "perf:web:assert": "pnpm --dir template/react-mui-app run perf:assert",
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",

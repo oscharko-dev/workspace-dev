@@ -23,7 +23,7 @@ It provides deterministic HTTP behavior for:
 - deterministic IR derivation (`ir.derive`)
 - template bootstrap from bundled React+TypeScript+MUI v7 template (`template.prepare`)
 - deterministic local code generation (`codegen.generate`)
-- project validation (`validate.project`: install, lint, typecheck, build)
+- project validation (`validate.project`: install, lint, typecheck, build, optional `perf:assert`)
 - local repro export (`repro.export`)
 - optional git/pr stage (`git.pr`) when enabled explicitly
 - integrated preview file serving from generated artifacts
