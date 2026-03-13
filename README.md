@@ -1,8 +1,21 @@
 # workspace-dev
 
+[![npm version](https://img.shields.io/npm/v/workspace-dev?label=npm)](https://www.npmjs.com/package/workspace-dev)
+[![GitHub release](https://img.shields.io/github/v/release/oscharko-dev/workspace-dev?display_name=tag)](https://github.com/oscharko-dev/workspace-dev/releases)
+[![release publish](https://img.shields.io/github/actions/workflow/status/oscharko-dev/workspace-dev/changesets-release.yml?branch=main&label=release%20publish)](https://github.com/oscharko-dev/workspace-dev/actions/workflows/changesets-release.yml)
+[![dev quality](https://img.shields.io/github/actions/workflow/status/oscharko-dev/workspace-dev/dev-quality-gate.yml?branch=dev&label=dev%20quality)](https://github.com/oscharko-dev/workspace-dev/actions/workflows/dev-quality-gate.yml)
+[![Node >=22](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MIT License](https://img.shields.io/github/license/oscharko-dev/workspace-dev)](https://github.com/oscharko-dev/workspace-dev/blob/dev/LICENSE)
+
 Autonomous local Workspace runtime for REST-based deterministic Figma-to-code generation.
 
 `workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the full Workspace Dev platform backend stack.
+
+## Package and release channels
+
+- npm distribution (authoritative): https://www.npmjs.com/package/workspace-dev
+- GitHub release notes and signed evidence assets (SBOM/OpenVEX): https://github.com/oscharko-dev/workspace-dev/releases
+- GitHub Packages is intentionally not used for `workspace-dev` distribution.
 
 ## Prerequisites
 
