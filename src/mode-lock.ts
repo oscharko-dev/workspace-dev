@@ -28,7 +28,7 @@ export function validateModeLock(input: {
     if (isKnownBlocked) {
       errors.push(
         `Mode '${figmaMode}' is not available in workspace-dev. ` +
-        `Only 'rest' is supported. MCP and hybrid modes require the full FigmaPipe deployment.`
+        `Only 'rest' is supported. MCP and hybrid modes require the full Workspace Dev platform deployment.`
       );
     } else {
       errors.push(
@@ -44,7 +44,7 @@ export function validateModeLock(input: {
     if (isKnownBlocked) {
       errors.push(
         `Mode '${codegenMode}' is not available in workspace-dev. ` +
-        `Only 'deterministic' is supported. LLM-based codegen modes require the full FigmaPipe deployment.`
+        `Only 'deterministic' is supported. LLM-based codegen modes require the full Workspace Dev platform deployment.`
       );
     } else {
       errors.push(

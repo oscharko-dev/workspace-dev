@@ -216,7 +216,7 @@ export const runGitPrFlowWithDeps = async ({
   await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["config", "user.email", "workspace-dev@figmapipe.local"]
+    args: ["config", "user.email", "workspace-dev@workspace-dev.local"]
   });
 
   const commitResult = await runCommand({

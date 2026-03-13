@@ -6,3 +6,5 @@ coverage/
 openvex.json
 *.tgz
 pnpm-debug.log*
+/.env
+.idea/

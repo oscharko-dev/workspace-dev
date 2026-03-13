@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --bg: #f1f4fa;
+  --bg: #ffffff;
   --panel: #ffffff;
-  --border: #d6dff0;
-  --muted: #5b6c86;
-  --text: #10203a;
-  --accent: #1b66e3;
-  --ok: #2f9e44;
-  --warn: #b67500;
-  --error: #d6336c;
-  --badge-bg: #e9eefb;
+  --border: #d9d9d9;
+  --muted: #595959;
+  --text: #000000;
+  --accent: #4eba87;
+  --ok: #4eba87;
+  --warn: #595959;
+  --error: #000000;
+  --badge-bg: #edf8f3;
 }
 
 * {
@@ -19,7 +19,7 @@
 body {
   margin: 0;
   font-family: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", sans-serif;
-  background: radial-gradient(circle at 0% -30%, #e8f0ff 0%, var(--bg) 45%, #edf4ff 100%);
+  background: radial-gradient(circle at 0% -30%, #edf8f3 0%, var(--bg) 45%, #ffffff 100%);
   color: var(--text);
 }
 
@@ -40,15 +40,21 @@ body {
 }
 
 .brand-icon {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.45rem;
-  background: #dceaff;
-  color: var(--accent);
-  font-weight: 700;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
-  font-size: 0.8rem;
+  padding: 0.2rem;
+}
+
+.brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand h1 {
@@ -70,7 +76,7 @@ body {
 button {
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: #ffffff;
   color: var(--text);
   padding: 0.4rem 0.8rem;
   font-weight: 600;
@@ -80,7 +86,7 @@ button {
 button.primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: #000000;
 }
 
 .context-strip {
@@ -89,22 +95,27 @@ button.primary {
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.8rem;
-  background: #f8faff;
+  background: #edf8f3;
+}
+
+.context-strip code {
+  color: #191919;
 }
 
 .workspace-grid {
   display: grid;
   gap: 0.9rem;
   padding: 0.9rem;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .card {
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 0.65rem;
   padding: 0.9rem;
-  box-shadow: 0 8px 24px rgba(4, 28, 64, 0.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 .section-head h2 {
@@ -135,7 +146,7 @@ button.primary {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #4b5c77;
+  color: #191919;
 }
 
 .field input,
@@ -144,8 +155,8 @@ button.primary {
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.48rem 0.55rem;
-  background: #f8faff;
-  color: #24334a;
+  background: #ffffff;
+  color: #000000;
 }
 
 .field input[type="checkbox"] {
@@ -177,27 +188,27 @@ button.primary {
   padding: 0.1rem 0.45rem;
   font-size: 0.72rem;
   font-weight: 700;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   background: var(--badge-bg);
-  color: #21407a;
+  color: #191919;
 }
 
 .badge--ok {
-  color: #155724;
-  background: #e8f9eb;
-  border-color: #bcebc3;
+  color: #191919;
+  background: #dcf1e7;
+  border-color: #4eba87;
 }
 
 .badge--warn {
-  color: #714b00;
-  background: #fff5df;
-  border-color: #ffdf9f;
+  color: #191919;
+  background: #ebebeb;
+  border-color: #8c8c8c;
 }
 
 .badge--error {
-  color: #7a0833;
-  background: #ffe6ef;
-  border-color: #ffbdd4;
+  color: #000000;
+  background: #ffffff;
+  border-color: #000000;
 }
 
 .preview-box {
@@ -206,7 +217,7 @@ button.primary {
   padding: 1rem;
   color: var(--muted);
   min-height: 8rem;
-  background: #fbfcff;
+  background: #ffffff;
 }
 
 .preview-link {
@@ -227,9 +238,12 @@ button.primary {
   border-radius: 0.55rem;
   padding: 0.75rem;
   font-size: 0.78rem;
-  background: #f8faff;
-  color: #20334f;
+  background: #ffffff;
+  color: #191919;
   min-height: 10rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   overflow: auto;
 }
 
@@ -273,7 +287,7 @@ button.primary {
 
 @media (max-width: 1200px) {
   .workspace-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .fields-grid {

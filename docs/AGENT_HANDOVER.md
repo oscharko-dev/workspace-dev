@@ -7,7 +7,7 @@ Scope: `workspace-dev` standalone OSS repository (`oscharko-dev/workspace-dev`).
 
 - Standalone hard split is complete and available on `main`.
 - Package version is `1.0.0`.
-- Legacy CLI alias `figmapipe-workspace-dev` has been removed (breaking change already shipped).
+- Legacy CLI alias has been removed (breaking change already shipped).
 - Template parity coupling to monorepo internals has been removed; integrity is validated via internal deterministic hash snapshots.
 - Standalone release and quality workflows are active in this repository.
 
