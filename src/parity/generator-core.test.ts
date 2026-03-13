@@ -160,3 +160,13 @@ test("createDeterministicAppFile uses lazy route-level loading for non-initial s
   assert.ok(appFile.content.includes("const LazySettingsScreen = lazy"));
   assert.ok(appFile.content.includes('element={<LazySettingsScreen />}'));
 });
+
+test("createDeterministicAppFile omits lazy import when only one screen exists", () => {
+  const ir = createIr();
+  const appFile = createDeterministicAppFile([ir.screens[0]]);
+
+  assert.ok(appFile.content.includes('import { Suspense } from "react";'));
+  assert.equal(appFile.content.includes('import { Suspense, lazy } from "react";'), false);
+  assert.equal(appFile.content.includes("const Lazy"), false);
+  assert.equal(appFile.content.includes("= lazy(async"), false);
+});

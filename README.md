@@ -2,7 +2,7 @@
 
 Autonomous local Workspace runtime for REST-based deterministic Figma-to-code generation.
 
-`workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the FigmaPipe backend stack.
+`workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the full Workspace Dev platform backend stack.
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ curl -sS http://127.0.0.1:1983/workspace/jobs/<jobId>
 
 ## Migration note (v1.0.0)
 
-- The legacy CLI alias `figmapipe-workspace-dev` was removed.
+- The legacy CLI alias was removed.
 - Use `workspace-dev` exclusively:
 
 ```bash

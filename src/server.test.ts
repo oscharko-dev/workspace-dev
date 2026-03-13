@@ -168,7 +168,7 @@ test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key
     });
     assert.equal(uiResponse.statusCode, 200);
     assert.match(uiResponse.headers["content-type"] ?? "", /text\/html/i);
-    assert.match(uiResponse.body, /FigmaPipe Workspace/i);
+    assert.match(uiResponse.body, /Workspace Dev/i);
 
     const workspacePathResponse = await server.app.inject({
       method: "GET",

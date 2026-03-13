@@ -1,4 +1,4 @@
-# FigmaPipe workspace-dev NPM Ignore Rules
+# Workspace Dev workspace-dev NPM Ignore Rules
 
 # Exclude source code, tests, and config since we publish transpiled JS
 src/

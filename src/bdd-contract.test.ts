@@ -50,5 +50,5 @@ test("bdd contract: unsupported modes stay rejected with guidance", () => {
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.length >= 2);
-  assert.ok(result.errors.some((error) => error.includes("full FigmaPipe deployment")));
+  assert.ok(result.errors.some((error) => error.includes("full Workspace Dev platform deployment")));
 });

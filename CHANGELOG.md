@@ -28,13 +28,13 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ### Changed
 
 - Promoted `workspace-dev` to standalone OSS package release line.
-- Removed legacy CLI alias `figmapipe-workspace-dev`; only `workspace-dev` remains.
+- Removed legacy CLI alias; only `workspace-dev` remains.
 - Replaced monorepo-coupled template parity test with self-contained template integrity snapshots.
 - Updated governance and contribution docs for standalone repository operations.
 
 ### Migration notes
 
-- Replace all `figmapipe-workspace-dev` invocations with `workspace-dev`.
+- Replace all legacy CLI alias invocations with `workspace-dev`.
 - No HTTP API contract changes in `/workspace` runtime endpoints.
 
 ## [0.3.0] - 2026-03-12
@@ -49,7 +49,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
   - `validate.project`
   - `repro.export`
   - optional `git.pr`
-- Bundled FigmaPipe React + TypeScript + MUI v7 template into `workspace-dev`.
+- Bundled Workspace Dev React + TypeScript + MUI v7 template into `workspace-dev`.
 - Replaced simplified generator with parity deterministic IR + codegen core.
 - Added optional Git/PR flow (`enableGitPr`) with contract-safe repo credential handling.
 - UI now exposes explicit Git/PR toggle and keeps `Generate` CTA visible in header and form.
@@ -80,7 +80,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
   - `figmaSourceMode=rest`
   - `llmCodegenMode=deterministic`
 - No MCP, no hybrid, no `llm_strict`.
-- No dependency on FigmaPipe backend services.
+- No dependency on Workspace Dev platform backend services.
 
 ## [0.1.1] - 2026-03-12
 

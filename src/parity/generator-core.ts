@@ -251,6 +251,10 @@ export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile =
 };
 
 const makeAppFile = (screens: ScreenIR[]): string => {
+  const lazyScreens = screens.slice(1);
+  const hasLazyRoutes = lazyScreens.length > 0;
+  const reactImport = hasLazyRoutes ? 'import { Suspense, lazy } from "react";' : 'import { Suspense } from "react";';
+
   const eagerImports = screens
     .slice(0, 1)
     .map((screen) => {
@@ -260,8 +264,7 @@ const makeAppFile = (screens: ScreenIR[]): string => {
     })
     .join("\n");
 
-  const lazyImports = screens
-    .slice(1)
+  const lazyImports = lazyScreens
     .map((screen) => {
       const componentName = toComponentName(screen.name);
       const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
@@ -281,7 +284,7 @@ const makeAppFile = (screens: ScreenIR[]): string => {
   const firstScreen = screens.at(0);
   const firstRoute = firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/";
 
-  return `import { Suspense, lazy } from "react";
+  return `${reactImport}
 import { Box, CircularProgress } from "@mui/material";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 ${eagerImports}
