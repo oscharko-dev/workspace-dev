@@ -192,7 +192,7 @@ const fallbackScreenFile = (screen: ScreenIR): GeneratedFile => {
   const hasButtons = buttonLabels.length > 0;
 
   const heading = normalizeText(screen.name) ?? "Generated screen";
-  const titleText = textBlocks.length > 0 ? textBlocks[0] : heading;
+  const titleText = textBlocks.at(0) ?? heading;
 
   const textLines = textBlocks.slice(1).map((text) => `        <Typography variant="body1">${literal(text)}</Typography>`);
   const inputLines = inputNodes.map(
@@ -278,7 +278,8 @@ const makeAppFile = (screens: ScreenIR[]): string => {
     })
     .join("\n");
 
-  const firstRoute = screens.length > 0 ? `/${sanitizeFileName(screens[0].name).toLowerCase()}` : "/";
+  const firstScreen = screens.at(0);
+  const firstRoute = firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/";
 
   return `import { Suspense, lazy } from "react";
 import { Box, CircularProgress } from "@mui/material";

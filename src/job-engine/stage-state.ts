@@ -81,7 +81,11 @@ export const updateStage = ({
   }
 
   stageEntry.status = status;
-  stageEntry.message = message;
+  if (message === undefined) {
+    delete stageEntry.message;
+  } else {
+    stageEntry.message = message;
+  }
 };
 
 export const pushLog = ({
@@ -100,33 +104,49 @@ export const pushLog = ({
     .replace(/(authorization\s*:\s*bearer\s+)([^\s]+)/gi, "$1[REDACTED]")
     .replace(/(x-access-token:)([^@\s]+)/gi, "$1[REDACTED]");
 
-  job.logs.push({
+  const entry: WorkspaceJobLog = {
     at: nowIso(),
     level,
-    stage,
     message: redactedMessage
-  });
+  };
+  if (stage) {
+    entry.stage = stage;
+  }
+
+  job.logs.push(entry);
   if (job.logs.length > LOG_LIMIT) {
     job.logs.splice(0, job.logs.length - LOG_LIMIT);
   }
 };
 
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
-  return {
+  const status: WorkspaceJobStatus = {
     jobId: job.jobId,
     status: job.status,
-    currentStage: job.currentStage,
     submittedAt: job.submittedAt,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
     request: { ...job.request },
     stages: job.stages.map((stage) => ({ ...stage })),
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
-    preview: { ...job.preview },
-    gitPr: job.gitPr ? { ...job.gitPr } : undefined,
-    error: job.error ? { ...job.error } : undefined
+    preview: { ...job.preview }
   };
+  if (job.currentStage) {
+    status.currentStage = job.currentStage;
+  }
+  if (job.startedAt) {
+    status.startedAt = job.startedAt;
+  }
+  if (job.finishedAt) {
+    status.finishedAt = job.finishedAt;
+  }
+  if (job.gitPr) {
+    status.gitPr = { ...job.gitPr };
+  }
+  if (job.error) {
+    status.error = { ...job.error };
+  }
+
+  return status;
 };
 
 export const toJobSummary = (job: JobRecord): string => {

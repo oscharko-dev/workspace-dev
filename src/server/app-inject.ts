@@ -70,9 +70,14 @@ export function resolveInjectRequest({
     }
   }
 
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    init.body = body;
+  }
+
   return {
     url: new URL(request.url, `http://${host}:${port}`),
-    init: { method, headers, body }
+    init
   };
 }
 

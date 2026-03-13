@@ -19,8 +19,12 @@ export class LlmClientError extends Error {
     super(message, { cause });
     this.name = "LlmClientError";
     this.code = code;
-    this.endpoint = endpoint;
-    this.status = status;
+    if (endpoint !== undefined) {
+      this.endpoint = endpoint;
+    }
+    if (status !== undefined) {
+      this.status = status;
+    }
   }
 }
 
