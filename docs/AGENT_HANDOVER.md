@@ -1,20 +1,19 @@
-# Agent Handover — workspace-dev Hard Split
+# Agent Handover — workspace-dev Standalone Repository
 
 Date: 2026-03-13  
-Scope: `workspace-dev` extracted from FigmaPipe monorepo and prepared as standalone OSS package.
+Scope: `workspace-dev` standalone OSS repository (`oscharko-dev/workspace-dev`).
 
 ## 1) Current state
 
-- Hard-split implementation is done in working tree (not yet committed).
-- `workspace-dev` package version is `1.0.0`.
-- Legacy CLI alias `figmapipe-workspace-dev` was removed (breaking change).
-- Template parity coupling to `services/api/template` was removed; replaced by internal hash snapshot integrity test.
-- Monorepo release/deploy workflows were replaced with deprecation no-op workflows.
-- Root deprecation docs for FullVersion were added.
+- Standalone hard split is complete and available on `main`.
+- Package version is `1.0.0`.
+- Legacy CLI alias `figmapipe-workspace-dev` has been removed (breaking change already shipped).
+- Template parity coupling to monorepo internals has been removed; integrity is validated via internal deterministic hash snapshots.
+- Standalone release and quality workflows are active in this repository.
 
-## 2) Validated gates (already green locally)
+## 2) Validated gates (expected green before release)
 
-Run in monorepo root with `-C packages/workspace-dev`:
+Run in this repository root:
 
 - `pnpm run lint:boundaries`
 - `pnpm run typecheck`
@@ -23,47 +22,44 @@ Run in monorepo root with `-C packages/workspace-dev`:
 - `pnpm run verify:pack`
 - `pnpm run prepublishOnly`
 
-Result: all passed.
-
-## 3) Key changes included
+## 3) Key changes included in standalone baseline
 
 - Breaking CLI/bin cleanup:
   - `package.json` bin keeps only `workspace-dev`
-  - CLI/help/tests/docs updated accordingly
+  - CLI/help/tests/docs aligned with the single command
 - Standalone template integrity:
-  - `src/parity-template.test.ts` now checks deterministic SHA-256 snapshots of bundled template files
+  - `src/parity-template.test.ts` validates deterministic SHA-256 snapshots of bundled template files
 - Governance/docs cleanup:
-  - references moved from `oscharko-dev/FigmaPipe` to `oscharko-dev/workspace-dev`
-  - mirror model references removed
+  - repository references target `oscharko-dev/workspace-dev`
+  - deprecated monorepo/mirror references removed from active docs
 - Supply-chain hardening:
-  - added `.github/CODEOWNERS`
-  - added lockfile host allowlist gate (`scripts/check-lockfile-host-allowlist.mjs`)
-  - added OSSF Scorecard workflow
-  - `prepublishOnly` now includes `verify:pack` and lockfile-host gate
-- Packaging gate fix:
-  - `scripts/validate-pack.sh` no longer false-fails on template `tsconfig.json`
+  - `.github/CODEOWNERS`
+  - lockfile host allowlist gate (`scripts/check-lockfile-host-allowlist.mjs`)
+  - OSSF Scorecard workflow
+  - hardened `prepublishOnly` gate chain
+- Packaging gate stability:
+  - `scripts/validate-pack.sh` includes template-aware checks and tarball integrity assertions
 
 ## 4) Important files to review first
 
-- `packages/workspace-dev/package.json`
-- `packages/workspace-dev/src/parity-template.test.ts`
-- `packages/workspace-dev/scripts/validate-pack.sh`
-- `packages/workspace-dev/scripts/check-lockfile-host-allowlist.mjs`
-- `packages/workspace-dev/.github/workflows/changesets-release.yml`
-- `packages/workspace-dev/.github/workflows/release-gate.yml`
-- `packages/workspace-dev/.github/workflows/ossf-scorecard.yml`
-- `packages/workspace-dev/docs/hard-split-cutover.md`
+- `package.json`
+- `src/parity-template.test.ts`
+- `scripts/validate-pack.sh`
+- `scripts/check-lockfile-host-allowlist.mjs`
+- `.github/workflows/changesets-release.yml`
+- `.github/workflows/release-gate.yml`
+- `.github/workflows/ossf-scorecard.yml`
+- `docs/hard-split-cutover.md`
 
-## 5) Cutover checklist (next operator)
+## 5) Release operator checklist
 
-1. Commit current changes in monorepo.
-2. Re-run subtree split from committed state:
-   - `git subtree split --prefix=packages/workspace-dev -b codex/workspace-dev-standalone`
-3. Push branch content to standalone repo `oscharko-dev/workspace-dev` as `main`.
-4. Configure npm Trusted Publisher to the standalone repo/workflow.
-5. Keep FullVersion repo in deprecated/frozen mode (already prepared in workflows/docs).
+1. Ensure working tree is clean.
+2. Run full release gates (`pnpm run prepublishOnly`).
+3. Confirm npm Trusted Publisher is configured for this repository/workflow.
+4. Trigger `changesets-release` workflow when release criteria are met.
+5. Keep legacy FullVersion repository in deprecated/frozen mode.
 
 ## 6) Notes / caveats
 
-- Current `pnpm` warnings about `services/*` overrides are monorepo-context warnings and do not block `workspace-dev` gates.
-- FIPS check may report skip when host OpenSSL FIPS module is unavailable (`verify:fips` is designed for this).
+- FIPS smoke can report `skip` when host OpenSSL FIPS module is unavailable (`verify:fips` is designed for this).
+- `workspace-dev` runtime is intentionally local-only and deterministic-mode locked (`rest` + `deterministic`).
