@@ -268,6 +268,57 @@ jobs:
 
           pnpm run release:changesets:publish
 
+      - name: Create GitHub release and attach evidence assets
+        id: github_release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          RELEASE_TAG="v${PACKAGE_VERSION}"
+
+          NPM_VIEW_ERR_FILE="${RUNNER_TEMP}/npm-view-published.err"
+          if ! npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>"${NPM_VIEW_ERR_FILE}"; then
+            echo "Expected ${PACKAGE_NAME}@${PACKAGE_VERSION} to be available on npm before creating GitHub release."
+            cat "${NPM_VIEW_ERR_FILE}" >&2
+            exit 1
+          fi
+
+          CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
+          SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
+          OPENVEX_ASSET="${RELEASE_EVIDENCE_DIR}/openvex.json"
+          for ASSET_PATH in "${CYCLO_ASSET}" "${SPDX_ASSET}" "${OPENVEX_ASSET}"; do
+            if [[ ! -f "${ASSET_PATH}" ]]; then
+              echo "Required release evidence asset is missing: ${ASSET_PATH}"
+              exit 1
+            fi
+          done
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
+            gh release upload "${RELEASE_TAG}" \
+              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
+              --clobber
+          else
+            echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
+            gh release create "${RELEASE_TAG}" \
+              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
+              --target "${GITHUB_SHA}" \
+              --title "workspace-dev ${RELEASE_TAG}" \
+              --generate-notes
+          fi
+
+          RELEASE_URL="$(gh release view "${RELEASE_TAG}" --json url --jq '.url')"
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
+
       - name: Upload release evidence artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -297,3 +348,5 @@ jobs:
           echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release tag | \`${{ steps.github_release.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release URL | ${{ steps.github_release.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
