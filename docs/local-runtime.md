@@ -20,7 +20,7 @@
 - No hybrid mode
 - No `llm_strict`
 - No Redis/Postgres queueing stack
-- No dependency on FigmaPipe API services
+- No dependency on Workspace Dev platform API services
 
 ## On-Prem Boundary
 
@@ -31,9 +31,9 @@
 3. Executes deterministic generation only.
 4. Writes output under project-local `.workspace-dev`.
 
-## Separation from Full FigmaPipe
+## Separation from Full Workspace Dev Platform
 
-| Aspect | workspace-dev | Full FigmaPipe |
+| Aspect | workspace-dev | Full Workspace Dev Platform |
 | ------ | ------------- | -------------- |
 | Runtime | Local Node.js process | Multi-service runtime |
 | Database | None | PostgreSQL |

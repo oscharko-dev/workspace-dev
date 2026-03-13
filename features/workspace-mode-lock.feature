@@ -12,4 +12,4 @@ Feature: Workspace mode lock contract
     And llmCodegenMode is "hybrid"
     When mode lock validation runs
     Then the mode lock result is invalid
-    And the mode lock errors mention full FigmaPipe deployment
+    And the mode lock errors mention full Workspace Dev platform deployment

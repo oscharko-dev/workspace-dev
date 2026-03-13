@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`workspace-dev` is an autonomous local generator runtime for a reduced FigmaPipe workspace flow.
+`workspace-dev` is an autonomous local generator runtime for a reduced Workspace Dev workspace flow.
 
 It provides deterministic HTTP behavior for:
 
@@ -14,7 +14,7 @@ It provides deterministic HTTP behavior for:
 - `GET /workspace/jobs/:id/result`
 - `GET /workspace/repros/:id/*`
 
-## Runtime Architecture (No FigmaPipe backend dependency)
+## Runtime Architecture (No Workspace Dev platform backend dependency)
 
 `workspace-dev` runs as a single Node.js process with:
 
@@ -57,5 +57,5 @@ Default output root is `.workspace-dev` in the current project.
 
 - Source repository: standalone `workspace-dev` repository
 - Distribution: npm package publish via OIDC trusted publishing
-- On-prem FigmaPipe runtime remains independent and out of package scope
+- On-prem Workspace Dev platform runtime remains independent and out of package scope
 - Cutover procedure: `docs/hard-split-cutover.md`
