@@ -48,6 +48,12 @@ const resolvePublishEnv = () => {
     delete publishEnv.NPM_TOKEN;
     delete publishEnv.npm_config__authToken;
     delete publishEnv.NPM_CONFIG__AUTH_TOKEN;
+
+    // The release workflow already runs exhaustive quality gates in dedicated jobs.
+    // Re-running package lifecycle scripts during publish introduces flaky ELIFECYCLE
+    // failures in CI while adding no additional release confidence.
+    publishEnv.npm_config_ignore_scripts = "true";
+    publishEnv.NPM_CONFIG_IGNORE_SCRIPTS = "true";
   }
 
   return publishEnv;
