@@ -83,6 +83,7 @@ workspace-dev start [options]
 - `--figma-timeout-ms <ms>` (default `30000`)
 - `--figma-retries <count>` (default `3`)
 - `--preview <true|false>` (default `true`)
+- `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)
 
 ### Environment variables
 
@@ -92,6 +93,19 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_RETRIES`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW`
+- `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION`
+- `FIGMAPIPE_ENABLE_PERF_VALIDATION` (legacy alias)
+
+## Web performance workflow
+
+Bundled template (`template/react-mui-app`) includes a baseline + assertion pipeline:
+
+- `pnpm --dir template/react-mui-app run perf:baseline`
+- `pnpm --dir template/react-mui-app run perf:assert`
+
+Artifacts are written to `template/react-mui-app/artifacts/performance` by default.
+Budget policy is configured in `template/react-mui-app/perf-budget.json`.
+Detailed operating notes: `docs/react-web-performance.md`.
 
 ## Example API flow
 

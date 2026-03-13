@@ -9,7 +9,9 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "prettier": "prettier",
-    "validate:ui": "node ./scripts/validate-ui-report.mjs"
+    "validate:ui": "node ./scripts/validate-ui-report.mjs",
+    "perf:baseline": "node ./scripts/perf-runner.mjs baseline",
+    "perf:assert": "node ./scripts/perf-runner.mjs assert"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -19,7 +21,8 @@
     "@mui/system": "^7.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.1"
+    "react-router-dom": "^6.30.1",
+    "web-vitals": "^4.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
@@ -32,6 +35,7 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^16.5.0",
+    "lighthouse": "^12.8.2",
     "prettier": "^3.5.3",
     "typescript": "^5.9.2",
     "vite": "^5.4.11"

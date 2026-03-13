@@ -22,6 +22,7 @@ interface CliOptions {
   figmaTimeoutMs: number;
   figmaRetries: number;
   enablePreview: boolean;
+  enablePerfValidation: boolean;
 }
 
 const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean => {
@@ -84,6 +85,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     max: 10
   });
   let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
+  let enablePerfValidation = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
+    false
+  );
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -144,6 +149,12 @@ const parseArgs = (argv: string[]): CliOptions => {
       index += 1;
       continue;
     }
+
+    if (arg === "--perf-validation") {
+      enablePerfValidation = parseBooleanLike(args[index + 1], enablePerfValidation);
+      index += 1;
+      continue;
+    }
   }
 
   return {
@@ -153,7 +164,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     outputRoot,
     figmaTimeoutMs,
     figmaRetries,
-    enablePreview
+    enablePreview,
+    enablePerfValidation
   };
 };
 
@@ -172,6 +184,8 @@ Options:
   --figma-timeout-ms <ms>    Figma request timeout (default: ${DEFAULT_FIGMA_TIMEOUT_MS})
   --figma-retries <count>    Figma max retries (default: ${DEFAULT_FIGMA_RETRIES})
   --preview <true|false>     Enable preview export/serving (default: true)
+  --perf-validation <true|false>
+                             Run perf:assert during validate.project (default: false)
   --help                     Show this help message
 
 Environment variables:
@@ -181,6 +195,8 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
+  FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
+  FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
 
 Capabilities:
   - GET /workspace                 Runtime status
@@ -214,6 +230,8 @@ const main = async (): Promise<void> => {
 
   console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
   console.log("[workspace-dev] Mode lock: figmaSourceMode=rest, llmCodegenMode=deterministic");
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
+  process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
 
   try {
     const server = await createWorkspaceServer({
@@ -241,6 +259,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Server ready at ${server.url}/workspace`);
     console.log(`[workspace-dev] Output root: ${options.outputRoot}`);
     console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
+    console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[workspace-dev] Failed to start: ${message}`);

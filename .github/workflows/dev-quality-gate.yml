@@ -1,0 +1,107 @@
+name: workspace-dev dev quality gate
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Enforce lockfile host allowlist
+        run: pnpm run verify:lockfile-hosts
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Canonical tests
+        run: pnpm run test
+
+      - name: Enforce architecture boundaries
+        run: pnpm run lint:boundaries
+
+      - name: Enforce TypeScript style
+        run: pnpm run lint:ts-style
+
+      - name: Enforce zero telemetry policy
+        run: pnpm run lint:no-telemetry
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Enforce package size budget
+        run: pnpm run lint:size
+
+      - name: Verify package tarball contents
+        run: pnpm run verify:pack
+
+  performance-web:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
+
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
+      - name: Build template app
+        run: pnpm --dir template/react-mui-app run build
+
+      - name: Capture web performance baseline (warn-only)
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_STRICT: "false"
+        run: pnpm --dir template/react-mui-app run perf:baseline
+
+      - name: Assert web performance budgets and regression (warn-only)
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_STRICT: "false"
+        run: pnpm --dir template/react-mui-app run perf:assert
+
+      - name: Upload web performance artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-dev-dev-performance-web-${{ github.run_id }}
+          path: template/react-mui-app/artifacts/performance
+          if-no-files-found: ignore
