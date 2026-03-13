@@ -3,10 +3,12 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const loadThemeModule = async (salt: string) => {
-  const modulePath = path.resolve("/Users/oscharko/PycharmProjects/intent/workspace-dev/src/parity/sparkasse-theme.ts");
+  const modulePath = path.resolve(MODULE_DIR, "sparkasse-theme.ts");
   return await import(`${pathToFileURL(modulePath).href}?case=${salt}`);
 };
 
