@@ -54,6 +54,9 @@ jobs:
       - name: Run property-based fuzz tests
         run: pnpm run test:property-based
 
+      - name: Lint UI
+        run: pnpm run ui:lint
+
       - name: Enforce architecture boundaries
         run: pnpm run lint:boundaries
 
