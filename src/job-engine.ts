@@ -124,15 +124,18 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      const figmaFile = await runStage({
+      const figmaFetch = await runStage({
         job,
         stage: "figma.source",
         action: async () => {
-          const file = await fetchFigmaFile({
+          const result = await fetchFigmaFile({
             fileKey: input.figmaFileKey,
             accessToken: input.figmaAccessToken,
             timeoutMs: runtime.figmaTimeoutMs,
             maxRetries: runtime.figmaMaxRetries,
+            bootstrapDepth: runtime.figmaBootstrapDepth,
+            nodeBatchSize: runtime.figmaNodeBatchSize,
+            maxScreenCandidates: runtime.figmaMaxScreenCandidates,
             fetchImpl: runtime.fetchImpl,
             onLog: (message) => {
               pushLog({
@@ -143,8 +146,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               });
             }
           });
-          await writeFile(figmaJsonFile, `${JSON.stringify(file, null, 2)}\n`, "utf8");
-          return file;
+          await writeFile(figmaJsonFile, `${JSON.stringify(result.file, null, 2)}\n`, "utf8");
+          pushLog({
+            job,
+            level: "info",
+            stage: "figma.source",
+            message: `Figma source mode=${result.diagnostics.sourceMode}, fetchedNodes=${result.diagnostics.fetchedNodes}, degradedGeometryNodes=${result.diagnostics.degradedGeometryNodes.length}`
+          });
+          return result;
         }
       });
 
@@ -152,7 +161,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "ir.derive",
         action: async () => {
-          const derived = figmaToDesignIrWithOptions(figmaFile, {});
+          const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
+            screenElementBudget: runtime.figmaScreenElementBudget,
+            sourceMetrics: {
+              fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
+              degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
+            }
+          });
           if (!Array.isArray(derived.screens) || derived.screens.length === 0) {
             throw createPipelineError({
               code: "E_IR_EMPTY",
@@ -165,7 +180,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             job,
             level: "info",
             stage: "ir.derive",
-            message: `Derived Design IR with ${derived.screens.length} screens.`
+            message: `Derived Design IR with ${derived.screens.length} screens (skippedHidden=${derived.metrics?.skippedHidden ?? 0}, skippedPlaceholders=${derived.metrics?.skippedPlaceholders ?? 0}, truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}).`
           });
           return derived;
         }
@@ -212,6 +227,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           });
         }
       });
+
+      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
+        job.artifacts.generationMetricsFile = path.join(generatedProjectDir, "generation-metrics.json");
+      }
 
       await runStage({
         job,
