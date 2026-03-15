@@ -604,6 +604,8 @@ export const fetchFigmaFile = async ({
   onLog,
   bootstrapDepth,
   nodeBatchSize,
+  nodeFetchConcurrency,
+  adaptiveBatchingEnabled,
   maxScreenCandidates
 }: {
   fileKey: string;
@@ -614,6 +616,8 @@ export const fetchFigmaFile = async ({
   onLog: (message: string) => void;
   bootstrapDepth: number;
   nodeBatchSize: number;
+  nodeFetchConcurrency: number;
+  adaptiveBatchingEnabled: boolean;
   maxScreenCandidates: number;
 }): Promise<FigmaFetchResult> => {
   const directUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?geometry=paths`;
@@ -700,6 +704,8 @@ export const fetchFigmaFile = async ({
 
   const replacementNodes = new Map<string, FigmaNodeLike>();
   const degradedGeometryNodes = new Set<string>();
+  let dynamicNodeBatchSize = Math.max(1, nodeBatchSize);
+  let oversizedBatchCount = 0;
 
   const recoverIconGeometryForFallback = async ({
     screenNodeId,
@@ -805,6 +811,20 @@ export const fetchFigmaFile = async ({
         throw error;
       }
 
+      if (adaptiveBatchingEnabled && ids.length >= dynamicNodeBatchSize && dynamicNodeBatchSize > 1) {
+        oversizedBatchCount += 1;
+        if (oversizedBatchCount >= 2) {
+          const previousBatchSize = dynamicNodeBatchSize;
+          dynamicNodeBatchSize = Math.max(1, Math.floor(dynamicNodeBatchSize / 2));
+          oversizedBatchCount = 0;
+          if (dynamicNodeBatchSize !== previousBatchSize) {
+            onLog(
+              `Adaptive staged fetch reduced node batch size from ${previousBatchSize} to ${dynamicNodeBatchSize} after oversized responses.`
+            );
+          }
+        }
+      }
+
       if (ids.length > 1) {
         const midpoint = Math.ceil(ids.length / 2);
         await fetchNodeGroup(ids.slice(0, midpoint));
@@ -853,9 +873,32 @@ export const fetchFigmaFile = async ({
     }
   };
 
-  for (const batch of splitIntoBatches(candidateIds, nodeBatchSize)) {
-    await fetchNodeGroup(batch);
-  }
+  let nextNodeIndex = 0;
+  const takeNextBatch = (): string[] => {
+    if (nextNodeIndex >= candidateIds.length) {
+      return [];
+    }
+    const batchSize = Math.max(1, dynamicNodeBatchSize);
+    const slice = candidateIds.slice(nextNodeIndex, nextNodeIndex + batchSize);
+    nextNodeIndex += slice.length;
+    return slice;
+  };
+
+  const workerCount = Math.min(
+    Math.max(1, nodeFetchConcurrency),
+    Math.max(1, Math.ceil(candidateIds.length / Math.max(1, dynamicNodeBatchSize)))
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const batch = takeNextBatch();
+        if (batch.length === 0) {
+          return;
+        }
+        await fetchNodeGroup(batch);
+      }
+    })
+  );
 
   const mergedRoot = mergeNodesIntoTree({
     node: rootNode,

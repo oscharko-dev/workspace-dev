@@ -117,6 +117,15 @@ workspace-dev start [options]
 - `--output-root <path>` (default `.workspace-dev`)
 - `--figma-timeout-ms <ms>` (default `30000`)
 - `--figma-retries <count>` (default `3`)
+- `--figma-bootstrap-depth <n>` (default `5`)
+- `--figma-node-batch-size <n>` (default `6`)
+- `--figma-node-fetch-concurrency <n>` (default `3`)
+- `--figma-adaptive-batching <true|false>` (default `true`)
+- `--figma-max-screen-candidates <n>` (default `40`)
+- `--figma-screen-element-budget <n>` (default `1200`)
+- `--command-timeout-ms <ms>` (default `900000`)
+- `--ui-validation <true|false>` (default `false`)
+- `--install-prefer-offline <true|false>` (default `true`)
 - `--preview <true|false>` (default `true`)
 - `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)
 
@@ -127,6 +136,15 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_OUTPUT_ROOT`
 - `FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_RETRIES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH`
+- `FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE`
+- `FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY`
+- `FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING`
+- `FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
+- `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
+- `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
+- `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION`
 - `FIGMAPIPE_ENABLE_PERF_VALIDATION` (legacy alias)
@@ -141,6 +159,13 @@ Bundled template (`template/react-mui-app`) includes a baseline + assertion pipe
 Artifacts are written to `template/react-mui-app/artifacts/performance` by default.
 Budget policy is configured in `template/react-mui-app/perf-budget.json`.
 Detailed operating notes: `docs/react-web-performance.md`.
+
+## React Compiler (template opt-in)
+
+Generated template builds can enable React Compiler via environment variables:
+
+- `VITE_ENABLE_REACT_COMPILER=true`
+- optional `VITE_REACT_COMPILER_TARGET=18|19`
 
 ## Example API flow
 

@@ -35,3 +35,17 @@ test("runCommand returns structured failure on spawn error", async () => {
   assert.equal(result.code, null);
   assert.ok(result.combined.length > 0);
 });
+
+test("runCommand terminates process when timeout is exceeded", async () => {
+  const result = await runCommand({
+    cwd: os.tmpdir(),
+    command: "node",
+    args: ["-e", "setTimeout(() => console.log('done'), 30_000)"],
+    timeoutMs: 1_000
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.timedOut, true);
+  assert.ok((result.durationMs ?? 0) >= 900);
+  assert.ok(result.combined.includes("Command timed out"));
+});

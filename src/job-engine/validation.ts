@@ -9,6 +9,7 @@ interface ValidationDeps {
     args: string[];
     env?: NodeJS.ProcessEnv;
     redactions?: string[];
+    timeoutMs?: number;
   }) => Promise<CommandResult>;
 }
 
@@ -16,26 +17,47 @@ export const runProjectValidationWithDeps = async ({
   generatedProjectDir,
   onLog,
   enablePerfValidation = false,
+  enableUiValidation = false,
+  commandTimeoutMs = 15 * 60_000,
+  installPreferOffline = true,
   deps
 }: {
   generatedProjectDir: string;
   onLog: (message: string) => void;
   enablePerfValidation?: boolean;
+  enableUiValidation?: boolean;
+  commandTimeoutMs?: number;
+  installPreferOffline?: boolean;
   deps?: Partial<ValidationDeps>;
 }): Promise<void> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
-  const commands: Array<{ name: string; args: string[]; env?: NodeJS.ProcessEnv }> = [
-    { name: "install", args: ["install", "--frozen-lockfile"] },
-    { name: "lint", args: ["lint"] },
-    { name: "typecheck", args: ["typecheck"] },
-    { name: "build", args: ["build"] }
+  const installArgs = ["install", "--frozen-lockfile", "--reporter", "append-only"];
+  if (installPreferOffline) {
+    installArgs.push("--prefer-offline");
+  }
+
+  const commands: Array<{ name: string; args: string[]; env?: NodeJS.ProcessEnv; timeoutMs?: number }> = [
+    { name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) },
+    { name: "lint", args: ["lint"], timeoutMs: commandTimeoutMs },
+    { name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs },
+    { name: "build", args: ["build"], timeoutMs: commandTimeoutMs }
   ];
+
+  if (enableUiValidation) {
+    commands.push({
+      name: "validate-ui",
+      args: ["run", "validate:ui"],
+      timeoutMs: commandTimeoutMs
+    });
+  }
+
   if (enablePerfValidation) {
     commands.push({
       name: "perf-assert",
       args: ["run", "perf:assert"],
+      timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000),
       env: {
         ...process.env,
         FIGMAPIPE_PERF_ARTIFACT_DIR: process.env.FIGMAPIPE_PERF_ARTIFACT_DIR ?? perfArtifactRoot,
@@ -52,11 +74,13 @@ export const runProjectValidationWithDeps = async ({
       cwd: generatedProjectDir,
       command: "pnpm",
       args: command.args,
+      ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
       ...(command.env ? { env: command.env } : {})
     });
 
     if (!result.success) {
-      throw new Error(`${command.name} failed: ${result.combined.slice(0, 2000)}`);
+      const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
+      throw new Error(`${command.name} failed${timeoutSuffix}: ${result.combined.slice(0, 2000)}`);
     }
   }
 };
@@ -64,11 +88,24 @@ export const runProjectValidationWithDeps = async ({
 export const runProjectValidation = async ({
   generatedProjectDir,
   onLog,
-  enablePerfValidation = false
+  enablePerfValidation = false,
+  enableUiValidation = false,
+  commandTimeoutMs = 15 * 60_000,
+  installPreferOffline = true
 }: {
   generatedProjectDir: string;
   onLog: (message: string) => void;
   enablePerfValidation?: boolean;
+  enableUiValidation?: boolean;
+  commandTimeoutMs?: number;
+  installPreferOffline?: boolean;
 }): Promise<void> => {
-  return await runProjectValidationWithDeps({ generatedProjectDir, onLog, enablePerfValidation });
+  return await runProjectValidationWithDeps({
+    generatedProjectDir,
+    onLog,
+    enablePerfValidation,
+    enableUiValidation,
+    commandTimeoutMs,
+    installPreferOffline
+  });
 };
