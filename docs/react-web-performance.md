@@ -13,6 +13,9 @@ The workflow measures Lighthouse performance for configured routes/profiles, com
 - Initial JavaScript transfer (`initial_js_kb`)
 - Route transition proxy (`route_transition_ms`)
 
+Lighthouse JSON parsing supports both legacy (`report.lhr.audits`) and current (`report.audits`) schemas.
+When INP is unavailable, the runner records explicit proxy sources (`total-blocking-time` / `interactive`) in report metadata.
+
 ## Budget policy
 
 Budgets and route/profile scope are defined in:

@@ -15,8 +15,13 @@ const DEFAULT_FIGMA_TIMEOUT_MS = 30_000;
 const DEFAULT_FIGMA_RETRIES = 3;
 const DEFAULT_FIGMA_BOOTSTRAP_DEPTH = 5;
 const DEFAULT_FIGMA_NODE_BATCH_SIZE = 6;
+const DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY = 3;
+const DEFAULT_FIGMA_ADAPTIVE_BATCHING = true;
 const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 
 interface CliOptions {
   command: string;
@@ -27,8 +32,13 @@ interface CliOptions {
   figmaRetries: number;
   figmaBootstrapDepth: number;
   figmaNodeBatchSize: number;
+  figmaNodeFetchConcurrency: number;
+  figmaAdaptiveBatchingEnabled: boolean;
   figmaMaxScreenCandidates: number;
   figmaScreenElementBudget: number;
+  commandTimeoutMs: number;
+  enableUiValidation: boolean;
+  installPreferOffline: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
 }
@@ -104,6 +114,16 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 1,
     max: 20
   });
+  let figmaNodeFetchConcurrency = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY,
+    fallback: DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY,
+    min: 1,
+    max: 10
+  });
+  let figmaAdaptiveBatchingEnabled = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING,
+    DEFAULT_FIGMA_ADAPTIVE_BATCHING
+  );
   let figmaMaxScreenCandidates = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES,
     fallback: DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES,
@@ -116,6 +136,20 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 100,
     max: 10000
   });
+  let commandTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
+    fallback: DEFAULT_COMMAND_TIMEOUT_MS,
+    min: 5_000,
+    max: 60 * 60_000
+  });
+  let enableUiValidation = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
+    DEFAULT_ENABLE_UI_VALIDATION
+  );
+  let installPreferOffline = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE,
+    DEFAULT_INSTALL_PREFER_OFFLINE
+  );
   let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
   let enablePerfValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
@@ -198,6 +232,23 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--figma-node-fetch-concurrency") {
+      figmaNodeFetchConcurrency = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaNodeFetchConcurrency,
+        min: 1,
+        max: 10
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-adaptive-batching") {
+      figmaAdaptiveBatchingEnabled = parseBooleanLike(args[index + 1], figmaAdaptiveBatchingEnabled);
+      index += 1;
+      continue;
+    }
+
     if (arg === "--figma-max-screen-candidates") {
       figmaMaxScreenCandidates = parseIntInRange({
         raw: args[index + 1],
@@ -216,6 +267,29 @@ const parseArgs = (argv: string[]): CliOptions => {
         min: 100,
         max: 10_000
       });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--command-timeout-ms") {
+      commandTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandTimeoutMs,
+        min: 5_000,
+        max: 60 * 60_000
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--ui-validation") {
+      enableUiValidation = parseBooleanLike(args[index + 1], enableUiValidation);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--install-prefer-offline") {
+      installPreferOffline = parseBooleanLike(args[index + 1], installPreferOffline);
       index += 1;
       continue;
     }
@@ -242,8 +316,13 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaRetries,
     figmaBootstrapDepth,
     figmaNodeBatchSize,
+    figmaNodeFetchConcurrency,
+    figmaAdaptiveBatchingEnabled,
     figmaMaxScreenCandidates,
     figmaScreenElementBudget,
+    commandTimeoutMs,
+    enableUiValidation,
+    installPreferOffline,
     enablePreview,
     enablePerfValidation
   };
@@ -267,10 +346,19 @@ Options:
                              Bootstrap depth for staged large-board fetch (default: ${DEFAULT_FIGMA_BOOTSTRAP_DEPTH})
   --figma-node-batch-size <n>
                              Candidate batch size for /nodes fetch (default: ${DEFAULT_FIGMA_NODE_BATCH_SIZE})
+  --figma-node-fetch-concurrency <n>
+                             Concurrent staged /nodes fetches (default: ${DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY})
+  --figma-adaptive-batching <true|false>
+                             Auto-split oversized staged /nodes batches (default: ${DEFAULT_FIGMA_ADAPTIVE_BATCHING})
   --figma-max-screen-candidates <n>
                              Max screen candidates fetched in staged mode (default: ${DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES})
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
+  --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
+  --ui-validation <true|false>
+                             Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
+  --install-prefer-offline <true|false>
+                             Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: false)
@@ -284,8 +372,13 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
   FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH
   FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE
+  FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY
+  FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING
   FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
+  FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
+  FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
   FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
@@ -334,8 +427,13 @@ const main = async (): Promise<void> => {
       figmaMaxRetries: options.figmaRetries,
       figmaBootstrapDepth: options.figmaBootstrapDepth,
       figmaNodeBatchSize: options.figmaNodeBatchSize,
+      figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
+      figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled,
       figmaMaxScreenCandidates: options.figmaMaxScreenCandidates,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
+      commandTimeoutMs: options.commandTimeoutMs,
+      enableUiValidation: options.enableUiValidation,
+      installPreferOffline: options.installPreferOffline,
       enablePreview: options.enablePreview
     });
 
@@ -356,6 +454,8 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Output root: ${options.outputRoot}`);
     console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
     console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
+    console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
+    console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[workspace-dev] Failed to start: ${message}`);

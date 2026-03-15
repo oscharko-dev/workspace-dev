@@ -4,16 +4,26 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BOOTSTRAP_DEPTH = 5;
 const DEFAULT_NODE_BATCH_SIZE = 6;
+const DEFAULT_NODE_FETCH_CONCURRENCY = 3;
+const DEFAULT_ADAPTIVE_BATCHING_ENABLED = true;
 const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 
 export const resolveRuntimeSettings = ({
   figmaRequestTimeoutMs,
   figmaMaxRetries,
   figmaBootstrapDepth,
   figmaNodeBatchSize,
+  figmaNodeFetchConcurrency,
+  figmaAdaptiveBatchingEnabled,
   figmaMaxScreenCandidates,
   figmaScreenElementBudget,
+  commandTimeoutMs,
+  enableUiValidation,
+  installPreferOffline,
   enablePreview,
   fetchImpl
 }: {
@@ -21,8 +31,13 @@ export const resolveRuntimeSettings = ({
   figmaMaxRetries?: number;
   figmaBootstrapDepth?: number;
   figmaNodeBatchSize?: number;
+  figmaNodeFetchConcurrency?: number;
+  figmaAdaptiveBatchingEnabled?: boolean;
   figmaMaxScreenCandidates?: number;
   figmaScreenElementBudget?: number;
+  commandTimeoutMs?: number;
+  enableUiValidation?: boolean;
+  installPreferOffline?: boolean;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
 }): JobEngineRuntime => {
@@ -43,6 +58,14 @@ export const resolveRuntimeSettings = ({
       typeof figmaNodeBatchSize === "number" && Number.isFinite(figmaNodeBatchSize)
         ? Math.max(1, Math.min(20, Math.trunc(figmaNodeBatchSize)))
         : DEFAULT_NODE_BATCH_SIZE,
+    figmaNodeFetchConcurrency:
+      typeof figmaNodeFetchConcurrency === "number" && Number.isFinite(figmaNodeFetchConcurrency)
+        ? Math.max(1, Math.min(10, Math.trunc(figmaNodeFetchConcurrency)))
+        : DEFAULT_NODE_FETCH_CONCURRENCY,
+    figmaAdaptiveBatchingEnabled:
+      typeof figmaAdaptiveBatchingEnabled === "boolean"
+        ? figmaAdaptiveBatchingEnabled
+        : DEFAULT_ADAPTIVE_BATCHING_ENABLED,
     figmaMaxScreenCandidates:
       typeof figmaMaxScreenCandidates === "number" && Number.isFinite(figmaMaxScreenCandidates)
         ? Math.max(1, Math.min(200, Math.trunc(figmaMaxScreenCandidates)))
@@ -51,6 +74,14 @@ export const resolveRuntimeSettings = ({
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))
         : DEFAULT_SCREEN_ELEMENT_BUDGET,
+    commandTimeoutMs:
+      typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
+        ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))
+        : DEFAULT_COMMAND_TIMEOUT_MS,
+    enableUiValidation:
+      typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
+    installPreferOffline:
+      typeof installPreferOffline === "boolean" ? installPreferOffline : DEFAULT_INSTALL_PREFER_OFFLINE,
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch
   };

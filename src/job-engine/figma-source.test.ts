@@ -18,6 +18,8 @@ const createRequest = (fetchImpl: typeof fetch) => {
     maxRetries: 2,
     bootstrapDepth: 5,
     nodeBatchSize: 4,
+    nodeFetchConcurrency: 2,
+    adaptiveBatchingEnabled: true,
     maxScreenCandidates: 40,
     fetchImpl,
     onLog: () => {
@@ -51,6 +53,27 @@ const createBootstrapDocument = () => ({
             children: []
           }
         ]
+      }
+    ]
+  }
+});
+
+const createBootstrapDocumentWithScreens = (count: number) => ({
+  name: "Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: Array.from({ length: count }, (_, index) => ({
+          id: `1:${index + 1}`,
+          type: "FRAME",
+          name: `Screen ${index + 1}`,
+          absoluteBoundingBox: { x: index * 420, y: 0, width: 400, height: 800 },
+          children: []
+        }))
       }
     ]
   }
@@ -407,6 +430,67 @@ test("fetchFigmaFile uses byte-limit guard to avoid oversized geometry JSON pars
   const result = await fetchFigmaFile(createRequest(fetchImpl));
   assert.equal(result.diagnostics.sourceMode, "staged-nodes");
   assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile reduces staged batch size adaptively after repeated oversized responses", async () => {
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocumentWithScreens(12));
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      if (ids.length >= 4) {
+        return new Response("Request too large", { status: 413 });
+      }
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(
+    {
+      ...createRequest(fetchImpl),
+      nodeBatchSize: 4,
+      nodeFetchConcurrency: 1,
+      adaptiveBatchingEnabled: true,
+      maxScreenCandidates: 12
+    }
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 12);
+  assert.equal(
+    requestedGeometryIds.some((ids) => ids.length === 4 && ids[0] === "1:9"),
+    false
+  );
+  assert.equal(
+    requestedGeometryIds.some((ids) => ids.length === 2 && ids[0] === "1:9"),
+    true
+  );
 });
 
 test("fetchFigmaFile recovers icon descendant geometry after no-geometry fallback", async () => {

@@ -379,6 +379,21 @@ test("createDeterministicAppFile omits lazy import when only one screen exists",
   assert.equal(appFile.content.includes("= lazy(async"), false);
 });
 
+test("createDeterministicAppFile disambiguates duplicate screen names", () => {
+  const ir = createIr();
+  const duplicateScreens = [
+    { ...ir.screens[0], id: "screen-a", name: "Overview" },
+    { ...ir.screens[0], id: "screen-b", name: "Overview" },
+    { ...ir.screens[0], id: "screen-c", name: "Overview" }
+  ];
+
+  const appFile = createDeterministicAppFile(duplicateScreens);
+  assert.ok(appFile.content.includes('path="/overview"'));
+  assert.ok(appFile.content.includes('path="/overview-'));
+  assert.ok(appFile.content.includes('import OverviewScreen from "./screens/Overview";'));
+  assert.ok(appFile.content.includes('const LazyOverview'));
+});
+
 test("deterministic screen rendering keeps semantic labels and avoids Mui internal text leakage", () => {
   const screen = createRegressionScreen();
   const screenFile = createDeterministicScreenFile(screen);

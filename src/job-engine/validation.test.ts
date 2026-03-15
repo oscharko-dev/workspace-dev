@@ -25,7 +25,7 @@ test("runProjectValidationWithDeps executes deterministic pnpm command sequence"
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile",
+    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint",
     "pnpm typecheck",
     "pnpm build"
@@ -59,7 +59,7 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile",
+    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint",
     "pnpm typecheck",
     "pnpm build",
@@ -105,4 +105,30 @@ test("runProjectValidationWithDeps throws on first failing command", async () =>
   );
 
   assert.ok(invocation >= 2);
+});
+
+test("runProjectValidationWithDeps runs ui validation when enabled", async () => {
+  const calls: string[] = [];
+
+  await runProjectValidationWithDeps({
+    generatedProjectDir: "/tmp/generated-project",
+    onLog: () => {
+      // no-op
+    },
+    enableUiValidation: true,
+    deps: {
+      runCommand: async ({ command, args }) => {
+        calls.push(`${command} ${args.join(" ")}`);
+        return {
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        };
+      }
+    }
+  });
+
+  assert.equal(calls.includes("pnpm run validate:ui"), true);
 });
