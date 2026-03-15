@@ -680,10 +680,34 @@ export interface ScreenIR {
   children: ScreenElementIR[];
 }
 
+export interface ScreenElementCountMetric {
+  screenId: string;
+  screenName: string;
+  elements: number;
+}
+
+export interface TruncatedScreenMetric {
+  screenId: string;
+  screenName: string;
+  originalElements: number;
+  retainedElements: number;
+  budget: number;
+}
+
+export interface GenerationMetrics {
+  fetchedNodes: number;
+  skippedHidden: number;
+  skippedPlaceholders: number;
+  screenElementCounts: ScreenElementCountMetric[];
+  truncatedScreens: TruncatedScreenMetric[];
+  degradedGeometryNodes: string[];
+}
+
 export interface DesignIR {
   sourceName: string;
   screens: ScreenIR[];
   tokens: DesignTokens;
+  metrics?: GenerationMetrics;
 }
 
 export interface DesignNodeFingerprint {

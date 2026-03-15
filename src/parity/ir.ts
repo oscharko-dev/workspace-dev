@@ -1,5 +1,20 @@
-import type { DesignIR, DesignTokens, FigmaMcpEnrichment, ScreenElementIR, ScreenIR } from "./types.js";
+import type {
+  DesignIR,
+  DesignTokens,
+  FigmaMcpEnrichment,
+  GenerationMetrics,
+  ScreenElementIR,
+  ScreenIR
+} from "./types.js";
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
+
+const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
+const PLACEHOLDER_TEXT_VALUES = new Set([
+  "swap component",
+  "instance swap",
+  "add description",
+  "alternativtext"
+]);
 
 interface FigmaColor {
   r: number;
@@ -18,6 +33,7 @@ interface FigmaNode {
   id: string;
   name?: string;
   type: string;
+  visible?: boolean;
   children?: FigmaNode[];
   fillGeometry?: Array<{
     path?: string;
@@ -56,6 +72,24 @@ interface FigmaFile {
 interface WeightedColor {
   color: string;
   weight: number;
+}
+
+interface MetricsAccumulator {
+  fetchedNodes: number;
+  skippedHidden: number;
+  skippedPlaceholders: number;
+  screenElementCounts: GenerationMetrics["screenElementCounts"];
+  truncatedScreens: GenerationMetrics["truncatedScreens"];
+  degradedGeometryNodes: string[];
+}
+
+interface FigmaToIrOptions {
+  mcpEnrichment?: FigmaMcpEnrichment;
+  screenElementBudget?: number;
+  sourceMetrics?: {
+    fetchedNodes?: number;
+    degradedGeometryNodes?: string[];
+  };
 }
 
 const toHexColor = (color?: FigmaColor, opacity?: number): string | undefined => {
@@ -114,7 +148,19 @@ const uniqueByColor = (entries: WeightedColor[]): WeightedColor[] => {
   return [...weights.entries()].map(([color, weight]) => ({ color, weight }));
 };
 
+const countSubtreeNodes = (node: FigmaNode): number => {
+  const children = node.children ?? [];
+  if (children.length === 0) {
+    return 1;
+  }
+  return 1 + children.reduce((count, child) => count + countSubtreeNodes(child), 0);
+};
+
 const collectNodes = (node: FigmaNode, predicate: (candidate: FigmaNode) => boolean): FigmaNode[] => {
+  if (node.visible === false) {
+    return [];
+  }
+
   const collected: FigmaNode[] = [];
   if (predicate(node)) {
     collected.push(node);
@@ -171,7 +217,62 @@ const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: numb
   };
 };
 
-const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
+const hasPlaceholderText = (node: FigmaNode): boolean => {
+  if (node.type !== "TEXT") {
+    return false;
+  }
+  const normalized = (node.characters ?? "").trim().toLowerCase();
+  return PLACEHOLDER_TEXT_VALUES.has(normalized);
+};
+
+const isGeometryEmpty = (node: FigmaNode): boolean => {
+  const width = node.absoluteBoundingBox?.width;
+  const height = node.absoluteBoundingBox?.height;
+  if (typeof width !== "number" || typeof height !== "number") {
+    return false;
+  }
+  return width <= 0 || height <= 0;
+};
+
+const isHelperItemNode = (node: FigmaNode): boolean => {
+  const normalized = (node.name ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    normalized === "_item" ||
+    normalized.startsWith("_item ") ||
+    normalized.startsWith("item_") ||
+    normalized.endsWith("_item")
+  );
+};
+
+const mapElement = ({
+  node,
+  depth,
+  inInstanceContext,
+  metrics
+}: {
+  node: FigmaNode;
+  depth: number;
+  inInstanceContext: boolean;
+  metrics: MetricsAccumulator;
+}): ScreenElementIR | null => {
+  if (node.visible === false) {
+    metrics.skippedHidden += countSubtreeNodes(node);
+    return null;
+  }
+
+  if (inInstanceContext && hasPlaceholderText(node)) {
+    metrics.skippedPlaceholders += 1;
+    return null;
+  }
+
+  if (isHelperItemNode(node) && isGeometryEmpty(node)) {
+    metrics.skippedPlaceholders += countSubtreeNodes(node);
+    return null;
+  }
+
   const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
   const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
   const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
@@ -186,6 +287,7 @@ const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node)
   };
+
   if (node.characters !== undefined) {
     element.text = node.characters;
   }
@@ -201,6 +303,7 @@ const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
   if (node.absoluteBoundingBox?.height !== undefined) {
     element.height = node.absoluteBoundingBox.height;
   }
+
   const fillColor = toHexColor(fill?.color, fill?.opacity);
   if (fillColor) {
     element.fillColor = fillColor;
@@ -233,20 +336,37 @@ const mapElement = (node: FigmaNode, depth = 0): ScreenElementIR => {
   if (node.cornerRadius !== undefined) {
     element.cornerRadius = node.cornerRadius;
   }
+
+  const isNextInstanceContext = inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET";
+
   if (depth >= 14) {
     element.children = [];
   } else if (node.children?.length) {
-    element.children = node.children.slice(0, 60).map((child) => mapElement(child, depth + 1));
+    const children: ScreenElementIR[] = [];
+    for (const child of node.children) {
+      const mappedChild = mapElement({
+        node: child,
+        depth: depth + 1,
+        inInstanceContext: isNextInstanceContext,
+        metrics
+      });
+      if (mappedChild) {
+        children.push(mappedChild);
+      }
+    }
+    if (children.length > 0) {
+      element.children = children;
+    }
   }
 
   return element;
 };
 
 const isScreenLikeNode = (node: FigmaNode | undefined): node is FigmaNode => {
-  if (!node) {
+  if (!node || node.visible === false) {
     return false;
   }
-  return node.type === "FRAME" || node.type === "COMPONENT" || node.type === "SECTION";
+  return node.type === "FRAME" || node.type === "COMPONENT";
 };
 
 const isGenericFrameName = (name: string | undefined): boolean => {
@@ -303,46 +423,204 @@ const unwrapScreenRoot = (candidate: FigmaNode): { node: FigmaNode; name: string
   return { node: current, name: resolvedName };
 };
 
-const extractScreens = (file: FigmaFile): ScreenIR[] => {
+const collectSectionScreens = ({
+  section,
+  metrics
+}: {
+  section: FigmaNode;
+  metrics: MetricsAccumulator;
+}): FigmaNode[] => {
+  const screens: FigmaNode[] = [];
+
+  for (const child of section.children ?? []) {
+    if (child.visible === false) {
+      metrics.skippedHidden += countSubtreeNodes(child);
+      continue;
+    }
+
+    if (child.type === "SECTION") {
+      screens.push(...collectSectionScreens({ section: child, metrics }));
+      continue;
+    }
+
+    if (child.type === "FRAME" || child.type === "COMPONENT") {
+      screens.push(child);
+    }
+  }
+
+  return screens;
+};
+
+const countElements = (elements: ScreenElementIR[]): number => {
+  let total = 0;
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    total += 1;
+    if (current.children?.length) {
+      stack.push(...current.children);
+    }
+  }
+  return total;
+};
+
+const truncateElementsToBudget = ({
+  elements,
+  budget
+}: {
+  elements: ScreenElementIR[];
+  budget: number;
+}): { elements: ScreenElementIR[]; retainedCount: number } => {
+  let remaining = budget;
+
+  const visit = (element: ScreenElementIR): ScreenElementIR | null => {
+    if (remaining <= 0) {
+      return null;
+    }
+    remaining -= 1;
+
+    const nextChildren: ScreenElementIR[] = [];
+    for (const child of element.children ?? []) {
+      const mapped = visit(child);
+      if (mapped) {
+        nextChildren.push(mapped);
+      }
+      if (remaining <= 0) {
+        break;
+      }
+    }
+
+    if (nextChildren.length === 0) {
+      const { children: _children, ...withoutChildren } = element;
+      return withoutChildren;
+    }
+    return {
+      ...element,
+      children: nextChildren
+    };
+  };
+
+  const truncated: ScreenElementIR[] = [];
+  for (const element of elements) {
+    const mapped = visit(element);
+    if (!mapped) {
+      break;
+    }
+    truncated.push(mapped);
+    if (remaining <= 0) {
+      break;
+    }
+  }
+
+  return {
+    elements: truncated,
+    retainedCount: budget - remaining
+  };
+};
+
+const extractScreens = ({
+  file,
+  metrics,
+  screenElementBudget
+}: {
+  file: FigmaFile;
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+}): ScreenIR[] => {
   const root = file.document;
   if (!root?.children?.length) {
     return [];
   }
 
-  const screens: ScreenIR[] = [];
+  const screenCandidates: FigmaNode[] = [];
+
   for (const page of root.children) {
-    if (!page.children) {
+    if (page.visible === false) {
+      metrics.skippedHidden += countSubtreeNodes(page);
       continue;
     }
 
-    for (const child of page.children) {
-      if (child.type !== "FRAME" && child.type !== "COMPONENT" && child.type !== "SECTION") {
+    for (const child of page.children ?? []) {
+      if (child.visible === false) {
+        metrics.skippedHidden += countSubtreeNodes(child);
         continue;
       }
 
-      const normalized = unwrapScreenRoot(child);
-      const sourceNode = normalized.node;
-      const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
-      const screen: ScreenIR = {
-        id: sourceNode.id,
-        name: normalized.name,
-        layoutMode: sourceNode.layoutMode ?? "NONE",
-        gap: sourceNode.itemSpacing ?? 0,
-        padding: mapPadding(sourceNode),
-        children: (sourceNode.children ?? []).slice(0, 40).map((node) => mapElement(node))
-      };
-      if (sourceNode.absoluteBoundingBox?.width !== undefined) {
-        screen.width = sourceNode.absoluteBoundingBox.width;
+      if (child.type === "SECTION") {
+        screenCandidates.push(...collectSectionScreens({ section: child, metrics }));
+        continue;
       }
-      if (sourceNode.absoluteBoundingBox?.height !== undefined) {
-        screen.height = sourceNode.absoluteBoundingBox.height;
+
+      if (child.type === "FRAME" || child.type === "COMPONENT") {
+        screenCandidates.push(child);
       }
-      const fillColor = toHexColor(fill?.color, fill?.opacity);
-      if (fillColor) {
-        screen.fillColor = fillColor;
-      }
-      screens.push(screen);
     }
+  }
+
+  const screens: ScreenIR[] = [];
+
+  for (const candidate of screenCandidates) {
+    const normalized = unwrapScreenRoot(candidate);
+    const sourceNode = normalized.node;
+    const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
+
+    const mappedChildren: ScreenElementIR[] = [];
+    for (const child of sourceNode.children ?? []) {
+      const mapped = mapElement({
+        node: child,
+        depth: 0,
+        inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
+        metrics
+      });
+      if (mapped) {
+        mappedChildren.push(mapped);
+      }
+    }
+
+    const originalElements = countElements(mappedChildren);
+    metrics.screenElementCounts.push({
+      screenId: sourceNode.id,
+      screenName: normalized.name,
+      elements: originalElements
+    });
+
+    const { elements: budgetedChildren, retainedCount } =
+      originalElements > screenElementBudget
+        ? truncateElementsToBudget({ elements: mappedChildren, budget: screenElementBudget })
+        : { elements: mappedChildren, retainedCount: originalElements };
+
+    if (originalElements > screenElementBudget) {
+      metrics.truncatedScreens.push({
+        screenId: sourceNode.id,
+        screenName: normalized.name,
+        originalElements,
+        retainedElements: retainedCount,
+        budget: screenElementBudget
+      });
+    }
+
+    const screen: ScreenIR = {
+      id: sourceNode.id,
+      name: normalized.name,
+      layoutMode: sourceNode.layoutMode ?? "NONE",
+      gap: sourceNode.itemSpacing ?? 0,
+      padding: mapPadding(sourceNode),
+      children: budgetedChildren
+    };
+    if (sourceNode.absoluteBoundingBox?.width !== undefined) {
+      screen.width = sourceNode.absoluteBoundingBox.width;
+    }
+    if (sourceNode.absoluteBoundingBox?.height !== undefined) {
+      screen.height = sourceNode.absoluteBoundingBox.height;
+    }
+    const fillColor = toHexColor(fill?.color, fill?.opacity);
+    if (fillColor) {
+      screen.fillColor = fillColor;
+    }
+    screens.push(screen);
   }
 
   return screens;
@@ -481,14 +759,6 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
   };
 };
 
-export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
-  return figmaToDesignIrWithOptions(figmaJson);
-};
-
-interface FigmaToIrOptions {
-  mcpEnrichment?: FigmaMcpEnrichment;
-}
-
 const isGenericElementName = (name: string): boolean => {
   const normalized = name.trim().toLowerCase();
   return (
@@ -563,16 +833,46 @@ const applyMcpEnrichmentToIr = (ir: DesignIR, enrichment: FigmaMcpEnrichment): D
   };
 };
 
+export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
+  return figmaToDesignIrWithOptions(figmaJson);
+};
+
 export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
   const parsed = figmaJson as FigmaFile;
-  const screens = extractScreens(parsed);
+  const screenElementBudget =
+    typeof options?.screenElementBudget === "number" && Number.isFinite(options.screenElementBudget)
+      ? Math.max(1, Math.trunc(options.screenElementBudget))
+      : DEFAULT_SCREEN_ELEMENT_BUDGET;
+
+  const metrics: MetricsAccumulator = {
+    fetchedNodes:
+      typeof options?.sourceMetrics?.fetchedNodes === "number" && Number.isFinite(options.sourceMetrics.fetchedNodes)
+        ? Math.max(0, Math.trunc(options.sourceMetrics.fetchedNodes))
+        : 0,
+    skippedHidden: 0,
+    skippedPlaceholders: 0,
+    screenElementCounts: [],
+    truncatedScreens: [],
+    degradedGeometryNodes: [...(options?.sourceMetrics?.degradedGeometryNodes ?? [])]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .sort((left, right) => left.localeCompare(right))
+  };
+
+  const screens = extractScreens({
+    file: parsed,
+    metrics,
+    screenElementBudget
+  });
+
   if (screens.length === 0) {
     throw new Error("No top-level frames/components found in Figma file");
   }
+
   const baseIr: DesignIR = {
     sourceName: parsed.name ?? "Figma File",
     screens,
-    tokens: applySparkasseThemeDefaults(deriveTokens(parsed))
+    tokens: applySparkasseThemeDefaults(deriveTokens(parsed)),
+    metrics
   };
 
   if (!options?.mcpEnrichment) {

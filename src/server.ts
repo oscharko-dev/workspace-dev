@@ -68,6 +68,14 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const runtime = resolveRuntimeSettings({
     ...(options.figmaRequestTimeoutMs !== undefined ? { figmaRequestTimeoutMs: options.figmaRequestTimeoutMs } : {}),
     ...(options.figmaMaxRetries !== undefined ? { figmaMaxRetries: options.figmaMaxRetries } : {}),
+    ...(options.figmaBootstrapDepth !== undefined ? { figmaBootstrapDepth: options.figmaBootstrapDepth } : {}),
+    ...(options.figmaNodeBatchSize !== undefined ? { figmaNodeBatchSize: options.figmaNodeBatchSize } : {}),
+    ...(options.figmaMaxScreenCandidates !== undefined
+      ? { figmaMaxScreenCandidates: options.figmaMaxScreenCandidates }
+      : {}),
+    ...(options.figmaScreenElementBudget !== undefined
+      ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
+      : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });

@@ -17,6 +17,17 @@ export interface FigmaFileResponse {
   document?: unknown;
 }
 
+export interface FigmaFetchDiagnostics {
+  sourceMode: "geometry-paths" | "staged-nodes";
+  fetchedNodes: number;
+  degradedGeometryNodes: string[];
+}
+
+export interface FigmaFetchResult {
+  file: FigmaFileResponse;
+  diagnostics: FigmaFetchDiagnostics;
+}
+
 export interface JobRecord {
   jobId: string;
   status: WorkspaceJobRuntimeStatus;
@@ -50,6 +61,10 @@ export interface JobEnginePaths {
 export interface JobEngineRuntime {
   figmaTimeoutMs: number;
   figmaMaxRetries: number;
+  figmaBootstrapDepth: number;
+  figmaNodeBatchSize: number;
+  figmaMaxScreenCandidates: number;
+  figmaScreenElementBudget: number;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
 }

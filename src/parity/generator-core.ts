@@ -4,6 +4,7 @@ import type * as ts from "typescript";
 import type {
   ComponentMappingRule,
   DesignIR,
+  GenerationMetrics,
   GeneratedFile,
   LlmCodegenMode,
   ScreenElementIR,
@@ -32,6 +33,7 @@ interface RejectedScreenEnhancement {
 
 interface GenerateArtifactsResult {
   generatedPaths: string[];
+  generationMetrics: GenerationMetrics;
   themeApplied: boolean;
   screenApplied: number;
   screenTotal: number;
@@ -1378,9 +1380,37 @@ interface FallbackScreenFileResult {
   }>;
 }
 
-const fallbackScreenFile = (screen: ScreenIR, mappingByNodeId: Map<string, ComponentMappingRule>): FallbackScreenFileResult => {
+const toTruncationComment = (
+  truncationMetric:
+    | {
+        originalElements: number;
+        retainedElements: number;
+        budget: number;
+      }
+    | undefined
+): string => {
+  if (!truncationMetric) {
+    return "";
+  }
+  return `/* workspace-dev: Screen IR exceeded budget (${truncationMetric.originalElements} elements), truncated to ${truncationMetric.retainedElements} (budget ${truncationMetric.budget}). */\n`;
+};
+
+const fallbackScreenFile = ({
+  screen,
+  mappingByNodeId,
+  truncationMetric
+}: {
+  screen: ScreenIR;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  truncationMetric?: {
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  };
+}): FallbackScreenFileResult => {
   const componentName = toComponentName(screen.name);
   const filePath = toDeterministicScreenPath(screen.name);
+  const truncationComment = toTruncationComment(truncationMetric);
 
   const simplifiedChildren = simplifyElements(screen.children);
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
@@ -1506,7 +1536,7 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   return {
     file: {
       path: filePath,
-      content: `${reactImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+      content: `${truncationComment}${reactImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
 
 export default function ${componentName}Screen(): JSX.Element {
@@ -1537,7 +1567,10 @@ export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
 };
 
 export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile => {
-  return fallbackScreenFile(screen, new Map<string, ComponentMappingRule>()).file;
+  return fallbackScreenFile({
+    screen,
+    mappingByNodeId: new Map<string, ComponentMappingRule>()
+  }).file;
 };
 
 export const createDeterministicAppFile = (screens: ScreenIR[]): GeneratedFile => {
@@ -2174,6 +2207,18 @@ export const generateArtifacts = async ({
   }
 
   const generatedPaths = new Set<string>();
+  const generationMetrics: GenerationMetrics = {
+    fetchedNodes: ir.metrics?.fetchedNodes ?? 0,
+    skippedHidden: ir.metrics?.skippedHidden ?? 0,
+    skippedPlaceholders: ir.metrics?.skippedPlaceholders ?? 0,
+    screenElementCounts: [...(ir.metrics?.screenElementCounts ?? [])],
+    truncatedScreens: [...(ir.metrics?.truncatedScreens ?? [])],
+    degradedGeometryNodes: [...(ir.metrics?.degradedGeometryNodes ?? [])]
+  };
+  const truncationByScreenId = new Map(
+    generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)
+  );
+
   const allIrNodeIds = new Set<string>(
     ir.screens.flatMap((screen) => flattenElements(screen.children).map((node) => node.id))
   );
@@ -2220,7 +2265,17 @@ export const generateArtifacts = async ({
 
   const usedMappingNodeIds = new Set<string>();
   const deterministicScreens = ir.screens.map((screen) => {
-    const deterministicScreen = fallbackScreenFile(screen, mappingByNodeId);
+    const truncationMetric = truncationByScreenId.get(screen.id);
+    if (truncationMetric) {
+      onLog(
+        `Screen '${screen.name}' truncated from ${truncationMetric.originalElements} to ${truncationMetric.retainedElements} elements (budget=${truncationMetric.budget}).`
+      );
+    }
+    const deterministicScreen = fallbackScreenFile({
+      screen,
+      mappingByNodeId,
+      ...(truncationMetric ? { truncationMetric } : {})
+    });
     for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
       usedMappingNodeIds.add(nodeId);
     }
@@ -2281,6 +2336,15 @@ export const generateArtifacts = async ({
 
   await writeFile(path.join(projectDir, "src", "App.tsx"), makeAppFile(ir.screens), "utf-8");
   generatedPaths.add("src/App.tsx");
+
+  const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
+  await writeFile(generationMetricsPath, `${JSON.stringify(generationMetrics, null, 2)}\n`, "utf-8");
+  generatedPaths.add("generation-metrics.json");
+
+  if (generationMetrics.degradedGeometryNodes.length > 0) {
+    onLog(`Geometry degraded for ${generationMetrics.degradedGeometryNodes.length} node(s) during staged fetch.`);
+  }
+
   onLog("Generated deterministic baseline artifacts");
 
   let themeApplied = false;
@@ -2319,6 +2383,7 @@ export const generateArtifacts = async ({
     onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
     return {
       generatedPaths: Array.from(generatedPaths),
+      generationMetrics,
       themeApplied,
       screenApplied,
       screenTotal,
@@ -2341,6 +2406,7 @@ export const generateArtifacts = async ({
     );
     return {
       generatedPaths: Array.from(generatedPaths),
+      generationMetrics,
       themeApplied,
       screenApplied,
       screenTotal,
@@ -2529,6 +2595,7 @@ export const generateArtifacts = async ({
   onLog(`LLM enhancement summary: themeApplied=${String(themeApplied)}, screensApplied=${screenApplied}/${screenTotal}`);
   return {
     generatedPaths: Array.from(generatedPaths),
+    generationMetrics,
     themeApplied,
     screenApplied,
     screenTotal,
