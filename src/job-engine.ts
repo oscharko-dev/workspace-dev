@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkspaceJobInput, WorkspaceJobResult, WorkspaceJobStageName, WorkspaceJobStatus } from "./contracts/index.js";
 import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
+import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { fetchFigmaFile } from "./job-engine/figma-source.js";
 import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { runGitPrFlow } from "./job-engine/git-pr.js";
@@ -106,6 +107,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
+    const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
     const figmaJsonFile = path.join(jobDir, "figma.json");
     const designIrFile = path.join(jobDir, "design-ir.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
@@ -146,14 +148,24 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               });
             }
           });
-          await writeFile(figmaJsonFile, `${JSON.stringify(result.file, null, 2)}\n`, "utf8");
+          await writeFile(figmaRawJsonFile, `${JSON.stringify(result.file, null, 2)}\n`, "utf8");
+          const cleaning = cleanFigmaForCodegen({ file: result.file });
+          await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
           pushLog({
             job,
             level: "info",
             stage: "figma.source",
-            message: `Figma source mode=${result.diagnostics.sourceMode}, fetchedNodes=${result.diagnostics.fetchedNodes}, degradedGeometryNodes=${result.diagnostics.degradedGeometryNodes.length}`
+            message:
+              `Figma source mode=${result.diagnostics.sourceMode}, fetchedNodes=${result.diagnostics.fetchedNodes}, ` +
+              `degradedGeometryNodes=${result.diagnostics.degradedGeometryNodes.length}, cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
+              `removedHidden=${cleaning.report.removedHiddenNodes}, removedPlaceholders=${cleaning.report.removedPlaceholderNodes}, ` +
+              `removedHelpers=${cleaning.report.removedHelperNodes}, removedInvalid=${cleaning.report.removedInvalidNodes}, removedProperties=${cleaning.report.removedPropertyCount}`
           });
-          return result;
+          return {
+            ...result,
+            file: cleaning.cleanedFile,
+            cleaning
+          };
         }
       });
 
@@ -161,6 +173,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "ir.derive",
         action: async () => {
+          if ((figmaFetch.cleaning.report.screenCandidateCount ?? 0) <= 0) {
+            throw createPipelineError({
+              code: "E_FIGMA_CLEAN_EMPTY",
+              stage: "ir.derive",
+              message: "Figma cleaning removed all screen candidates."
+            });
+          }
           const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
             screenElementBudget: runtime.figmaScreenElementBudget,
             sourceMetrics: {
