@@ -38,6 +38,8 @@ const createSampleFigmaFile = () => ({
                 type: "FRAME",
                 name: "T1",
                 layoutMode: "VERTICAL",
+                primaryAxisAlignItems: "MIN",
+                counterAxisAlignItems: "CENTER",
                 itemSpacing: 12,
                 paddingTop: 16,
                 paddingRight: 16,
@@ -65,6 +67,9 @@ const createSampleFigmaFile = () => ({
                     id: "i1",
                     type: "FRAME",
                     name: "MuiFormControlRoot",
+                    layoutMode: "HORIZONTAL",
+                    primaryAxisAlignItems: "SPACE_BETWEEN",
+                    counterAxisAlignItems: "CENTER",
                     absoluteBoundingBox: { x: 20, y: 90, width: 400, height: 56 },
                     children: []
                   },
@@ -116,6 +121,12 @@ test("figmaToDesignIr maps SECTION-contained screens and prunes hidden subtrees"
   assert.equal(ir.screens.length, 1);
   assert.equal(ir.screens[0].name.length > 0, true);
   assert.equal(ir.screens[0].children.length >= 3, true);
+  assert.equal(ir.screens[0].primaryAxisAlignItems, "MIN");
+  assert.equal(ir.screens[0].counterAxisAlignItems, "CENTER");
+
+  const inputNode = ir.screens[0].children.find((child) => child.id === "i1");
+  assert.equal(inputNode?.primaryAxisAlignItems, "SPACE_BETWEEN");
+  assert.equal(inputNode?.counterAxisAlignItems, "CENTER");
 
   const flattenedNames = JSON.stringify(ir.screens[0].children);
   assert.equal(flattenedNames.includes("Should not appear"), false);

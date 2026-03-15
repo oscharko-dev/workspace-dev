@@ -1,8 +1,10 @@
 import type {
+  CounterAxisAlignItems,
   DesignIR,
   DesignTokens,
   FigmaMcpEnrichment,
   GenerationMetrics,
+  PrimaryAxisAlignItems,
   ScreenElementIR,
   ScreenIR
 } from "./types.js";
@@ -44,6 +46,8 @@ interface FigmaNode {
     windingRule?: string;
   }>;
   layoutMode?: "HORIZONTAL" | "VERTICAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
   itemSpacing?: number;
   paddingTop?: number;
   paddingRight?: number;
@@ -177,6 +181,7 @@ const collectNodes = (node: FigmaNode, predicate: (candidate: FigmaNode) => bool
 const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   const name = (node.name ?? "").toLowerCase();
   const hasSolidFill = Boolean(node.fills?.find((item) => item.type === "SOLID" && item.color));
+  const hasStroke = Boolean(node.strokes?.find((item) => item.type === "SOLID" && item.color));
   const isInputRoot =
     name.includes("muiformcontrolroot") || name.includes("textfield") || name.includes("input field");
 
@@ -197,7 +202,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   if (
     name.includes("cta") ||
     ((name.includes("button") || name.includes("muibutton")) &&
-      (hasSolidFill || name.includes("zur übersicht") || name.includes("termin vereinbaren")))
+      (hasSolidFill || hasStroke || name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner")))
   ) {
     return "button";
   }
@@ -285,7 +290,9 @@ const mapElement = ({
     type: determineElementType(node),
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
-    padding: mapPadding(node)
+    padding: mapPadding(node),
+    ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
+    ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
   };
 
   if (node.characters !== undefined) {
@@ -608,7 +615,9 @@ const extractScreens = ({
       layoutMode: sourceNode.layoutMode ?? "NONE",
       gap: sourceNode.itemSpacing ?? 0,
       padding: mapPadding(sourceNode),
-      children: budgetedChildren
+      children: budgetedChildren,
+      ...(sourceNode.primaryAxisAlignItems ? { primaryAxisAlignItems: sourceNode.primaryAxisAlignItems } : {}),
+      ...(sourceNode.counterAxisAlignItems ? { counterAxisAlignItems: sourceNode.counterAxisAlignItems } : {})
     };
     if (sourceNode.absoluteBoundingBox?.width !== undefined) {
       screen.width = sourceNode.absoluteBoundingBox.width;
