@@ -194,7 +194,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "ir.derive",
         action: async () => {
-          if ((figmaFetch.cleaning.report.screenCandidateCount ?? 0) <= 0) {
+          if (figmaFetch.cleaning.report.screenCandidateCount <= 0) {
             throw createPipelineError({
               code: "E_FIGMA_CLEAN_EMPTY",
               stage: "ir.derive",

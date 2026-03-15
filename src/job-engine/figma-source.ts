@@ -157,8 +157,13 @@ const parseJsonWithByteLimit = async ({
   requestLabel: string;
   allowTooLargeFallback: boolean;
 }): Promise<unknown> => {
-  const headerContainer = (response as Response & { headers?: { get?: (name: string) => string | null } }).headers;
-  const contentLengthRaw = typeof headerContainer?.get === "function" ? headerContainer.get("content-length") : null;
+  const responseWithOptionalHeaders = response as {
+    headers?: {
+      get?: (name: string) => string | null;
+    };
+  };
+  const headers = responseWithOptionalHeaders.headers;
+  const contentLengthRaw = typeof headers?.get === "function" ? headers.get("content-length") : null;
   const contentLength = contentLengthRaw ? Number.parseInt(contentLengthRaw, 10) : Number.NaN;
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_RESPONSE_BYTES) {
     if (allowTooLargeFallback) {
@@ -181,15 +186,19 @@ const parseJsonWithByteLimit = async ({
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
+  for (;;) {
+    const readResult = (await reader.read()) as {
+      done: boolean;
+      value?: Uint8Array;
+    };
+    if (readResult.done) {
       break;
     }
-    if (!value) {
+    const chunk = readResult.value;
+    if (!(chunk instanceof Uint8Array)) {
       continue;
     }
-    totalBytes += value.byteLength;
+    totalBytes += chunk.byteLength;
     if (totalBytes > MAX_JSON_RESPONSE_BYTES) {
       await reader.cancel();
       if (allowTooLargeFallback) {
@@ -203,7 +212,7 @@ const parseJsonWithByteLimit = async ({
         message: `Figma response body exceeds byte limit (${requestLabel}, bytes=${totalBytes}).`
       });
     }
-    chunks.push(value);
+    chunks.push(chunk);
   }
 
   const merged = new Uint8Array(totalBytes);
@@ -659,7 +668,7 @@ export const fetchFigmaFile = async ({
     bootstrapDepth
   });
 
-  const rootNode = isRecord(bootstrapFile.document) ? (bootstrapFile.document as FigmaNodeLike) : undefined;
+  const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
   if (!rootNode) {
     return {
       file: bootstrapFile,
@@ -890,6 +899,7 @@ export const fetchFigmaFile = async ({
   );
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
+      for (;;) {
       while (true) {
         const batch = takeNextBatch();
         if (batch.length === 0) {
