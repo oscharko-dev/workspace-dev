@@ -501,7 +501,8 @@ const truncateElementsToBudget = ({
     }
 
     if (nextChildren.length === 0) {
-      const { children: _children, ...withoutChildren } = element;
+      const withoutChildren = { ...element };
+      delete withoutChildren.children;
       return withoutChildren;
     }
     return {

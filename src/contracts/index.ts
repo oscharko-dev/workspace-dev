@@ -58,7 +58,7 @@ export interface WorkspaceStartOptions {
   figmaScreenElementBudget?: number;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
-  /** Run static UI validation in validate.project. Default: true */
+  /** Run static UI validation in validate.project. Default: false */
   enableUiValidation?: boolean;
   /** Prefer offline package resolution during generated-project install. Default: true */
   installPreferOffline?: boolean;
