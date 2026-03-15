@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -94,4 +94,64 @@ test("resolvePreviewAsset enforces safe job id/path and supports index fallback"
   assert.ok(fallback);
   assert.equal(fallback?.contentType, "text/html; charset=utf-8");
   assert.ok(fallback?.content.toString("utf8").includes("ok"));
+});
+
+test("createJobEngine fails fast when cleaning removes all screen candidates", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-clean-empty-"));
+  const payload = {
+    name: "Hidden only board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "hidden-screen",
+              type: "FRAME",
+              visible: false,
+              children: []
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_FIGMA_CLEAN_EMPTY");
+  assert.equal(status.error?.stage, "ir.derive");
+
+  const rawPath = path.join(status.artifacts.jobDir, "figma.raw.json");
+  const cleanedPath = path.join(status.artifacts.jobDir, "figma.json");
+  const raw = await readFile(rawPath, "utf8");
+  const cleaned = await readFile(cleanedPath, "utf8");
+
+  assert.equal(raw.length > cleaned.length, true);
+  assert.equal(cleaned.includes('"visible": false'), false);
 });

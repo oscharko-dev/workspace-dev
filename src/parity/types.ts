@@ -632,6 +632,9 @@ export interface DesignTokens {
   bodySize: number;
 }
 
+export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
+export type CounterAxisAlignItems = "MIN" | "CENTER" | "MAX" | "BASELINE";
+
 export interface ScreenElementIR {
   id: string;
   name: string;
@@ -652,6 +655,8 @@ export interface ScreenElementIR {
   textAlign?: "LEFT" | "CENTER" | "RIGHT";
   vectorPaths?: string[];
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
   gap?: number;
   padding?: {
     top: number;
@@ -667,6 +672,8 @@ export interface ScreenIR {
   id: string;
   name: string;
   layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
   gap: number;
   width?: number;
   height?: number;
@@ -727,6 +734,8 @@ export interface DesignNodeFingerprint {
   width?: number;
   height?: number;
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
 }
 
 export interface DesignScreenFingerprint {
