@@ -137,6 +137,41 @@ const toPxLiteral = (value: number | undefined): string | undefined => {
   return literal(`${Math.round(value)}px`);
 };
 
+const mapPrimaryAxisAlignToJustifyContent = (
+  value: ScreenElementIR["primaryAxisAlignItems"]
+): string | undefined => {
+  switch (value) {
+    case "MIN":
+      return "flex-start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "flex-end";
+    case "SPACE_BETWEEN":
+      return "space-between";
+    default:
+      return undefined;
+  }
+};
+
+const mapCounterAxisAlignToAlignItems = (
+  value: ScreenElementIR["counterAxisAlignItems"],
+  layoutMode: ScreenElementIR["layoutMode"]
+): string | undefined => {
+  switch (value) {
+    case "MIN":
+      return "flex-start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "flex-end";
+    case "BASELINE":
+      return "baseline";
+    default:
+      return layoutMode === "HORIZONTAL" ? "center" : undefined;
+  }
+};
+
 const hasVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
     element.fillColor ||
@@ -150,13 +185,18 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
   );
 };
 
-const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
+const isIconLikeNode = (element: ScreenElementIR): boolean => {
   const loweredName = element.name.toLowerCase();
-  if (
-    loweredName.includes("muisvgiconroot") ||
-    loweredName.includes("buttonendicon") ||
-    loweredName.includes("expandiconwrapper")
-  ) {
+  return loweredName.includes("muisvgiconroot") || loweredName.includes("iconcomponent") || loweredName.startsWith("ic_");
+};
+
+const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
+  const loweredName = element.name.toLowerCase();
+  return loweredName.includes("buttonendicon") || loweredName.includes("expandiconwrapper");
+};
+
+const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
+  if (isIconLikeNode(element) || isSemanticIconWrapper(element)) {
     return false;
   }
 
@@ -174,12 +214,7 @@ const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
 
   if (
     children.some((child) => {
-      const childName = child.name.toLowerCase();
-      return (
-        childName.includes("muisvgiconroot") ||
-        childName.includes("buttonendicon") ||
-        childName.includes("expandiconwrapper")
-      );
+      return isIconLikeNode(child) || isSemanticIconWrapper(child);
     })
   ) {
     return false;
@@ -194,7 +229,7 @@ const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
 
 const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
   const simplifiedChildren = simplifyElements(element.children ?? []);
-  const isSvgIconRoot = element.name.toLowerCase().includes("muisvgiconroot");
+  const isSvgIconRoot = isIconLikeNode(element);
   const hasVectorPayload = element.nodeType === "VECTOR" && (element.vectorPaths?.length ?? 0) > 0;
 
   const simplified: ScreenElementIR = {
@@ -210,7 +245,7 @@ const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
     return simplified;
   }
 
-  if (isSvgIconRoot) {
+  if (isSvgIconRoot || isSemanticIconWrapper(element)) {
     return simplified;
   }
 
@@ -253,8 +288,21 @@ const sortChildren = (children: ScreenElementIR[], layoutMode: "VERTICAL" | "HOR
 };
 
 const sxString = (entries: Array<[string, string | number | undefined]>): string => {
-  const filtered = entries.filter((entry): entry is [string, string | number] => entry[1] !== undefined);
-  return filtered.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
+  const deduped: Array<[string, string | number]> = [];
+  const seen = new Set<string>();
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    const [key, value] = entry;
+    if (value === undefined || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.unshift([key, value]);
+  }
+  return deduped.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
 };
 
 const indentBlock = (value: string, spaces: number): string => {
@@ -293,6 +341,24 @@ const baseLayoutEntries = (
     ["minHeight", hasChildren ? toPxLiteral(element.height) : undefined],
     ["display", isFlex ? literal("flex") : undefined],
     ["flexDirection", layoutMode === "VERTICAL" ? literal("column") : layoutMode === "HORIZONTAL" ? literal("row") : undefined],
+    [
+      "alignItems",
+      isFlex
+        ? (() => {
+            const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
+            return alignItems ? literal(alignItems) : undefined;
+          })()
+        : undefined
+    ],
+    [
+      "justifyContent",
+      isFlex
+        ? (() => {
+            const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+            return justifyContent ? literal(justifyContent) : undefined;
+          })()
+        : undefined
+    ],
     ["gap", element.gap && element.gap > 0 ? toPxLiteral(element.gap) : undefined],
     ["pt", element.padding && element.padding.top > 0 ? toPxLiteral(element.padding.top) : undefined],
     ["pr", element.padding && element.padding.right > 0 ? toPxLiteral(element.padding.right) : undefined],
@@ -322,6 +388,7 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
     return key !== "width" && key !== "height" && key !== "minHeight";
   });
 
+  const isLinkLikeColor = element.fillColor && /^#0[0-4][0-9a-f]{4}$/i.test(element.fillColor);
   const sx = sxString([
     ...textLayoutEntries,
     ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
@@ -339,6 +406,8 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
             ? literal("right")
             : undefined
     ],
+    ["textDecoration", isLinkLikeColor ? literal("underline") : undefined],
+    ["cursor", isLinkLikeColor ? literal("pointer") : undefined],
     ["whiteSpace", literal("pre-wrap")]
   ]);
 
@@ -372,13 +441,15 @@ const firstTextColor = (element: ScreenElementIR): string | undefined => {
 };
 
 const collectVectorPaths = (element: ScreenElementIR): string[] => {
-  const localPaths = element.nodeType === "VECTOR" ? (element.vectorPaths ?? []) : [];
+  const localPaths = Array.isArray(element.vectorPaths)
+    ? element.vectorPaths.filter((path): path is string => typeof path === "string" && path.length > 0)
+    : [];
   const nestedPaths = (element.children ?? []).flatMap((child) => collectVectorPaths(child));
   return [...new Set([...localPaths, ...nestedPaths])];
 };
 
 const firstVectorColor = (element: ScreenElementIR): string | undefined => {
-  if (element.nodeType === "VECTOR" && element.fillColor) {
+  if (Array.isArray(element.vectorPaths) && element.vectorPaths.length > 0 && element.fillColor) {
     return element.fillColor;
   }
   for (const child of element.children ?? []) {
@@ -396,10 +467,55 @@ const collectTextNodes = (element: ScreenElementIR): ScreenElementIR[] => {
   return [...local, ...nested];
 };
 
+const hasMeaningfulTextDescendants = (element: ScreenElementIR): boolean => {
+  return collectTextNodes(element).some((node) => {
+    const text = node.text?.trim() ?? "";
+    if (!text) {
+      return false;
+    }
+    return /[a-z0-9]/i.test(text);
+  });
+};
+
 const collectIconNodes = (element: ScreenElementIR): ScreenElementIR[] => {
-  const local = element.name.toLowerCase().includes("muisvgiconroot") ? [element] : [];
+  const local = isIconLikeNode(element) ? [element] : [];
   const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child));
   return [...local, ...nested];
+};
+
+const collectSubtreeNames = (element: ScreenElementIR): string[] => {
+  return [element.name, ...(element.children ?? []).flatMap((child) => collectSubtreeNames(child))];
+};
+
+const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | undefined => {
+  const candidates = collectIconNodes(element);
+  const sorted = [...candidates].sort((left, right) => {
+    const score = (candidate: ScreenElementIR): number => {
+      const lowered = candidate.name.toLowerCase();
+      let total = 0;
+      if (lowered.startsWith("ic_")) {
+        total += 6;
+      }
+      if (lowered.includes("muisvgiconroot")) {
+        total += 4;
+      }
+      if (lowered.includes("iconcomponent")) {
+        total += 2;
+      }
+      if (collectVectorPaths(candidate).length > 0) {
+        total += 8;
+      }
+      total -= Math.min(4, candidate.children?.length ?? 0);
+      return total;
+    };
+
+    return (
+      score(right) - score(left) ||
+      ((left.width ?? 0) * (left.height ?? 0)) - ((right.width ?? 0) * (right.height ?? 0)) ||
+      left.name.localeCompare(right.name)
+    );
+  });
+  return sorted[0];
 };
 
 const hasSubtreeName = (element: ScreenElementIR, pattern: string): boolean => {
@@ -588,6 +704,7 @@ const registerMappedImport = ({ context, mapping }: { context: RenderContext; ma
     "Box",
     "Button",
     "Divider",
+    "IconButton",
     "Typography",
     "SvgIcon",
     "TextField",
@@ -837,6 +954,150 @@ const registerIconImport = (context: RenderContext, spec: IconImportSpec): strin
     context.iconImports.push(spec);
   }
   return spec.localName;
+};
+
+const resolveIconColor = (element: ScreenElementIR): string | undefined => {
+  return firstVectorColor(element) ?? firstTextColor(element) ?? element.fillColor;
+};
+
+const FALLBACK_ICON_SPECS: Array<{ patterns: string[]; importSpec: IconImportSpec }> = [
+  {
+    patterns: ["bookmark", "merken"],
+    importSpec: { localName: "BookmarkBorderIcon", modulePath: "@mui/icons-material/BookmarkBorder" }
+  },
+  {
+    patterns: ["help", "hilfe", "questionmark"],
+    importSpec: { localName: "HelpOutlineIcon", modulePath: "@mui/icons-material/HelpOutline" }
+  },
+  {
+    patterns: ["homepage", "startseite", "house", "home"],
+    importSpec: { localName: "HomeOutlinedIcon", modulePath: "@mui/icons-material/HomeOutlined" }
+  },
+  {
+    patterns: ["personensuche", "person_search", "search_person", "person search"],
+    importSpec: { localName: "PersonSearchIcon", modulePath: "@mui/icons-material/PersonSearch" }
+  },
+  {
+    patterns: ["messenger", "speechbubble", "speech_bubble", "chat", "forum"],
+    importSpec: { localName: "ForumOutlinedIcon", modulePath: "@mui/icons-material/ForumOutlined" }
+  },
+  {
+    patterns: ["folder", "document", "two_documents"],
+    importSpec: { localName: "FolderOutlinedIcon", modulePath: "@mui/icons-material/FolderOutlined" }
+  },
+  {
+    patterns: ["edit", "pencil"],
+    importSpec: { localName: "EditOutlinedIcon", modulePath: "@mui/icons-material/EditOutlined" }
+  },
+  {
+    patterns: ["delete", "trash"],
+    importSpec: { localName: "DeleteOutlineIcon", modulePath: "@mui/icons-material/DeleteOutline" }
+  },
+  {
+    patterns: ["mail", "postbox"],
+    importSpec: { localName: "MailOutlineIcon", modulePath: "@mui/icons-material/MailOutline" }
+  },
+  {
+    patterns: ["add", "plus"],
+    importSpec: { localName: "AddIcon", modulePath: "@mui/icons-material/Add" }
+  },
+  {
+    patterns: ["search", "magnifier"],
+    importSpec: { localName: "SearchIcon", modulePath: "@mui/icons-material/Search" }
+  },
+  {
+    patterns: ["info", "hint"],
+    importSpec: { localName: "InfoOutlinedIcon", modulePath: "@mui/icons-material/InfoOutlined" }
+  }
+];
+
+const hasDownIndicatorHint = (subtreeNameBlob: string): boolean => {
+  return (
+    subtreeNameBlob.includes("expand_more") ||
+    subtreeNameBlob.includes("chevron_down") ||
+    subtreeNameBlob.includes("arrow_drop_down") ||
+    subtreeNameBlob.includes("keyboard_arrow_down") ||
+    subtreeNameBlob.includes("caret_down") ||
+    subtreeNameBlob.includes("ic_down") ||
+    /\bdown\b/.test(subtreeNameBlob)
+  );
+};
+
+const resolveFallbackIconComponent = ({
+  element,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  parent: Pick<VirtualParent, "name">;
+  context: RenderContext;
+}): string => {
+  const parentName = parent.name?.toLowerCase() ?? "";
+  const subtreeNameBlob = collectSubtreeNames(element).join(" ").toLowerCase();
+
+  const spec =
+    parentName.includes("buttonendicon") || subtreeNameBlob.includes("chevron_right") || subtreeNameBlob.includes("arrow_right")
+      ? {
+          localName: "ChevronRightIcon",
+          modulePath: "@mui/icons-material/ChevronRight"
+        }
+      : parentName.includes("expandiconwrapper") ||
+          parentName.includes("outlinedinputroot") ||
+          parentName.includes("formcontrolroot") ||
+          parentName.includes("select") ||
+          hasDownIndicatorHint(subtreeNameBlob)
+        ? {
+            localName: "ExpandMoreIcon",
+            modulePath: "@mui/icons-material/ExpandMore"
+          }
+        : parentName.includes("accordionsummarycontent")
+          ? {
+              localName: "TuneIcon",
+              modulePath: "@mui/icons-material/Tune"
+            }
+          : FALLBACK_ICON_SPECS.find(({ patterns }) => patterns.some((pattern) => subtreeNameBlob.includes(pattern)))?.importSpec ?? {
+              localName: "InfoOutlinedIcon",
+              modulePath: "@mui/icons-material/InfoOutlined"
+            };
+
+  return registerIconImport(context, spec);
+};
+
+const renderFallbackIconExpression = ({
+  element,
+  parent,
+  context,
+  extraEntries = []
+}: {
+  element: ScreenElementIR;
+  parent: Pick<VirtualParent, "name">;
+  context: RenderContext;
+  extraEntries?: Array<[string, string | number | undefined]>;
+}): string => {
+  const vectorPaths = collectVectorPaths(element);
+  if (vectorPaths.length > 0) {
+    return renderInlineSvgIcon(
+      {
+        paths: vectorPaths,
+        color: resolveIconColor(element),
+        width: element.width,
+        height: element.height
+      },
+      extraEntries
+    );
+  }
+
+  const iconComponent = resolveFallbackIconComponent({ element, parent, context });
+  const color = resolveIconColor(element);
+  const sx = sxString([
+    ["width", toPxLiteral(element.width)],
+    ["height", toPxLiteral(element.height)],
+    ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
+    ["lineHeight", literal("1")],
+    ["color", color ? literal(color) : undefined],
+    ...extraEntries
+  ]);
+  return `<${iconComponent} sx={{ ${sx} }} fontSize="inherit" />`;
 };
 
 const registerInteractiveField = ({
@@ -1186,10 +1447,50 @@ ${indent}  </AccordionDetails>
 ${indent}</Accordion>`;
 };
 
-const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent): string => {
+const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   const indent = "  ".repeat(depth);
-  const label = firstText(element) ?? element.name;
+  const textNodes = collectTextNodes(element)
+    .filter((node) => Boolean(node.text?.trim()))
+    .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+  const labelNode = textNodes[0];
+  const label = labelNode?.text?.trim();
   const buttonTextColor = firstTextColor(element);
+  const endIconRoot = findFirstByName(element, "buttonendicon");
+  const iconNode = pickBestIconNode(element) ?? endIconRoot;
+  const isIconOnlyButton = !label && Boolean(iconNode);
+
+  if (iconNode && isIconOnlyButton) {
+    const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
+    const iconButtonSx = sxString([
+      ...baseLayoutEntries(element, parent),
+      ["color", iconColor ? literal(iconColor) : undefined]
+    ]);
+    const iconExpression = renderFallbackIconExpression({
+      element: iconNode,
+      parent: { name: endIconRoot?.name ?? element.name },
+      context,
+      extraEntries: [["fontSize", literal("inherit")]]
+    });
+    return `${indent}<IconButton aria-label=${literal(element.name)} sx={{ ${iconButtonSx} }}>${iconExpression}</IconButton>`;
+  }
+
+  const iconExpression = iconNode
+    ? renderFallbackIconExpression({
+        element: iconNode,
+        parent: { name: endIconRoot?.name ?? element.name },
+        context,
+        extraEntries: [["fontSize", literal("inherit")]]
+      })
+    : undefined;
+  const iconBelongsAtEnd =
+    Boolean(iconNode && endIconRoot) ||
+    Boolean(
+      iconNode &&
+        labelNode &&
+        typeof iconNode.x === "number" &&
+        typeof labelNode.x === "number" &&
+        iconNode.x > labelNode.x
+    );
 
   const sx = sxString([
     ...baseLayoutEntries(element, parent),
@@ -1201,9 +1502,23 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     ["justifyContent", literal("center")]
   ]);
 
-  const variant = element.fillColor ? "contained" : "text";
+  const variant = element.fillColor ? "contained" : "outlined";
+  const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
+  const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
 
-  return `${indent}<Button variant="${variant}" disableElevation sx={{ ${sx} }}>{${literal(label)}}</Button>`;
+  return `${indent}<Button variant="${variant}" disableElevation${startIconProp}${endIconProp} sx={{ ${sx} }}>{${literal(label ?? element.name)}}</Button>`;
+};
+
+const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  const hasStroke = Boolean(element.strokeColor);
+  const isPill = (element.cornerRadius ?? 0) >= 32;
+  const texts = collectTextNodes(element);
+  const hasSingleText = texts.length >= 1 && Boolean(texts[0]?.text?.trim());
+  const noFill = !element.fillColor || element.fillColor === "#ffffff" || element.fillColor === "#FFFFFF";
+  return hasStroke && isPill && hasSingleText && noFill;
 };
 
 const renderContainer = (
@@ -1221,55 +1536,23 @@ const renderContainer = (
     return renderSemanticInput(element, depth, parent, context);
   }
 
-  const iconNode = element.name.toLowerCase().includes("muisvgiconroot");
-  if (iconNode) {
-    const vectorPaths = collectVectorPaths(element);
-    if (vectorPaths.length > 0) {
-      const vectorColor = firstVectorColor(element);
-      const iconSx = sxString([
+  if (isPillShapedOutlinedButton(element)) {
+    return renderButton(element, depth, parent, context);
+  }
+
+  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants(element)) {
+    const iconExpression = renderFallbackIconExpression({
+      element,
+      parent,
+      context,
+      extraEntries: [
         ...baseLayoutEntries(element, parent, { includePaints: false }),
-        ["color", vectorColor ? literal(vectorColor) : undefined]
-      ]);
-      const iconPaths = vectorPaths
-        .map((pathData) => `${indent}  <path d={${literal(pathData)}} />`)
-        .join("\n");
-      return `${indent}<SvgIcon sx={{ ${iconSx} }} viewBox={${literal(`0 0 ${Math.max(1, Math.round(element.width ?? 24))} ${Math.max(1, Math.round(element.height ?? 24))}`)}}>\n${iconPaths}\n${indent}</SvgIcon>`;
-    }
-
-    const parentName = parent.name?.toLowerCase() ?? "";
-    const iconComponent = parentName.includes("buttonendicon")
-      ? registerIconImport(context, {
-          localName: "ChevronRightIcon",
-          modulePath: "@mui/icons-material/ChevronRight"
-        })
-      : parentName.includes("expandiconwrapper") ||
-          parentName.includes("outlinedinputroot") ||
-          parentName.includes("formcontrolroot") ||
-          parentName.includes("select")
-        ? registerIconImport(context, {
-            localName: "ExpandMoreIcon",
-            modulePath: "@mui/icons-material/ExpandMore"
-          })
-        : parentName.includes("accordionsummarycontent")
-          ? registerIconImport(context, {
-              localName: "TuneIcon",
-              modulePath: "@mui/icons-material/Tune"
-            })
-          : registerIconImport(context, {
-              localName: "InfoOutlinedIcon",
-              modulePath: "@mui/icons-material/InfoOutlined"
-            });
-
-    const iconSx = sxString([
-      ...baseLayoutEntries(element, parent, { includePaints: false }),
-      ["display", literal("flex")],
-      ["alignItems", literal("center")],
-      ["justifyContent", literal("center")],
-      ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
-      ["lineHeight", literal("1")],
-      ["color", element.fillColor ? literal(element.fillColor) : undefined]
-    ]);
-    return `${indent}<${iconComponent} sx={{ ${iconSx} }} fontSize="inherit" />`;
+        ["display", literal("flex")],
+        ["alignItems", literal("center")],
+        ["justifyContent", literal("center")]
+      ]
+    });
+    return `${indent}${iconExpression}`;
   }
 
   const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
@@ -1327,7 +1610,7 @@ const renderElement = (
   }
 
   if (element.type === "button") {
-    return renderButton(element, depth, parent);
+    return renderButton(element, depth, parent, context);
   }
 
   return renderContainer(element, depth, parent, context);
@@ -1433,6 +1716,7 @@ const fallbackScreenFile = ({
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
   const hasSvgIcon = rendered.includes("<SvgIcon");
+  const hasIconButton = rendered.includes("<IconButton");
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
@@ -1506,6 +1790,9 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   }
   if (usesDivider) {
     muiImports.push("Divider");
+  }
+  if (hasIconButton) {
+    muiImports.push("IconButton");
   }
   if (usesTypography) {
     muiImports.push("Typography");
