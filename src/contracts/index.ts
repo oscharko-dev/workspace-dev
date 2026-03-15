@@ -48,10 +48,20 @@ export interface WorkspaceStartOptions {
   figmaBootstrapDepth?: number;
   /** Candidate node batch size for staged fetch. Default: 6 */
   figmaNodeBatchSize?: number;
+  /** Number of concurrent staged /nodes fetch workers. Default: 3 */
+  figmaNodeFetchConcurrency?: number;
+  /** Enable adaptive node batch splitting on repeated oversized responses. Default: true */
+  figmaAdaptiveBatchingEnabled?: boolean;
   /** Maximum staged screen candidates to fetch. Default: 40 */
   figmaMaxScreenCandidates?: number;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
   figmaScreenElementBudget?: number;
+  /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
+  commandTimeoutMs?: number;
+  /** Run static UI validation in validate.project. Default: true */
+  enableUiValidation?: boolean;
+  /** Prefer offline package resolution during generated-project install. Default: true */
+  installPreferOffline?: boolean;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -133,6 +143,7 @@ export interface WorkspaceJobArtifacts {
   designIrFile?: string;
   figmaJsonFile?: string;
   generationMetricsFile?: string;
+  stageTimingsFile?: string;
   reproDir?: string;
 }
 

@@ -63,8 +63,13 @@ export interface JobEngineRuntime {
   figmaMaxRetries: number;
   figmaBootstrapDepth: number;
   figmaNodeBatchSize: number;
+  figmaNodeFetchConcurrency: number;
+  figmaAdaptiveBatchingEnabled: boolean;
   figmaMaxScreenCandidates: number;
   figmaScreenElementBudget: number;
+  commandTimeoutMs: number;
+  enableUiValidation: boolean;
+  installPreferOffline: boolean;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
 }
@@ -81,6 +86,8 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   combined: string;
+  timedOut?: boolean;
+  durationMs?: number;
 }
 
 export interface GitPrExecutionResult {

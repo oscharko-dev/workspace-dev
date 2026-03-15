@@ -110,12 +110,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
     const figmaJsonFile = path.join(jobDir, "figma.json");
     const designIrFile = path.join(jobDir, "design-ir.json");
+    const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
     job.artifacts.figmaJsonFile = figmaJsonFile;
     job.artifacts.designIrFile = designIrFile;
+    job.artifacts.stageTimingsFile = stageTimingsFile;
     if (runtime.previewEnabled) {
       job.artifacts.reproDir = reproDir;
       job.preview.url = `${resolveBaseUrl()}/workspace/repros/${job.jobId}/`;
@@ -125,6 +127,23 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
+
+      const persistStageTimings = async (): Promise<void> => {
+        await writeFile(
+          stageTimingsFile,
+          `${JSON.stringify(
+            {
+              jobId: job.jobId,
+              status: job.status,
+              generatedAt: nowIso(),
+              stages: job.stages
+            },
+            null,
+            2
+          )}\n`,
+          "utf8"
+        );
+      };
 
       const figmaFetch = await runStage({
         job,
@@ -137,6 +156,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             maxRetries: runtime.figmaMaxRetries,
             bootstrapDepth: runtime.figmaBootstrapDepth,
             nodeBatchSize: runtime.figmaNodeBatchSize,
+            nodeFetchConcurrency: runtime.figmaNodeFetchConcurrency,
+            adaptiveBatchingEnabled: runtime.figmaAdaptiveBatchingEnabled,
             maxScreenCandidates: runtime.figmaMaxScreenCandidates,
             fetchImpl: runtime.fetchImpl,
             onLog: (message) => {
@@ -262,6 +283,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           await runProjectValidation({
             generatedProjectDir,
             enablePerfValidation: isPerfValidationEnabled(),
+            enableUiValidation: runtime.enableUiValidation,
+            commandTimeoutMs: runtime.commandTimeoutMs,
+            installPreferOffline: runtime.installPreferOffline,
             onLog: (message) => {
               pushLog({
                 job,
@@ -314,6 +338,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               job,
               generatedProjectDir,
               jobDir,
+              commandTimeoutMs: runtime.commandTimeoutMs,
               onLog: (message) => {
                 pushLog({
                   job,
@@ -340,6 +365,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
+      await persistStageTimings();
       pushLog({
         job,
         level: "info",
@@ -363,6 +389,25 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message: typedError.message
       };
       job.currentStage = typedError.stage;
+      try {
+        await writeFile(
+          stageTimingsFile,
+          `${JSON.stringify(
+            {
+              jobId: job.jobId,
+              status: job.status,
+              generatedAt: nowIso(),
+              stages: job.stages,
+              error: job.error
+            },
+            null,
+            2
+          )}\n`,
+          "utf8"
+        );
+      } catch {
+        // Ignore stage-timing persistence failures during error handling.
+      }
       pushLog({
         job,
         level: "error",

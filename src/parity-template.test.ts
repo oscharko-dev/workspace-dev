@@ -32,13 +32,13 @@ const toSha256 = (value: string): string => {
 };
 
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = {
-  "package.json": "6b871e33b7ab7ac806ad322e73b02b1bf209c47d1cad873e6de767980bbc565e",
-  "pnpm-lock.yaml": "0201c6906f12ff329a20ad30ecc2b4b300128de33f285d60246f3e9618a7741d",
-  "vite.config.ts": "b1e4685d9f2abca26f4cca73de471abd27393a9d2a34a997a1402decdf12e2ec",
+  "package.json": "a165389cca07bdc5defb45346dbcace9917a9980b8b952c6bdfd86524378f3f2",
+  "pnpm-lock.yaml": "3184f6ee6d03639e821e081700affe4255891191c10c34871cb86e31680a86eb",
+  "vite.config.ts": "3ea49273273aeeb6abbd6477e8211a2279e21eba8b1f827444d94059484f97d9",
   "tsconfig.json": "f921bebd56ac845e889a55e8c44b804a0f70b5f51e5c221c3dd0aae7fe7cb5b0",
-  "eslint.config.js": "92fe7ae585f43eb52a90982c3eba9e0fa025c109ce8711ed1f290a9939190091",
+  "eslint.config.js": "beca62d859daf895bb540e25cb69d6a5fe6051f4c3627dabb139314c91039910",
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
-  "scripts/perf-runner.mjs": "4a074b06746828f5ef34dd7dcb5c02ff46dd3400bdfaadb3da58b7f8765e6c8f",
+  "scripts/perf-runner.mjs": "f236d2543bd33b3cf7c0088f221091e4b1144c156ac97adf202b3fdd95e59c63",
   "src/App.tsx": "a125f5c96f5bc7bf4e7351ff69f80afea511622a5ad9ff1394c243aaa56cb67a",
   "src/main.tsx": "b0eb6415571d137571820c60016e3e97e4f04afe8e6f1562824ff4745a3925e8",
   "src/performance/report-web-vitals.ts": "4a818db2533f3290aac059f7117beacb45cb8b604a643ad0f227ca8d3d213e5d",

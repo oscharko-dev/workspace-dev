@@ -70,12 +70,21 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.figmaMaxRetries !== undefined ? { figmaMaxRetries: options.figmaMaxRetries } : {}),
     ...(options.figmaBootstrapDepth !== undefined ? { figmaBootstrapDepth: options.figmaBootstrapDepth } : {}),
     ...(options.figmaNodeBatchSize !== undefined ? { figmaNodeBatchSize: options.figmaNodeBatchSize } : {}),
+    ...(options.figmaNodeFetchConcurrency !== undefined
+      ? { figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency }
+      : {}),
+    ...(options.figmaAdaptiveBatchingEnabled !== undefined
+      ? { figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled }
+      : {}),
     ...(options.figmaMaxScreenCandidates !== undefined
       ? { figmaMaxScreenCandidates: options.figmaMaxScreenCandidates }
       : {}),
     ...(options.figmaScreenElementBudget !== undefined
       ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
       : {}),
+    ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
+    ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
+    ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });

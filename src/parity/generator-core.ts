@@ -65,6 +65,12 @@ interface VirtualParent {
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE" | undefined;
 }
 
+interface ScreenArtifactIdentity {
+  componentName: string;
+  filePath: string;
+  routePath: string;
+}
+
 const literal = (value: string): string => JSON.stringify(value);
 
 const clamp = (value: number, min: number, max: number): number => {
@@ -128,6 +134,73 @@ const toComponentName = (rawName: string): string => {
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join("");
   return pascal.length > 0 ? pascal : "Screen";
+};
+
+const toScreenIdSuffix = (screenId: string): string => {
+  const compact = screenId.replace(/[^a-zA-Z0-9]+/g, "");
+  if (compact.length >= 6) {
+    return compact.slice(-6);
+  }
+  if (compact.length > 0) {
+    return compact;
+  }
+  return "v2";
+};
+
+const toUniqueScreenStem = ({
+  baseStem,
+  suffix
+}: {
+  baseStem: string;
+  suffix: string;
+}): string => {
+  return `${baseStem}_${suffix}`;
+};
+
+const buildScreenArtifactIdentities = (screens: ScreenIR[]): Map<string, ScreenArtifactIdentity> => {
+  const byScreenId = new Map<string, ScreenArtifactIdentity>();
+  const usedComponentNames = new Set<string>();
+  const usedFilePaths = new Set<string>();
+  const usedRoutePaths = new Set<string>();
+
+  for (const screen of screens) {
+    const baseRoute = `/${sanitizeFileName(screen.name).toLowerCase() || "screen"}`;
+    const baseComponent = toComponentName(screen.name);
+    const baseStem = sanitizeFileName(screen.name) || "Screen";
+    const suffix = toScreenIdSuffix(screen.id);
+
+    let componentName = baseComponent;
+    let filePath = toDeterministicScreenPath(baseStem);
+    let routePath = baseRoute;
+    let attempt = 0;
+
+    while (
+      usedComponentNames.has(componentName.toLowerCase()) ||
+      usedFilePaths.has(filePath.toLowerCase()) ||
+      usedRoutePaths.has(routePath.toLowerCase())
+    ) {
+      attempt += 1;
+      const attemptSuffix = attempt === 1 ? suffix : `${suffix}${attempt + 1}`;
+      const nextStem = toUniqueScreenStem({
+        baseStem,
+        suffix: attemptSuffix
+      });
+      componentName = toComponentName(nextStem);
+      filePath = toDeterministicScreenPath(nextStem);
+      routePath = `${baseRoute}-${attemptSuffix.toLowerCase()}`;
+    }
+
+    usedComponentNames.add(componentName.toLowerCase());
+    usedFilePaths.add(filePath.toLowerCase());
+    usedRoutePaths.add(routePath.toLowerCase());
+    byScreenId.set(screen.id, {
+      componentName,
+      filePath,
+      routePath
+    });
+  }
+
+  return byScreenId;
 };
 
 const toPxLiteral = (value: number | undefined): string | undefined => {
@@ -1681,7 +1754,9 @@ const toTruncationComment = (
 const fallbackScreenFile = ({
   screen,
   mappingByNodeId,
-  truncationMetric
+  truncationMetric,
+  componentNameOverride,
+  filePathOverride
 }: {
   screen: ScreenIR;
   mappingByNodeId: Map<string, ComponentMappingRule>;
@@ -1690,9 +1765,11 @@ const fallbackScreenFile = ({
     retainedElements: number;
     budget: number;
   };
+  componentNameOverride?: string;
+  filePathOverride?: string;
 }): FallbackScreenFileResult => {
-  const componentName = toComponentName(screen.name);
-  const filePath = toDeterministicScreenPath(screen.name);
+  const componentName = componentNameOverride ?? toComponentName(screen.name);
+  const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
   const truncationComment = toTruncationComment(truncationMetric);
 
   const simplifiedChildren = simplifyElements(screen.children);
@@ -1750,8 +1827,6 @@ const fallbackScreenFile = ({
     )
   );
 
-  const responsiveScaleExpression = `min(1, calc((100vw - 32px) / ${contentWidth}))`;
-  const responsiveHeightExpression = `calc(${contentHeight}px * ${responsiveScaleExpression})`;
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const selectOptionsMap = Object.fromEntries(
     renderContext.fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
@@ -1826,12 +1901,12 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
       content: `${truncationComment}${reactImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
 
-export default function ${componentName}Screen(): JSX.Element {
+export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: ${literal(screen.fillColor ?? "background.default")}, display: "flex", justifyContent: "center", px: "0px", py: "0px" }}>
-      <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", minHeight: ${literal(responsiveHeightExpression)} }}>
-        <Box sx={{ position: "relative", width: ${literal(`${contentWidth}px`)}, minHeight: ${literal(`${contentHeight}px`)}, transform: ${literal(`scale(${responsiveScaleExpression})`)}, transformOrigin: "top center" }}>
+      <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", py: "16px" }}>
+        <Box sx={{ position: "relative", width: "100%", maxWidth: ${literal(`${contentWidth}px`)}, minHeight: ${literal(`${contentHeight}px`)} }}>
 ${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
         </Box>
       </Box>
@@ -1861,13 +1936,23 @@ export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile =
 };
 
 export const createDeterministicAppFile = (screens: ScreenIR[]): GeneratedFile => {
+  const identitiesByScreenId = buildScreenArtifactIdentities(screens);
   return {
     path: "src/App.tsx",
-    content: makeAppFile(screens)
+    content: makeAppFile({
+      screens,
+      identitiesByScreenId
+    })
   };
 };
 
-const makeAppFile = (screens: ScreenIR[]): string => {
+const makeAppFile = ({
+  screens,
+  identitiesByScreenId = buildScreenArtifactIdentities(screens)
+}: {
+  screens: ScreenIR[];
+  identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
+}): string => {
   const lazyScreens = screens.slice(1);
   const hasLazyRoutes = lazyScreens.length > 0;
   const reactImport = hasLazyRoutes ? 'import { Suspense, lazy } from "react";' : 'import { Suspense } from "react";';
@@ -1875,31 +1960,39 @@ const makeAppFile = (screens: ScreenIR[]): string => {
   const eagerImports = screens
     .slice(0, 1)
     .map((screen) => {
-      const componentName = toComponentName(screen.name);
-      const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const fileName = (identity?.filePath ?? toDeterministicScreenPath(screen.name))
+        .replace(/^src\/screens\//, "")
+        .replace(/\.tsx$/i, "");
       return `import ${componentName}Screen from "./screens/${fileName}";`;
     })
     .join("\n");
 
   const lazyImports = lazyScreens
     .map((screen) => {
-      const componentName = toComponentName(screen.name);
-      const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const fileName = (identity?.filePath ?? toDeterministicScreenPath(screen.name))
+        .replace(/^src\/screens\//, "")
+        .replace(/\.tsx$/i, "");
       return `const Lazy${componentName}Screen = lazy(async () => await import("./screens/${fileName}"));`;
     })
     .join("\n");
 
   const routes = screens
     .map((screen, index) => {
-      const componentName = toComponentName(screen.name);
-      const routePath = `/${sanitizeFileName(screen.name).toLowerCase()}`;
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const routePath = identity?.routePath ?? `/${sanitizeFileName(screen.name).toLowerCase()}`;
       const routeComponent = index === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
       return `          <Route path="${routePath}" element={<${routeComponent} />} />`;
     })
     .join("\n");
 
   const firstScreen = screens.at(0);
-  const firstRoute = firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/";
+  const firstIdentity = firstScreen ? identitiesByScreenId.get(firstScreen.id) : undefined;
+  const firstRoute = firstIdentity?.routePath ?? (firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/");
 
   return `${reactImport}
 import { Box, CircularProgress } from "@mui/material";
@@ -1913,7 +2006,7 @@ const routeLoadingFallback = (
   </Box>
 );
 
-export default function App(): JSX.Element {
+export default function App() {
   return (
     <HashRouter>
       <Suspense fallback={routeLoadingFallback}>
@@ -2550,8 +2643,10 @@ export const generateArtifacts = async ({
   await writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
 
+  const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
   const usedMappingNodeIds = new Set<string>();
   const deterministicScreens = ir.screens.map((screen) => {
+    const identity = identitiesByScreenId.get(screen.id);
     const truncationMetric = truncationByScreenId.get(screen.id);
     if (truncationMetric) {
       onLog(
@@ -2561,6 +2656,8 @@ export const generateArtifacts = async ({
     const deterministicScreen = fallbackScreenFile({
       screen,
       mappingByNodeId,
+      ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
+      ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
     });
     for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
@@ -2583,10 +2680,12 @@ export const generateArtifacts = async ({
       ].filter((value, index, values) => value.trim().length > 0 && values.indexOf(value) === index)
     };
   });
-  for (const item of deterministicScreens) {
-    await writeGeneratedFile(projectDir, item.file);
-    generatedPaths.add(item.file.path);
-  }
+  await Promise.all(
+    deterministicScreens.map(async (item) => {
+      await writeGeneratedFile(projectDir, item.file);
+      generatedPaths.add(item.file.path);
+    })
+  );
 
   for (const [nodeId, mapping] of mappingByNodeId.entries()) {
     if (!allIrNodeIds.has(nodeId)) {
@@ -2621,7 +2720,14 @@ export const generateArtifacts = async ({
     }
   }
 
-  await writeFile(path.join(projectDir, "src", "App.tsx"), makeAppFile(ir.screens), "utf-8");
+  await writeFile(
+    path.join(projectDir, "src", "App.tsx"),
+    makeAppFile({
+      screens: ir.screens,
+      identitiesByScreenId
+    }),
+    "utf-8"
+  );
   generatedPaths.add("src/App.tsx");
 
   const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
