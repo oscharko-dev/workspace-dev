@@ -387,6 +387,7 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
   assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
   assert.ok(content.includes('>{"Weiter"}</Button>'));
+  assert.ok(content.includes('endIcon={<ChevronRightIcon'));
   assert.ok(content.includes("TextField"));
   assert.ok(content.includes("MenuItem"));
   assert.ok(content.includes("InputAdornment"));
@@ -396,6 +397,216 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.equal(content.includes('{"MuiButtonBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiButtonEndIcon"}'), false);
   assert.equal(/>\s*"/.test(content), false);
+});
+
+test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
+  const screen = {
+    id: "layout-screen",
+    name: "Layout Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "header-row",
+        name: "Header Row",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 48,
+        layoutMode: "HORIZONTAL" as const,
+        primaryAxisAlignItems: "SPACE_BETWEEN" as const,
+        counterAxisAlignItems: "CENTER" as const,
+        children: [
+          {
+            id: "left-label",
+            name: "Left Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Left"
+          },
+          {
+            id: "right-label",
+            name: "Right Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Right"
+          }
+        ]
+      },
+      {
+        id: "bookmark-button",
+        name: "Bookmark Button",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 64,
+        width: 40,
+        height: 40,
+        fillColor: "#ffffff",
+        cornerRadius: 64,
+        children: [
+          {
+            id: "bookmark-icon",
+            name: "ic_bookmark_outline",
+            nodeType: "INSTANCE",
+            type: "container" as const,
+            x: 8,
+            y: 72,
+            width: 24,
+            height: 24,
+            fillColor: "#565656"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes('justifyContent: "space-between"'));
+  assert.ok(content.includes('alignItems: "center"'));
+  assert.ok(content.includes("IconButton"));
+  assert.ok(content.includes('import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";'));
+  assert.ok(content.includes('<IconButton aria-label="Bookmark Button"'));
+});
+
+test("deterministic screen rendering deduplicates duplicate sx keys for icon fallbacks", () => {
+  const screen = {
+    id: "dupe-sx-screen",
+    name: "Dupe SX Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "dupe-icon",
+        name: "ic_info_hint",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 10,
+        y: 20,
+        width: 24,
+        height: 24,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconLine = content.split("\n").find((line) => line.includes("<InfoOutlinedIcon"));
+  assert.ok(iconLine);
+
+  const count = (source: string, token: string): number => source.split(token).length - 1;
+  assert.equal(count(iconLine, "width:"), 1);
+  assert.equal(count(iconLine, "height:"), 1);
+  assert.equal(count(iconLine, "display:"), 1);
+  assert.equal(count(iconLine, "alignItems:"), 1);
+  assert.equal(count(iconLine, "justifyContent:"), 1);
+  assert.equal(count(iconLine, "fontSize:"), 1);
+});
+
+test("deterministic screen rendering keeps avatar text for icon-like containers", () => {
+  const screen = {
+    id: "avatar-screen",
+    name: "Avatar Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "avatar-node",
+        name: "IconComponentAvatar",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 40,
+        height: 40,
+        fillColor: "#d9d9d9",
+        cornerRadius: 20,
+        children: [
+          {
+            id: "avatar-text",
+            name: "MuiTypographyRoot",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "PB",
+            x: 10,
+            y: 10,
+            fillColor: "#222222",
+            fontFamily: "Roboto",
+            fontWeight: 700,
+            fontSize: 14
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('>{"PB"}</Typography>'));
+  assert.equal(content.includes("InfoOutlinedIcon"), false);
+});
+
+test("deterministic screen rendering maps down-indicator icon names to ExpandMoreIcon", () => {
+  const screen = {
+    id: "expand-screen",
+    name: "Expand Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "expand-icon",
+        name: "ic_down_s",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('import ExpandMoreIcon from "@mui/icons-material/ExpandMore";'));
+  assert.ok(content.includes("<ExpandMoreIcon"));
+  assert.equal(content.includes("InfoOutlinedIcon"), false);
+});
+
+test("deterministic screen rendering uses vector paths on non-VECTOR icon nodes", () => {
+  const screen = {
+    id: "vector-instance-screen",
+    name: "Vector Instance Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "vector-instance",
+        name: "ic_custom_instance",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        fillColor: "#111111",
+        vectorPaths: ["M0 0L10 0L10 10Z"],
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<SvgIcon"));
+  assert.ok(content.includes('d={"M0 0L10 0L10 10Z"}'));
+  assert.equal(content.includes("InfoOutlinedIcon"), false);
 });
 
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {

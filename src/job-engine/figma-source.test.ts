@@ -56,6 +56,28 @@ const createBootstrapDocument = () => ({
   }
 });
 
+const findNodeById = (node: unknown, targetId: string): Record<string, unknown> | undefined => {
+  if (!node || typeof node !== "object") {
+    return undefined;
+  }
+  const record = node as Record<string, unknown>;
+  if (record.id === targetId) {
+    return record;
+  }
+  if (!Array.isArray(record.children)) {
+    return undefined;
+  }
+
+  for (const child of record.children) {
+    const nested = findNodeById(child, targetId);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return undefined;
+};
+
 test("fetchFigmaFile returns direct geometry payload when request succeeds", async () => {
   const result = await fetchFigmaFile(
     createRequest(async () => {
@@ -385,6 +407,118 @@ test("fetchFigmaFile uses byte-limit guard to avoid oversized geometry JSON pars
   const result = await fetchFigmaFile(createRequest(fetchImpl));
   assert.equal(result.diagnostics.sourceMode, "staged-nodes");
   assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile recovers icon descendant geometry after no-geometry fallback", async () => {
+  const observedUrls: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    observedUrls.push(asString);
+
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: [
+                {
+                  id: "2:1",
+                  type: "INSTANCE",
+                  name: "ic_home",
+                  absoluteBoundingBox: { x: 4, y: 4, width: 24, height: 24 },
+                  children: []
+                },
+                {
+                  id: "2:2",
+                  type: "INSTANCE",
+                  name: "MuiSvgIconRoot",
+                  absoluteBoundingBox: { x: 32, y: 4, width: 20, height: 20 },
+                  children: []
+                },
+                {
+                  id: "2:3",
+                  type: "INSTANCE",
+                  name: "ic_too_large",
+                  absoluteBoundingBox: { x: 56, y: 4, width: 200, height: 200 },
+                  children: []
+                }
+              ]
+            }
+          }
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=2%3A1,2%3A2&geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "2:1": {
+            document: {
+              id: "2:1",
+              type: "INSTANCE",
+              name: "ic_home",
+              vectorPaths: ["M1 1L12 12Z"],
+              children: []
+            }
+          },
+          "2:2": {
+            document: {
+              id: "2:2",
+              type: "INSTANCE",
+              name: "MuiSvgIconRoot",
+              vectorPaths: ["M0 0H10V10H0Z"],
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile(createRequest(fetchImpl));
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 3);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+  assert.equal(observedUrls.some((url) => url.includes("/nodes?ids=2%3A1,2%3A2&geometry=paths")), true);
+
+  const recoveredIconA = findNodeById(result.file.document, "2:1");
+  const recoveredIconB = findNodeById(result.file.document, "2:2");
+  assert.deepEqual(recoveredIconA?.vectorPaths, ["M1 1L12 12Z"]);
+  assert.deepEqual(recoveredIconB?.vectorPaths, ["M0 0H10V10H0Z"]);
 });
 
 test("fetchFigmaFile classifies http failures and parse errors", async () => {

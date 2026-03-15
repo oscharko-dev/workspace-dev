@@ -5,6 +5,10 @@ const MIN_SCREEN_WIDTH = 320;
 const MIN_SCREEN_HEIGHT = 480;
 const MAX_ERROR_BODY_CHARS = 500;
 const MAX_JSON_RESPONSE_BYTES = 64 * 1024 * 1024;
+const MAX_ICON_RECOVERY_DESCENDANTS = 160;
+const ICON_RECOVERY_BATCH_SIZE = 20;
+const MAX_ICON_RECOVERY_DIMENSION = 96;
+const MAX_ICON_RECOVERY_AREA = MAX_ICON_RECOVERY_DIMENSION * MAX_ICON_RECOVERY_DIMENSION;
 
 interface FigmaNodeLike {
   id?: string;
@@ -419,6 +423,72 @@ const collectScreenCandidates = ({
   return candidates;
 };
 
+const hasIconRecoveryName = (node: FigmaNodeLike): boolean => {
+  const normalizedName = String(node.name ?? "").toLowerCase();
+  return (
+    normalizedName.startsWith("ic_") ||
+    normalizedName.includes("iconcomponent") ||
+    normalizedName.includes("muisvgiconroot")
+  );
+};
+
+const hasRecoverableIconBounds = (node: FigmaNodeLike): boolean => {
+  const width = node.absoluteBoundingBox?.width;
+  const height = node.absoluteBoundingBox?.height;
+  if (typeof width !== "number" || typeof height !== "number") {
+    return false;
+  }
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+  return width <= MAX_ICON_RECOVERY_DIMENSION && height <= MAX_ICON_RECOVERY_DIMENSION && width * height <= MAX_ICON_RECOVERY_AREA;
+};
+
+const collectRecoverableIconDescendantIds = ({
+  root,
+  maxCandidates
+}: {
+  root: FigmaNodeLike;
+  maxCandidates: number;
+}): string[] => {
+  const collected: string[] = [];
+  const seen = new Set<string>();
+
+  const visit = (node: FigmaNodeLike, isRoot: boolean): void => {
+    if (collected.length >= maxCandidates) {
+      return;
+    }
+    if (node.visible === false) {
+      return;
+    }
+
+    const nodeId = typeof node.id === "string" ? node.id : "";
+    if (
+      !isRoot &&
+      nodeId.length > 0 &&
+      !seen.has(nodeId) &&
+      hasIconRecoveryName(node) &&
+      hasRecoverableIconBounds(node)
+    ) {
+      seen.add(nodeId);
+      collected.push(nodeId);
+      if (collected.length >= maxCandidates) {
+        return;
+      }
+    }
+
+    for (const child of asNodeArray(node.children)) {
+      visit(child, false);
+      if (collected.length >= maxCandidates) {
+        return;
+      }
+    }
+  };
+
+  visit(root, true);
+  return collected;
+};
+
 const splitIntoBatches = (ids: string[], batchSize: number): string[][] => {
   const batches: string[][] = [];
   for (let index = 0; index < ids.length; index += batchSize) {
@@ -631,6 +701,80 @@ export const fetchFigmaFile = async ({
   const replacementNodes = new Map<string, FigmaNodeLike>();
   const degradedGeometryNodes = new Set<string>();
 
+  const recoverIconGeometryForFallback = async ({
+    screenNodeId,
+    fallbackNode
+  }: {
+    screenNodeId: string;
+    fallbackNode: FigmaNodeLike;
+  }): Promise<number> => {
+    const recoverableDescendantIds = collectRecoverableIconDescendantIds({
+      root: fallbackNode,
+      maxCandidates: MAX_ICON_RECOVERY_DESCENDANTS
+    });
+
+    if (recoverableDescendantIds.length === 0) {
+      return 0;
+    }
+
+    let recoveredCount = 0;
+
+    const fetchIconGeometryGroup = async (ids: string[]): Promise<void> => {
+      if (ids.length === 0) {
+        return;
+      }
+
+      try {
+        const payload = await executeFigmaRequest({
+          url: buildNodesUrl({ fileKey, ids, includeGeometry: true }),
+          requestLabel: `nodes icon-geometry (${screenNodeId}, ${ids.length})`,
+          accessToken,
+          timeoutMs,
+          maxRetries,
+          fetchImpl,
+          onLog,
+          allowTooLargeFallback: true
+        });
+
+        const documents = extractNodeDocuments(payload);
+        for (const id of ids) {
+          const node = documents.get(id);
+          if (!node) {
+            continue;
+          }
+          const alreadyPresent = replacementNodes.has(id);
+          replacementNodes.set(id, node);
+          if (!alreadyPresent) {
+            recoveredCount += 1;
+          }
+        }
+        return;
+      } catch (error) {
+        if (!(error instanceof FigmaTooLargeError)) {
+          throw error;
+        }
+      }
+
+      if (ids.length > 1) {
+        const midpoint = Math.ceil(ids.length / 2);
+        await fetchIconGeometryGroup(ids.slice(0, midpoint));
+        await fetchIconGeometryGroup(ids.slice(midpoint));
+        return;
+      }
+
+      const nodeId = ids[0];
+      if (nodeId) {
+        onLog(`Icon geometry recovery skipped for node '${nodeId}' after oversized geometry response.`);
+      }
+    };
+
+    for (const batch of splitIntoBatches(recoverableDescendantIds, ICON_RECOVERY_BATCH_SIZE)) {
+      await fetchIconGeometryGroup(batch);
+    }
+
+    return recoveredCount;
+  };
+
   const fetchNodeGroup = async (ids: string[]): Promise<void> => {
     if (ids.length === 0) {
       return;
@@ -690,6 +834,17 @@ export const fetchFigmaFile = async ({
       const fallbackNode = documents.get(nodeId);
       if (fallbackNode) {
         replacementNodes.set(nodeId, fallbackNode);
+        try {
+          const recoveredCount = await recoverIconGeometryForFallback({
+            screenNodeId: nodeId,
+            fallbackNode
+          });
+          if (recoveredCount > 0) {
+            onLog(`Recovered geometry for ${recoveredCount} icon descendants under node '${nodeId}'.`);
+          }
+        } catch (error) {
+          onLog(`Icon geometry recovery failed for node '${nodeId}': ${getErrorMessage(error)}`);
+        }
       }
       degradedGeometryNodes.add(nodeId);
     } catch {
