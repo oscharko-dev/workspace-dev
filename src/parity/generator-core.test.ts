@@ -311,6 +311,8 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(result.screenApplied, 0);
   assert.equal(result.screenTotal, 1);
   assert.equal(result.generatedPaths.includes("src/App.tsx"), true);
+  assert.equal(result.generatedPaths.includes("generation-metrics.json"), true);
+  assert.equal(result.generationMetrics.fetchedNodes, 0);
   assert.equal(result.mappingCoverage?.usedMappings, 1);
   assert.equal(result.mappingCoverage?.fallbackNodes, 3);
   assert.equal(result.mappingCoverage?.totalCandidateNodes, 4);
@@ -326,6 +328,11 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
   assert.ok(generatedScreenContent.includes('import MappedInput from "@acme/ui";'));
   assert.ok(generatedScreenContent.includes("<MappedInput"));
+
+  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metrics = JSON.parse(metricsContent) as { skippedHidden?: number; truncatedScreens?: unknown[] };
+  assert.equal(typeof metrics.skippedHidden, "number");
+  assert.equal(Array.isArray(metrics.truncatedScreens), true);
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
@@ -389,4 +396,42 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.equal(content.includes('{"MuiButtonBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiButtonEndIcon"}'), false);
   assert.equal(/>\s*"/.test(content), false);
+});
+
+test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-truncation-"));
+  const ir = createIr();
+  ir.metrics = {
+    fetchedNodes: 4,
+    skippedHidden: 2,
+    skippedPlaceholders: 3,
+    screenElementCounts: [{ screenId: "screen-1", screenName: "Übersicht", elements: 1400 }],
+    truncatedScreens: [
+      {
+        screenId: "screen-1",
+        screenName: "Übersicht",
+        originalElements: 1400,
+        retainedElements: 1200,
+        budget: 1200
+      }
+    ],
+    degradedGeometryNodes: ["1:1"]
+  };
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  assert.ok(generatedScreenContent.includes("Screen IR exceeded budget"));
+
+  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  assert.ok(metricsContent.includes("\"degradedGeometryNodes\""));
+  assert.equal(result.generationMetrics.truncatedScreens.length, 1);
 });

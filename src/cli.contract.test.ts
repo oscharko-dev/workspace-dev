@@ -148,6 +148,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /workspace-dev start/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
+  assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
 

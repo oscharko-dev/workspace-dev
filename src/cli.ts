@@ -13,6 +13,10 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
 const DEFAULT_FIGMA_TIMEOUT_MS = 30_000;
 const DEFAULT_FIGMA_RETRIES = 3;
+const DEFAULT_FIGMA_BOOTSTRAP_DEPTH = 5;
+const DEFAULT_FIGMA_NODE_BATCH_SIZE = 6;
+const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
+const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
 
 interface CliOptions {
   command: string;
@@ -21,6 +25,10 @@ interface CliOptions {
   outputRoot: string;
   figmaTimeoutMs: number;
   figmaRetries: number;
+  figmaBootstrapDepth: number;
+  figmaNodeBatchSize: number;
+  figmaMaxScreenCandidates: number;
+  figmaScreenElementBudget: number;
   enablePreview: boolean;
   enablePerfValidation: boolean;
 }
@@ -84,6 +92,30 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 1,
     max: 10
   });
+  let figmaBootstrapDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH,
+    fallback: DEFAULT_FIGMA_BOOTSTRAP_DEPTH,
+    min: 1,
+    max: 10
+  });
+  let figmaNodeBatchSize = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE,
+    fallback: DEFAULT_FIGMA_NODE_BATCH_SIZE,
+    min: 1,
+    max: 20
+  });
+  let figmaMaxScreenCandidates = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES,
+    fallback: DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES,
+    min: 1,
+    max: 200
+  });
+  let figmaScreenElementBudget = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
+    fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
+    min: 100,
+    max: 10000
+  });
   let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
   let enablePerfValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
@@ -144,6 +176,50 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--figma-bootstrap-depth") {
+      figmaBootstrapDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaBootstrapDepth,
+        min: 1,
+        max: 10
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-node-batch-size") {
+      figmaNodeBatchSize = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaNodeBatchSize,
+        min: 1,
+        max: 20
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-max-screen-candidates") {
+      figmaMaxScreenCandidates = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaMaxScreenCandidates,
+        min: 1,
+        max: 200
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-screen-element-budget") {
+      figmaScreenElementBudget = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaScreenElementBudget,
+        min: 100,
+        max: 10_000
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--preview") {
       enablePreview = parseBooleanLike(args[index + 1], enablePreview);
       index += 1;
@@ -164,6 +240,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     outputRoot,
     figmaTimeoutMs,
     figmaRetries,
+    figmaBootstrapDepth,
+    figmaNodeBatchSize,
+    figmaMaxScreenCandidates,
+    figmaScreenElementBudget,
     enablePreview,
     enablePerfValidation
   };
@@ -183,6 +263,14 @@ Options:
   --output-root <path>       Output root for jobs/repros (default: ${DEFAULT_OUTPUT_ROOT})
   --figma-timeout-ms <ms>    Figma request timeout (default: ${DEFAULT_FIGMA_TIMEOUT_MS})
   --figma-retries <count>    Figma max retries (default: ${DEFAULT_FIGMA_RETRIES})
+  --figma-bootstrap-depth <n>
+                             Bootstrap depth for staged large-board fetch (default: ${DEFAULT_FIGMA_BOOTSTRAP_DEPTH})
+  --figma-node-batch-size <n>
+                             Candidate batch size for /nodes fetch (default: ${DEFAULT_FIGMA_NODE_BATCH_SIZE})
+  --figma-max-screen-candidates <n>
+                             Max screen candidates fetched in staged mode (default: ${DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES})
+  --figma-screen-element-budget <n>
+                             Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: false)
@@ -194,6 +282,10 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_OUTPUT_ROOT
   FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
+  FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH
+  FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE
+  FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
   FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
@@ -240,6 +332,10 @@ const main = async (): Promise<void> => {
       outputRoot: options.outputRoot,
       figmaRequestTimeoutMs: options.figmaTimeoutMs,
       figmaMaxRetries: options.figmaRetries,
+      figmaBootstrapDepth: options.figmaBootstrapDepth,
+      figmaNodeBatchSize: options.figmaNodeBatchSize,
+      figmaMaxScreenCandidates: options.figmaMaxScreenCandidates,
+      figmaScreenElementBudget: options.figmaScreenElementBudget,
       enablePreview: options.enablePreview
     });
 

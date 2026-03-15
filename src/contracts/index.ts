@@ -44,6 +44,14 @@ export interface WorkspaceStartOptions {
   figmaRequestTimeoutMs?: number;
   /** Figma retry attempts. Default: 3 */
   figmaMaxRetries?: number;
+  /** Bootstrap depth for large-board staged fetch. Default: 5 */
+  figmaBootstrapDepth?: number;
+  /** Candidate node batch size for staged fetch. Default: 6 */
+  figmaNodeBatchSize?: number;
+  /** Maximum staged screen candidates to fetch. Default: 40 */
+  figmaMaxScreenCandidates?: number;
+  /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
+  figmaScreenElementBudget?: number;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -124,6 +132,7 @@ export interface WorkspaceJobArtifacts {
   generatedProjectDir?: string;
   designIrFile?: string;
   figmaJsonFile?: string;
+  generationMetricsFile?: string;
   reproDir?: string;
 }
 
