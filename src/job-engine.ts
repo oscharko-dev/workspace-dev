@@ -202,7 +202,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           await rm(generatedProjectDir, { recursive: true, force: true });
           await copyDir({
             sourceDir: TEMPLATE_ROOT,
-            targetDir: generatedProjectDir
+            targetDir: generatedProjectDir,
+            filter: (sourcePath) => {
+              const baseName = path.basename(sourcePath);
+              return baseName !== "node_modules" && baseName !== ".vite" && baseName !== "dist";
+            }
           });
         }
       });

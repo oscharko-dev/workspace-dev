@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readlink, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWorkspaceServer } from "./server.js";
+
+const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_NODE_MODULES_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app/node_modules");
 
 const createFakeFigmaFetch = (): typeof fetch => {
   return async (input) => {
@@ -94,6 +98,42 @@ const waitForJobTerminalState = async ({
 
 const createTempOutputRoot = async (): Promise<string> => {
   return await mkdtemp(path.join(os.tmpdir(), "workspace-dev-test-"));
+};
+
+const isPathWithinRoot = ({ candidatePath, rootPath }: { candidatePath: string; rootPath: string }): boolean => {
+  const normalizedRoot = path.resolve(rootPath);
+  const normalizedCandidate = path.resolve(candidatePath);
+  return (
+    normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`)
+  );
+};
+
+const collectSymlinkTargets = async ({ rootDir }: { rootDir: string }): Promise<string[]> => {
+  const pendingDirs: string[] = [rootDir];
+  const resolvedTargets: string[] = [];
+
+  while (pendingDirs.length > 0) {
+    const currentDir = pendingDirs.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = await readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirs.push(entryPath);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) {
+        continue;
+      }
+      const target = await readlink(entryPath);
+      resolvedTargets.push(path.resolve(path.dirname(entryPath), target));
+    }
+  }
+
+  return resolvedTargets;
 };
 
 const extractUiAssetUrls = ({ html }: { html: string }): string[] => {
@@ -388,6 +428,17 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(request.repoToken, undefined);
     assert.equal(request.enableGitPr, false);
     assert.equal(preview.enabled, true);
+
+    const generatedProjectDir = path.join(outputRoot, "jobs", jobId, "generated-app");
+    const symlinkTargets = await collectSymlinkTargets({ rootDir: generatedProjectDir });
+    const hasTemplateNodeModulesSymlink = symlinkTargets.some((target) =>
+      isPathWithinRoot({ candidatePath: target, rootPath: TEMPLATE_NODE_MODULES_ROOT })
+    );
+    assert.equal(
+      hasTemplateNodeModulesSymlink,
+      false,
+      "Generated app must not keep symlinks into template node_modules."
+    );
 
     const resultResponse = await server.app.inject({
       method: "GET",
