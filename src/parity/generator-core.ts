@@ -2401,6 +2401,122 @@ const renderChildrenIntoParent = ({
     .join("\n");
 };
 
+const SIMPLE_STACK_GEOMETRY_SX_KEYS = new Set([
+  "position",
+  "left",
+  "top",
+  "width",
+  "maxWidth",
+  "height",
+  "minHeight",
+  "boxSizing",
+  "overflow"
+]);
+
+const hasResponsiveTopLevelLayoutOverrides = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  return Boolean(context.responsiveTopLevelLayoutOverrides?.[element.id]);
+};
+
+const isSimpleFlexContainerForStack = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  const layoutMode = element.layoutMode ?? "NONE";
+  if (layoutMode !== "VERTICAL" && layoutMode !== "HORIZONTAL") {
+    return false;
+  }
+  if ((element.children?.length ?? 0) === 0) {
+    return false;
+  }
+  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
+    return false;
+  }
+
+  const hasVisualStylingSignals = Boolean(
+    hasVisualStyle(element) ||
+      (typeof element.strokeWidth === "number" && Number.isFinite(element.strokeWidth) && element.strokeWidth > 0) ||
+      (typeof element.opacity === "number" && Number.isFinite(element.opacity) && element.opacity !== 1)
+  );
+  return !hasVisualStylingSignals;
+};
+
+const toSimpleStackContainerSx = ({
+  element,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  }).filter(([key]) => SIMPLE_STACK_GEOMETRY_SX_KEYS.has(key));
+  return sxString(baseEntries);
+};
+
+const renderSimpleFlexContainerAsStack = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  registerMuiImports(context, "Stack");
+  const indent = "  ".repeat(depth);
+  const layoutMode = element.layoutMode === "HORIZONTAL" ? "HORIZONTAL" : "VERTICAL";
+  const direction = layoutMode === "HORIZONTAL" ? "row" : "column";
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
+      : 0;
+  const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
+  const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+  const sx = toSimpleStackContainerSx({
+    element,
+    parent,
+    context
+  });
+  const props = [
+    `direction=${literal(direction)}`,
+    `spacing={${spacing}}`,
+    alignItems ? `alignItems=${literal(alignItems)}` : undefined,
+    justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
+    sx ? `sx={{ ${sx} }}` : undefined
+  ]
+    .filter((entry): entry is string => Boolean(entry))
+    .join(" ");
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  if (!renderedChildren.trim()) {
+    return `${indent}<Stack ${props} />`;
+  }
+  return `${indent}<Stack ${props}>
+${renderedChildren}
+${indent}</Stack>`;
+};
+
 interface RenderedItem {
   id: string;
   label: string;
@@ -3381,6 +3497,15 @@ const renderContainer = (
     if (renderedGrid) {
       return renderedGrid;
     }
+  }
+
+  if (isSimpleFlexContainerForStack({ element, context })) {
+    return renderSimpleFlexContainerAsStack({
+      element,
+      depth,
+      parent,
+      context
+    });
   }
 
   const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
