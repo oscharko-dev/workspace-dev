@@ -22,6 +22,7 @@ export const resolveRuntimeSettings = ({
   figmaNodeFetchConcurrency,
   figmaAdaptiveBatchingEnabled,
   figmaMaxScreenCandidates,
+  figmaScreenNamePattern,
   figmaCacheEnabled,
   figmaCacheTtlMs,
   figmaScreenElementBudget,
@@ -38,6 +39,7 @@ export const resolveRuntimeSettings = ({
   figmaNodeFetchConcurrency?: number;
   figmaAdaptiveBatchingEnabled?: boolean;
   figmaMaxScreenCandidates?: number;
+  figmaScreenNamePattern?: string;
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
   figmaScreenElementBudget?: number;
@@ -76,6 +78,10 @@ export const resolveRuntimeSettings = ({
       typeof figmaMaxScreenCandidates === "number" && Number.isFinite(figmaMaxScreenCandidates)
         ? Math.max(1, Math.min(200, Math.trunc(figmaMaxScreenCandidates)))
         : DEFAULT_MAX_SCREEN_CANDIDATES,
+    figmaScreenNamePattern:
+      typeof figmaScreenNamePattern === "string" && figmaScreenNamePattern.trim().length > 0
+        ? figmaScreenNamePattern.trim()
+        : undefined,
     figmaCacheEnabled: typeof figmaCacheEnabled === "boolean" ? figmaCacheEnabled : DEFAULT_FIGMA_CACHE_ENABLED,
     figmaCacheTtlMs:
       typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)

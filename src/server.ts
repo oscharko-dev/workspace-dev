@@ -79,6 +79,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.figmaMaxScreenCandidates !== undefined
       ? { figmaMaxScreenCandidates: options.figmaMaxScreenCandidates }
       : {}),
+    ...(options.figmaScreenNamePattern !== undefined
+      ? { figmaScreenNamePattern: options.figmaScreenNamePattern }
+      : {}),
     ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
     ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
     ...(options.figmaScreenElementBudget !== undefined

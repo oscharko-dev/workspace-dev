@@ -588,6 +588,325 @@ test("fetchFigmaFile runs staged node geometry batches concurrently", async () =
   assert.equal(maxActiveGeometryRequests >= 2, true);
 });
 
+test("fetchFigmaFile excludes staged candidates by name and page context", async () => {
+  const logs: string[] = [];
+  const requestedGeometryUrls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "Components",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Profile Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "0:2",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "2:1",
+                  type: "FRAME",
+                  name: "icon/home",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:2",
+                  type: "FRAME",
+                  name: "atom/card",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:3",
+                  type: "FRAME",
+                  name: "_hidden/debug",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "2:4",
+                  type: "FRAME",
+                  name: "Checkout Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=2%3A4&geometry=paths")) {
+      requestedGeometryUrls.push(asString);
+      return jsonResponse({
+        nodes: {
+          "2:4": {
+            document: {
+              id: "2:4",
+              type: "FRAME",
+              name: "Loaded Checkout",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    onLog: (message: string) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 1);
+  assert.equal(requestedGeometryUrls.length, 1);
+  assert.equal(logs.some((entry) => entry.includes("excludedByPage=1")), true);
+  assert.equal(logs.some((entry) => entry.includes("excludedByName=3")), true);
+});
+
+test("fetchFigmaFile prioritizes content-rich staged screen candidates", async () => {
+  const requestedGeometryUrls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Decorative Banner",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 1800, height: 500 },
+                  children: []
+                },
+                {
+                  id: "1:2",
+                  type: "FRAME",
+                  name: "Login Screen",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: [
+                    {
+                      id: "1:2:1",
+                      type: "TEXT",
+                      name: "Welcome",
+                      children: []
+                    },
+                    {
+                      id: "1:2:2",
+                      type: "FRAME",
+                      name: "email input",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+      requestedGeometryUrls.push(asString);
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Loaded Login Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    maxScreenCandidates: 1
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 1);
+  assert.equal(requestedGeometryUrls.length, 1);
+  const selectedScreen = findNodeById(result.file.document, "1:2");
+  assert.equal(selectedScreen?.name, "Loaded Login Screen");
+});
+
+test("fetchFigmaFile applies screenNamePattern include filter for staged candidates", async () => {
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              name: "App",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Auth/Login",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "1:2",
+                  type: "FRAME",
+                  name: "Settings",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                },
+                {
+                  id: "1:3",
+                  type: "FRAME",
+                  name: "Auth/Register",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    screenNamePattern: "^auth/"
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(requestedGeometryIds, [["1:1", "1:3"]]);
+});
+
+test("fetchFigmaFile ignores invalid screenNamePattern and continues staged fetch", async () => {
+  const logs: string[] = [];
+  const requestedGeometryIds: string[][] = [];
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+      requestedGeometryIds.push(ids);
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    screenNamePattern: "(",
+    onLog: (message: string) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(requestedGeometryIds, [["1:1", "1:2"]]);
+  assert.equal(logs.some((entry) => entry.includes("Invalid figmaScreenNamePattern")), true);
+});
+
 test("fetchFigmaFile uses cache for repeated direct geometry requests", async () => {
   const cacheDir = await createTempCacheDir();
   const logs: string[] = [];
