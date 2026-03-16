@@ -7,6 +7,9 @@ import type {
   GenerationMetrics,
   GeneratedFile,
   LlmCodegenMode,
+  ResponsiveBreakpoint,
+  ScreenResponsiveLayoutOverride,
+  ScreenResponsiveLayoutOverridesByBreakpoint,
   ScreenElementIR,
   ScreenIR,
   VariantStateStyle
@@ -517,12 +520,214 @@ const baseLayoutEntries = (
   return entries;
 };
 
+const RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT: Record<ResponsiveBreakpoint, string> = {
+  xs: "@media (max-width: 428px)",
+  sm: "@media (min-width: 429px) and (max-width: 768px)",
+  md: "@media (min-width: 769px) and (max-width: 1024px)",
+  lg: "@media (min-width: 1025px) and (max-width: 1440px)",
+  xl: "@media (min-width: 1441px)"
+};
+
+const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
+
+const pushResponsiveStyleEntry = ({
+  byBreakpoint,
+  breakpoint,
+  entry
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>;
+  breakpoint: ResponsiveBreakpoint;
+  entry: [string, string | number | undefined];
+}): void => {
+  const current = byBreakpoint.get(breakpoint) ?? [];
+  current.push(entry);
+  byBreakpoint.set(breakpoint, current);
+};
+
+const appendLayoutOverrideEntriesForBreakpoint = ({
+  byBreakpoint,
+  breakpoint,
+  baseLayoutMode,
+  override
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>;
+  breakpoint: ResponsiveBreakpoint;
+  baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  override: ScreenResponsiveLayoutOverride;
+}): void => {
+  const effectiveLayoutMode = override.layoutMode ?? baseLayoutMode;
+  if (override.layoutMode) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["display", literal(effectiveLayoutMode === "NONE" ? "block" : "flex")]
+    });
+    if (effectiveLayoutMode !== "NONE") {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["flexDirection", literal(effectiveLayoutMode === "HORIZONTAL" ? "row" : "column")]
+      });
+    }
+  }
+
+  if (override.primaryAxisAlignItems) {
+    const justifyContent = mapPrimaryAxisAlignToJustifyContent(override.primaryAxisAlignItems);
+    if (justifyContent) {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["justifyContent", literal(justifyContent)]
+      });
+    }
+  } else if (override.layoutMode === "NONE") {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["justifyContent", literal("initial")]
+    });
+  }
+
+  if (override.counterAxisAlignItems) {
+    const alignItems = mapCounterAxisAlignToAlignItems(override.counterAxisAlignItems, effectiveLayoutMode);
+    if (alignItems) {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["alignItems", literal(alignItems)]
+      });
+    }
+  } else if (override.layoutMode === "NONE") {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["alignItems", literal("initial")]
+    });
+  }
+
+  if (typeof override.gap === "number" && Number.isFinite(override.gap)) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["gap", toPxLiteral(override.gap)]
+    });
+  }
+};
+
+const toResponsiveMediaEntries = (
+  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>
+): Array<[string, string | number | undefined]> => {
+  const entries: Array<[string, string | number | undefined]> = [];
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const styleEntries = byBreakpoint.get(breakpoint);
+    if (!styleEntries || styleEntries.length === 0) {
+      continue;
+    }
+    const styleBody = sxString(styleEntries);
+    if (!styleBody) {
+      continue;
+    }
+    entries.push([literal(RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT[breakpoint]), `{ ${styleBody} }`]);
+  }
+  return entries;
+};
+
+const toResponsiveLayoutMediaEntries = ({
+  baseLayoutMode,
+  overrides
+}: {
+  baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  overrides: ScreenResponsiveLayoutOverridesByBreakpoint | undefined;
+}): Array<[string, string | number | undefined]> => {
+  if (!overrides) {
+    return [];
+  }
+  const byBreakpoint = new Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>();
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const override = overrides[breakpoint];
+    if (!override) {
+      continue;
+    }
+    appendLayoutOverrideEntriesForBreakpoint({
+      byBreakpoint,
+      breakpoint,
+      baseLayoutMode,
+      override
+    });
+  }
+  return toResponsiveMediaEntries(byBreakpoint);
+};
+
+const toElementSx = ({
+  element,
+  parent,
+  context,
+  includePaints = true
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+  context: RenderContext;
+  includePaints?: boolean;
+}): string => {
+  const responsiveEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+  });
+  return sxString([
+    ...baseLayoutEntries(element, parent, { includePaints }),
+    ...responsiveEntries
+  ]);
+};
+
+const toScreenResponsiveRootMediaEntries = (screen: ScreenIR): Array<[string, string | number | undefined]> => {
+  if (!screen.responsive) {
+    return [];
+  }
+
+  const byBreakpoint = new Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>();
+
+  for (const variant of screen.responsive.variants) {
+    if (typeof variant.width !== "number" || !Number.isFinite(variant.width) || variant.width <= 0) {
+      continue;
+    }
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint: variant.breakpoint,
+      entry: ["maxWidth", literal(`${Math.round(variant.width)}px`)]
+    });
+  }
+
+  const rootOverrides = screen.responsive.rootLayoutOverrides;
+  if (rootOverrides) {
+    for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+      const override = rootOverrides[breakpoint];
+      if (!override) {
+        continue;
+      }
+      appendLayoutOverrideEntriesForBreakpoint({
+        byBreakpoint,
+        breakpoint,
+        baseLayoutMode: screen.layoutMode,
+        override
+      });
+    }
+  }
+
+  return toResponsiveMediaEntries(byBreakpoint);
+};
+
 const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text?.trim() || element.name);
   const normalizedFont = normalizeFontFamily(element.fontFamily);
-  const textLayoutEntries = baseLayoutEntries(element, parent, { includePaints: false }).filter(([key]) => {
+  const textLayoutEntries = [
+    ...baseLayoutEntries(element, parent, { includePaints: false }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+    })
+  ].filter(([key]) => {
     return key !== "width" && key !== "height" && key !== "minHeight";
   });
 
@@ -734,6 +939,7 @@ interface RenderContext {
     message: string;
   }>;
   emittedWarningKeys: Set<string>;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {
@@ -917,7 +1123,11 @@ const renderMappedElement = (
   const componentName = registerMappedImport({ context, mapping });
   context.usedMappingNodeIds.add(element.id);
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const resolvedContract = mapping.propContract ?? {};
   const childrenValue = resolveContractValue(resolvedContract.children, element);
   const propEntries = Object.entries(resolvedContract)
@@ -1420,6 +1630,10 @@ const renderSemanticInput = (
   const outlineStrokeColor = outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor;
   const fieldSx = sxString([
     ...baseLayoutEntries(outlineContainer, parent, { includePaints: false }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: outlineContainer.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id]
+    }),
     ["bgcolor", element.fillColor ? literal(element.fillColor) : undefined]
   ]);
 
@@ -1577,6 +1791,10 @@ const renderSemanticAccordion = (
 
   const accordionSx = sxString([
     ...baseLayoutEntries(element, parent),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+    }),
     ["boxShadow", literal("none")]
   ]);
 
@@ -1620,6 +1838,10 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
     const iconButtonSx = sxString([
       ...baseLayoutEntries(element, parent),
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      }),
       ["color", iconColor ? literal(iconColor) : undefined]
     ]);
     const iconButtonSxWithState = appendVariantStateOverridesToSx({
@@ -1656,6 +1878,10 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
 
   const sx = sxString([
     ...baseLayoutEntries(element, parent),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+    }),
     ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
     ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
     ["lineHeight", element.lineHeight ? toPxLiteral(element.lineHeight) : undefined],
@@ -1732,7 +1958,11 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   }
   registerMuiImports(context, "Card", "CardContent");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 2,
@@ -1751,7 +1981,11 @@ const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const indent = "  ".repeat(depth);
   const mappedMuiProps = element.variantMapping?.muiProps;
   const sx = appendVariantStateOverridesToSx({
-    sx: sxString(baseLayoutEntries(element, parent)),
+    sx: toElementSx({
+      element,
+      parent,
+      context
+    }),
     element
   });
   const label = firstText(element)?.trim() || element.name;
@@ -1781,7 +2015,12 @@ const renderSelectionControl = ({
     return renderContainer(element, depth, parent, context);
   }
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
   const label = firstText(element)?.trim();
   registerMuiImports(context, componentName);
   if (label) {
@@ -1798,7 +2037,11 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
   }
   registerMuiImports(context, "List", "ListItem", "ListItemText");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedItems = items
     .map((item) => `${indent}  <ListItem key={${literal(item.id)}} disablePadding><ListItemText primary={${literal(item.label)}} /></ListItem>`)
     .join("\n");
@@ -1810,7 +2053,11 @@ ${indent}</List>`;
 const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "AppBar", "Toolbar", "Typography");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 2,
@@ -1831,7 +2078,11 @@ const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualPare
   }
   registerMuiImports(context, "Tabs", "Tab");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedTabs = tabs.map((tab, index) => `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}} />`).join("\n");
   return `${indent}<Tabs value={0} sx={{ ${sx} }}>
 ${renderedTabs}
@@ -1850,7 +2101,11 @@ const renderDialog = (element: ScreenElementIR, depth: number, parent: VirtualPa
   }
   registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
     : `${indent}  <DialogContent />`;
@@ -1866,7 +2121,11 @@ const renderStepper = (element: ScreenElementIR, depth: number, parent: VirtualP
   }
   registerMuiImports(context, "Stepper", "Step", "StepLabel");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedSteps = steps
     .map((step, index) => `${indent}  <Step key={${literal(step.id)}} completed={${index < 1 ? "true" : "false"}}><StepLabel>{${literal(step.label)}}</StepLabel></Step>`)
     .join("\n");
@@ -1880,7 +2139,12 @@ const renderProgress = (element: ScreenElementIR, depth: number, parent: Virtual
   const height = element.height ?? 0;
   const isLinear = width >= Math.max(48, height * 2);
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
   if (isLinear) {
     registerMuiImports(context, "LinearProgress");
     return `${indent}<LinearProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
@@ -1896,14 +2160,23 @@ const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualPa
   }
   registerMuiImports(context, "Avatar");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   return `${indent}<Avatar sx={{ ${sx} }}>${content ? `{${literal(content)}}` : ""}</Avatar>`;
 };
 
 const renderBadge = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Badge", "Box");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
   const badgeContent = firstText(element)?.trim() || " ";
   const renderedChildren = renderChildrenIntoParent({
     element,
@@ -1920,6 +2193,10 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
   const indent = "  ".repeat(depth);
   const sx = sxString([
     ...baseLayoutEntries(element, parent, { includePaints: false }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+    }),
     ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
   ]);
   return `${indent}<Divider sx={{ ${sx} }} />`;
@@ -1932,7 +2209,11 @@ const renderNavigation = (element: ScreenElementIR, depth: number, parent: Virtu
   }
   registerMuiImports(context, "BottomNavigation", "BottomNavigationAction");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const renderedActions = actions
     .map(
       (action, index) =>
@@ -1971,6 +2252,10 @@ const renderContainer = (
       context,
       extraEntries: [
         ...baseLayoutEntries(element, parent, { includePaints: false }),
+        ...toResponsiveLayoutMediaEntries({
+          baseLayoutMode: element.layoutMode ?? "NONE",
+          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+        }),
         ["display", literal("flex")],
         ["alignItems", literal("center")],
         ["justifyContent", literal("center")]
@@ -1995,13 +2280,21 @@ const renderContainer = (
   if (isDivider) {
     const sx = sxString([
       ...baseLayoutEntries(element, parent),
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      }),
       ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
     ]);
     registerMuiImports(context, "Divider");
     return `${indent}<Divider sx={{ ${sx} }} />`;
   }
 
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
 
   if (!renderedChildren.trim()) {
     if (!hasVisualStyle(element)) {
@@ -2187,7 +2480,10 @@ const fallbackScreenFile = ({
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
-    emittedWarningKeys: new Set<string>()
+    emittedWarningKeys: new Set<string>(),
+    ...(screen.responsive?.topLevelLayoutOverrides
+      ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
+      : {})
   };
 
   const rendered = simplifiedChildren
@@ -2227,6 +2523,13 @@ const fallbackScreenFile = ({
       }, 0)
     )
   );
+  const contentRootSx = sxString([
+    ["position", literal("relative")],
+    ["width", literal("100%")],
+    ["maxWidth", literal(`${contentWidth}px`)],
+    ["minHeight", literal(`${contentHeight}px`)],
+    ...toScreenResponsiveRootMediaEntries(screen)
+  ]);
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const selectOptionsMap = Object.fromEntries(
@@ -2279,7 +2582,7 @@ ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: ${literal(screen.fillColor ?? "background.default")}, display: "flex", justifyContent: "center", px: "0px", py: "0px" }}>
       <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", py: "16px" }}>
-        <Box sx={{ position: "relative", width: "100%", maxWidth: ${literal(`${contentWidth}px`)}, minHeight: ${literal(`${contentHeight}px`)} }}>
+        <Box sx={{ ${contentRootSx} }}>
 ${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
         </Box>
       </Box>

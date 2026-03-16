@@ -6,6 +6,11 @@ import type {
   FigmaMcpEnrichment,
   GenerationMetrics,
   PrimaryAxisAlignItems,
+  ResponsiveBreakpoint,
+  ScreenResponsiveIR,
+  ScreenResponsiveLayoutOverride,
+  ScreenResponsiveLayoutOverridesByBreakpoint,
+  ScreenResponsiveVariantIR,
   VariantElementState,
   VariantMappingIR,
   VariantMuiProps,
@@ -1683,6 +1688,392 @@ const truncateElementsToBudget = ({
   };
 };
 
+const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
+const RESPONSIVE_BASE_BREAKPOINT_PRIORITY: ResponsiveBreakpoint[] = ["lg", "xl", "md", "sm", "xs"];
+
+const BREAKPOINT_SUFFIX_TOKEN_TO_VALUE: Record<string, ResponsiveBreakpoint> = {
+  xs: "xs",
+  mobile: "xs",
+  phone: "xs",
+  sm: "sm",
+  tablet: "sm",
+  md: "md",
+  lg: "lg",
+  desktop: "lg",
+  xl: "xl",
+  widescreen: "xl"
+};
+
+interface ComparableLayoutState {
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  gap: number;
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+}
+
+interface TopLevelLayoutMatchEntry {
+  elementId: string;
+  layout: ComparableLayoutState;
+}
+
+interface MappedScreenCandidate {
+  sourceNode: FigmaNode;
+  name: string;
+  groupKey: string;
+  breakpoint: ResponsiveBreakpoint;
+  width?: number;
+  height?: number;
+  area: number;
+  fillColor?: string;
+  layout: ComparableLayoutState;
+  padding: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  children: ScreenElementIR[];
+  topLevelLayoutByMatchKey: Map<string, TopLevelLayoutMatchEntry>;
+  originalElements: number;
+  retainedCount: number;
+  truncatedByBudget: boolean;
+  depthTruncatedBranchCount: number;
+  firstTruncatedDepth?: number;
+}
+
+const toAsciiLower = (value: string): string => {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+};
+
+const toNameTokens = (value: string): string[] => {
+  return toAsciiLower(value).match(/[a-z0-9]+/g) ?? [];
+};
+
+const resolveScreenGroupKey = ({
+  name,
+  fallbackId
+}: {
+  name: string;
+  fallbackId: string;
+}): string => {
+  const tokens = toNameTokens(name);
+  if (tokens.length === 0) {
+    const sanitizedFallback = fallbackId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return sanitizedFallback ? `screen-${sanitizedFallback}` : "screen";
+  }
+
+  const reduced = [...tokens];
+  let keepReducing = true;
+  while (keepReducing && reduced.length > 0) {
+    keepReducing = false;
+    const last = reduced[reduced.length - 1];
+    const lastPair = reduced.slice(-2).join(" ");
+
+    if (lastPair === "tablet portrait") {
+      reduced.splice(-2, 2);
+      keepReducing = true;
+      continue;
+    }
+    if (lastPair === "tablet landscape") {
+      reduced.splice(-2, 2);
+      keepReducing = true;
+      continue;
+    }
+    if (lastPair === "large desktop") {
+      reduced.splice(-2, 2);
+      keepReducing = true;
+      continue;
+    }
+
+    if (last && BREAKPOINT_SUFFIX_TOKEN_TO_VALUE[last]) {
+      reduced.pop();
+      keepReducing = true;
+    }
+  }
+
+  const normalized = (reduced.length > 0 ? reduced : tokens).join("-");
+  return normalized.length > 0 ? normalized : `screen-${fallbackId}`;
+};
+
+const resolveResponsiveBreakpointFromWidth = (width: number | undefined): ResponsiveBreakpoint => {
+  if (typeof width !== "number" || !Number.isFinite(width) || width <= 0) {
+    return "lg";
+  }
+  if (width >= 1441) {
+    return "xl";
+  }
+  if (width >= 1025) {
+    return "lg";
+  }
+  if (width >= 769) {
+    return "md";
+  }
+  if (width >= 429) {
+    return "sm";
+  }
+  return "xs";
+};
+
+const toComparableRootLayout = (node: FigmaNode): ComparableLayoutState => {
+  return {
+    layoutMode: node.layoutMode ?? "NONE",
+    gap: node.itemSpacing ?? 0,
+    ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
+    ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
+  };
+};
+
+const toComparableElementLayout = (element: ScreenElementIR): ComparableLayoutState => {
+  return {
+    layoutMode: element.layoutMode ?? "NONE",
+    gap: element.gap ?? 0,
+    ...(element.primaryAxisAlignItems ? { primaryAxisAlignItems: element.primaryAxisAlignItems } : {}),
+    ...(element.counterAxisAlignItems ? { counterAxisAlignItems: element.counterAxisAlignItems } : {})
+  };
+};
+
+const toResponsiveMatchElementName = (name: string): string => {
+  const tokens = toNameTokens(name);
+  return tokens.length > 0 ? tokens.join("-") : "element";
+};
+
+const buildTopLevelLayoutMatchMap = (children: ScreenElementIR[]): Map<string, TopLevelLayoutMatchEntry> => {
+  const entries = new Map<string, TopLevelLayoutMatchEntry>();
+  const occurrenceBySignature = new Map<string, number>();
+  for (const child of children) {
+    const signature = `${child.type}:${toResponsiveMatchElementName(child.name)}`;
+    const nextIndex = (occurrenceBySignature.get(signature) ?? 0) + 1;
+    occurrenceBySignature.set(signature, nextIndex);
+    const matchKey = `${signature}#${nextIndex}`;
+    entries.set(matchKey, {
+      elementId: child.id,
+      layout: toComparableElementLayout(child)
+    });
+  }
+  return entries;
+};
+
+const resolveLayoutOverride = ({
+  base,
+  current
+}: {
+  base: ComparableLayoutState;
+  current: ComparableLayoutState;
+}): ScreenResponsiveLayoutOverride | undefined => {
+  const override: ScreenResponsiveLayoutOverride = {};
+  if (current.layoutMode !== base.layoutMode) {
+    override.layoutMode = current.layoutMode;
+  }
+  if (current.gap !== base.gap) {
+    override.gap = current.gap;
+  }
+  if (current.primaryAxisAlignItems && current.primaryAxisAlignItems !== base.primaryAxisAlignItems) {
+    override.primaryAxisAlignItems = current.primaryAxisAlignItems;
+  }
+  if (current.counterAxisAlignItems && current.counterAxisAlignItems !== base.counterAxisAlignItems) {
+    override.counterAxisAlignItems = current.counterAxisAlignItems;
+  }
+  return Object.keys(override).length > 0 ? override : undefined;
+};
+
+const compareResponsiveWinnerPriority = (left: MappedScreenCandidate, right: MappedScreenCandidate): number => {
+  if (left.originalElements !== right.originalElements) {
+    return right.originalElements - left.originalElements;
+  }
+  if (left.area !== right.area) {
+    return right.area - left.area;
+  }
+  return left.sourceNode.id.localeCompare(right.sourceNode.id);
+};
+
+const mapScreenCandidate = ({
+  candidate,
+  metrics,
+  screenElementBudget,
+  screenElementMaxDepth
+}: {
+  candidate: FigmaNode;
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+}): MappedScreenCandidate => {
+  const normalized = unwrapScreenRoot(candidate);
+  const sourceNode = normalized.node;
+  const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
+  const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? []);
+  const depthContext: ScreenDepthBudgetContext = {
+    screenElementBudget,
+    configuredMaxDepth: screenElementMaxDepth,
+    mappedElementCount: 0,
+    nodeCountByDepth: depthAnalysis.nodeCountByDepth,
+    semanticCountByDepth: depthAnalysis.semanticCountByDepth,
+    subtreeHasSemanticById: depthAnalysis.subtreeHasSemanticById,
+    truncatedBranchCount: 0
+  };
+
+  const mappedChildren: ScreenElementIR[] = [];
+  for (const child of sourceNode.children ?? []) {
+    const mapped = mapElement({
+      node: child,
+      depth: 0,
+      inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
+      metrics,
+      depthContext
+    });
+    if (mapped) {
+      mappedChildren.push(mapped);
+    }
+  }
+
+  const originalElements = countElements(mappedChildren);
+  const { elements: budgetedChildren, retainedCount } =
+    originalElements > screenElementBudget
+      ? truncateElementsToBudget({ elements: mappedChildren, budget: screenElementBudget })
+      : { elements: mappedChildren, retainedCount: originalElements };
+
+  const width = sourceNode.absoluteBoundingBox?.width;
+  const height = sourceNode.absoluteBoundingBox?.height;
+  const area =
+    typeof width === "number" &&
+    Number.isFinite(width) &&
+    width > 0 &&
+    typeof height === "number" &&
+    Number.isFinite(height) &&
+    height > 0
+      ? width * height
+      : 0;
+  const fillColor = toHexColor(fill?.color, fill?.opacity);
+
+  return {
+    sourceNode,
+    name: normalized.name,
+    groupKey: resolveScreenGroupKey({
+      name: normalized.name,
+      fallbackId: sourceNode.id
+    }),
+    breakpoint: resolveResponsiveBreakpointFromWidth(width),
+    ...(typeof width === "number" ? { width } : {}),
+    ...(typeof height === "number" ? { height } : {}),
+    area,
+    ...(fillColor ? { fillColor } : {}),
+    layout: toComparableRootLayout(sourceNode),
+    padding: mapPadding(sourceNode),
+    children: budgetedChildren,
+    topLevelLayoutByMatchKey: buildTopLevelLayoutMatchMap(budgetedChildren),
+    originalElements,
+    retainedCount,
+    truncatedByBudget: originalElements > screenElementBudget,
+    depthTruncatedBranchCount: depthContext.truncatedBranchCount,
+    ...(depthContext.firstTruncatedDepth !== undefined
+      ? { firstTruncatedDepth: depthContext.firstTruncatedDepth }
+      : {})
+  };
+};
+
+const buildResponsiveMetadata = ({
+  groupKey,
+  baseBreakpoint,
+  baseCandidate,
+  winnersByBreakpoint
+}: {
+  groupKey: string;
+  baseBreakpoint: ResponsiveBreakpoint;
+  baseCandidate: MappedScreenCandidate;
+  winnersByBreakpoint: Map<ResponsiveBreakpoint, MappedScreenCandidate>;
+}): ScreenResponsiveIR | undefined => {
+  if (winnersByBreakpoint.size <= 1) {
+    return undefined;
+  }
+
+  const variants: ScreenResponsiveVariantIR[] = RESPONSIVE_BREAKPOINT_ORDER
+    .filter((breakpoint) => winnersByBreakpoint.has(breakpoint))
+    .map((breakpoint) => {
+      const winner = winnersByBreakpoint.get(breakpoint) as MappedScreenCandidate;
+      return {
+        breakpoint,
+        nodeId: winner.sourceNode.id,
+        name: winner.name,
+        ...(winner.width !== undefined ? { width: winner.width } : {}),
+        ...(winner.height !== undefined ? { height: winner.height } : {}),
+        layoutMode: winner.layout.layoutMode,
+        gap: winner.layout.gap,
+        ...(winner.layout.primaryAxisAlignItems ? { primaryAxisAlignItems: winner.layout.primaryAxisAlignItems } : {}),
+        ...(winner.layout.counterAxisAlignItems ? { counterAxisAlignItems: winner.layout.counterAxisAlignItems } : {}),
+        padding: winner.padding,
+        isBase: breakpoint === baseBreakpoint
+      };
+    });
+
+  const rootLayoutOverrides: ScreenResponsiveLayoutOverridesByBreakpoint = {};
+  const topLevelLayoutOverrides: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint> = {};
+
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    if (breakpoint === baseBreakpoint) {
+      continue;
+    }
+    const winner = winnersByBreakpoint.get(breakpoint);
+    if (!winner) {
+      continue;
+    }
+
+    const rootOverride = resolveLayoutOverride({
+      base: baseCandidate.layout,
+      current: winner.layout
+    });
+    if (rootOverride) {
+      rootLayoutOverrides[breakpoint] = rootOverride;
+    }
+
+    for (const [matchKey, baseEntry] of baseCandidate.topLevelLayoutByMatchKey.entries()) {
+      const variantEntry = winner.topLevelLayoutByMatchKey.get(matchKey);
+      if (!variantEntry) {
+        continue;
+      }
+      const childOverride = resolveLayoutOverride({
+        base: baseEntry.layout,
+        current: variantEntry.layout
+      });
+      if (!childOverride) {
+        continue;
+      }
+      const existing = topLevelLayoutOverrides[baseEntry.elementId] ?? {};
+      existing[breakpoint] = childOverride;
+      topLevelLayoutOverrides[baseEntry.elementId] = existing;
+    }
+  }
+
+  return {
+    groupKey,
+    baseBreakpoint,
+    variants,
+    ...(Object.keys(rootLayoutOverrides).length > 0 ? { rootLayoutOverrides } : {}),
+    ...(Object.keys(topLevelLayoutOverrides).length > 0 ? { topLevelLayoutOverrides } : {})
+  };
+};
+
+const toScreenFromCandidate = ({
+  candidate,
+  responsive
+}: {
+  candidate: MappedScreenCandidate;
+  responsive?: ScreenResponsiveIR;
+}): ScreenIR => {
+  return {
+    id: candidate.sourceNode.id,
+    name: candidate.name,
+    layoutMode: candidate.layout.layoutMode,
+    gap: candidate.layout.gap,
+    padding: candidate.padding,
+    children: candidate.children,
+    ...(candidate.layout.primaryAxisAlignItems ? { primaryAxisAlignItems: candidate.layout.primaryAxisAlignItems } : {}),
+    ...(candidate.layout.counterAxisAlignItems ? { counterAxisAlignItems: candidate.layout.counterAxisAlignItems } : {}),
+    ...(candidate.width !== undefined ? { width: candidate.width } : {}),
+    ...(candidate.height !== undefined ? { height: candidate.height } : {}),
+    ...(candidate.fillColor ? { fillColor: candidate.fillColor } : {}),
+    ...(responsive ? { responsive } : {})
+  };
+};
+
 const extractScreens = ({
   file,
   metrics,
@@ -1724,89 +2115,80 @@ const extractScreens = ({
     }
   }
 
-  const screens: ScreenIR[] = [];
-
-  for (const candidate of screenCandidates) {
-    const normalized = unwrapScreenRoot(candidate);
-    const sourceNode = normalized.node;
-    const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
-    const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? []);
-    const depthContext: ScreenDepthBudgetContext = {
+  const mappedCandidates = screenCandidates.map((candidate) =>
+    mapScreenCandidate({
+      candidate,
+      metrics,
       screenElementBudget,
-      configuredMaxDepth: screenElementMaxDepth,
-      mappedElementCount: 0,
-      nodeCountByDepth: depthAnalysis.nodeCountByDepth,
-      semanticCountByDepth: depthAnalysis.semanticCountByDepth,
-      subtreeHasSemanticById: depthAnalysis.subtreeHasSemanticById,
-      truncatedBranchCount: 0
-    };
+      screenElementMaxDepth
+    })
+  );
 
-    const mappedChildren: ScreenElementIR[] = [];
-    for (const child of sourceNode.children ?? []) {
-      const mapped = mapElement({
-        node: child,
-        depth: 0,
-        inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
-        metrics,
-        depthContext
-      });
-      if (mapped) {
-        mappedChildren.push(mapped);
+  const groupedCandidates = new Map<string, MappedScreenCandidate[]>();
+  for (const candidate of mappedCandidates) {
+    const existing = groupedCandidates.get(candidate.groupKey) ?? [];
+    existing.push(candidate);
+    groupedCandidates.set(candidate.groupKey, existing);
+  }
+
+  const screens: ScreenIR[] = [];
+  for (const [groupKey, grouped] of groupedCandidates.entries()) {
+    const winnersByBreakpoint = new Map<ResponsiveBreakpoint, MappedScreenCandidate>();
+
+    for (const candidate of grouped) {
+      const existing = winnersByBreakpoint.get(candidate.breakpoint);
+      if (!existing || compareResponsiveWinnerPriority(candidate, existing) < 0) {
+        winnersByBreakpoint.set(candidate.breakpoint, candidate);
       }
     }
 
-    const originalElements = countElements(mappedChildren);
+    const baseBreakpoint =
+      RESPONSIVE_BASE_BREAKPOINT_PRIORITY.find((breakpoint) => winnersByBreakpoint.has(breakpoint)) ??
+      RESPONSIVE_BREAKPOINT_ORDER.find((breakpoint) => winnersByBreakpoint.has(breakpoint));
+    if (!baseBreakpoint) {
+      continue;
+    }
+    const baseCandidate = winnersByBreakpoint.get(baseBreakpoint);
+    if (!baseCandidate) {
+      continue;
+    }
+
     metrics.screenElementCounts.push({
-      screenId: sourceNode.id,
-      screenName: normalized.name,
-      elements: originalElements
+      screenId: baseCandidate.sourceNode.id,
+      screenName: baseCandidate.name,
+      elements: baseCandidate.originalElements
     });
-
-    const { elements: budgetedChildren, retainedCount } =
-      originalElements > screenElementBudget
-        ? truncateElementsToBudget({ elements: mappedChildren, budget: screenElementBudget })
-        : { elements: mappedChildren, retainedCount: originalElements };
-
-    if (originalElements > screenElementBudget) {
+    if (baseCandidate.truncatedByBudget) {
       metrics.truncatedScreens.push({
-        screenId: sourceNode.id,
-        screenName: normalized.name,
-        originalElements,
-        retainedElements: retainedCount,
+        screenId: baseCandidate.sourceNode.id,
+        screenName: baseCandidate.name,
+        originalElements: baseCandidate.originalElements,
+        retainedElements: baseCandidate.retainedCount,
         budget: screenElementBudget
       });
     }
-    if (depthContext.truncatedBranchCount > 0) {
+    if (baseCandidate.depthTruncatedBranchCount > 0) {
       metrics.depthTruncatedScreens.push({
-        screenId: sourceNode.id,
-        screenName: normalized.name,
+        screenId: baseCandidate.sourceNode.id,
+        screenName: baseCandidate.name,
         maxDepth: screenElementMaxDepth,
-        firstTruncatedDepth: depthContext.firstTruncatedDepth ?? screenElementMaxDepth + 1,
-        truncatedBranchCount: depthContext.truncatedBranchCount
+        firstTruncatedDepth: baseCandidate.firstTruncatedDepth ?? screenElementMaxDepth + 1,
+        truncatedBranchCount: baseCandidate.depthTruncatedBranchCount
       });
     }
 
-    const screen: ScreenIR = {
-      id: sourceNode.id,
-      name: normalized.name,
-      layoutMode: sourceNode.layoutMode ?? "NONE",
-      gap: sourceNode.itemSpacing ?? 0,
-      padding: mapPadding(sourceNode),
-      children: budgetedChildren,
-      ...(sourceNode.primaryAxisAlignItems ? { primaryAxisAlignItems: sourceNode.primaryAxisAlignItems } : {}),
-      ...(sourceNode.counterAxisAlignItems ? { counterAxisAlignItems: sourceNode.counterAxisAlignItems } : {})
-    };
-    if (sourceNode.absoluteBoundingBox?.width !== undefined) {
-      screen.width = sourceNode.absoluteBoundingBox.width;
-    }
-    if (sourceNode.absoluteBoundingBox?.height !== undefined) {
-      screen.height = sourceNode.absoluteBoundingBox.height;
-    }
-    const fillColor = toHexColor(fill?.color, fill?.opacity);
-    if (fillColor) {
-      screen.fillColor = fillColor;
-    }
-    screens.push(screen);
+    const responsive = buildResponsiveMetadata({
+      groupKey,
+      baseBreakpoint,
+      baseCandidate,
+      winnersByBreakpoint
+    });
+    screens.push(
+      toScreenFromCandidate({
+        candidate: baseCandidate,
+        ...(responsive ? { responsive } : {})
+      })
+    );
   }
 
   return screens;
