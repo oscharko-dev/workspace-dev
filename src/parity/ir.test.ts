@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { figmaToDesignIr, figmaToDesignIrWithOptions } from "./ir.js";
+import { deriveTokensForTesting, figmaToDesignIr, figmaToDesignIrWithOptions } from "./ir.js";
 
 const countElements = (elements: Array<{ children?: unknown[] }>): number => {
   let total = 0;
@@ -16,6 +16,39 @@ const countElements = (elements: Array<{ children?: unknown[] }>): number => {
     }
   }
   return total;
+};
+
+const toFigmaColor = (hex: string): { r: number; g: number; b: number; a: number } => {
+  const normalized = hex.replace("#", "");
+  const toChannel = (start: number): number => Number.parseInt(normalized.slice(start, start + 2), 16) / 255;
+  return {
+    r: toChannel(0),
+    g: toChannel(2),
+    b: toChannel(4),
+    a: 1
+  };
+};
+
+const contrastRatio = (firstHex: string, secondHex: string): number => {
+  const toLuminance = (hex: string): number => {
+    const { r, g, b } = toFigmaColor(hex);
+    const transform = (value: number): number => {
+      if (value <= 0.03928) {
+        return value / 12.92;
+      }
+      return ((value + 0.055) / 1.055) ** 2.4;
+    };
+    const rl = transform(r);
+    const gl = transform(g);
+    const bl = transform(b);
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+  };
+
+  const first = toLuminance(firstHex);
+  const second = toLuminance(secondHex);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+  return (lighter + 0.05) / (darker + 0.05);
 };
 
 const createSampleFigmaFile = () => ({
@@ -579,4 +612,274 @@ test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types",
   assert.equal(byId.get("hint-badge")?.type, "badge");
   assert.equal(byId.get("hint-progress")?.type, "progress");
   assert.equal(byId.get("hint-chip")?.name, "Status Chip");
+});
+
+test("deriveTokensForTesting prioritizes semantic button and heading colors over decorative fills", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Token Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Overview Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f4f5f8") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+              children: [
+                {
+                  id: "decorative-bg",
+                  type: "RECTANGLE",
+                  name: "Decorative Glow",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#3b82f6") }],
+                  absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 500 }
+                },
+                {
+                  id: "title",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Finanzübersicht",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  style: { fontSize: 34, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 48, y: 36, width: 420, height: 52 }
+                },
+                {
+                  id: "cta",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  absoluteBoundingBox: { x: 60, y: 640, width: 280, height: 56 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.primary, "#d4001a");
+  assert.equal(tokens.palette.secondary !== tokens.palette.primary, true);
+});
+
+test("deriveTokensForTesting chooses text/background candidates with robust contrast", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Contrast Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Contrast Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f8f9fb") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1180, height: 900 },
+              children: [
+                {
+                  id: "body-light",
+                  type: "TEXT",
+                  name: "Body Light",
+                  characters: "Leichter Text",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#9ca3af") }],
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 120, width: 260, height: 24 }
+                },
+                {
+                  id: "headline-dark",
+                  type: "TEXT",
+                  name: "Headline Dark",
+                  characters: "Starker Kontrast",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  style: { fontSize: 30, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 340, height: 40 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const ratio = contrastRatio(tokens.palette.text, tokens.palette.background);
+  assert.equal(ratio >= 4.5, true);
+});
+
+test("deriveTokensForTesting uses median spacing and border radius", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Metrics Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 800 },
+              children: [
+                { id: "n1", type: "FRAME", name: "A", itemSpacing: 4, cornerRadius: 2 },
+                { id: "n2", type: "FRAME", name: "B", itemSpacing: 8, cornerRadius: 8 },
+                { id: "n3", type: "FRAME", name: "C", itemSpacing: 8, cornerRadius: 12 },
+                { id: "n4", type: "FRAME", name: "D", itemSpacing: 12, cornerRadius: 12 },
+                { id: "n5", type: "FRAME", name: "E", itemSpacing: 40, cornerRadius: 20 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.spacingBase, 8);
+  assert.equal(tokens.borderRadius, 12);
+});
+
+test("deriveTokensForTesting builds stable font stack from heading and body families", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Font Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 900, height: 700 },
+              children: [
+                {
+                  id: "title",
+                  type: "TEXT",
+                  name: "Title",
+                  characters: "Titel",
+                  style: { fontSize: 34, fontWeight: 700, fontFamily: "Roboto Slab" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  absoluteBoundingBox: { x: 24, y: 24, width: 200, height: 40 }
+                },
+                {
+                  id: "body-1",
+                  type: "TEXT",
+                  name: "Body 1",
+                  characters: "Text",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#374151") }],
+                  absoluteBoundingBox: { x: 24, y: 80, width: 280, height: 22 }
+                },
+                {
+                  id: "body-2",
+                  type: "TEXT",
+                  name: "Body 2",
+                  characters: "Weiterer Text",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#374151") }],
+                  absoluteBoundingBox: { x: 24, y: 110, width: 320, height: 22 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.fontFamily.includes("Inter"), true);
+  assert.equal(tokens.fontFamily.includes("Roboto Slab"), true);
+  assert.equal(tokens.fontFamily.includes("sans-serif"), true);
+  assert.equal(tokens.headingSize > tokens.bodySize, true);
+});
+
+test("deriveTokensForTesting boosts style-tagged brand colors", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Style Boost Demo",
+    styles: {
+      "S:PRIMARY": {
+        name: "Brand Primary Main",
+        styleType: "FILL"
+      }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f7f8fb") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1000, height: 800 },
+              children: [
+                {
+                  id: "button-red",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  absoluteBoundingBox: { x: 40, y: 620, width: 280, height: 56 }
+                },
+                {
+                  id: "button-brand",
+                  type: "FRAME",
+                  name: "Secondary CTA",
+                  styles: { fill: "S:PRIMARY" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#0b84f3") }],
+                  absoluteBoundingBox: { x: 360, y: 620, width: 260, height: 56 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.primary, "#0b84f3");
+});
+
+test("deriveTokensForTesting stays stable with sparse token signals", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Sparse Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: []
+        }
+      ]
+    }
+  });
+
+  assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.primary), true);
+  assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.secondary), true);
+  assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.background), true);
+  assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.text), true);
+  assert.equal(tokens.spacingBase >= 1, true);
+  assert.equal(tokens.borderRadius >= 1, true);
+  assert.equal(tokens.headingSize >= tokens.bodySize, true);
+  assert.equal(tokens.fontFamily.includes("sans-serif"), true);
 });
