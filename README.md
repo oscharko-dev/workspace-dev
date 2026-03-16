@@ -82,6 +82,10 @@ Optional Git/PR input:
 - `projectName` (optional)
 - `targetPath` (optional, defaults to `figma-generated`)
 
+Optional token branding input:
+
+- `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
+
 With `enableGitPr=false`, generation is local-only.
 
 ## Runtime API
@@ -126,6 +130,7 @@ workspace-dev start [options]
 - `--no-cache` (default `false`, disables figma.source file-system cache)
 - `--figma-cache-ttl-ms <ms>` (default `900000`)
 - `--figma-screen-element-budget <n>` (default `1200`)
+- `--brand <derived|sparkasse>` (default `derived`)
 - `--command-timeout-ms <ms>` (default `900000`)
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
@@ -148,6 +153,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_NO_CACHE`
 - `FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
+- `FIGMAPIPE_WORKSPACE_BRAND`
 - `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
 - `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
@@ -181,6 +187,7 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
   -d '{
     "figmaFileKey":"demo-file-key",
     "figmaAccessToken":"figd_...",
+    "brandTheme":"derived",
     "enableGitPr": false,
     "figmaSourceMode":"rest",
     "llmCodegenMode":"deterministic"

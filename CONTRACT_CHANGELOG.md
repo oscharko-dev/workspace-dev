@@ -23,6 +23,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.4.0] - 2026-03-16
+
+### Brand theme policy for IR token derivation
+
+Added:
+
+- `WorkspaceBrandTheme = "derived" | "sparkasse"`
+- `WorkspaceStartOptions.brandTheme?: WorkspaceBrandTheme` (default `derived`)
+- `WorkspaceJobInput.brandTheme?: WorkspaceBrandTheme` (optional per-job override)
+- `WorkspaceJobRequestMetadata.brandTheme: WorkspaceBrandTheme` (resolved effective policy)
+
 ## [2.3.0] - 2026-03-16
 
 ### Staged screen candidate name filter

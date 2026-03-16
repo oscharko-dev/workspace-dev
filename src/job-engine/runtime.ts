@@ -1,3 +1,4 @@
+import type { WorkspaceBrandTheme } from "../contracts/index.js";
 import type { JobEngineRuntime } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -10,9 +11,21 @@ const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
+
+const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "derived" || normalized === "sparkasse") {
+    return normalized;
+  }
+  return undefined;
+};
 
 export const resolveRuntimeSettings = ({
   figmaRequestTimeoutMs,
@@ -26,6 +39,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled,
   figmaCacheTtlMs,
   figmaScreenElementBudget,
+  brandTheme,
   commandTimeoutMs,
   enableUiValidation,
   installPreferOffline,
@@ -43,6 +57,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
   figmaScreenElementBudget?: number;
+  brandTheme?: string;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
   installPreferOffline?: boolean;
@@ -91,6 +106,8 @@ export const resolveRuntimeSettings = ({
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))
         : DEFAULT_SCREEN_ELEMENT_BUDGET,
+    brandTheme:
+      typeof brandTheme === "string" ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME) : DEFAULT_BRAND_THEME,
     commandTimeoutMs:
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))

@@ -1,4 +1,5 @@
 import type {
+  WorkspaceBrandTheme,
   WorkspaceGitPrStatus,
   WorkspaceJobArtifacts,
   WorkspaceJobError,
@@ -70,6 +71,7 @@ export interface JobEngineRuntime {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
+  brandTheme: WorkspaceBrandTheme;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
