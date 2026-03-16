@@ -243,6 +243,189 @@ const createElementTypeMatrixFigmaFile = () => ({
                 children: []
               },
               {
+                id: "node-grid",
+                type: "FRAME",
+                name: "Grid Layout",
+                absoluteBoundingBox: { x: 10, y: 340, width: 340, height: 180 },
+                children: [
+                  {
+                    id: "node-grid-a",
+                    type: "FRAME",
+                    name: "Tile A",
+                    absoluteBoundingBox: { x: 10, y: 340, width: 160, height: 80 },
+                    children: []
+                  },
+                  {
+                    id: "node-grid-b",
+                    type: "FRAME",
+                    name: "Tile B",
+                    absoluteBoundingBox: { x: 190, y: 340, width: 160, height: 80 },
+                    children: []
+                  },
+                  {
+                    id: "node-grid-c",
+                    type: "FRAME",
+                    name: "Tile C",
+                    absoluteBoundingBox: { x: 10, y: 440, width: 160, height: 80 },
+                    children: []
+                  },
+                  {
+                    id: "node-grid-d",
+                    type: "FRAME",
+                    name: "Tile D",
+                    absoluteBoundingBox: { x: 190, y: 440, width: 160, height: 80 },
+                    children: []
+                  }
+                ]
+              },
+              {
+                id: "node-stack",
+                type: "FRAME",
+                name: "Stack Group",
+                layoutMode: "VERTICAL",
+                absoluteBoundingBox: { x: 370, y: 340, width: 200, height: 120 },
+                children: [
+                  {
+                    id: "node-stack-child-1",
+                    type: "TEXT",
+                    name: "Stack Item 1",
+                    characters: "Item 1",
+                    absoluteBoundingBox: { x: 372, y: 344, width: 80, height: 20 }
+                  },
+                  {
+                    id: "node-stack-child-2",
+                    type: "TEXT",
+                    name: "Stack Item 2",
+                    characters: "Item 2",
+                    absoluteBoundingBox: { x: 372, y: 372, width: 80, height: 20 }
+                  }
+                ]
+              },
+              {
+                id: "node-paper",
+                type: "FRAME",
+                name: "Paper Surface",
+                fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
+                absoluteBoundingBox: { x: 370, y: 470, width: 260, height: 110 },
+                children: [
+                  {
+                    id: "node-paper-text",
+                    type: "TEXT",
+                    name: "Paper Title",
+                    characters: "Paper",
+                    absoluteBoundingBox: { x: 382, y: 482, width: 80, height: 20 }
+                  }
+                ]
+              },
+              {
+                id: "node-table",
+                type: "FRAME",
+                name: "Customer Table",
+                absoluteBoundingBox: { x: 650, y: 340, width: 360, height: 160 },
+                children: [
+                  {
+                    id: "node-table-row-1",
+                    type: "FRAME",
+                    name: "Table Row 1",
+                    absoluteBoundingBox: { x: 650, y: 340, width: 360, height: 40 },
+                    children: [
+                      {
+                        id: "node-table-row-1-col-1",
+                        type: "TEXT",
+                        name: "Col 1",
+                        characters: "Name",
+                        absoluteBoundingBox: { x: 656, y: 350, width: 80, height: 18 }
+                      },
+                      {
+                        id: "node-table-row-1-col-2",
+                        type: "TEXT",
+                        name: "Col 2",
+                        characters: "Value",
+                        absoluteBoundingBox: { x: 836, y: 350, width: 80, height: 18 }
+                      }
+                    ]
+                  },
+                  {
+                    id: "node-table-row-2",
+                    type: "FRAME",
+                    name: "Table Row 2",
+                    absoluteBoundingBox: { x: 650, y: 384, width: 360, height: 40 },
+                    children: [
+                      {
+                        id: "node-table-row-2-col-1",
+                        type: "TEXT",
+                        name: "Col 1",
+                        characters: "Anna",
+                        absoluteBoundingBox: { x: 656, y: 394, width: 80, height: 18 }
+                      },
+                      {
+                        id: "node-table-row-2-col-2",
+                        type: "TEXT",
+                        name: "Col 2",
+                        characters: "42",
+                        absoluteBoundingBox: { x: 836, y: 394, width: 80, height: 18 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                id: "node-tooltip",
+                type: "FRAME",
+                name: "Tooltip Info",
+                absoluteBoundingBox: { x: 650, y: 520, width: 120, height: 44 },
+                children: []
+              },
+              {
+                id: "node-drawer",
+                type: "FRAME",
+                name: "Side Drawer",
+                absoluteBoundingBox: { x: 790, y: 520, width: 220, height: 260 },
+                children: []
+              },
+              {
+                id: "node-breadcrumbs",
+                type: "FRAME",
+                name: "Breadcrumbs",
+                absoluteBoundingBox: { x: 650, y: 570, width: 220, height: 36 },
+                children: []
+              },
+              {
+                id: "node-select",
+                type: "FRAME",
+                name: "Select Field",
+                absoluteBoundingBox: { x: 650, y: 620, width: 280, height: 56 },
+                children: []
+              },
+              {
+                id: "node-slider",
+                type: "FRAME",
+                name: "MuiSlider",
+                absoluteBoundingBox: { x: 650, y: 690, width: 280, height: 40 },
+                children: []
+              },
+              {
+                id: "node-rating",
+                type: "FRAME",
+                name: "Star Rating",
+                absoluteBoundingBox: { x: 650, y: 738, width: 180, height: 36 },
+                children: []
+              },
+              {
+                id: "node-snackbar",
+                type: "FRAME",
+                name: "Snackbar Alert",
+                absoluteBoundingBox: { x: 650, y: 782, width: 320, height: 64 },
+                children: []
+              },
+              {
+                id: "node-skeleton",
+                type: "FRAME",
+                name: "Loading Skeleton",
+                absoluteBoundingBox: { x: 650, y: 856, width: 320, height: 20 },
+                children: []
+              },
+              {
                 id: "node-progress",
                 type: "FRAME",
                 name: "LinearProgress",
@@ -388,7 +571,19 @@ const createSemanticHintOverrideFigmaFile = () => ({
               { id: "hint-navigation", type: "FRAME", name: "Frame 3", absoluteBoundingBox: { x: 0, y: 260, width: 320, height: 64 } },
               { id: "hint-stepper", type: "FRAME", name: "Frame 4", absoluteBoundingBox: { x: 0, y: 334, width: 320, height: 80 } },
               { id: "hint-badge", type: "FRAME", name: "Frame 5", absoluteBoundingBox: { x: 0, y: 424, width: 64, height: 32 } },
-              { id: "hint-progress", type: "FRAME", name: "Frame 6", absoluteBoundingBox: { x: 0, y: 468, width: 200, height: 8 } }
+              { id: "hint-progress", type: "FRAME", name: "Frame 6", absoluteBoundingBox: { x: 0, y: 468, width: 200, height: 8 } },
+              { id: "hint-grid", type: "FRAME", name: "Frame 7", absoluteBoundingBox: { x: 0, y: 486, width: 260, height: 120 } },
+              { id: "hint-table", type: "FRAME", name: "Frame 8", absoluteBoundingBox: { x: 0, y: 616, width: 260, height: 120 } },
+              { id: "hint-slider", type: "FRAME", name: "Frame 9", absoluteBoundingBox: { x: 0, y: 746, width: 240, height: 32 } },
+              { id: "hint-select", type: "FRAME", name: "Frame 10", absoluteBoundingBox: { x: 0, y: 786, width: 280, height: 56 } },
+              { id: "hint-rating", type: "FRAME", name: "Frame 11", absoluteBoundingBox: { x: 0, y: 852, width: 180, height: 32 } },
+              { id: "hint-snackbar", type: "FRAME", name: "Frame 12", absoluteBoundingBox: { x: 0, y: 894, width: 300, height: 64 } },
+              { id: "hint-skeleton", type: "FRAME", name: "Frame 13", absoluteBoundingBox: { x: 0, y: 968, width: 300, height: 20 } },
+              { id: "hint-paper", type: "FRAME", name: "Frame 14", absoluteBoundingBox: { x: 0, y: 998, width: 280, height: 120 } },
+              { id: "hint-stack", type: "FRAME", name: "Frame 15", absoluteBoundingBox: { x: 0, y: 1128, width: 280, height: 120 } },
+              { id: "hint-drawer", type: "FRAME", name: "Frame 16", absoluteBoundingBox: { x: 0, y: 1258, width: 280, height: 240 } },
+              { id: "hint-breadcrumbs", type: "FRAME", name: "Frame 17", absoluteBoundingBox: { x: 0, y: 1508, width: 280, height: 40 } },
+              { id: "hint-tooltip", type: "FRAME", name: "Frame 18", absoluteBoundingBox: { x: 0, y: 1558, width: 120, height: 40 } }
             ]
           }
         ]
@@ -1386,6 +1581,18 @@ test("figmaToDesignIrWithOptions classifies extended element types deterministic
   assert.equal(byId.get("node-radio"), "radio");
   assert.equal(byId.get("node-chip"), "chip");
   assert.equal(byId.get("node-tab"), "tab");
+  assert.equal(byId.get("node-grid"), "grid");
+  assert.equal(byId.get("node-stack"), "stack");
+  assert.equal(byId.get("node-paper"), "paper");
+  assert.equal(byId.get("node-table"), "table");
+  assert.equal(byId.get("node-tooltip"), "tooltip");
+  assert.equal(byId.get("node-drawer"), "drawer");
+  assert.equal(byId.get("node-breadcrumbs"), "breadcrumbs");
+  assert.equal(byId.get("node-select"), "select");
+  assert.equal(byId.get("node-slider"), "slider");
+  assert.equal(byId.get("node-rating"), "rating");
+  assert.equal(byId.get("node-snackbar"), "snackbar");
+  assert.equal(byId.get("node-skeleton"), "skeleton");
   assert.equal(byId.get("node-progress"), "progress");
   assert.equal(byId.get("node-avatar"), "avatar");
   assert.equal(byId.get("node-badge"), "badge");
@@ -1442,6 +1649,78 @@ test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types",
           semanticName: "Ladefortschritt",
           semanticType: "progress indicator",
           sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-grid",
+          semanticName: "Kachel Raster",
+          semanticType: "grid layout",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-table",
+          semanticName: "Daten Tabelle",
+          semanticType: "table",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-slider",
+          semanticName: "Betrag Slider",
+          semanticType: "slider range",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-select",
+          semanticName: "Laufzeit Select",
+          semanticType: "select dropdown",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-rating",
+          semanticName: "Sterne Bewertung",
+          semanticType: "rating stars",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-snackbar",
+          semanticName: "Status Snackbar",
+          semanticType: "snackbar alert",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-skeleton",
+          semanticName: "Lade Skeleton",
+          semanticType: "loading skeleton",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-paper",
+          semanticName: "Surface Paper",
+          semanticType: "paper surface",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-stack",
+          semanticName: "Vertical Stack",
+          semanticType: "stack layout",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-drawer",
+          semanticName: "Seitliche Navigation",
+          semanticType: "drawer sidebar",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-breadcrumbs",
+          semanticName: "Navigation Pfad",
+          semanticType: "breadcrumbs",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-tooltip",
+          semanticName: "Info Tooltip",
+          semanticType: "tooltip",
+          sourceTools: ["figma-mcp"]
         }
       ]
     }
@@ -1454,6 +1733,18 @@ test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types",
   assert.equal(byId.get("hint-stepper")?.type, "stepper");
   assert.equal(byId.get("hint-badge")?.type, "badge");
   assert.equal(byId.get("hint-progress")?.type, "progress");
+  assert.equal(byId.get("hint-grid")?.type, "grid");
+  assert.equal(byId.get("hint-table")?.type, "table");
+  assert.equal(byId.get("hint-slider")?.type, "slider");
+  assert.equal(byId.get("hint-select")?.type, "select");
+  assert.equal(byId.get("hint-rating")?.type, "rating");
+  assert.equal(byId.get("hint-snackbar")?.type, "snackbar");
+  assert.equal(byId.get("hint-skeleton")?.type, "skeleton");
+  assert.equal(byId.get("hint-paper")?.type, "paper");
+  assert.equal(byId.get("hint-stack")?.type, "stack");
+  assert.equal(byId.get("hint-drawer")?.type, "drawer");
+  assert.equal(byId.get("hint-breadcrumbs")?.type, "breadcrumbs");
+  assert.equal(byId.get("hint-tooltip")?.type, "tooltip");
   assert.equal(byId.get("hint-chip")?.name, "Status Chip");
 });
 
