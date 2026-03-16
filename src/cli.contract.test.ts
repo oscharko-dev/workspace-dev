@@ -150,7 +150,9 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
   assert.match(result.stdout, /--no-cache/i);
+  assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
@@ -222,6 +224,30 @@ test("cli contract: --no-cache disables figma cache and is logged", async () => 
   try {
     const output = await waitForStdout(child, /Figma cache enabled: false/i);
     assert.match(output, /Figma cache enabled: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --figma-screen-name-pattern is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--figma-screen-name-pattern", "^auth/"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma screen name pattern: \^auth\//i);
+    assert.match(output, /Figma screen name pattern: \^auth\//i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

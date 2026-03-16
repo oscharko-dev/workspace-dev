@@ -12,6 +12,11 @@ const MAX_ICON_RECOVERY_DESCENDANTS = 160;
 const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
 const MAX_ICON_RECOVERY_AREA = MAX_ICON_RECOVERY_DIMENSION * MAX_ICON_RECOVERY_DIMENSION;
+const SCREEN_CANDIDATE_NAME_EXCLUDE_RE = /^(icon|icons|atom|atoms|component|components|_hidden)(\/|$)/i;
+const SCREEN_CANDIDATE_PAGE_EXCLUDE_RE = /\b(components|assets|icons|tokens|styles)\b/i;
+const SCREEN_CANDIDATE_INPUT_HINT_RE = /\b(input|field|form|email|password|search|phone|otp|button|cta)\b/i;
+const SCREEN_CANDIDATE_POOL_MULTIPLIER = 5;
+const SCREEN_CANDIDATE_POOL_LIMIT = 400;
 const FIGMA_CACHE_ENTRY_VERSION = 1;
 const FIGMA_CACHE_LATEST_INDEX_VERSION = 1;
 
@@ -55,6 +60,19 @@ interface FigmaStagedIncrementalContext {
   fileVersionId?: string;
   previousRootNode: FigmaNodeLike;
   previousCandidateSubtreeHashes: Record<string, string>;
+}
+
+interface ScreenCandidateStats {
+  total: number;
+  excludedByPage: number;
+  excludedByName: number;
+  excludedByPattern: number;
+  selected: number;
+}
+
+interface ScreenCandidateSelection {
+  candidates: FigmaNodeLike[];
+  stats: ScreenCandidateStats;
 }
 
 class FigmaTooLargeError extends Error {
@@ -746,19 +764,137 @@ const hasScreenLikeSize = (node: FigmaNodeLike, requireMinSize: boolean): boolea
   return width >= MIN_SCREEN_WIDTH && height >= MIN_SCREEN_HEIGHT;
 };
 
+const toTrimmedName = (value: unknown): string => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const toNodeArea = (node: FigmaNodeLike): number => {
+  const width = node.absoluteBoundingBox?.width;
+  const height = node.absoluteBoundingBox?.height;
+  if (typeof width !== "number" || typeof height !== "number") {
+    return 0;
+  }
+  if (width <= 0 || height <= 0) {
+    return 0;
+  }
+  return width * height;
+};
+
+const toAspectRatioScore = (node: FigmaNodeLike): number => {
+  const width = node.absoluteBoundingBox?.width;
+  const height = node.absoluteBoundingBox?.height;
+  if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
+    return 0;
+  }
+  const ratio = width / height;
+  const portraitTarget = 390 / 844;
+  const landscapeTarget = 16 / 10;
+  const normalizedPortraitDelta = Math.abs(ratio - portraitTarget) / 1;
+  const normalizedLandscapeDelta = Math.abs(ratio - landscapeTarget) / 2;
+  const normalizedDelta = Math.min(normalizedPortraitDelta, normalizedLandscapeDelta);
+  return Math.max(0, 1 - Math.min(1, normalizedDelta));
+};
+
+const collectDescendantSignals = (node: FigmaNodeLike): {
+  descendantCount: number;
+  hasTextDescendant: boolean;
+  hasInputHintInDescendants: boolean;
+} => {
+  let descendantCount = 0;
+  let hasTextDescendant = false;
+  let hasInputHintInDescendants = false;
+  const queue = [...asNodeArray(node.children)];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    descendantCount += 1;
+    const nodeType = String(current.type ?? "").toUpperCase();
+    if (nodeType === "TEXT") {
+      hasTextDescendant = true;
+    }
+    const nodeName = toTrimmedName(current.name);
+    if (nodeName.length > 0 && SCREEN_CANDIDATE_INPUT_HINT_RE.test(nodeName)) {
+      hasInputHintInDescendants = true;
+    }
+    for (const child of asNodeArray(current.children)) {
+      queue.push(child);
+    }
+  }
+
+  return { descendantCount, hasTextDescendant, hasInputHintInDescendants };
+};
+
+const toCandidateQualityScore = (node: FigmaNodeLike): number => {
+  const childCount = asNodeArray(node.children).length;
+  const descendantSignals = collectDescendantSignals(node);
+  const aspectRatioScore = toAspectRatioScore(node);
+
+  return (
+    (descendantSignals.hasTextDescendant ? 6 : 0) +
+    (descendantSignals.hasInputHintInDescendants ? 4 : 0) +
+    Math.min(6, childCount) * 0.6 +
+    Math.min(20, descendantSignals.descendantCount) * 0.2 +
+    aspectRatioScore * 3
+  );
+};
+
+const toScreenNamePattern = ({
+  screenNamePattern,
+  onLog
+}: {
+  screenNamePattern: string | undefined;
+  onLog: (message: string) => void;
+}): RegExp | undefined => {
+  const normalizedPattern = typeof screenNamePattern === "string" ? screenNamePattern.trim() : "";
+  if (normalizedPattern.length === 0) {
+    return undefined;
+  }
+  try {
+    return new RegExp(normalizedPattern, "i");
+  } catch (error) {
+    onLog(
+      `Invalid figmaScreenNamePattern '${normalizedPattern}' (${getErrorMessage(error)}); include filter disabled.`
+    );
+    return undefined;
+  }
+};
+
 const collectScreenCandidates = ({
   root,
   maxCandidates,
-  requireMinSize
+  requireMinSize,
+  screenNamePattern
 }: {
   root: FigmaNodeLike;
   maxCandidates: number;
   requireMinSize: boolean;
-}): FigmaNodeLike[] => {
-  const candidates: FigmaNodeLike[] = [];
+  screenNamePattern: RegExp | undefined;
+}): ScreenCandidateSelection => {
+  const candidates: Array<{
+    node: FigmaNodeLike;
+    qualityScore: number;
+    area: number;
+    traversalIndex: number;
+  }> = [];
+  const stats: ScreenCandidateStats = {
+    total: 0,
+    excludedByPage: 0,
+    excludedByName: 0,
+    excludedByPattern: 0,
+    selected: 0
+  };
 
-  const visit = (node: FigmaNodeLike): void => {
-    if (candidates.length >= maxCandidates) {
+  let traversalIndex = 0;
+  const candidatePoolLimit = Math.max(
+    Math.max(1, maxCandidates),
+    Math.min(SCREEN_CANDIDATE_POOL_LIMIT, Math.max(1, maxCandidates) * SCREEN_CANDIDATE_POOL_MULTIPLIER)
+  );
+
+  const visit = (node: FigmaNodeLike, pageName: string): void => {
+    if (candidates.length >= candidatePoolLimit) {
       return;
     }
     if (node.visible === false) {
@@ -766,9 +902,29 @@ const collectScreenCandidates = ({
     }
 
     const nodeType = String(node.type ?? "").toUpperCase();
+    const nextPageName =
+      nodeType === "CANVAS" || nodeType === "PAGE" ? toTrimmedName(node.name).toLowerCase() : pageName;
+
     if (isScreenCandidateType(nodeType) && hasScreenLikeSize(node, requireMinSize)) {
-      candidates.push(node);
-      if (candidates.length >= maxCandidates) {
+      stats.total += 1;
+      const normalizedName = toTrimmedName(node.name);
+      const pageExcluded = nextPageName.length > 0 && SCREEN_CANDIDATE_PAGE_EXCLUDE_RE.test(nextPageName);
+      if (pageExcluded) {
+        stats.excludedByPage += 1;
+      } else if (normalizedName.length > 0 && SCREEN_CANDIDATE_NAME_EXCLUDE_RE.test(normalizedName)) {
+        stats.excludedByName += 1;
+      } else if (screenNamePattern && !screenNamePattern.test(normalizedName)) {
+        stats.excludedByPattern += 1;
+      } else {
+        candidates.push({
+          node,
+          qualityScore: toCandidateQualityScore(node),
+          area: toNodeArea(node),
+          traversalIndex
+        });
+        traversalIndex += 1;
+      }
+      if (candidates.length >= candidatePoolLimit) {
         return;
       }
     }
@@ -782,16 +938,31 @@ const collectScreenCandidates = ({
       nodeType === "COMPONENT"
     ) {
       for (const child of asNodeArray(node.children)) {
-        visit(child);
-        if (candidates.length >= maxCandidates) {
+        visit(child, nextPageName);
+        if (candidates.length >= candidatePoolLimit) {
           return;
         }
       }
     }
   };
 
-  visit(root);
-  return candidates;
+  visit(root, "");
+
+  const selected = [...candidates]
+    .sort((left, right) => {
+      if (right.qualityScore !== left.qualityScore) {
+        return right.qualityScore - left.qualityScore;
+      }
+      if (right.area !== left.area) {
+        return right.area - left.area;
+      }
+      return left.traversalIndex - right.traversalIndex;
+    })
+    .slice(0, Math.max(1, maxCandidates))
+    .map((entry) => entry.node);
+
+  stats.selected = selected.length;
+  return { candidates: selected, stats };
 };
 
 const hasIconRecoveryName = (node: FigmaNodeLike): boolean => {
@@ -1144,6 +1315,7 @@ export const fetchFigmaFile = async ({
   nodeFetchConcurrency,
   adaptiveBatchingEnabled,
   maxScreenCandidates,
+  screenNamePattern,
   cacheEnabled,
   cacheTtlMs,
   cacheDir
@@ -1159,6 +1331,7 @@ export const fetchFigmaFile = async ({
   nodeFetchConcurrency: number;
   adaptiveBatchingEnabled: boolean;
   maxScreenCandidates: number;
+  screenNamePattern?: string;
   cacheEnabled: boolean;
   cacheTtlMs: number;
   cacheDir: string;
@@ -1243,54 +1416,61 @@ export const fetchFigmaFile = async ({
       bootstrapDepth
     });
 
-  const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
-  if (!rootNode) {
-    return {
-      result: {
-        file: bootstrapFile,
-        diagnostics: {
-          sourceMode: "staged-nodes",
-          fetchedNodes: 0,
-          degradedGeometryNodes: []
-        }
-      },
-      ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
-    };
-  }
+    const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
+    if (!rootNode) {
+      return {
+        result: {
+          file: bootstrapFile,
+          diagnostics: {
+            sourceMode: "staged-nodes",
+            fetchedNodes: 0,
+            degradedGeometryNodes: []
+          }
+        },
+        ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
+      };
+    }
 
-  const screenCandidatesWithSize = collectScreenCandidates({
-    root: rootNode,
-    maxCandidates: maxScreenCandidates,
-    requireMinSize: true
-  });
-  const screenCandidates =
-    screenCandidatesWithSize.length > 0
-      ? screenCandidatesWithSize
-      : collectScreenCandidates({
-          root: rootNode,
-          maxCandidates: maxScreenCandidates,
-          requireMinSize: false
-        });
+    const includeScreenNamePattern = toScreenNamePattern({ screenNamePattern, onLog });
+    const screenCandidatesWithSize = collectScreenCandidates({
+      root: rootNode,
+      maxCandidates: maxScreenCandidates,
+      requireMinSize: true,
+      screenNamePattern: includeScreenNamePattern
+    });
+    const screenCandidateSelection =
+      screenCandidatesWithSize.candidates.length > 0
+        ? screenCandidatesWithSize
+        : collectScreenCandidates({
+            root: rootNode,
+            maxCandidates: maxScreenCandidates,
+            requireMinSize: false,
+            screenNamePattern: includeScreenNamePattern
+          });
+    const usedMinSizePass = screenCandidatesWithSize.candidates.length > 0;
+    onLog(
+      `Staged candidate filter pass=${usedMinSizePass ? "min-size" : "no-min-size"} total=${screenCandidateSelection.stats.total} excludedByPage=${screenCandidateSelection.stats.excludedByPage} excludedByName=${screenCandidateSelection.stats.excludedByName} excludedByPattern=${screenCandidateSelection.stats.excludedByPattern} selected=${screenCandidateSelection.stats.selected}.`
+    );
 
-  const candidateIds = screenCandidates
-    .map((node) => (typeof node.id === "string" ? node.id : ""))
-    .filter((id, index, values) => id.length > 0 && values.indexOf(id) === index)
-    .slice(0, maxScreenCandidates);
+    const candidateIds = screenCandidateSelection.candidates
+      .map((node) => (typeof node.id === "string" ? node.id : ""))
+      .filter((id, index, values) => id.length > 0 && values.indexOf(id) === index)
+      .slice(0, maxScreenCandidates);
 
-  if (candidateIds.length === 0) {
-    onLog("Staged fetch found no screen candidates; using bootstrap tree only.");
-    return {
-      result: {
-        file: bootstrapFile,
-        diagnostics: {
-          sourceMode: "staged-nodes",
-          fetchedNodes: 0,
-          degradedGeometryNodes: []
-        }
-      },
-      ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
-    };
-  }
+    if (candidateIds.length === 0) {
+      onLog("Staged fetch found no screen candidates; using bootstrap tree only.");
+      return {
+        result: {
+          file: bootstrapFile,
+          diagnostics: {
+            sourceMode: "staged-nodes",
+            fetchedNodes: 0,
+            degradedGeometryNodes: []
+          }
+        },
+        ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
+      };
+    }
 
   const replacementNodes = new Map<string, FigmaNodeLike>();
   const networkFetchedNodeIds = new Set<string>();

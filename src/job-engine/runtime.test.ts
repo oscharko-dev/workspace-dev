@@ -12,6 +12,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaNodeFetchConcurrency, 3);
   assert.equal(runtime.figmaAdaptiveBatchingEnabled, true);
   assert.equal(runtime.figmaMaxScreenCandidates, 40);
+  assert.equal(runtime.figmaScreenNamePattern, undefined);
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
@@ -28,6 +29,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaNodeFetchConcurrency: 99,
     figmaAdaptiveBatchingEnabled: false,
     figmaMaxScreenCandidates: -5,
+    figmaScreenNamePattern: "  ^auth/(login|register)$  ",
     figmaCacheEnabled: false,
     figmaCacheTtlMs: 999_999_999,
     figmaScreenElementBudget: 999_999,
@@ -41,10 +43,19 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaNodeFetchConcurrency, 10);
   assert.equal(runtime.figmaAdaptiveBatchingEnabled, false);
   assert.equal(runtime.figmaMaxScreenCandidates, 1);
+  assert.equal(runtime.figmaScreenNamePattern, "^auth/(login|register)$");
   assert.equal(runtime.figmaCacheEnabled, false);
   assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, false);
+});
+
+test("resolveRuntimeSettings normalizes empty figma screen name pattern to undefined", () => {
+  const runtime = resolveRuntimeSettings({
+    figmaScreenNamePattern: "   "
+  });
+
+  assert.equal(runtime.figmaScreenNamePattern, undefined);
 });

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.1.0
+ * Contract version: 2.3.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -54,6 +54,8 @@ export interface WorkspaceStartOptions {
   figmaAdaptiveBatchingEnabled?: boolean;
   /** Maximum staged screen candidates to fetch. Default: 40 */
   figmaMaxScreenCandidates?: number;
+  /** Optional case-insensitive regex used to include staged screen candidates by name. */
+  figmaScreenNamePattern?: string;
   /** Enable file-system cache for figma.source fetches. Default: true */
   figmaCacheEnabled?: boolean;
   /** Cache TTL for figma.source entries in milliseconds. Default: 900000 */
@@ -212,4 +214,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.2.0" as const;
+export const CONTRACT_VERSION = "2.3.0" as const;
