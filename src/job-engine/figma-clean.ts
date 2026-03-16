@@ -25,6 +25,7 @@ const ALLOWED_NODE_KEYS = new Set([
   "paddingRight",
   "paddingBottom",
   "paddingLeft",
+  "opacity",
   "fills",
   "strokes",
   "strokeWeight",
@@ -567,6 +568,9 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
   }
   if (isFiniteNumber(nodeCandidate.cornerRadius)) {
     nextNode.cornerRadius = nodeCandidate.cornerRadius;
+  }
+  if (isFiniteNumber(nodeCandidate.opacity) && nodeCandidate.opacity >= 0 && nodeCandidate.opacity < 1) {
+    nextNode.opacity = nodeCandidate.opacity;
   }
   if (typeof nodeCandidate.characters === "string") {
     nextNode.characters = nodeCandidate.characters;

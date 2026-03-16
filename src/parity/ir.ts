@@ -102,6 +102,7 @@ interface FigmaNode {
   paddingRight?: number;
   paddingBottom?: number;
   paddingLeft?: number;
+  opacity?: number;
   fills?: FigmaPaint[];
   strokes?: FigmaPaint[];
   effects?: FigmaEffect[];
@@ -1520,6 +1521,9 @@ const mapElement = ({
   const fillGradient = toCssGradient(gradientFill);
   if (fillGradient) {
     element.fillGradient = fillGradient;
+  }
+  if (typeof node.opacity === "number" && Number.isFinite(node.opacity) && node.opacity >= 0 && node.opacity < 1) {
+    element.opacity = node.opacity;
   }
   if (typeof elevation === "number") {
     element.elevation = elevation;

@@ -742,6 +742,7 @@ export interface ScreenElementIR {
   height?: number;
   fillColor?: string;
   fillGradient?: string;
+  opacity?: number;
   elevation?: number;
   insetShadow?: string;
   strokeColor?: string;
