@@ -741,6 +741,7 @@ export interface ScreenElementIR {
   width?: number;
   height?: number;
   fillColor?: string;
+  fillGradient?: string;
   strokeColor?: string;
   strokeWidth?: number;
   fontSize?: number;
@@ -774,6 +775,7 @@ export interface ScreenIR {
   width?: number;
   height?: number;
   fillColor?: string;
+  fillGradient?: string;
   padding: {
     top: number;
     right: number;
