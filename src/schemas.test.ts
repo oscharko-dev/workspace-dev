@@ -15,12 +15,14 @@ test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
+    brandTheme: "Sparkasse",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
   assert.equal(result.success, true);
   if (result.success) {
     assert.equal(result.data.figmaFileKey, "abc123");
+    assert.equal(result.data.brandTheme, "sparkasse");
     assert.equal(result.data.figmaSourceMode, "rest");
     assert.equal(result.data.enableGitPr, false);
   }
@@ -63,6 +65,15 @@ test("schema: optional fields must be strings when provided", () => {
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
     projectName: 123
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: brandTheme must be a supported enum value", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    brandTheme: "enterprise"
   });
   assert.equal(result.success, false);
 });

@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WorkspaceJobInput, WorkspaceJobResult, WorkspaceJobStageName, WorkspaceJobStatus } from "./contracts/index.js";
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceJobInput,
+  WorkspaceJobResult,
+  WorkspaceJobStageName,
+  WorkspaceJobStatus
+} from "./contracts/index.js";
 import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { fetchFigmaFile } from "./job-engine/figma-source.js";
@@ -104,6 +110,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const runJob = async (job: JobRecord, input: WorkspaceJobInput): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
+    const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -209,6 +216,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           }
           const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
             screenElementBudget: runtime.figmaScreenElementBudget,
+            brandTheme: resolvedBrandTheme,
             sourceMetrics: {
               fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
               degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
@@ -226,7 +234,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             job,
             level: "info",
             stage: "ir.derive",
-            message: `Derived Design IR with ${derived.screens.length} screens (skippedHidden=${derived.metrics?.skippedHidden ?? 0}, skippedPlaceholders=${derived.metrics?.skippedPlaceholders ?? 0}, truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}).`
+            message:
+              `Derived Design IR with ${derived.screens.length} screens (brandTheme=${resolvedBrandTheme}, ` +
+              `skippedHidden=${derived.metrics?.skippedHidden ?? 0}, skippedPlaceholders=${derived.metrics?.skippedPlaceholders ?? 0}, ` +
+              `truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}).`
           });
           return derived;
         }
@@ -430,7 +441,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       figmaFileKey: input.figmaFileKey,
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
-      llmCodegenMode: acceptedModes.llmCodegenMode
+      llmCodegenMode: acceptedModes.llmCodegenMode,
+      brandTheme: input.brandTheme ?? runtime.brandTheme
     };
     if (input.repoUrl) {
       request.repoUrl = input.repoUrl;

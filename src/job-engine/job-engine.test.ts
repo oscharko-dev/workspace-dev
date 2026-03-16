@@ -45,6 +45,38 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
 
+test("createJobEngine resolves request brandTheme with submit override precedence", () => {
+  const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-brand-theme");
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      brandTheme: "sparkasse",
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+      fetchImpl: async () => {
+        throw new Error("network down");
+      }
+    })
+  });
+
+  const defaultAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const defaultRequest = engine.getJob(defaultAccepted.jobId)?.request;
+  assert.equal(defaultRequest?.brandTheme, "sparkasse");
+
+  const overrideAccepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+    brandTheme: "derived"
+  });
+  const overrideRequest = engine.getJob(overrideAccepted.jobId)?.request;
+  assert.equal(overrideRequest?.brandTheme, "derived");
+});
+
 test("createJobEngine marks jobs failed when figma source cannot be fetched", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-fail-"));
   const engine = createJobEngine({
