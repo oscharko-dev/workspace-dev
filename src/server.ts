@@ -87,6 +87,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.figmaScreenElementBudget !== undefined
       ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
       : {}),
+    ...(options.figmaScreenElementMaxDepth !== undefined
+      ? { figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth }
+      : {}),
     ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),

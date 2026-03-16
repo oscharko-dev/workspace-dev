@@ -151,11 +151,13 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
+  assert.match(result.stdout, /--figma-screen-element-max-depth/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
 
@@ -270,6 +272,30 @@ test("cli contract: --brand is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Brand theme default: sparkasse/i);
     assert.match(output, /Brand theme default: sparkasse/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --figma-screen-element-max-depth is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--figma-screen-element-max-depth", "7"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma screen depth max: 7/i);
+    assert.match(output, /Figma screen depth max: 7/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

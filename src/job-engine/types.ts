@@ -71,6 +71,7 @@ export interface JobEngineRuntime {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
+  figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
   commandTimeoutMs: number;
   enableUiValidation: boolean;

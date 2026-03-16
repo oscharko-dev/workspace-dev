@@ -11,6 +11,7 @@ const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
@@ -39,6 +40,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled,
   figmaCacheTtlMs,
   figmaScreenElementBudget,
+  figmaScreenElementMaxDepth,
   brandTheme,
   commandTimeoutMs,
   enableUiValidation,
@@ -57,6 +59,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
   figmaScreenElementBudget?: number;
+  figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
@@ -106,6 +109,10 @@ export const resolveRuntimeSettings = ({
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))
         : DEFAULT_SCREEN_ELEMENT_BUDGET,
+    figmaScreenElementMaxDepth:
+      typeof figmaScreenElementMaxDepth === "number" && Number.isFinite(figmaScreenElementMaxDepth)
+        ? Math.max(1, Math.min(64, Math.trunc(figmaScreenElementMaxDepth)))
+        : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
     brandTheme:
       typeof brandTheme === "string" ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME) : DEFAULT_BRAND_THEME,
     commandTimeoutMs:
