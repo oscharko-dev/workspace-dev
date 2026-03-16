@@ -2267,12 +2267,34 @@ interface ComparableLayoutState {
   gap: number;
   primaryAxisAlignItems?: PrimaryAxisAlignItems;
   counterAxisAlignItems?: CounterAxisAlignItems;
+  widthRatio?: number;
+  minHeight?: number;
 }
 
 interface TopLevelLayoutMatchEntry {
   elementId: string;
   layout: ComparableLayoutState;
 }
+
+const RESPONSIVE_WIDTH_RATIO_MIN = 0.001;
+const RESPONSIVE_WIDTH_RATIO_MAX = 1.2;
+const RESPONSIVE_WIDTH_RATIO_EPSILON = 0.01;
+const RESPONSIVE_MIN_HEIGHT_EPSILON_PX = 1;
+
+const normalizeComparableWidthRatio = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const normalized = clamp(value, RESPONSIVE_WIDTH_RATIO_MIN, RESPONSIVE_WIDTH_RATIO_MAX);
+  return Math.round(normalized * 1000) / 1000;
+};
+
+const normalizeComparableMinHeight = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.round(value);
+};
 
 interface MappedScreenCandidate {
   sourceNode: FigmaNode;
@@ -2382,12 +2404,30 @@ const toComparableRootLayout = (node: FigmaNode): ComparableLayoutState => {
   };
 };
 
-const toComparableElementLayout = (element: ScreenElementIR): ComparableLayoutState => {
+const toComparableElementLayout = ({
+  element,
+  rootWidth
+}: {
+  element: ScreenElementIR;
+  rootWidth: number | undefined;
+}): ComparableLayoutState => {
+  const widthRatio =
+    typeof element.width === "number" &&
+    Number.isFinite(element.width) &&
+    element.width > 0 &&
+    typeof rootWidth === "number" &&
+    Number.isFinite(rootWidth) &&
+    rootWidth > 0
+      ? normalizeComparableWidthRatio(element.width / rootWidth)
+      : undefined;
+  const minHeight = normalizeComparableMinHeight(element.height);
   return {
     layoutMode: element.layoutMode ?? "NONE",
     gap: element.gap ?? 0,
     ...(element.primaryAxisAlignItems ? { primaryAxisAlignItems: element.primaryAxisAlignItems } : {}),
-    ...(element.counterAxisAlignItems ? { counterAxisAlignItems: element.counterAxisAlignItems } : {})
+    ...(element.counterAxisAlignItems ? { counterAxisAlignItems: element.counterAxisAlignItems } : {}),
+    ...(widthRatio !== undefined ? { widthRatio } : {}),
+    ...(minHeight !== undefined ? { minHeight } : {})
   };
 };
 
@@ -2396,7 +2436,13 @@ const toResponsiveMatchElementName = (name: string): string => {
   return tokens.length > 0 ? tokens.join("-") : "element";
 };
 
-const buildTopLevelLayoutMatchMap = (children: ScreenElementIR[]): Map<string, TopLevelLayoutMatchEntry> => {
+const buildTopLevelLayoutMatchMap = ({
+  children,
+  rootWidth
+}: {
+  children: ScreenElementIR[];
+  rootWidth: number | undefined;
+}): Map<string, TopLevelLayoutMatchEntry> => {
   const entries = new Map<string, TopLevelLayoutMatchEntry>();
   const occurrenceBySignature = new Map<string, number>();
   for (const child of children) {
@@ -2406,7 +2452,7 @@ const buildTopLevelLayoutMatchMap = (children: ScreenElementIR[]): Map<string, T
     const matchKey = `${signature}#${nextIndex}`;
     entries.set(matchKey, {
       elementId: child.id,
-      layout: toComparableElementLayout(child)
+      layout: toComparableElementLayout({ element: child, rootWidth })
     });
   }
   return entries;
@@ -2431,6 +2477,18 @@ const resolveLayoutOverride = ({
   }
   if (current.counterAxisAlignItems && current.counterAxisAlignItems !== base.counterAxisAlignItems) {
     override.counterAxisAlignItems = current.counterAxisAlignItems;
+  }
+  if (
+    current.widthRatio !== undefined &&
+    (base.widthRatio === undefined || Math.abs(current.widthRatio - base.widthRatio) >= RESPONSIVE_WIDTH_RATIO_EPSILON)
+  ) {
+    override.widthRatio = current.widthRatio;
+  }
+  if (
+    current.minHeight !== undefined &&
+    (base.minHeight === undefined || Math.abs(current.minHeight - base.minHeight) > RESPONSIVE_MIN_HEIGHT_EPSILON_PX)
+  ) {
+    override.minHeight = current.minHeight;
   }
   return Object.keys(override).length > 0 ? override : undefined;
 };
@@ -2525,7 +2583,10 @@ const mapScreenCandidate = ({
     layout: toComparableRootLayout(sourceNode),
     padding: mapPadding(sourceNode),
     children: budgetedChildren,
-    topLevelLayoutByMatchKey: buildTopLevelLayoutMatchMap(budgetedChildren),
+    topLevelLayoutByMatchKey: buildTopLevelLayoutMatchMap({
+      children: budgetedChildren,
+      rootWidth: width
+    }),
     originalElements,
     retainedCount,
     truncatedByBudget: originalElements > screenElementBudget,
