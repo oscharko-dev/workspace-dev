@@ -636,6 +636,7 @@ export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
 export type CounterAxisAlignItems = "MIN" | "CENTER" | "MAX" | "BASELINE";
 
 export type VariantElementState = "default" | "hover" | "active" | "disabled";
+export type ResponsiveBreakpoint = "xs" | "sm" | "md" | "lg" | "xl";
 
 export interface VariantMuiProps {
   variant?: "contained" | "outlined" | "text";
@@ -669,6 +670,44 @@ export interface VariantMappingIR {
     disabled?: VariantStateStyle;
   };
   states?: VariantStateSnapshot[];
+}
+
+export interface ScreenResponsiveLayoutOverride {
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  gap?: number;
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+}
+
+export type ScreenResponsiveLayoutOverridesByBreakpoint = Partial<
+  Record<ResponsiveBreakpoint, ScreenResponsiveLayoutOverride>
+>;
+
+export interface ScreenResponsiveVariantIR {
+  breakpoint: ResponsiveBreakpoint;
+  nodeId: string;
+  name: string;
+  width?: number;
+  height?: number;
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+  gap: number;
+  padding: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  isBase: boolean;
+}
+
+export interface ScreenResponsiveIR {
+  groupKey: string;
+  baseBreakpoint: ResponsiveBreakpoint;
+  variants: ScreenResponsiveVariantIR[];
+  rootLayoutOverrides?: ScreenResponsiveLayoutOverridesByBreakpoint;
+  topLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }
 
 export interface ScreenElementIR {
@@ -741,6 +780,7 @@ export interface ScreenIR {
     bottom: number;
     left: number;
   };
+  responsive?: ScreenResponsiveIR;
   children: ScreenElementIR[];
 }
 

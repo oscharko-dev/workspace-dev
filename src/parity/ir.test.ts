@@ -1285,6 +1285,177 @@ test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types",
   assert.equal(byId.get("hint-chip")?.name, "Status Chip");
 });
 
+const createResponsiveVariantFigmaFile = () => ({
+  name: "Responsive Variants Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-login-mobile",
+            type: "FRAME",
+            name: "Login - Mobile",
+            layoutMode: "VERTICAL",
+            itemSpacing: 8,
+            absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+            children: [
+              {
+                id: "login-mobile-form",
+                type: "FRAME",
+                name: "Form Area",
+                layoutMode: "VERTICAL",
+                itemSpacing: 8,
+                absoluteBoundingBox: { x: 16, y: 120, width: 358, height: 240 },
+                children: []
+              },
+              {
+                id: "login-mobile-actions",
+                type: "FRAME",
+                name: "CTA Stack",
+                layoutMode: "VERTICAL",
+                itemSpacing: 8,
+                absoluteBoundingBox: { x: 16, y: 380, width: 358, height: 120 },
+                children: []
+              }
+            ]
+          },
+          {
+            id: "screen-login-tablet",
+            type: "FRAME",
+            name: "Login / Tablet",
+            layoutMode: "VERTICAL",
+            itemSpacing: 16,
+            absoluteBoundingBox: { x: 450, y: 0, width: 768, height: 1024 },
+            children: [
+              {
+                id: "login-tablet-form",
+                type: "FRAME",
+                name: "Form Area",
+                layoutMode: "VERTICAL",
+                itemSpacing: 12,
+                absoluteBoundingBox: { x: 498, y: 140, width: 672, height: 240 },
+                children: []
+              },
+              {
+                id: "login-tablet-actions",
+                type: "FRAME",
+                name: "CTA Stack",
+                layoutMode: "HORIZONTAL",
+                itemSpacing: 12,
+                absoluteBoundingBox: { x: 498, y: 420, width: 672, height: 56 },
+                children: []
+              }
+            ]
+          },
+          {
+            id: "screen-login-desktop-lite",
+            type: "FRAME",
+            name: "Login - Desktop",
+            layoutMode: "VERTICAL",
+            itemSpacing: 20,
+            absoluteBoundingBox: { x: 1300, y: 0, width: 1200, height: 900 },
+            children: [
+              {
+                id: "login-desktop-lite-form",
+                type: "FRAME",
+                name: "Form Area",
+                layoutMode: "VERTICAL",
+                itemSpacing: 16,
+                absoluteBoundingBox: { x: 1360, y: 160, width: 1080, height: 240 },
+                children: []
+              },
+              {
+                id: "login-desktop-lite-actions",
+                type: "FRAME",
+                name: "CTA Stack",
+                layoutMode: "HORIZONTAL",
+                itemSpacing: 16,
+                absoluteBoundingBox: { x: 1360, y: 440, width: 1080, height: 56 },
+                children: []
+              }
+            ]
+          },
+          {
+            id: "screen-login-desktop",
+            type: "FRAME",
+            name: "Login - Desktop",
+            layoutMode: "VERTICAL",
+            itemSpacing: 24,
+            absoluteBoundingBox: { x: 2600, y: 0, width: 1336, height: 900 },
+            children: [
+              {
+                id: "login-desktop-form",
+                type: "FRAME",
+                name: "Form Area",
+                layoutMode: "VERTICAL",
+                itemSpacing: 16,
+                absoluteBoundingBox: { x: 2660, y: 160, width: 1216, height: 240 },
+                children: []
+              },
+              {
+                id: "login-desktop-actions",
+                type: "FRAME",
+                name: "CTA Stack",
+                layoutMode: "HORIZONTAL",
+                itemSpacing: 16,
+                absoluteBoundingBox: { x: 2660, y: 440, width: 1216, height: 56 },
+                children: []
+              },
+              {
+                id: "login-desktop-footer",
+                type: "FRAME",
+                name: "Legal Footer",
+                layoutMode: "HORIZONTAL",
+                itemSpacing: 8,
+                absoluteBoundingBox: { x: 2660, y: 532, width: 1216, height: 24 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+test("figmaToDesignIrWithOptions groups responsive screen variants and emits breakpoint metadata", () => {
+  const ir = figmaToDesignIrWithOptions(createResponsiveVariantFigmaFile());
+
+  assert.equal(ir.screens.length, 1);
+  const screen = ir.screens[0];
+  assert.equal(screen?.id, "screen-login-desktop");
+  assert.equal(screen?.responsive?.groupKey, "login");
+  assert.equal(screen?.responsive?.baseBreakpoint, "lg");
+  assert.deepEqual(
+    screen?.responsive?.variants.map((variant) => variant.breakpoint),
+    ["xs", "sm", "lg"]
+  );
+  assert.equal(
+    screen?.responsive?.variants.find((variant) => variant.breakpoint === "lg")?.isBase,
+    true
+  );
+  assert.equal(screen?.responsive?.rootLayoutOverrides?.xs?.gap, 8);
+  assert.equal(screen?.responsive?.rootLayoutOverrides?.sm?.gap, 16);
+
+  const desktopActions = screen?.children.find((child) => child.id === "login-desktop-actions");
+  if (!desktopActions) {
+    throw new Error("Expected desktop actions node");
+  }
+  assert.equal(screen?.responsive?.topLevelLayoutOverrides?.[desktopActions.id]?.xs?.layoutMode, "VERTICAL");
+});
+
+test("figmaToDesignIrWithOptions derives responsive metadata deterministically", () => {
+  const first = figmaToDesignIrWithOptions(createResponsiveVariantFigmaFile());
+  const second = figmaToDesignIrWithOptions(createResponsiveVariantFigmaFile());
+
+  assert.deepEqual(first.screens, second.screens);
+  assert.deepEqual(first.metrics?.screenElementCounts, second.metrics?.screenElementCounts);
+});
+
 test("deriveTokensForTesting prioritizes semantic button and heading colors over decorative fills", () => {
   const tokens = deriveTokensForTesting({
     name: "Token Demo",

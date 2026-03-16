@@ -726,6 +726,129 @@ test("deterministic screen rendering maps variant metadata to MUI props and pseu
   assert.ok(content.includes('"&:active": { borderColor: "#6b7280" }'));
 });
 
+test("deterministic screen rendering emits responsive maxWidth and layout overrides from ScreenIR metadata", () => {
+  const screen = {
+    id: "responsive-screen",
+    name: "Responsive Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 24,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    responsive: {
+      groupKey: "login",
+      baseBreakpoint: "lg" as const,
+      variants: [
+        {
+          breakpoint: "xs" as const,
+          nodeId: "screen-login-mobile",
+          name: "Login - Mobile",
+          width: 390,
+          height: 844,
+          layoutMode: "VERTICAL" as const,
+          gap: 8,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          isBase: false
+        },
+        {
+          breakpoint: "sm" as const,
+          nodeId: "screen-login-tablet",
+          name: "Login - Tablet",
+          width: 768,
+          height: 1024,
+          layoutMode: "VERTICAL" as const,
+          gap: 16,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          isBase: false
+        },
+        {
+          breakpoint: "lg" as const,
+          nodeId: "screen-login-desktop",
+          name: "Login - Desktop",
+          width: 1336,
+          height: 900,
+          layoutMode: "VERTICAL" as const,
+          gap: 24,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          isBase: true
+        }
+      ],
+      rootLayoutOverrides: {
+        xs: { gap: 8 },
+        sm: { gap: 16 }
+      },
+      topLevelLayoutOverrides: {
+        "cta-row": {
+          xs: {
+            layoutMode: "VERTICAL" as const,
+            gap: 8
+          },
+          sm: {
+            gap: 12
+          }
+        }
+      }
+    },
+    children: [
+      {
+        id: "title",
+        name: "Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Welcome",
+        x: 0,
+        y: 0
+      },
+      {
+        id: "cta-row",
+        name: "CTA Row",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 72,
+        width: 600,
+        height: 56,
+        layoutMode: "HORIZONTAL" as const,
+        gap: 16,
+        children: [
+          {
+            id: "cta-a",
+            name: "Action A",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "A",
+            x: 0,
+            y: 0
+          },
+          {
+            id: "cta-b",
+            name: "Action B",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "B",
+            x: 60,
+            y: 0
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: "8px" }'));
+  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: "16px" }'));
+  assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
+  assert.ok(
+    content.includes(
+      '"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: "8px" }'
+    )
+  );
+  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: "12px" }'));
+});
+
+test("deterministic screen rendering keeps fallback behavior when responsive metadata is absent", () => {
+  const content = createDeterministicScreenFile(createIr().screens[0]).content;
+  assert.equal(content.includes("@media ("), false);
+});
+
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-truncation-"));
   const ir = createIr();
