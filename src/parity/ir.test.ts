@@ -830,6 +830,203 @@ test("figmaToDesignIrWithOptions removes placeholder text only in instance/compo
   assert.ok((ir.metrics?.skippedPlaceholders ?? 0) >= 1);
 });
 
+test("figmaToDesignIrWithOptions maps variant metadata on INSTANCE nodes", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Instance Variants",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-instance-variants",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+              children: [
+                {
+                  id: "instance-variant-1",
+                  type: "INSTANCE",
+                  name: "Variant=Text, Size=Small, State=Disabled",
+                  componentProperties: {
+                    Variant: { type: "VARIANT", value: "Outlined" },
+                    Size: { type: "VARIANT", value: "Small" },
+                    State: { type: "VARIANT", value: "Disabled" }
+                  },
+                  absoluteBoundingBox: { x: 16, y: 32, width: 220, height: 48 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const variantNode = ir.screens[0]?.children.find((child) => child.id === "instance-variant-1");
+  assert.ok(variantNode);
+  assert.deepEqual(variantNode?.variantMapping?.properties, {
+    size: "Small",
+    state: "Disabled",
+    variant: "Outlined"
+  });
+  assert.deepEqual(variantNode?.variantMapping?.muiProps, {
+    variant: "outlined",
+    size: "small",
+    disabled: true
+  });
+  assert.equal(variantNode?.variantMapping?.state, "disabled");
+});
+
+test("figmaToDesignIrWithOptions compacts COMPONENT_SET variants into default plus state overrides", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Component Set Variants",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-component-set",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 720 },
+              children: [
+                {
+                  id: "btn-set",
+                  type: "COMPONENT_SET",
+                  name: "Primary Button",
+                  componentPropertyDefinitions: {
+                    State: {
+                      type: "VARIANT",
+                      defaultValue: "Disabled",
+                      variantOptions: ["Enabled", "Hover", "Pressed", "Disabled"]
+                    }
+                  },
+                  absoluteBoundingBox: { x: 48, y: 96, width: 260, height: 56 },
+                  children: [
+                    {
+                      id: "variant-default",
+                      type: "COMPONENT",
+                      name: "State=Enabled, Size=Medium, Variant=Contained",
+                      componentProperties: {
+                        State: { type: "VARIANT", value: "Enabled" },
+                        Size: { type: "VARIANT", value: "Medium" },
+                        Variant: { type: "VARIANT", value: "Contained" }
+                      },
+                      fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                      absoluteBoundingBox: { x: 48, y: 96, width: 260, height: 56 },
+                      children: [
+                        {
+                          id: "variant-default-text",
+                          type: "TEXT",
+                          name: "Label",
+                          characters: "Weiter",
+                          fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                          absoluteBoundingBox: { x: 128, y: 114, width: 68, height: 20 }
+                        }
+                      ]
+                    },
+                    {
+                      id: "variant-hover",
+                      type: "COMPONENT",
+                      name: "State=Hover, Size=Medium, Variant=Contained",
+                      componentProperties: {
+                        State: { type: "VARIANT", value: "Hover" },
+                        Size: { type: "VARIANT", value: "Medium" },
+                        Variant: { type: "VARIANT", value: "Contained" }
+                      },
+                      fills: [{ type: "SOLID", color: toFigmaColor("#b00018") }],
+                      absoluteBoundingBox: { x: 48, y: 160, width: 260, height: 56 },
+                      children: [
+                        {
+                          id: "variant-hover-text",
+                          type: "TEXT",
+                          name: "Label",
+                          characters: "Weiter",
+                          fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                          absoluteBoundingBox: { x: 128, y: 178, width: 68, height: 20 }
+                        }
+                      ]
+                    },
+                    {
+                      id: "variant-active",
+                      type: "COMPONENT",
+                      name: "State=Pressed, Size=Medium, Variant=Contained",
+                      componentProperties: {
+                        State: { type: "VARIANT", value: "Pressed" },
+                        Size: { type: "VARIANT", value: "Medium" },
+                        Variant: { type: "VARIANT", value: "Contained" }
+                      },
+                      fills: [{ type: "SOLID", color: toFigmaColor("#8f0013") }],
+                      absoluteBoundingBox: { x: 48, y: 224, width: 260, height: 56 },
+                      children: [
+                        {
+                          id: "variant-active-text",
+                          type: "TEXT",
+                          name: "Label",
+                          characters: "Weiter",
+                          fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                          absoluteBoundingBox: { x: 128, y: 242, width: 68, height: 20 }
+                        }
+                      ]
+                    },
+                    {
+                      id: "variant-disabled",
+                      type: "COMPONENT",
+                      name: "State=Disabled, Size=Medium, Variant=Contained",
+                      componentProperties: {
+                        State: { type: "VARIANT", value: "Disabled" },
+                        Size: { type: "VARIANT", value: "Medium" },
+                        Variant: { type: "VARIANT", value: "Contained" }
+                      },
+                      fills: [{ type: "SOLID", color: toFigmaColor("#d1d5db") }],
+                      absoluteBoundingBox: { x: 48, y: 288, width: 260, height: 56 },
+                      children: [
+                        {
+                          id: "variant-disabled-text",
+                          type: "TEXT",
+                          name: "Label",
+                          characters: "Weiter",
+                          fills: [{ type: "SOLID", color: toFigmaColor("#6b7280") }],
+                          absoluteBoundingBox: { x: 128, y: 306, width: 68, height: 20 }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const componentSetNode = ir.screens[0]?.children.find((child) => child.id === "btn-set");
+  assert.ok(componentSetNode);
+  assert.equal(componentSetNode?.children?.length, 1);
+  assert.equal(componentSetNode?.children?.[0]?.id, "variant-default");
+  assert.equal(componentSetNode?.variantMapping?.defaultVariantNodeId, "variant-default");
+  assert.equal(componentSetNode?.variantMapping?.state, "default");
+  assert.deepEqual(componentSetNode?.variantMapping?.muiProps, {
+    variant: "contained",
+    size: "medium"
+  });
+  assert.equal(componentSetNode?.variantMapping?.states?.length, 4);
+  assert.equal(componentSetNode?.variantMapping?.stateOverrides?.hover?.backgroundColor, "#b00018");
+  assert.equal(componentSetNode?.variantMapping?.stateOverrides?.active?.backgroundColor, "#8f0013");
+  assert.equal(componentSetNode?.variantMapping?.stateOverrides?.disabled?.backgroundColor, "#d1d5db");
+  assert.equal(componentSetNode?.variantMapping?.stateOverrides?.disabled?.color, "#6b7280");
+});
+
 test("figmaToDesignIrWithOptions applies deterministic screen element budget truncation", () => {
   const buildLargeScreen = (prefix: string) => ({
     id: "0:0",

@@ -111,6 +111,40 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                   ],
                   absoluteBoundingBox: { x: 1, y: 2, width: 280, height: 160, extraBoxKey: 123 },
                   children: []
+                },
+                {
+                  id: "variant-set-1",
+                  type: "COMPONENT_SET",
+                  name: "Button Variants",
+                  componentProperties: {
+                    State: {
+                      type: "VARIANT",
+                      value: "Disabled",
+                      boundVariables: {}
+                    },
+                    Size: {
+                      type: "VARIANT",
+                      value: "Large"
+                    },
+                    Swap: {
+                      type: "INSTANCE_SWAP",
+                      value: "1:1"
+                    }
+                  },
+                  componentPropertyDefinitions: {
+                    State: {
+                      type: "VARIANT",
+                      defaultValue: "Enabled",
+                      variantOptions: ["Enabled", "Disabled", "", 2],
+                      preferredValues: ["drop"]
+                    },
+                    Style: {
+                      type: "TEXT",
+                      defaultValue: "Ignored"
+                    }
+                  },
+                  absoluteBoundingBox: { x: 20, y: 220, width: 280, height: 56 },
+                  children: []
                 }
               ]
             }
@@ -136,6 +170,26 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   assert.ok(regularNode);
   assert.equal(Array.isArray(regularNode?.fills), true);
   assert.equal((regularNode?.fills as unknown[]).length, 1);
+
+  const variantNode = findNodeById(result.cleanedFile.document, "variant-set-1");
+  assert.ok(variantNode);
+  assert.deepEqual(variantNode?.componentProperties, {
+    State: {
+      type: "VARIANT",
+      value: "Disabled"
+    },
+    Size: {
+      type: "VARIANT",
+      value: "Large"
+    }
+  });
+  assert.deepEqual(variantNode?.componentPropertyDefinitions, {
+    State: {
+      type: "VARIANT",
+      defaultValue: "Enabled",
+      variantOptions: ["Enabled", "Disabled"]
+    }
+  });
 
   assert.equal(result.report.screenCandidateCount, 1);
   assert.equal(result.report.removedHiddenNodes >= 2, true);
