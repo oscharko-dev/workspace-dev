@@ -153,7 +153,9 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
   assert.match(result.stdout, /--no-cache/i);
+  assert.match(result.stdout, /--skip-install/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
@@ -208,6 +210,26 @@ test("cli contract: perf validation flag is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Perf validation enabled: true/i);
     assert.match(output, /Perf validation enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --skip-install is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--skip-install"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Skip install: true/i);
+    assert.match(output, /Skip install: true/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.6.0] - 2026-03-16
+
+### Skip-install runtime switch for validate.project
+
+Added:
+
+- `WorkspaceStartOptions.skipInstall?: boolean` (default `false`)
+
 ## [2.5.0] - 2026-03-16
 
 ### Dynamic IR depth traversal baseline configuration

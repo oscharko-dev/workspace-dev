@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.5.0
+ * Contract version: 2.6.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -76,6 +76,8 @@ export interface WorkspaceStartOptions {
   enableUiValidation?: boolean;
   /** Prefer offline package resolution during generated-project install. Default: true */
   installPreferOffline?: boolean;
+  /** Skip package installation in validate.project; requires existing node_modules. Default: false */
+  skipInstall?: boolean;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -223,4 +225,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.5.0" as const;
+export const CONTRACT_VERSION = "2.6.0" as const;
