@@ -66,6 +66,8 @@ interface GenerateArtifactsResult {
 interface VirtualParent {
   x?: number | undefined;
   y?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
   name?: string | undefined;
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE" | undefined;
 }
@@ -221,6 +223,31 @@ const toPxLiteral = (value: number | undefined): string | undefined => {
     return undefined;
   }
   return literal(`${Math.round(value)}px`);
+};
+
+const RESPONSIVE_WIDTH_RATIO_MIN = 0.001;
+const RESPONSIVE_WIDTH_RATIO_MAX = 1.2;
+const RESPONSIVE_FULL_WIDTH_EPSILON = 0.02;
+
+const normalizeResponsiveWidthRatio = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const normalized = clamp(value, RESPONSIVE_WIDTH_RATIO_MIN, RESPONSIVE_WIDTH_RATIO_MAX);
+  return Math.round(normalized * 1000) / 1000;
+};
+
+const toPercentLiteralFromRatio = (ratio: number | undefined): string | undefined => {
+  const normalized = normalizeResponsiveWidthRatio(ratio);
+  if (normalized === undefined) {
+    return undefined;
+  }
+  if (Math.abs(1 - normalized) <= RESPONSIVE_FULL_WIDTH_EPSILON) {
+    return literal("100%");
+  }
+  const percent = Math.round(normalized * 100000) / 1000;
+  const percentString = Number.isInteger(percent) ? String(percent) : percent.toString();
+  return literal(`${percentString}%`);
 };
 
 const DEFAULT_SPACING_BASE = 8;
@@ -640,6 +667,10 @@ const baseLayoutEntries = (
   const spacingBase = normalizeSpacingBase(options?.spacingBase);
   const tokens = options?.tokens;
   const parentLayout = parent.layoutMode ?? "NONE";
+  const parentWidth =
+    typeof parent.width === "number" && Number.isFinite(parent.width) && parent.width > 0 ? parent.width : undefined;
+  const elementWidth =
+    typeof element.width === "number" && Number.isFinite(element.width) && element.width > 0 ? element.width : undefined;
   const isAbsoluteChild =
     parentLayout === "NONE" &&
     typeof element.x === "number" &&
@@ -650,13 +681,20 @@ const baseLayoutEntries = (
   const layoutMode = element.layoutMode ?? "NONE";
   const hasChildren = (element.children?.length ?? 0) > 0;
   const isFlex = layoutMode === "VERTICAL" || layoutMode === "HORIZONTAL";
+  const isFlowContainer = hasChildren && !isAbsoluteChild && (layoutMode !== "NONE" || parentLayout !== "NONE");
   const resolvedPosition = isAbsoluteChild ? "absolute" : layoutMode === "NONE" && hasChildren ? "relative" : undefined;
+  const responsiveWidth = isFlowContainer
+    ? parentWidth && elementWidth
+      ? toPercentLiteralFromRatio(elementWidth / parentWidth) ?? literal("100%")
+      : literal("100%")
+    : undefined;
 
   const entries: Array<[string, string | number | undefined]> = [
     ["position", resolvedPosition ? literal(resolvedPosition) : undefined],
     ["left", isAbsoluteChild ? toPxLiteral((element.x ?? 0) - (parent.x ?? 0)) : undefined],
     ["top", isAbsoluteChild ? toPxLiteral((element.y ?? 0) - (parent.y ?? 0)) : undefined],
-    ["width", toPxLiteral(element.width)],
+    ["width", isFlowContainer ? responsiveWidth : toPxLiteral(element.width)],
+    ["maxWidth", isFlowContainer ? toPxLiteral(element.width) : undefined],
     ["height", !hasChildren ? toPxLiteral(element.height) : undefined],
     ["minHeight", hasChildren ? toPxLiteral(element.height) : undefined],
     ["display", isFlex ? literal("flex") : undefined],
@@ -829,6 +867,22 @@ const appendLayoutOverrideEntriesForBreakpoint = ({
       byBreakpoint,
       breakpoint,
       entry: ["gap", toSpacingUnitValue({ value: override.gap, spacingBase })]
+    });
+  }
+
+  if (typeof override.widthRatio === "number" && Number.isFinite(override.widthRatio) && override.widthRatio > 0) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["width", toPercentLiteralFromRatio(override.widthRatio)]
+    });
+  }
+
+  if (typeof override.minHeight === "number" && Number.isFinite(override.minHeight) && override.minHeight > 0) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["minHeight", toPxLiteral(override.minHeight)]
     });
   }
 };
@@ -2042,6 +2096,8 @@ const renderSemanticAccordion = (
         {
           x: summaryContent.x,
           y: summaryContent.y,
+          width: summaryContent.width,
+          height: summaryContent.height,
           name: summaryContent.name,
           layoutMode: summaryContent.layoutMode ?? "NONE"
         },
@@ -2060,6 +2116,8 @@ const renderSemanticAccordion = (
         {
           x: detailsContainer.x,
           y: detailsContainer.y,
+          width: detailsContainer.width,
+          height: detailsContainer.height,
           name: detailsContainer.name,
           layoutMode: detailsContainer.layoutMode ?? "NONE"
         },
@@ -2094,9 +2152,21 @@ const renderSemanticAccordion = (
   }
   registerMuiImports(context, "Accordion", "AccordionSummary", "AccordionDetails", "Box", "Typography");
 
+  const detailsWidthRatio =
+    typeof detailsContainer.width === "number" &&
+    Number.isFinite(detailsContainer.width) &&
+    detailsContainer.width > 0 &&
+    typeof element.width === "number" &&
+    Number.isFinite(element.width) &&
+    element.width > 0
+      ? detailsContainer.width / element.width
+      : undefined;
+  const detailsResponsiveWidth = toPercentLiteralFromRatio(detailsWidthRatio) ?? literal("100%");
+
   const detailsSx = sxString([
     ["position", literal("relative")],
-    ["width", toPxLiteral(detailsContainer.width)],
+    ["width", detailsResponsiveWidth],
+    ["maxWidth", toPxLiteral(detailsContainer.width)],
     ["minHeight", toPxLiteral(detailsContainer.height)],
     ["display", detailsContainer.layoutMode === "NONE" ? literal("block") : literal("flex")],
     ["flexDirection", detailsContainer.layoutMode === "HORIZONTAL" ? literal("row") : literal("column")],
@@ -2319,6 +2389,8 @@ const renderChildrenIntoParent = ({
         {
           x: element.x,
           y: element.y,
+          width: element.width,
+          height: element.height,
           name: element.name,
           layoutMode: element.layoutMode ?? "NONE"
         },
@@ -2771,6 +2843,8 @@ const renderGrid = (element: ScreenElementIR, depth: number, parent: VirtualPare
         {
           x: element.x,
           y: element.y,
+          width: element.width,
+          height: element.height,
           name: element.name,
           layoutMode: element.layoutMode ?? "NONE"
         },
@@ -2904,6 +2978,8 @@ const renderTooltipElement = (element: ScreenElementIR, depth: number, parent: V
         {
           x: element.x,
           y: element.y,
+          width: element.width,
+          height: element.height,
           name: element.name,
           layoutMode: element.layoutMode ?? "NONE"
         },
@@ -3111,6 +3187,8 @@ const renderContainer = (
     .map((child) => renderElement(child, depth + 1, {
       x: element.x,
       y: element.y,
+      width: element.width,
+      height: element.height,
       name: element.name,
       layoutMode: element.layoutMode ?? "NONE"
     }, context))
@@ -3364,7 +3442,19 @@ const fallbackScreenFile = ({
 
   const rendered = simplifiedChildren
     .map((element) =>
-      renderElement(element, 3, { x: minX, y: minY, name: screen.name, layoutMode: screen.layoutMode }, renderContext)
+      renderElement(
+        element,
+        3,
+        {
+          x: minX,
+          y: minY,
+          width: screen.width,
+          height: screen.height,
+          name: screen.name,
+          layoutMode: screen.layoutMode
+        },
+        renderContext
+      )
     )
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");

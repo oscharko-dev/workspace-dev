@@ -423,6 +423,9 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.equal(content.includes('{"MuiButtonBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiButtonEndIcon"}'), false);
   assert.equal(/>\s*"/.test(content), false);
+  assert.ok(content.includes('top: "40px"'));
+  assert.ok(content.includes('width: "560px"'));
+  assert.ok(content.includes('minHeight: "66px"'));
 });
 
 test("deterministic screen rendering maps textRole placeholder to TextField placeholder without default prefill", () => {
@@ -900,6 +903,8 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
     name: "Responsive Screen",
     layoutMode: "VERTICAL" as const,
     gap: 24,
+    width: 1336,
+    height: 900,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     responsive: {
       groupKey: "login",
@@ -947,10 +952,13 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
         "cta-row": {
           xs: {
             layoutMode: "VERTICAL" as const,
-            gap: 8
+            gap: 8,
+            widthRatio: 1,
+            minHeight: 120
           },
           sm: {
-            gap: 12
+            gap: 12,
+            widthRatio: 0.75
           }
         }
       }
@@ -1004,8 +1012,12 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
   assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: 1 }'));
   assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: 2 }'));
   assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
-  assert.ok(content.includes('"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: 1 }'));
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: 1.5 }'));
+  assert.ok(content.includes('width: "44.9%"'));
+  assert.ok(content.includes('maxWidth: "600px"'));
+  assert.ok(
+    content.includes('"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: 1, width: "100%", minHeight: "120px" }')
+  );
+  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: 1.5, width: "75%" }'));
 });
 
 test("deterministic screen rendering keeps fallback behavior when responsive metadata is absent", () => {

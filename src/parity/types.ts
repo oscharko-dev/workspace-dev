@@ -677,6 +677,8 @@ export interface ScreenResponsiveLayoutOverride {
   gap?: number;
   primaryAxisAlignItems?: PrimaryAxisAlignItems;
   counterAxisAlignItems?: CounterAxisAlignItems;
+  widthRatio?: number;
+  minHeight?: number;
 }
 
 export type ScreenResponsiveLayoutOverridesByBreakpoint = Partial<
