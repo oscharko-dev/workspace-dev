@@ -549,6 +549,206 @@ test("deterministic screen rendering preserves auto-layout alignment and icon fa
   assert.ok(content.includes('<IconButton aria-label="Bookmark Button"'));
 });
 
+test("deterministic screen rendering detects matrix-like container layouts and renders responsive Grid", () => {
+  const screen = {
+    id: "grid-matrix-detection-screen",
+    name: "Grid Matrix Detection",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "metrics-grid-wrapper",
+        name: "Metrics Wrapper",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 620,
+        height: 320,
+        fillColor: "#f8fafc",
+        children: [
+          {
+            id: "metric-tile-a",
+            name: "Tile A",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 140,
+            fillColor: "#ffffff",
+            children: []
+          },
+          {
+            id: "metric-tile-b",
+            name: "Tile B",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 320,
+            y: 0,
+            width: 300,
+            height: 140,
+            fillColor: "#ffffff",
+            children: []
+          },
+          {
+            id: "metric-tile-c",
+            name: "Tile C",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 0,
+            y: 170,
+            width: 300,
+            height: 140,
+            fillColor: "#ffffff",
+            children: []
+          },
+          {
+            id: "metric-tile-d",
+            name: "Tile D",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 320,
+            y: 170,
+            width: 300,
+            height: 140,
+            fillColor: "#ffffff",
+            children: []
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Grid container"));
+  assert.equal((content.match(/size=\{\{ xs: 12, sm: 6, md: 6 \}\}/g) ?? []).length, 4);
+});
+
+test("deterministic screen rendering detects equal-width row containers and emits equal grid columns", () => {
+  const screen = {
+    id: "grid-equal-row-screen",
+    name: "Grid Equal Row",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "stats-row-wrapper",
+        name: "Stats Row Wrapper",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 660,
+        height: 140,
+        children: [
+          {
+            id: "stats-card-a",
+            name: "Card A",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 120,
+            fillColor: "#ffffff",
+            children: []
+          },
+          {
+            id: "stats-card-b",
+            name: "Card B",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 230,
+            y: 0,
+            width: 200,
+            height: 120,
+            fillColor: "#ffffff",
+            children: []
+          },
+          {
+            id: "stats-card-c",
+            name: "Card C",
+            nodeType: "FRAME",
+            type: "paper" as const,
+            x: 460,
+            y: 0,
+            width: 200,
+            height: 120,
+            fillColor: "#ffffff",
+            children: []
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Grid container"));
+  assert.equal((content.match(/size=\{\{ xs: 12, sm: 6, md: 4 \}\}/g) ?? []).length, 3);
+});
+
+test("deterministic screen rendering keeps vertical flow containers as Box and avoids false grid positives", () => {
+  const screen = {
+    id: "grid-negative-vertical-screen",
+    name: "Grid Negative Vertical",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "vertical-flow-wrapper",
+        name: "Vertical Flow Wrapper",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 240,
+        gap: 12,
+        children: [
+          {
+            id: "vertical-flow-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Kontodaten",
+            x: 0,
+            y: 0
+          },
+          {
+            id: "vertical-flow-value",
+            name: "Value",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "1234567890",
+            x: 0,
+            y: 40
+          },
+          {
+            id: "vertical-flow-hint",
+            name: "Hint",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Bitte prüfen",
+            x: 0,
+            y: 80
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<Grid container"), false);
+  assert.ok(content.includes("<Box sx={{"));
+  assert.ok(content.includes('display: "flex"'));
+  assert.ok(content.includes('flexDirection: "column"'));
+});
+
 test("deterministic screen rendering emits path-based imports and only imports used icons", () => {
   const screen = {
     id: "single-icon-screen",
