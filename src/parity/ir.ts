@@ -6,6 +6,11 @@ import type {
   FigmaMcpEnrichment,
   GenerationMetrics,
   PrimaryAxisAlignItems,
+  VariantElementState,
+  VariantMappingIR,
+  VariantMuiProps,
+  VariantStateSnapshot,
+  VariantStateStyle,
   ScreenElementIR,
   ScreenIR
 } from "./types.js";
@@ -32,6 +37,17 @@ interface FigmaPaint {
   type?: string;
   color?: FigmaColor;
   opacity?: number;
+}
+
+interface FigmaComponentPropertyValue {
+  type?: string;
+  value?: unknown;
+}
+
+interface FigmaComponentPropertyDefinition {
+  type?: string;
+  defaultValue?: unknown;
+  variantOptions?: unknown;
 }
 
 interface FigmaNode {
@@ -74,6 +90,8 @@ interface FigmaNode {
     textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT";
   };
   cornerRadius?: number;
+  componentProperties?: Record<string, FigmaComponentPropertyValue>;
+  componentPropertyDefinitions?: Record<string, FigmaComponentPropertyDefinition>;
 }
 
 interface FigmaFile {
@@ -364,6 +382,455 @@ const hasAnySubstring = (value: string, tokens: string[]): boolean => {
 
 const hasAnyWord = (value: string, words: string[]): boolean => {
   return words.some((word) => new RegExp(`\\b${escapeRegExp(word)}\\b`, "i").test(value));
+};
+
+interface NormalizedVariantData {
+  properties: Record<string, string>;
+  muiProps: VariantMuiProps;
+  state?: VariantElementState;
+}
+
+interface ComponentSetVariantCandidate extends NormalizedVariantData {
+  node: FigmaNode;
+  style: VariantStateStyle;
+}
+
+const isTruthyVariantFlag = (value: string): boolean => {
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, "");
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+};
+
+const normalizeVariantKey = (key: string): string | undefined => {
+  const normalized = key
+    .trim()
+    .replace(/[#*]+$/g, "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized === "state" || normalized.includes(" state")) {
+    return "state";
+  }
+  if (normalized === "size" || normalized.includes(" size")) {
+    return "size";
+  }
+  if (normalized === "variant" || normalized.includes(" variant")) {
+    return "variant";
+  }
+  if (normalized === "disabled") {
+    return "disabled";
+  }
+  if (normalized.includes("color")) {
+    return "color";
+  }
+  return normalized;
+};
+
+const normalizeVariantValue = (value: string): string => {
+  return value.trim().replace(/[#*]+$/g, "").trim();
+};
+
+const toSortedVariantProperties = (input: Record<string, string>): Record<string, string> => {
+  return Object.fromEntries(Object.entries(input).sort(([left], [right]) => left.localeCompare(right)));
+};
+
+const extractVariantNameProperties = (name: string | undefined): Record<string, string> => {
+  if (typeof name !== "string") {
+    return {};
+  }
+  const parsed: Record<string, string> = {};
+  for (const chunk of name.split(",")) {
+    const equalsIndex = chunk.indexOf("=");
+    if (equalsIndex <= 0) {
+      continue;
+    }
+    const rawKey = chunk.slice(0, equalsIndex).trim();
+    const rawValue = chunk.slice(equalsIndex + 1).trim();
+    const key = normalizeVariantKey(rawKey);
+    const value = normalizeVariantValue(rawValue);
+    if (!key || value.length === 0) {
+      continue;
+    }
+    parsed[key] = value;
+  }
+  return parsed;
+};
+
+const extractVariantPropertiesFromComponentProperties = (
+  componentProperties: FigmaNode["componentProperties"]
+): Record<string, string> => {
+  if (!componentProperties) {
+    return {};
+  }
+  const parsed: Record<string, string> = {};
+  for (const [rawKey, propertyValue] of Object.entries(componentProperties)) {
+    const propertyType = typeof propertyValue?.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
+    if (propertyType !== "VARIANT") {
+      continue;
+    }
+    if (typeof propertyValue?.value !== "string") {
+      continue;
+    }
+    const key = normalizeVariantKey(rawKey);
+    const value = normalizeVariantValue(propertyValue.value);
+    if (!key || value.length === 0) {
+      continue;
+    }
+    parsed[key] = value;
+  }
+  return parsed;
+};
+
+const toVariantState = (value: string | undefined): VariantElementState | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[_-]+/g, "");
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.includes("disabled")) {
+    return "disabled";
+  }
+  if (normalized.includes("hover")) {
+    return "hover";
+  }
+  if (normalized.includes("active") || normalized.includes("pressed")) {
+    return "active";
+  }
+  if (normalized.includes("default") || normalized.includes("enabled") || normalized.includes("rest")) {
+    return "default";
+  }
+  return undefined;
+};
+
+const toMuiVariant = (value: string | undefined): VariantMuiProps["variant"] => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[_-]+/g, "");
+  if (normalized.includes("outlined")) {
+    return "outlined";
+  }
+  if (normalized.includes("contained") || normalized.includes("filled")) {
+    return "contained";
+  }
+  if (normalized.includes("text")) {
+    return "text";
+  }
+  return undefined;
+};
+
+const toMuiSize = (value: string | undefined): VariantMuiProps["size"] => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.includes("large") || normalized === "lg" || normalized === "l") {
+    return "large";
+  }
+  if (
+    normalized.includes("small") ||
+    normalized.includes("extra small") ||
+    normalized === "sm" ||
+    normalized === "s" ||
+    normalized === "xs"
+  ) {
+    return "small";
+  }
+  if (normalized.includes("medium") || normalized === "md" || normalized === "m" || normalized === "default") {
+    return "medium";
+  }
+  return undefined;
+};
+
+const resolveMuiPropsFromVariantProperties = ({
+  properties,
+  state
+}: {
+  properties: Record<string, string>;
+  state: VariantElementState | undefined;
+}): VariantMuiProps => {
+  const muiProps: VariantMuiProps = {};
+  const variant = toMuiVariant(properties.variant);
+  if (variant) {
+    muiProps.variant = variant;
+  }
+  const size = toMuiSize(properties.size);
+  if (size) {
+    muiProps.size = size;
+  }
+  if (state === "disabled") {
+    muiProps.disabled = true;
+    return muiProps;
+  }
+  const disabledProperty = properties.disabled;
+  if (typeof disabledProperty === "string" && isTruthyVariantFlag(disabledProperty)) {
+    muiProps.disabled = true;
+  }
+  return muiProps;
+};
+
+const extractVariantDataFromNode = (node: FigmaNode): NormalizedVariantData | undefined => {
+  const properties = {
+    ...extractVariantNameProperties(node.name),
+    ...extractVariantPropertiesFromComponentProperties(node.componentProperties)
+  };
+  const stateFromProperties = toVariantState(properties.state);
+  const state = stateFromProperties ?? (typeof properties.disabled === "string" && isTruthyVariantFlag(properties.disabled) ? "disabled" : undefined);
+  const sortedProperties = toSortedVariantProperties(properties);
+  const muiProps = resolveMuiPropsFromVariantProperties({
+    properties: sortedProperties,
+    state
+  });
+  if (Object.keys(sortedProperties).length === 0 && Object.keys(muiProps).length === 0 && !state) {
+    return undefined;
+  }
+  return {
+    properties: sortedProperties,
+    muiProps,
+    ...(state ? { state } : {})
+  };
+};
+
+const extractDefaultVariantProperties = (
+  componentPropertyDefinitions: FigmaNode["componentPropertyDefinitions"]
+): Record<string, string> => {
+  if (!componentPropertyDefinitions) {
+    return {};
+  }
+  const properties: Record<string, string> = {};
+  for (const [rawKey, definition] of Object.entries(componentPropertyDefinitions)) {
+    const definitionType = typeof definition?.type === "string" ? definition.type.trim().toUpperCase() : "";
+    if (definitionType !== "VARIANT") {
+      continue;
+    }
+    if (typeof definition.defaultValue !== "string") {
+      continue;
+    }
+    const key = normalizeVariantKey(rawKey);
+    const value = normalizeVariantValue(definition.defaultValue);
+    if (!key || value.length === 0) {
+      continue;
+    }
+    properties[key] = value;
+  }
+  return properties;
+};
+
+const extractFirstTextFillColor = (node: FigmaNode): string | undefined => {
+  if (node.type === "TEXT") {
+    const textFill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+    const textColor = toHexColor(textFill?.color, textFill?.opacity);
+    if (textColor) {
+      return textColor;
+    }
+  }
+  for (const child of node.children ?? []) {
+    const childColor = extractFirstTextFillColor(child);
+    if (childColor) {
+      return childColor;
+    }
+  }
+  return undefined;
+};
+
+const extractVariantStyleFromNode = (node: FigmaNode): VariantStateStyle => {
+  const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+  const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
+  const style: VariantStateStyle = {};
+  const backgroundColor = toHexColor(fill?.color, fill?.opacity);
+  if (backgroundColor) {
+    style.backgroundColor = backgroundColor;
+  }
+  const borderColor = toHexColor(stroke?.color, stroke?.opacity);
+  if (borderColor) {
+    style.borderColor = borderColor;
+  }
+  const textColor = extractFirstTextFillColor(node);
+  if (textColor) {
+    style.color = textColor;
+  }
+  return style;
+};
+
+const buildComponentSetVariantCandidate = (node: FigmaNode): ComponentSetVariantCandidate => {
+  const variantData = extractVariantDataFromNode(node);
+  return {
+    node,
+    properties: variantData?.properties ?? {},
+    muiProps: variantData?.muiProps ?? {},
+    ...(variantData?.state ? { state: variantData.state } : {}),
+    style: extractVariantStyleFromNode(node)
+  };
+};
+
+const valuesEqualIgnoreCase = (left: string | undefined, right: string | undefined): boolean => {
+  if (!left || !right) {
+    return false;
+  }
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+};
+
+const resolveDefaultVariantCandidate = ({
+  candidates,
+  defaultProperties
+}: {
+  candidates: ComponentSetVariantCandidate[];
+  defaultProperties: Record<string, string>;
+}): ComponentSetVariantCandidate | undefined => {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const stateDefaultCandidate = candidates.find((candidate) => candidate.state === "default");
+  if (stateDefaultCandidate) {
+    return stateDefaultCandidate;
+  }
+
+  if (Object.keys(defaultProperties).length > 0) {
+    const propertyDefaultCandidate = candidates.find((candidate) => {
+      return Object.entries(defaultProperties).every(([key, value]) => valuesEqualIgnoreCase(candidate.properties[key], value));
+    });
+    if (propertyDefaultCandidate) {
+      return propertyDefaultCandidate;
+    }
+  }
+
+  return candidates[0];
+};
+
+const scoreVariantSimilarity = ({
+  candidate,
+  base
+}: {
+  candidate: ComponentSetVariantCandidate;
+  base: ComponentSetVariantCandidate;
+}): number => {
+  const keys = new Set<string>([...Object.keys(candidate.properties), ...Object.keys(base.properties)]);
+  let score = 0;
+  for (const key of keys) {
+    if (key === "state") {
+      continue;
+    }
+    const candidateValue = candidate.properties[key];
+    const baseValue = base.properties[key];
+    if (candidateValue && baseValue && valuesEqualIgnoreCase(candidateValue, baseValue)) {
+      score += 2;
+      continue;
+    }
+    if (candidateValue && baseValue && !valuesEqualIgnoreCase(candidateValue, baseValue)) {
+      score -= 1;
+    }
+  }
+  return score;
+};
+
+const diffVariantStyle = ({
+  candidateStyle,
+  baseStyle
+}: {
+  candidateStyle: VariantStateStyle;
+  baseStyle: VariantStateStyle;
+}): VariantStateStyle => {
+  const style: VariantStateStyle = {};
+  if (candidateStyle.backgroundColor && !valuesEqualIgnoreCase(candidateStyle.backgroundColor, baseStyle.backgroundColor)) {
+    style.backgroundColor = candidateStyle.backgroundColor;
+  }
+  if (candidateStyle.borderColor && !valuesEqualIgnoreCase(candidateStyle.borderColor, baseStyle.borderColor)) {
+    style.borderColor = candidateStyle.borderColor;
+  }
+  if (candidateStyle.color && !valuesEqualIgnoreCase(candidateStyle.color, baseStyle.color)) {
+    style.color = candidateStyle.color;
+  }
+  return style;
+};
+
+const toComponentSetVariantMapping = (node: FigmaNode): VariantMappingIR | undefined => {
+  const visibleChildren = (node.children ?? []).filter((child) => child.visible !== false);
+  if (visibleChildren.length === 0) {
+    return extractVariantDataFromNode(node);
+  }
+
+  const candidates = visibleChildren.map((child) => buildComponentSetVariantCandidate(child));
+  const hasVariantSignals = candidates.some((candidate) => {
+    return Object.keys(candidate.properties).length > 0 || Object.keys(candidate.muiProps).length > 0 || candidate.state !== undefined;
+  });
+  if (!hasVariantSignals) {
+    return undefined;
+  }
+
+  const defaultProperties = extractDefaultVariantProperties(node.componentPropertyDefinitions);
+  const defaultCandidate =
+    resolveDefaultVariantCandidate({
+      candidates,
+      defaultProperties
+    }) ?? candidates[0];
+  if (!defaultCandidate) {
+    return undefined;
+  }
+
+  const states: VariantStateSnapshot[] = candidates.map((candidate) => ({
+    nodeId: candidate.node.id,
+    properties: toSortedVariantProperties(candidate.properties),
+    muiProps: candidate.muiProps,
+    style: candidate.style,
+    isDefault: candidate.node.id === defaultCandidate.node.id,
+    ...(candidate.state ? { state: candidate.state } : {})
+  }));
+
+  const stateOverrides: NonNullable<VariantMappingIR["stateOverrides"]> = {};
+  for (const state of ["hover", "active", "disabled"] as Array<"hover" | "active" | "disabled">) {
+    const stateCandidates = candidates
+      .map((candidate, index) => ({
+        candidate,
+        index,
+        score: scoreVariantSimilarity({
+          candidate,
+          base: defaultCandidate
+        })
+      }))
+      .filter((entry) => entry.candidate.state === state)
+      .sort((left, right) => right.score - left.score || left.index - right.index);
+    const best = stateCandidates[0]?.candidate;
+    if (!best) {
+      continue;
+    }
+    const styleDiff = diffVariantStyle({
+      candidateStyle: best.style,
+      baseStyle: defaultCandidate.style
+    });
+    if (Object.keys(styleDiff).length > 0) {
+      stateOverrides[state] = styleDiff;
+    }
+  }
+
+  return {
+    properties: toSortedVariantProperties(defaultCandidate.properties),
+    muiProps: defaultCandidate.muiProps,
+    ...(defaultCandidate.state ? { state: defaultCandidate.state } : {}),
+    defaultVariantNodeId: defaultCandidate.node.id,
+    ...(Object.keys(stateOverrides).length > 0 ? { stateOverrides } : {}),
+    states
+  };
 };
 
 const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
@@ -717,6 +1184,7 @@ const mapElement = ({
     .map((item) => item.path)
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   const elementType = determineElementType(node);
+  const variantMapping = node.type === "COMPONENT_SET" ? toComponentSetVariantMapping(node) : extractVariantDataFromNode(node);
   const element: ScreenElementIR = {
     id: node.id,
     name: node.name ?? node.type,
@@ -725,6 +1193,7 @@ const mapElement = ({
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),
+    ...(variantMapping ? { variantMapping } : {}),
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
     ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
   };
@@ -780,6 +1249,40 @@ const mapElement = ({
   depthContext.mappedElementCount += 1;
 
   const isNextInstanceContext = inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET";
+
+  if (node.type === "COMPONENT_SET") {
+    const visibleChildren = (node.children ?? []).filter((child) => child.visible !== false);
+    const defaultVariantNodeId = element.variantMapping?.defaultVariantNodeId;
+    const defaultVariantNode =
+      (defaultVariantNodeId ? visibleChildren.find((child) => child.id === defaultVariantNodeId) : undefined) ??
+      visibleChildren[0];
+    if (!defaultVariantNode) {
+      return element;
+    }
+
+    if (shouldTruncateChildrenByDepth({ node, depth, elementType, context: depthContext })) {
+      element.children = [];
+      const nextDepth = depth + 1;
+      depthContext.truncatedBranchCount += 1;
+      depthContext.firstTruncatedDepth =
+        depthContext.firstTruncatedDepth === undefined
+          ? nextDepth
+          : Math.min(depthContext.firstTruncatedDepth, nextDepth);
+      return element;
+    }
+
+    const mappedDefault = mapElement({
+      node: defaultVariantNode,
+      depth: depth + 1,
+      inInstanceContext: isNextInstanceContext,
+      metrics,
+      depthContext
+    });
+    if (mappedDefault) {
+      element.children = [mappedDefault];
+    }
+    return element;
+  }
 
   if (shouldTruncateChildrenByDepth({ node, depth, elementType, context: depthContext })) {
     element.children = [];

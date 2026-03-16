@@ -8,7 +8,8 @@ import type {
   GeneratedFile,
   LlmCodegenMode,
   ScreenElementIR,
-  ScreenIR
+  ScreenIR,
+  VariantStateStyle
 } from "./types.js";
 import { isLlmClientError, type LlmClient } from "./llm.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
@@ -376,6 +377,69 @@ const sxString = (entries: Array<[string, string | number | undefined]>): string
     deduped.unshift([key, value]);
   }
   return deduped.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
+};
+
+const toVariantStateSxObject = (style: VariantStateStyle | undefined): string | undefined => {
+  if (!style) {
+    return undefined;
+  }
+  const stateSx = sxString([
+    ["bgcolor", style.backgroundColor ? literal(style.backgroundColor) : undefined],
+    ["borderColor", style.borderColor ? literal(style.borderColor) : undefined],
+    ["color", style.color ? literal(style.color) : undefined]
+  ]);
+  if (!stateSx.trim()) {
+    return undefined;
+  }
+  return `{ ${stateSx} }`;
+};
+
+const appendVariantStateOverridesToSx = ({
+  sx,
+  element
+}: {
+  sx: string;
+  element: ScreenElementIR;
+}): string => {
+  const stateOverrides = element.variantMapping?.stateOverrides;
+  if (!stateOverrides) {
+    return sx;
+  }
+  const selectors = [
+    ["\"&:hover\"", toVariantStateSxObject(stateOverrides.hover)],
+    ["\"&:active\"", toVariantStateSxObject(stateOverrides.active)],
+    ["\"&.Mui-disabled\"", toVariantStateSxObject(stateOverrides.disabled)]
+  ]
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([selector, style]) => `${selector}: ${style}`);
+  if (selectors.length === 0) {
+    return sx;
+  }
+  const normalizedBase = sx.trim();
+  if (!normalizedBase) {
+    return selectors.join(", ");
+  }
+  return `${normalizedBase}, ${selectors.join(", ")}`;
+};
+
+const toChipVariant = (value: "contained" | "outlined" | "text" | undefined): "filled" | "outlined" | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  if (value === "outlined") {
+    return "outlined";
+  }
+  return "filled";
+};
+
+const toChipSize = (value: "small" | "medium" | "large" | undefined): "small" | "medium" | undefined => {
+  if (value === "small") {
+    return "small";
+  }
+  if (value === "medium" || value === "large") {
+    return "medium";
+  }
+  return undefined;
 };
 
 const indentBlock = (value: string, spaces: number): string => {
@@ -1540,6 +1604,7 @@ ${indent}</Accordion>`;
 const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
+  const mappedMuiProps = element.variantMapping?.muiProps;
   const textNodes = collectTextNodes(element)
     .filter((node) => Boolean(node.text?.trim()))
     .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
@@ -1557,13 +1622,18 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
       ...baseLayoutEntries(element, parent),
       ["color", iconColor ? literal(iconColor) : undefined]
     ]);
+    const iconButtonSxWithState = appendVariantStateOverridesToSx({
+      sx: iconButtonSx,
+      element
+    });
     const iconExpression = renderFallbackIconExpression({
       element: iconNode,
       parent: { name: endIconRoot?.name ?? element.name },
       context,
       extraEntries: [["fontSize", literal("inherit")]]
     });
-    return `${indent}<IconButton aria-label=${literal(element.name)} sx={{ ${iconButtonSx} }}>${iconExpression}</IconButton>`;
+    const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
+    return `${indent}<IconButton aria-label=${literal(element.name)}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
   }
 
   const iconExpression = iconNode
@@ -1594,11 +1664,17 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     ["justifyContent", literal("center")]
   ]);
 
-  const variant = element.fillColor ? "contained" : "outlined";
+  const sxWithVariantStates = appendVariantStateOverridesToSx({
+    sx,
+    element
+  });
+  const variant = mappedMuiProps?.variant ?? (element.fillColor ? "contained" : "outlined");
+  const sizeProp = mappedMuiProps?.size ? ` size="${mappedMuiProps.size}"` : "";
+  const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
 
-  return `${indent}<Button variant="${variant}" disableElevation${startIconProp}${endIconProp} sx={{ ${sx} }}>{${literal(label ?? element.name)}}</Button>`;
+  return `${indent}<Button variant="${variant}"${sizeProp}${disabledProp} disableElevation${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
 };
 
 const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
@@ -1673,9 +1749,18 @@ ${indent}</Card>`;
 const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Chip");
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const mappedMuiProps = element.variantMapping?.muiProps;
+  const sx = appendVariantStateOverridesToSx({
+    sx: sxString(baseLayoutEntries(element, parent)),
+    element
+  });
   const label = firstText(element)?.trim() || element.name;
-  return `${indent}<Chip label={${literal(label)}} sx={{ ${sx} }} />`;
+  const chipVariant = toChipVariant(mappedMuiProps?.variant);
+  const chipSize = toChipSize(mappedMuiProps?.size);
+  const variantProp = chipVariant ? ` variant="${chipVariant}"` : "";
+  const sizeProp = chipSize ? ` size="${chipSize}"` : "";
+  const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
+  return `${indent}<Chip label={${literal(label)}}${variantProp}${sizeProp}${disabledProp} sx={{ ${sx} }} />`;
 };
 
 const renderSelectionControl = ({

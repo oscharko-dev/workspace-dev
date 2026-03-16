@@ -635,6 +635,42 @@ export interface DesignTokens {
 export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
 export type CounterAxisAlignItems = "MIN" | "CENTER" | "MAX" | "BASELINE";
 
+export type VariantElementState = "default" | "hover" | "active" | "disabled";
+
+export interface VariantMuiProps {
+  variant?: "contained" | "outlined" | "text";
+  size?: "small" | "medium" | "large";
+  disabled?: boolean;
+}
+
+export interface VariantStateStyle {
+  backgroundColor?: string;
+  borderColor?: string;
+  color?: string;
+}
+
+export interface VariantStateSnapshot {
+  nodeId: string;
+  state?: VariantElementState;
+  properties: Record<string, string>;
+  muiProps: VariantMuiProps;
+  style: VariantStateStyle;
+  isDefault: boolean;
+}
+
+export interface VariantMappingIR {
+  properties: Record<string, string>;
+  muiProps: VariantMuiProps;
+  state?: VariantElementState;
+  defaultVariantNodeId?: string;
+  stateOverrides?: {
+    hover?: VariantStateStyle;
+    active?: VariantStateStyle;
+    disabled?: VariantStateStyle;
+  };
+  states?: VariantStateSnapshot[];
+}
+
 export interface ScreenElementIR {
   id: string;
   name: string;
@@ -685,6 +721,7 @@ export interface ScreenElementIR {
     left: number;
   };
   cornerRadius?: number;
+  variantMapping?: VariantMappingIR;
   children?: ScreenElementIR[];
 }
 

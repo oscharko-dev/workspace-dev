@@ -624,6 +624,108 @@ test("deterministic screen rendering uses vector paths on non-VECTOR icon nodes"
   assert.equal(content.includes("InfoOutlinedIcon"), false);
 });
 
+test("deterministic screen rendering maps variant metadata to MUI props and pseudo-state sx overrides", () => {
+  const screen = {
+    id: "variant-mapping-screen",
+    name: "Variant Mapping Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "variant-button",
+        name: "Primary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        variantMapping: {
+          properties: {
+            state: "Disabled",
+            size: "Small",
+            variant: "Text"
+          },
+          muiProps: {
+            variant: "text" as const,
+            size: "small" as const,
+            disabled: true
+          },
+          state: "disabled" as const,
+          stateOverrides: {
+            hover: {
+              backgroundColor: "#c4001a"
+            },
+            active: {
+              backgroundColor: "#9f0015"
+            },
+            disabled: {
+              backgroundColor: "#d1d5db",
+              color: "#6b7280"
+            }
+          }
+        },
+        children: [
+          {
+            id: "variant-button-text",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Weiter"
+          }
+        ]
+      },
+      {
+        id: "variant-chip",
+        name: "Status",
+        nodeType: "FRAME",
+        type: "chip" as const,
+        x: 0,
+        y: 60,
+        width: 120,
+        height: 32,
+        variantMapping: {
+          properties: {
+            state: "Disabled",
+            size: "Small",
+            variant: "Outlined"
+          },
+          muiProps: {
+            variant: "outlined" as const,
+            size: "small" as const,
+            disabled: true
+          },
+          state: "disabled" as const,
+          stateOverrides: {
+            active: {
+              borderColor: "#6b7280"
+            }
+          }
+        },
+        children: [
+          {
+            id: "variant-chip-text",
+            name: "Chip label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Status"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('variant="text" size="small" disabled disableElevation'));
+  assert.ok(content.includes('<Chip label={"Status"} variant="outlined" size="small" disabled'));
+  assert.ok(content.includes('"&:hover": { bgcolor: "#c4001a" }'));
+  assert.ok(content.includes('"&:active": { bgcolor: "#9f0015" }'));
+  assert.ok(content.includes('"&.Mui-disabled": { bgcolor: "#d1d5db", color: "#6b7280" }'));
+  assert.ok(content.includes('"&:active": { borderColor: "#6b7280" }'));
+});
+
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-truncation-"));
   const ir = createIr();
