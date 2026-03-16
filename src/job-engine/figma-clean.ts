@@ -32,6 +32,7 @@ const ALLOWED_NODE_KEYS = new Set([
   "characters",
   "style",
   "cornerRadius",
+  "effects",
   "componentProperties",
   "componentPropertyDefinitions"
 ]);
@@ -43,6 +44,8 @@ const ALLOWED_STYLE_KEYS = new Set(["fontSize", "fontWeight", "fontFamily", "lin
 const ALLOWED_GEOMETRY_KEYS = new Set(["path", "windingRule"]);
 const ALLOWED_GRADIENT_STOP_KEYS = new Set(["position", "color"]);
 const ALLOWED_GRADIENT_HANDLE_POSITION_KEYS = new Set(["x", "y"]);
+const ALLOWED_EFFECT_KEYS = new Set(["type", "visible", "color", "radius", "offset"]);
+const ALLOWED_EFFECT_OFFSET_KEYS = new Set(["x", "y"]);
 const ALLOWED_COMPONENT_PROPERTY_KEYS = new Set(["type", "value"]);
 const ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS = new Set(["type", "defaultValue", "variantOptions"]);
 
@@ -274,6 +277,65 @@ const sanitizePaints = (value: unknown, metrics: FigmaCleaningAccumulator): Arra
       return nextPaint;
     })
     .filter((paint): paint is Record<string, unknown> => Boolean(paint));
+
+  return sanitized.length > 0 ? sanitized : undefined;
+};
+
+const sanitizeEffectOffset = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): { x: number; y: number } | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  metrics.removedPropertyCount += countRemovedKeys(value, ALLOWED_EFFECT_OFFSET_KEYS);
+  if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) {
+    return undefined;
+  }
+  return {
+    x: value.x,
+    y: value.y
+  };
+};
+
+const sanitizeEffects = (value: unknown, metrics: FigmaCleaningAccumulator): Array<Record<string, unknown>> | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sanitized = value
+    .map((effectCandidate) => {
+      if (!isRecord(effectCandidate)) {
+        return undefined;
+      }
+      metrics.removedPropertyCount += countRemovedKeys(effectCandidate, ALLOWED_EFFECT_KEYS);
+
+      const type = typeof effectCandidate.type === "string" ? effectCandidate.type.trim().toUpperCase() : "";
+      if (type !== "DROP_SHADOW" && type !== "INNER_SHADOW") {
+        return undefined;
+      }
+      if (effectCandidate.visible === false) {
+        return undefined;
+      }
+
+      const color = sanitizeColor(effectCandidate.color, metrics);
+      const offset = sanitizeEffectOffset(effectCandidate.offset, metrics);
+      if (!color || !offset || !isFiniteNumber(effectCandidate.radius)) {
+        return undefined;
+      }
+
+      const nextEffect: Record<string, unknown> = {
+        type,
+        color,
+        radius: effectCandidate.radius,
+        offset
+      };
+      if (typeof effectCandidate.visible === "boolean") {
+        nextEffect.visible = effectCandidate.visible;
+      }
+      return nextEffect;
+    })
+    .filter((effect): effect is Record<string, unknown> => Boolean(effect));
 
   return sanitized.length > 0 ? sanitized : undefined;
 };
@@ -528,6 +590,11 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
   const strokes = sanitizePaints(nodeCandidate.strokes, metrics);
   if (strokes) {
     nextNode.strokes = strokes;
+  }
+
+  const effects = sanitizeEffects(nodeCandidate.effects, metrics);
+  if (effects) {
+    nextNode.effects = effects;
   }
 
   const fillGeometry = sanitizeGeometryList(nodeCandidate.fillGeometry, metrics);

@@ -125,6 +125,34 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                       hiddenGradientField: "drop"
                     }
                   ],
+                  effects: [
+                    {
+                      type: "DROP_SHADOW",
+                      visible: true,
+                      color: { r: 0, g: 0, b: 0, a: 0.2 },
+                      radius: 8,
+                      offset: { x: 0, y: 4, hiddenOffset: true },
+                      blendMode: "NORMAL"
+                    },
+                    {
+                      type: "INNER_SHADOW",
+                      color: { r: 0.1, g: 0.2, b: 0.3, a: 0.35 },
+                      radius: 6,
+                      offset: { x: 2, y: 3 },
+                      showShadowBehindNode: true
+                    },
+                    {
+                      type: "DROP_SHADOW",
+                      visible: false,
+                      color: { r: 0, g: 0, b: 0, a: 0.5 },
+                      radius: 12,
+                      offset: { x: 0, y: 8 }
+                    },
+                    {
+                      type: "BACKGROUND_BLUR",
+                      radius: 9
+                    }
+                  ],
                   absoluteBoundingBox: { x: 1, y: 2, width: 280, height: 160, extraBoxKey: 123 },
                   children: []
                 },
@@ -209,6 +237,21 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
         { x: 0, y: 0 },
         { x: 1, y: 0 }
       ]
+    }
+  ]);
+  assert.deepEqual(regularNode?.effects, [
+    {
+      type: "DROP_SHADOW",
+      visible: true,
+      color: { r: 0, g: 0, b: 0, a: 0.2 },
+      radius: 8,
+      offset: { x: 0, y: 4 }
+    },
+    {
+      type: "INNER_SHADOW",
+      color: { r: 0.1, g: 0.2, b: 0.3, a: 0.35 },
+      radius: 6,
+      offset: { x: 2, y: 3 }
     }
   ]);
 
