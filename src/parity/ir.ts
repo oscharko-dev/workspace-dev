@@ -178,35 +178,148 @@ const collectNodes = (node: FigmaNode, predicate: (candidate: FigmaNode) => bool
   return collected;
 };
 
+const escapeRegExp = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+const hasAnySubstring = (value: string, tokens: string[]): boolean => {
+  return tokens.some((token) => value.includes(token));
+};
+
+const hasAnyWord = (value: string, words: string[]): boolean => {
+  return words.some((word) => new RegExp(`\\b${escapeRegExp(word)}\\b`, "i").test(value));
+};
+
 const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   const name = (node.name ?? "").toLowerCase();
+  const width = node.absoluteBoundingBox?.width ?? 0;
+  const height = node.absoluteBoundingBox?.height ?? 0;
+  const childCount = node.children?.length ?? 0;
+  const textChildCount = (node.children ?? []).filter((child) => child.type === "TEXT" && (child.characters ?? "").trim().length > 0).length;
+  const hasChildren = childCount > 0;
   const hasSolidFill = Boolean(node.fills?.find((item) => item.type === "SOLID" && item.color));
   const hasStroke = Boolean(node.strokes?.find((item) => item.type === "SOLID" && item.color));
-  const isInputRoot =
-    name.includes("muiformcontrolroot") || name.includes("textfield") || name.includes("input field");
+  const hasRoundedCorners = (node.cornerRadius ?? 0) >= 8;
+  const hasListishChildNames = (node.children ?? []).some((child) => {
+    const childName = (child.name ?? "").toLowerCase();
+    return (
+      childName.includes("listitem") ||
+      childName.includes("list item") ||
+      childName.includes("muilistitem") ||
+      childName.includes("navigationaction")
+    );
+  });
+  const hasInputSemantic = hasAnySubstring(name, [
+    "muiformcontrolroot",
+    "textfield",
+    "input field",
+    "muioutlinedinputroot",
+    "muioutlinedinputinput",
+    "muiinputadornmentroot",
+    "muiselectselect",
+    "muiinputbaseroot",
+    "muiinputbaseinput",
+    "muiinputroot",
+    "formcontrol"
+  ]);
+  const isFieldSized = width >= 96 && height >= 28 && height <= 140;
+  const isLikelyDividerByGeometry =
+    !hasChildren && hasSolidFill && ((width >= 16 && height > 0 && height <= 2) || (height >= 16 && width > 0 && width <= 2));
+  const hasButtonLabelHint =
+    name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
+  const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
+  const hasStrongImageName = hasAnyWord(name, ["image", "photo", "illustration", "hero", "banner"]);
 
   if (node.type === "TEXT") {
     return "text";
   }
-  if (isInputRoot) {
+
+  if ((hasInputSemantic || hasAnyWord(name, ["input", "textfield", "select"])) && (isFieldSized || hasChildren)) {
     return "input";
   }
-  if (
-    name.includes("muioutlinedinputroot") ||
-    name.includes("muioutlinedinputinput") ||
-    name.includes("muiinputadornmentroot") ||
-    name.includes("muiselectselect")
-  ) {
-    return "container";
+
+  if (hasAnySubstring(name, ["muiswitch", "switchbase"]) || hasAnyWord(name, ["switch", "toggle"])) {
+    return "switch";
   }
+
+  if (hasAnySubstring(name, ["muicheckbox"]) || hasAnyWord(name, ["checkbox"])) {
+    return "checkbox";
+  }
+
+  if (hasAnySubstring(name, ["muiradio"]) || hasAnyWord(name, ["radio"])) {
+    return "radio";
+  }
+
+  if (hasAnySubstring(name, ["muichip"]) || hasAnyWord(name, ["chip"])) {
+    return "chip";
+  }
+
+  if (hasAnySubstring(name, ["muitabs", "muitab"]) || hasAnyWord(name, ["tab", "tabs"])) {
+    return "tab";
+  }
+
   if (
-    name.includes("cta") ||
-    ((name.includes("button") || name.includes("muibutton")) &&
-      (hasSolidFill || hasStroke || name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner")))
+    hasAnySubstring(name, ["muicircularprogress", "muilinearprogress", "circularprogress", "linearprogress", "progressbar"]) ||
+    hasAnyWord(name, ["progress", "loader", "loading", "spinner"])
   ) {
+    return "progress";
+  }
+
+  if (hasAnySubstring(name, ["muiavatar"]) || hasAnyWord(name, ["avatar"])) {
+    return "avatar";
+  }
+
+  if (hasAnySubstring(name, ["muibadge"]) || hasAnyWord(name, ["badge"])) {
+    return "badge";
+  }
+
+  if (hasAnySubstring(name, ["muidivider", "separator"]) || hasAnyWord(name, ["divider"]) || isLikelyDividerByGeometry) {
+    return "divider";
+  }
+
+  if (hasAnySubstring(name, ["muiappbar", "topbar"]) || hasAnyWord(name, ["appbar", "app bar", "toolbar"])) {
+    return "appbar";
+  }
+
+  if (
+    hasAnySubstring(name, ["bottomnavigation", "navigationbar", "muitabbar"]) ||
+    hasAnyWord(name, ["navigation", "navbar"])
+  ) {
+    return "navigation";
+  }
+
+  if (hasAnySubstring(name, ["muidialog", "modal"]) || hasAnyWord(name, ["dialog", "modal"])) {
+    return "dialog";
+  }
+
+  if (hasAnySubstring(name, ["muistepper"]) || hasAnyWord(name, ["stepper"])) {
+    return "stepper";
+  }
+
+  const isLikelyListByStructure =
+    !hasSolidFill && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
+  if (
+    hasAnySubstring(name, ["muilist", "listitem", "muilistitem"]) ||
+    hasAnyWord(name, ["list"]) ||
+    hasListishChildNames ||
+    isLikelyListByStructure
+  ) {
+    return "list";
+  }
+
+  if (hasAnySubstring(name, ["muicard"]) || hasAnyWord(name, ["card"])) {
+    return "card";
+  }
+
+  if (hasChildren && hasSolidFill && hasRoundedCorners && width >= 120 && height >= 80) {
+    return "card";
+  }
+
+  if (name.includes("cta") || (hasButtonKeyword && (hasSolidFill || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
     return "button";
   }
-  if (node.type === "RECTANGLE" && name.includes("image")) {
+
+  if ((node.type === "RECTANGLE" || node.type === "FRAME") && hasStrongImageName && !hasChildren) {
     return "image";
   }
 
@@ -788,21 +901,80 @@ const inferTypeFromSemanticHint = (
   if (!combined.trim()) {
     return undefined;
   }
-  if (combined.includes("text")) {
+
+  if (hasAnyWord(combined, ["text", "typography", "headline", "title", "label"])) {
     return "text";
   }
-  if (
-    combined.includes("input") ||
-    combined.includes("select") ||
-    combined.includes("formcontrol") ||
-    combined.includes("textfield")
-  ) {
+
+  if (hasAnySubstring(combined, ["formcontrol", "textfield", "text field"]) || hasAnyWord(combined, ["input", "select", "field"])) {
     return "input";
   }
-  if (combined.includes("button") || combined.includes("cta")) {
+
+  if (hasAnyWord(combined, ["switch", "toggle"])) {
+    return "switch";
+  }
+
+  if (hasAnyWord(combined, ["checkbox"])) {
+    return "checkbox";
+  }
+
+  if (hasAnyWord(combined, ["radio"])) {
+    return "radio";
+  }
+
+  if (hasAnyWord(combined, ["chip"])) {
+    return "chip";
+  }
+
+  if (hasAnyWord(combined, ["tab", "tabs"])) {
+    return "tab";
+  }
+
+  if (hasAnyWord(combined, ["progress", "loader", "spinner"])) {
+    return "progress";
+  }
+
+  if (hasAnyWord(combined, ["avatar"])) {
+    return "avatar";
+  }
+
+  if (hasAnyWord(combined, ["badge"])) {
+    return "badge";
+  }
+
+  if (hasAnyWord(combined, ["divider", "separator"])) {
+    return "divider";
+  }
+
+  if (hasAnySubstring(combined, ["appbar", "app bar"]) || hasAnyWord(combined, ["toolbar"])) {
+    return "appbar";
+  }
+
+  if (hasAnyWord(combined, ["navigation", "navbar"])) {
+    return "navigation";
+  }
+
+  if (hasAnyWord(combined, ["dialog", "modal"])) {
+    return "dialog";
+  }
+
+  if (hasAnyWord(combined, ["stepper", "step"])) {
+    return "stepper";
+  }
+
+  if (hasAnyWord(combined, ["list", "listitem"])) {
+    return "list";
+  }
+
+  if (hasAnyWord(combined, ["card"])) {
+    return "card";
+  }
+
+  if (hasAnyWord(combined, ["button", "cta"])) {
     return "button";
   }
-  if (combined.includes("image") || combined.includes("icon")) {
+
+  if (hasAnyWord(combined, ["image", "photo", "illustration", "icon"])) {
     return "image";
   }
   return undefined;
