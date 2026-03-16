@@ -1405,8 +1405,32 @@ const isLikelyAccordionContainer = (element: ScreenElementIR): boolean => {
   return hasAnySubtreeName(element, ACCORDION_NAME_HINTS) && hasSubtreeName(element, "collapsewrapper");
 };
 
+const normalizeIconImports = (iconImports: IconImportSpec[]): IconImportSpec[] => {
+  const seen = new Set<string>();
+  const uniqueIconImports: IconImportSpec[] = [];
+
+  for (const iconImport of iconImports) {
+    const dedupeKey = `${iconImport.localName}:::${iconImport.modulePath}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    uniqueIconImports.push(iconImport);
+  }
+
+  return uniqueIconImports.sort((left, right) => {
+    const modulePathComparison = left.modulePath.localeCompare(right.modulePath);
+    if (modulePathComparison !== 0) {
+      return modulePathComparison;
+    }
+    return left.localName.localeCompare(right.localName);
+  });
+};
+
 const registerIconImport = (context: RenderContext, spec: IconImportSpec): string => {
-  const exists = context.iconImports.some((icon) => icon.localName === spec.localName);
+  const exists = context.iconImports.some(
+    (icon) => icon.localName === spec.localName && icon.modulePath === spec.modulePath
+  );
   if (!exists) {
     context.iconImports.push(spec);
   }
@@ -2699,7 +2723,7 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
     registerMuiImports(renderContext, "Typography");
   }
   const uniqueMuiImports = [...renderContext.muiImports].sort((left, right) => left.localeCompare(right));
-  const iconImports = renderContext.iconImports
+  const iconImports = normalizeIconImports(renderContext.iconImports)
     .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
     .join("\n");
   const mappedImports = renderContext.mappedImports
