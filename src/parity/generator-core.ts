@@ -1239,6 +1239,7 @@ interface RenderContext {
     message: string;
   }>;
   emittedWarningKeys: Set<string>;
+  pageBackgroundColorNormalized: string | undefined;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }
 
@@ -2423,6 +2424,66 @@ const hasResponsiveTopLevelLayoutOverrides = ({
   return Boolean(context.responsiveTopLevelLayoutOverrides?.[element.id]);
 };
 
+const hasVisibleBorderSignal = (element: ScreenElementIR): boolean => {
+  if (!element.strokeColor) {
+    return false;
+  }
+  if (element.strokeWidth === undefined) {
+    return true;
+  }
+  return Number.isFinite(element.strokeWidth) && element.strokeWidth > 0;
+};
+
+const hasDistinctSurfaceFill = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  const normalizedFill = normalizeHexColor(element.fillColor);
+  const normalizedPageBackground = context.pageBackgroundColorNormalized;
+  if (!normalizedFill || !normalizedPageBackground) {
+    return false;
+  }
+  return normalizedFill !== normalizedPageBackground;
+};
+
+const isElevatedSurfaceContainerForPaper = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  if ((element.children?.length ?? 0) === 0) {
+    return false;
+  }
+  if (!hasMeaningfulTextDescendants(element)) {
+    return false;
+  }
+  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
+    return false;
+  }
+
+  const hasRoundedSurface = typeof element.cornerRadius === "number" && Number.isFinite(element.cornerRadius) && element.cornerRadius > 0;
+  if (!hasRoundedSurface) {
+    return false;
+  }
+
+  const normalizedElevation = normalizeElevationForSx(element.elevation);
+  const hasElevation = typeof normalizedElevation === "number" && normalizedElevation > 0;
+  const hasInsetShadow = typeof element.insetShadow === "string" && element.insetShadow.trim().length > 0;
+  const hasInsetShadowOnly = hasInsetShadow && !hasElevation;
+
+  const elevatedSurfaceMatch = hasDistinctSurfaceFill({ element, context }) && hasElevation && !hasInsetShadowOnly;
+  const outlinedSurfaceMatch = hasVisibleBorderSignal(element) && !hasElevation && !hasInsetShadow;
+  return elevatedSurfaceMatch || outlinedSurfaceMatch;
+};
+
 const isSimpleFlexContainerForStack = ({
   element,
   context
@@ -3505,6 +3566,10 @@ const renderContainer = (
     }
   }
 
+  if (isElevatedSurfaceContainerForPaper({ element, context })) {
+    return renderPaper(element, depth, parent, context);
+  }
+
   if (isSimpleFlexContainerForStack({ element, context })) {
     return renderSimpleFlexContainerAsStack({
       element,
@@ -3770,6 +3835,7 @@ const fallbackScreenFile = ({
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
     emittedWarningKeys: new Set<string>(),
+    pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
       : {})
