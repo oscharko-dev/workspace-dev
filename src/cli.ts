@@ -27,6 +27,7 @@ const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
+const DEFAULT_SKIP_INSTALL = false;
 
 interface CliOptions {
   command: string;
@@ -49,6 +50,7 @@ interface CliOptions {
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
+  skipInstall: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
 }
@@ -198,6 +200,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     process.env.FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE,
     DEFAULT_INSTALL_PREFER_OFFLINE
   );
+  let skipInstall = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL, DEFAULT_SKIP_INSTALL);
   let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
   let enablePerfValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
@@ -385,6 +388,17 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--skip-install") {
+      const nextValue = args[index + 1];
+      if (nextValue && !nextValue.startsWith("--")) {
+        skipInstall = parseBooleanLike(nextValue, true);
+        index += 1;
+      } else {
+        skipInstall = true;
+      }
+      continue;
+    }
+
     if (arg === "--preview") {
       enablePreview = parseBooleanLike(args[index + 1], enablePreview);
       index += 1;
@@ -419,6 +433,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     commandTimeoutMs,
     enableUiValidation,
     installPreferOffline,
+    skipInstall,
     enablePreview,
     enablePerfValidation
   };
@@ -463,6 +478,8 @@ Options:
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
   --install-prefer-offline <true|false>
                              Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
+  --skip-install <true|false>
+                             Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: false)
@@ -488,6 +505,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
+  FIGMAPIPE_WORKSPACE_SKIP_INSTALL
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
   FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
@@ -550,6 +568,7 @@ const main = async (): Promise<void> => {
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
       installPreferOffline: options.installPreferOffline,
+      skipInstall: options.skipInstall,
       enablePreview: options.enablePreview
     });
 
@@ -572,6 +591,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
+    console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);

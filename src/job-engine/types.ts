@@ -76,6 +76,7 @@ export interface JobEngineRuntime {
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
+  skipInstall: boolean;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
 }

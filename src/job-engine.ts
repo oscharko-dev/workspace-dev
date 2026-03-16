@@ -26,6 +26,7 @@ import {
   toPublicJob,
   updateStage
 } from "./job-engine/stage-state.js";
+import { createTemplateCopyFilter } from "./job-engine/template-copy-filter.js";
 import type { CreateJobEngineInput, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
 import { runProjectValidation } from "./job-engine/validation.js";
 import { generateArtifacts } from "./parity/generator-core.js";
@@ -33,6 +34,7 @@ import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
+const TEMPLATE_COPY_FILTER = createTemplateCopyFilter({ templateRoot: TEMPLATE_ROOT });
 
 const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
   return error instanceof Error && "stage" in error && "code" in error;
@@ -280,10 +282,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           await copyDir({
             sourceDir: TEMPLATE_ROOT,
             targetDir: generatedProjectDir,
-            filter: (sourcePath) => {
-              const baseName = path.basename(sourcePath);
-              return baseName !== "node_modules" && baseName !== ".vite" && baseName !== "dist";
-            }
+            filter: TEMPLATE_COPY_FILTER
           });
         }
       });
@@ -323,6 +322,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             enableUiValidation: runtime.enableUiValidation,
             commandTimeoutMs: runtime.commandTimeoutMs,
             installPreferOffline: runtime.installPreferOffline,
+            skipInstall: runtime.skipInstall,
             onLog: (message) => {
               pushLog({
                 job,

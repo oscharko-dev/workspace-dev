@@ -21,6 +21,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, true);
+  assert.equal(runtime.skipInstall, false);
   assert.equal(runtime.previewEnabled, true);
 });
 
@@ -39,7 +40,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     brandTheme: "SPARKASSE",
     commandTimeoutMs: 10,
     enableUiValidation: false,
-    installPreferOffline: false
+    installPreferOffline: false,
+    skipInstall: true
   });
 
   assert.equal(runtime.figmaBootstrapDepth, 10);
@@ -56,6 +58,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, false);
+  assert.equal(runtime.skipInstall, true);
 });
 
 test("resolveRuntimeSettings normalizes empty figma screen name pattern to undefined", () => {
