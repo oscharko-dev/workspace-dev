@@ -31,6 +31,18 @@ const toSha256 = (value: string): string => {
   return createHash("sha256").update(value).digest("hex");
 };
 
+const toSemverMajor = (versionRange: string | undefined): number | undefined => {
+  if (!versionRange || versionRange.trim().length === 0) {
+    return undefined;
+  }
+  const match = versionRange.match(/(\d+)(?:\.\d+){0,2}/);
+  if (!match) {
+    return undefined;
+  }
+  const major = Number(match[1]);
+  return Number.isInteger(major) && major >= 0 ? major : undefined;
+};
+
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = {
   "package.json": "a165389cca07bdc5defb45346dbcace9917a9980b8b952c6bdfd86524378f3f2",
   "pnpm-lock.yaml": "3184f6ee6d03639e821e081700affe4255891191c10c34871cb86e31680a86eb",
@@ -78,4 +90,33 @@ test("template semantics: React 19 dependencies and JSX typing coverage are expl
   assert.equal(tsconfigJson.compilerOptions?.jsx, "react-jsx");
   assert.equal(tsconfigJson.compilerOptions?.types?.includes("react"), true);
   assert.equal(tsconfigJson.compilerOptions?.types?.includes("react-dom"), true);
+});
+
+test("template semantics: Vite baseline remains at least major 6 with React plugin wiring", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(templateRoot, "package.json"), "utf8")) as {
+    devDependencies?: Record<string, string>;
+  };
+  const viteConfig = await readFile(path.join(templateRoot, "vite.config.ts"), "utf8");
+
+  const viteVersionRange = packageJson.devDependencies?.vite;
+  const vitePluginVersionRange = packageJson.devDependencies?.["@vitejs/plugin-react"];
+  const viteMajor = toSemverMajor(viteVersionRange);
+  const vitePluginMajor = toSemverMajor(vitePluginVersionRange);
+
+  assert.notEqual(viteMajor, undefined, `Unable to parse Vite version range '${viteVersionRange ?? ""}'`);
+  assert.notEqual(
+    vitePluginMajor,
+    undefined,
+    `Unable to parse @vitejs/plugin-react version range '${vitePluginVersionRange ?? ""}'`
+  );
+  assert.equal((viteMajor ?? 0) >= 6, true, `Expected vite major >= 6, received '${viteVersionRange ?? ""}'`);
+  assert.equal(
+    (vitePluginMajor ?? 0) >= 6,
+    true,
+    `Expected @vitejs/plugin-react major >= 6, received '${vitePluginVersionRange ?? ""}'`
+  );
+
+  assert.match(viteConfig, /from\s+["']vite["']/);
+  assert.match(viteConfig, /\bdefineConfig\b/);
+  assert.match(viteConfig, /\breact\s*\(/);
 });
