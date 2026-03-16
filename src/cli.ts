@@ -6,6 +6,7 @@
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
+import type { WorkspaceBrandTheme } from "./contracts/index.js";
 import { createWorkspaceServer } from "./server.js";
 
 const DEFAULT_PORT = 1983;
@@ -21,6 +22,7 @@ const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
@@ -41,6 +43,7 @@ interface CliOptions {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
+  brandTheme: WorkspaceBrandTheme;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
@@ -81,6 +84,23 @@ const parseIntInRange = ({
     return fallback;
   }
   return Math.max(min, Math.min(max, parsed));
+};
+
+const parseBrandTheme = ({
+  value,
+  fallback
+}: {
+  value: string | undefined;
+  fallback: WorkspaceBrandTheme;
+}): WorkspaceBrandTheme => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "derived" || normalized === "sparkasse") {
+    return normalized;
+  }
+  return fallback;
 };
 
 const parseArgs = (argv: string[]): CliOptions => {
@@ -151,6 +171,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
     min: 100,
     max: 10000
+  });
+  let brandTheme = parseBrandTheme({
+    value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
+    fallback: DEFAULT_BRAND_THEME
   });
   let commandTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
@@ -310,6 +334,15 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--brand") {
+      brandTheme = parseBrandTheme({
+        value: args[index + 1],
+        fallback: brandTheme
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--command-timeout-ms") {
       commandTimeoutMs = parseIntInRange({
         raw: args[index + 1],
@@ -362,6 +395,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaCacheEnabled,
     figmaCacheTtlMs,
     figmaScreenElementBudget,
+    brandTheme,
     commandTimeoutMs,
     enableUiValidation,
     installPreferOffline,
@@ -400,6 +434,8 @@ Options:
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
+  --brand <derived|sparkasse>
+                             Token brand policy for ir.derive (default: ${DEFAULT_BRAND_THEME})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
@@ -425,6 +461,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
+  FIGMAPIPE_WORKSPACE_BRAND
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
@@ -485,6 +522,7 @@ const main = async (): Promise<void> => {
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
+      brandTheme: options.brandTheme,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
       installPreferOffline: options.installPreferOffline,
@@ -511,6 +549,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
+    console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
     console.log(
       `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
     );

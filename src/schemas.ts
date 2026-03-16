@@ -5,7 +5,7 @@
  * dependencies to keep the package air-gap compatible.
  */
 
-import type { WorkspaceJobInput, WorkspaceStatus } from "./contracts/index.js";
+import type { WorkspaceBrandTheme, WorkspaceJobInput, WorkspaceStatus } from "./contracts/index.js";
 
 type PathSegment = string | number;
 
@@ -100,7 +100,8 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "figmaSourceMode",
     "llmCodegenMode",
     "projectName",
-    "targetPath"
+    "targetPath",
+    "brandTheme"
   ]);
 
   for (const key of Object.keys(input)) {
@@ -167,6 +168,23 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
+  const rawBrandTheme = parseStringField({
+    input,
+    key: "brandTheme",
+    required: false,
+    issues
+  });
+  const brandTheme = (() => {
+    if (rawBrandTheme === undefined) {
+      return undefined;
+    }
+    const normalized = rawBrandTheme.trim().toLowerCase();
+    if (normalized === "derived" || normalized === "sparkasse") {
+      return normalized as WorkspaceBrandTheme;
+    }
+    pushIssue(issues, ["brandTheme"], "brandTheme must be one of: derived, sparkasse");
+    return undefined;
+  })();
 
   if (enableGitPr) {
     if (!repoUrl) {
@@ -203,6 +221,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (targetPath !== undefined) {
     data.targetPath = targetPath;
+  }
+  if (brandTheme !== undefined) {
+    data.brandTheme = brandTheme;
   }
 
   return {

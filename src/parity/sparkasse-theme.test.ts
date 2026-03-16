@@ -78,7 +78,11 @@ test("sparkasse theme loads configured token file and applies fallback-safe typo
 
   assert.equal(applied.palette.primary, "#001122");
   assert.equal(applied.palette.secondary, "#112233");
+  assert.equal(applied.palette.background, "#f4f5f6");
+  assert.equal(applied.palette.text, "#121212");
   assert.equal(applied.borderRadius, 14);
   assert.equal(applied.spacingBase, 10);
   assert.ok(applied.fontFamily.includes("Roboto"));
+  assert.equal(applied.headingSize, 30);
+  assert.equal(applied.bodySize, 15);
 });

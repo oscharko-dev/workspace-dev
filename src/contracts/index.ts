@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.3.0
+ * Contract version: 2.4.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -13,6 +13,9 @@ export type WorkspaceFigmaSourceMode = "rest";
 
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
+
+/** Theme brand policy applied during IR token derivation. */
+export type WorkspaceBrandTheme = "derived" | "sparkasse";
 
 /** Runtime status values for asynchronous workspace jobs. */
 export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed";
@@ -62,6 +65,8 @@ export interface WorkspaceStartOptions {
   figmaCacheTtlMs?: number;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
   figmaScreenElementBudget?: number;
+  /** Token brand policy used when deriving IR tokens. Default: "derived" */
+  brandTheme?: WorkspaceBrandTheme;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
   /** Run static UI validation in validate.project. Default: false */
@@ -101,6 +106,7 @@ export interface WorkspaceJobInput {
   llmCodegenMode?: string;
   projectName?: string;
   targetPath?: string;
+  brandTheme?: WorkspaceBrandTheme;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -112,6 +118,7 @@ export interface WorkspaceJobRequestMetadata {
   llmCodegenMode: WorkspaceLlmCodegenMode;
   projectName?: string;
   targetPath?: string;
+  brandTheme: WorkspaceBrandTheme;
 }
 
 /** Submit response for accepted jobs. */
@@ -214,4 +221,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.3.0" as const;
+export const CONTRACT_VERSION = "2.4.0" as const;

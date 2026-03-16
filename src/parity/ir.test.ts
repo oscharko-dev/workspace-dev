@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveTokensForTesting, figmaToDesignIr, figmaToDesignIrWithOptions } from "./ir.js";
+import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
 
 const countElements = (elements: Array<{ children?: unknown[] }>): number => {
   let total = 0;
@@ -384,6 +385,21 @@ test("figmaToDesignIr maps SECTION-contained screens and prunes hidden subtrees"
   const flattenedNames = JSON.stringify(ir.screens[0].children);
   assert.equal(flattenedNames.includes("Should not appear"), false);
   assert.ok((ir.metrics?.skippedHidden ?? 0) >= 1);
+});
+
+test("figmaToDesignIrWithOptions applies brand theme policy deterministically", () => {
+  const sample = createSampleFigmaFile();
+  const derivedTokens = deriveTokensForTesting(sample);
+
+  const derivedIr = figmaToDesignIrWithOptions(sample, {
+    brandTheme: "derived"
+  });
+  const sparkasseIr = figmaToDesignIrWithOptions(sample, {
+    brandTheme: "sparkasse"
+  });
+
+  assert.deepEqual(derivedIr.tokens, derivedTokens);
+  assert.deepEqual(sparkasseIr.tokens, applySparkasseThemeDefaults(derivedTokens));
 });
 
 test("figmaToDesignIrWithOptions removes placeholder text only in instance/component-set context", () => {

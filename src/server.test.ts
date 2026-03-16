@@ -427,6 +427,7 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(finalStatus.status, "completed");
     assert.equal(request.repoToken, undefined);
     assert.equal(request.enableGitPr, false);
+    assert.equal(request.brandTheme, "derived");
     assert.equal(preview.enabled, true);
 
     const generatedProjectDir = path.join(outputRoot, "jobs", jobId, "generated-app");
@@ -456,6 +457,45 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(previewResponse.statusCode, 200);
     assert.match(previewResponse.headers["content-type"] ?? "", /text\/html/i);
     assert.equal(previewResponse.body.includes('<div id="root"></div>'), true);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server resolves submit brandTheme override over server default", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    brandTheme: "sparkasse",
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        brandTheme: "derived",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const request = finalStatus.request as Record<string, unknown>;
+
+    assert.equal(finalStatus.status, "completed");
+    assert.equal(request.brandTheme, "derived");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

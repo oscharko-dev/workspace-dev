@@ -16,6 +16,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
+  assert.equal(runtime.brandTheme, "derived");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, true);
@@ -33,6 +34,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaCacheEnabled: false,
     figmaCacheTtlMs: 999_999_999,
     figmaScreenElementBudget: 999_999,
+    brandTheme: "SPARKASSE",
     commandTimeoutMs: 10,
     enableUiValidation: false,
     installPreferOffline: false
@@ -47,6 +49,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaCacheEnabled, false);
   assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
+  assert.equal(runtime.brandTheme, "sparkasse");
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, false);
@@ -58,4 +61,12 @@ test("resolveRuntimeSettings normalizes empty figma screen name pattern to undef
   });
 
   assert.equal(runtime.figmaScreenNamePattern, undefined);
+});
+
+test("resolveRuntimeSettings falls back to derived brand theme for unknown values", () => {
+  const runtime = resolveRuntimeSettings({
+    brandTheme: "unknown"
+  });
+
+  assert.equal(runtime.brandTheme, "derived");
 });

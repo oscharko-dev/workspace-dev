@@ -1,3 +1,4 @@
+import type { WorkspaceBrandTheme } from "../contracts/index.js";
 import type {
   CounterAxisAlignItems,
   DesignIR,
@@ -129,6 +130,7 @@ interface MetricsAccumulator {
 interface FigmaToIrOptions {
   mcpEnrichment?: FigmaMcpEnrichment;
   screenElementBudget?: number;
+  brandTheme?: WorkspaceBrandTheme;
   sourceMetrics?: {
     fetchedNodes?: number;
     degradedGeometryNodes?: string[];
@@ -1631,6 +1633,7 @@ export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
 
 export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
   const parsed = figmaJson as FigmaFile;
+  const resolvedBrandTheme: WorkspaceBrandTheme = options?.brandTheme === "sparkasse" ? "sparkasse" : "derived";
   const screenElementBudget =
     typeof options?.screenElementBudget === "number" && Number.isFinite(options.screenElementBudget)
       ? Math.max(1, Math.trunc(options.screenElementBudget))
@@ -1660,10 +1663,11 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     throw new Error("No top-level frames/components found in Figma file");
   }
 
+  const derivedTokens = deriveTokens(parsed);
   const baseIr: DesignIR = {
     sourceName: parsed.name ?? "Figma File",
     screens,
-    tokens: applySparkasseThemeDefaults(deriveTokens(parsed)),
+    tokens: resolvedBrandTheme === "sparkasse" ? applySparkasseThemeDefaults(derivedTokens) : derivedTokens,
     metrics
   };
 
