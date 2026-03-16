@@ -1175,25 +1175,97 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     "muioutlinedinputroot",
     "muioutlinedinputinput",
     "muiinputadornmentroot",
-    "muiselectselect",
     "muiinputbaseroot",
     "muiinputbaseinput",
     "muiinputroot",
     "formcontrol"
   ]);
+  const hasSelectSemantic = hasAnySubstring(name, [
+    "muiselect",
+    "selectroot",
+    "selectfield",
+    "dropdown"
+  ]);
   const isFieldSized = width >= 96 && height >= 28 && height <= 140;
   const isLikelyDividerByGeometry =
     !hasChildren && hasVisualFill && ((width >= 16 && height > 0 && height <= 2) || (height >= 16 && width > 0 && width <= 2));
+  const hasTableishChildNames = (node.children ?? []).some((child) => {
+    const childName = (child.name ?? "").toLowerCase();
+    return (
+      childName.includes("tablerow") ||
+      childName.includes("table row") ||
+      childName.includes("tablecell") ||
+      childName.includes("table cell")
+    );
+  });
+  const hasRowCellStructure = (node.children ?? []).some((child) => (child.children?.length ?? 0) >= 2);
+  const isLikelyTableByStructure = hasChildren && childCount >= 2 && hasRowCellStructure && (width >= 180 || hasTableishChildNames);
   const hasButtonLabelHint =
     name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
   const hasStrongImageName = hasAnyWord(name, ["image", "photo", "illustration", "hero", "banner"]);
+  const rowBuckets = (() => {
+    const values = (node.children ?? [])
+      .map((child) => child.absoluteBoundingBox?.y)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+      .sort((left, right) => left - right);
+    if (values.length === 0) {
+      return 0;
+    }
+    let buckets = 1;
+    let previous = values[0] ?? 0;
+    for (const value of values.slice(1)) {
+      if (Math.abs(value - previous) >= 18) {
+        buckets += 1;
+        previous = value;
+      }
+    }
+    return buckets;
+  })();
+  const columnBuckets = (() => {
+    const values = (node.children ?? [])
+      .map((child) => child.absoluteBoundingBox?.x)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+      .sort((left, right) => left - right);
+    if (values.length === 0) {
+      return 0;
+    }
+    let buckets = 1;
+    let previous = values[0] ?? 0;
+    for (const value of values.slice(1)) {
+      if (Math.abs(value - previous) >= 18) {
+        buckets += 1;
+        previous = value;
+      }
+    }
+    return buckets;
+  })();
+  const isLikelyGridByStructure = childCount >= 4 && rowBuckets >= 2 && columnBuckets >= 2 && node.layoutMode !== "VERTICAL";
 
   if (node.type === "TEXT") {
     return "text";
   }
 
-  if ((hasInputSemantic || hasAnyWord(name, ["input", "textfield", "select"])) && (isFieldSized || hasChildren)) {
+  if ((hasSelectSemantic || hasAnyWord(name, ["select", "dropdown"])) && (isFieldSized || hasChildren)) {
+    return "select";
+  }
+
+  if (hasAnySubstring(name, ["muislider", "slider"]) || hasAnyWord(name, ["slider", "range"])) {
+    return "slider";
+  }
+
+  if (hasAnySubstring(name, ["muirating"]) || hasAnyWord(name, ["rating", "stars", "star rating"])) {
+    return "rating";
+  }
+
+  if (
+    hasAnySubstring(name, ["muiskeleton", "loadingplaceholder"]) ||
+    hasAnyWord(name, ["skeleton", "placeholder shimmer", "loading skeleton"])
+  ) {
+    return "skeleton";
+  }
+
+  if ((hasInputSemantic || hasAnyWord(name, ["input", "textfield", "field"])) && (isFieldSized || hasChildren)) {
     return "input";
   }
 
@@ -1240,11 +1312,35 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     return "appbar";
   }
 
+  if (hasAnySubstring(name, ["muidrawer", "sidedrawer", "navigationdrawer"]) || hasAnyWord(name, ["drawer", "sidebar"])) {
+    return "drawer";
+  }
+
+  if (hasAnySubstring(name, ["muibreadcrumbs"]) || hasAnyWord(name, ["breadcrumbs", "breadcrumb"])) {
+    return "breadcrumbs";
+  }
+
+  if (hasAnySubstring(name, ["muitooltip"]) || hasAnyWord(name, ["tooltip", "hover info"])) {
+    return "tooltip";
+  }
+
+  if (hasAnySubstring(name, ["muitable"]) || hasAnyWord(name, ["table"])) {
+    return "table";
+  }
+
+  if (isLikelyTableByStructure) {
+    return "table";
+  }
+
   if (
     hasAnySubstring(name, ["bottomnavigation", "navigationbar", "muitabbar"]) ||
     hasAnyWord(name, ["navigation", "navbar"])
   ) {
     return "navigation";
+  }
+
+  if (hasAnySubstring(name, ["muisnackbar", "muialert"]) || hasAnyWord(name, ["snackbar", "toast", "alert"])) {
+    return "snackbar";
   }
 
   if (hasAnySubstring(name, ["muidialog", "modal"]) || hasAnyWord(name, ["dialog", "modal"])) {
@@ -1266,12 +1362,36 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     return "list";
   }
 
+  if (hasAnySubstring(name, ["muigrid", "grid2"]) || hasAnyWord(name, ["grid", "tile"])) {
+    return "grid";
+  }
+
+  if (isLikelyGridByStructure) {
+    return "grid";
+  }
+
   if (hasAnySubstring(name, ["muicard"]) || hasAnyWord(name, ["card"])) {
     return "card";
   }
 
   if (hasChildren && hasVisualSurface && hasRoundedCorners && width >= 120 && height >= 80) {
     return "card";
+  }
+
+  if (hasAnySubstring(name, ["muipaper"]) || hasAnyWord(name, ["paper", "surface"])) {
+    return "paper";
+  }
+
+  if (hasChildren && hasVisualSurface && !hasAnyWord(name, ["card"])) {
+    return "paper";
+  }
+
+  if (hasAnySubstring(name, ["muistack"]) || hasAnyWord(name, ["stack"])) {
+    return "stack";
+  }
+
+  if (hasChildren && (node.layoutMode === "HORIZONTAL" || node.layoutMode === "VERTICAL") && !hasVisualSurface) {
+    return "stack";
   }
 
   if (name.includes("cta") || (hasButtonKeyword && (hasVisualSurface || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
@@ -1386,27 +1506,42 @@ const DEPTH_SEMANTIC_TYPES = new Set<ScreenElementIR["type"]>([
   "text",
   "button",
   "input",
+  "select",
   "switch",
   "checkbox",
   "radio",
+  "slider",
+  "rating",
   "tab",
+  "drawer",
+  "breadcrumbs",
   "navigation",
-  "stepper"
+  "stepper",
+  "table",
+  "snackbar"
 ]);
 const DEPTH_SEMANTIC_NAME_HINTS = [
   "button",
   "cta",
   "input",
+  "select",
+  "dropdown",
   "textfield",
   "form",
   "switch",
   "checkbox",
   "radio",
+  "slider",
+  "rating",
   "tab",
+  "drawer",
+  "breadcrumbs",
   "navigation",
   "stepper",
   "accordion",
-  "table"
+  "table",
+  "snackbar",
+  "alert"
 ];
 
 interface DepthAnalysis {
@@ -1873,23 +2008,35 @@ const resolveElementBasePriority = (type: ScreenElementIR["type"]): number => {
   switch (type) {
     case "button":
     case "input":
+    case "select":
     case "switch":
     case "checkbox":
     case "radio":
+    case "slider":
+    case "rating":
     case "tab":
+    case "drawer":
+    case "breadcrumbs":
     case "navigation":
     case "stepper":
       return 100;
     case "text":
     case "list":
+    case "table":
     case "dialog":
+    case "snackbar":
     case "appbar":
+    case "tooltip":
     case "card":
       return 70;
     case "chip":
     case "avatar":
     case "badge":
     case "progress":
+    case "skeleton":
+    case "paper":
+    case "grid":
+    case "stack":
     case "image":
       return 55;
     case "container":
@@ -3210,8 +3357,12 @@ const inferTypeFromSemanticHint = (
     return "text";
   }
 
-  if (hasAnySubstring(combined, ["formcontrol", "textfield", "text field"]) || hasAnyWord(combined, ["input", "select", "field"])) {
+  if (hasAnySubstring(combined, ["formcontrol", "textfield", "text field"]) || hasAnyWord(combined, ["input", "field"])) {
     return "input";
+  }
+
+  if (hasAnyWord(combined, ["select", "dropdown"])) {
+    return "select";
   }
 
   if (hasAnyWord(combined, ["switch", "toggle"])) {
@@ -3226,6 +3377,14 @@ const inferTypeFromSemanticHint = (
     return "radio";
   }
 
+  if (hasAnyWord(combined, ["slider", "range"])) {
+    return "slider";
+  }
+
+  if (hasAnyWord(combined, ["rating", "stars"])) {
+    return "rating";
+  }
+
   if (hasAnyWord(combined, ["chip"])) {
     return "chip";
   }
@@ -3234,8 +3393,24 @@ const inferTypeFromSemanticHint = (
     return "tab";
   }
 
+  if (hasAnyWord(combined, ["grid", "grid2", "tile"])) {
+    return "grid";
+  }
+
+  if (hasAnyWord(combined, ["stack"])) {
+    return "stack";
+  }
+
+  if (hasAnyWord(combined, ["paper", "surface"])) {
+    return "paper";
+  }
+
   if (hasAnyWord(combined, ["progress", "loader", "spinner"])) {
     return "progress";
+  }
+
+  if (hasAnyWord(combined, ["skeleton", "placeholder"])) {
+    return "skeleton";
   }
 
   if (hasAnyWord(combined, ["avatar"])) {
@@ -3254,12 +3429,32 @@ const inferTypeFromSemanticHint = (
     return "appbar";
   }
 
+  if (hasAnyWord(combined, ["drawer", "sidebar"])) {
+    return "drawer";
+  }
+
+  if (hasAnyWord(combined, ["breadcrumbs", "breadcrumb"])) {
+    return "breadcrumbs";
+  }
+
+  if (hasAnyWord(combined, ["tooltip"])) {
+    return "tooltip";
+  }
+
+  if (hasAnyWord(combined, ["table", "datatable", "data table"])) {
+    return "table";
+  }
+
   if (hasAnyWord(combined, ["navigation", "navbar"])) {
     return "navigation";
   }
 
   if (hasAnyWord(combined, ["dialog", "modal"])) {
     return "dialog";
+  }
+
+  if (hasAnyWord(combined, ["snackbar", "toast", "alert"])) {
+    return "snackbar";
   }
 
   if (hasAnyWord(combined, ["stepper", "step"])) {
