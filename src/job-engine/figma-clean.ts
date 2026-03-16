@@ -31,7 +31,9 @@ const ALLOWED_NODE_KEYS = new Set([
   "absoluteBoundingBox",
   "characters",
   "style",
-  "cornerRadius"
+  "cornerRadius",
+  "componentProperties",
+  "componentPropertyDefinitions"
 ]);
 
 const ALLOWED_COLOR_KEYS = new Set(["r", "g", "b", "a"]);
@@ -39,6 +41,8 @@ const ALLOWED_PAINT_KEYS = new Set(["type", "color", "opacity"]);
 const ALLOWED_BOX_KEYS = new Set(["x", "y", "width", "height"]);
 const ALLOWED_STYLE_KEYS = new Set(["fontSize", "fontWeight", "fontFamily", "lineHeightPx", "textAlignHorizontal"]);
 const ALLOWED_GEOMETRY_KEYS = new Set(["path", "windingRule"]);
+const ALLOWED_COMPONENT_PROPERTY_KEYS = new Set(["type", "value"]);
+const ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS = new Set(["type", "defaultValue", "variantOptions"]);
 
 interface FigmaCleaningAccumulator {
   outputNodeCount: number;
@@ -271,6 +275,85 @@ const sanitizeGeometryList = (
   return next.length > 0 ? next : undefined;
 };
 
+const sanitizeVariantComponentProperties = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): Record<string, { type: "VARIANT"; value: string }> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const next: Record<string, { type: "VARIANT"; value: string }> = {};
+  for (const [propertyName, propertyValue] of Object.entries(value)) {
+    if (!isRecord(propertyValue)) {
+      continue;
+    }
+    metrics.removedPropertyCount += countRemovedKeys(propertyValue, ALLOWED_COMPONENT_PROPERTY_KEYS);
+
+    const propertyType = typeof propertyValue.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
+    if (propertyType !== "VARIANT") {
+      continue;
+    }
+    if (typeof propertyValue.value !== "string") {
+      continue;
+    }
+    const normalizedValue = propertyValue.value.trim();
+    if (normalizedValue.length === 0) {
+      continue;
+    }
+    next[propertyName] = {
+      type: "VARIANT",
+      value: normalizedValue
+    };
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined;
+};
+
+const sanitizeVariantComponentPropertyDefinitions = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): Record<string, { type: "VARIANT"; defaultValue?: string; variantOptions?: string[] }> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const next: Record<string, { type: "VARIANT"; defaultValue?: string; variantOptions?: string[] }> = {};
+  for (const [propertyName, propertyValue] of Object.entries(value)) {
+    if (!isRecord(propertyValue)) {
+      continue;
+    }
+    metrics.removedPropertyCount += countRemovedKeys(propertyValue, ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS);
+
+    const propertyType = typeof propertyValue.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
+    if (propertyType !== "VARIANT") {
+      continue;
+    }
+
+    const definition: { type: "VARIANT"; defaultValue?: string; variantOptions?: string[] } = {
+      type: "VARIANT"
+    };
+    if (typeof propertyValue.defaultValue === "string") {
+      const defaultValue = propertyValue.defaultValue.trim();
+      if (defaultValue.length > 0) {
+        definition.defaultValue = defaultValue;
+      }
+    }
+    if (Array.isArray(propertyValue.variantOptions)) {
+      const variantOptions = propertyValue.variantOptions
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      if (variantOptions.length > 0) {
+        definition.variantOptions = variantOptions;
+      }
+    }
+    next[propertyName] = definition;
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined;
+};
+
 const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record<string, unknown> | null => {
   const { metrics } = context;
   if (!isRecord(nodeCandidate)) {
@@ -370,6 +453,19 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
   const strokeGeometry = sanitizeGeometryList(nodeCandidate.strokeGeometry, metrics);
   if (strokeGeometry) {
     nextNode.strokeGeometry = strokeGeometry;
+  }
+
+  const componentProperties = sanitizeVariantComponentProperties(nodeCandidate.componentProperties, metrics);
+  if (componentProperties) {
+    nextNode.componentProperties = componentProperties;
+  }
+
+  const componentPropertyDefinitions = sanitizeVariantComponentPropertyDefinitions(
+    nodeCandidate.componentPropertyDefinitions,
+    metrics
+  );
+  if (componentPropertyDefinitions) {
+    nextNode.componentPropertyDefinitions = componentPropertyDefinitions;
   }
 
   const isNextInstanceContext =
