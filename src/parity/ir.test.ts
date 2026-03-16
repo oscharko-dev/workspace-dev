@@ -1495,6 +1495,170 @@ const createGradientFillFigmaFile = () => ({
   }
 });
 
+const createShadowEffectsFigmaFile = () => ({
+  name: "Shadow Effects Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "shadow-screen",
+            type: "FRAME",
+            name: "Shadow Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 900 },
+            children: [
+              {
+                id: "shadow-elevation-bands",
+                type: "FRAME",
+                name: "Shadow Elevation Bands",
+                absoluteBoundingBox: { x: 40, y: 120, width: 600, height: 420 },
+                children: [
+                  {
+                    id: "shadow-elev-0",
+                    type: "FRAME",
+                    name: "Shadow Elevation 0",
+                    absoluteBoundingBox: { x: 56, y: 140, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 1,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.2 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-elev-2",
+                    type: "FRAME",
+                    name: "Shadow Elevation 2",
+                    absoluteBoundingBox: { x: 56, y: 224, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 4,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.24 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-elev-5",
+                    type: "FRAME",
+                    name: "Shadow Elevation 5",
+                    absoluteBoundingBox: { x: 56, y: 308, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 10,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.24 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-elev-14",
+                    type: "FRAME",
+                    name: "Shadow Elevation 14",
+                    absoluteBoundingBox: { x: 260, y: 140, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 24,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.28 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-elev-21",
+                    type: "FRAME",
+                    name: "Shadow Elevation 21",
+                    absoluteBoundingBox: { x: 260, y: 224, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 40,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.3 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-elev-24",
+                    type: "FRAME",
+                    name: "Shadow Elevation 24",
+                    absoluteBoundingBox: { x: 260, y: 308, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 90,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.35 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-max-drop",
+                    type: "FRAME",
+                    name: "Shadow Max Drop",
+                    absoluteBoundingBox: { x: 472, y: 140, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 8,
+                        offset: { x: 0, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.2 }
+                      },
+                      {
+                        type: "DROP_SHADOW",
+                        radius: 40,
+                        offset: { x: 4, y: 3 },
+                        color: { ...toFigmaColor("#000000"), a: 0.3 }
+                      }
+                    ],
+                    children: []
+                  },
+                  {
+                    id: "shadow-inner",
+                    type: "FRAME",
+                    name: "Inner Shadow Surface",
+                    absoluteBoundingBox: { x: 472, y: 224, width: 180, height: 72 },
+                    effects: [
+                      {
+                        type: "INNER_SHADOW",
+                        radius: 6,
+                        offset: { x: 2, y: 4 },
+                        color: { ...toFigmaColor("#112233"), a: 0.25 }
+                      },
+                      {
+                        type: "INNER_SHADOW",
+                        radius: 3,
+                        offset: { x: -1, y: 0 },
+                        color: { ...toFigmaColor("#000000"), a: 0.5 }
+                      }
+                    ],
+                    children: []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 test("figmaToDesignIrWithOptions groups responsive screen variants and emits breakpoint metadata", () => {
   const ir = figmaToDesignIrWithOptions(createResponsiveVariantFigmaFile());
 
@@ -1548,6 +1712,49 @@ test("figmaToDesignIrWithOptions maps linear and radial gradient fills on screen
 test("figmaToDesignIrWithOptions derives gradient fill metadata deterministically", () => {
   const first = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
   const second = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
+  assert.deepEqual(first.screens, second.screens);
+});
+
+test("figmaToDesignIrWithOptions maps drop shadows to deterministic elevation bands", () => {
+  const ir = figmaToDesignIrWithOptions(createShadowEffectsFigmaFile());
+  const screen = ir.screens[0];
+  assert.ok(screen);
+
+  const elevationByNodeId = new Map(
+    (screen?.children ?? [])
+      .flatMap((node) => [node, ...(node.children ?? [])])
+      .map((node) => [node.id, node.elevation] as const)
+  );
+  assert.equal(elevationByNodeId.get("shadow-elev-0"), 0);
+  assert.equal(elevationByNodeId.get("shadow-elev-2"), 2);
+  assert.equal(elevationByNodeId.get("shadow-elev-5"), 5);
+  assert.equal(elevationByNodeId.get("shadow-elev-14"), 14);
+  assert.equal(elevationByNodeId.get("shadow-elev-21"), 21);
+  assert.equal(elevationByNodeId.get("shadow-elev-24"), 24);
+});
+
+test("figmaToDesignIrWithOptions picks the maximum elevation across multiple drop shadows", () => {
+  const ir = figmaToDesignIrWithOptions(createShadowEffectsFigmaFile());
+  const nested = ir.screens[0]?.children.flatMap((entry) => [entry, ...(entry.children ?? [])]) ?? [];
+  const node = nested.find((entry) => entry.id === "shadow-max-drop");
+  assert.ok(node);
+  assert.equal(node?.elevation, 21);
+});
+
+test("figmaToDesignIrWithOptions maps inner shadows to CSS inset shadow strings", () => {
+  const ir = figmaToDesignIrWithOptions(createShadowEffectsFigmaFile());
+  const nested = ir.screens[0]?.children.flatMap((entry) => [entry, ...(entry.children ?? [])]) ?? [];
+  const node = nested.find((entry) => entry.id === "shadow-inner");
+  assert.ok(node);
+  assert.equal(
+    node?.insetShadow,
+    "inset 2px 4px 6px rgba(17, 34, 51, 0.25), inset -1px 0px 3px rgba(0, 0, 0, 0.5)"
+  );
+});
+
+test("figmaToDesignIrWithOptions derives shadow metadata deterministically", () => {
+  const first = figmaToDesignIrWithOptions(createShadowEffectsFigmaFile());
+  const second = figmaToDesignIrWithOptions(createShadowEffectsFigmaFile());
   assert.deepEqual(first.screens, second.screens);
 });
 

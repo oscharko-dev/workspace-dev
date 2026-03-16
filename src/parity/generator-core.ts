@@ -253,6 +253,8 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
     element.fillColor ||
       element.fillGradient ||
+      element.insetShadow ||
+      (typeof element.elevation === "number" && element.elevation > 0) ||
       element.strokeColor ||
       (element.cornerRadius ?? 0) > 0 ||
       (element.padding &&
@@ -401,6 +403,31 @@ const toPaintSxEntries = ({
   ];
 };
 
+const normalizeElevationForSx = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return clamp(Math.round(value), 0, 24);
+};
+
+const toShadowSxEntry = ({
+  elevation,
+  insetShadow,
+  preferInsetShadow
+}: {
+  elevation: number | undefined;
+  insetShadow: string | undefined;
+  preferInsetShadow: boolean;
+}): string | number | undefined => {
+  const normalizedInset = typeof insetShadow === "string" && insetShadow.trim().length > 0 ? literal(insetShadow.trim()) : undefined;
+  const normalizedElevation = normalizeElevationForSx(elevation);
+
+  if (preferInsetShadow) {
+    return normalizedInset ?? normalizedElevation;
+  }
+  return normalizedElevation !== undefined ? normalizedElevation : normalizedInset;
+};
+
 const toVariantStateSxObject = (style: VariantStateStyle | undefined): string | undefined => {
   if (!style) {
     return undefined;
@@ -475,9 +502,10 @@ const indentBlock = (value: string, spaces: number): string => {
 const baseLayoutEntries = (
   element: ScreenElementIR,
   parent: VirtualParent,
-  options?: { includePaints?: boolean }
+  options?: { includePaints?: boolean; preferInsetShadow?: boolean }
 ): Array<[string, string | number | undefined]> => {
   const includePaints = options?.includePaints ?? true;
+  const preferInsetShadow = options?.preferInsetShadow ?? true;
   const parentLayout = parent.layoutMode ?? "NONE";
   const isAbsoluteChild =
     parentLayout === "NONE" &&
@@ -536,6 +564,14 @@ const baseLayoutEntries = (
     ],
     ["borderColor", includePaints && element.strokeColor ? literal(element.strokeColor) : undefined],
     ["borderRadius", element.cornerRadius ? toPxLiteral(element.cornerRadius) : undefined],
+    [
+      "boxShadow",
+      toShadowSxEntry({
+        elevation: element.elevation,
+        insetShadow: element.insetShadow,
+        preferInsetShadow
+      })
+    ],
     ["boxSizing", literal("border-box")],
     ["overflow", literal("visible")]
   ];
@@ -685,19 +721,21 @@ const toElementSx = ({
   element,
   parent,
   context,
-  includePaints = true
+  includePaints = true,
+  preferInsetShadow = true
 }: {
   element: ScreenElementIR;
   parent: VirtualParent;
   context: RenderContext;
   includePaints?: boolean;
+  preferInsetShadow?: boolean;
 }): string => {
   const responsiveEntries = toResponsiveLayoutMediaEntries({
     baseLayoutMode: element.layoutMode ?? "NONE",
     overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
   });
   return sxString([
-    ...baseLayoutEntries(element, parent, { includePaints }),
+    ...baseLayoutEntries(element, parent, { includePaints, preferInsetShadow }),
     ...responsiveEntries
   ]);
 };
@@ -1984,11 +2022,14 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   }
   registerMuiImports(context, "Card", "CardContent");
   const indent = "  ".repeat(depth);
+  const cardElevation = normalizeElevationForSx(element.elevation);
   const sx = toElementSx({
     element,
     parent,
-    context
+    context,
+    preferInsetShadow: false
   });
+  const elevationProp = typeof cardElevation === "number" && cardElevation > 0 ? ` elevation={${cardElevation}}` : "";
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 2,
@@ -1997,7 +2038,7 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
     : `${indent}  <CardContent />`;
-  return `${indent}<Card sx={{ ${sx} }}>
+  return `${indent}<Card${elevationProp} sx={{ ${sx} }}>
 ${contentBlock}
 ${indent}</Card>`;
 };

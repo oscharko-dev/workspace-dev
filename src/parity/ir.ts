@@ -53,6 +53,17 @@ interface FigmaPaint {
   }>;
 }
 
+interface FigmaEffect {
+  type?: string;
+  visible?: boolean;
+  color?: FigmaColor;
+  radius?: number;
+  offset?: {
+    x?: number;
+    y?: number;
+  };
+}
+
 interface FigmaComponentPropertyValue {
   type?: string;
   value?: unknown;
@@ -93,6 +104,7 @@ interface FigmaNode {
   paddingLeft?: number;
   fills?: FigmaPaint[];
   strokes?: FigmaPaint[];
+  effects?: FigmaEffect[];
   strokeWeight?: number;
   absoluteBoundingBox?: { x: number; y: number; width: number; height: number };
   characters?: string;
@@ -294,6 +306,170 @@ const toCssGradient = (paint: FigmaPaint | undefined): string | undefined => {
   }
   const angle = kind === "linear" ? toLinearGradientAngle(paint) : 180;
   return `linear-gradient(${toCssNumber(angle)}deg, ${serializedStops})`;
+};
+
+const normalizeEffectType = (value: string | undefined): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim().toUpperCase();
+};
+
+const resolveVisibleEffectsByType = (
+  effects: FigmaEffect[] | undefined,
+  effectType: "DROP_SHADOW" | "INNER_SHADOW"
+): FigmaEffect[] => {
+  return (effects ?? []).filter((effect) => effect.visible !== false && normalizeEffectType(effect.type) === effectType);
+};
+
+const hasVisibleShadowEffect = (effects: FigmaEffect[] | undefined): boolean => {
+  return resolveVisibleEffectsByType(effects, "DROP_SHADOW").length > 0 || resolveVisibleEffectsByType(effects, "INNER_SHADOW").length > 0;
+};
+
+const toRgbaColor = (color: FigmaColor | undefined): string | undefined => {
+  if (!color) {
+    return undefined;
+  }
+  if (
+    !Number.isFinite(color.r) ||
+    !Number.isFinite(color.g) ||
+    !Number.isFinite(color.b) ||
+    (color.a !== undefined && !Number.isFinite(color.a))
+  ) {
+    return undefined;
+  }
+  const alpha = clamp(color.a ?? 1, 0, 1);
+  if (alpha <= 0) {
+    return undefined;
+  }
+  const red = clamp(Math.round(color.r * 255), 0, 255);
+  const green = clamp(Math.round(color.g * 255), 0, 255);
+  const blue = clamp(Math.round(color.b * 255), 0, 255);
+  return `rgba(${red}, ${green}, ${blue}, ${toCssNumber(alpha, 3)})`;
+};
+
+const toDropShadowMagnitude = (effect: FigmaEffect): number | undefined => {
+  if (!Number.isFinite(effect.radius)) {
+    return undefined;
+  }
+  const radius = Math.max(0, effect.radius ?? 0);
+  const offsetX = Number.isFinite(effect.offset?.x) ? (effect.offset?.x as number) : 0;
+  const offsetY = Number.isFinite(effect.offset?.y) ? (effect.offset?.y as number) : 0;
+  const offsetMagnitude = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+  return radius + 0.75 * offsetMagnitude;
+};
+
+const toLinearMappedRounded = ({
+  value,
+  sourceMin,
+  sourceMax,
+  targetMin,
+  targetMax
+}: {
+  value: number;
+  sourceMin: number;
+  sourceMax: number;
+  targetMin: number;
+  targetMax: number;
+}): number => {
+  const normalizedValue = clamp(value, sourceMin, sourceMax);
+  const ratio = sourceMax === sourceMin ? 0 : (normalizedValue - sourceMin) / (sourceMax - sourceMin);
+  return Math.round(targetMin + ratio * (targetMax - targetMin));
+};
+
+const mapDropShadowMagnitudeToElevation = (magnitude: number): number => {
+  if (!Number.isFinite(magnitude) || magnitude < 2) {
+    return 0;
+  }
+  if (magnitude < 6) {
+    return clamp(
+      toLinearMappedRounded({
+        value: magnitude,
+        sourceMin: 2,
+        sourceMax: 6,
+        targetMin: 1,
+        targetMax: 2
+      }),
+      1,
+      2
+    );
+  }
+  if (magnitude < 16) {
+    return clamp(
+      toLinearMappedRounded({
+        value: magnitude,
+        sourceMin: 6,
+        sourceMax: 16,
+        targetMin: 3,
+        targetMax: 8
+      }),
+      3,
+      8
+    );
+  }
+  if (magnitude < 32) {
+    return clamp(
+      toLinearMappedRounded({
+        value: magnitude,
+        sourceMin: 16,
+        sourceMax: 32,
+        targetMin: 12,
+        targetMax: 16
+      }),
+      12,
+      16
+    );
+  }
+  return clamp(
+    toLinearMappedRounded({
+      value: magnitude,
+      sourceMin: 32,
+      sourceMax: 64,
+      targetMin: 20,
+      targetMax: 24
+    }),
+    20,
+    24
+  );
+};
+
+const resolveElevationFromEffects = (effects: FigmaEffect[] | undefined): number | undefined => {
+  const dropShadows = resolveVisibleEffectsByType(effects, "DROP_SHADOW");
+  if (dropShadows.length === 0) {
+    return undefined;
+  }
+  let maxElevation = 0;
+  let hasMagnitude = false;
+  for (const effect of dropShadows) {
+    const magnitude = toDropShadowMagnitude(effect);
+    if (typeof magnitude !== "number" || !Number.isFinite(magnitude)) {
+      continue;
+    }
+    hasMagnitude = true;
+    maxElevation = Math.max(maxElevation, mapDropShadowMagnitudeToElevation(magnitude));
+  }
+  return hasMagnitude ? maxElevation : undefined;
+};
+
+const toInsetShadowToken = (effect: FigmaEffect): string | undefined => {
+  const color = toRgbaColor(effect.color);
+  if (!color || !Number.isFinite(effect.radius)) {
+    return undefined;
+  }
+  const offsetX = Number.isFinite(effect.offset?.x) ? (effect.offset?.x as number) : 0;
+  const offsetY = Number.isFinite(effect.offset?.y) ? (effect.offset?.y as number) : 0;
+  const radius = Math.max(0, effect.radius ?? 0);
+  return `inset ${toCssNumber(offsetX)}px ${toCssNumber(offsetY)}px ${toCssNumber(radius)}px ${color}`;
+};
+
+const resolveInsetShadowFromEffects = (effects: FigmaEffect[] | undefined): string | undefined => {
+  const tokens = resolveVisibleEffectsByType(effects, "INNER_SHADOW")
+    .map((effect) => toInsetShadowToken(effect))
+    .filter((value): value is string => Boolean(value));
+  if (tokens.length === 0) {
+    return undefined;
+  }
+  return tokens.join(", ");
 };
 
 const parseHex = (hex: string): { r: number; g: number; b: number } => {
@@ -958,7 +1134,9 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   const hasChildren = childCount > 0;
   const hasSolidFill = Boolean(resolveFirstVisibleSolidPaint(node.fills));
   const hasGradientFill = Boolean(resolveFirstVisibleGradientPaint(node.fills));
+  const hasShadow = hasVisibleShadowEffect(node.effects);
   const hasVisualFill = hasSolidFill || hasGradientFill;
+  const hasVisualSurface = hasVisualFill || hasShadow;
   const hasStroke = Boolean(resolveFirstVisibleSolidPaint(node.strokes));
   const hasRoundedCorners = (node.cornerRadius ?? 0) >= 8;
   const hasListishChildNames = (node.children ?? []).some((child) => {
@@ -1058,7 +1236,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   }
 
   const isLikelyListByStructure =
-    !hasVisualFill && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
+    !hasVisualSurface && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
   if (
     hasAnySubstring(name, ["muilist", "listitem", "muilistitem"]) ||
     hasAnyWord(name, ["list"]) ||
@@ -1072,11 +1250,11 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     return "card";
   }
 
-  if (hasChildren && hasVisualFill && hasRoundedCorners && width >= 120 && height >= 80) {
+  if (hasChildren && hasVisualSurface && hasRoundedCorners && width >= 120 && height >= 80) {
     return "card";
   }
 
-  if (name.includes("cta") || (hasButtonKeyword && (hasVisualFill || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
+  if (name.includes("cta") || (hasButtonKeyword && (hasVisualSurface || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
     return "button";
   }
 
@@ -1299,6 +1477,8 @@ const mapElement = ({
   const fill = resolveFirstVisibleSolidPaint(node.fills);
   const gradientFill = resolveFirstVisibleGradientPaint(node.fills);
   const stroke = resolveFirstVisibleSolidPaint(node.strokes);
+  const elevation = resolveElevationFromEffects(node.effects);
+  const insetShadow = resolveInsetShadowFromEffects(node.effects);
   const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
     .map((item) => item.path)
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
@@ -1340,6 +1520,12 @@ const mapElement = ({
   const fillGradient = toCssGradient(gradientFill);
   if (fillGradient) {
     element.fillGradient = fillGradient;
+  }
+  if (typeof elevation === "number") {
+    element.elevation = elevation;
+  }
+  if (insetShadow) {
+    element.insetShadow = insetShadow;
   }
   const strokeColor = toHexColor(stroke?.color, stroke?.opacity);
   if (strokeColor) {
