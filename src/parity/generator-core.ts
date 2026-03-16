@@ -2424,6 +2424,219 @@ const collectRenderedItemLabels = (element: ScreenElementIR): Array<{ id: string
   }));
 };
 
+const GRID_CLUSTER_TOLERANCE_PX = 18;
+const GRID_MATRIX_MIN_CHILDREN = 4;
+const GRID_EQUAL_ROW_MIN_CHILDREN = 3;
+const GRID_EQUAL_WIDTH_CV_THRESHOLD = 0.14;
+const GRID_EQUAL_WIDTH_DELTA_THRESHOLD_PX = 24;
+const GRID_MATRIX_MIN_OCCUPANCY = 0.55;
+
+interface GridLayoutDetection {
+  mode: "matrix" | "equal-row";
+  columnCount: number;
+}
+
+const isFiniteNumber = (value: number | undefined): value is number => {
+  return typeof value === "number" && Number.isFinite(value);
+};
+
+const clusterAxisValues = ({ values, tolerance }: { values: number[]; tolerance: number }): number[] => {
+  if (values.length === 0) {
+    return [];
+  }
+  const sortedValues = [...values].sort((left, right) => left - right);
+  const clusters: Array<{ center: number; count: number }> = [];
+  for (const value of sortedValues) {
+    const current = clusters.at(-1);
+    if (!current || Math.abs(value - current.center) > tolerance) {
+      clusters.push({ center: value, count: 1 });
+      continue;
+    }
+    const nextCount = current.count + 1;
+    current.center = (current.center * current.count + value) / nextCount;
+    current.count = nextCount;
+  }
+  return clusters.map((cluster) => cluster.center);
+};
+
+const toNearestClusterIndex = ({ value, clusters }: { value: number; clusters: number[] }): number => {
+  if (clusters.length <= 1) {
+    return 0;
+  }
+  let nearestIndex = 0;
+  let nearestDistance = Math.abs(value - clusters[0]!);
+  for (let index = 1; index < clusters.length; index += 1) {
+    const candidate = clusters[index];
+    if (candidate === undefined) {
+      continue;
+    }
+    const distance = Math.abs(value - candidate);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex;
+};
+
+const detectGridLikeContainerLayout = (element: ScreenElementIR): GridLayoutDetection | null => {
+  if (element.type !== "container") {
+    return null;
+  }
+  if ((element.layoutMode ?? "NONE") !== "NONE") {
+    return null;
+  }
+
+  const children = sortChildren(element.children ?? [], "NONE");
+  if (children.length < GRID_EQUAL_ROW_MIN_CHILDREN) {
+    return null;
+  }
+
+  const positionedChildren = children.filter((child) => isFiniteNumber(child.x) && isFiniteNumber(child.y));
+  if (positionedChildren.length !== children.length) {
+    return null;
+  }
+
+  const rowClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.y ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+  const columnClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.x ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+
+  if (children.length >= GRID_MATRIX_MIN_CHILDREN && rowClusters.length >= 2 && columnClusters.length >= 2) {
+    const rowCounts = new Array<number>(rowClusters.length).fill(0);
+    const columnCounts = new Array<number>(columnClusters.length).fill(0);
+    for (const child of positionedChildren) {
+      const rowIndex = toNearestClusterIndex({
+        value: child.y ?? 0,
+        clusters: rowClusters
+      });
+      const columnIndex = toNearestClusterIndex({
+        value: child.x ?? 0,
+        clusters: columnClusters
+      });
+      rowCounts[rowIndex] = (rowCounts[rowIndex] ?? 0) + 1;
+      columnCounts[columnIndex] = (columnCounts[columnIndex] ?? 0) + 1;
+    }
+    const minRowItems = Math.min(...rowCounts);
+    const minColumnItems = Math.min(...columnCounts);
+    const occupancy = positionedChildren.length / Math.max(1, rowClusters.length * columnClusters.length);
+    if (minRowItems >= 2 && minColumnItems >= 2 && occupancy >= GRID_MATRIX_MIN_OCCUPANCY) {
+      return {
+        mode: "matrix",
+        columnCount: columnClusters.length
+      };
+    }
+  }
+
+  if (children.length < GRID_EQUAL_ROW_MIN_CHILDREN || rowClusters.length !== 1 || columnClusters.length < GRID_EQUAL_ROW_MIN_CHILDREN) {
+    return null;
+  }
+  const childWidths = positionedChildren
+    .map((child) => child.width)
+    .filter((width): width is number => isFiniteNumber(width) && width > 0);
+  if (childWidths.length !== positionedChildren.length) {
+    return null;
+  }
+
+  const minWidth = Math.min(...childWidths);
+  const maxWidth = Math.max(...childWidths);
+  const averageWidth = childWidths.reduce((total, width) => total + width, 0) / childWidths.length;
+  const widthVariance = childWidths.reduce((total, width) => total + (width - averageWidth) ** 2, 0) / childWidths.length;
+  const widthCv = averageWidth > 0 ? Math.sqrt(widthVariance) / averageWidth : Number.POSITIVE_INFINITY;
+  const hasEqualWidths =
+    widthCv <= GRID_EQUAL_WIDTH_CV_THRESHOLD || maxWidth - minWidth <= GRID_EQUAL_WIDTH_DELTA_THRESHOLD_PX;
+
+  if (!hasEqualWidths) {
+    return null;
+  }
+
+  return {
+    mode: "equal-row",
+    columnCount: columnClusters.length
+  };
+};
+
+const renderGridLayout = ({
+  element,
+  depth,
+  parent,
+  context,
+  includePaints,
+  equalColumns = false,
+  columnCountHint
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  includePaints: boolean;
+  equalColumns?: boolean;
+  columnCountHint?: number;
+}): string | null => {
+  const items = collectRenderedItems(element);
+  if (items.length < 2) {
+    return null;
+  }
+
+  registerMuiImports(context, "Grid");
+  const indent = "  ".repeat(depth);
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 2
+      : 2;
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints
+  });
+
+  const normalizedChildWidths = items.map((item) => Math.max(1, item.node.width ?? 0));
+  const totalChildWidth = normalizedChildWidths.reduce((total, width) => total + width, 0);
+  const normalizedColumnHint =
+    typeof columnCountHint === "number" && Number.isFinite(columnCountHint) && columnCountHint > 0
+      ? Math.min(Math.max(1, Math.round(columnCountHint)), items.length)
+      : items.length;
+  const referenceRowWidth =
+    normalizedColumnHint > 1 && items.length > normalizedColumnHint
+      ? Math.max(1, totalChildWidth / Math.max(1, Math.ceil(items.length / normalizedColumnHint)))
+      : Math.max(1, totalChildWidth);
+
+  const renderedItems = items
+    .map((item, index) => {
+      const fallbackWidth = normalizedChildWidths[index] ?? 1;
+      const mdSize = equalColumns
+        ? clamp(Math.round(12 / normalizedColumnHint), 1, 12)
+        : clamp(Math.round((fallbackWidth / referenceRowWidth) * 12), 1, 12);
+      const smSize = normalizedColumnHint <= 2 ? mdSize : Math.max(6, mdSize);
+      const childContent = renderElement(
+        item.node,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      );
+      return `${indent}  <Grid key={${literal(item.id)}} size={{ xs: 12, sm: ${smSize}, md: ${mdSize} }}>
+${childContent ?? `${indent}    <Box />`}
+${indent}  </Grid>`;
+    })
+    .join("\n");
+
+  return `${indent}<Grid container spacing={${spacing}} sx={{ ${sx} }}>
+${renderedItems}
+${indent}</Grid>`;
+};
+
 const sanitizeSelectOptionValue = (value: string): string => {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : "Option";
@@ -2820,44 +3033,17 @@ ${indent}</BottomNavigation>`;
 };
 
 const renderGrid = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const items = collectRenderedItems(element);
-  if (items.length < 2) {
-    return renderContainer(element, depth, parent, context);
-  }
-  registerMuiImports(context, "Grid");
-  const indent = "  ".repeat(depth);
-  const sx = toElementSx({
+  const rendered = renderGridLayout({
     element,
+    depth,
     parent,
     context,
     includePaints: false
   });
-  const totalChildWidth = items.reduce((total, item) => total + Math.max(1, item.node.width ?? 0), 0);
-  const renderedItems = items
-    .map((item) => {
-      const widthRatio = Math.max(1, item.node.width ?? 0) / Math.max(1, totalChildWidth);
-      const mdSize = clamp(Math.round(widthRatio * 12), 2, 12);
-      const childContent = renderElement(
-        item.node,
-        depth + 2,
-        {
-          x: element.x,
-          y: element.y,
-          width: element.width,
-          height: element.height,
-          name: element.name,
-          layoutMode: element.layoutMode ?? "NONE"
-        },
-        context
-      );
-      return `${indent}  <Grid key={${literal(item.id)}} size={{ xs: 12, md: ${mdSize} }}>
-${childContent ?? `${indent}    <Box />`}
-${indent}  </Grid>`;
-    })
-    .join("\n");
-  return `${indent}<Grid container spacing={2} sx={{ ${sx} }}>
-${renderedItems}
-${indent}</Grid>`;
+  if (rendered) {
+    return rendered;
+  }
+  return renderContainer(element, depth, parent, context);
 };
 
 const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
@@ -3179,6 +3365,22 @@ const renderContainer = (
       ]
     });
     return `${indent}${iconExpression}`;
+  }
+
+  const detectedGridLayout = detectGridLikeContainerLayout(element);
+  if (detectedGridLayout) {
+    const renderedGrid = renderGridLayout({
+      element,
+      depth,
+      parent,
+      context,
+      includePaints: true,
+      equalColumns: detectedGridLayout.mode === "equal-row",
+      columnCountHint: detectedGridLayout.columnCount
+    });
+    if (renderedGrid) {
+      return renderedGrid;
+    }
   }
 
   const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
