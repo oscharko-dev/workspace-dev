@@ -721,12 +721,21 @@ export interface TruncatedScreenMetric {
   budget: number;
 }
 
+export interface DepthTruncatedScreenMetric {
+  screenId: string;
+  screenName: string;
+  maxDepth: number;
+  firstTruncatedDepth: number;
+  truncatedBranchCount: number;
+}
+
 export interface GenerationMetrics {
   fetchedNodes: number;
   skippedHidden: number;
   skippedPlaceholders: number;
   screenElementCounts: ScreenElementCountMetric[];
   truncatedScreens: TruncatedScreenMetric[];
+  depthTruncatedScreens?: DepthTruncatedScreenMetric[];
   degradedGeometryNodes: string[];
 }
 

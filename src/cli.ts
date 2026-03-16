@@ -22,6 +22,7 @@ const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
@@ -43,6 +44,7 @@ interface CliOptions {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
+  figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
@@ -171,6 +173,12 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
     min: 100,
     max: 10000
+  });
+  let figmaScreenElementMaxDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
+    fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
+    min: 1,
+    max: 64
   });
   let brandTheme = parseBrandTheme({
     value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
@@ -334,6 +342,17 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--figma-screen-element-max-depth") {
+      figmaScreenElementMaxDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaScreenElementMaxDepth,
+        min: 1,
+        max: 64
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--brand") {
       brandTheme = parseBrandTheme({
         value: args[index + 1],
@@ -395,6 +414,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaCacheEnabled,
     figmaCacheTtlMs,
     figmaScreenElementBudget,
+    figmaScreenElementMaxDepth,
     brandTheme,
     commandTimeoutMs,
     enableUiValidation,
@@ -434,6 +454,8 @@ Options:
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
+  --figma-screen-element-max-depth <n>
+                             Baseline depth cap for dynamic IR traversal (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH})
   --brand <derived|sparkasse>
                              Token brand policy for ir.derive (default: ${DEFAULT_BRAND_THEME})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
@@ -461,6 +483,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_BRAND
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
@@ -522,6 +545,7 @@ const main = async (): Promise<void> => {
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
+      figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
@@ -549,6 +573,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
+    console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
     console.log(
       `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`

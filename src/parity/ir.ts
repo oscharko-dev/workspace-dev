@@ -12,6 +12,7 @@ import type {
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
 
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
+const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const PLACEHOLDER_TEXT_VALUES = new Set([
   "swap component",
   "instance swap",
@@ -125,12 +126,14 @@ interface MetricsAccumulator {
   skippedPlaceholders: number;
   screenElementCounts: GenerationMetrics["screenElementCounts"];
   truncatedScreens: GenerationMetrics["truncatedScreens"];
+  depthTruncatedScreens: NonNullable<GenerationMetrics["depthTruncatedScreens"]>;
   degradedGeometryNodes: string[];
 }
 
 interface FigmaToIrOptions {
   mcpEnrichment?: FigmaMcpEnrichment;
   screenElementBudget?: number;
+  screenElementMaxDepth?: number;
   brandTheme?: WorkspaceBrandTheme;
   sourceMetrics?: {
     fetchedNodes?: number;
@@ -538,16 +541,160 @@ const isHelperItemNode = (node: FigmaNode): boolean => {
   );
 };
 
+const DEPTH_SEMANTIC_TYPES = new Set<ScreenElementIR["type"]>([
+  "text",
+  "button",
+  "input",
+  "switch",
+  "checkbox",
+  "radio",
+  "tab",
+  "navigation",
+  "stepper"
+]);
+const DEPTH_SEMANTIC_NAME_HINTS = [
+  "button",
+  "cta",
+  "input",
+  "textfield",
+  "form",
+  "switch",
+  "checkbox",
+  "radio",
+  "tab",
+  "navigation",
+  "stepper",
+  "accordion",
+  "table"
+];
+
+interface DepthAnalysis {
+  nodeCountByDepth: Map<number, number>;
+  semanticCountByDepth: Map<number, number>;
+  subtreeHasSemanticById: Map<string, boolean>;
+}
+
+interface ScreenDepthBudgetContext {
+  screenElementBudget: number;
+  configuredMaxDepth: number;
+  mappedElementCount: number;
+  nodeCountByDepth: Map<number, number>;
+  semanticCountByDepth: Map<number, number>;
+  subtreeHasSemanticById: Map<string, boolean>;
+  truncatedBranchCount: number;
+  firstTruncatedDepth?: number;
+}
+
+const hasMeaningfulNodeText = (node: FigmaNode): boolean => {
+  const normalized = (node.characters ?? "").trim().toLowerCase();
+  return normalized.length > 0 && !PLACEHOLDER_TEXT_VALUES.has(normalized);
+};
+
+const isDepthSemanticNode = (node: FigmaNode): boolean => {
+  if (node.visible === false) {
+    return false;
+  }
+  if (node.type === "TEXT") {
+    return hasMeaningfulNodeText(node);
+  }
+  const semanticType = determineElementType(node);
+  if (DEPTH_SEMANTIC_TYPES.has(semanticType)) {
+    return true;
+  }
+  const loweredName = (node.name ?? "").toLowerCase();
+  return hasAnySubstring(loweredName, DEPTH_SEMANTIC_NAME_HINTS);
+};
+
+const analyzeDepthPressure = (nodes: FigmaNode[]): DepthAnalysis => {
+  const nodeCountByDepth = new Map<number, number>();
+  const semanticCountByDepth = new Map<number, number>();
+  const subtreeHasSemanticById = new Map<string, boolean>();
+
+  const visit = (node: FigmaNode, depth: number): boolean => {
+    if (node.visible === false) {
+      return false;
+    }
+
+    nodeCountByDepth.set(depth, (nodeCountByDepth.get(depth) ?? 0) + 1);
+
+    const selfSemantic = isDepthSemanticNode(node);
+    if (selfSemantic) {
+      semanticCountByDepth.set(depth, (semanticCountByDepth.get(depth) ?? 0) + 1);
+    }
+
+    let childSemantic = false;
+    for (const child of node.children ?? []) {
+      childSemantic = visit(child, depth + 1) || childSemantic;
+    }
+
+    const hasSemanticSubtree = selfSemantic || childSemantic;
+    subtreeHasSemanticById.set(node.id, hasSemanticSubtree);
+    return hasSemanticSubtree;
+  };
+
+  for (const node of nodes) {
+    visit(node, 0);
+  }
+
+  return {
+    nodeCountByDepth,
+    semanticCountByDepth,
+    subtreeHasSemanticById
+  };
+};
+
+const shouldTruncateChildrenByDepth = ({
+  node,
+  depth,
+  elementType,
+  context
+}: {
+  node: FigmaNode;
+  depth: number;
+  elementType: ScreenElementIR["type"];
+  context: ScreenDepthBudgetContext;
+}): boolean => {
+  if (!node.children?.length) {
+    return false;
+  }
+
+  const nextDepth = depth + 1;
+  const remainingBudget = Math.max(0, context.screenElementBudget - context.mappedElementCount);
+  const nodeCountAtDepth = context.nodeCountByDepth.get(nextDepth) ?? 0;
+  const semanticCountAtDepth = context.semanticCountByDepth.get(nextDepth) ?? 0;
+  const subtreeHasSemantic = context.subtreeHasSemanticById.get(node.id) ?? false;
+  const semanticRelevant = DEPTH_SEMANTIC_TYPES.has(elementType) || subtreeHasSemantic;
+  const semanticDensityAtDepth = nodeCountAtDepth > 0 ? semanticCountAtDepth / nodeCountAtDepth : 0;
+
+  if (nextDepth <= context.configuredMaxDepth) {
+    const pressureMultiplier = semanticDensityAtDepth > 0.25 ? 6 : 4;
+    const highPressureCutoff = remainingBudget > 0 && nodeCountAtDepth > Math.max(remainingBudget * pressureMultiplier, 32);
+    return highPressureCutoff && !semanticRelevant;
+  }
+
+  if (remainingBudget <= 0) {
+    return true;
+  }
+  if (!semanticRelevant) {
+    return true;
+  }
+
+  const allowedSemanticDepthWidth = Math.max(remainingBudget * (semanticDensityAtDepth > 0.15 ? 3 : 2), 12);
+  return nodeCountAtDepth > allowedSemanticDepthWidth;
+};
+
 const mapElement = ({
   node,
   depth,
   inInstanceContext,
-  metrics
+  metrics,
+  depthContext
 }: {
   node: FigmaNode;
   depth: number;
   inInstanceContext: boolean;
   metrics: MetricsAccumulator;
+  depthContext: ScreenDepthBudgetContext;
 }): ScreenElementIR | null => {
   if (node.visible === false) {
     metrics.skippedHidden += countSubtreeNodes(node);
@@ -569,11 +716,12 @@ const mapElement = ({
   const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
     .map((item) => item.path)
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  const elementType = determineElementType(node);
   const element: ScreenElementIR = {
     id: node.id,
     name: node.name ?? node.type,
     nodeType: node.type,
-    type: determineElementType(node),
+    type: elementType,
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),
@@ -629,11 +777,18 @@ const mapElement = ({
   if (node.cornerRadius !== undefined) {
     element.cornerRadius = node.cornerRadius;
   }
+  depthContext.mappedElementCount += 1;
 
   const isNextInstanceContext = inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET";
 
-  if (depth >= 14) {
+  if (shouldTruncateChildrenByDepth({ node, depth, elementType, context: depthContext })) {
     element.children = [];
+    const nextDepth = depth + 1;
+    depthContext.truncatedBranchCount += 1;
+    depthContext.firstTruncatedDepth =
+      depthContext.firstTruncatedDepth === undefined
+        ? nextDepth
+        : Math.min(depthContext.firstTruncatedDepth, nextDepth);
   } else if (node.children?.length) {
     const children: ScreenElementIR[] = [];
     for (const child of node.children) {
@@ -641,7 +796,8 @@ const mapElement = ({
         node: child,
         depth: depth + 1,
         inInstanceContext: isNextInstanceContext,
-        metrics
+        metrics,
+        depthContext
       });
       if (mappedChild) {
         children.push(mappedChild);
@@ -1027,11 +1183,13 @@ const truncateElementsToBudget = ({
 const extractScreens = ({
   file,
   metrics,
-  screenElementBudget
+  screenElementBudget,
+  screenElementMaxDepth
 }: {
   file: FigmaFile;
   metrics: MetricsAccumulator;
   screenElementBudget: number;
+  screenElementMaxDepth: number;
 }): ScreenIR[] => {
   const root = file.document;
   if (!root?.children?.length) {
@@ -1069,6 +1227,16 @@ const extractScreens = ({
     const normalized = unwrapScreenRoot(candidate);
     const sourceNode = normalized.node;
     const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
+    const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? []);
+    const depthContext: ScreenDepthBudgetContext = {
+      screenElementBudget,
+      configuredMaxDepth: screenElementMaxDepth,
+      mappedElementCount: 0,
+      nodeCountByDepth: depthAnalysis.nodeCountByDepth,
+      semanticCountByDepth: depthAnalysis.semanticCountByDepth,
+      subtreeHasSemanticById: depthAnalysis.subtreeHasSemanticById,
+      truncatedBranchCount: 0
+    };
 
     const mappedChildren: ScreenElementIR[] = [];
     for (const child of sourceNode.children ?? []) {
@@ -1076,7 +1244,8 @@ const extractScreens = ({
         node: child,
         depth: 0,
         inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
-        metrics
+        metrics,
+        depthContext
       });
       if (mapped) {
         mappedChildren.push(mapped);
@@ -1102,6 +1271,15 @@ const extractScreens = ({
         originalElements,
         retainedElements: retainedCount,
         budget: screenElementBudget
+      });
+    }
+    if (depthContext.truncatedBranchCount > 0) {
+      metrics.depthTruncatedScreens.push({
+        screenId: sourceNode.id,
+        screenName: normalized.name,
+        maxDepth: screenElementMaxDepth,
+        firstTruncatedDepth: depthContext.firstTruncatedDepth ?? screenElementMaxDepth + 1,
+        truncatedBranchCount: depthContext.truncatedBranchCount
       });
     }
 
@@ -1848,6 +2026,10 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     typeof options?.screenElementBudget === "number" && Number.isFinite(options.screenElementBudget)
       ? Math.max(1, Math.trunc(options.screenElementBudget))
       : DEFAULT_SCREEN_ELEMENT_BUDGET;
+  const screenElementMaxDepth =
+    typeof options?.screenElementMaxDepth === "number" && Number.isFinite(options.screenElementMaxDepth)
+      ? Math.max(1, Math.min(64, Math.trunc(options.screenElementMaxDepth)))
+      : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH;
 
   const metrics: MetricsAccumulator = {
     fetchedNodes:
@@ -1858,6 +2040,7 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     skippedPlaceholders: 0,
     screenElementCounts: [],
     truncatedScreens: [],
+    depthTruncatedScreens: [],
     degradedGeometryNodes: [...(options?.sourceMetrics?.degradedGeometryNodes ?? [])]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .sort((left, right) => left.localeCompare(right))
@@ -1866,7 +2049,8 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
   const screens = extractScreens({
     file: parsed,
     metrics,
-    screenElementBudget
+    screenElementBudget,
+    screenElementMaxDepth
   });
 
   if (screens.length === 0) {

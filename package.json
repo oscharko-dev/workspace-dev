@@ -151,7 +151,7 @@
   "size-limit": [
     {
       "path": "dist/index.js",
-      "limit": "52 KB"
+      "limit": "53 KB"
     },
     {
       "path": "dist/contracts/index.js",
