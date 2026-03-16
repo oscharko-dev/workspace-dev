@@ -1798,23 +1798,25 @@ const renderSemanticInput = (
       : "";
 
   if (field.isSelect) {
-    registerMuiImports(context, "TextField", "MenuItem");
-    return `${indent}<TextField
-${indent}  select
-${indent}  label={${literal(field.label)}}
-${indent}  value={formValues[${literal(field.key)}] ?? ""}
-${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
-${indent}  sx={{
-${indent}    ${fieldSx},
-${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
-${indent}    "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} },
-${indent}    "& .MuiInputLabel-root": { ${inputLabelStyle} }
-${indent}  }}
-${indent}>
-${indent}  {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
-${indent}    <MenuItem key={option} value={option}>{option}</MenuItem>
-${indent}  ))}
-${indent}</TextField>`;
+    registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem");
+    const selectLabelId = `${field.key}-label`;
+    return `${indent}<FormControl sx={{ ${fieldSx} }}>
+${indent}  <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
+${indent}  <Select
+${indent}    labelId={${literal(selectLabelId)}}
+${indent}    label={${literal(field.label)}}
+${indent}    value={formValues[${literal(field.key)}] ?? ""}
+${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    sx={{
+${indent}      ${inputRootStyle},
+${indent}      "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} }
+${indent}    }}
+${indent}  >
+${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}    ))}
+${indent}  </Select>
+${indent}</FormControl>`;
   }
 
   registerMuiImports(context, "TextField");
@@ -2090,13 +2092,59 @@ const renderChildrenIntoParent = ({
     .join("\n");
 };
 
-const collectRenderedItemLabels = (element: ScreenElementIR): Array<{ id: string; label: string }> => {
+interface RenderedItem {
+  id: string;
+  label: string;
+  node: ScreenElementIR;
+}
+
+const collectRenderedItems = (element: ScreenElementIR): RenderedItem[] => {
   return sortChildren(element.children ?? [], element.layoutMode ?? "NONE")
     .map((child, index) => ({
       id: child.id || `${element.id}-item-${index + 1}`,
-      label: firstText(child)?.trim() || child.name || `Item ${index + 1}`
+      label: firstText(child)?.trim() || child.name || `Item ${index + 1}`,
+      node: child
     }))
     .filter((entry) => entry.label.trim().length > 0);
+};
+
+const collectRenderedItemLabels = (element: ScreenElementIR): Array<{ id: string; label: string }> => {
+  return collectRenderedItems(element).map((item) => ({
+    id: item.id,
+    label: item.label
+  }));
+};
+
+const sanitizeSelectOptionValue = (value: string): string => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "Option";
+};
+
+const toMuiContainerMaxWidth = (contentWidth: number): "sm" | "md" | "lg" | "xl" => {
+  if (contentWidth <= 600) {
+    return "sm";
+  }
+  if (contentWidth <= 900) {
+    return "md";
+  }
+  if (contentWidth <= 1200) {
+    return "lg";
+  }
+  return "xl";
+};
+
+const toAlertSeverityFromName = (name: string): "error" | "warning" | "info" | "success" => {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("error")) {
+    return "error";
+  }
+  if (normalized.includes("warn")) {
+    return "warning";
+  }
+  if (normalized.includes("success")) {
+    return "success";
+  }
+  return "info";
 };
 
 const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
@@ -2113,16 +2161,61 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
     preferInsetShadow: false
   });
   const elevationProp = typeof cardElevation === "number" && cardElevation > 0 ? ` elevation={${cardElevation}}` : "";
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  const mediaCandidate = sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
+  const actionCandidates = sortedChildren.filter((child) => {
+    if (child.type === "button") {
+      return true;
+    }
+    const loweredName = child.name.toLowerCase();
+    return loweredName.includes("action") || loweredName.includes("cta");
+  });
+  const bodyChildren = sortedChildren.filter((child) => {
+    if (child.id === mediaCandidate?.id) {
+      return false;
+    }
+    return !actionCandidates.some((candidate) => candidate.id === child.id);
+  });
+
+  const contentElement: ScreenElementIR = {
+    ...element,
+    children: bodyChildren
+  };
+  const actionsElement: ScreenElementIR = {
+    ...element,
+    children: actionCandidates
+  };
+  const mediaSx = mediaCandidate
+    ? sxString([
+        ["height", toPxLiteral(mediaCandidate.height ?? 140)],
+        ["background", mediaCandidate.fillGradient ? literal(mediaCandidate.fillGradient) : undefined],
+        ["bgcolor", !mediaCandidate.fillGradient && mediaCandidate.fillColor ? literal(mediaCandidate.fillColor) : undefined]
+      ])
+    : undefined;
+  if (mediaCandidate) {
+    registerMuiImports(context, "CardMedia");
+  }
+  if (actionCandidates.length > 0) {
+    registerMuiImports(context, "CardActions");
+  }
+
   const renderedChildren = renderChildrenIntoParent({
-    element,
+    element: contentElement,
+    depth: depth + 2,
+    context
+  });
+  const renderedActions = renderChildrenIntoParent({
+    element: actionsElement,
     depth: depth + 2,
     context
   });
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
     : `${indent}  <CardContent />`;
+  const mediaBlock = mediaCandidate ? `${indent}  <CardMedia sx={{ ${mediaSx} }} />\n` : "";
+  const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
   return `${indent}<Card${elevationProp} sx={{ ${sx} }}>
-${contentBlock}
+${mediaBlock}${contentBlock}${actionsBlock}
 ${indent}</Card>`;
 };
 
@@ -2171,6 +2264,23 @@ const renderSelectionControl = ({
     context,
     includePaints: false
   });
+  if (componentName === "Radio") {
+    const options = collectRenderedItems(element);
+    if (options.length > 1) {
+      registerMuiImports(context, "RadioGroup", "FormControlLabel", "Radio");
+      const renderedOptions = options
+        .map(
+          (option, index) =>
+            `${indent}  <FormControlLabel value=${literal(option.id)} control={<Radio />} label={${literal(option.label)}} />${
+              index === options.length - 1 ? "" : ""
+            }`
+        )
+        .join("\n");
+      return `${indent}<RadioGroup defaultValue=${literal(options[0]?.id ?? "")} sx={{ ${sx} }}>
+${renderedOptions}
+${indent}</RadioGroup>`;
+    }
+  }
   const label = firstText(element)?.trim();
   registerMuiImports(context, componentName);
   if (label) {
@@ -2181,11 +2291,15 @@ const renderSelectionControl = ({
 };
 
 const renderList = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const items = collectRenderedItemLabels(element);
+  const items = collectRenderedItems(element);
   if (items.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
   registerMuiImports(context, "List", "ListItem", "ListItemText");
+  const hasListIcons = items.some((item) => Boolean(pickBestIconNode(item.node)));
+  if (hasListIcons) {
+    registerMuiImports(context, "ListItemIcon");
+  }
   const indent = "  ".repeat(depth);
   const sx = toElementSx({
     element,
@@ -2193,7 +2307,17 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
     context
   });
   const renderedItems = items
-    .map((item) => `${indent}  <ListItem key={${literal(item.id)}} disablePadding><ListItemText primary={${literal(item.label)}} /></ListItem>`)
+    .map((item) => {
+      const iconNode = pickBestIconNode(item.node);
+      const iconBlock = iconNode
+        ? `<ListItemIcon>${renderFallbackIconExpression({
+            element: iconNode,
+            parent: { name: item.node.name },
+            context
+          })}</ListItemIcon>`
+        : "";
+      return `${indent}  <ListItem key={${literal(item.id)}} disablePadding>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItem>`;
+    })
     .join("\n");
   return `${indent}<List sx={{ ${sx} }}>
 ${renderedItems}
@@ -2375,6 +2499,317 @@ ${renderedActions}
 ${indent}</BottomNavigation>`;
 };
 
+const renderGrid = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const items = collectRenderedItems(element);
+  if (items.length < 2) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Grid");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const totalChildWidth = items.reduce((total, item) => total + Math.max(1, item.node.width ?? 0), 0);
+  const renderedItems = items
+    .map((item) => {
+      const widthRatio = Math.max(1, item.node.width ?? 0) / Math.max(1, totalChildWidth);
+      const mdSize = clamp(Math.round(widthRatio * 12), 2, 12);
+      const childContent = renderElement(
+        item.node,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          name: element.name,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      );
+      return `${indent}  <Grid key={${literal(item.id)}} size={{ xs: 12, md: ${mdSize} }}>
+${childContent ?? `${indent}    <Box />`}
+${indent}  </Grid>`;
+    })
+    .join("\n");
+  return `${indent}<Grid container spacing={2} sx={{ ${sx} }}>
+${renderedItems}
+${indent}</Grid>`;
+};
+
+const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  if ((element.children?.length ?? 0) === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Stack");
+  const indent = "  ".repeat(depth);
+  const direction = element.layoutMode === "HORIZONTAL" ? "row" : "column";
+  const spacing = typeof element.gap === "number" && element.gap > 0 ? Math.max(0.5, Math.round((element.gap / 8) * 2) / 2) : 0;
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  if (!renderedChildren.trim()) {
+    return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}} sx={{ ${sx} }} />`;
+  }
+  return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}} sx={{ ${sx} }}>
+${renderedChildren}
+${indent}</Stack>`;
+};
+
+const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Paper");
+  const indent = "  ".repeat(depth);
+  const elevation = normalizeElevationForSx(element.elevation);
+  const variant = elevation && elevation > 0 ? undefined : element.strokeColor ? "outlined" : undefined;
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  const elevationProp = typeof elevation === "number" && elevation > 0 ? ` elevation={${elevation}}` : "";
+  const variantProp = variant ? ` variant="${variant}"` : "";
+  if (!renderedChildren.trim()) {
+    return `${indent}<Paper${elevationProp}${variantProp} sx={{ ${sx} }} />`;
+  }
+  return `${indent}<Paper${elevationProp}${variantProp} sx={{ ${sx} }}>
+${renderedChildren}
+${indent}</Paper>`;
+};
+
+const renderTable = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL")
+    .map((row) => {
+      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL");
+      if (rowChildren.length === 0) {
+        return [row];
+      }
+      return rowChildren;
+    })
+    .filter((row) => row.length > 0);
+  if (rows.length < 2 || rows.some((row) => row.length < 2)) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Table", "TableHead", "TableBody", "TableRow", "TableCell");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const headerCells = rows[0] ?? [];
+  const bodyRows = rows.slice(1);
+  const renderedHead = headerCells
+    .map((cell) => `${indent}      <TableCell>{${literal(firstText(cell)?.trim() || cell.name)}}</TableCell>`)
+    .join("\n");
+  const renderedBody = bodyRows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((cell) => `${indent}      <TableCell>{${literal(firstText(cell)?.trim() || cell.name || `Row ${rowIndex + 1}`)}}</TableCell>`)
+        .join("\n");
+      return `${indent}    <TableRow>\n${cells}\n${indent}    </TableRow>`;
+    })
+    .join("\n");
+  return `${indent}<Table size="small" sx={{ ${sx} }}>
+${indent}  <TableHead>
+${indent}    <TableRow>
+${renderedHead}
+${indent}    </TableRow>
+${indent}  </TableHead>
+${indent}  <TableBody>
+${renderedBody}
+${indent}  </TableBody>
+${indent}</Table>`;
+};
+
+const renderTooltipElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Tooltip", "Box");
+  const indent = "  ".repeat(depth);
+  const title = firstText(element)?.trim() || element.name || "Info";
+  const anchorNode = sortChildren(element.children ?? [], element.layoutMode ?? "NONE")[0];
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const anchorContent = anchorNode
+    ? renderElement(
+        anchorNode,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          name: element.name,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    : `${indent}    <Box sx={{ width: "24px", height: "24px" }} />`;
+  return `${indent}<Tooltip title={${literal(title)}}>
+${indent}  <Box sx={{ ${sx} }}>
+${anchorContent}
+${indent}  </Box>
+${indent}</Tooltip>`;
+};
+
+const renderDrawer = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Drawer", "Box");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  return `${indent}<Drawer open variant="persistent" sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+${indent}  <Box sx={{ width: "100%" }}>
+${renderedChildren || `${indent}    <Box />`}
+${indent}  </Box>
+${indent}</Drawer>`;
+};
+
+const renderBreadcrumbs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const crumbs = collectRenderedItemLabels(element);
+  if (crumbs.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Breadcrumbs", "Typography");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const renderedCrumbs = crumbs
+    .map((crumb, index) => {
+      const color = index === crumbs.length - 1 ? "text.primary" : "text.secondary";
+      return `${indent}  <Typography key={${literal(crumb.id)}} color=${literal(color)}>{${literal(crumb.label)}}</Typography>`;
+    })
+    .join("\n");
+  return `${indent}<Breadcrumbs sx={{ ${sx} }}>
+${renderedCrumbs}
+${indent}</Breadcrumbs>`;
+};
+
+const renderSlider = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Slider");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Slider defaultValue={65} valueLabelDisplay="auto" sx={{ ${sx} }} />`;
+};
+
+const renderSelectElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  const key = toStateKey(element);
+  const existing = context.fields.find((field) => field.key === key);
+  const optionsFromChildren = collectRenderedItems(element)
+    .map((item) => sanitizeSelectOptionValue(item.label))
+    .filter((value) => value.length > 0);
+  const fallbackDefault = sanitizeSelectOptionValue(firstText(element)?.trim() || "Option 1");
+  const options = optionsFromChildren.length > 0 ? [...new Set(optionsFromChildren)] : deriveSelectOptions(fallbackDefault);
+  const field: InteractiveFieldModel =
+    existing ??
+    (() => {
+      const created: InteractiveFieldModel = {
+        key,
+        label: firstText(element)?.trim() || element.name,
+        defaultValue: options[0] ?? fallbackDefault,
+        isSelect: true,
+        options
+      };
+      context.fields.push(created);
+      return created;
+    })();
+  registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const labelId = `${field.key}-label`;
+  return `${indent}<FormControl sx={{ ${sx} }}>
+${indent}  <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
+${indent}  <Select
+${indent}    labelId={${literal(labelId)}}
+${indent}    label={${literal(field.label)}}
+${indent}    value={formValues[${literal(field.key)}] ?? ""}
+${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}  >
+${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}    ))}
+${indent}  </Select>
+${indent}</FormControl>`;
+};
+
+const renderRatingElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Rating");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Rating defaultValue={4} precision={0.5} sx={{ ${sx} }} />`;
+};
+
+const renderSnackbar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Snackbar", "Alert");
+  const indent = "  ".repeat(depth);
+  const message = firstText(element)?.trim() || element.name || "Hinweis";
+  const severity = toAlertSeverityFromName(element.name);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+${indent}  <Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>
+${indent}</Snackbar>`;
+};
+
+const renderSkeleton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Skeleton");
+  const indent = "  ".repeat(depth);
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const variant = height <= 24 ? "text" : width >= Math.max(24, height * 1.8) ? "rectangular" : "circular";
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Skeleton variant="${variant}" sx={{ ${sx} }} />`;
+};
+
 const renderContainer = (
   element: ScreenElementIR,
   depth: number,
@@ -2478,8 +2913,16 @@ const renderElement = (
       return renderText(element, depth, parent, context);
     case "input":
       return renderSemanticInput(element, depth, parent, context);
+    case "select":
+      return renderSelectElement(element, depth, parent, context);
     case "button":
       return renderButton(element, depth, parent, context);
+    case "grid":
+      return renderGrid(element, depth, parent, context);
+    case "stack":
+      return renderStack(element, depth, parent, context);
+    case "paper":
+      return renderPaper(element, depth, parent, context);
     case "card":
       return renderCard(element, depth, parent, context);
     case "chip":
@@ -2508,18 +2951,34 @@ const renderElement = (
         context,
         componentName: "Radio"
       });
+    case "slider":
+      return renderSlider(element, depth, parent, context);
+    case "rating":
+      return renderRatingElement(element, depth, parent, context);
     case "list":
       return renderList(element, depth, parent, context);
+    case "table":
+      return renderTable(element, depth, parent, context);
+    case "tooltip":
+      return renderTooltipElement(element, depth, parent, context);
     case "appbar":
       return renderAppBar(element, depth, parent, context);
+    case "drawer":
+      return renderDrawer(element, depth, parent, context);
+    case "breadcrumbs":
+      return renderBreadcrumbs(element, depth, parent, context);
     case "tab":
       return renderTabs(element, depth, parent, context);
     case "dialog":
       return renderDialog(element, depth, parent, context);
+    case "snackbar":
+      return renderSnackbar(element, depth, parent, context);
     case "stepper":
       return renderStepper(element, depth, parent, context);
     case "progress":
       return renderProgress(element, depth, parent, context);
+    case "skeleton":
+      return renderSkeleton(element, depth, parent, context);
     case "avatar":
       return renderAvatar(element, depth, parent, context);
     case "badge":
@@ -2624,7 +3083,7 @@ const fallbackScreenFile = ({
   const renderContext: RenderContext = {
     fields: [],
     accordions: [],
-    muiImports: new Set<string>(["Box"]),
+    muiImports: new Set<string>(["Box", "Container"]),
     iconImports: [],
     mappedImports: [],
     mappingByNodeId,
@@ -2676,16 +3135,15 @@ const fallbackScreenFile = ({
   const contentRootSx = sxString([
     ["position", literal("relative")],
     ["width", literal("100%")],
-    ["maxWidth", literal(`${contentWidth}px`)],
     ["minHeight", literal(`${contentHeight}px`)],
     ...toScreenResponsiveRootMediaEntries(screen)
   ]);
+  const containerMaxWidth = toMuiContainerMaxWidth(contentWidth);
   const screenRootSx = sxString([
     ["minHeight", literal("100vh")],
     ["background", screen.fillGradient ? literal(screen.fillGradient) : undefined],
     ["bgcolor", !screen.fillGradient ? literal(screen.fillColor ?? "background.default") : undefined],
-    ["display", literal("flex")],
-    ["justifyContent", literal("center")],
+    ["display", literal("block")],
     ["px", literal("0px")],
     ["py", literal("0px")]
   ]);
@@ -2740,11 +3198,11 @@ export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
     <Box sx={{ ${screenRootSx} }}>
-      <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", py: "16px" }}>
+      <Container maxWidth="${containerMaxWidth}" sx={{ width: "100%", px: "16px", boxSizing: "border-box", py: "16px" }}>
         <Box sx={{ ${contentRootSx} }}>
 ${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
         </Box>
-      </Box>
+      </Container>
     </Box>
   );
 }
@@ -3146,8 +3604,12 @@ const inferScreenInteractivityExpectation = (screen: ScreenIR): ScreenInteractiv
   const nodes = flattenElements(screen.children);
   const names = nodes.map((node) => node.name.toLowerCase());
 
-  const selectCount = names.filter((name) => name.includes("muiselectselect")).length;
-  const inputCount = names.filter((name) => INPUT_NAME_HINTS.some((pattern) => name.includes(pattern))).length;
+  const selectCount =
+    names.filter((name) => name.includes("muiselectselect") || name.includes("select")).length +
+    nodes.filter((node) => node.type === "select").length;
+  const inputCount =
+    names.filter((name) => INPUT_NAME_HINTS.some((pattern) => name.includes(pattern))).length +
+    nodes.filter((node) => node.type === "input").length;
   const accordionCount = names.filter((name) => name.includes("accordionsummarycontent") || name.includes("collapsewrapper"))
     .length;
 

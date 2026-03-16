@@ -1226,316 +1226,361 @@ test("generateArtifacts emits truncation notice comment when screen was budget-t
 });
 
 test("deterministic screen rendering supports extended semantic MUI element types", () => {
+  const basePadding = { top: 0, right: 0, bottom: 0, left: 0 };
+  const textNode = (id: string, name: string, text: string): any => ({
+    id,
+    name,
+    nodeType: "TEXT",
+    type: "text" as const,
+    text
+  });
+  const frameNode = (node: Record<string, unknown>): any => ({
+    nodeType: "FRAME",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: basePadding,
+    children: [],
+    ...node
+  });
+
   const screen = {
     id: "extended-types-screen",
     name: "Extended Types",
     layoutMode: "NONE" as const,
     gap: 0,
-    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    padding: basePadding,
     children: [
-      {
+      frameNode({
         id: "input-node",
         name: "Kontonummer Feld",
-        nodeType: "FRAME",
         type: "input" as const,
-        x: 0,
-        y: 0,
         width: 260,
         height: 56,
-        strokeColor: "#c4c4c4",
-        children: []
-      },
-      {
+        strokeColor: "#c4c4c4"
+      }),
+      frameNode({
         id: "card-node",
         name: "Summary Card",
-        nodeType: "FRAME",
         type: "card" as const,
-        x: 0,
-        y: 70,
         width: 280,
-        height: 120,
+        height: 160,
         fillColor: "#ffffff",
         cornerRadius: 12,
         children: [
           {
-            id: "card-title",
-            name: "Card title",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Card Content"
-          }
+            id: "card-media",
+            name: "Card Media",
+            nodeType: "RECTANGLE",
+            type: "image" as const,
+            width: 280,
+            height: 100,
+            fillColor: "#e5e7eb"
+          },
+          textNode("card-title", "Card Title", "Card Content"),
+          frameNode({
+            id: "card-action",
+            name: "Card Action",
+            type: "button" as const,
+            width: 120,
+            height: 36,
+            fillColor: "#d4001a",
+            children: [textNode("card-action-text", "Action Text", "Details")]
+          })
         ]
-      },
-      {
+      }),
+      frameNode({
         id: "chip-node",
         name: "Status Chip",
-        nodeType: "FRAME",
         type: "chip" as const,
-        x: 0,
-        y: 200,
         width: 120,
         height: 32,
         fillColor: "#f2f2f2"
-      },
-      {
+      }),
+      frameNode({
         id: "switch-node",
         name: "Switch Field",
-        nodeType: "FRAME",
         type: "switch" as const,
-        x: 0,
-        y: 244,
         width: 180,
         height: 30,
-        children: [
-          {
-            id: "switch-label",
-            name: "Switch Label",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Switch aktiv"
-          }
-        ]
-      },
-      {
+        children: [textNode("switch-label", "Switch Label", "Switch aktiv")]
+      }),
+      frameNode({
         id: "checkbox-node",
         name: "Checkbox Field",
-        nodeType: "FRAME",
         type: "checkbox" as const,
-        x: 0,
-        y: 282,
         width: 180,
         height: 30,
-        children: [
-          {
-            id: "checkbox-label",
-            name: "Checkbox Label",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Checkbox aktiv"
-          }
-        ]
-      },
-      {
+        children: [textNode("checkbox-label", "Checkbox Label", "Checkbox aktiv")]
+      }),
+      frameNode({
         id: "radio-node",
         name: "Radio Field",
-        nodeType: "FRAME",
         type: "radio" as const,
-        x: 0,
-        y: 320,
         width: 180,
         height: 30,
         children: [
-          {
-            id: "radio-label",
-            name: "Radio Label",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Radio aktiv"
-          }
+          textNode("radio-option-a", "Radio Option A", "Option A"),
+          textNode("radio-option-b", "Radio Option B", "Option B")
         ]
-      },
-      {
+      }),
+      frameNode({
         id: "list-node",
         name: "Detail List",
-        nodeType: "FRAME",
         type: "list" as const,
-        x: 0,
-        y: 360,
         width: 260,
         height: 80,
         children: [
-          {
+          frameNode({
             id: "list-item-a",
             name: "List item A",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Erster Punkt"
-          },
-          {
+            type: "container" as const,
+            children: [
+              {
+                id: "list-item-a-icon",
+                name: "ic_search",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                width: 20,
+                height: 20,
+                children: []
+              },
+              textNode("list-item-a-text", "List item A text", "Erster Punkt")
+            ]
+          }),
+          frameNode({
             id: "list-item-b",
             name: "List item B",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Zweiter Punkt"
-          }
+            type: "container" as const,
+            children: [
+              {
+                id: "list-item-b-icon",
+                name: "ic_add",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                width: 20,
+                height: 20,
+                children: []
+              },
+              textNode("list-item-b-text", "List item B text", "Zweiter Punkt")
+            ]
+          })
         ]
-      },
-      {
+      }),
+      frameNode({
+        id: "grid-node",
+        name: "Metrics Grid",
+        type: "grid" as const,
+        width: 420,
+        height: 220,
+        children: [
+          frameNode({
+            id: "grid-tile-a",
+            name: "Tile A",
+            type: "paper" as const,
+            width: 200,
+            height: 100,
+            fillColor: "#ffffff",
+            children: [textNode("grid-tile-a-text", "Tile A Text", "A")]
+          }),
+          frameNode({
+            id: "grid-tile-b",
+            name: "Tile B",
+            type: "paper" as const,
+            width: 200,
+            height: 100,
+            fillColor: "#ffffff",
+            children: [textNode("grid-tile-b-text", "Tile B Text", "B")]
+          })
+        ]
+      }),
+      frameNode({
+        id: "stack-node",
+        name: "Actions Stack",
+        type: "stack" as const,
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        width: 220,
+        height: 120,
+        children: [
+          textNode("stack-item-1", "Stack Item 1", "Item 1"),
+          textNode("stack-item-2", "Stack Item 2", "Item 2")
+        ]
+      }),
+      frameNode({
+        id: "paper-node",
+        name: "Info Paper",
+        type: "paper" as const,
+        width: 260,
+        height: 120,
+        fillColor: "#ffffff",
+        strokeColor: "#d1d5db",
+        children: [textNode("paper-text", "Paper Text", "Paper content")]
+      }),
+      frameNode({
+        id: "table-node",
+        name: "Offers Table",
+        type: "table" as const,
+        width: 420,
+        height: 140,
+        children: [
+          frameNode({
+            id: "table-row-1",
+            name: "Table Row 1",
+            type: "container" as const,
+            children: [
+              textNode("table-row-1-col-1", "Row1 Col1", "Name"),
+              textNode("table-row-1-col-2", "Row1 Col2", "Wert")
+            ]
+          }),
+          frameNode({
+            id: "table-row-2",
+            name: "Table Row 2",
+            type: "container" as const,
+            children: [
+              textNode("table-row-2-col-1", "Row2 Col1", "A"),
+              textNode("table-row-2-col-2", "Row2 Col2", "1")
+            ]
+          })
+        ]
+      }),
+      frameNode({
+        id: "tooltip-node",
+        name: "Tooltip Hilfe",
+        type: "tooltip" as const,
+        width: 120,
+        height: 40,
+        children: [textNode("tooltip-anchor", "Tooltip Anchor", "?")]
+      }),
+      frameNode({
+        id: "drawer-node",
+        name: "Main Drawer",
+        type: "drawer" as const,
+        width: 220,
+        height: 200,
+        children: [textNode("drawer-item-1", "Drawer Item 1", "Home"), textNode("drawer-item-2", "Drawer Item 2", "Konto")]
+      }),
+      frameNode({
+        id: "breadcrumbs-node",
+        name: "Breadcrumbs",
+        type: "breadcrumbs" as const,
+        width: 220,
+        height: 40,
+        children: [textNode("crumb-1", "Crumb 1", "Start"), textNode("crumb-2", "Crumb 2", "Details")]
+      }),
+      frameNode({
+        id: "select-node",
+        name: "Status Select",
+        type: "select" as const,
+        width: 260,
+        height: 56,
+        children: [textNode("select-option-1", "Option 1", "Aktiv"), textNode("select-option-2", "Option 2", "Inaktiv")]
+      }),
+      frameNode({
+        id: "slider-node",
+        name: "Budget Slider",
+        type: "slider" as const,
+        width: 260,
+        height: 40,
+        fillColor: "#f3f4f6"
+      }),
+      frameNode({
+        id: "rating-node",
+        name: "Rating",
+        type: "rating" as const,
+        width: 200,
+        height: 36,
+        fillColor: "#f3f4f6"
+      }),
+      frameNode({
+        id: "snackbar-node",
+        name: "Success Snackbar",
+        type: "snackbar" as const,
+        width: 260,
+        height: 64,
+        children: [textNode("snackbar-text", "Snackbar text", "Gespeichert")]
+      }),
+      frameNode({
+        id: "skeleton-node",
+        name: "Skeleton",
+        type: "skeleton" as const,
+        width: 260,
+        height: 16,
+        fillColor: "#f3f4f6"
+      }),
+      frameNode({
         id: "appbar-node",
         name: "Main AppBar",
-        nodeType: "FRAME",
         type: "appbar" as const,
-        x: 0,
-        y: 450,
         width: 320,
         height: 64,
-        children: [
-          {
-            id: "appbar-title",
-            name: "AppBar title",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Übersicht"
-          }
-        ]
-      },
-      {
+        children: [textNode("appbar-title", "AppBar title", "Übersicht")]
+      }),
+      frameNode({
         id: "tabs-node",
         name: "Tabs",
-        nodeType: "FRAME",
         type: "tab" as const,
-        x: 0,
-        y: 522,
         width: 280,
         height: 48,
-        children: [
-          {
-            id: "tab-a",
-            name: "Tab A",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Start"
-          },
-          {
-            id: "tab-b",
-            name: "Tab B",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Details"
-          }
-        ]
-      },
-      {
+        children: [textNode("tab-a", "Tab A", "Start"), textNode("tab-b", "Tab B", "Details")]
+      }),
+      frameNode({
         id: "dialog-node",
         name: "Dialog",
-        nodeType: "FRAME",
         type: "dialog" as const,
-        x: 0,
-        y: 580,
         width: 300,
         height: 200,
-        children: [
-          {
-            id: "dialog-title",
-            name: "Dialog title",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Bestätigung"
-          }
-        ]
-      },
-      {
+        children: [textNode("dialog-title", "Dialog title", "Bestätigung")]
+      }),
+      frameNode({
         id: "stepper-node",
         name: "Stepper",
-        nodeType: "FRAME",
         type: "stepper" as const,
-        x: 0,
-        y: 790,
         width: 280,
         height: 64,
-        children: [
-          {
-            id: "step-1",
-            name: "Step One",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Schritt 1"
-          },
-          {
-            id: "step-2",
-            name: "Step Two",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Schritt 2"
-          }
-        ]
-      },
-      {
+        children: [textNode("step-1", "Step One", "Schritt 1"), textNode("step-2", "Step Two", "Schritt 2")]
+      }),
+      frameNode({
         id: "progress-node",
         name: "Progress",
-        nodeType: "FRAME",
         type: "progress" as const,
-        x: 0,
-        y: 862,
         width: 240,
         height: 10,
         fillColor: "#d8d8d8"
-      },
-      {
+      }),
+      frameNode({
         id: "avatar-node",
         name: "Avatar",
-        nodeType: "FRAME",
         type: "avatar" as const,
-        x: 0,
-        y: 882,
         width: 40,
         height: 40,
-        children: [
-          {
-            id: "avatar-text",
-            name: "Avatar Text",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "AB"
-          }
-        ]
-      },
-      {
+        children: [textNode("avatar-text", "Avatar Text", "AB")]
+      }),
+      frameNode({
         id: "badge-node",
         name: "Badge",
-        nodeType: "FRAME",
         type: "badge" as const,
-        x: 60,
-        y: 882,
         width: 56,
         height: 40,
-        children: [
-          {
-            id: "badge-child",
-            name: "Badge child",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "3"
-          }
-        ]
-      },
+        children: [textNode("badge-child", "Badge child", "3")]
+      }),
       {
         id: "divider-node",
         name: "Divider",
         nodeType: "RECTANGLE",
         type: "divider" as const,
-        x: 0,
-        y: 930,
         width: 280,
         height: 1,
-        fillColor: "#d4d4d4"
+        fillColor: "#d4d4d4",
+        children: []
       },
-      {
+      frameNode({
         id: "navigation-node",
         name: "Bottom navigation",
-        nodeType: "FRAME",
         type: "navigation" as const,
-        x: 0,
-        y: 940,
         width: 320,
         height: 64,
-        children: [
-          {
-            id: "nav-1",
-            name: "Home",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Home"
-          },
-          {
-            id: "nav-2",
-            name: "Search",
-            nodeType: "TEXT",
-            type: "text" as const,
-            text: "Suche"
-          }
-        ]
-      }
+        children: [textNode("nav-1", "Home", "Home"), textNode("nav-2", "Search", "Suche")]
+      })
     ]
   };
 
@@ -1545,32 +1590,57 @@ test("deterministic screen rendering supports extended semantic MUI element type
     .find((line) => line.startsWith("import { ") && line.endsWith(' } from "@mui/material";'));
   assert.ok(muiImportLine);
   const requiredImports = [
+    "Alert",
     "AppBar",
     "Avatar",
     "Badge",
+    "Breadcrumbs",
     "BottomNavigation",
     "BottomNavigationAction",
     "Card",
+    "CardActions",
     "CardContent",
+    "CardMedia",
     "Checkbox",
     "Chip",
+    "Container",
+    "Drawer",
     "Dialog",
     "DialogContent",
     "DialogTitle",
     "Divider",
+    "FormControl",
     "FormControlLabel",
+    "Grid",
+    "InputLabel",
     "LinearProgress",
     "List",
     "ListItem",
+    "ListItemIcon",
     "ListItemText",
+    "MenuItem",
     "Radio",
+    "RadioGroup",
+    "Rating",
+    "Select",
+    "Skeleton",
+    "Slider",
+    "Snackbar",
+    "Stack",
+    "Paper",
     "Step",
     "StepLabel",
     "Stepper",
     "Switch",
+    "Table",
+    "TableBody",
+    "TableCell",
+    "TableHead",
+    "TableRow",
     "Tab",
     "Tabs",
     "TextField",
+    "Tooltip",
     "Toolbar"
   ];
   for (const requiredImport of requiredImports) {
@@ -1580,8 +1650,9 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<Chip "));
   assert.ok(content.includes("<Switch "));
   assert.ok(content.includes("<Checkbox "));
-  assert.ok(content.includes("<Radio "));
+  assert.ok(content.includes("<RadioGroup "));
   assert.ok(content.includes("<List "));
+  assert.ok(content.includes("<ListItemIcon>"));
   assert.ok(content.includes("<AppBar "));
   assert.ok(content.includes("<Tabs "));
   assert.ok(content.includes("<Dialog "));
@@ -1591,7 +1662,24 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<Badge "));
   assert.ok(content.includes("<Divider "));
   assert.ok(content.includes("<BottomNavigation "));
+  assert.ok(content.includes("<Grid container"));
+  assert.ok(content.includes("<Stack "));
+  assert.ok(content.includes("<Paper "));
+  assert.ok(content.includes("<CardMedia "));
+  assert.ok(content.includes("<CardActions>"));
+  assert.ok(content.includes("<Table "));
+  assert.ok(content.includes("<Tooltip "));
+  assert.ok(content.includes("<Drawer "));
+  assert.ok(content.includes("<Breadcrumbs "));
+  assert.ok(content.includes("<Select"));
+  assert.ok(content.includes("<Slider "));
+  assert.ok(content.includes("<Rating "));
+  assert.ok(content.includes("<Snackbar "));
+  assert.ok(content.includes("<Alert "));
+  assert.ok(content.includes("<Skeleton "));
+  assert.equal(content.includes("<TextField\n  select"), false);
   assert.ok(content.includes("<TextField"));
+  assert.ok(content.includes("<Container maxWidth="));
 });
 
 test("deterministic extended renderer falls back to container for implausible models", () => {
