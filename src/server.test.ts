@@ -440,6 +440,12 @@ test("workspace server accepts submit with 202 and job polling reaches completed
       false,
       "Generated app must not keep symlinks into template node_modules."
     );
+    const generatedRootEntries = await readdir(generatedProjectDir);
+    assert.equal(
+      generatedRootEntries.includes("artifacts"),
+      false,
+      "Generated app must not include template artifacts directory."
+    );
 
     const resultResponse = await server.app.inject({
       method: "GET",
@@ -457,6 +463,45 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(previewResponse.statusCode, 200);
     assert.match(previewResponse.headers["content-type"] ?? "", /text\/html/i);
     assert.equal(previewResponse.body.includes('<div id="root"></div>'), true);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server fails validate.project when skipInstall=true and dependencies are missing", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    skipInstall: true,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const error = finalStatus.error as Record<string, unknown> | undefined;
+
+    assert.equal(finalStatus.status, "failed");
+    assert.equal(error?.stage, "validate.project");
+    assert.match(String(error?.message), /skipInstall=true requires an existing node_modules directory/i);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

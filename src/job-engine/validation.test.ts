@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { runProjectValidationWithDeps } from "./validation.js";
 
@@ -131,4 +134,66 @@ test("runProjectValidationWithDeps runs ui validation when enabled", async () =>
   });
 
   assert.equal(calls.includes("pnpm run validate:ui"), true);
+});
+
+test("runProjectValidationWithDeps fails fast when skipInstall=true and node_modules is missing", async () => {
+  let invocationCount = 0;
+
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/workspace-dev-missing-node-modules",
+        onLog: () => {
+          // no-op
+        },
+        skipInstall: true,
+        deps: {
+          runCommand: async () => {
+            invocationCount += 1;
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          }
+        }
+      }),
+    /skipInstall=true requires an existing node_modules directory/
+  );
+
+  assert.equal(invocationCount, 0);
+});
+
+test("runProjectValidationWithDeps skips install command when skipInstall=true and node_modules exists", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-skip-"));
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+
+  const calls: string[] = [];
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      onLog: () => {
+        // no-op
+      },
+      skipInstall: true,
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+
+  assert.deepEqual(calls, ["pnpm lint", "pnpm typecheck", "pnpm build"]);
 });

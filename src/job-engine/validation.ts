@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { runCommand as runCommandImpl } from "./command-runner.js";
 import path from "node:path";
 import type { CommandResult } from "./types.js";
@@ -13,6 +14,16 @@ interface ValidationDeps {
   }) => Promise<CommandResult>;
 }
 
+const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<boolean> => {
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+  try {
+    const metadata = await stat(nodeModulesDir);
+    return metadata.isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 export const runProjectValidationWithDeps = async ({
   generatedProjectDir,
   onLog,
@@ -20,6 +31,7 @@ export const runProjectValidationWithDeps = async ({
   enableUiValidation = false,
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
+  skipInstall = false,
   deps
 }: {
   generatedProjectDir: string;
@@ -28,6 +40,7 @@ export const runProjectValidationWithDeps = async ({
   enableUiValidation?: boolean;
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
+  skipInstall?: boolean;
   deps?: Partial<ValidationDeps>;
 }): Promise<void> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
@@ -38,12 +51,24 @@ export const runProjectValidationWithDeps = async ({
     installArgs.push("--prefer-offline");
   }
 
+  if (skipInstall) {
+    const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir });
+    if (!nodeModulesExists) {
+      throw new Error(
+        `skipInstall=true requires an existing node_modules directory at ${path.join(generatedProjectDir, "node_modules")}.`
+      );
+    }
+    onLog("Skipping install because skipInstall=true.");
+  }
+
   const commands: Array<{ name: string; args: string[]; env?: NodeJS.ProcessEnv; timeoutMs?: number }> = [
-    { name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) },
     { name: "lint", args: ["lint"], timeoutMs: commandTimeoutMs },
     { name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs },
     { name: "build", args: ["build"], timeoutMs: commandTimeoutMs }
   ];
+  if (!skipInstall) {
+    commands.unshift({ name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) });
+  }
 
   if (enableUiValidation) {
     commands.push({
@@ -91,7 +116,8 @@ export const runProjectValidation = async ({
   enablePerfValidation = false,
   enableUiValidation = false,
   commandTimeoutMs = 15 * 60_000,
-  installPreferOffline = true
+  installPreferOffline = true,
+  skipInstall = false
 }: {
   generatedProjectDir: string;
   onLog: (message: string) => void;
@@ -99,6 +125,7 @@ export const runProjectValidation = async ({
   enableUiValidation?: boolean;
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
+  skipInstall?: boolean;
 }): Promise<void> => {
   return await runProjectValidationWithDeps({
     generatedProjectDir,
@@ -106,6 +133,7 @@ export const runProjectValidation = async ({
     enablePerfValidation,
     enableUiValidation,
     commandTimeoutMs,
-    installPreferOffline
+    installPreferOffline,
+    skipInstall
   });
 };
