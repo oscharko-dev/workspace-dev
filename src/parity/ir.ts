@@ -23,12 +23,22 @@ import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
 
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
-const PLACEHOLDER_TEXT_VALUES = new Set([
+const TECHNICAL_PLACEHOLDER_TEXT_VALUES = new Set([
   "swap component",
   "instance swap",
   "add description",
   "alternativtext"
 ]);
+const GENERIC_PLACEHOLDER_TEXT_PATTERNS = [
+  /^(type|enter|your)(?:\s+text)?(?:\s+here)?$/i,
+  /^(label|title|subtitle|heading)$/i,
+  /^(xx(?:[./:-]xx)+)$/i,
+  /^\$?\s*0(?:[.,]0{2})?$/i,
+  /^\d{3}-\d{3}-\d{4}$/i,
+  /^[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}$/i,
+  /^(john|jane)\s+doe$/i,
+  /^[x•—–-]$/i
+];
 const DECORATIVE_NAME_PATTERN = /(icon|decor|bg|background|shape|vector|spacer|divider)/i;
 
 interface FigmaColor {
@@ -179,11 +189,20 @@ interface FigmaToIrOptions {
   mcpEnrichment?: FigmaMcpEnrichment;
   screenElementBudget?: number;
   screenElementMaxDepth?: number;
+  placeholderRules?: {
+    allowlist?: string[];
+    blocklist?: string[];
+  };
   brandTheme?: WorkspaceBrandTheme;
   sourceMetrics?: {
     fetchedNodes?: number;
     degradedGeometryNodes?: string[];
   };
+}
+
+interface PlaceholderMatcherConfig {
+  allowlist: Set<string>;
+  blocklist: Set<string>;
 }
 
 const toHexColor = (color?: FigmaColor, opacity?: number): string | undefined => {
@@ -1275,12 +1294,70 @@ const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: numb
   };
 };
 
-const hasPlaceholderText = (node: FigmaNode): boolean => {
-  if (node.type !== "TEXT") {
-    return false;
+const normalizePlaceholderText = (value: string): string => {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const toPlaceholderRuleSet = (values: string[] | undefined): Set<string> => {
+  const normalizedValues = (values ?? [])
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => normalizePlaceholderText(value))
+    .filter((value) => value.length > 0);
+  return new Set(normalizedValues);
+};
+
+const resolvePlaceholderMatcherConfig = (
+  rules: FigmaToIrOptions["placeholderRules"] | undefined
+): PlaceholderMatcherConfig => {
+  return {
+    allowlist: toPlaceholderRuleSet(rules?.allowlist),
+    blocklist: toPlaceholderRuleSet(rules?.blocklist)
+  };
+};
+
+const classifyPlaceholderText = ({
+  text,
+  matcher
+}: {
+  text: string | undefined;
+  matcher: PlaceholderMatcherConfig;
+}): "none" | "technical" | "generic" => {
+  if (typeof text !== "string") {
+    return "none";
   }
-  const normalized = (node.characters ?? "").trim().toLowerCase();
-  return PLACEHOLDER_TEXT_VALUES.has(normalized);
+  const normalized = normalizePlaceholderText(text);
+  if (!normalized) {
+    return "none";
+  }
+  if (matcher.allowlist.has(normalized)) {
+    return "none";
+  }
+  if (TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized)) {
+    return "technical";
+  }
+  if (matcher.blocklist.has(normalized)) {
+    return "generic";
+  }
+  if (GENERIC_PLACEHOLDER_TEXT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return "generic";
+  }
+  return "none";
+};
+
+const classifyPlaceholderNode = ({
+  node,
+  matcher
+}: {
+  node: FigmaNode;
+  matcher: PlaceholderMatcherConfig;
+}): "none" | "technical" | "generic" => {
+  if (node.type !== "TEXT") {
+    return "none";
+  }
+  return classifyPlaceholderText({
+    text: node.characters,
+    matcher
+  });
 };
 
 const isGeometryEmpty = (node: FigmaNode): boolean => {
@@ -1351,7 +1428,7 @@ interface ScreenDepthBudgetContext {
 
 const hasMeaningfulNodeText = (node: FigmaNode): boolean => {
   const normalized = (node.characters ?? "").trim().toLowerCase();
-  return normalized.length > 0 && !PLACEHOLDER_TEXT_VALUES.has(normalized);
+  return normalized.length > 0 && !TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized);
 };
 
 const isDepthSemanticNode = (node: FigmaNode): boolean => {
@@ -1451,12 +1528,16 @@ const mapElement = ({
   node,
   depth,
   inInstanceContext,
+  inInputContext,
+  placeholderMatcherConfig,
   metrics,
   depthContext
 }: {
   node: FigmaNode;
   depth: number;
   inInstanceContext: boolean;
+  inInputContext: boolean;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
   metrics: MetricsAccumulator;
   depthContext: ScreenDepthBudgetContext;
 }): ScreenElementIR | null => {
@@ -1465,7 +1546,15 @@ const mapElement = ({
     return null;
   }
 
-  if (inInstanceContext && hasPlaceholderText(node)) {
+  const placeholderClassification = classifyPlaceholderNode({
+    node,
+    matcher: placeholderMatcherConfig
+  });
+  if (inInstanceContext && placeholderClassification === "technical") {
+    metrics.skippedPlaceholders += 1;
+    return null;
+  }
+  if (inInstanceContext && !inInputContext && placeholderClassification === "generic") {
     metrics.skippedPlaceholders += 1;
     return null;
   }
@@ -1500,6 +1589,9 @@ const mapElement = ({
 
   if (node.characters !== undefined) {
     element.text = node.characters;
+  }
+  if (inInstanceContext && inInputContext && placeholderClassification === "generic") {
+    element.textRole = "placeholder";
   }
   if (node.absoluteBoundingBox?.x !== undefined) {
     element.x = node.absoluteBoundingBox.x;
@@ -1561,7 +1653,13 @@ const mapElement = ({
   }
   depthContext.mappedElementCount += 1;
 
+  const loweredNodeName = (node.name ?? "").toLowerCase();
+  const isCurrentInputContext =
+    inInputContext ||
+    elementType === "input" ||
+    hasAnyWord(loweredNodeName, ["input", "textfield", "select", "formcontrol"]);
   const isNextInstanceContext = inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET";
+  const isNextInputContext = isCurrentInputContext;
 
   if (node.type === "COMPONENT_SET") {
     const visibleChildren = (node.children ?? []).filter((child) => child.visible !== false);
@@ -1588,6 +1686,8 @@ const mapElement = ({
       node: defaultVariantNode,
       depth: depth + 1,
       inInstanceContext: isNextInstanceContext,
+      inInputContext: isNextInputContext,
+      placeholderMatcherConfig,
       metrics,
       depthContext
     });
@@ -1612,6 +1712,8 @@ const mapElement = ({
         node: child,
         depth: depth + 1,
         inInstanceContext: isNextInstanceContext,
+        inInputContext: isNextInputContext,
+        placeholderMatcherConfig,
         metrics,
         depthContext
       });
@@ -1747,7 +1849,7 @@ const hasMeaningfulTextContent = (value: string | undefined): boolean => {
     return false;
   }
   const normalized = value.trim().toLowerCase();
-  return normalized.length > 0 && !PLACEHOLDER_TEXT_VALUES.has(normalized);
+  return normalized.length > 0 && !TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized);
 };
 
 const hasVisualSubstance = (element: ScreenElementIR): boolean => {
@@ -2200,12 +2302,14 @@ const mapScreenCandidate = ({
   candidate,
   metrics,
   screenElementBudget,
-  screenElementMaxDepth
+  screenElementMaxDepth,
+  placeholderMatcherConfig
 }: {
   candidate: FigmaNode;
   metrics: MetricsAccumulator;
   screenElementBudget: number;
   screenElementMaxDepth: number;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
 }): MappedScreenCandidate => {
   const normalized = unwrapScreenRoot(candidate);
   const sourceNode = normalized.node;
@@ -2228,6 +2332,8 @@ const mapScreenCandidate = ({
       node: child,
       depth: 0,
       inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
+      inInputContext: false,
+      placeholderMatcherConfig,
       metrics,
       depthContext
     });
@@ -2392,12 +2498,14 @@ const extractScreens = ({
   file,
   metrics,
   screenElementBudget,
-  screenElementMaxDepth
+  screenElementMaxDepth,
+  placeholderMatcherConfig
 }: {
   file: FigmaFile;
   metrics: MetricsAccumulator;
   screenElementBudget: number;
   screenElementMaxDepth: number;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
 }): ScreenIR[] => {
   const root = file.document;
   if (!root?.children?.length) {
@@ -2434,7 +2542,8 @@ const extractScreens = ({
       candidate,
       metrics,
       screenElementBudget,
-      screenElementMaxDepth
+      screenElementMaxDepth,
+      placeholderMatcherConfig
     })
   );
 
@@ -3221,6 +3330,7 @@ export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
 export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
   const parsed = figmaJson as FigmaFile;
   const resolvedBrandTheme: WorkspaceBrandTheme = options?.brandTheme === "sparkasse" ? "sparkasse" : "derived";
+  const placeholderMatcherConfig = resolvePlaceholderMatcherConfig(options?.placeholderRules);
   const screenElementBudget =
     typeof options?.screenElementBudget === "number" && Number.isFinite(options.screenElementBudget)
       ? Math.max(1, Math.trunc(options.screenElementBudget))
@@ -3249,7 +3359,8 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     file: parsed,
     metrics,
     screenElementBudget,
-    screenElementMaxDepth
+    screenElementMaxDepth,
+    placeholderMatcherConfig
   });
 
   if (screens.length === 0) {

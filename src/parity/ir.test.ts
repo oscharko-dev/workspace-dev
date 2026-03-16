@@ -830,6 +830,178 @@ test("figmaToDesignIrWithOptions removes placeholder text only in instance/compo
   assert.ok((ir.metrics?.skippedPlaceholders ?? 0) >= 1);
 });
 
+test("figmaToDesignIrWithOptions keeps generic placeholders in instance input context and marks textRole", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Generic Placeholder Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-generic-placeholder",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 960 },
+              children: [
+                {
+                  id: "instance-root",
+                  type: "INSTANCE",
+                  name: "Instance Root",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 420, height: 300 },
+                  children: [
+                    {
+                      id: "input-root",
+                      type: "FRAME",
+                      name: "TextField Root",
+                      absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 64 },
+                      children: [
+                        {
+                          id: "input-label",
+                          type: "TEXT",
+                          name: "Label",
+                          characters: "Amount",
+                          absoluteBoundingBox: { x: 32, y: 30, width: 120, height: 16 }
+                        },
+                        {
+                          id: "input-placeholder",
+                          type: "TEXT",
+                          name: "Placeholder",
+                          characters: "Type here",
+                          absoluteBoundingBox: { x: 32, y: 52, width: 140, height: 20 }
+                        }
+                      ]
+                    },
+                    {
+                      id: "content-card",
+                      type: "FRAME",
+                      name: "Card",
+                      absoluteBoundingBox: { x: 24, y: 120, width: 320, height: 120 },
+                      children: [
+                        {
+                          id: "card-placeholder",
+                          type: "TEXT",
+                          name: "Placeholder",
+                          characters: "Type here",
+                          absoluteBoundingBox: { x: 32, y: 132, width: 140, height: 20 }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  id: "plain-frame",
+                  type: "FRAME",
+                  name: "Plain",
+                  absoluteBoundingBox: { x: 24, y: 360, width: 320, height: 120 },
+                  children: [
+                    {
+                      id: "plain-placeholder",
+                      type: "TEXT",
+                      name: "Placeholder",
+                      characters: "Type here",
+                      absoluteBoundingBox: { x: 32, y: 372, width: 140, height: 20 }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const ids = new Set(collectElementIds(screenChildren));
+  assert.equal(ids.has("input-placeholder"), true);
+  assert.equal(ids.has("card-placeholder"), false);
+  assert.equal(ids.has("plain-placeholder"), true);
+
+  const inputPlaceholderNode = findElementById(screenChildren, "input-placeholder") as
+    | { textRole?: string; text?: string }
+    | undefined;
+  assert.equal(inputPlaceholderNode?.textRole, "placeholder");
+  assert.equal(inputPlaceholderNode?.text, "Type here");
+});
+
+test("figmaToDesignIrWithOptions applies placeholder allowlist and blocklist deterministically", () => {
+  const file = {
+    name: "Placeholder Rules Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-placeholder-rules",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 480, height: 640 },
+              children: [
+                {
+                  id: "instance-rules",
+                  type: "INSTANCE",
+                  name: "Instance Rules",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 280, height: 200 },
+                  children: [
+                    {
+                      id: "allow-candidate",
+                      type: "TEXT",
+                      name: "Allow Candidate",
+                      characters: "Type here",
+                      absoluteBoundingBox: { x: 32, y: 36, width: 120, height: 20 }
+                    },
+                    {
+                      id: "block-candidate",
+                      type: "TEXT",
+                      name: "Block Candidate",
+                      characters: "Visible Value",
+                      absoluteBoundingBox: { x: 32, y: 64, width: 120, height: 20 }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const allowlisted = figmaToDesignIrWithOptions(file, {
+    placeholderRules: {
+      allowlist: ["Type Here"]
+    }
+  });
+  const allowlistedIds = new Set(collectElementIds(allowlisted.screens[0].children as Array<{ id: string; children?: unknown[] }>));
+  assert.equal(allowlistedIds.has("allow-candidate"), true);
+
+  const blocklistedFirst = figmaToDesignIrWithOptions(file, {
+    placeholderRules: {
+      blocklist: ["visible value"]
+    }
+  });
+  const blocklistedSecond = figmaToDesignIrWithOptions(file, {
+    placeholderRules: {
+      blocklist: ["visible value"]
+    }
+  });
+  assert.deepEqual(blocklistedFirst, blocklistedSecond);
+
+  const blocklistedIds = new Set(
+    collectElementIds(blocklistedFirst.screens[0].children as Array<{ id: string; children?: unknown[] }>)
+  );
+  assert.equal(blocklistedIds.has("block-candidate"), false);
+  assert.ok((blocklistedFirst.metrics?.skippedPlaceholders ?? 0) >= 1);
+});
+
 test("figmaToDesignIrWithOptions maps variant metadata on INSTANCE nodes", () => {
   const ir = figmaToDesignIrWithOptions({
     name: "Instance Variants",
