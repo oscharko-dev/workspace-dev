@@ -37,6 +37,7 @@ interface CliOptions {
   figmaNodeFetchConcurrency: number;
   figmaAdaptiveBatchingEnabled: boolean;
   figmaMaxScreenCandidates: number;
+  figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
@@ -134,6 +135,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 1,
     max: 200
   });
+  let figmaScreenNamePattern = process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN?.trim() || undefined;
   let figmaCacheEnabled = !parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_NO_CACHE,
     !DEFAULT_FIGMA_CACHE_ENABLED
@@ -274,6 +276,13 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--figma-screen-name-pattern") {
+      const nextValue = args[index + 1]?.trim();
+      figmaScreenNamePattern = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--no-cache") {
       figmaCacheEnabled = false;
       continue;
@@ -349,6 +358,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaNodeFetchConcurrency,
     figmaAdaptiveBatchingEnabled,
     figmaMaxScreenCandidates,
+    figmaScreenNamePattern,
     figmaCacheEnabled,
     figmaCacheTtlMs,
     figmaScreenElementBudget,
@@ -384,6 +394,8 @@ Options:
                              Auto-split oversized staged /nodes batches (default: ${DEFAULT_FIGMA_ADAPTIVE_BATCHING})
   --figma-max-screen-candidates <n>
                              Max screen candidates fetched in staged mode (default: ${DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES})
+  --figma-screen-name-pattern <regex>
+                             Case-insensitive regex include-filter for staged screen names
   --no-cache                 Disable figma.source file-system cache
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --figma-screen-element-budget <n>
@@ -409,6 +421,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY
   FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING
   FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES
+  FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
@@ -466,6 +479,9 @@ const main = async (): Promise<void> => {
       figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
       figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled,
       figmaMaxScreenCandidates: options.figmaMaxScreenCandidates,
+      ...(options.figmaScreenNamePattern !== undefined
+        ? { figmaScreenNamePattern: options.figmaScreenNamePattern }
+        : {}),
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
@@ -495,6 +511,9 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
+    console.log(
+      `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[workspace-dev] Failed to start: ${message}`);

@@ -122,6 +122,7 @@ workspace-dev start [options]
 - `--figma-node-fetch-concurrency <n>` (default `3`)
 - `--figma-adaptive-batching <true|false>` (default `true`)
 - `--figma-max-screen-candidates <n>` (default `40`)
+- `--figma-screen-name-pattern <regex>` (default unset, case-insensitive include-filter for staged candidate names)
 - `--no-cache` (default `false`, disables figma.source file-system cache)
 - `--figma-cache-ttl-ms <ms>` (default `900000`)
 - `--figma-screen-element-budget <n>` (default `1200`)
@@ -143,6 +144,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY`
 - `FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING`
 - `FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN`
 - `FIGMAPIPE_WORKSPACE_NO_CACHE`
 - `FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`

@@ -66,6 +66,7 @@ export interface JobEngineRuntime {
   figmaNodeFetchConcurrency: number;
   figmaAdaptiveBatchingEnabled: boolean;
   figmaMaxScreenCandidates: number;
+  figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;

@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.3.0] - 2026-03-16
+
+### Staged screen candidate name filter
+
+Added:
+
+- `WorkspaceStartOptions.figmaScreenNamePattern?: string` (default `undefined`)
+
 ## [2.2.0] - 2026-03-16
 
 ### Figma source cache controls

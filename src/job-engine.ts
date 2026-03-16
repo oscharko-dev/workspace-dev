@@ -159,6 +159,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             nodeFetchConcurrency: runtime.figmaNodeFetchConcurrency,
             adaptiveBatchingEnabled: runtime.figmaAdaptiveBatchingEnabled,
             maxScreenCandidates: runtime.figmaMaxScreenCandidates,
+            ...(runtime.figmaScreenNamePattern !== undefined
+              ? { screenNamePattern: runtime.figmaScreenNamePattern }
+              : {}),
             cacheEnabled: runtime.figmaCacheEnabled,
             cacheTtlMs: runtime.figmaCacheTtlMs,
             cacheDir: path.join(resolvedPaths.outputRoot, "cache", "figma-source"),
