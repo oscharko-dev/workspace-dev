@@ -1001,15 +1001,11 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: "8px" }'));
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: "16px" }'));
+  assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: 1 }'));
+  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: 2 }'));
   assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
-  assert.ok(
-    content.includes(
-      '"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: "8px" }'
-    )
-  );
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: "12px" }'));
+  assert.ok(content.includes('"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: 1 }'));
+  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: 1.5 }'));
 });
 
 test("deterministic screen rendering keeps fallback behavior when responsive metadata is absent", () => {
@@ -1185,6 +1181,151 @@ test("deterministic screen rendering maps shadow metadata to Card elevation and 
   assert.ok(content.includes("boxShadow: 5"));
   assert.ok(content.includes('boxShadow: "inset 2px 4px 6px rgba(17, 34, 51, 0.25)"'));
   assert.equal(content.includes('boxShadow: "inset 0px 1px 3px rgba(0, 0, 0, 0.2)"'), false);
+});
+
+test("deterministic screen rendering emits spacing units and rem typography without px literals", () => {
+  const screen = {
+    id: "spacing-typography-screen",
+    name: "Spacing Typography Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "spacing-group",
+        name: "Spacing Group",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 220,
+        layoutMode: "VERTICAL" as const,
+        gap: 12,
+        padding: { top: 16, right: 16, bottom: 16, left: 16 },
+        children: [
+          {
+            id: "spacing-text",
+            name: "Body Text",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Hallo",
+            fontSize: 14,
+            lineHeight: 20
+          },
+          {
+            id: "spacing-button",
+            name: "Primary Button",
+            nodeType: "FRAME",
+            type: "button" as const,
+            width: 180,
+            height: 48,
+            fontSize: 16,
+            lineHeight: 24,
+            fillColor: "#d4001a",
+            children: [
+              {
+                id: "spacing-button-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Weiter"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("gap: 1.5"));
+  assert.ok(content.includes("pt: 2"));
+  assert.ok(content.includes("pr: 2"));
+  assert.ok(content.includes("pb: 2"));
+  assert.ok(content.includes("pl: 2"));
+  assert.ok(content.includes('fontSize: "0.875rem"'));
+  assert.ok(content.includes('lineHeight: "1.25rem"'));
+  assert.ok(content.includes('fontSize: "1rem"'));
+  assert.ok(content.includes('lineHeight: "1.5rem"'));
+  assert.equal(/\b(gap|p[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
+});
+
+test("generateArtifacts maps exact token palette colors to MUI theme references in sx", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-token-colors-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "token-color-screen",
+      name: "Token Color Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      fillColor: "#fafafa",
+      children: [
+        {
+          id: "token-surface",
+          name: "Token Surface",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 0,
+          y: 0,
+          width: 280,
+          height: 120,
+          fillColor: "#fafafa",
+          strokeColor: "#00aa55",
+          children: [
+            {
+              id: "token-text",
+              name: "Token Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Welcome",
+              fillColor: "#222222",
+              fontSize: 14,
+              lineHeight: 20
+            }
+          ]
+        },
+        {
+          id: "token-button",
+          name: "Token Button",
+          nodeType: "FRAME",
+          type: "button" as const,
+          x: 0,
+          y: 140,
+          width: 200,
+          height: 48,
+          fillColor: "#ee0000",
+          children: [
+            {
+              id: "token-button-label",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Continue"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Token Color Screen")), "utf8");
+  assert.ok(content.includes('bgcolor: "background.default"'));
+  assert.ok(content.includes('borderColor: "secondary.main"'));
+  assert.ok(content.includes('color: "text.primary"'));
+  assert.ok(content.includes('bgcolor: "primary.main"'));
 });
 
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
