@@ -639,7 +639,27 @@ export interface ScreenElementIR {
   id: string;
   name: string;
   nodeType: string;
-  type: "text" | "container" | "button" | "input" | "image";
+  type:
+    | "text"
+    | "container"
+    | "button"
+    | "input"
+    | "image"
+    | "card"
+    | "chip"
+    | "switch"
+    | "checkbox"
+    | "radio"
+    | "list"
+    | "appbar"
+    | "tab"
+    | "dialog"
+    | "stepper"
+    | "progress"
+    | "avatar"
+    | "badge"
+    | "divider"
+    | "navigation";
   text?: string;
   x?: number;
   y?: number;
