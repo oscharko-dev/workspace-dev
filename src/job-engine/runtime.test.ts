@@ -12,6 +12,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaNodeFetchConcurrency, 3);
   assert.equal(runtime.figmaAdaptiveBatchingEnabled, true);
   assert.equal(runtime.figmaMaxScreenCandidates, 40);
+  assert.equal(runtime.figmaCacheEnabled, true);
+  assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
   assert.equal(runtime.enableUiValidation, false);
@@ -26,6 +28,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaNodeFetchConcurrency: 99,
     figmaAdaptiveBatchingEnabled: false,
     figmaMaxScreenCandidates: -5,
+    figmaCacheEnabled: false,
+    figmaCacheTtlMs: 999_999_999,
     figmaScreenElementBudget: 999_999,
     commandTimeoutMs: 10,
     enableUiValidation: false,
@@ -37,6 +41,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaNodeFetchConcurrency, 10);
   assert.equal(runtime.figmaAdaptiveBatchingEnabled, false);
   assert.equal(runtime.figmaMaxScreenCandidates, 1);
+  assert.equal(runtime.figmaCacheEnabled, false);
+  assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);

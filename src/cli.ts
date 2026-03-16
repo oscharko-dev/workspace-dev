@@ -18,6 +18,8 @@ const DEFAULT_FIGMA_NODE_BATCH_SIZE = 6;
 const DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY = 3;
 const DEFAULT_FIGMA_ADAPTIVE_BATCHING = true;
 const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
+const DEFAULT_FIGMA_CACHE_ENABLED = true;
+const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
@@ -35,6 +37,8 @@ interface CliOptions {
   figmaNodeFetchConcurrency: number;
   figmaAdaptiveBatchingEnabled: boolean;
   figmaMaxScreenCandidates: number;
+  figmaCacheEnabled: boolean;
+  figmaCacheTtlMs: number;
   figmaScreenElementBudget: number;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
@@ -129,6 +133,16 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES,
     min: 1,
     max: 200
+  });
+  let figmaCacheEnabled = !parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_NO_CACHE,
+    !DEFAULT_FIGMA_CACHE_ENABLED
+  );
+  let figmaCacheTtlMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS,
+    fallback: DEFAULT_FIGMA_CACHE_TTL_MS,
+    min: 1_000,
+    max: 24 * 60 * 60_000
   });
   let figmaScreenElementBudget = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
@@ -260,6 +274,22 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--no-cache") {
+      figmaCacheEnabled = false;
+      continue;
+    }
+
+    if (arg === "--figma-cache-ttl-ms") {
+      figmaCacheTtlMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCacheTtlMs,
+        min: 1_000,
+        max: 24 * 60 * 60_000
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--figma-screen-element-budget") {
       figmaScreenElementBudget = parseIntInRange({
         raw: args[index + 1],
@@ -319,6 +349,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaNodeFetchConcurrency,
     figmaAdaptiveBatchingEnabled,
     figmaMaxScreenCandidates,
+    figmaCacheEnabled,
+    figmaCacheTtlMs,
     figmaScreenElementBudget,
     commandTimeoutMs,
     enableUiValidation,
@@ -352,6 +384,8 @@ Options:
                              Auto-split oversized staged /nodes batches (default: ${DEFAULT_FIGMA_ADAPTIVE_BATCHING})
   --figma-max-screen-candidates <n>
                              Max screen candidates fetched in staged mode (default: ${DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES})
+  --no-cache                 Disable figma.source file-system cache
+  --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
@@ -375,6 +409,8 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY
   FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING
   FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES
+  FIGMAPIPE_WORKSPACE_NO_CACHE
+  FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
@@ -430,6 +466,8 @@ const main = async (): Promise<void> => {
       figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
       figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled,
       figmaMaxScreenCandidates: options.figmaMaxScreenCandidates,
+      figmaCacheEnabled: options.figmaCacheEnabled,
+      figmaCacheTtlMs: options.figmaCacheTtlMs,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
@@ -456,6 +494,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
+    console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[workspace-dev] Failed to start: ${message}`);

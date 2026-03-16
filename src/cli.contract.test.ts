@@ -149,6 +149,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /workspace-dev start/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
+  assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
@@ -200,6 +202,26 @@ test("cli contract: perf validation flag is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Perf validation enabled: true/i);
     assert.match(output, /Perf validation enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --no-cache disables figma cache and is logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--no-cache"], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Figma cache enabled: false/i);
+    assert.match(output, /Figma cache enabled: false/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);
