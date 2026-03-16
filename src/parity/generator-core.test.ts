@@ -901,6 +901,60 @@ test("deterministic screen rendering emits gradient background sx and uses conta
   assert.equal(content.includes('bgcolor: "background.default"'), false);
 });
 
+test("deterministic screen rendering emits opacity in sx and keeps low-opacity elements renderable", () => {
+  const screen = {
+    id: "opacity-screen",
+    name: "Opacity Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "opacity-surface",
+        name: "Opacity Surface",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 120,
+        opacity: 0.42,
+        children: []
+      },
+      {
+        id: "opacity-overlay",
+        name: "Opacity Overlay",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 140,
+        width: 320,
+        height: 120,
+        opacity: 0.2,
+        children: []
+      },
+      {
+        id: "opacity-full",
+        name: "Opacity Full",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 280,
+        width: 320,
+        height: 120,
+        opacity: 1,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("opacity: 0.42"));
+  assert.ok(content.includes("opacity: 0.2"));
+  assert.equal(content.includes("opacity: 1"), false);
+  assert.equal((content.match(/opacity:/g) ?? []).length, 2);
+});
+
 test("deterministic screen rendering maps shadow metadata to Card elevation and Box boxShadow with priority rules", () => {
   const screen = {
     id: "shadow-screen",

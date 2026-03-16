@@ -1495,6 +1495,70 @@ const createGradientFillFigmaFile = () => ({
   }
 });
 
+const createOpacityFigmaFile = () => ({
+  name: "Opacity Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "opacity-screen",
+            type: "FRAME",
+            name: "Opacity Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+            children: [
+              {
+                id: "opacity-node-valid",
+                type: "FRAME",
+                name: "Opacity Valid",
+                opacity: 0.42,
+                absoluteBoundingBox: { x: 48, y: 80, width: 420, height: 120 },
+                children: []
+              },
+              {
+                id: "opacity-node-zero",
+                type: "FRAME",
+                name: "Opacity Zero",
+                opacity: 0,
+                absoluteBoundingBox: { x: 48, y: 220, width: 420, height: 120 },
+                children: []
+              },
+              {
+                id: "opacity-node-one",
+                type: "FRAME",
+                name: "Opacity One",
+                opacity: 1,
+                absoluteBoundingBox: { x: 48, y: 360, width: 420, height: 120 },
+                children: []
+              },
+              {
+                id: "opacity-node-negative",
+                type: "FRAME",
+                name: "Opacity Negative",
+                opacity: -0.2,
+                absoluteBoundingBox: { x: 48, y: 500, width: 420, height: 120 },
+                children: []
+              },
+              {
+                id: "opacity-node-over",
+                type: "FRAME",
+                name: "Opacity Over",
+                opacity: 1.4,
+                absoluteBoundingBox: { x: 48, y: 640, width: 420, height: 120 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const createShadowEffectsFigmaFile = () => ({
   name: "Shadow Effects Demo",
   document: {
@@ -1712,6 +1776,30 @@ test("figmaToDesignIrWithOptions maps linear and radial gradient fills on screen
 test("figmaToDesignIrWithOptions derives gradient fill metadata deterministically", () => {
   const first = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
   const second = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
+  assert.deepEqual(first.screens, second.screens);
+});
+
+test("figmaToDesignIrWithOptions maps node opacity to ScreenElementIR.opacity for values in [0,1)", () => {
+  const ir = figmaToDesignIrWithOptions(createOpacityFigmaFile());
+  const screen = ir.screens[0];
+  assert.ok(screen);
+
+  const validNode = screen?.children.find((entry) => entry.id === "opacity-node-valid");
+  const zeroNode = screen?.children.find((entry) => entry.id === "opacity-node-zero");
+  const oneNode = screen?.children.find((entry) => entry.id === "opacity-node-one");
+  const negativeNode = screen?.children.find((entry) => entry.id === "opacity-node-negative");
+  const overNode = screen?.children.find((entry) => entry.id === "opacity-node-over");
+
+  assert.equal(validNode?.opacity, 0.42);
+  assert.equal(zeroNode?.opacity, 0);
+  assert.equal(oneNode?.opacity, undefined);
+  assert.equal(negativeNode?.opacity, undefined);
+  assert.equal(overNode?.opacity, undefined);
+});
+
+test("figmaToDesignIrWithOptions derives opacity metadata deterministically", () => {
+  const first = figmaToDesignIrWithOptions(createOpacityFigmaFile());
+  const second = figmaToDesignIrWithOptions(createOpacityFigmaFile());
   assert.deepEqual(first.screens, second.screens);
 });
 
