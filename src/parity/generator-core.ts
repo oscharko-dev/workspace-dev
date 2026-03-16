@@ -3,6 +3,7 @@ import path from "node:path";
 import type * as ts from "typescript";
 import type {
   ComponentMappingRule,
+  DesignTokens,
   DesignIR,
   GenerationMetrics,
   GeneratedFile,
@@ -222,6 +223,112 @@ const toPxLiteral = (value: number | undefined): string | undefined => {
   return literal(`${Math.round(value)}px`);
 };
 
+const DEFAULT_SPACING_BASE = 8;
+const REM_BASE = 16;
+
+const normalizeSpacingBase = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_SPACING_BASE;
+  }
+  return value;
+};
+
+const toSpacingUnitValue = ({
+  value,
+  spacingBase
+}: {
+  value: number | undefined;
+  spacingBase: number;
+}): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = Math.round((value / normalizeSpacingBase(spacingBase)) * 1000) / 1000;
+  if (normalized === 0 && value > 0) {
+    return 0.125;
+  }
+  return normalized;
+};
+
+const toRemLiteral = (value: number | undefined): string | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const rem = Math.round((value / REM_BASE) * 10000) / 10000;
+  const remString = Number.isInteger(rem) ? String(rem) : rem.toString();
+  return literal(`${remString}rem`);
+};
+
+const normalizeHexColor = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(trimmed);
+  if (!match) {
+    return undefined;
+  }
+  const payload = match[1]?.toLowerCase();
+  if (!payload) {
+    return undefined;
+  }
+  if (payload.length === 3) {
+    return `#${payload
+      .split("")
+      .map((chunk) => `${chunk}${chunk}`)
+      .join("")}`;
+  }
+  return `#${payload}`;
+};
+
+const toThemePaletteLiteral = ({
+  color,
+  tokens
+}: {
+  color: string | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
+  if (!tokens) {
+    return undefined;
+  }
+  const normalizedColor = normalizeHexColor(color);
+  if (!normalizedColor) {
+    return undefined;
+  }
+
+  const exactMatches: Array<[string, string | undefined]> = [
+    ["primary.main", tokens.palette.primary],
+    ["secondary.main", tokens.palette.secondary],
+    ["background.default", tokens.palette.background],
+    ["text.primary", tokens.palette.text]
+  ];
+
+  for (const [tokenPath, tokenColor] of exactMatches) {
+    if (normalizeHexColor(tokenColor) === normalizedColor) {
+      return tokenPath;
+    }
+  }
+  return undefined;
+};
+
+const toThemeColorLiteral = ({
+  color,
+  tokens
+}: {
+  color: string | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
+  if (!color) {
+    return undefined;
+  }
+  const trimmed = color.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const mapped = toThemePaletteLiteral({ color: trimmed, tokens });
+  return literal(mapped ?? trimmed);
+};
+
 const mapPrimaryAxisAlignToJustifyContent = (
   value: ScreenElementIR["primaryAxisAlignItems"]
 ): string | undefined => {
@@ -397,18 +504,20 @@ const sxString = (entries: Array<[string, string | number | undefined]>): string
 const toPaintSxEntries = ({
   fillColor,
   fillGradient,
-  includePaints
+  includePaints,
+  tokens
 }: {
   fillColor: ScreenElementIR["fillColor"];
   fillGradient: ScreenElementIR["fillGradient"];
   includePaints: boolean;
+  tokens: DesignTokens | undefined;
 }): Array<[string, string | number | undefined]> => {
   if (!includePaints) {
     return [];
   }
   return [
     ["background", fillGradient ? literal(fillGradient) : undefined],
-    ["bgcolor", !fillGradient && fillColor ? literal(fillColor) : undefined]
+    ["bgcolor", !fillGradient ? toThemeColorLiteral({ color: fillColor, tokens }) : undefined]
   ];
 };
 
@@ -437,14 +546,20 @@ const toShadowSxEntry = ({
   return normalizedElevation !== undefined ? normalizedElevation : normalizedInset;
 };
 
-const toVariantStateSxObject = (style: VariantStateStyle | undefined): string | undefined => {
+const toVariantStateSxObject = ({
+  style,
+  tokens
+}: {
+  style: VariantStateStyle | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
   if (!style) {
     return undefined;
   }
   const stateSx = sxString([
-    ["bgcolor", style.backgroundColor ? literal(style.backgroundColor) : undefined],
-    ["borderColor", style.borderColor ? literal(style.borderColor) : undefined],
-    ["color", style.color ? literal(style.color) : undefined]
+    ["bgcolor", toThemeColorLiteral({ color: style.backgroundColor, tokens })],
+    ["borderColor", toThemeColorLiteral({ color: style.borderColor, tokens })],
+    ["color", toThemeColorLiteral({ color: style.color, tokens })]
   ]);
   if (!stateSx.trim()) {
     return undefined;
@@ -454,19 +569,21 @@ const toVariantStateSxObject = (style: VariantStateStyle | undefined): string | 
 
 const appendVariantStateOverridesToSx = ({
   sx,
-  element
+  element,
+  tokens
 }: {
   sx: string;
   element: ScreenElementIR;
+  tokens: DesignTokens | undefined;
 }): string => {
   const stateOverrides = element.variantMapping?.stateOverrides;
   if (!stateOverrides) {
     return sx;
   }
   const selectors = [
-    ["\"&:hover\"", toVariantStateSxObject(stateOverrides.hover)],
-    ["\"&:active\"", toVariantStateSxObject(stateOverrides.active)],
-    ["\"&.Mui-disabled\"", toVariantStateSxObject(stateOverrides.disabled)]
+    ["\"&:hover\"", toVariantStateSxObject({ style: stateOverrides.hover, tokens })],
+    ["\"&:active\"", toVariantStateSxObject({ style: stateOverrides.active, tokens })],
+    ["\"&.Mui-disabled\"", toVariantStateSxObject({ style: stateOverrides.disabled, tokens })]
   ]
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
     .map(([selector, style]) => `${selector}: ${style}`);
@@ -511,10 +628,17 @@ const indentBlock = (value: string, spaces: number): string => {
 const baseLayoutEntries = (
   element: ScreenElementIR,
   parent: VirtualParent,
-  options?: { includePaints?: boolean; preferInsetShadow?: boolean }
+  options?: {
+    includePaints?: boolean;
+    preferInsetShadow?: boolean;
+    spacingBase?: number;
+    tokens?: DesignTokens | undefined;
+  }
 ): Array<[string, string | number | undefined]> => {
   const includePaints = options?.includePaints ?? true;
   const preferInsetShadow = options?.preferInsetShadow ?? true;
+  const spacingBase = normalizeSpacingBase(options?.spacingBase);
+  const tokens = options?.tokens;
   const parentLayout = parent.layoutMode ?? "NONE";
   const isAbsoluteChild =
     parentLayout === "NONE" &&
@@ -555,16 +679,40 @@ const baseLayoutEntries = (
           })()
         : undefined
     ],
-    ["gap", element.gap && element.gap > 0 ? toPxLiteral(element.gap) : undefined],
-    ["pt", element.padding && element.padding.top > 0 ? toPxLiteral(element.padding.top) : undefined],
-    ["pr", element.padding && element.padding.right > 0 ? toPxLiteral(element.padding.right) : undefined],
-    ["pb", element.padding && element.padding.bottom > 0 ? toPxLiteral(element.padding.bottom) : undefined],
-    ["pl", element.padding && element.padding.left > 0 ? toPxLiteral(element.padding.left) : undefined],
+    [
+      "gap",
+      element.gap && element.gap > 0 ? toSpacingUnitValue({ value: element.gap, spacingBase }) : undefined
+    ],
+    [
+      "pt",
+      element.padding && element.padding.top > 0
+        ? toSpacingUnitValue({ value: element.padding.top, spacingBase })
+        : undefined
+    ],
+    [
+      "pr",
+      element.padding && element.padding.right > 0
+        ? toSpacingUnitValue({ value: element.padding.right, spacingBase })
+        : undefined
+    ],
+    [
+      "pb",
+      element.padding && element.padding.bottom > 0
+        ? toSpacingUnitValue({ value: element.padding.bottom, spacingBase })
+        : undefined
+    ],
+    [
+      "pl",
+      element.padding && element.padding.left > 0
+        ? toSpacingUnitValue({ value: element.padding.left, spacingBase })
+        : undefined
+    ],
     ["opacity", normalizeOpacityForSx(element.opacity)],
     ...toPaintSxEntries({
       fillColor: element.fillColor,
       fillGradient: element.fillGradient,
-      includePaints
+      includePaints,
+      tokens
     }),
     [
       "border",
@@ -572,7 +720,7 @@ const baseLayoutEntries = (
         ? literal(`${Math.max(1, Math.round(element.strokeWidth ?? 1))}px solid`)
         : undefined
     ],
-    ["borderColor", includePaints && element.strokeColor ? literal(element.strokeColor) : undefined],
+    ["borderColor", includePaints ? toThemeColorLiteral({ color: element.strokeColor, tokens }) : undefined],
     ["borderRadius", element.cornerRadius ? toPxLiteral(element.cornerRadius) : undefined],
     [
       "boxShadow",
@@ -617,12 +765,14 @@ const appendLayoutOverrideEntriesForBreakpoint = ({
   byBreakpoint,
   breakpoint,
   baseLayoutMode,
-  override
+  override,
+  spacingBase
 }: {
   byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>;
   breakpoint: ResponsiveBreakpoint;
   baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
   override: ScreenResponsiveLayoutOverride;
+  spacingBase: number;
 }): void => {
   const effectiveLayoutMode = override.layoutMode ?? baseLayoutMode;
   if (override.layoutMode) {
@@ -678,7 +828,7 @@ const appendLayoutOverrideEntriesForBreakpoint = ({
     pushResponsiveStyleEntry({
       byBreakpoint,
       breakpoint,
-      entry: ["gap", toPxLiteral(override.gap)]
+      entry: ["gap", toSpacingUnitValue({ value: override.gap, spacingBase })]
     });
   }
 };
@@ -703,10 +853,12 @@ const toResponsiveMediaEntries = (
 
 const toResponsiveLayoutMediaEntries = ({
   baseLayoutMode,
-  overrides
+  overrides,
+  spacingBase
 }: {
   baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
   overrides: ScreenResponsiveLayoutOverridesByBreakpoint | undefined;
+  spacingBase: number;
 }): Array<[string, string | number | undefined]> => {
   if (!overrides) {
     return [];
@@ -721,7 +873,8 @@ const toResponsiveLayoutMediaEntries = ({
       byBreakpoint,
       breakpoint,
       baseLayoutMode,
-      override
+      override,
+      spacingBase
     });
   }
   return toResponsiveMediaEntries(byBreakpoint);
@@ -742,15 +895,27 @@ const toElementSx = ({
 }): string => {
   const responsiveEntries = toResponsiveLayoutMediaEntries({
     baseLayoutMode: element.layoutMode ?? "NONE",
-    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase
   });
   return sxString([
-    ...baseLayoutEntries(element, parent, { includePaints, preferInsetShadow }),
+    ...baseLayoutEntries(element, parent, {
+      includePaints,
+      preferInsetShadow,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...responsiveEntries
   ]);
 };
 
-const toScreenResponsiveRootMediaEntries = (screen: ScreenIR): Array<[string, string | number | undefined]> => {
+const toScreenResponsiveRootMediaEntries = ({
+  screen,
+  spacingBase
+}: {
+  screen: ScreenIR;
+  spacingBase: number;
+}): Array<[string, string | number | undefined]> => {
   if (!screen.responsive) {
     return [];
   }
@@ -779,7 +944,8 @@ const toScreenResponsiveRootMediaEntries = (screen: ScreenIR): Array<[string, st
         byBreakpoint,
         breakpoint,
         baseLayoutMode: screen.layoutMode,
-        override
+        override,
+        spacingBase
       });
     }
   }
@@ -793,10 +959,15 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const text = literal(element.text?.trim() || element.name);
   const normalizedFont = normalizeFontFamily(element.fontFamily);
   const textLayoutEntries = [
-    ...baseLayoutEntries(element, parent, { includePaints: false }),
+    ...baseLayoutEntries(element, parent, {
+      includePaints: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
     })
   ].filter(([key]) => {
     return key !== "width" && key !== "height" && key !== "minHeight";
@@ -805,11 +976,11 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const isLinkLikeColor = element.fillColor && /^#0[0-4][0-9a-f]{4}$/i.test(element.fillColor);
   const sx = sxString([
     ...textLayoutEntries,
-    ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
+    ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
     ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toPxLiteral(element.lineHeight) : undefined],
+    ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
     ["fontFamily", normalizedFont ? literal(normalizedFont) : undefined],
-    ["color", element.fillColor ? literal(element.fillColor) : undefined],
+    ["color", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })],
     [
       "textAlign",
       element.textAlign === "LEFT"
@@ -1004,6 +1175,8 @@ interface RenderContext {
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
   mappedImports: MappedImportSpec[];
+  spacingBase: number;
+  tokens?: DesignTokens | undefined;
   mappingByNodeId: Map<string, ComponentMappingRule>;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
@@ -1576,7 +1749,7 @@ const renderFallbackIconExpression = ({
     ["height", toPxLiteral(element.height)],
     ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
     ["lineHeight", literal("1")],
-    ["color", color ? literal(color) : undefined],
+    ["color", toThemeColorLiteral({ color, tokens: context.tokens })],
     ...extraEntries
   ]);
   return `<${iconComponent} sx={{ ${sx} }} fontSize="inherit" />`;
@@ -1752,7 +1925,7 @@ const renderInlineSvgIcon = ({
   const sx = sxString([
     ["width", toPxLiteral(icon.width)],
     ["height", toPxLiteral(icon.height)],
-    ["color", icon.color ? literal(icon.color) : undefined],
+    ["color", toThemeColorLiteral({ color: icon.color, tokens: context.tokens })],
     ...extraEntries
   ]);
   const width = Math.max(1, Math.round(icon.width ?? 24));
@@ -1774,24 +1947,29 @@ const renderSemanticInput = (
   const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
   const outlineStrokeColor = outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor;
   const fieldSx = sxString([
-    ...baseLayoutEntries(outlineContainer, parent, { includePaints: false }),
+    ...baseLayoutEntries(outlineContainer, parent, {
+      includePaints: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: outlineContainer.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id]
+      overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id],
+      spacingBase: context.spacingBase
     }),
-    ["bgcolor", element.fillColor ? literal(element.fillColor) : undefined]
+    ["bgcolor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
   ]);
 
   const inputRootStyle = sxString([
     ["borderRadius", toPxLiteral(outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius)],
     ["fontFamily", field.valueFontFamily ? literal(field.valueFontFamily) : undefined],
-    ["color", field.valueColor ? literal(field.valueColor) : undefined]
+    ["color", toThemeColorLiteral({ color: field.valueColor, tokens: context.tokens })]
   ]);
   const inputLabelStyle = sxString([
     ["fontFamily", field.labelFontFamily ? literal(field.labelFontFamily) : undefined],
-    ["color", field.labelColor ? literal(field.labelColor) : undefined]
+    ["color", toThemeColorLiteral({ color: field.labelColor, tokens: context.tokens })]
   ]);
-  const outlineStyle = sxString([["borderColor", outlineStrokeColor ? literal(outlineStrokeColor) : undefined]]);
+  const outlineStyle = sxString([["borderColor", toThemeColorLiteral({ color: outlineStrokeColor, tokens: context.tokens })]]);
   const endAdornment =
     !field.isSelect && field.suffixText
       ? `endAdornment: <InputAdornment position="end">{${literal(field.suffixText)}}</InputAdornment>`
@@ -1922,26 +2100,75 @@ const renderSemanticAccordion = (
     ["minHeight", toPxLiteral(detailsContainer.height)],
     ["display", detailsContainer.layoutMode === "NONE" ? literal("block") : literal("flex")],
     ["flexDirection", detailsContainer.layoutMode === "HORIZONTAL" ? literal("row") : literal("column")],
-    ["gap", detailsContainer.gap && detailsContainer.gap > 0 ? toPxLiteral(detailsContainer.gap) : undefined],
-    ["pt", detailsContainer.padding && detailsContainer.padding.top > 0 ? toPxLiteral(detailsContainer.padding.top) : undefined],
-    ["pr", detailsContainer.padding && detailsContainer.padding.right > 0 ? toPxLiteral(detailsContainer.padding.right) : undefined],
-    ["pb", detailsContainer.padding && detailsContainer.padding.bottom > 0 ? toPxLiteral(detailsContainer.padding.bottom) : undefined],
-    ["pl", detailsContainer.padding && detailsContainer.padding.left > 0 ? toPxLiteral(detailsContainer.padding.left) : undefined]
+    [
+      "gap",
+      detailsContainer.gap && detailsContainer.gap > 0
+        ? toSpacingUnitValue({ value: detailsContainer.gap, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pt",
+      detailsContainer.padding && detailsContainer.padding.top > 0
+        ? toSpacingUnitValue({ value: detailsContainer.padding.top, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pr",
+      detailsContainer.padding && detailsContainer.padding.right > 0
+        ? toSpacingUnitValue({ value: detailsContainer.padding.right, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pb",
+      detailsContainer.padding && detailsContainer.padding.bottom > 0
+        ? toSpacingUnitValue({ value: detailsContainer.padding.bottom, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pl",
+      detailsContainer.padding && detailsContainer.padding.left > 0
+        ? toSpacingUnitValue({ value: detailsContainer.padding.left, spacingBase: context.spacingBase })
+        : undefined
+    ]
   ]);
 
   const summarySx = sxString([
     ["minHeight", toPxLiteral(summaryRoot.height)],
-    ["pt", summaryRoot.padding && summaryRoot.padding.top > 0 ? toPxLiteral(summaryRoot.padding.top) : undefined],
-    ["pr", summaryRoot.padding && summaryRoot.padding.right > 0 ? toPxLiteral(summaryRoot.padding.right) : undefined],
-    ["pb", summaryRoot.padding && summaryRoot.padding.bottom > 0 ? toPxLiteral(summaryRoot.padding.bottom) : undefined],
-    ["pl", summaryRoot.padding && summaryRoot.padding.left > 0 ? toPxLiteral(summaryRoot.padding.left) : undefined]
+    [
+      "pt",
+      summaryRoot.padding && summaryRoot.padding.top > 0
+        ? toSpacingUnitValue({ value: summaryRoot.padding.top, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pr",
+      summaryRoot.padding && summaryRoot.padding.right > 0
+        ? toSpacingUnitValue({ value: summaryRoot.padding.right, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pb",
+      summaryRoot.padding && summaryRoot.padding.bottom > 0
+        ? toSpacingUnitValue({ value: summaryRoot.padding.bottom, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    [
+      "pl",
+      summaryRoot.padding && summaryRoot.padding.left > 0
+        ? toSpacingUnitValue({ value: summaryRoot.padding.left, spacingBase: context.spacingBase })
+        : undefined
+    ]
   ]);
 
   const accordionSx = sxString([
-    ...baseLayoutEntries(element, parent),
+    ...baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
     }),
     ["boxShadow", literal("none")]
   ]);
@@ -1959,7 +2186,7 @@ ${indent}    <Box sx={{ width: "100%", position: "relative", minHeight: ${litera
 ${renderedSummary || `${indent}      <Typography>{${literal(summaryFallbackLabel)}}</Typography>`}
 ${indent}    </Box>
 ${indent}  </AccordionSummary>
-${indent}  <AccordionDetails sx={{ p: "0px" }}>
+${indent}  <AccordionDetails sx={{ p: 0 }}>
 ${indent}    <Box sx={{ ${detailsSx} }}>
 ${renderedDetails || `${indent}      <Box />`}
 ${indent}    </Box>
@@ -1985,16 +2212,21 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     registerMuiImports(context, "IconButton");
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
     const iconButtonSx = sxString([
-      ...baseLayoutEntries(element, parent),
+      ...baseLayoutEntries(element, parent, {
+        spacingBase: context.spacingBase,
+        tokens: context.tokens
+      }),
       ...toResponsiveLayoutMediaEntries({
         baseLayoutMode: element.layoutMode ?? "NONE",
-        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase
       }),
-      ["color", iconColor ? literal(iconColor) : undefined]
+      ["color", toThemeColorLiteral({ color: iconColor, tokens: context.tokens })]
     ]);
     const iconButtonSxWithState = appendVariantStateOverridesToSx({
       sx: iconButtonSx,
-      element
+      element,
+      tokens: context.tokens
     });
     const iconExpression = renderFallbackIconExpression({
       element: iconNode,
@@ -2025,22 +2257,27 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     );
 
   const sx = sxString([
-    ...baseLayoutEntries(element, parent),
+    ...baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
     }),
-    ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
+    ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
     ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toPxLiteral(element.lineHeight) : undefined],
-    ["color", buttonTextColor ? literal(buttonTextColor) : undefined],
+    ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
+    ["color", toThemeColorLiteral({ color: buttonTextColor, tokens: context.tokens })],
     ["textTransform", literal("none")],
     ["justifyContent", literal("center")]
   ]);
 
   const sxWithVariantStates = appendVariantStateOverridesToSx({
     sx,
-    element
+    element,
+    tokens: context.tokens
   });
   const variant = mappedMuiProps?.variant ?? (element.fillColor || element.fillGradient ? "contained" : "outlined");
   const sizeProp = mappedMuiProps?.size ? ` size="${mappedMuiProps.size}"` : "";
@@ -2189,7 +2426,12 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
     ? sxString([
         ["height", toPxLiteral(mediaCandidate.height ?? 140)],
         ["background", mediaCandidate.fillGradient ? literal(mediaCandidate.fillGradient) : undefined],
-        ["bgcolor", !mediaCandidate.fillGradient && mediaCandidate.fillColor ? literal(mediaCandidate.fillColor) : undefined]
+        [
+          "bgcolor",
+          !mediaCandidate.fillGradient
+            ? toThemeColorLiteral({ color: mediaCandidate.fillColor, tokens: context.tokens })
+            : undefined
+        ]
       ])
     : undefined;
   if (mediaCandidate) {
@@ -2229,7 +2471,8 @@ const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualPare
       parent,
       context
     }),
-    element
+    element,
+    tokens: context.tokens
   });
   const label = firstText(element)?.trim() || element.name;
   const chipVariant = toChipVariant(mappedMuiProps?.variant);
@@ -2466,12 +2709,17 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
   registerMuiImports(context, "Divider");
   const indent = "  ".repeat(depth);
   const sx = sxString([
-    ...baseLayoutEntries(element, parent, { includePaints: false }),
+    ...baseLayoutEntries(element, parent, {
+      includePaints: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
     }),
-    ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
+    ["borderColor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
   ]);
   return `${indent}<Divider sx={{ ${sx} }} />`;
 };
@@ -2545,7 +2793,10 @@ const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualPar
   registerMuiImports(context, "Stack");
   const indent = "  ".repeat(depth);
   const direction = element.layoutMode === "HORIZONTAL" ? "row" : "column";
-  const spacing = typeof element.gap === "number" && element.gap > 0 ? Math.max(0.5, Math.round((element.gap / 8) * 2) / 2) : 0;
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
+      : 0;
   const sx = toElementSx({
     element,
     parent,
@@ -2836,10 +3087,15 @@ const renderContainer = (
       parent,
       context,
       extraEntries: [
-        ...baseLayoutEntries(element, parent, { includePaints: false }),
+        ...baseLayoutEntries(element, parent, {
+          includePaints: false,
+          spacingBase: context.spacingBase,
+          tokens: context.tokens
+        }),
         ...toResponsiveLayoutMediaEntries({
           baseLayoutMode: element.layoutMode ?? "NONE",
-          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+          spacingBase: context.spacingBase
         }),
         ["display", literal("flex")],
         ["alignItems", literal("center")],
@@ -2864,12 +3120,16 @@ const renderContainer = (
   const isDivider = (element.height ?? 0) <= 2 && Boolean(element.fillColor) && !children.length;
   if (isDivider) {
     const sx = sxString([
-      ...baseLayoutEntries(element, parent),
+      ...baseLayoutEntries(element, parent, {
+        spacingBase: context.spacingBase,
+        tokens: context.tokens
+      }),
       ...toResponsiveLayoutMediaEntries({
         baseLayoutMode: element.layoutMode ?? "NONE",
-        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id]
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase
       }),
-      ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
+      ["borderColor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
     ]);
     registerMuiImports(context, "Divider");
     return `${indent}<Divider sx={{ ${sx} }} />`;
@@ -3059,12 +3319,16 @@ const toTruncationComment = (
 const fallbackScreenFile = ({
   screen,
   mappingByNodeId,
+  spacingBase,
+  tokens,
   truncationMetric,
   componentNameOverride,
   filePathOverride
 }: {
   screen: ScreenIR;
   mappingByNodeId: Map<string, ComponentMappingRule>;
+  spacingBase?: number;
+  tokens?: DesignTokens | undefined;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -3076,6 +3340,7 @@ const fallbackScreenFile = ({
   const componentName = componentNameOverride ?? toComponentName(screen.name);
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
   const truncationComment = toTruncationComment(truncationMetric);
+  const resolvedSpacingBase = normalizeSpacingBase(spacingBase);
 
   const simplifiedChildren = simplifyElements(screen.children);
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
@@ -3086,6 +3351,8 @@ const fallbackScreenFile = ({
     muiImports: new Set<string>(["Box", "Container"]),
     iconImports: [],
     mappedImports: [],
+    spacingBase: resolvedSpacingBase,
+    ...(tokens ? { tokens } : {}),
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
@@ -3136,17 +3403,26 @@ const fallbackScreenFile = ({
     ["position", literal("relative")],
     ["width", literal("100%")],
     ["minHeight", literal(`${contentHeight}px`)],
-    ...toScreenResponsiveRootMediaEntries(screen)
+    ...toScreenResponsiveRootMediaEntries({
+      screen,
+      spacingBase: renderContext.spacingBase
+    })
   ]);
   const containerMaxWidth = toMuiContainerMaxWidth(contentWidth);
   const screenRootSx = sxString([
     ["minHeight", literal("100vh")],
     ["background", screen.fillGradient ? literal(screen.fillGradient) : undefined],
-    ["bgcolor", !screen.fillGradient ? literal(screen.fillColor ?? "background.default") : undefined],
+    [
+      "bgcolor",
+      !screen.fillGradient
+        ? toThemeColorLiteral({ color: screen.fillColor ?? "background.default", tokens: renderContext.tokens })
+        : undefined
+    ],
     ["display", literal("block")],
-    ["px", literal("0px")],
-    ["py", literal("0px")]
+    ["px", 0],
+    ["py", 0]
   ]);
+  const containerPadding = toSpacingUnitValue({ value: 16, spacingBase: renderContext.spacingBase }) ?? 2;
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const selectOptionsMap = Object.fromEntries(
@@ -3198,7 +3474,7 @@ export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
     <Box sx={{ ${screenRootSx} }}>
-      <Container maxWidth="${containerMaxWidth}" sx={{ width: "100%", px: "16px", boxSizing: "border-box", py: "16px" }}>
+      <Container maxWidth="${containerMaxWidth}" sx={{ width: "100%", px: ${containerPadding}, boxSizing: "border-box", py: ${containerPadding} }}>
         <Box sx={{ ${contentRootSx} }}>
 ${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
         </Box>
@@ -3224,7 +3500,8 @@ export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
 export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile => {
   return fallbackScreenFile({
     screen,
-    mappingByNodeId: new Map<string, ComponentMappingRule>()
+    mappingByNodeId: new Map<string, ComponentMappingRule>(),
+    spacingBase: DEFAULT_SPACING_BASE
   }).file;
 };
 
@@ -3953,6 +4230,8 @@ export const generateArtifacts = async ({
     const deterministicScreen = fallbackScreenFile({
       screen,
       mappingByNodeId,
+      spacingBase: ir.tokens.spacingBase,
+      tokens: ir.tokens,
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
