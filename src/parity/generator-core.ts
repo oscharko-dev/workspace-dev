@@ -81,6 +81,14 @@ const clamp = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
 };
 
+const normalizeOpacityForSx = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = clamp(value, 0, 1);
+  return normalized < 1 ? normalized : undefined;
+};
+
 const normalizeFontFamily = (rawFamily: string | undefined): string | undefined => {
   if (!rawFamily || !rawFamily.trim()) {
     return undefined;
@@ -253,6 +261,7 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
     element.fillColor ||
       element.fillGradient ||
+      normalizeOpacityForSx(element.opacity) !== undefined ||
       element.insetShadow ||
       (typeof element.elevation === "number" && element.elevation > 0) ||
       element.strokeColor ||
@@ -551,6 +560,7 @@ const baseLayoutEntries = (
     ["pr", element.padding && element.padding.right > 0 ? toPxLiteral(element.padding.right) : undefined],
     ["pb", element.padding && element.padding.bottom > 0 ? toPxLiteral(element.padding.bottom) : undefined],
     ["pl", element.padding && element.padding.left > 0 ? toPxLiteral(element.padding.left) : undefined],
+    ["opacity", normalizeOpacityForSx(element.opacity)],
     ...toPaintSxEntries({
       fillColor: element.fillColor,
       fillGradient: element.fillGradient,

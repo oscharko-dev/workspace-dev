@@ -96,6 +96,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                   id: "regular-1",
                   type: "FRAME",
                   name: "Card",
+                  opacity: 0.42,
                   pluginData: { x: 1 },
                   fills: [
                     {
@@ -160,6 +161,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                   id: "variant-set-1",
                   type: "COMPONENT_SET",
                   name: "Button Variants",
+                  opacity: 1,
                   componentProperties: {
                     State: {
                       type: "VARIANT",
@@ -212,6 +214,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
 
   const regularNode = findNodeById(result.cleanedFile.document, "regular-1");
   assert.ok(regularNode);
+  assert.equal(regularNode?.opacity, 0.42);
   assert.equal(Array.isArray(regularNode?.fills), true);
   assert.equal((regularNode?.fills as unknown[]).length, 2);
   assert.deepEqual(regularNode?.fills, [
@@ -257,6 +260,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
 
   const variantNode = findNodeById(result.cleanedFile.document, "variant-set-1");
   assert.ok(variantNode);
+  assert.equal("opacity" in (variantNode ?? {}), false);
   assert.deepEqual(variantNode?.componentProperties, {
     State: {
       type: "VARIANT",
@@ -309,4 +313,81 @@ test("cleanFigmaForCodegen reports zero screen candidates when nothing screen-li
   const result = cleanFigmaForCodegen({ file: input });
   assert.equal(result.report.screenCandidateCount, 0);
   assert.equal(result.report.removedHiddenNodes >= 1, true);
+});
+
+test("cleanFigmaForCodegen keeps only finite node opacity values in [0,1)", () => {
+  const input = {
+    name: "Opacity Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-opacity",
+              type: "FRAME",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: [
+                {
+                  id: "opacity-valid-half",
+                  type: "FRAME",
+                  opacity: 0.5,
+                  children: []
+                },
+                {
+                  id: "opacity-valid-zero",
+                  type: "FRAME",
+                  opacity: 0,
+                  children: []
+                },
+                {
+                  id: "opacity-invalid-one",
+                  type: "FRAME",
+                  opacity: 1,
+                  children: []
+                },
+                {
+                  id: "opacity-invalid-negative",
+                  type: "FRAME",
+                  opacity: -0.1,
+                  children: []
+                },
+                {
+                  id: "opacity-invalid-over",
+                  type: "FRAME",
+                  opacity: 1.2,
+                  children: []
+                },
+                {
+                  id: "opacity-invalid-string",
+                  type: "FRAME",
+                  opacity: "0.3",
+                  children: []
+                },
+                {
+                  id: "opacity-invalid-nan",
+                  type: "FRAME",
+                  opacity: Number.NaN,
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+
+  assert.equal(findNodeById(result.cleanedFile.document, "opacity-valid-half")?.opacity, 0.5);
+  assert.equal(findNodeById(result.cleanedFile.document, "opacity-valid-zero")?.opacity, 0);
+  assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-one") ?? {}), false);
+  assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-negative") ?? {}), false);
+  assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-over") ?? {}), false);
+  assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-string") ?? {}), false);
+  assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-nan") ?? {}), false);
 });
