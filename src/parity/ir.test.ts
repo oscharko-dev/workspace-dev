@@ -19,6 +19,42 @@ const countElements = (elements: Array<{ children?: unknown[] }>): number => {
   return total;
 };
 
+const collectElementIds = (elements: Array<{ id: string; children?: unknown[] }>): string[] => {
+  const ids: string[] = [];
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop() as { id: string; children?: unknown[] } | undefined;
+    if (!current) {
+      continue;
+    }
+    ids.push(current.id);
+    if (Array.isArray(current.children)) {
+      stack.push(...(current.children as Array<{ id: string; children?: unknown[] }>));
+    }
+  }
+  return ids;
+};
+
+const findElementById = (
+  elements: Array<{ id: string; children?: unknown[] }>,
+  id: string
+): { id: string; children?: unknown[] } | undefined => {
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop() as { id: string; children?: unknown[] } | undefined;
+    if (!current) {
+      continue;
+    }
+    if (current.id === id) {
+      return current;
+    }
+    if (Array.isArray(current.children)) {
+      stack.push(...(current.children as Array<{ id: string; children?: unknown[] }>));
+    }
+  }
+  return undefined;
+};
+
 const toFigmaColor = (hex: string): { r: number; g: number; b: number; a: number } => {
   const normalized = hex.replace("#", "");
   const toChannel = (start: number): number => Number.parseInt(normalized.slice(start, start + 2), 16) / 255;
@@ -361,6 +397,189 @@ const createSemanticHintOverrideFigmaFile = () => ({
   }
 });
 
+const createPriorityRetentionFigmaFile = () => ({
+  name: "Priority Truncation",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-priority",
+            type: "FRAME",
+            name: "Priority Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+            children: [
+              {
+                id: "decorative-bg",
+                type: "FRAME",
+                name: "Decor Background",
+                fills: [{ type: "SOLID", color: toFigmaColor("#d1d5db") }],
+                absoluteBoundingBox: { x: 0, y: 0, width: 1180, height: 260 },
+                children: []
+              },
+              {
+                id: "decorative-shape",
+                type: "FRAME",
+                name: "Vector Shape",
+                fills: [{ type: "SOLID", color: toFigmaColor("#94a3b8") }],
+                absoluteBoundingBox: { x: 0, y: 280, width: 300, height: 220 },
+                children: []
+              },
+              {
+                id: "form-shell",
+                type: "FRAME",
+                name: "Form Shell",
+                absoluteBoundingBox: { x: 24, y: 520, width: 560, height: 260 },
+                children: [
+                  {
+                    id: "form-section",
+                    type: "FRAME",
+                    name: "Section",
+                    absoluteBoundingBox: { x: 32, y: 528, width: 540, height: 240 },
+                    children: [
+                      {
+                        id: "input-node",
+                        type: "FRAME",
+                        name: "MuiFormControlRoot",
+                        absoluteBoundingBox: { x: 40, y: 540, width: 320, height: 56 },
+                        children: []
+                      },
+                      {
+                        id: "action-row",
+                        type: "FRAME",
+                        name: "Action Row",
+                        absoluteBoundingBox: { x: 40, y: 630, width: 500, height: 72 },
+                        children: [
+                          {
+                            id: "cta-node",
+                            type: "FRAME",
+                            name: "Primary Button",
+                            fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                            absoluteBoundingBox: { x: 40, y: 640, width: 260, height: 56 },
+                            children: []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createAncestorChainBudgetFigmaFile = () => ({
+  name: "Ancestor Chain Budget",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-ancestor-budget",
+            type: "FRAME",
+            name: "Ancestor Budget Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 900, height: 600 },
+            children: [
+              {
+                id: "decor-node",
+                type: "FRAME",
+                name: "Decor Shape",
+                fills: [{ type: "SOLID", color: toFigmaColor("#cbd5e1") }],
+                absoluteBoundingBox: { x: 0, y: 0, width: 360, height: 200 },
+                children: []
+              },
+              {
+                id: "ancestor-root",
+                type: "FRAME",
+                name: "Ancestor Root",
+                absoluteBoundingBox: { x: 20, y: 220, width: 500, height: 220 },
+                children: [
+                  {
+                    id: "ancestor-middle",
+                    type: "FRAME",
+                    name: "Ancestor Middle",
+                    absoluteBoundingBox: { x: 24, y: 230, width: 460, height: 180 },
+                    children: [
+                      {
+                        id: "ancestor-button",
+                        type: "FRAME",
+                        name: "Primary Button",
+                        fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                        absoluteBoundingBox: { x: 30, y: 250, width: 220, height: 56 },
+                        children: []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createTextVsDecorativeFigmaFile = () => ({
+  name: "Text Priority",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-text-priority",
+            type: "FRAME",
+            name: "Text Priority Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 600 },
+            children: [
+              {
+                id: "decor-one",
+                type: "FRAME",
+                name: "Decor Layer",
+                fills: [{ type: "SOLID", color: toFigmaColor("#94a3b8") }],
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 180 },
+                children: []
+              },
+              {
+                id: "decor-two",
+                type: "FRAME",
+                name: "Background Shape",
+                fills: [{ type: "SOLID", color: toFigmaColor("#64748b") }],
+                absoluteBoundingBox: { x: 0, y: 200, width: 400, height: 180 },
+                children: []
+              },
+              {
+                id: "meaningful-text",
+                type: "TEXT",
+                name: "Headline",
+                characters: "Kreditübersicht",
+                style: { fontSize: 28, fontWeight: 700, fontFamily: "Inter" },
+                absoluteBoundingBox: { x: 20, y: 420, width: 300, height: 44 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
   assert.throws(
     () => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }),
@@ -523,6 +742,70 @@ test("figmaToDesignIrWithOptions applies deterministic screen element budget tru
   assert.equal(first.metrics?.truncatedScreens.length, 1);
   assert.equal(first.metrics?.truncatedScreens[0]?.retainedElements, 3);
   assert.deepEqual(first.screens[0].children, second.screens[0].children);
+});
+
+test("figmaToDesignIrWithOptions keeps deep interactive nodes over early decorative nodes under tight budget", () => {
+  const ir = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 4
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const ids = new Set(collectElementIds(screenChildren));
+  assert.equal(ids.has("cta-node"), true);
+  assert.equal(ids.has("form-shell"), true);
+  assert.equal(ids.has("form-section"), true);
+  assert.equal(ids.has("action-row"), true);
+  assert.equal(ids.has("decorative-bg"), false);
+  assert.equal(ids.has("decorative-shape"), false);
+  assert.equal(countElements(screenChildren), 4);
+});
+
+test("figmaToDesignIrWithOptions keeps required ancestor chain without exceeding budget", () => {
+  const ir = figmaToDesignIrWithOptions(createAncestorChainBudgetFigmaFile(), {
+    screenElementBudget: 3
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const ids = new Set(collectElementIds(screenChildren));
+  assert.equal(ids.has("ancestor-root"), true);
+  assert.equal(ids.has("ancestor-middle"), true);
+  assert.equal(ids.has("ancestor-button"), true);
+  assert.equal(ids.has("decor-node"), false);
+  assert.equal(countElements(screenChildren), 3);
+});
+
+test("figmaToDesignIrWithOptions prioritizes meaningful text over decorative containers", () => {
+  const ir = figmaToDesignIrWithOptions(createTextVsDecorativeFigmaFile(), {
+    screenElementBudget: 1
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  assert.equal(countElements(screenChildren), 1);
+  assert.equal(screenChildren[0]?.id, "meaningful-text");
+});
+
+test("figmaToDesignIrWithOptions remains deterministic for mixed-priority truncation", () => {
+  const first = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 4
+  });
+  const second = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 4
+  });
+
+  assert.deepEqual(first.screens[0].children, second.screens[0].children);
+  assert.deepEqual(first.metrics?.truncatedScreens, second.metrics?.truncatedScreens);
+});
+
+test("figmaToDesignIrWithOptions reports retainedElements matching actual truncated tree size", () => {
+  const ir = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 4
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const retainedMetric = ir.metrics?.truncatedScreens.find((entry) => entry.screenId === "screen-priority")?.retainedElements;
+  assert.equal(retainedMetric, countElements(screenChildren));
+  assert.equal((retainedMetric ?? 0) <= 4, true);
+  assert.ok(findElementById(screenChildren, "cta-node"));
 });
 
 test("figmaToDesignIrWithOptions applies MCP enrichment hints", () => {

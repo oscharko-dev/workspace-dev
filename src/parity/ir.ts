@@ -18,6 +18,7 @@ const PLACEHOLDER_TEXT_VALUES = new Set([
   "add description",
   "alternativtext"
 ]);
+const DECORATIVE_NAME_PATTERN = /(icon|decor|bg|background|shape|vector|spacer|divider)/i;
 
 interface FigmaColor {
   r: number;
@@ -759,6 +760,192 @@ const countElements = (elements: ScreenElementIR[]): number => {
   return total;
 };
 
+interface TruncationCandidate {
+  id: string;
+  ancestorIds: string[];
+  depth: number;
+  traversalIndex: number;
+  area: number;
+  score: number;
+  mustKeep: boolean;
+}
+
+const hasMeaningfulTextContent = (value: string | undefined): boolean => {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && !PLACEHOLDER_TEXT_VALUES.has(normalized);
+};
+
+const hasVisualSubstance = (element: ScreenElementIR): boolean => {
+  const hasPadding = element.padding
+    ? element.padding.top + element.padding.right + element.padding.bottom + element.padding.left > 0
+    : false;
+
+  return (
+    typeof element.fillColor === "string" ||
+    typeof element.strokeColor === "string" ||
+    (typeof element.strokeWidth === "number" && element.strokeWidth > 0) ||
+    (typeof element.cornerRadius === "number" && element.cornerRadius > 0) ||
+    (typeof element.gap === "number" && element.gap > 0) ||
+    hasPadding ||
+    (element.vectorPaths?.length ?? 0) > 0
+  );
+};
+
+const resolveElementBasePriority = (type: ScreenElementIR["type"]): number => {
+  switch (type) {
+    case "button":
+    case "input":
+    case "switch":
+    case "checkbox":
+    case "radio":
+    case "tab":
+    case "navigation":
+    case "stepper":
+      return 100;
+    case "text":
+    case "list":
+    case "dialog":
+    case "appbar":
+    case "card":
+      return 70;
+    case "chip":
+    case "avatar":
+    case "badge":
+    case "progress":
+    case "image":
+      return 55;
+    case "container":
+      return 35;
+    case "divider":
+      return 20;
+    default:
+      return 35;
+  }
+};
+
+const resolveElementArea = (element: ScreenElementIR): number => {
+  if (
+    typeof element.width === "number" &&
+    Number.isFinite(element.width) &&
+    element.width > 0 &&
+    typeof element.height === "number" &&
+    Number.isFinite(element.height) &&
+    element.height > 0
+  ) {
+    return Math.max(1, element.width * element.height);
+  }
+  return 1;
+};
+
+const resolveTruncationPriority = (
+  element: ScreenElementIR
+): {
+  score: number;
+  mustKeep: boolean;
+} => {
+  const basePriority = resolveElementBasePriority(element.type);
+  const meaningfulText = hasMeaningfulTextContent(element.text);
+  const visualSubstance = hasVisualSubstance(element);
+  const childCount = element.children?.length ?? 0;
+  const isDecorativeName = DECORATIVE_NAME_PATTERN.test(element.name);
+  const emptyDecorative = childCount === 0 && !meaningfulText && !visualSubstance;
+  let score = basePriority;
+
+  if (meaningfulText) {
+    score += 20;
+  }
+  if (visualSubstance) {
+    score += 10;
+  }
+  score += Math.min(childCount, 5) * 2;
+  if (emptyDecorative) {
+    score -= 20;
+  }
+  if (isDecorativeName) {
+    score -= 15;
+  }
+
+  return {
+    score,
+    mustKeep: basePriority >= 100 || (element.type === "text" && meaningfulText)
+  };
+};
+
+const collectTruncationCandidates = (elements: ScreenElementIR[]): TruncationCandidate[] => {
+  const candidates: TruncationCandidate[] = [];
+  const ancestorIds: string[] = [];
+  let traversalIndex = 0;
+
+  const visit = (element: ScreenElementIR, depth: number): void => {
+    const { score, mustKeep } = resolveTruncationPriority(element);
+    candidates.push({
+      id: element.id,
+      ancestorIds: [...ancestorIds],
+      depth,
+      traversalIndex,
+      area: resolveElementArea(element),
+      score,
+      mustKeep
+    });
+    traversalIndex += 1;
+    ancestorIds.push(element.id);
+    for (const child of element.children ?? []) {
+      visit(child, depth + 1);
+    }
+    ancestorIds.pop();
+  };
+
+  for (const element of elements) {
+    visit(element, 0);
+  }
+  return candidates;
+};
+
+const sortCandidatesByPriority = (candidates: TruncationCandidate[]): TruncationCandidate[] => {
+  return [...candidates].sort((left, right) => {
+    if (left.score !== right.score) {
+      return right.score - left.score;
+    }
+    if (left.area !== right.area) {
+      return right.area - left.area;
+    }
+    return left.traversalIndex - right.traversalIndex;
+  });
+};
+
+const pruneElementToSelection = ({
+  element,
+  selectedIds
+}: {
+  element: ScreenElementIR;
+  selectedIds: Set<string>;
+}): ScreenElementIR | null => {
+  if (!selectedIds.has(element.id)) {
+    return null;
+  }
+
+  const nextChildren: ScreenElementIR[] = [];
+  for (const child of element.children ?? []) {
+    const pruned = pruneElementToSelection({ element: child, selectedIds });
+    if (pruned) {
+      nextChildren.push(pruned);
+    }
+  }
+
+  const withoutChildren = { ...element };
+  delete withoutChildren.children;
+  if (nextChildren.length === 0) {
+    return withoutChildren;
+  }
+  return {
+    ...withoutChildren,
+    children: nextChildren
+  };
+};
+
 const truncateElementsToBudget = ({
   elements,
   budget
@@ -766,51 +953,74 @@ const truncateElementsToBudget = ({
   elements: ScreenElementIR[];
   budget: number;
 }): { elements: ScreenElementIR[]; retainedCount: number } => {
-  let remaining = budget;
-
-  const visit = (element: ScreenElementIR): ScreenElementIR | null => {
-    if (remaining <= 0) {
-      return null;
-    }
-    remaining -= 1;
-
-    const nextChildren: ScreenElementIR[] = [];
-    for (const child of element.children ?? []) {
-      const mapped = visit(child);
-      if (mapped) {
-        nextChildren.push(mapped);
-      }
-      if (remaining <= 0) {
-        break;
-      }
-    }
-
-    if (nextChildren.length === 0) {
-      const withoutChildren = { ...element };
-      delete withoutChildren.children;
-      return withoutChildren;
-    }
+  if (budget <= 0 || elements.length === 0) {
     return {
-      ...element,
-      children: nextChildren
+      elements: [],
+      retainedCount: 0
     };
+  }
+
+  const candidates = collectTruncationCandidates(elements);
+  if (candidates.length <= budget) {
+    return {
+      elements,
+      retainedCount: candidates.length
+    };
+  }
+
+  const selectedIds = new Set<string>();
+  let remaining = budget;
+  const sortedCandidates = sortCandidatesByPriority(candidates);
+
+  const selectCandidate = (candidate: TruncationCandidate): void => {
+    if (remaining <= 0 || selectedIds.has(candidate.id)) {
+      return;
+    }
+    const chain = [...candidate.ancestorIds, candidate.id];
+    const missingChain = chain.filter((id) => !selectedIds.has(id));
+    if (missingChain.length === 0 || missingChain.length > remaining) {
+      return;
+    }
+    for (const id of missingChain) {
+      selectedIds.add(id);
+      remaining -= 1;
+    }
   };
 
-  const truncated: ScreenElementIR[] = [];
-  for (const element of elements) {
-    const mapped = visit(element);
-    if (!mapped) {
-      break;
-    }
-    truncated.push(mapped);
+  for (const candidate of sortedCandidates.filter((entry) => entry.mustKeep)) {
+    selectCandidate(candidate);
     if (remaining <= 0) {
       break;
     }
   }
 
+  if (remaining > 0) {
+    for (const candidate of sortedCandidates) {
+      selectCandidate(candidate);
+      if (remaining <= 0) {
+        break;
+      }
+    }
+  }
+
+  if (remaining > 0 && selectedIds.size === 0) {
+    const fallbackCandidate = candidates.find((candidate) => candidate.depth === 0) ?? candidates[0];
+    if (fallbackCandidate) {
+      selectCandidate(fallbackCandidate);
+    }
+  }
+
+  const truncated: ScreenElementIR[] = [];
+  for (const element of elements) {
+    const pruned = pruneElementToSelection({ element, selectedIds });
+    if (pruned) {
+      truncated.push(pruned);
+    }
+  }
+
   return {
     elements: truncated,
-    retainedCount: budget - remaining
+    retainedCount: countElements(truncated)
   };
 };
 
