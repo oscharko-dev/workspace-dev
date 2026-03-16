@@ -493,6 +493,66 @@ test("fetchFigmaFile reduces staged batch size adaptively after repeated oversiz
   );
 });
 
+test("fetchFigmaFile runs staged node geometry batches concurrently", async () => {
+  let activeGeometryRequests = 0;
+  let maxActiveGeometryRequests = 0;
+
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocumentWithScreens(6));
+    }
+    if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+      const decoded = decodeURIComponent(asString);
+      const idsParam = decoded.split("ids=")[1]?.split("&")[0] ?? "";
+      const ids = idsParam.split(",").filter((entry) => entry.length > 0);
+
+      activeGeometryRequests += 1;
+      maxActiveGeometryRequests = Math.max(maxActiveGeometryRequests, activeGeometryRequests);
+      try {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 25);
+        });
+      } finally {
+        activeGeometryRequests -= 1;
+      }
+
+      return jsonResponse({
+        nodes: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              document: {
+                id,
+                type: "FRAME",
+                name: `Loaded ${id}`,
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          ])
+        )
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeBatchSize: 1,
+    nodeFetchConcurrency: 3,
+    adaptiveBatchingEnabled: false,
+    maxScreenCandidates: 6
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 6);
+  assert.equal(maxActiveGeometryRequests >= 2, true);
+});
+
 test("fetchFigmaFile recovers icon descendant geometry after no-geometry fallback", async () => {
   const observedUrls: string[] = [];
   const fetchImpl: typeof fetch = async (url) => {
