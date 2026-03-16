@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { fetchFigmaFile } from "./figma-source.js";
 
@@ -21,6 +24,9 @@ const createRequest = (fetchImpl: typeof fetch) => {
     nodeFetchConcurrency: 2,
     adaptiveBatchingEnabled: true,
     maxScreenCandidates: 40,
+    cacheEnabled: false,
+    cacheTtlMs: 15 * 60_000,
+    cacheDir: path.join(os.tmpdir(), "workspace-dev-figma-source-cache-disabled"),
     fetchImpl,
     onLog: () => {
       // no-op
@@ -99,6 +105,10 @@ const findNodeById = (node: unknown, targetId: string): Record<string, unknown> 
   }
 
   return undefined;
+};
+
+const createTempCacheDir = async (): Promise<string> => {
+  return await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-cache-"));
 };
 
 test("fetchFigmaFile returns direct geometry payload when request succeeds", async () => {
@@ -551,6 +561,308 @@ test("fetchFigmaFile runs staged node geometry batches concurrently", async () =
   assert.equal(result.diagnostics.sourceMode, "staged-nodes");
   assert.equal(result.diagnostics.fetchedNodes, 6);
   assert.equal(maxActiveGeometryRequests >= 2, true);
+});
+
+test("fetchFigmaFile uses cache for repeated direct geometry requests", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:00:00Z",
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+
+    assert.equal(first.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(second.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(first.file.name, "Demo-1");
+    assert.equal(second.file.name, "Demo-1");
+    assert.equal(metadataRequests, 2);
+    assert.equal(geometryRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("cache hit")), true);
+    assert.equal(logs.some((entry) => entry.includes("cache write completed")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile bypasses cache when metadata lastModified changes", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: metadataRequests === 1 ? "2026-03-16T05:10:00Z" : "2026-03-16T05:11:00Z",
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+    assert.equal(first.file.name, "Demo-1");
+    assert.equal(second.file.name, "Demo-2");
+    assert.equal(geometryRequests, 2);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile invalidates stale cache entries based on TTL", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:20:00Z",
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 5,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    await fetchFigmaFile(request);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+    await fetchFigmaFile(request);
+
+    assert.equal(geometryRequests, 2);
+    assert.equal(logs.some((entry) => entry.includes("cache stale")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile skips metadata/cache IO when cache is disabled", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        throw new Error("Metadata endpoint must not be called when cache is disabled.");
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: `Demo-${geometryRequests}`,
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: false,
+      cacheDir
+    });
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: false,
+      cacheDir
+    });
+
+    assert.equal(metadataRequests, 0);
+    assert.equal(geometryRequests, 2);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile falls back to fresh fetch when metadata request fails", async () => {
+  const cacheDir = await createTempCacheDir();
+  let metadataRequests = 0;
+  let geometryRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return new Response("metadata failure", { status: 500 });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        geometryRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const result = await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+    assert.equal(metadataRequests >= 1, true);
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile reuses cached staged result on repeated runs", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+  let metadataRequests = 0;
+  let directGeometryRequests = 0;
+  let bootstrapRequests = 0;
+  let nodeRequests = 0;
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        metadataRequests += 1;
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:30:00Z",
+          document: { id: "0:0", type: "DOCUMENT" }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        directGeometryRequests += 1;
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("?depth=5")) {
+        bootstrapRequests += 1;
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?") && asString.includes("geometry=paths")) {
+        nodeRequests += 1;
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    const request = {
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message: string) => {
+        logs.push(message);
+      }
+    };
+
+    const first = await fetchFigmaFile(request);
+    const second = await fetchFigmaFile(request);
+
+    assert.equal(first.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(second.diagnostics.sourceMode, "staged-nodes");
+    assert.equal(first.diagnostics.fetchedNodes, 2);
+    assert.equal(second.diagnostics.fetchedNodes, 2);
+    assert.equal(metadataRequests, 2);
+    assert.equal(directGeometryRequests, 1);
+    assert.equal(bootstrapRequests, 1);
+    assert.equal(nodeRequests, 1);
+    assert.equal(logs.some((entry) => entry.includes("cache hit")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
 });
 
 test("fetchFigmaFile recovers icon descendant geometry after no-geometry fallback", async () => {

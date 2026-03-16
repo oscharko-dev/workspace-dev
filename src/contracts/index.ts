@@ -54,6 +54,10 @@ export interface WorkspaceStartOptions {
   figmaAdaptiveBatchingEnabled?: boolean;
   /** Maximum staged screen candidates to fetch. Default: 40 */
   figmaMaxScreenCandidates?: number;
+  /** Enable file-system cache for figma.source fetches. Default: true */
+  figmaCacheEnabled?: boolean;
+  /** Cache TTL for figma.source entries in milliseconds. Default: 900000 */
+  figmaCacheTtlMs?: number;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
   figmaScreenElementBudget?: number;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
@@ -208,4 +212,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.1.0" as const;
+export const CONTRACT_VERSION = "2.2.0" as const;
