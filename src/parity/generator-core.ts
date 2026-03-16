@@ -962,6 +962,7 @@ interface SemanticIconModel {
 interface SemanticInputModel {
   labelNode?: ScreenElementIR | undefined;
   valueNode?: ScreenElementIR | undefined;
+  placeholderNode?: ScreenElementIR | undefined;
   labelIcon?: SemanticIconModel | undefined;
   suffixText?: string | undefined;
   suffixIcon?: SemanticIconModel | undefined;
@@ -972,6 +973,7 @@ interface InteractiveFieldModel {
   key: string;
   label: string;
   defaultValue: string;
+  placeholder?: string;
   isSelect: boolean;
   options: string[];
   suffixText?: string | undefined;
@@ -1290,6 +1292,23 @@ const INPUT_NAME_HINTS = [
   "textfield"
 ];
 
+const INPUT_PLACEHOLDER_TECHNICAL_VALUES = new Set([
+  "swap component",
+  "instance swap",
+  "add description",
+  "alternativtext"
+]);
+const INPUT_PLACEHOLDER_GENERIC_PATTERNS = [
+  /^(type|enter|your)(?:\s+text)?(?:\s+here)?$/i,
+  /^(label|title|subtitle|heading)$/i,
+  /^(xx(?:[./:-]xx)+)$/i,
+  /^\$?\s*0(?:[.,]0{2})?$/i,
+  /^\d{3}-\d{3}-\d{4}$/i,
+  /^[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}$/i,
+  /^(john|jane)\s+doe$/i,
+  /^[x•—–-]$/i
+];
+
 const ACCORDION_NAME_HINTS = ["accordion", "accordionsummarycontent", "collapsewrapper"];
 const PLACEHOLDER_TEXT_PATTERNS = [
   /\beingabe\s*\d+\b/i,
@@ -1309,6 +1328,24 @@ const isValueLikeText = (value: string): boolean => {
     return false;
   }
   return /\d/.test(trimmed) || trimmed.includes("%") || trimmed.includes("€") || /jahr/i.test(trimmed);
+};
+
+const normalizeInputPlaceholderText = (value: string): string => {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const isLikelyInputPlaceholderText = (value: string | undefined): boolean => {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = normalizeInputPlaceholderText(value);
+  if (!normalized) {
+    return false;
+  }
+  if (INPUT_PLACEHOLDER_TECHNICAL_VALUES.has(normalized)) {
+    return true;
+  }
+  return INPUT_PLACEHOLDER_GENERIC_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
 const splitTextRows = (texts: ScreenElementIR[]): { topRow: ScreenElementIR[]; bottomRow: ScreenElementIR[] } => {
@@ -1537,6 +1574,7 @@ const registerInteractiveField = ({
   }
 
   const label = model.labelNode?.text?.trim() ?? element.name;
+  const placeholder = model.placeholderNode?.text?.trim();
   const defaultValue = model.valueNode?.text?.trim() ?? "";
   const isSelect = model.isSelect;
   const options = isSelect ? deriveSelectOptions(defaultValue) : [];
@@ -1545,6 +1583,7 @@ const registerInteractiveField = ({
     key,
     label,
     defaultValue,
+    ...(placeholder && !isSelect ? { placeholder } : {}),
     isSelect,
     options,
     suffixText: isSelect ? undefined : model.suffixText,
@@ -1592,26 +1631,34 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
     const trimmed = value.trim();
     return trimmed === "€" || trimmed === "%" || trimmed === "$";
   };
+  const isPlaceholderNode = (node: ScreenElementIR): boolean => {
+    if (node.textRole === "placeholder") {
+      return true;
+    }
+    return isLikelyInputPlaceholderText(node.text);
+  };
 
   const { topRow, bottomRow } = splitTextRows(texts);
+  const placeholderNode =
+    bottomRow.find((node) => isPlaceholderNode(node)) ?? texts.find((node) => isPlaceholderNode(node));
   const labelNode =
     topRow.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
   const valueNode =
     bottomRow.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isSuffixText(text);
+      return text.length > 0 && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
   const labelIconNode =
@@ -1646,6 +1693,7 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
   return {
     labelNode,
     valueNode,
+    placeholderNode,
     labelIcon: labelIconNode
       ? {
           paths: labelIconNode.paths,
@@ -1749,9 +1797,10 @@ ${indent}</TextField>`;
   if (field.suffixText) {
     registerMuiImports(context, "InputAdornment");
   }
+  const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
-${indent}  value={formValues[${literal(field.key)}] ?? ""}
+${placeholderProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
 ${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}  sx={{
 ${indent}    ${fieldSx},
