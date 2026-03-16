@@ -245,6 +245,17 @@ const createRegressionScreen = () => ({
   ]
 });
 
+const extractMuiIconImportLines = (content: string): string[] => {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^import\s+\w+\s+from\s+"@mui\/icons-material/.test(line));
+};
+
+const hasMuiIconBarrelImport = (content: string): boolean => {
+  return /from\s+"@mui\/icons-material";/.test(content);
+};
+
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
@@ -533,6 +544,116 @@ test("deterministic screen rendering preserves auto-layout alignment and icon fa
   assert.ok(content.includes("IconButton"));
   assert.ok(content.includes('import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";'));
   assert.ok(content.includes('<IconButton aria-label="Bookmark Button"'));
+});
+
+test("deterministic screen rendering emits path-based imports and only imports used icons", () => {
+  const screen = {
+    id: "single-icon-screen",
+    name: "Single Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "single-bookmark-icon",
+        name: "ic_bookmark_outline",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 4,
+        y: 8,
+        width: 24,
+        height: 24,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+
+  assert.equal(hasMuiIconBarrelImport(content), false);
+  assert.deepEqual(iconImportLines, ['import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";']);
+});
+
+test("deterministic screen rendering deduplicates repeated icon imports", () => {
+  const screen = {
+    id: "duplicate-icon-screen",
+    name: "Duplicate Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "duplicate-bookmark-icon-1",
+        name: "ic_bookmark_outline",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 24,
+        height: 24,
+        children: []
+      },
+      {
+        id: "duplicate-bookmark-icon-2",
+        name: "ic_bookmark_outline",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 32,
+        y: 0,
+        width: 24,
+        height: 24,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+
+  assert.deepEqual(iconImportLines, ['import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";']);
+});
+
+test("deterministic screen rendering orders icon imports deterministically", () => {
+  const screen = {
+    id: "ordered-icon-screen",
+    name: "Ordered Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "search-icon",
+        name: "ic_search",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 24,
+        height: 24,
+        children: []
+      },
+      {
+        id: "add-icon",
+        name: "ic_add",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 32,
+        y: 0,
+        width: 24,
+        height: 24,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+
+  assert.deepEqual(iconImportLines, [
+    'import AddIcon from "@mui/icons-material/Add";',
+    'import SearchIcon from "@mui/icons-material/Search";'
+  ]);
 });
 
 test("deterministic screen rendering deduplicates duplicate sx keys for icon fallbacks", () => {
