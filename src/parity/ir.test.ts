@@ -2210,6 +2210,9 @@ test("figmaToDesignIrWithOptions groups responsive screen variants and emits bre
     throw new Error("Expected desktop actions node");
   }
   assert.equal(screen?.responsive?.topLevelLayoutOverrides?.[desktopActions.id]?.xs?.layoutMode, "VERTICAL");
+  assert.equal(screen?.responsive?.topLevelLayoutOverrides?.[desktopActions.id]?.xs?.widthRatio, undefined);
+  assert.equal(screen?.responsive?.topLevelLayoutOverrides?.[desktopActions.id]?.xs?.minHeight, 120);
+  assert.equal(screen?.responsive?.topLevelLayoutOverrides?.[desktopActions.id]?.sm?.widthRatio, 0.875);
 });
 
 test("figmaToDesignIrWithOptions derives responsive metadata deterministically", () => {
