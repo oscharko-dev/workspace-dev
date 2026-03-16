@@ -1422,6 +1422,79 @@ const createResponsiveVariantFigmaFile = () => ({
   }
 });
 
+const createGradientFillFigmaFile = () => ({
+  name: "Gradient Fill Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "gradient-screen",
+            type: "FRAME",
+            name: "Gradient Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+            fills: [
+              {
+                type: "LINEAR_GRADIENT",
+                gradientStops: [
+                  { position: 0, color: toFigmaColor("#d4001a") },
+                  { position: 1, color: toFigmaColor("#f0b400") }
+                ],
+                gradientHandlePositions: [
+                  { x: 0, y: 0 },
+                  { x: 1, y: 0 }
+                ]
+              }
+            ],
+            children: [
+              {
+                id: "gradient-linear-node",
+                type: "FRAME",
+                name: "Linear Card",
+                absoluteBoundingBox: { x: 48, y: 120, width: 560, height: 220 },
+                fills: [
+                  {
+                    type: "GRADIENT_LINEAR",
+                    gradientStops: [
+                      { position: 0, color: toFigmaColor("#d4001a") },
+                      { position: 1, color: toFigmaColor("#c26f00") }
+                    ],
+                    gradientHandlePositions: [
+                      { x: 0, y: 0 },
+                      { x: 0.8, y: 0.4 }
+                    ]
+                  }
+                ],
+                children: []
+              },
+              {
+                id: "gradient-radial-node",
+                type: "FRAME",
+                name: "Radial Card",
+                absoluteBoundingBox: { x: 640, y: 120, width: 560, height: 220 },
+                fills: [
+                  {
+                    type: "GRADIENT_RADIAL",
+                    gradientStops: [
+                      { position: 0, color: toFigmaColor("#fff5d6") },
+                      { position: 1, color: toFigmaColor("#d4001a") }
+                    ]
+                  }
+                ],
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 test("figmaToDesignIrWithOptions groups responsive screen variants and emits breakpoint metadata", () => {
   const ir = figmaToDesignIrWithOptions(createResponsiveVariantFigmaFile());
 
@@ -1454,6 +1527,28 @@ test("figmaToDesignIrWithOptions derives responsive metadata deterministically",
 
   assert.deepEqual(first.screens, second.screens);
   assert.deepEqual(first.metrics?.screenElementCounts, second.metrics?.screenElementCounts);
+});
+
+test("figmaToDesignIrWithOptions maps linear and radial gradient fills on screen and elements", () => {
+  const ir = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
+  const screen = ir.screens[0];
+  assert.ok(screen);
+  assert.equal(screen?.id, "gradient-screen");
+  assert.equal(typeof screen?.fillGradient, "string");
+  assert.equal(screen?.fillGradient?.startsWith("linear-gradient("), true);
+
+  const linearNode = screen?.children.find((child) => child.id === "gradient-linear-node");
+  const radialNode = screen?.children.find((child) => child.id === "gradient-radial-node");
+  assert.ok(linearNode);
+  assert.ok(radialNode);
+  assert.equal(linearNode?.fillGradient?.startsWith("linear-gradient("), true);
+  assert.equal(radialNode?.fillGradient?.startsWith("radial-gradient("), true);
+});
+
+test("figmaToDesignIrWithOptions derives gradient fill metadata deterministically", () => {
+  const first = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
+  const second = figmaToDesignIrWithOptions(createGradientFillFigmaFile());
+  assert.deepEqual(first.screens, second.screens);
 });
 
 test("deriveTokensForTesting prioritizes semantic button and heading colors over decorative fills", () => {

@@ -37,10 +37,12 @@ const ALLOWED_NODE_KEYS = new Set([
 ]);
 
 const ALLOWED_COLOR_KEYS = new Set(["r", "g", "b", "a"]);
-const ALLOWED_PAINT_KEYS = new Set(["type", "color", "opacity"]);
+const ALLOWED_PAINT_KEYS = new Set(["type", "color", "opacity", "gradientStops", "gradientHandlePositions"]);
 const ALLOWED_BOX_KEYS = new Set(["x", "y", "width", "height"]);
 const ALLOWED_STYLE_KEYS = new Set(["fontSize", "fontWeight", "fontFamily", "lineHeightPx", "textAlignHorizontal"]);
 const ALLOWED_GEOMETRY_KEYS = new Set(["path", "windingRule"]);
+const ALLOWED_GRADIENT_STOP_KEYS = new Set(["position", "color"]);
+const ALLOWED_GRADIENT_HANDLE_POSITION_KEYS = new Set(["x", "y"]);
 const ALLOWED_COMPONENT_PROPERTY_KEYS = new Set(["type", "value"]);
 const ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS = new Set(["type", "defaultValue", "variantOptions"]);
 
@@ -159,6 +161,64 @@ const sanitizeColor = (value: unknown, metrics: FigmaCleaningAccumulator): Recor
   return "r" in next && "g" in next && "b" in next ? next : undefined;
 };
 
+const sanitizeGradientStops = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): Array<{ position: number; color: Record<string, number> }> | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const next = value
+    .map((stopCandidate) => {
+      if (!isRecord(stopCandidate)) {
+        return undefined;
+      }
+      metrics.removedPropertyCount += countRemovedKeys(stopCandidate, ALLOWED_GRADIENT_STOP_KEYS);
+      if (!isFiniteNumber(stopCandidate.position)) {
+        return undefined;
+      }
+      const color = sanitizeColor(stopCandidate.color, metrics);
+      if (!color) {
+        return undefined;
+      }
+      return {
+        position: stopCandidate.position,
+        color
+      };
+    })
+    .filter((stop): stop is { position: number; color: Record<string, number> } => Boolean(stop));
+
+  return next.length > 0 ? next : undefined;
+};
+
+const sanitizeGradientHandlePositions = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): Array<{ x: number; y: number }> | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const next = value
+    .map((positionCandidate) => {
+      if (!isRecord(positionCandidate)) {
+        return undefined;
+      }
+      metrics.removedPropertyCount += countRemovedKeys(positionCandidate, ALLOWED_GRADIENT_HANDLE_POSITION_KEYS);
+      if (!isFiniteNumber(positionCandidate.x) || !isFiniteNumber(positionCandidate.y)) {
+        return undefined;
+      }
+      return {
+        x: positionCandidate.x,
+        y: positionCandidate.y
+      };
+    })
+    .filter((position): position is { x: number; y: number } => Boolean(position));
+
+  return next.length > 0 ? next : undefined;
+};
+
 const sanitizePaints = (value: unknown, metrics: FigmaCleaningAccumulator): Array<Record<string, unknown>> | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
@@ -173,18 +233,43 @@ const sanitizePaints = (value: unknown, metrics: FigmaCleaningAccumulator): Arra
       metrics.removedPropertyCount += countRemovedKeys(paintCandidate, ALLOWED_PAINT_KEYS);
 
       const type = typeof paintCandidate.type === "string" ? paintCandidate.type : undefined;
-      if (type !== "SOLID") {
+      if (!type) {
+        return undefined;
+      }
+      const normalizedType = type.trim().toUpperCase();
+
+      if (normalizedType === "SOLID") {
+        const color = sanitizeColor(paintCandidate.color, metrics);
+        if (!color) {
+          return undefined;
+        }
+
+        const nextPaint: Record<string, unknown> = { type: normalizedType, color };
+        if (isFiniteNumber(paintCandidate.opacity)) {
+          nextPaint.opacity = paintCandidate.opacity;
+        }
+        return nextPaint;
+      }
+
+      if (!normalizedType.includes("GRADIENT")) {
         return undefined;
       }
 
-      const color = sanitizeColor(paintCandidate.color, metrics);
-      if (!color) {
+      const gradientStops = sanitizeGradientStops(paintCandidate.gradientStops, metrics);
+      if (!gradientStops) {
         return undefined;
       }
 
-      const nextPaint: Record<string, unknown> = { type, color };
+      const nextPaint: Record<string, unknown> = {
+        type: normalizedType,
+        gradientStops
+      };
       if (isFiniteNumber(paintCandidate.opacity)) {
         nextPaint.opacity = paintCandidate.opacity;
+      }
+      const gradientHandlePositions = sanitizeGradientHandlePositions(paintCandidate.gradientHandlePositions, metrics);
+      if (gradientHandlePositions) {
+        nextPaint.gradientHandlePositions = gradientHandlePositions;
       }
       return nextPaint;
     })

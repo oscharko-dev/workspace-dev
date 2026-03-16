@@ -252,6 +252,7 @@ const mapCounterAxisAlignToAlignItems = (
 const hasVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
     element.fillColor ||
+      element.fillGradient ||
       element.strokeColor ||
       (element.cornerRadius ?? 0) > 0 ||
       (element.padding &&
@@ -382,6 +383,24 @@ const sxString = (entries: Array<[string, string | number | undefined]>): string
   return deduped.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
 };
 
+const toPaintSxEntries = ({
+  fillColor,
+  fillGradient,
+  includePaints
+}: {
+  fillColor: ScreenElementIR["fillColor"];
+  fillGradient: ScreenElementIR["fillGradient"];
+  includePaints: boolean;
+}): Array<[string, string | number | undefined]> => {
+  if (!includePaints) {
+    return [];
+  }
+  return [
+    ["background", fillGradient ? literal(fillGradient) : undefined],
+    ["bgcolor", !fillGradient && fillColor ? literal(fillColor) : undefined]
+  ];
+};
+
 const toVariantStateSxObject = (style: VariantStateStyle | undefined): string | undefined => {
   if (!style) {
     return undefined;
@@ -504,7 +523,11 @@ const baseLayoutEntries = (
     ["pr", element.padding && element.padding.right > 0 ? toPxLiteral(element.padding.right) : undefined],
     ["pb", element.padding && element.padding.bottom > 0 ? toPxLiteral(element.padding.bottom) : undefined],
     ["pl", element.padding && element.padding.left > 0 ? toPxLiteral(element.padding.left) : undefined],
-    ["bgcolor", includePaints && element.fillColor ? literal(element.fillColor) : undefined],
+    ...toPaintSxEntries({
+      fillColor: element.fillColor,
+      fillGradient: element.fillGradient,
+      includePaints
+    }),
     [
       "border",
       includePaints && element.strokeColor
@@ -1270,7 +1293,9 @@ const isLikelyInputContainer = (element: ScreenElementIR): boolean => {
     return false;
   }
 
-  const hasDirectVisualContainer = Boolean(element.strokeColor || element.fillColor || (element.cornerRadius ?? 0) > 0);
+  const hasDirectVisualContainer = Boolean(
+    element.strokeColor || element.fillColor || element.fillGradient || (element.cornerRadius ?? 0) > 0
+  );
   const width = element.width ?? 0;
   const height = element.height ?? 0;
   const sizeLooksLikeField = width >= 120 && height >= 36 && height <= 120;
@@ -1894,7 +1919,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     sx,
     element
   });
-  const variant = mappedMuiProps?.variant ?? (element.fillColor ? "contained" : "outlined");
+  const variant = mappedMuiProps?.variant ?? (element.fillColor || element.fillGradient ? "contained" : "outlined");
   const sizeProp = mappedMuiProps?.size ? ` size="${mappedMuiProps.size}"` : "";
   const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
@@ -1911,7 +1936,8 @@ const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
   const isPill = (element.cornerRadius ?? 0) >= 32;
   const texts = collectTextNodes(element);
   const hasSingleText = texts.length >= 1 && Boolean(texts[0]?.text?.trim());
-  const noFill = !element.fillColor || element.fillColor === "#ffffff" || element.fillColor === "#FFFFFF";
+  const noFill =
+    (!element.fillColor || element.fillColor === "#ffffff" || element.fillColor === "#FFFFFF") && !element.fillGradient;
   return hasStroke && isPill && hasSingleText && noFill;
 };
 
@@ -2530,6 +2556,15 @@ const fallbackScreenFile = ({
     ["minHeight", literal(`${contentHeight}px`)],
     ...toScreenResponsiveRootMediaEntries(screen)
   ]);
+  const screenRootSx = sxString([
+    ["minHeight", literal("100vh")],
+    ["background", screen.fillGradient ? literal(screen.fillGradient) : undefined],
+    ["bgcolor", !screen.fillGradient ? literal(screen.fillColor ?? "background.default") : undefined],
+    ["display", literal("flex")],
+    ["justifyContent", literal("center")],
+    ["px", literal("0px")],
+    ["py", literal("0px")]
+  ]);
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const selectOptionsMap = Object.fromEntries(
@@ -2580,7 +2615,7 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: ${literal(screen.fillColor ?? "background.default")}, display: "flex", justifyContent: "center", px: "0px", py: "0px" }}>
+    <Box sx={{ ${screenRootSx} }}>
       <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", py: "16px" }}>
         <Box sx={{ ${contentRootSx} }}>
 ${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}

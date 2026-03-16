@@ -849,6 +849,58 @@ test("deterministic screen rendering keeps fallback behavior when responsive met
   assert.equal(content.includes("@media ("), false);
 });
 
+test("deterministic screen rendering emits gradient background sx and uses contained fallback for gradient buttons", () => {
+  const screen = {
+    id: "gradient-screen",
+    name: "Gradient Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 0,
+    fillGradient: "linear-gradient(90deg, #d4001a 0%, #f0b400 100%)",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "gradient-hero",
+        name: "Gradient Hero",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 520,
+        height: 180,
+        fillGradient: "radial-gradient(circle, #fff5d6 0%, #d4001a 100%)",
+        children: []
+      },
+      {
+        id: "gradient-button",
+        name: "Continue",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 200,
+        width: 220,
+        height: 48,
+        fillGradient: "linear-gradient(135deg, #d4001a 0%, #f06a00 100%)",
+        children: [
+          {
+            id: "gradient-button-text",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Weiter"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('background: "linear-gradient(90deg, #d4001a 0%, #f0b400 100%)"'));
+  assert.ok(content.includes('background: "radial-gradient(circle, #fff5d6 0%, #d4001a 100%)"'));
+  assert.ok(content.includes('background: "linear-gradient(135deg, #d4001a 0%, #f06a00 100%)"'));
+  assert.ok(content.includes('<Button variant="contained"'));
+  assert.equal(content.includes('bgcolor: "background.default"'), false);
+});
+
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-truncation-"));
   const ir = createIr();
