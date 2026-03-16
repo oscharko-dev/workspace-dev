@@ -2742,8 +2742,12 @@ const renderGridLayout = ({
         },
         context
       );
+      const resolvedChildContent = childContent ?? (() => {
+        registerMuiImports(context, "Box");
+        return `${indent}    <Box />`;
+      })();
       return `${indent}  <Grid key={${literal(item.id)}} size={{ xs: 12, sm: ${smSize}, md: ${mdSize} }}>
-${childContent ?? `${indent}    <Box />`}
+${resolvedChildContent}
 ${indent}  </Grid>`;
     })
     .join("\n");
@@ -2767,6 +2771,9 @@ const toMuiContainerMaxWidth = (contentWidth: number): "sm" | "md" | "lg" | "xl"
   }
   if (contentWidth <= 1200) {
     return "lg";
+  }
+  if (contentWidth <= 1536) {
+    return "xl";
   }
   return "xl";
 };
@@ -3445,7 +3452,6 @@ const renderContainer = (
   parent: VirtualParent,
   context: RenderContext
 ): string | null => {
-  registerMuiImports(context, "Box");
   const indent = "  ".repeat(depth);
   if (isLikelyAccordionContainer(element)) {
     return renderSemanticAccordion(element, depth, parent, context);
@@ -3550,9 +3556,11 @@ const renderContainer = (
     if (!hasVisualStyle(element)) {
       return null;
     }
+    registerMuiImports(context, "Box");
     return `${indent}<Box sx={{ ${sx} }} />`;
   }
 
+  registerMuiImports(context, "Box");
   return `${indent}<Box sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Box>`;
@@ -3753,7 +3761,7 @@ const fallbackScreenFile = ({
   const renderContext: RenderContext = {
     fields: [],
     accordions: [],
-    muiImports: new Set<string>(["Box", "Container"]),
+    muiImports: new Set<string>(["Container"]),
     iconImports: [],
     mappedImports: [],
     spacingBase: resolvedSpacingBase,
@@ -3816,18 +3824,12 @@ const fallbackScreenFile = ({
       }, 0)
     )
   );
-  const contentRootSx = sxString([
+  const containerMaxWidth = toMuiContainerMaxWidth(contentWidth);
+  const containerPadding = toSpacingUnitValue({ value: 16, spacingBase: renderContext.spacingBase }) ?? 2;
+  const screenContainerSx = sxString([
     ["position", literal("relative")],
     ["width", literal("100%")],
-    ["minHeight", literal(`${contentHeight}px`)],
-    ...toScreenResponsiveRootMediaEntries({
-      screen,
-      spacingBase: renderContext.spacingBase
-    })
-  ]);
-  const containerMaxWidth = toMuiContainerMaxWidth(contentWidth);
-  const screenRootSx = sxString([
-    ["minHeight", literal("100vh")],
+    ["minHeight", literal(`max(100vh, ${contentHeight}px)`)],
     ["background", screen.fillGradient ? literal(screen.fillGradient) : undefined],
     [
       "bgcolor",
@@ -3835,11 +3837,14 @@ const fallbackScreenFile = ({
         ? toThemeColorLiteral({ color: screen.fillColor ?? "background.default", tokens: renderContext.tokens })
         : undefined
     ],
-    ["display", literal("block")],
-    ["px", 0],
-    ["py", 0]
+    ["px", containerPadding],
+    ["py", containerPadding],
+    ["boxSizing", literal("border-box")],
+    ...toScreenResponsiveRootMediaEntries({
+      screen,
+      spacingBase: renderContext.spacingBase
+    })
   ]);
-  const containerPadding = toSpacingUnitValue({ value: 16, spacingBase: renderContext.spacingBase }) ?? 2;
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const selectOptionsMap = Object.fromEntries(
@@ -3890,13 +3895,9 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
-    <Box sx={{ ${screenRootSx} }}>
-      <Container maxWidth="${containerMaxWidth}" sx={{ width: "100%", px: ${containerPadding}, boxSizing: "border-box", py: ${containerPadding} }}>
-        <Box sx={{ ${contentRootSx} }}>
-${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
-        </Box>
-      </Container>
-    </Box>
+    <Container maxWidth="${containerMaxWidth}" sx={{ ${screenContainerSx} }}>
+${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+    </Container>
   );
 }
 `
