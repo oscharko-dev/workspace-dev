@@ -216,6 +216,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           }
           const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
             screenElementBudget: runtime.figmaScreenElementBudget,
+            screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
             brandTheme: resolvedBrandTheme,
             sourceMetrics: {
               fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
@@ -230,6 +231,24 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             });
           }
           await writeFile(designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
+          const depthTruncatedScreens = derived.metrics?.depthTruncatedScreens ?? [];
+          if (depthTruncatedScreens.length > 0) {
+            const summary = depthTruncatedScreens
+              .slice(0, 3)
+              .map(
+                (entry) =>
+                  `'${entry.screenName}' branches=${entry.truncatedBranchCount} firstDepth=${entry.firstTruncatedDepth}`
+              )
+              .join("; ");
+            pushLog({
+              job,
+              level: "warn",
+              stage: "ir.derive",
+              message:
+                `Dynamic depth truncation applied on ${depthTruncatedScreens.length} screen(s) ` +
+                `(maxDepth=${runtime.figmaScreenElementMaxDepth}). ${summary}`
+            });
+          }
           pushLog({
             job,
             level: "info",
@@ -237,7 +256,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             message:
               `Derived Design IR with ${derived.screens.length} screens (brandTheme=${resolvedBrandTheme}, ` +
               `skippedHidden=${derived.metrics?.skippedHidden ?? 0}, skippedPlaceholders=${derived.metrics?.skippedPlaceholders ?? 0}, ` +
-              `truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}).`
+              `truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}, ` +
+              `depthTruncatedScreens=${derived.metrics?.depthTruncatedScreens?.length ?? 0}).`
           });
           return derived;
         }

@@ -130,6 +130,7 @@ workspace-dev start [options]
 - `--no-cache` (default `false`, disables figma.source file-system cache)
 - `--figma-cache-ttl-ms <ms>` (default `900000`)
 - `--figma-screen-element-budget <n>` (default `1200`)
+- `--figma-screen-element-max-depth <n>` (default `14`)
 - `--brand <derived|sparkasse>` (default `derived`)
 - `--command-timeout-ms <ms>` (default `900000`)
 - `--ui-validation <true|false>` (default `false`)
@@ -153,6 +154,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_NO_CACHE`
 - `FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH`
 - `FIGMAPIPE_WORKSPACE_BRAND`
 - `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`

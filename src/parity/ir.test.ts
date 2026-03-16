@@ -580,6 +580,147 @@ const createTextVsDecorativeFigmaFile = () => ({
   }
 });
 
+const createDynamicDepthFigmaFile = () => ({
+  name: "Dynamic Depth",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-depth-dynamic",
+            type: "FRAME",
+            name: "Dynamic Depth Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1024, height: 768 },
+            children: [
+              {
+                id: "decor-root",
+                type: "FRAME",
+                name: "Decor Wrapper",
+                absoluteBoundingBox: { x: 0, y: 0, width: 300, height: 160 },
+                children: [
+                  {
+                    id: "decor-mid",
+                    type: "FRAME",
+                    name: "Decor Layer",
+                    absoluteBoundingBox: { x: 0, y: 0, width: 280, height: 140 },
+                    children: [
+                      {
+                        id: "decor-leaf",
+                        type: "FRAME",
+                        name: "Decor Shape",
+                        absoluteBoundingBox: { x: 0, y: 0, width: 260, height: 120 },
+                        children: []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                id: "semantic-root",
+                type: "FRAME",
+                name: "Form Root",
+                absoluteBoundingBox: { x: 0, y: 200, width: 500, height: 320 },
+                children: [
+                  {
+                    id: "semantic-step",
+                    type: "FRAME",
+                    name: "Step Content",
+                    absoluteBoundingBox: { x: 0, y: 220, width: 480, height: 280 },
+                    children: [
+                      {
+                        id: "semantic-action",
+                        type: "FRAME",
+                        name: "Action Container",
+                        absoluteBoundingBox: { x: 0, y: 240, width: 440, height: 120 },
+                        children: [
+                          {
+                            id: "deep-cta",
+                            type: "FRAME",
+                            name: "Primary Button",
+                            fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                            absoluteBoundingBox: { x: 0, y: 260, width: 240, height: 56 },
+                            children: []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createDepthPressureFigmaFile = () => ({
+  name: "Depth Pressure",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-depth-pressure",
+            type: "FRAME",
+            name: "Depth Pressure Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 900 },
+            children: [
+              {
+                id: "pressure-root",
+                type: "FRAME",
+                name: "Pressure Root",
+                absoluteBoundingBox: { x: 0, y: 0, width: 1100, height: 800 },
+                children: Array.from({ length: 26 }, (_, index) => ({
+                  id: `pressure-branch-${index + 1}`,
+                  type: "FRAME",
+                  name: index === 0 ? "Semantic Branch" : `Decor Branch ${index + 1}`,
+                  absoluteBoundingBox: { x: 0, y: index * 24, width: 500, height: 24 },
+                  children: [
+                    {
+                      id: `pressure-inner-${index + 1}`,
+                      type: "FRAME",
+                      name: index === 0 ? "Semantic Inner" : `Decor Inner ${index + 1}`,
+                      absoluteBoundingBox: { x: 0, y: index * 24, width: 220, height: 20 },
+                      children: [
+                        index === 0
+                          ? {
+                              id: "pressure-cta",
+                              type: "FRAME",
+                              name: "Primary Button",
+                              fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                              absoluteBoundingBox: { x: 0, y: index * 24, width: 200, height: 20 },
+                              children: []
+                            }
+                          : {
+                              id: `pressure-leaf-${index + 1}`,
+                              type: "FRAME",
+                              name: "Decor Shape",
+                              absoluteBoundingBox: { x: 0, y: index * 24, width: 200, height: 20 },
+                              children: []
+                            }
+                      ]
+                    }
+                  ]
+                }))
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
   assert.throws(
     () => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }),
@@ -806,6 +947,40 @@ test("figmaToDesignIrWithOptions reports retainedElements matching actual trunca
   assert.equal(retainedMetric, countElements(screenChildren));
   assert.equal((retainedMetric ?? 0) <= 4, true);
   assert.ok(findElementById(screenChildren, "cta-node"));
+});
+
+test("figmaToDesignIrWithOptions applies configurable dynamic depth and keeps semantic deep nodes", () => {
+  const ir = figmaToDesignIrWithOptions(createDynamicDepthFigmaFile(), {
+    screenElementBudget: 200,
+    screenElementMaxDepth: 1
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const ids = new Set(collectElementIds(screenChildren));
+  assert.equal(ids.has("deep-cta"), true);
+  assert.equal(ids.has("decor-leaf"), false);
+
+  const depthMetrics = ir.metrics?.depthTruncatedScreens ?? [];
+  assert.equal(depthMetrics.length, 1);
+  assert.equal(depthMetrics[0]?.screenId, "screen-depth-dynamic");
+  assert.equal((depthMetrics[0]?.truncatedBranchCount ?? 0) >= 1, true);
+  assert.equal((depthMetrics[0]?.firstTruncatedDepth ?? 0) >= 2, true);
+});
+
+test("figmaToDesignIrWithOptions tightens depth traversal under level pressure and low remaining budget", () => {
+  const ir = figmaToDesignIrWithOptions(createDepthPressureFigmaFile(), {
+    screenElementBudget: 1,
+    screenElementMaxDepth: 1
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ id: string; children?: unknown[] }>;
+  const ids = new Set(collectElementIds(screenChildren));
+  assert.equal(ids.has("pressure-cta"), false);
+
+  const depthMetrics = ir.metrics?.depthTruncatedScreens ?? [];
+  assert.equal(depthMetrics.length, 1);
+  assert.equal(depthMetrics[0]?.screenId, ir.screens[0]?.id);
+  assert.equal((depthMetrics[0]?.truncatedBranchCount ?? 0) >= 1, true);
 });
 
 test("figmaToDesignIrWithOptions applies MCP enrichment hints", () => {

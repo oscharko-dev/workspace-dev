@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.5.0] - 2026-03-16
+
+### Dynamic IR depth traversal baseline configuration
+
+Added:
+
+- `WorkspaceStartOptions.figmaScreenElementMaxDepth?: number` (default `14`)
+
 ## [2.4.0] - 2026-03-16
 
 ### Brand theme policy for IR token derivation
