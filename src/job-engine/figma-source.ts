@@ -13,6 +13,7 @@ const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
 const MAX_ICON_RECOVERY_AREA = MAX_ICON_RECOVERY_DIMENSION * MAX_ICON_RECOVERY_DIMENSION;
 const FIGMA_CACHE_ENTRY_VERSION = 1;
+const FIGMA_CACHE_LATEST_INDEX_VERSION = 1;
 
 interface FigmaCacheEntry {
   version: number;
@@ -20,8 +21,17 @@ interface FigmaCacheEntry {
   lastModified: string;
   cachedAt: number;
   ttlMs: number;
+  fileVersionId?: string;
+  candidateSubtreeHashes?: Record<string, string>;
   diagnostics: FigmaFetchResult["diagnostics"];
   file: FigmaFetchResult["file"];
+}
+
+interface FigmaCacheLatestIndex {
+  version: number;
+  fileKey: string;
+  lastModified: string;
+  updatedAt: number;
 }
 
 interface FigmaNodeLike {
@@ -39,6 +49,12 @@ interface FigmaNodeLike {
 
 interface FigmaFileLike extends FigmaFileResponse {
   document?: FigmaNodeLike;
+}
+
+interface FigmaStagedIncrementalContext {
+  fileVersionId?: string;
+  previousRootNode: FigmaNodeLike;
+  previousCandidateSubtreeHashes: Record<string, string>;
 }
 
 class FigmaTooLargeError extends Error {
@@ -395,6 +411,43 @@ const toFigmaCacheFilePath = ({
   return path.join(cacheDir, `${hash}.json`);
 };
 
+const toFigmaCacheLatestIndexPath = ({
+  cacheDir,
+  fileKey
+}: {
+  cacheDir: string;
+  fileKey: string;
+}): string => {
+  const hash = createHash("sha256").update(fileKey).digest("hex");
+  return path.join(cacheDir, `${hash}.latest.json`);
+};
+
+const toCanonicalJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => toCanonicalJsonValue(entry));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  const output: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort((left, right) => left.localeCompare(right))) {
+    output[key] = toCanonicalJsonValue(value[key]);
+  }
+  return output;
+};
+
+const toNodeSubtreeHash = (node: FigmaNodeLike): string => {
+  const canonical = toCanonicalJsonValue(node);
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+};
+
+const toSortedHashRecord = (hashes: Map<string, string>): Record<string, string> => {
+  const sortedEntries = [...hashes.entries()]
+    .filter(([id, hash]) => id.length > 0 && hash.length > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return Object.fromEntries(sortedEntries);
+};
+
 const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
   if (!isRecord(payload)) {
     return undefined;
@@ -409,6 +462,24 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
 
   const sourceMode = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.sourceMode : undefined;
   const fetchedNodes = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.fetchedNodes : undefined;
+  const fileVersionId = typeof payload.fileVersionId === "string" ? payload.fileVersionId : undefined;
+  const candidateSubtreeHashesRaw = payload.candidateSubtreeHashes;
+  let candidateSubtreeHashes: Record<string, string> | undefined;
+  if (candidateSubtreeHashesRaw !== undefined) {
+    if (!isRecord(candidateSubtreeHashesRaw)) {
+      return undefined;
+    }
+    const parsedHashes: Record<string, string> = {};
+    for (const [nodeId, hash] of Object.entries(candidateSubtreeHashesRaw)) {
+      if (typeof hash !== "string") {
+        return undefined;
+      }
+      if (nodeId.length > 0 && hash.length > 0) {
+        parsedHashes[nodeId] = hash;
+      }
+    }
+    candidateSubtreeHashes = parsedHashes;
+  }
   if (
     (sourceMode !== "geometry-paths" && sourceMode !== "staged-nodes") ||
     typeof fetchedNodes !== "number" ||
@@ -432,7 +503,7 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
     return undefined;
   }
 
-  return {
+  const cacheEntry: FigmaCacheEntry = {
     version: payload.version,
     fileKey: payload.fileKey,
     lastModified: payload.lastModified,
@@ -445,28 +516,53 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
     },
     file: payload.file
   };
+  if (typeof fileVersionId === "string" && fileVersionId.length > 0) {
+    cacheEntry.fileVersionId = fileVersionId;
+  }
+  if (candidateSubtreeHashes && Object.keys(candidateSubtreeHashes).length > 0) {
+    cacheEntry.candidateSubtreeHashes = candidateSubtreeHashes;
+  }
+  return cacheEntry;
 };
 
-const readCachedFigmaResult = async ({
+const toLatestCacheIndex = (payload: unknown): FigmaCacheLatestIndex | undefined => {
+  if (
+    !isRecord(payload) ||
+    typeof payload.version !== "number" ||
+    !Number.isFinite(payload.version) ||
+    typeof payload.fileKey !== "string" ||
+    typeof payload.lastModified !== "string" ||
+    typeof payload.updatedAt !== "number" ||
+    !Number.isFinite(payload.updatedAt)
+  ) {
+    return undefined;
+  }
+  return {
+    version: payload.version,
+    fileKey: payload.fileKey,
+    lastModified: payload.lastModified,
+    updatedAt: payload.updatedAt
+  };
+};
+
+const readCacheEntryFile = async ({
   cacheFilePath,
   fileKey,
-  lastModified,
-  cacheTtlMs,
-  onLog
+  onLog,
+  cacheMissLabel
 }: {
   cacheFilePath: string;
   fileKey: string;
-  lastModified: string;
-  cacheTtlMs: number;
   onLog: (message: string) => void;
-}): Promise<FigmaFetchResult | undefined> => {
+  cacheMissLabel: string;
+}): Promise<FigmaCacheEntry | undefined> => {
   let raw: string;
   try {
     raw = await readFile(cacheFilePath, "utf8");
   } catch (error) {
     const maybeError = error as NodeJS.ErrnoException;
     if (maybeError.code === "ENOENT") {
-      onLog(`Figma cache miss for file '${fileKey}' (no cache entry).`);
+      onLog(`Figma cache miss for file '${fileKey}' (${cacheMissLabel}).`);
       return undefined;
     }
     onLog(`Figma cache read failed for file '${fileKey}': ${getErrorMessage(error)}.`);
@@ -482,12 +578,36 @@ const readCachedFigmaResult = async ({
   }
 
   const cacheEntry = toCacheEntry(parsed);
-  if (
-    !cacheEntry ||
-    cacheEntry.version !== FIGMA_CACHE_ENTRY_VERSION ||
-    cacheEntry.fileKey !== fileKey ||
-    cacheEntry.lastModified !== lastModified
-  ) {
+  if (!cacheEntry || cacheEntry.version !== FIGMA_CACHE_ENTRY_VERSION || cacheEntry.fileKey !== fileKey) {
+    onLog(`Figma cache miss for file '${fileKey}' (entry mismatch).`);
+    return undefined;
+  }
+  return cacheEntry;
+};
+
+const readCachedFigmaResult = async ({
+  cacheFilePath,
+  fileKey,
+  lastModified,
+  cacheTtlMs,
+  onLog
+}: {
+  cacheFilePath: string;
+  fileKey: string;
+  lastModified: string;
+  cacheTtlMs: number;
+  onLog: (message: string) => void;
+}): Promise<FigmaFetchResult | undefined> => {
+  const cacheEntry = await readCacheEntryFile({
+    cacheFilePath,
+    fileKey,
+    onLog,
+    cacheMissLabel: "no cache entry"
+  });
+  if (!cacheEntry) {
+    return undefined;
+  }
+  if (cacheEntry.lastModified !== lastModified) {
     onLog(`Figma cache miss for file '${fileKey}' (entry mismatch).`);
     return undefined;
   }
@@ -510,12 +630,56 @@ const readCachedFigmaResult = async ({
   };
 };
 
+const readLatestCacheIndex = async ({
+  cacheIndexPath,
+  fileKey,
+  onLog
+}: {
+  cacheIndexPath: string;
+  fileKey: string;
+  onLog: (message: string) => void;
+}): Promise<FigmaCacheLatestIndex | undefined> => {
+  let raw: string;
+  try {
+    raw = await readFile(cacheIndexPath, "utf8");
+  } catch (error) {
+    const maybeError = error as NodeJS.ErrnoException;
+    if (maybeError.code === "ENOENT") {
+      return undefined;
+    }
+    onLog(`Figma incremental index read failed for file '${fileKey}': ${getErrorMessage(error)}.`);
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    onLog(`Figma incremental index parse failed for file '${fileKey}': ${getErrorMessage(error)}.`);
+    return undefined;
+  }
+
+  const indexEntry = toLatestCacheIndex(parsed);
+  if (
+    !indexEntry ||
+    indexEntry.version !== FIGMA_CACHE_LATEST_INDEX_VERSION ||
+    indexEntry.fileKey !== fileKey ||
+    indexEntry.lastModified.trim().length === 0
+  ) {
+    onLog(`Figma incremental index invalid for file '${fileKey}', ignoring index entry.`);
+    return undefined;
+  }
+  return indexEntry;
+};
+
 const writeCachedFigmaResult = async ({
   cacheDir,
   cacheFilePath,
   fileKey,
   lastModified,
   cacheTtlMs,
+  fileVersionId,
+  candidateSubtreeHashes,
   result,
   onLog
 }: {
@@ -524,6 +688,8 @@ const writeCachedFigmaResult = async ({
   fileKey: string;
   lastModified: string;
   cacheTtlMs: number;
+  fileVersionId?: string;
+  candidateSubtreeHashes?: Record<string, string>;
   result: FigmaFetchResult;
   onLog: (message: string) => void;
 }): Promise<void> => {
@@ -536,10 +702,24 @@ const writeCachedFigmaResult = async ({
     diagnostics: result.diagnostics,
     file: result.file
   };
+  if (typeof fileVersionId === "string" && fileVersionId.length > 0) {
+    entry.fileVersionId = fileVersionId;
+  }
+  if (candidateSubtreeHashes && Object.keys(candidateSubtreeHashes).length > 0) {
+    entry.candidateSubtreeHashes = candidateSubtreeHashes;
+  }
 
   try {
     await mkdir(cacheDir, { recursive: true });
     await writeFile(cacheFilePath, `${JSON.stringify(entry, null, 2)}\n`, "utf8");
+    const latestIndexPath = toFigmaCacheLatestIndexPath({ cacheDir, fileKey });
+    const latestIndex: FigmaCacheLatestIndex = {
+      version: FIGMA_CACHE_LATEST_INDEX_VERSION,
+      fileKey,
+      lastModified,
+      updatedAt: Date.now()
+    };
+    await writeFile(latestIndexPath, `${JSON.stringify(latestIndex, null, 2)}\n`, "utf8");
     onLog(`Figma cache write completed for file '${fileKey}'.`);
   } catch (error) {
     onLog(`Figma cache write failed for file '${fileKey}': ${getErrorMessage(error)}.`);
@@ -725,6 +905,29 @@ const mergeNodesIntoTree = ({
   };
 };
 
+const findNodeById = ({
+  root,
+  targetId
+}: {
+  root: FigmaNodeLike;
+  targetId: string;
+}): FigmaNodeLike | undefined => {
+  const queue: FigmaNodeLike[] = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    if (current.id === targetId) {
+      return current;
+    }
+    for (const child of asNodeArray(current.children)) {
+      queue.push(child);
+    }
+  }
+  return undefined;
+};
+
 const buildNodesUrl = ({
   fileKey,
   ids,
@@ -786,6 +989,149 @@ const fetchBootstrapFile = async ({
   });
 };
 
+const fetchLatestFileVersionId = async ({
+  fileKey,
+  accessToken,
+  timeoutMs,
+  maxRetries,
+  fetchImpl,
+  onLog
+}: {
+  fileKey: string;
+  accessToken: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl: typeof fetch;
+  onLog: (message: string) => void;
+}): Promise<string | undefined> => {
+  const versionsUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/versions?page_size=1`;
+  const payload = await executeFigmaRequest({
+    url: versionsUrl,
+    requestLabel: "files versions page_size=1",
+    accessToken,
+    timeoutMs,
+    maxRetries,
+    fetchImpl,
+    onLog,
+    allowTooLargeFallback: false
+  });
+  const record = toRecordOrParseError({
+    payload,
+    requestLabel: "files versions page_size=1"
+  });
+  const versions = Array.isArray(record.versions) ? record.versions : [];
+  const first = versions.length > 0 && isRecord(versions[0]) ? versions[0] : undefined;
+  const versionId = typeof first?.id === "string" ? first.id.trim() : "";
+  return versionId.length > 0 ? versionId : undefined;
+};
+
+const resolveStagedIncrementalContext = async ({
+  cacheDir,
+  fileKey,
+  currentLastModified,
+  cacheTtlMs,
+  accessToken,
+  timeoutMs,
+  maxRetries,
+  fetchImpl,
+  onLog
+}: {
+  cacheDir: string;
+  fileKey: string;
+  currentLastModified: string;
+  cacheTtlMs: number;
+  accessToken: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl: typeof fetch;
+  onLog: (message: string) => void;
+}): Promise<{ fileVersionId?: string; context?: FigmaStagedIncrementalContext }> => {
+  let fileVersionId: string | undefined;
+  try {
+    fileVersionId = await fetchLatestFileVersionId({
+      fileKey,
+      accessToken,
+      timeoutMs,
+      maxRetries,
+      fetchImpl,
+      onLog
+    });
+  } catch (error) {
+    onLog(
+      `Figma incremental versions check failed for file '${fileKey}', falling back to full staged fetch: ${getErrorMessage(error)}.`
+    );
+    return {};
+  }
+
+  if (!fileVersionId) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (missing latest version id).`);
+    return {};
+  }
+
+  const latestIndexPath = toFigmaCacheLatestIndexPath({ cacheDir, fileKey });
+  const latestIndex = await readLatestCacheIndex({
+    cacheIndexPath: latestIndexPath,
+    fileKey,
+    onLog
+  });
+  if (!latestIndex) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (no previous cache index).`);
+    return { fileVersionId };
+  }
+  if (latestIndex.lastModified === currentLastModified) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (no previous cache revision).`);
+    return { fileVersionId };
+  }
+
+  const previousCacheFilePath = toFigmaCacheFilePath({
+    cacheDir,
+    fileKey,
+    lastModified: latestIndex.lastModified
+  });
+  const previousEntry = await readCacheEntryFile({
+    cacheFilePath: previousCacheFilePath,
+    fileKey,
+    onLog,
+    cacheMissLabel: "previous cache entry missing"
+  });
+  if (!previousEntry) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (previous cache entry unavailable).`);
+    return { fileVersionId };
+  }
+
+  const previousAgeMs = Date.now() - previousEntry.cachedAt;
+  if (!Number.isFinite(previousAgeMs) || previousAgeMs < 0 || previousAgeMs > cacheTtlMs) {
+    onLog(
+      `Figma incremental skipped for file '${fileKey}' (previous cache stale, age=${Math.max(0, Math.trunc(previousAgeMs))}ms).`
+    );
+    return { fileVersionId };
+  }
+
+  const previousRootNode = isRecord(previousEntry.file.document) ? (previousEntry.file.document as FigmaNodeLike) : undefined;
+  if (!previousRootNode) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (previous cache root node missing).`);
+    return { fileVersionId };
+  }
+
+  const previousCandidateSubtreeHashes = previousEntry.candidateSubtreeHashes;
+  if (!previousCandidateSubtreeHashes || Object.keys(previousCandidateSubtreeHashes).length === 0) {
+    onLog(`Figma incremental skipped for file '${fileKey}' (previous subtree hashes missing).`);
+    return { fileVersionId };
+  }
+
+  onLog(
+    `Figma incremental enabled for file '${fileKey}' (previousLastModified=${latestIndex.lastModified}, currentVersion=${fileVersionId}).`
+  );
+  return {
+    fileVersionId,
+    context: {
+      fileVersionId,
+      previousRootNode,
+      previousCandidateSubtreeHashes
+    }
+  };
+};
+
 export const fetchFigmaFile = async ({
   fileKey,
   accessToken,
@@ -819,7 +1165,21 @@ export const fetchFigmaFile = async ({
 }): Promise<FigmaFetchResult> => {
   const resolvedCacheDir = cacheDir.trim();
 
-  const fetchFreshFile = async (): Promise<FigmaFetchResult> => {
+  const fetchFreshFile = async ({
+    currentLastModified,
+    cacheTtlMsForIncremental,
+    allowIncremental
+  }: {
+    currentLastModified?: string;
+    cacheTtlMsForIncremental?: number;
+    allowIncremental?: boolean;
+  }): Promise<{
+    result: FigmaFetchResult;
+    fileVersionId?: string;
+    candidateSubtreeHashes?: Record<string, string>;
+  }> => {
+    let stagedFileVersionId: string | undefined;
+    let stagedIncrementalContext: FigmaStagedIncrementalContext | undefined;
     const directUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?geometry=paths`;
 
     try {
@@ -835,18 +1195,42 @@ export const fetchFigmaFile = async ({
       });
 
       return {
-        file: toRecordOrParseError({ payload, requestLabel: "files geometry=paths" }) as FigmaFileResponse,
-        diagnostics: {
-          sourceMode: "geometry-paths",
-          fetchedNodes: 0,
-          degradedGeometryNodes: []
-        }
+        result: {
+          file: toRecordOrParseError({ payload, requestLabel: "files geometry=paths" }) as FigmaFileResponse,
+          diagnostics: {
+            sourceMode: "geometry-paths",
+            fetchedNodes: 0,
+            degradedGeometryNodes: []
+          }
+        },
+        ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
       };
     } catch (error) {
       if (!(error instanceof FigmaTooLargeError)) {
         throw error;
       }
       onLog("Primary Figma fetch is too large; switching to staged node fetch.");
+    }
+
+    if (
+      allowIncremental &&
+      typeof currentLastModified === "string" &&
+      currentLastModified.length > 0 &&
+      typeof cacheTtlMsForIncremental === "number"
+    ) {
+      const resolvedIncremental = await resolveStagedIncrementalContext({
+        cacheDir: resolvedCacheDir,
+        fileKey,
+        currentLastModified,
+        cacheTtlMs: cacheTtlMsForIncremental,
+        accessToken,
+        timeoutMs,
+        maxRetries,
+        fetchImpl,
+        onLog
+      });
+      stagedFileVersionId = resolvedIncremental.fileVersionId;
+      stagedIncrementalContext = resolvedIncremental.context;
     }
 
     const bootstrapFile = await fetchBootstrapFile({
@@ -862,12 +1246,15 @@ export const fetchFigmaFile = async ({
   const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
   if (!rootNode) {
     return {
-      file: bootstrapFile,
-      diagnostics: {
-        sourceMode: "staged-nodes",
-        fetchedNodes: 0,
-        degradedGeometryNodes: []
-      }
+      result: {
+        file: bootstrapFile,
+        diagnostics: {
+          sourceMode: "staged-nodes",
+          fetchedNodes: 0,
+          degradedGeometryNodes: []
+        }
+      },
+      ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
     };
   }
 
@@ -893,17 +1280,22 @@ export const fetchFigmaFile = async ({
   if (candidateIds.length === 0) {
     onLog("Staged fetch found no screen candidates; using bootstrap tree only.");
     return {
-      file: bootstrapFile,
-      diagnostics: {
-        sourceMode: "staged-nodes",
-        fetchedNodes: 0,
-        degradedGeometryNodes: []
-      }
+      result: {
+        file: bootstrapFile,
+        diagnostics: {
+          sourceMode: "staged-nodes",
+          fetchedNodes: 0,
+          degradedGeometryNodes: []
+        }
+      },
+      ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})
     };
   }
 
   const replacementNodes = new Map<string, FigmaNodeLike>();
+  const networkFetchedNodeIds = new Set<string>();
   const degradedGeometryNodes = new Set<string>();
+  const candidateSubtreeHashes = new Map<string, string>();
   let dynamicNodeBatchSize = Math.max(1, nodeBatchSize);
   let oversizedBatchCount = 0;
 
@@ -948,11 +1340,9 @@ export const fetchFigmaFile = async ({
           if (!node) {
             continue;
           }
-          const alreadyPresent = replacementNodes.has(id);
           replacementNodes.set(id, node);
-          if (!alreadyPresent) {
-            recoveredCount += 1;
-          }
+          networkFetchedNodeIds.add(id);
+          recoveredCount += 1;
         }
         return;
       } catch (error) {
@@ -1003,6 +1393,7 @@ export const fetchFigmaFile = async ({
         const node = documents.get(id);
         if (node) {
           replacementNodes.set(id, node);
+          networkFetchedNodeIds.add(id);
         }
       }
       return;
@@ -1054,6 +1445,7 @@ export const fetchFigmaFile = async ({
       const fallbackNode = documents.get(nodeId);
       if (fallbackNode) {
         replacementNodes.set(nodeId, fallbackNode);
+        networkFetchedNodeIds.add(nodeId);
         try {
           const recoveredCount = await recoverIconGeometryForFallback({
             screenNodeId: nodeId,
@@ -1073,54 +1465,180 @@ export const fetchFigmaFile = async ({
     }
   };
 
+  let geometryCandidateIds = [...candidateIds];
+  if (stagedIncrementalContext) {
+    try {
+      const snapshotNodes = new Map<string, FigmaNodeLike>();
+      const snapshotBatchSize = Math.max(1, nodeBatchSize);
+
+      const fetchSnapshotNodeGroup = async (ids: string[]): Promise<void> => {
+        if (ids.length === 0) {
+          return;
+        }
+        try {
+          const payload = await executeFigmaRequest({
+            url: buildNodesUrl({ fileKey, ids, includeGeometry: false }),
+            requestLabel: `nodes snapshot (${ids.length})`,
+            accessToken,
+            timeoutMs,
+            maxRetries,
+            fetchImpl,
+            onLog,
+            allowTooLargeFallback: true
+          });
+          const documents = extractNodeDocuments(payload);
+          for (const id of ids) {
+            const node = documents.get(id);
+            if (node) {
+              snapshotNodes.set(id, node);
+            }
+          }
+          return;
+        } catch (error) {
+          if (!(error instanceof FigmaTooLargeError)) {
+            throw error;
+          }
+        }
+
+        if (ids.length > 1) {
+          const midpoint = Math.ceil(ids.length / 2);
+          await fetchSnapshotNodeGroup(ids.slice(0, midpoint));
+          await fetchSnapshotNodeGroup(ids.slice(midpoint));
+          return;
+        }
+
+        const nodeId = ids[0];
+        throw new Error(`Incremental snapshot fetch too large for node '${nodeId}'.`);
+      };
+
+      let nextSnapshotIndex = 0;
+      const takeNextSnapshotBatch = (): string[] => {
+        if (nextSnapshotIndex >= candidateIds.length) {
+          return [];
+        }
+        const slice = candidateIds.slice(nextSnapshotIndex, nextSnapshotIndex + snapshotBatchSize);
+        nextSnapshotIndex += slice.length;
+        return slice;
+      };
+
+      const snapshotWorkerCount = Math.min(
+        Math.max(1, nodeFetchConcurrency),
+        Math.max(1, Math.ceil(candidateIds.length / snapshotBatchSize))
+      );
+
+      await Promise.all(
+        Array.from({ length: snapshotWorkerCount }, async () => {
+          for (;;) {
+            const batch = takeNextSnapshotBatch();
+            if (batch.length === 0) {
+              return;
+            }
+            await fetchSnapshotNodeGroup(batch);
+          }
+        })
+      );
+
+      const changedCandidateIds: string[] = [];
+      let reusedCount = 0;
+      for (const nodeId of candidateIds) {
+        const snapshotNode = snapshotNodes.get(nodeId);
+        if (snapshotNode) {
+          candidateSubtreeHashes.set(nodeId, toNodeSubtreeHash(snapshotNode));
+        }
+
+        const currentHash = candidateSubtreeHashes.get(nodeId);
+        const previousHash = stagedIncrementalContext.previousCandidateSubtreeHashes[nodeId];
+        if (currentHash && previousHash && currentHash === previousHash) {
+          const previousNode = findNodeById({
+            root: stagedIncrementalContext.previousRootNode,
+            targetId: nodeId
+          });
+          if (previousNode) {
+            replacementNodes.set(nodeId, previousNode);
+            reusedCount += 1;
+            continue;
+          }
+        }
+        changedCandidateIds.push(nodeId);
+      }
+      geometryCandidateIds = changedCandidateIds;
+      onLog(`Figma incremental reuse=${reusedCount}, changed=${geometryCandidateIds.length}.`);
+    } catch (error) {
+      onLog(
+        `Figma incremental fallback for file '${fileKey}': ${getErrorMessage(error)}. Fetching all candidate nodes with geometry.`
+      );
+      geometryCandidateIds = [...candidateIds];
+      candidateSubtreeHashes.clear();
+    }
+  }
+
   let nextNodeIndex = 0;
   const takeNextBatch = (): string[] => {
-    if (nextNodeIndex >= candidateIds.length) {
+    if (nextNodeIndex >= geometryCandidateIds.length) {
       return [];
     }
     const batchSize = Math.max(1, dynamicNodeBatchSize);
-    const slice = candidateIds.slice(nextNodeIndex, nextNodeIndex + batchSize);
+    const slice = geometryCandidateIds.slice(nextNodeIndex, nextNodeIndex + batchSize);
     nextNodeIndex += slice.length;
     return slice;
   };
 
-  const workerCount = Math.min(
-    Math.max(1, nodeFetchConcurrency),
-    Math.max(1, Math.ceil(candidateIds.length / Math.max(1, dynamicNodeBatchSize)))
-  );
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      for (;;) {
-        const batch = takeNextBatch();
-        if (batch.length === 0) {
-          return;
+  if (geometryCandidateIds.length > 0) {
+    const workerCount = Math.min(
+      Math.max(1, nodeFetchConcurrency),
+      Math.max(1, Math.ceil(geometryCandidateIds.length / Math.max(1, dynamicNodeBatchSize)))
+    );
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        for (;;) {
+          const batch = takeNextBatch();
+          if (batch.length === 0) {
+            return;
+          }
+          await fetchNodeGroup(batch);
         }
-        await fetchNodeGroup(batch);
+      })
+    );
+  }
+
+    for (const nodeId of candidateIds) {
+      if (candidateSubtreeHashes.has(nodeId)) {
+        continue;
       }
-    })
-  );
+      const candidateNode = findNodeById({ root: rootNode, targetId: nodeId });
+      if (candidateNode) {
+        candidateSubtreeHashes.set(nodeId, toNodeSubtreeHash(candidateNode));
+      }
+    }
 
     const mergedRoot = mergeNodesIntoTree({
       node: rootNode,
       replacementsById: replacementNodes
     });
 
+    const candidateHashRecord = toSortedHashRecord(candidateSubtreeHashes);
+    const resolvedFileVersionId = stagedIncrementalContext?.fileVersionId ?? stagedFileVersionId;
     return {
-      file: {
-        ...bootstrapFile,
-        document: mergedRoot
+      result: {
+        file: {
+          ...bootstrapFile,
+          document: mergedRoot
+        },
+        diagnostics: {
+          sourceMode: "staged-nodes",
+          fetchedNodes: networkFetchedNodeIds.size,
+          degradedGeometryNodes: [...degradedGeometryNodes].sort((left, right) => left.localeCompare(right))
+        }
       },
-      diagnostics: {
-        sourceMode: "staged-nodes",
-        fetchedNodes: replacementNodes.size,
-        degradedGeometryNodes: [...degradedGeometryNodes].sort((left, right) => left.localeCompare(right))
-      }
+      ...(typeof resolvedFileVersionId === "string" ? { fileVersionId: resolvedFileVersionId } : {}),
+      ...(Object.keys(candidateHashRecord).length > 0 ? { candidateSubtreeHashes: candidateHashRecord } : {})
     };
   };
 
   if (!cacheEnabled || resolvedCacheDir.length === 0) {
     onLog("Figma cache disabled; fetching fresh data.");
-    return await fetchFreshFile();
+    const freshOutcome = await fetchFreshFile({ allowIncremental: false });
+    return freshOutcome.result;
   }
 
   const resolvedCacheTtlMs = Math.max(1, Math.trunc(cacheTtlMs));
@@ -1145,12 +1663,14 @@ export const fetchFigmaFile = async ({
     }
   } catch (error) {
     onLog(`Figma cache metadata check failed for file '${fileKey}': ${getErrorMessage(error)}.`);
-    return await fetchFreshFile();
+    const freshOutcome = await fetchFreshFile({ allowIncremental: false });
+    return freshOutcome.result;
   }
 
   if (!lastModified) {
     onLog(`Figma cache miss for file '${fileKey}' (missing lastModified metadata).`);
-    return await fetchFreshFile();
+    const freshOutcome = await fetchFreshFile({ allowIncremental: false });
+    return freshOutcome.result;
   }
 
   const cacheFilePath = toFigmaCacheFilePath({
@@ -1170,15 +1690,21 @@ export const fetchFigmaFile = async ({
     return cachedResult;
   }
 
-  const freshResult = await fetchFreshFile();
+  const freshOutcome = await fetchFreshFile({
+    currentLastModified: lastModified,
+    cacheTtlMsForIncremental: resolvedCacheTtlMs,
+    allowIncremental: true
+  });
   await writeCachedFigmaResult({
     cacheDir: resolvedCacheDir,
     cacheFilePath,
     fileKey,
     lastModified,
     cacheTtlMs: resolvedCacheTtlMs,
-    result: freshResult,
+    ...(typeof freshOutcome.fileVersionId === "string" ? { fileVersionId: freshOutcome.fileVersionId } : {}),
+    ...(freshOutcome.candidateSubtreeHashes ? { candidateSubtreeHashes: freshOutcome.candidateSubtreeHashes } : {}),
+    result: freshOutcome.result,
     onLog
   });
-  return freshResult;
+  return freshOutcome.result;
 };
