@@ -778,6 +778,172 @@ test("deterministic screen rendering keeps styled flex containers as Box with fl
   assert.equal(content.includes('<Stack direction="row"'), false);
 });
 
+test("deterministic screen rendering promotes elevated surface containers with content to Paper", () => {
+  const screen = {
+    id: "paper-surface-elevated-screen",
+    name: "Paper Surface Elevated",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    fillColor: "#ffffff",
+    children: [
+      {
+        id: "paper-surface-elevated-container",
+        name: "Surface Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 180,
+        fillColor: "#f5f7fb",
+        cornerRadius: 12,
+        elevation: 6,
+        children: [
+          {
+            id: "paper-surface-elevated-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Kontostand"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes("<Paper elevation={6}"));
+  assert.equal(content.includes('<Box sx={{ position: "absolute", left: "0px", top: "0px", width: "320px"'), false);
+});
+
+test("deterministic screen rendering promotes outlined surface containers with content to Paper", () => {
+  const screen = {
+    id: "paper-surface-outlined-screen",
+    name: "Paper Surface Outlined",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    fillColor: "#ffffff",
+    children: [
+      {
+        id: "paper-surface-outlined-container",
+        name: "Outlined Surface Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 120,
+        strokeColor: "#d1d5db",
+        strokeWidth: 1,
+        cornerRadius: 8,
+        children: [
+          {
+            id: "paper-surface-outlined-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Transaktionen"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes('<Paper variant="outlined"'));
+  assert.equal(content.includes('<Box sx={{ position: "absolute", left: "0px", top: "0px", width: "320px"'), false);
+});
+
+test("deterministic screen rendering keeps decorative elevated containers on Box fallback", () => {
+  const screen = {
+    id: "paper-surface-negative-decorative-screen",
+    name: "Paper Surface Negative Decorative",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    fillColor: "#ffffff",
+    children: [
+      {
+        id: "paper-surface-negative-decorative-container",
+        name: "Decorative Surface Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 96,
+        height: 96,
+        fillColor: "#f5f7fb",
+        cornerRadius: 12,
+        elevation: 4,
+        children: [
+          {
+            id: "paper-surface-negative-decorative-icon",
+            name: "ic_add",
+            nodeType: "INSTANCE",
+            type: "container" as const,
+            x: 0,
+            y: 0,
+            width: 24,
+            height: 24,
+            children: []
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.equal(content.includes("<Paper elevation={4}"), false);
+  assert.ok(content.includes("boxShadow: 4"));
+  assert.ok(content.includes("<Box sx={{"));
+});
+
+test("deterministic screen rendering keeps same-background elevated containers on Box fallback", () => {
+  const screen = {
+    id: "paper-surface-negative-background-screen",
+    name: "Paper Surface Negative Background",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    fillColor: "#ffffff",
+    children: [
+      {
+        id: "paper-surface-negative-background-container",
+        name: "Same Background Surface Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 120,
+        fillColor: "#ffffff",
+        cornerRadius: 10,
+        elevation: 4,
+        children: [
+          {
+            id: "paper-surface-negative-background-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Saldo"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.equal(content.includes("<Paper elevation={4}"), false);
+  assert.ok(content.includes("boxShadow: 4"));
+  assert.ok(content.includes("<Box sx={{"));
+});
+
 test("deterministic screen rendering detects matrix-like container layouts and renders responsive Grid", () => {
   const screen = {
     id: "grid-matrix-detection-screen",
@@ -1622,6 +1788,8 @@ test("deterministic screen rendering maps shadow metadata to Card elevation and 
   assert.ok(content.includes("boxShadow: 5"));
   assert.ok(content.includes('boxShadow: "inset 2px 4px 6px rgba(17, 34, 51, 0.25)"'));
   assert.equal(content.includes('boxShadow: "inset 0px 1px 3px rgba(0, 0, 0, 0.2)"'), false);
+  assert.equal(content.includes("<Paper elevation={5}"), false);
+  assert.equal(content.includes("<Paper elevation={8}"), false);
 });
 
 test("deterministic screen rendering emits spacing units and rem typography without px literals", () => {
