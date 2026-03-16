@@ -7,6 +7,8 @@ const DEFAULT_NODE_BATCH_SIZE = 6;
 const DEFAULT_NODE_FETCH_CONCURRENCY = 3;
 const DEFAULT_ADAPTIVE_BATCHING_ENABLED = true;
 const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
+const DEFAULT_FIGMA_CACHE_ENABLED = true;
+const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
@@ -20,6 +22,8 @@ export const resolveRuntimeSettings = ({
   figmaNodeFetchConcurrency,
   figmaAdaptiveBatchingEnabled,
   figmaMaxScreenCandidates,
+  figmaCacheEnabled,
+  figmaCacheTtlMs,
   figmaScreenElementBudget,
   commandTimeoutMs,
   enableUiValidation,
@@ -34,6 +38,8 @@ export const resolveRuntimeSettings = ({
   figmaNodeFetchConcurrency?: number;
   figmaAdaptiveBatchingEnabled?: boolean;
   figmaMaxScreenCandidates?: number;
+  figmaCacheEnabled?: boolean;
+  figmaCacheTtlMs?: number;
   figmaScreenElementBudget?: number;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
@@ -70,6 +76,11 @@ export const resolveRuntimeSettings = ({
       typeof figmaMaxScreenCandidates === "number" && Number.isFinite(figmaMaxScreenCandidates)
         ? Math.max(1, Math.min(200, Math.trunc(figmaMaxScreenCandidates)))
         : DEFAULT_MAX_SCREEN_CANDIDATES,
+    figmaCacheEnabled: typeof figmaCacheEnabled === "boolean" ? figmaCacheEnabled : DEFAULT_FIGMA_CACHE_ENABLED,
+    figmaCacheTtlMs:
+      typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)
+        ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
+        : DEFAULT_FIGMA_CACHE_TTL_MS,
     figmaScreenElementBudget:
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))

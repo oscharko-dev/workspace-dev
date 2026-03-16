@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { createPipelineError, getErrorMessage } from "./errors.js";
 import type { FigmaFetchResult, FigmaFileResponse } from "./types.js";
 
@@ -9,6 +12,17 @@ const MAX_ICON_RECOVERY_DESCENDANTS = 160;
 const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
 const MAX_ICON_RECOVERY_AREA = MAX_ICON_RECOVERY_DIMENSION * MAX_ICON_RECOVERY_DIMENSION;
+const FIGMA_CACHE_ENTRY_VERSION = 1;
+
+interface FigmaCacheEntry {
+  version: number;
+  fileKey: string;
+  lastModified: string;
+  cachedAt: number;
+  ttlMs: number;
+  diagnostics: FigmaFetchResult["diagnostics"];
+  file: FigmaFetchResult["file"];
+}
 
 interface FigmaNodeLike {
   id?: string;
@@ -41,6 +55,10 @@ class FigmaTooLargeError extends Error {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const isStringArray = (value: unknown): value is string[] => {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 };
 
 const parseFigmaStatus = (status: number): { code: string; retryable: boolean } => {
@@ -364,6 +382,170 @@ const executeFigmaRequest = async ({
   });
 };
 
+const toFigmaCacheFilePath = ({
+  cacheDir,
+  fileKey,
+  lastModified
+}: {
+  cacheDir: string;
+  fileKey: string;
+  lastModified: string;
+}): string => {
+  const hash = createHash("sha256").update(`${fileKey}:${lastModified}`).digest("hex");
+  return path.join(cacheDir, `${hash}.json`);
+};
+
+const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+
+  const degradedGeometryNodes = payload.diagnostics && isRecord(payload.diagnostics)
+    ? payload.diagnostics.degradedGeometryNodes
+    : undefined;
+  if (!isStringArray(degradedGeometryNodes)) {
+    return undefined;
+  }
+
+  const sourceMode = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.sourceMode : undefined;
+  const fetchedNodes = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.fetchedNodes : undefined;
+  if (
+    (sourceMode !== "geometry-paths" && sourceMode !== "staged-nodes") ||
+    typeof fetchedNodes !== "number" ||
+    !Number.isFinite(fetchedNodes) ||
+    fetchedNodes < 0
+  ) {
+    return undefined;
+  }
+
+  if (
+    typeof payload.version !== "number" ||
+    !Number.isFinite(payload.version) ||
+    typeof payload.fileKey !== "string" ||
+    typeof payload.lastModified !== "string" ||
+    typeof payload.cachedAt !== "number" ||
+    !Number.isFinite(payload.cachedAt) ||
+    typeof payload.ttlMs !== "number" ||
+    !Number.isFinite(payload.ttlMs) ||
+    !isRecord(payload.file)
+  ) {
+    return undefined;
+  }
+
+  return {
+    version: payload.version,
+    fileKey: payload.fileKey,
+    lastModified: payload.lastModified,
+    cachedAt: payload.cachedAt,
+    ttlMs: payload.ttlMs,
+    diagnostics: {
+      sourceMode,
+      fetchedNodes,
+      degradedGeometryNodes
+    },
+    file: payload.file
+  };
+};
+
+const readCachedFigmaResult = async ({
+  cacheFilePath,
+  fileKey,
+  lastModified,
+  cacheTtlMs,
+  onLog
+}: {
+  cacheFilePath: string;
+  fileKey: string;
+  lastModified: string;
+  cacheTtlMs: number;
+  onLog: (message: string) => void;
+}): Promise<FigmaFetchResult | undefined> => {
+  let raw: string;
+  try {
+    raw = await readFile(cacheFilePath, "utf8");
+  } catch (error) {
+    const maybeError = error as NodeJS.ErrnoException;
+    if (maybeError.code === "ENOENT") {
+      onLog(`Figma cache miss for file '${fileKey}' (no cache entry).`);
+      return undefined;
+    }
+    onLog(`Figma cache read failed for file '${fileKey}': ${getErrorMessage(error)}.`);
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    onLog(`Figma cache miss for file '${fileKey}' (invalid cache JSON): ${getErrorMessage(error)}.`);
+    return undefined;
+  }
+
+  const cacheEntry = toCacheEntry(parsed);
+  if (
+    !cacheEntry ||
+    cacheEntry.version !== FIGMA_CACHE_ENTRY_VERSION ||
+    cacheEntry.fileKey !== fileKey ||
+    cacheEntry.lastModified !== lastModified
+  ) {
+    onLog(`Figma cache miss for file '${fileKey}' (entry mismatch).`);
+    return undefined;
+  }
+
+  const ageMs = Date.now() - cacheEntry.cachedAt;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > cacheTtlMs) {
+    onLog(`Figma cache stale for file '${fileKey}' (age=${Math.max(0, Math.trunc(ageMs))}ms).`);
+    try {
+      await unlink(cacheFilePath);
+    } catch {
+      // Best-effort stale cleanup.
+    }
+    return undefined;
+  }
+
+  onLog(`Figma cache hit for file '${fileKey}' (age=${Math.trunc(ageMs)}ms).`);
+  return {
+    file: cacheEntry.file,
+    diagnostics: cacheEntry.diagnostics
+  };
+};
+
+const writeCachedFigmaResult = async ({
+  cacheDir,
+  cacheFilePath,
+  fileKey,
+  lastModified,
+  cacheTtlMs,
+  result,
+  onLog
+}: {
+  cacheDir: string;
+  cacheFilePath: string;
+  fileKey: string;
+  lastModified: string;
+  cacheTtlMs: number;
+  result: FigmaFetchResult;
+  onLog: (message: string) => void;
+}): Promise<void> => {
+  const entry: FigmaCacheEntry = {
+    version: FIGMA_CACHE_ENTRY_VERSION,
+    fileKey,
+    lastModified,
+    cachedAt: Date.now(),
+    ttlMs: cacheTtlMs,
+    diagnostics: result.diagnostics,
+    file: result.file
+  };
+
+  try {
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(cacheFilePath, `${JSON.stringify(entry, null, 2)}\n`, "utf8");
+    onLog(`Figma cache write completed for file '${fileKey}'.`);
+  } catch (error) {
+    onLog(`Figma cache write failed for file '${fileKey}': ${getErrorMessage(error)}.`);
+  }
+};
+
 const asNodeArray = (value: unknown): FigmaNodeLike[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -615,7 +797,10 @@ export const fetchFigmaFile = async ({
   nodeBatchSize,
   nodeFetchConcurrency,
   adaptiveBatchingEnabled,
-  maxScreenCandidates
+  maxScreenCandidates,
+  cacheEnabled,
+  cacheTtlMs,
+  cacheDir
 }: {
   fileKey: string;
   accessToken: string;
@@ -628,45 +813,51 @@ export const fetchFigmaFile = async ({
   nodeFetchConcurrency: number;
   adaptiveBatchingEnabled: boolean;
   maxScreenCandidates: number;
+  cacheEnabled: boolean;
+  cacheTtlMs: number;
+  cacheDir: string;
 }): Promise<FigmaFetchResult> => {
-  const directUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?geometry=paths`;
+  const resolvedCacheDir = cacheDir.trim();
 
-  try {
-    const payload = await executeFigmaRequest({
-      url: directUrl,
-      requestLabel: "files geometry=paths",
+  const fetchFreshFile = async (): Promise<FigmaFetchResult> => {
+    const directUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?geometry=paths`;
+
+    try {
+      const payload = await executeFigmaRequest({
+        url: directUrl,
+        requestLabel: "files geometry=paths",
+        accessToken,
+        timeoutMs,
+        maxRetries,
+        fetchImpl,
+        onLog,
+        allowTooLargeFallback: true
+      });
+
+      return {
+        file: toRecordOrParseError({ payload, requestLabel: "files geometry=paths" }) as FigmaFileResponse,
+        diagnostics: {
+          sourceMode: "geometry-paths",
+          fetchedNodes: 0,
+          degradedGeometryNodes: []
+        }
+      };
+    } catch (error) {
+      if (!(error instanceof FigmaTooLargeError)) {
+        throw error;
+      }
+      onLog("Primary Figma fetch is too large; switching to staged node fetch.");
+    }
+
+    const bootstrapFile = await fetchBootstrapFile({
+      fileKey,
       accessToken,
       timeoutMs,
       maxRetries,
       fetchImpl,
       onLog,
-      allowTooLargeFallback: true
+      bootstrapDepth
     });
-
-    return {
-      file: toRecordOrParseError({ payload, requestLabel: "files geometry=paths" }) as FigmaFileResponse,
-      diagnostics: {
-        sourceMode: "geometry-paths",
-        fetchedNodes: 0,
-        degradedGeometryNodes: []
-      }
-    };
-  } catch (error) {
-    if (!(error instanceof FigmaTooLargeError)) {
-      throw error;
-    }
-    onLog("Primary Figma fetch is too large; switching to staged node fetch.");
-  }
-
-  const bootstrapFile = await fetchBootstrapFile({
-    fileKey,
-    accessToken,
-    timeoutMs,
-    maxRetries,
-    fetchImpl,
-    onLog,
-    bootstrapDepth
-  });
 
   const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
   if (!rootNode) {
@@ -909,20 +1100,85 @@ export const fetchFigmaFile = async ({
     })
   );
 
-  const mergedRoot = mergeNodesIntoTree({
-    node: rootNode,
-    replacementsById: replacementNodes
+    const mergedRoot = mergeNodesIntoTree({
+      node: rootNode,
+      replacementsById: replacementNodes
+    });
+
+    return {
+      file: {
+        ...bootstrapFile,
+        document: mergedRoot
+      },
+      diagnostics: {
+        sourceMode: "staged-nodes",
+        fetchedNodes: replacementNodes.size,
+        degradedGeometryNodes: [...degradedGeometryNodes].sort((left, right) => left.localeCompare(right))
+      }
+    };
+  };
+
+  if (!cacheEnabled || resolvedCacheDir.length === 0) {
+    onLog("Figma cache disabled; fetching fresh data.");
+    return await fetchFreshFile();
+  }
+
+  const resolvedCacheTtlMs = Math.max(1, Math.trunc(cacheTtlMs));
+  const metadataUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?depth=1`;
+
+  let lastModified: string | undefined;
+  try {
+    const metadataPayload = await executeFigmaRequest({
+      url: metadataUrl,
+      requestLabel: "files metadata depth=1",
+      accessToken,
+      timeoutMs,
+      maxRetries,
+      fetchImpl,
+      onLog,
+      allowTooLargeFallback: false
+    });
+    const metadataRecord = toRecordOrParseError({ payload: metadataPayload, requestLabel: "files metadata depth=1" });
+    const value = typeof metadataRecord.lastModified === "string" ? metadataRecord.lastModified.trim() : "";
+    if (value.length > 0) {
+      lastModified = value;
+    }
+  } catch (error) {
+    onLog(`Figma cache metadata check failed for file '${fileKey}': ${getErrorMessage(error)}.`);
+    return await fetchFreshFile();
+  }
+
+  if (!lastModified) {
+    onLog(`Figma cache miss for file '${fileKey}' (missing lastModified metadata).`);
+    return await fetchFreshFile();
+  }
+
+  const cacheFilePath = toFigmaCacheFilePath({
+    cacheDir: resolvedCacheDir,
+    fileKey,
+    lastModified
   });
 
-  return {
-    file: {
-      ...bootstrapFile,
-      document: mergedRoot
-    },
-    diagnostics: {
-      sourceMode: "staged-nodes",
-      fetchedNodes: replacementNodes.size,
-      degradedGeometryNodes: [...degradedGeometryNodes].sort((left, right) => left.localeCompare(right))
-    }
-  };
+  const cachedResult = await readCachedFigmaResult({
+    cacheFilePath,
+    fileKey,
+    lastModified,
+    cacheTtlMs: resolvedCacheTtlMs,
+    onLog
+  });
+  if (cachedResult) {
+    return cachedResult;
+  }
+
+  const freshResult = await fetchFreshFile();
+  await writeCachedFigmaResult({
+    cacheDir: resolvedCacheDir,
+    cacheFilePath,
+    fileKey,
+    lastModified,
+    cacheTtlMs: resolvedCacheTtlMs,
+    result: freshResult,
+    onLog
+  });
+  return freshResult;
 };

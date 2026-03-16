@@ -23,6 +23,15 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.2.0] - 2026-03-16
+
+### Figma source cache controls
+
+Added:
+
+- `WorkspaceStartOptions.figmaCacheEnabled?: boolean` (default `true`)
+- `WorkspaceStartOptions.figmaCacheTtlMs?: number` (default `900000`)
+
 ## [2.1.0] - 2026-03-12
 
 ### Parity pipeline + optional git.pr contract
