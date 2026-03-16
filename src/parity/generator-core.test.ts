@@ -256,6 +256,18 @@ const hasMuiIconBarrelImport = (content: string): boolean => {
   return /from\s+"@mui\/icons-material";/.test(content);
 };
 
+const extractContainerMaxWidth = (content: string): "sm" | "md" | "lg" | "xl" | undefined => {
+  const match = content.match(/<Container maxWidth="(sm|md|lg|xl)"/);
+  if (!match) {
+    return undefined;
+  }
+  const value = match[1];
+  if (value === "sm" || value === "md" || value === "lg" || value === "xl") {
+    return value;
+  }
+  return undefined;
+};
+
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
@@ -264,6 +276,81 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.equal(createDeterministicThemeFile(ir).path, "src/theme/theme.ts");
   assert.equal(createDeterministicScreenFile(screen).path.startsWith("src/screens/"), true);
   assert.equal(createDeterministicAppFile(ir.screens).path, "src/App.tsx");
+});
+
+test("deterministic screen rendering uses a single root Container without unnecessary Box import", () => {
+  const screen = {
+    id: "single-root-container-screen",
+    name: "Single Root Container",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "single-root-container-text",
+        name: "Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Hello Container"
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const materialImportLine = content
+    .split("\n")
+    .find((line) => line.startsWith("import { ") && line.endsWith(' } from "@mui/material";'));
+  assert.ok(materialImportLine);
+  assert.ok(materialImportLine?.includes("Container"));
+  assert.ok(materialImportLine?.includes("Typography"));
+  assert.equal(materialImportLine?.includes("Box"), false);
+  assert.equal((content.match(/<Container /g) ?? []).length, 1);
+  assert.equal(content.includes('<Box sx={{ minHeight: "100vh"'), false);
+  assert.ok(content.includes('sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)"'));
+});
+
+test("deterministic screen rendering maps container maxWidth boundaries from content width", () => {
+  const buildScreen = (width: number) => ({
+    id: `container-width-${width}`,
+    name: `Container Width ${width}`,
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: `paper-width-${width}`,
+        name: `Paper ${width}`,
+        nodeType: "FRAME",
+        type: "paper" as const,
+        x: 0,
+        y: 0,
+        width,
+        height: 80,
+        fillColor: "#ffffff",
+        children: []
+      }
+    ]
+  });
+
+  const cases: Array<{ width: number; expected: "sm" | "md" | "lg" | "xl" }> = [
+    { width: 600, expected: "sm" },
+    { width: 601, expected: "md" },
+    { width: 900, expected: "md" },
+    { width: 901, expected: "lg" },
+    { width: 1200, expected: "lg" },
+    { width: 1201, expected: "xl" },
+    { width: 1536, expected: "xl" },
+    { width: 1537, expected: "xl" }
+  ];
+
+  for (const testCase of cases) {
+    const content = createDeterministicScreenFile(buildScreen(testCase.width)).content;
+    assert.equal(
+      extractContainerMaxWidth(content),
+      testCase.expected,
+      `Expected width ${testCase.width} to map to maxWidth=${testCase.expected}`
+    );
+  }
 });
 
 test("generateArtifacts writes deterministic output and mapping diagnostics", async () => {
@@ -1349,6 +1436,8 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
   };
 
   const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes('<Box sx={{ minHeight: "100vh"'), false);
+  assert.ok(content.includes("<Container maxWidth="));
   assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: 1 }'));
   assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: 2 }'));
   assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
