@@ -542,11 +542,153 @@ test("deterministic screen rendering preserves auto-layout alignment and icon fa
 
   const content = createDeterministicScreenFile(screen).content;
 
-  assert.ok(content.includes('justifyContent: "space-between"'));
-  assert.ok(content.includes('alignItems: "center"'));
+  assert.ok(content.includes('justifyContent="space-between"'));
+  assert.ok(content.includes('alignItems="center"'));
   assert.ok(content.includes("IconButton"));
   assert.ok(content.includes('import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";'));
   assert.ok(content.includes('<IconButton aria-label="Bookmark Button"'));
+});
+
+test("deterministic screen rendering maps simple vertical containers to Stack", () => {
+  const screen = {
+    id: "stack-vertical-screen",
+    name: "Stack Vertical",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "simple-vertical-container",
+        name: "Simple Vertical Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 120,
+        gap: 16,
+        children: [
+          {
+            id: "simple-vertical-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Kontostand"
+          },
+          {
+            id: "simple-vertical-value",
+            name: "Value",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "1.250 EUR"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes('<Stack direction="column" spacing={2}'));
+  assert.equal(content.includes('display: "flex"'), false);
+  assert.equal(content.includes('flexDirection: "column"'), false);
+});
+
+test("deterministic screen rendering maps simple horizontal containers to Stack with alignment props", () => {
+  const screen = {
+    id: "stack-horizontal-screen",
+    name: "Stack Horizontal",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "simple-horizontal-container",
+        name: "Simple Horizontal Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        primaryAxisAlignItems: "SPACE_BETWEEN" as const,
+        counterAxisAlignItems: "CENTER" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 56,
+        gap: 12,
+        children: [
+          {
+            id: "simple-horizontal-left",
+            name: "Left",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Links"
+          },
+          {
+            id: "simple-horizontal-right",
+            name: "Right",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Rechts"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes('<Stack direction="row" spacing={1.5}'));
+  assert.ok(content.includes('alignItems="center"'));
+  assert.ok(content.includes('justifyContent="space-between"'));
+  assert.equal(content.includes('display: "flex"'), false);
+});
+
+test("deterministic screen rendering keeps styled flex containers as Box with flex sx", () => {
+  const screen = {
+    id: "stack-negative-styled-screen",
+    name: "Stack Negative Styled",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "styled-horizontal-container",
+        name: "Styled Horizontal Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 64,
+        fillColor: "#f5f5f5",
+        children: [
+          {
+            id: "styled-horizontal-left",
+            name: "Left",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "A"
+          },
+          {
+            id: "styled-horizontal-right",
+            name: "Right",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "B"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+
+  assert.ok(content.includes("<Box sx={{"));
+  assert.ok(content.includes('display: "flex"'));
+  assert.ok(content.includes('flexDirection: "row"'));
+  assert.equal(content.includes('<Stack direction="row"'), false);
 });
 
 test("deterministic screen rendering detects matrix-like container layouts and renders responsive Grid", () => {
@@ -690,7 +832,7 @@ test("deterministic screen rendering detects equal-width row containers and emit
   assert.equal((content.match(/size=\{\{ xs: 12, sm: 6, md: 4 \}\}/g) ?? []).length, 3);
 });
 
-test("deterministic screen rendering keeps vertical flow containers as Box and avoids false grid positives", () => {
+test("deterministic screen rendering avoids false grid positives for vertical flow containers", () => {
   const screen = {
     id: "grid-negative-vertical-screen",
     name: "Grid Negative Vertical",
@@ -744,9 +886,7 @@ test("deterministic screen rendering keeps vertical flow containers as Box and a
 
   const content = createDeterministicScreenFile(screen).content;
   assert.equal(content.includes("<Grid container"), false);
-  assert.ok(content.includes("<Box sx={{"));
-  assert.ok(content.includes('display: "flex"'));
-  assert.ok(content.includes('flexDirection: "column"'));
+  assert.ok(content.includes("Kontodaten"));
 });
 
 test("deterministic screen rendering emits path-based imports and only imports used icons", () => {
