@@ -736,6 +736,7 @@ export interface ScreenElementIR {
     | "divider"
     | "navigation";
   text?: string;
+  textRole?: "placeholder";
   x?: number;
   y?: number;
   width?: number;

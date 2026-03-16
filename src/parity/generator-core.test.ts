@@ -414,6 +414,53 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.equal(/>\s*"/.test(content), false);
 });
 
+test("deterministic screen rendering maps textRole placeholder to TextField placeholder without default prefill", () => {
+  const screen = {
+    id: "placeholder-screen",
+    name: "Placeholder Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "input-1",
+        name: "Loan Input",
+        nodeType: "FRAME",
+        type: "input" as const,
+        layoutMode: "VERTICAL" as const,
+        gap: 4,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        width: 320,
+        height: 72,
+        children: [
+          {
+            id: "input-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Loan amount",
+            y: 0
+          },
+          {
+            id: "input-placeholder",
+            name: "Placeholder",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Type here",
+            textRole: "placeholder" as const,
+            y: 24
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('label={"Loan amount"}'));
+  assert.ok(content.includes('placeholder={"Type here"}'));
+  assert.equal(/":\s*"Type here"/.test(content), false);
+});
+
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
   const screen = {
     id: "layout-screen",
