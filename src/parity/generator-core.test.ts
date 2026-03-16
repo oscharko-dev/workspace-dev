@@ -661,3 +661,401 @@ test("generateArtifacts emits truncation notice comment when screen was budget-t
   assert.ok(metricsContent.includes("\"degradedGeometryNodes\""));
   assert.equal(result.generationMetrics.truncatedScreens.length, 1);
 });
+
+test("deterministic screen rendering supports extended semantic MUI element types", () => {
+  const screen = {
+    id: "extended-types-screen",
+    name: "Extended Types",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "input-node",
+        name: "Kontonummer Feld",
+        nodeType: "FRAME",
+        type: "input" as const,
+        x: 0,
+        y: 0,
+        width: 260,
+        height: 56,
+        strokeColor: "#c4c4c4",
+        children: []
+      },
+      {
+        id: "card-node",
+        name: "Summary Card",
+        nodeType: "FRAME",
+        type: "card" as const,
+        x: 0,
+        y: 70,
+        width: 280,
+        height: 120,
+        fillColor: "#ffffff",
+        cornerRadius: 12,
+        children: [
+          {
+            id: "card-title",
+            name: "Card title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Card Content"
+          }
+        ]
+      },
+      {
+        id: "chip-node",
+        name: "Status Chip",
+        nodeType: "FRAME",
+        type: "chip" as const,
+        x: 0,
+        y: 200,
+        width: 120,
+        height: 32,
+        fillColor: "#f2f2f2"
+      },
+      {
+        id: "switch-node",
+        name: "Switch Field",
+        nodeType: "FRAME",
+        type: "switch" as const,
+        x: 0,
+        y: 244,
+        width: 180,
+        height: 30,
+        children: [
+          {
+            id: "switch-label",
+            name: "Switch Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Switch aktiv"
+          }
+        ]
+      },
+      {
+        id: "checkbox-node",
+        name: "Checkbox Field",
+        nodeType: "FRAME",
+        type: "checkbox" as const,
+        x: 0,
+        y: 282,
+        width: 180,
+        height: 30,
+        children: [
+          {
+            id: "checkbox-label",
+            name: "Checkbox Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Checkbox aktiv"
+          }
+        ]
+      },
+      {
+        id: "radio-node",
+        name: "Radio Field",
+        nodeType: "FRAME",
+        type: "radio" as const,
+        x: 0,
+        y: 320,
+        width: 180,
+        height: 30,
+        children: [
+          {
+            id: "radio-label",
+            name: "Radio Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Radio aktiv"
+          }
+        ]
+      },
+      {
+        id: "list-node",
+        name: "Detail List",
+        nodeType: "FRAME",
+        type: "list" as const,
+        x: 0,
+        y: 360,
+        width: 260,
+        height: 80,
+        children: [
+          {
+            id: "list-item-a",
+            name: "List item A",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Erster Punkt"
+          },
+          {
+            id: "list-item-b",
+            name: "List item B",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Zweiter Punkt"
+          }
+        ]
+      },
+      {
+        id: "appbar-node",
+        name: "Main AppBar",
+        nodeType: "FRAME",
+        type: "appbar" as const,
+        x: 0,
+        y: 450,
+        width: 320,
+        height: 64,
+        children: [
+          {
+            id: "appbar-title",
+            name: "AppBar title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Übersicht"
+          }
+        ]
+      },
+      {
+        id: "tabs-node",
+        name: "Tabs",
+        nodeType: "FRAME",
+        type: "tab" as const,
+        x: 0,
+        y: 522,
+        width: 280,
+        height: 48,
+        children: [
+          {
+            id: "tab-a",
+            name: "Tab A",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Start"
+          },
+          {
+            id: "tab-b",
+            name: "Tab B",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Details"
+          }
+        ]
+      },
+      {
+        id: "dialog-node",
+        name: "Dialog",
+        nodeType: "FRAME",
+        type: "dialog" as const,
+        x: 0,
+        y: 580,
+        width: 300,
+        height: 200,
+        children: [
+          {
+            id: "dialog-title",
+            name: "Dialog title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Bestätigung"
+          }
+        ]
+      },
+      {
+        id: "stepper-node",
+        name: "Stepper",
+        nodeType: "FRAME",
+        type: "stepper" as const,
+        x: 0,
+        y: 790,
+        width: 280,
+        height: 64,
+        children: [
+          {
+            id: "step-1",
+            name: "Step One",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Schritt 1"
+          },
+          {
+            id: "step-2",
+            name: "Step Two",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Schritt 2"
+          }
+        ]
+      },
+      {
+        id: "progress-node",
+        name: "Progress",
+        nodeType: "FRAME",
+        type: "progress" as const,
+        x: 0,
+        y: 862,
+        width: 240,
+        height: 10,
+        fillColor: "#d8d8d8"
+      },
+      {
+        id: "avatar-node",
+        name: "Avatar",
+        nodeType: "FRAME",
+        type: "avatar" as const,
+        x: 0,
+        y: 882,
+        width: 40,
+        height: 40,
+        children: [
+          {
+            id: "avatar-text",
+            name: "Avatar Text",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "AB"
+          }
+        ]
+      },
+      {
+        id: "badge-node",
+        name: "Badge",
+        nodeType: "FRAME",
+        type: "badge" as const,
+        x: 60,
+        y: 882,
+        width: 56,
+        height: 40,
+        children: [
+          {
+            id: "badge-child",
+            name: "Badge child",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "3"
+          }
+        ]
+      },
+      {
+        id: "divider-node",
+        name: "Divider",
+        nodeType: "RECTANGLE",
+        type: "divider" as const,
+        x: 0,
+        y: 930,
+        width: 280,
+        height: 1,
+        fillColor: "#d4d4d4"
+      },
+      {
+        id: "navigation-node",
+        name: "Bottom navigation",
+        nodeType: "FRAME",
+        type: "navigation" as const,
+        x: 0,
+        y: 940,
+        width: 320,
+        height: 64,
+        children: [
+          {
+            id: "nav-1",
+            name: "Home",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Home"
+          },
+          {
+            id: "nav-2",
+            name: "Search",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Suche"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const muiImportLine = content
+    .split("\n")
+    .find((line) => line.startsWith("import { ") && line.endsWith(' } from "@mui/material";'));
+  assert.ok(muiImportLine);
+  const requiredImports = [
+    "AppBar",
+    "Avatar",
+    "Badge",
+    "BottomNavigation",
+    "BottomNavigationAction",
+    "Card",
+    "CardContent",
+    "Checkbox",
+    "Chip",
+    "Dialog",
+    "DialogContent",
+    "DialogTitle",
+    "Divider",
+    "FormControlLabel",
+    "LinearProgress",
+    "List",
+    "ListItem",
+    "ListItemText",
+    "Radio",
+    "Step",
+    "StepLabel",
+    "Stepper",
+    "Switch",
+    "Tab",
+    "Tabs",
+    "TextField",
+    "Toolbar"
+  ];
+  for (const requiredImport of requiredImports) {
+    assert.ok(muiImportLine?.includes(requiredImport));
+  }
+  assert.ok(content.includes("<Card "));
+  assert.ok(content.includes("<Chip "));
+  assert.ok(content.includes("<Switch "));
+  assert.ok(content.includes("<Checkbox "));
+  assert.ok(content.includes("<Radio "));
+  assert.ok(content.includes("<List "));
+  assert.ok(content.includes("<AppBar "));
+  assert.ok(content.includes("<Tabs "));
+  assert.ok(content.includes("<Dialog "));
+  assert.ok(content.includes("<Stepper "));
+  assert.ok(content.includes("<LinearProgress "));
+  assert.ok(content.includes("<Avatar "));
+  assert.ok(content.includes("<Badge "));
+  assert.ok(content.includes("<Divider "));
+  assert.ok(content.includes("<BottomNavigation "));
+  assert.ok(content.includes("<TextField"));
+});
+
+test("deterministic extended renderer falls back to container for implausible models", () => {
+  const screen = {
+    id: "fallback-screen",
+    name: "Fallback Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "implausible-list",
+        name: "List",
+        nodeType: "FRAME",
+        type: "list" as const,
+        x: 0,
+        y: 0,
+        width: 120,
+        height: 40,
+        fillColor: "#efefef",
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<List "), false);
+  assert.ok(content.includes('width: "120px"'));
+  assert.ok(content.includes('height: "40px"'));
+});

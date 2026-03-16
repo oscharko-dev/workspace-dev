@@ -453,7 +453,8 @@ const baseLayoutEntries = (
   return entries;
 };
 
-const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent): string => {
+const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text?.trim() || element.name);
   const normalizedFont = normalizeFontFamily(element.fontFamily);
@@ -658,6 +659,7 @@ interface MappedImportSpec {
 interface RenderContext {
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
+  muiImports: Set<string>;
   iconImports: IconImportSpec[];
   mappedImports: MappedImportSpec[];
   mappingByNodeId: Map<string, ComponentMappingRule>;
@@ -672,6 +674,15 @@ interface RenderContext {
 
 const isValidJsIdentifier = (value: string): boolean => {
   return /^[A-Za-z_$][\w$]*$/.test(value);
+};
+
+const registerMuiImports = (context: RenderContext, ...imports: string[]): void => {
+  for (const item of imports) {
+    if (!item.trim()) {
+      continue;
+    }
+    context.muiImports.add(item);
+  }
 };
 
 const toIdentifier = (rawValue: string, fallback = "MappedComponent"): string => {
@@ -774,18 +785,7 @@ const registerMappedImport = ({ context, mapping }: { context: RenderContext; ma
   }
 
   const knownNames = new Set<string>([
-    "Box",
-    "Button",
-    "Divider",
-    "IconButton",
-    "Typography",
-    "SvgIcon",
-    "TextField",
-    "Accordion",
-    "AccordionSummary",
-    "AccordionDetails",
-    "MenuItem",
-    "InputAdornment",
+    ...context.muiImports,
     ...context.iconImports.map((item) => item.localName),
     ...context.mappedImports.map((item) => item.localName)
   ]);
@@ -1149,15 +1149,16 @@ const renderFallbackIconExpression = ({
 }): string => {
   const vectorPaths = collectVectorPaths(element);
   if (vectorPaths.length > 0) {
-    return renderInlineSvgIcon(
-      {
+    return renderInlineSvgIcon({
+      icon: {
         paths: vectorPaths,
         color: resolveIconColor(element),
         width: element.width,
         height: element.height
       },
+      context,
       extraEntries
-    );
+    });
   }
 
   const iconComponent = resolveFallbackIconComponent({ element, parent, context });
@@ -1319,7 +1320,16 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
   };
 };
 
-const renderInlineSvgIcon = (icon: SemanticIconModel, extraEntries: Array<[string, string | number | undefined]> = []): string => {
+const renderInlineSvgIcon = ({
+  icon,
+  context,
+  extraEntries = []
+}: {
+  icon: SemanticIconModel;
+  context: RenderContext;
+  extraEntries?: Array<[string, string | number | undefined]>;
+}): string => {
+  registerMuiImports(context, "SvgIcon");
   const sx = sxString([
     ["width", toPxLiteral(icon.width)],
     ["height", toPxLiteral(icon.height)],
@@ -1365,6 +1375,7 @@ const renderSemanticInput = (
       : "";
 
   if (field.isSelect) {
+    registerMuiImports(context, "TextField", "MenuItem");
     return `${indent}<TextField
 ${indent}  select
 ${indent}  label={${literal(field.label)}}
@@ -1383,6 +1394,10 @@ ${indent}  ))}
 ${indent}</TextField>`;
   }
 
+  registerMuiImports(context, "TextField");
+  if (field.suffixText) {
+    registerMuiImports(context, "InputAdornment");
+  }
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
 ${indent}  value={formValues[${literal(field.key)}] ?? ""}
@@ -1456,15 +1471,16 @@ const renderSemanticAccordion = (
 
   let expandIconExpression: string;
   if (expandIconPaths.length > 0) {
-    expandIconExpression = renderInlineSvgIcon(
-      {
+    expandIconExpression = renderInlineSvgIcon({
+      icon: {
         paths: expandIconPaths,
         color: expandIconNode ? firstVectorColor(expandIconNode) : undefined,
         width: expandIconNode?.width,
         height: expandIconNode?.height
       },
-      [["fontSize", literal("inherit")]]
-    );
+      context,
+      extraEntries: [["fontSize", literal("inherit")]]
+    });
   } else {
     const expandMoreIcon = registerIconImport(context, {
       localName: "ExpandMoreIcon",
@@ -1472,6 +1488,7 @@ const renderSemanticAccordion = (
     });
     expandIconExpression = `<${expandMoreIcon} fontSize="small" />`;
   }
+  registerMuiImports(context, "Accordion", "AccordionSummary", "AccordionDetails", "Box", "Typography");
 
   const detailsSx = sxString([
     ["position", literal("relative")],
@@ -1521,6 +1538,7 @@ ${indent}</Accordion>`;
 };
 
 const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
   const textNodes = collectTextNodes(element)
     .filter((node) => Boolean(node.text?.trim()))
@@ -1533,6 +1551,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const isIconOnlyButton = !label && Boolean(iconNode);
 
   if (iconNode && isIconOnlyButton) {
+    registerMuiImports(context, "IconButton");
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
     const iconButtonSx = sxString([
       ...baseLayoutEntries(element, parent),
@@ -1594,12 +1613,259 @@ const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
   return hasStroke && isPill && hasSingleText && noFill;
 };
 
+const renderChildrenIntoParent = ({
+  element,
+  depth,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+}): string => {
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  return children
+    .map((child) =>
+      renderElement(
+        child,
+        depth,
+        {
+          x: element.x,
+          y: element.y,
+          name: element.name,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
+    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+    .join("\n");
+};
+
+const collectRenderedItemLabels = (element: ScreenElementIR): Array<{ id: string; label: string }> => {
+  return sortChildren(element.children ?? [], element.layoutMode ?? "NONE")
+    .map((child, index) => ({
+      id: child.id || `${element.id}-item-${index + 1}`,
+      label: firstText(child)?.trim() || child.name || `Item ${index + 1}`
+    }))
+    .filter((entry) => entry.label.trim().length > 0);
+};
+
+const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  if ((element.children?.length ?? 0) === 0 && !hasVisualStyle(element)) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Card", "CardContent");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  const contentBlock = renderedChildren.trim()
+    ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
+    : `${indent}  <CardContent />`;
+  return `${indent}<Card sx={{ ${sx} }}>
+${contentBlock}
+${indent}</Card>`;
+};
+
+const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Chip");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const label = firstText(element)?.trim() || element.name;
+  return `${indent}<Chip label={${literal(label)}} sx={{ ${sx} }} />`;
+};
+
+const renderSelectionControl = ({
+  element,
+  depth,
+  parent,
+  context,
+  componentName
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  componentName: "Switch" | "Checkbox" | "Radio";
+}): string | null => {
+  const nonTextChildCount = (element.children ?? []).filter((child) => child.type !== "text").length;
+  if (nonTextChildCount > 1) {
+    return renderContainer(element, depth, parent, context);
+  }
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  const label = firstText(element)?.trim();
+  registerMuiImports(context, componentName);
+  if (label) {
+    registerMuiImports(context, "FormControlLabel");
+    return `${indent}<FormControlLabel sx={{ ${sx} }} control={<${componentName} />} label={${literal(label)}} />`;
+  }
+  return `${indent}<${componentName} sx={{ ${sx} }} />`;
+};
+
+const renderList = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const items = collectRenderedItemLabels(element);
+  if (items.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "List", "ListItem", "ListItemText");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedItems = items
+    .map((item) => `${indent}  <ListItem key={${literal(item.id)}} disablePadding><ListItemText primary={${literal(item.label)}} /></ListItem>`)
+    .join("\n");
+  return `${indent}<List sx={{ ${sx} }}>
+${renderedItems}
+${indent}</List>`;
+};
+
+const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "AppBar", "Toolbar", "Typography");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  const fallbackTitle = firstText(element)?.trim() || element.name || "App";
+  return `${indent}<AppBar position="static" sx={{ ${sx} }}>
+${indent}  <Toolbar>
+${renderedChildren || `${indent}    <Typography variant="h6">{${literal(fallbackTitle)}}</Typography>`}
+${indent}  </Toolbar>
+${indent}</AppBar>`;
+};
+
+const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const tabs = collectRenderedItemLabels(element);
+  if (tabs.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Tabs", "Tab");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedTabs = tabs.map((tab, index) => `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}} />`).join("\n");
+  return `${indent}<Tabs value={0} sx={{ ${sx} }}>
+${renderedTabs}
+${indent}</Tabs>`;
+};
+
+const renderDialog = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  const title = firstText(element)?.trim();
+  if (!renderedChildren.trim() && !title) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const contentBlock = renderedChildren.trim()
+    ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
+    : `${indent}  <DialogContent />`;
+  return `${indent}<Dialog open sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${title ? `${indent}  <DialogTitle>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
+${indent}</Dialog>`;
+};
+
+const renderStepper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const steps = collectRenderedItemLabels(element);
+  if (steps.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Stepper", "Step", "StepLabel");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedSteps = steps
+    .map((step, index) => `${indent}  <Step key={${literal(step.id)}} completed={${index < 1 ? "true" : "false"}}><StepLabel>{${literal(step.label)}}</StepLabel></Step>`)
+    .join("\n");
+  return `${indent}<Stepper activeStep={0} sx={{ ${sx} }}>
+${renderedSteps}
+${indent}</Stepper>`;
+};
+
+const renderProgress = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const isLinear = width >= Math.max(48, height * 2);
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  if (isLinear) {
+    registerMuiImports(context, "LinearProgress");
+    return `${indent}<LinearProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+  }
+  registerMuiImports(context, "CircularProgress");
+  return `${indent}<CircularProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+};
+
+const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const content = firstText(element)?.trim();
+  if (!content && !hasVisualStyle(element) && (element.children?.length ?? 0) === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Avatar");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  return `${indent}<Avatar sx={{ ${sx} }}>${content ? `{${literal(content)}}` : ""}</Avatar>`;
+};
+
+const renderBadge = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Badge", "Box");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent, { includePaints: false }));
+  const badgeContent = firstText(element)?.trim() || " ";
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  return `${indent}<Badge badgeContent={${literal(badgeContent)}} color="primary" sx={{ ${sx} }}>
+${renderedChildren || `${indent}  <Box sx={{ width: "20px", height: "20px" }} />`}
+${indent}</Badge>`;
+};
+
+const renderDividerElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Divider");
+  const indent = "  ".repeat(depth);
+  const sx = sxString([
+    ...baseLayoutEntries(element, parent, { includePaints: false }),
+    ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
+  ]);
+  return `${indent}<Divider sx={{ ${sx} }} />`;
+};
+
+const renderNavigation = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const actions = collectRenderedItemLabels(element);
+  if (actions.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "BottomNavigation", "BottomNavigationAction");
+  const indent = "  ".repeat(depth);
+  const sx = sxString(baseLayoutEntries(element, parent));
+  const renderedActions = actions
+    .map(
+      (action, index) =>
+        `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}} />`
+    )
+    .join("\n");
+  return `${indent}<BottomNavigation showLabels value={0} sx={{ ${sx} }}>
+${renderedActions}
+${indent}</BottomNavigation>`;
+};
+
 const renderContainer = (
   element: ScreenElementIR,
   depth: number,
   parent: VirtualParent,
   context: RenderContext
 ): string | null => {
+  registerMuiImports(context, "Box");
   const indent = "  ".repeat(depth);
   if (isLikelyAccordionContainer(element)) {
     return renderSemanticAccordion(element, depth, parent, context);
@@ -1646,6 +1912,7 @@ const renderContainer = (
       ...baseLayoutEntries(element, parent),
       ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
     ]);
+    registerMuiImports(context, "Divider");
     return `${indent}<Divider sx={{ ${sx} }} />`;
   }
 
@@ -1678,15 +1945,66 @@ const renderElement = (
     return null;
   }
 
-  if (element.type === "text") {
-    return renderText(element, depth, parent);
+  switch (element.type) {
+    case "text":
+      return renderText(element, depth, parent, context);
+    case "input":
+      return renderSemanticInput(element, depth, parent, context);
+    case "button":
+      return renderButton(element, depth, parent, context);
+    case "card":
+      return renderCard(element, depth, parent, context);
+    case "chip":
+      return renderChip(element, depth, parent, context);
+    case "switch":
+      return renderSelectionControl({
+        element,
+        depth,
+        parent,
+        context,
+        componentName: "Switch"
+      });
+    case "checkbox":
+      return renderSelectionControl({
+        element,
+        depth,
+        parent,
+        context,
+        componentName: "Checkbox"
+      });
+    case "radio":
+      return renderSelectionControl({
+        element,
+        depth,
+        parent,
+        context,
+        componentName: "Radio"
+      });
+    case "list":
+      return renderList(element, depth, parent, context);
+    case "appbar":
+      return renderAppBar(element, depth, parent, context);
+    case "tab":
+      return renderTabs(element, depth, parent, context);
+    case "dialog":
+      return renderDialog(element, depth, parent, context);
+    case "stepper":
+      return renderStepper(element, depth, parent, context);
+    case "progress":
+      return renderProgress(element, depth, parent, context);
+    case "avatar":
+      return renderAvatar(element, depth, parent, context);
+    case "badge":
+      return renderBadge(element, depth, parent, context);
+    case "divider":
+      return renderDividerElement(element, depth, parent, context);
+    case "navigation":
+      return renderNavigation(element, depth, parent, context);
+    case "image":
+    case "container":
+    default:
+      return renderContainer(element, depth, parent, context);
   }
-
-  if (element.type === "button") {
-    return renderButton(element, depth, parent, context);
-  }
-
-  return renderContainer(element, depth, parent, context);
 };
 
 const fallbackThemeFile = (ir: DesignIR): GeneratedFile => {
@@ -1778,6 +2096,7 @@ const fallbackScreenFile = ({
   const renderContext: RenderContext = {
     fields: [],
     accordions: [],
+    muiImports: new Set<string>(["Box"]),
     iconImports: [],
     mappedImports: [],
     mappingByNodeId,
@@ -1792,12 +2111,9 @@ const fallbackScreenFile = ({
     )
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
-  const hasSvgIcon = rendered.includes("<SvgIcon");
-  const hasIconButton = rendered.includes("<IconButton");
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
-  const hasAdornmentField = renderContext.fields.some((field) => !field.isSelect && Boolean(field.suffixText));
 
   const contentWidth = clamp(
     Math.round(
@@ -1856,38 +2172,10 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   const hasStatefulElements = hasInteractiveFields || hasInteractiveAccordions;
 
   const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
-  const usesButton = rendered.includes("<Button ");
-  const usesDivider = rendered.includes("<Divider ");
-  const usesTypography = rendered.includes("<Typography ") || rendered.length === 0;
-  const muiImports = ["Box"];
-  if (usesButton) {
-    muiImports.push("Button");
+  if (rendered.length === 0) {
+    registerMuiImports(renderContext, "Typography");
   }
-  if (usesDivider) {
-    muiImports.push("Divider");
-  }
-  if (hasIconButton) {
-    muiImports.push("IconButton");
-  }
-  if (usesTypography) {
-    muiImports.push("Typography");
-  }
-  if (hasSvgIcon) {
-    muiImports.push("SvgIcon");
-  }
-  if (hasInteractiveFields) {
-    muiImports.push("TextField");
-  }
-  if (hasInteractiveAccordions) {
-    muiImports.push("Accordion", "AccordionSummary", "AccordionDetails");
-  }
-  if (hasSelectField) {
-    muiImports.push("MenuItem");
-  }
-  if (hasAdornmentField) {
-    muiImports.push("InputAdornment");
-  }
-  const uniqueMuiImports = [...new Set(muiImports)];
+  const uniqueMuiImports = [...renderContext.muiImports].sort((left, right) => left.localeCompare(right));
   const iconImports = renderContext.iconImports
     .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
     .join("\n");
