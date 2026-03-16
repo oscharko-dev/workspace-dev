@@ -40,8 +40,17 @@ interface FigmaColor {
 
 interface FigmaPaint {
   type?: string;
+  visible?: boolean;
   color?: FigmaColor;
   opacity?: number;
+  gradientStops?: Array<{
+    position?: number;
+    color?: FigmaColor;
+  }>;
+  gradientHandlePositions?: Array<{
+    x?: number;
+    y?: number;
+  }>;
 }
 
 interface FigmaComponentPropertyValue {
@@ -183,6 +192,108 @@ const toHexColor = (color?: FigmaColor, opacity?: number): string | undefined =>
 
   const toHex = (value: number): string => Math.round(value * 255).toString(16).padStart(2, "0");
   return `#${toHex(blendOnWhite(color.r))}${toHex(blendOnWhite(color.g))}${toHex(blendOnWhite(color.b))}`;
+};
+
+const normalizePaintType = (value: string | undefined): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim().toUpperCase();
+};
+
+const resolveGradientPaintKind = (paintType: string | undefined): "linear" | "radial" | "other" | undefined => {
+  const normalized = normalizePaintType(paintType);
+  if (!normalized.includes("GRADIENT")) {
+    return undefined;
+  }
+  if (normalized.includes("LINEAR")) {
+    return "linear";
+  }
+  if (normalized.includes("RADIAL")) {
+    return "radial";
+  }
+  return "other";
+};
+
+const resolveFirstVisibleSolidPaint = (paints: FigmaPaint[] | undefined): FigmaPaint | undefined => {
+  return paints?.find((paint) => paint.visible !== false && normalizePaintType(paint.type) === "SOLID" && Boolean(paint.color));
+};
+
+const resolveFirstVisibleGradientPaint = (paints: FigmaPaint[] | undefined): FigmaPaint | undefined => {
+  return paints?.find((paint) => {
+    if (paint.visible === false) {
+      return false;
+    }
+    return resolveGradientPaintKind(paint.type) !== undefined;
+  });
+};
+
+const toCssNumber = (value: number, precision = 2): string => {
+  const normalized = Number.isFinite(value) ? value : 0;
+  const fixed = normalized.toFixed(precision).replace(/\.?0+$/, "");
+  if (fixed === "-0") {
+    return "0";
+  }
+  return fixed;
+};
+
+const toGradientStopCss = (paint: FigmaPaint): Array<{ position: number; color: string }> => {
+  return (paint.gradientStops ?? [])
+    .map((stop) => {
+      if (typeof stop.position !== "number") {
+        return undefined;
+      }
+      const color = toHexColor(stop.color, paint.opacity);
+      if (!color) {
+        return undefined;
+      }
+      return {
+        position: clamp(stop.position, 0, 1),
+        color
+      };
+    })
+    .filter((stop): stop is { position: number; color: string } => Boolean(stop))
+    .sort((left, right) => left.position - right.position);
+};
+
+const toLinearGradientAngle = (paint: FigmaPaint): number => {
+  const first = paint.gradientHandlePositions?.[0];
+  const second = paint.gradientHandlePositions?.[1];
+  if (
+    typeof first?.x !== "number" ||
+    typeof first.y !== "number" ||
+    typeof second?.x !== "number" ||
+    typeof second.y !== "number"
+  ) {
+    return 180;
+  }
+  const dx = second.x - first.x;
+  const dy = second.y - first.y;
+  if (dx === 0 && dy === 0) {
+    return 180;
+  }
+  const degrees = (Math.atan2(dy, dx) * 180) / Math.PI;
+  return (degrees + 90 + 360) % 360;
+};
+
+const toCssGradient = (paint: FigmaPaint | undefined): string | undefined => {
+  if (!paint) {
+    return undefined;
+  }
+  const kind = resolveGradientPaintKind(paint.type);
+  if (!kind) {
+    return undefined;
+  }
+  const stops = toGradientStopCss(paint);
+  if (stops.length === 0) {
+    return undefined;
+  }
+  const serializedStops = stops.map((stop) => `${stop.color} ${toCssNumber(stop.position * 100)}%`).join(", ");
+  if (kind === "radial") {
+    return `radial-gradient(circle, ${serializedStops})`;
+  }
+  const angle = kind === "linear" ? toLinearGradientAngle(paint) : 180;
+  return `linear-gradient(${toCssNumber(angle)}deg, ${serializedStops})`;
 };
 
 const parseHex = (hex: string): { r: number; g: number; b: number } => {
@@ -643,7 +754,7 @@ const extractDefaultVariantProperties = (
 
 const extractFirstTextFillColor = (node: FigmaNode): string | undefined => {
   if (node.type === "TEXT") {
-    const textFill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+    const textFill = resolveFirstVisibleSolidPaint(node.fills);
     const textColor = toHexColor(textFill?.color, textFill?.opacity);
     if (textColor) {
       return textColor;
@@ -659,8 +770,8 @@ const extractFirstTextFillColor = (node: FigmaNode): string | undefined => {
 };
 
 const extractVariantStyleFromNode = (node: FigmaNode): VariantStateStyle => {
-  const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
-  const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
+  const fill = resolveFirstVisibleSolidPaint(node.fills);
+  const stroke = resolveFirstVisibleSolidPaint(node.strokes);
   const style: VariantStateStyle = {};
   const backgroundColor = toHexColor(fill?.color, fill?.opacity);
   if (backgroundColor) {
@@ -845,8 +956,10 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   const childCount = node.children?.length ?? 0;
   const textChildCount = (node.children ?? []).filter((child) => child.type === "TEXT" && (child.characters ?? "").trim().length > 0).length;
   const hasChildren = childCount > 0;
-  const hasSolidFill = Boolean(node.fills?.find((item) => item.type === "SOLID" && item.color));
-  const hasStroke = Boolean(node.strokes?.find((item) => item.type === "SOLID" && item.color));
+  const hasSolidFill = Boolean(resolveFirstVisibleSolidPaint(node.fills));
+  const hasGradientFill = Boolean(resolveFirstVisibleGradientPaint(node.fills));
+  const hasVisualFill = hasSolidFill || hasGradientFill;
+  const hasStroke = Boolean(resolveFirstVisibleSolidPaint(node.strokes));
   const hasRoundedCorners = (node.cornerRadius ?? 0) >= 8;
   const hasListishChildNames = (node.children ?? []).some((child) => {
     const childName = (child.name ?? "").toLowerCase();
@@ -872,7 +985,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   ]);
   const isFieldSized = width >= 96 && height >= 28 && height <= 140;
   const isLikelyDividerByGeometry =
-    !hasChildren && hasSolidFill && ((width >= 16 && height > 0 && height <= 2) || (height >= 16 && width > 0 && width <= 2));
+    !hasChildren && hasVisualFill && ((width >= 16 && height > 0 && height <= 2) || (height >= 16 && width > 0 && width <= 2));
   const hasButtonLabelHint =
     name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
@@ -945,7 +1058,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   }
 
   const isLikelyListByStructure =
-    !hasSolidFill && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
+    !hasVisualFill && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
   if (
     hasAnySubstring(name, ["muilist", "listitem", "muilistitem"]) ||
     hasAnyWord(name, ["list"]) ||
@@ -959,11 +1072,11 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     return "card";
   }
 
-  if (hasChildren && hasSolidFill && hasRoundedCorners && width >= 120 && height >= 80) {
+  if (hasChildren && hasVisualFill && hasRoundedCorners && width >= 120 && height >= 80) {
     return "card";
   }
 
-  if (name.includes("cta") || (hasButtonKeyword && (hasSolidFill || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
+  if (name.includes("cta") || (hasButtonKeyword && (hasVisualFill || hasStroke || hasRoundedCorners || hasButtonLabelHint))) {
     return "button";
   }
 
@@ -1183,8 +1296,9 @@ const mapElement = ({
     return null;
   }
 
-  const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
-  const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
+  const fill = resolveFirstVisibleSolidPaint(node.fills);
+  const gradientFill = resolveFirstVisibleGradientPaint(node.fills);
+  const stroke = resolveFirstVisibleSolidPaint(node.strokes);
   const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
     .map((item) => item.path)
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
@@ -1222,6 +1336,10 @@ const mapElement = ({
   const fillColor = toHexColor(fill?.color, fill?.opacity);
   if (fillColor) {
     element.fillColor = fillColor;
+  }
+  const fillGradient = toCssGradient(gradientFill);
+  if (fillGradient) {
+    element.fillGradient = fillGradient;
   }
   const strokeColor = toHexColor(stroke?.color, stroke?.opacity);
   if (strokeColor) {
@@ -1449,6 +1567,7 @@ const hasVisualSubstance = (element: ScreenElementIR): boolean => {
 
   return (
     typeof element.fillColor === "string" ||
+    typeof element.fillGradient === "string" ||
     typeof element.strokeColor === "string" ||
     (typeof element.strokeWidth === "number" && element.strokeWidth > 0) ||
     (typeof element.cornerRadius === "number" && element.cornerRadius > 0) ||
@@ -1725,6 +1844,7 @@ interface MappedScreenCandidate {
   height?: number;
   area: number;
   fillColor?: string;
+  fillGradient?: string;
   layout: ComparableLayoutState;
   padding: {
     top: number;
@@ -1899,7 +2019,8 @@ const mapScreenCandidate = ({
 }): MappedScreenCandidate => {
   const normalized = unwrapScreenRoot(candidate);
   const sourceNode = normalized.node;
-  const fill = sourceNode.fills?.find((item) => item.type === "SOLID" && item.color);
+  const fill = resolveFirstVisibleSolidPaint(sourceNode.fills);
+  const gradientFill = resolveFirstVisibleGradientPaint(sourceNode.fills);
   const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? []);
   const depthContext: ScreenDepthBudgetContext = {
     screenElementBudget,
@@ -1943,6 +2064,7 @@ const mapScreenCandidate = ({
       ? width * height
       : 0;
   const fillColor = toHexColor(fill?.color, fill?.opacity);
+  const fillGradient = toCssGradient(gradientFill);
 
   return {
     sourceNode,
@@ -1956,6 +2078,7 @@ const mapScreenCandidate = ({
     ...(typeof height === "number" ? { height } : {}),
     area,
     ...(fillColor ? { fillColor } : {}),
+    ...(fillGradient ? { fillGradient } : {}),
     layout: toComparableRootLayout(sourceNode),
     padding: mapPadding(sourceNode),
     children: budgetedChildren,
@@ -2070,6 +2193,7 @@ const toScreenFromCandidate = ({
     ...(candidate.width !== undefined ? { width: candidate.width } : {}),
     ...(candidate.height !== undefined ? { height: candidate.height } : {}),
     ...(candidate.fillColor ? { fillColor: candidate.fillColor } : {}),
+    ...(candidate.fillGradient ? { fillGradient: candidate.fillGradient } : {}),
     ...(responsive ? { responsive } : {})
   };
 };
@@ -2337,12 +2461,12 @@ const resolveSampleWeight = ({
 };
 
 const resolveFillColor = (node: FigmaNode): string | undefined => {
-  const fill = node.fills?.find((item) => item.type === "SOLID" && item.color);
+  const fill = resolveFirstVisibleSolidPaint(node.fills);
   return toHexColor(fill?.color, fill?.opacity);
 };
 
 const resolveStrokeColor = (node: FigmaNode): string | undefined => {
-  const stroke = node.strokes?.find((item) => item.type === "SOLID" && item.color);
+  const stroke = resolveFirstVisibleSolidPaint(node.strokes);
   return toHexColor(stroke?.color, stroke?.opacity);
 };
 

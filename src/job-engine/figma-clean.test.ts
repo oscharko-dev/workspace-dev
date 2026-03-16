@@ -106,7 +106,23 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                     },
                     {
                       type: "GRADIENT_LINEAR",
-                      color: { r: 0, g: 0, b: 0, a: 1 }
+                      opacity: 0.75,
+                      gradientStops: [
+                        {
+                          position: 0,
+                          color: { r: 0.85, g: 0.02, b: 0.1, a: 1 },
+                          ignored: "drop"
+                        },
+                        {
+                          position: 1,
+                          color: { r: 0.98, g: 0.64, b: 0.08, a: 1 }
+                        }
+                      ],
+                      gradientHandlePositions: [
+                        { x: 0, y: 0, ignored: true },
+                        { x: 1, y: 0 }
+                      ],
+                      hiddenGradientField: "drop"
                     }
                   ],
                   absoluteBoundingBox: { x: 1, y: 2, width: 280, height: 160, extraBoxKey: 123 },
@@ -169,7 +185,32 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   const regularNode = findNodeById(result.cleanedFile.document, "regular-1");
   assert.ok(regularNode);
   assert.equal(Array.isArray(regularNode?.fills), true);
-  assert.equal((regularNode?.fills as unknown[]).length, 1);
+  assert.equal((regularNode?.fills as unknown[]).length, 2);
+  assert.deepEqual(regularNode?.fills, [
+    {
+      type: "SOLID",
+      color: { r: 0.8, g: 0.2, b: 0.2, a: 1 },
+      opacity: 0.9
+    },
+    {
+      type: "GRADIENT_LINEAR",
+      opacity: 0.75,
+      gradientStops: [
+        {
+          position: 0,
+          color: { r: 0.85, g: 0.02, b: 0.1, a: 1 }
+        },
+        {
+          position: 1,
+          color: { r: 0.98, g: 0.64, b: 0.08, a: 1 }
+        }
+      ],
+      gradientHandlePositions: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 }
+      ]
+    }
+  ]);
 
   const variantNode = findNodeById(result.cleanedFile.document, "variant-set-1");
   assert.ok(variantNode);
