@@ -900,7 +900,6 @@ export const fetchFigmaFile = async ({
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       for (;;) {
-      while (true) {
         const batch = takeNextBatch();
         if (batch.length === 0) {
           return;
