@@ -1686,6 +1686,195 @@ test("figmaToDesignIrWithOptions classifies explicit VECTOR image nodes and keep
   assert.equal(typeById.get("vector-icon-node"), "container");
 });
 
+test("figmaToDesignIrWithOptions maps ON_CLICK NODE prototype interactions to deterministic screen navigation", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Prototype Navigation",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-a",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "nav-push",
+                  type: "FRAME",
+                  name: "Navigate Button",
+                  absoluteBoundingBox: { x: 16, y: 16, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "target-b", navigation: "NAVIGATE" }]
+                    }
+                  ],
+                  children: []
+                },
+                {
+                  id: "nav-replace",
+                  type: "FRAME",
+                  name: "Replace Button",
+                  absoluteBoundingBox: { x: 16, y: 64, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "screen-b", navigation: "SWAP" }]
+                    }
+                  ],
+                  children: []
+                },
+                {
+                  id: "nav-overlay",
+                  type: "FRAME",
+                  name: "Overlay Button",
+                  absoluteBoundingBox: { x: 16, y: 112, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", transitionNodeId: "target-b", navigation: "OVERLAY" }]
+                    }
+                  ],
+                  children: []
+                },
+                {
+                  id: "nav-change-to",
+                  type: "FRAME",
+                  name: "Variant Toggle",
+                  absoluteBoundingBox: { x: 16, y: 160, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "target-b", navigation: "CHANGE_TO" }]
+                    }
+                  ],
+                  children: []
+                },
+                {
+                  id: "nav-hover",
+                  type: "FRAME",
+                  name: "Hover Interaction",
+                  absoluteBoundingBox: { x: 16, y: 208, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_HOVER" },
+                      actions: [{ type: "NODE", destinationId: "target-b", navigation: "NAVIGATE" }]
+                    }
+                  ],
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "screen-b",
+              type: "FRAME",
+              name: "Screen B",
+              absoluteBoundingBox: { x: 500, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "target-b",
+                  type: "TEXT",
+                  name: "Target",
+                  characters: "Target",
+                  absoluteBoundingBox: { x: 520, y: 24, width: 100, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const screenA = ir.screens.find((screen) => screen.id === "screen-a");
+  assert.ok(screenA);
+  const pushNode = findElementById(screenA?.children ?? [], "nav-push") as { prototypeNavigation?: unknown } | undefined;
+  const replaceNode = findElementById(screenA?.children ?? [], "nav-replace") as { prototypeNavigation?: unknown } | undefined;
+  const overlayNode = findElementById(screenA?.children ?? [], "nav-overlay") as { prototypeNavigation?: unknown } | undefined;
+  const changeToNode = findElementById(screenA?.children ?? [], "nav-change-to") as { prototypeNavigation?: unknown } | undefined;
+  const hoverNode = findElementById(screenA?.children ?? [], "nav-hover") as { prototypeNavigation?: unknown } | undefined;
+
+  assert.deepEqual(pushNode?.prototypeNavigation, { targetScreenId: "screen-b", mode: "push" });
+  assert.deepEqual(replaceNode?.prototypeNavigation, { targetScreenId: "screen-b", mode: "replace" });
+  assert.deepEqual(overlayNode?.prototypeNavigation, { targetScreenId: "screen-b", mode: "overlay" });
+  assert.equal(changeToNode?.prototypeNavigation, undefined);
+  assert.equal(hoverNode?.prototypeNavigation, undefined);
+  assert.equal(ir.metrics?.prototypeNavigationDetected, 3);
+  assert.equal(ir.metrics?.prototypeNavigationResolved, 3);
+  assert.equal(ir.metrics?.prototypeNavigationUnresolved, 0);
+});
+
+test("figmaToDesignIrWithOptions ignores unresolved prototype targets and records unresolved metrics", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Prototype Navigation Unresolved",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-a",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "nav-missing-destination",
+                  type: "FRAME",
+                  name: "Missing Destination",
+                  absoluteBoundingBox: { x: 16, y: 16, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", navigation: "NAVIGATE" }]
+                    }
+                  ],
+                  children: []
+                },
+                {
+                  id: "nav-unknown-target",
+                  type: "FRAME",
+                  name: "Unknown Target",
+                  absoluteBoundingBox: { x: 16, y: 64, width: 120, height: 40 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "not-a-screen-node", navigation: "REPLACE" }]
+                    }
+                  ],
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const screen = ir.screens.find((entry) => entry.id === "screen-a");
+  assert.ok(screen);
+  const missingDestinationNode = findElementById(screen?.children ?? [], "nav-missing-destination") as {
+    prototypeNavigation?: unknown;
+  };
+  const unknownTargetNode = findElementById(screen?.children ?? [], "nav-unknown-target") as {
+    prototypeNavigation?: unknown;
+  };
+  assert.equal(missingDestinationNode.prototypeNavigation, undefined);
+  assert.equal(unknownTargetNode.prototypeNavigation, undefined);
+  assert.equal(ir.metrics?.prototypeNavigationDetected, 2);
+  assert.equal(ir.metrics?.prototypeNavigationResolved, 0);
+  assert.equal(ir.metrics?.prototypeNavigationUnresolved, 2);
+});
+
 test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types", () => {
   const ir = figmaToDesignIrWithOptions(createSemanticHintOverrideFigmaFile(), {
     mcpEnrichment: {

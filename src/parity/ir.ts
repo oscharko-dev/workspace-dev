@@ -85,6 +85,24 @@ interface FigmaComponentPropertyDefinition {
   variantOptions?: unknown;
 }
 
+interface FigmaInteractionTrigger {
+  type?: string;
+}
+
+interface FigmaInteractionAction {
+  type?: string;
+  destinationId?: string;
+  navigation?: string;
+  transitionNodeID?: string;
+  transitionNodeId?: string;
+}
+
+interface FigmaInteraction {
+  trigger?: FigmaInteractionTrigger;
+  action?: FigmaInteractionAction;
+  actions?: FigmaInteractionAction[];
+}
+
 interface FigmaNode {
   id: string;
   name?: string;
@@ -129,6 +147,7 @@ interface FigmaNode {
   cornerRadius?: number;
   componentProperties?: Record<string, FigmaComponentPropertyValue>;
   componentPropertyDefinitions?: Record<string, FigmaComponentPropertyDefinition>;
+  interactions?: FigmaInteraction[];
 }
 
 interface FigmaFile {
@@ -179,6 +198,9 @@ interface MetricsAccumulator {
   fetchedNodes: number;
   skippedHidden: number;
   skippedPlaceholders: number;
+  prototypeNavigationDetected: number;
+  prototypeNavigationResolved: number;
+  prototypeNavigationUnresolved: number;
   screenElementCounts: GenerationMetrics["screenElementCounts"];
   truncatedScreens: GenerationMetrics["truncatedScreens"];
   depthTruncatedScreens: NonNullable<GenerationMetrics["depthTruncatedScreens"]>;
@@ -1590,6 +1612,11 @@ interface ScreenDepthBudgetContext {
   firstTruncatedDepth?: number;
 }
 
+interface PrototypeNavigationResolutionContext {
+  nodeIdToScreenId: Map<string, string>;
+  knownScreenIds: Set<string>;
+}
+
 const hasMeaningfulNodeText = (node: FigmaNode): boolean => {
   const normalized = (node.characters ?? "").trim().toLowerCase();
   return normalized.length > 0 && !TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized);
@@ -1688,6 +1715,99 @@ const shouldTruncateChildrenByDepth = ({
   return nodeCountAtDepth > allowedSemanticDepthWidth;
 };
 
+const normalizeNodeActionType = (value: string | undefined): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim().toUpperCase();
+};
+
+const resolvePrototypeNavigationMode = (
+  navigation: string | undefined
+): NonNullable<ScreenElementIR["prototypeNavigation"]>["mode"] | undefined => {
+  const normalized = normalizeNodeActionType(navigation);
+  if (!normalized || normalized === "NAVIGATE") {
+    return "push";
+  }
+  if (normalized === "SWAP" || normalized === "REPLACE") {
+    return "replace";
+  }
+  if (normalized === "OVERLAY") {
+    return "overlay";
+  }
+  if (normalized === "CHANGE_TO") {
+    return undefined;
+  }
+  return "push";
+};
+
+const resolvePrototypeDestinationId = (action: FigmaInteractionAction): string | undefined => {
+  const candidates = [action.destinationId, action.transitionNodeID, action.transitionNodeId];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return undefined;
+};
+
+const resolvePrototypeNavigation = ({
+  node,
+  metrics,
+  navigationContext
+}: {
+  node: FigmaNode;
+  metrics: MetricsAccumulator;
+  navigationContext: PrototypeNavigationResolutionContext;
+}): ScreenElementIR["prototypeNavigation"] | undefined => {
+  for (const interaction of node.interactions ?? []) {
+    if (normalizeNodeActionType(interaction.trigger?.type) !== "ON_CLICK") {
+      continue;
+    }
+    const actions = Array.isArray(interaction.actions)
+      ? interaction.actions
+      : interaction.action
+        ? [interaction.action]
+        : [];
+    for (const action of actions) {
+      if (normalizeNodeActionType(action.type) !== "NODE") {
+        continue;
+      }
+      const mode = resolvePrototypeNavigationMode(action.navigation);
+      if (!mode) {
+        continue;
+      }
+
+      metrics.prototypeNavigationDetected += 1;
+      const destinationId = resolvePrototypeDestinationId(action);
+      if (!destinationId) {
+        metrics.prototypeNavigationUnresolved += 1;
+        continue;
+      }
+
+      const targetScreenId =
+        navigationContext.nodeIdToScreenId.get(destinationId) ??
+        (navigationContext.knownScreenIds.has(destinationId) ? destinationId : undefined);
+      if (!targetScreenId) {
+        metrics.prototypeNavigationUnresolved += 1;
+        continue;
+      }
+
+      metrics.prototypeNavigationResolved += 1;
+      return {
+        targetScreenId,
+        mode
+      };
+    }
+  }
+
+  return undefined;
+};
+
 const mapElement = ({
   node,
   depth,
@@ -1695,7 +1815,8 @@ const mapElement = ({
   inInputContext,
   placeholderMatcherConfig,
   metrics,
-  depthContext
+  depthContext,
+  navigationContext
 }: {
   node: FigmaNode;
   depth: number;
@@ -1704,6 +1825,7 @@ const mapElement = ({
   placeholderMatcherConfig: PlaceholderMatcherConfig;
   metrics: MetricsAccumulator;
   depthContext: ScreenDepthBudgetContext;
+  navigationContext: PrototypeNavigationResolutionContext;
 }): ScreenElementIR | null => {
   if (node.visible === false) {
     metrics.skippedHidden += countSubtreeNodes(node);
@@ -1738,6 +1860,11 @@ const mapElement = ({
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   const elementType = determineElementType(node);
   const variantMapping = node.type === "COMPONENT_SET" ? toComponentSetVariantMapping(node) : extractVariantDataFromNode(node);
+  const prototypeNavigation = resolvePrototypeNavigation({
+    node,
+    metrics,
+    navigationContext
+  });
   const element: ScreenElementIR = {
     id: node.id,
     name: node.name ?? node.type,
@@ -1746,6 +1873,7 @@ const mapElement = ({
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),
+    ...(prototypeNavigation ? { prototypeNavigation } : {}),
     ...(variantMapping ? { variantMapping } : {}),
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
     ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
@@ -1853,7 +1981,8 @@ const mapElement = ({
       inInputContext: isNextInputContext,
       placeholderMatcherConfig,
       metrics,
-      depthContext
+      depthContext,
+      navigationContext
     });
     if (mappedDefault) {
       element.children = [mappedDefault];
@@ -1879,7 +2008,8 @@ const mapElement = ({
         inInputContext: isNextInputContext,
         placeholderMatcherConfig,
         metrics,
-        depthContext
+        depthContext,
+        navigationContext
       });
       if (mappedChild) {
         children.push(mappedChild);
@@ -1980,6 +2110,30 @@ const collectSectionScreens = ({
   }
 
   return screens;
+};
+
+const indexScreenNodeIds = ({
+  root,
+  screenId,
+  index
+}: {
+  root: FigmaNode;
+  screenId: string;
+  index: Map<string, string>;
+}): void => {
+  const stack: FigmaNode[] = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (!index.has(current.id)) {
+      index.set(current.id, screenId);
+    }
+    for (const child of current.children ?? []) {
+      stack.push(child);
+    }
+  }
 };
 
 const countElements = (elements: ScreenElementIR[]): number => {
@@ -2534,18 +2688,22 @@ const compareResponsiveWinnerPriority = (left: MappedScreenCandidate, right: Map
 
 const mapScreenCandidate = ({
   candidate,
+  normalizedCandidate,
   metrics,
   screenElementBudget,
   screenElementMaxDepth,
-  placeholderMatcherConfig
+  placeholderMatcherConfig,
+  navigationContext
 }: {
   candidate: FigmaNode;
+  normalizedCandidate?: { node: FigmaNode; name: string };
   metrics: MetricsAccumulator;
   screenElementBudget: number;
   screenElementMaxDepth: number;
   placeholderMatcherConfig: PlaceholderMatcherConfig;
+  navigationContext: PrototypeNavigationResolutionContext;
 }): MappedScreenCandidate => {
-  const normalized = unwrapScreenRoot(candidate);
+  const normalized = normalizedCandidate ?? unwrapScreenRoot(candidate);
   const sourceNode = normalized.node;
   const fill = resolveFirstVisibleSolidPaint(sourceNode.fills);
   const gradientFill = resolveFirstVisibleGradientPaint(sourceNode.fills);
@@ -2569,7 +2727,8 @@ const mapScreenCandidate = ({
       inInputContext: false,
       placeholderMatcherConfig,
       metrics,
-      depthContext
+      depthContext,
+      navigationContext
     });
     if (mapped) {
       mappedChildren.push(mapped);
@@ -2774,13 +2933,33 @@ const extractScreens = ({
     }
   }
 
-  const mappedCandidates = screenCandidates.map((candidate) =>
+  const preparedScreenCandidates = screenCandidates.map((candidate) => ({
+    candidate,
+    normalized: unwrapScreenRoot(candidate)
+  }));
+  const knownScreenIds = new Set(preparedScreenCandidates.map((entry) => entry.normalized.node.id));
+  const nodeIdToScreenId = new Map<string, string>();
+  for (const entry of preparedScreenCandidates) {
+    indexScreenNodeIds({
+      root: entry.normalized.node,
+      screenId: entry.normalized.node.id,
+      index: nodeIdToScreenId
+    });
+  }
+  const navigationContext: PrototypeNavigationResolutionContext = {
+    nodeIdToScreenId,
+    knownScreenIds
+  };
+
+  const mappedCandidates = preparedScreenCandidates.map((entry) =>
     mapScreenCandidate({
-      candidate,
+      candidate: entry.candidate,
+      normalizedCandidate: entry.normalized,
       metrics,
       screenElementBudget,
       screenElementMaxDepth,
-      placeholderMatcherConfig
+      placeholderMatcherConfig,
+      navigationContext
     })
   );
 
@@ -3632,6 +3811,9 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
         : 0,
     skippedHidden: 0,
     skippedPlaceholders: 0,
+    prototypeNavigationDetected: 0,
+    prototypeNavigationResolved: 0,
+    prototypeNavigationUnresolved: 0,
     screenElementCounts: [],
     truncatedScreens: [],
     depthTruncatedScreens: [],

@@ -779,6 +779,10 @@ export interface ScreenElementIR {
     left: number;
   };
   cornerRadius?: number;
+  prototypeNavigation?: {
+    targetScreenId: string;
+    mode: "push" | "replace" | "overlay";
+  };
   variantMapping?: VariantMappingIR;
   children?: ScreenElementIR[];
 }
@@ -834,6 +838,10 @@ export interface GenerationMetrics {
   truncatedScreens: TruncatedScreenMetric[];
   depthTruncatedScreens?: DepthTruncatedScreenMetric[];
   degradedGeometryNodes: string[];
+  prototypeNavigationDetected?: number;
+  prototypeNavigationResolved?: number;
+  prototypeNavigationUnresolved?: number;
+  prototypeNavigationRendered?: number;
 }
 
 export interface DesignIR {

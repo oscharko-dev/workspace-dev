@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   generateArtifacts,
   toDeterministicScreenPath
 } from "./generator-core.js";
+import { figmaToDesignIr } from "./ir.js";
 
 const createIr = () => ({
   sourceName: "Demo",
@@ -686,6 +687,124 @@ test("generateArtifacts rejects non-deterministic mode in workspace-dev", async 
       }),
     /Only deterministic code generation is supported/
   );
+});
+
+test("generateArtifacts wires prototype interactions from IR to deterministic route links across screens", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-prototype-navigation-"));
+  const ir = figmaToDesignIr({
+    name: "Prototype Navigation Integration",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-home",
+              type: "FRAME",
+              name: "Home",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "home-cta",
+                  type: "FRAME",
+                  name: "Go Settings",
+                  absoluteBoundingBox: { x: 16, y: 16, width: 160, height: 48 },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "screen-settings", navigation: "NAVIGATE" }]
+                    }
+                  ],
+                  children: [
+                    {
+                      id: "home-cta-label",
+                      type: "TEXT",
+                      name: "Label",
+                      characters: "Settings",
+                      absoluteBoundingBox: { x: 32, y: 30, width: 100, height: 24 }
+                    }
+                  ]
+                },
+                {
+                  id: "home-subtitle",
+                  type: "TEXT",
+                  name: "Subtitle",
+                  characters: "Overview",
+                  absoluteBoundingBox: { x: 16, y: 88, width: 100, height: 24 }
+                }
+              ]
+            },
+            {
+              id: "screen-settings",
+              type: "FRAME",
+              name: "Settings",
+              absoluteBoundingBox: { x: 480, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "settings-title",
+                  type: "TEXT",
+                  name: "Settings title",
+                  characters: "Settings",
+                  absoluteBoundingBox: { x: 496, y: 24, width: 120, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const logs: string[] = [];
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  const generatedScreenDir = path.join(projectDir, "src", "screens");
+  const generatedScreenFiles = await readdir(generatedScreenDir);
+  const generatedScreenContents = await Promise.all(
+    generatedScreenFiles.map(async (fileName) => readFile(path.join(generatedScreenDir, fileName), "utf8"))
+  );
+  assert.ok(
+    generatedScreenContents.some(
+      (content) =>
+        content.includes('import { Link as RouterLink } from "react-router-dom";') ||
+        content.includes('import { useNavigate } from "react-router-dom";')
+    )
+  );
+  assert.ok(
+    generatedScreenContents.some(
+      (content) =>
+        content.includes('component={RouterLink} to={"/settings"}') ||
+        content.includes('navigate("/settings")') ||
+        content.includes('navigate("/settings", { replace: true })')
+    )
+  );
+
+  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  assert.ok(appContent.includes('path="/home"'));
+  assert.ok(appContent.includes('path="/settings"'));
+
+  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metrics = JSON.parse(metricsContent) as {
+    prototypeNavigationDetected?: number;
+    prototypeNavigationResolved?: number;
+    prototypeNavigationUnresolved?: number;
+    prototypeNavigationRendered?: number;
+  };
+  assert.equal(metrics.prototypeNavigationDetected, 1);
+  assert.equal(metrics.prototypeNavigationResolved, 1);
+  assert.equal(metrics.prototypeNavigationUnresolved, 0);
+  assert.equal((metrics.prototypeNavigationRendered ?? 0) >= 1, true);
+  assert.equal((result.generationMetrics.prototypeNavigationRendered ?? 0) >= 1, true);
+  assert.ok(logs.some((entry) => entry.includes("Prototype navigation: detected=1, resolved=1, unresolved=0")));
 });
 
 test("generateArtifacts auto-bootstraps icon fallback map file when missing", async () => {
@@ -1443,6 +1562,127 @@ test("deterministic screen rendering emits <img> accessibility semantics with de
   assert.ok(content.includes('src={"data:image/svg+xml;utf8,'));
   assert.ok(content.includes('alt={"Product Image"}'));
   assert.ok(content.includes('alt="" aria-hidden="true"'));
+});
+
+test("deterministic screen rendering maps prototype navigation on link-capable components via RouterLink", () => {
+  const screen = {
+    id: "nav-link-screen",
+    name: "Nav Link Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "replace-button",
+        name: "Open Details",
+        nodeType: "FRAME",
+        type: "button" as const,
+        width: 180,
+        height: 48,
+        fillColor: "#d4001a",
+        prototypeNavigation: {
+          targetScreenId: "screen-details",
+          mode: "replace" as const
+        },
+        children: [
+          {
+            id: "replace-button-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Details"
+          }
+        ]
+      },
+      {
+        id: "overlay-chip",
+        name: "Open Overlay",
+        nodeType: "FRAME",
+        type: "chip" as const,
+        width: 120,
+        height: 32,
+        prototypeNavigation: {
+          targetScreenId: "screen-overlay",
+          mode: "overlay" as const
+        },
+        children: [
+          {
+            id: "overlay-chip-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Overlay"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, {
+    routePathByScreenId: {
+      "screen-details": "/details",
+      "screen-overlay": "/overlay"
+    }
+  }).content;
+
+  assert.ok(content.includes('import { Link as RouterLink } from "react-router-dom";'));
+  assert.ok(content.includes('component={RouterLink} to={"/details"} replace'));
+  assert.ok(content.includes('component={RouterLink} to={"/overlay"}'));
+  assert.equal(content.includes('component={RouterLink} to={"/overlay"} replace'), false);
+});
+
+test("deterministic screen rendering maps prototype navigation on container fallback via useNavigate handler", () => {
+  const screen = {
+    id: "nav-container-screen",
+    name: "Nav Container Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "clickable-card-shell",
+        name: "Clickable Surface",
+        nodeType: "FRAME",
+        type: "container" as const,
+        width: 280,
+        height: 120,
+        fillColor: "#ffffff",
+        strokeColor: "#d4d4d4",
+        prototypeNavigation: {
+          targetScreenId: "screen-target",
+          mode: "replace" as const
+        },
+        children: [
+          {
+            id: "clickable-card-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Open Target"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, {
+    routePathByScreenId: {
+      "screen-target": "/target"
+    }
+  }).content;
+
+  assert.ok(content.includes('import { useNavigate } from "react-router-dom";'));
+  assert.ok(content.includes("const navigate = useNavigate();"));
+  assert.ok(content.includes('role="button"'));
+  assert.ok(content.includes("tabIndex={0}"));
+  assert.ok(content.includes('onClick={() => navigate("/target", { replace: true })}'));
+});
+
+test("deterministic screen rendering does not import router bindings without prototype navigation", () => {
+  const content = createDeterministicScreenFile(createIr().screens[0]).content;
+  assert.equal(content.includes("react-router-dom"), false);
+  assert.equal(content.includes("RouterLink"), false);
+  assert.equal(content.includes("useNavigate"), false);
 });
 
 test("deterministic screen rendering infers navigation landmark roles for nav-like containers", () => {

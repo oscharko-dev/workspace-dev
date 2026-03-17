@@ -697,6 +697,9 @@ const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
 };
 
 const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
+  if (element.prototypeNavigation) {
+    return false;
+  }
   if (isIconLikeNode(element) || isSemanticIconWrapper(element)) {
     return false;
   }
@@ -756,6 +759,9 @@ const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
 
   const hasChildren = simplifiedChildren.length > 0;
   if (!hasChildren && !hasVisualStyle(simplified) && !simplified.text?.trim()) {
+    if (simplified.prototypeNavigation) {
+      return simplified;
+    }
     return null;
   }
 
@@ -1921,6 +1927,10 @@ interface RenderContext {
   iconImports: IconImportSpec[];
   iconResolver: IconFallbackResolver;
   imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  usesRouterLink: boolean;
+  usesNavigateHandler: boolean;
+  prototypeNavigationRenderedCount: number;
   mappedImports: MappedImportSpec[];
   spacingBase: number;
   tokens?: DesignTokens | undefined;
@@ -3626,6 +3636,72 @@ ${indent}  </AccordionDetails>
 ${indent}</Accordion>`;
 };
 
+interface ResolvedPrototypeNavigation {
+  routePath: string;
+  replace: boolean;
+}
+
+const resolvePrototypeNavigationBinding = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): ResolvedPrototypeNavigation | undefined => {
+  const targetScreenId = element.prototypeNavigation?.targetScreenId;
+  if (!targetScreenId) {
+    return undefined;
+  }
+  const routePath = context.routePathByScreenId.get(targetScreenId);
+  if (!routePath) {
+    return undefined;
+  }
+  return {
+    routePath,
+    replace: element.prototypeNavigation?.mode === "replace"
+  };
+};
+
+const toRouterLinkProps = ({
+  navigation,
+  context
+}: {
+  navigation: ResolvedPrototypeNavigation;
+  context: RenderContext;
+}): string => {
+  context.usesRouterLink = true;
+  context.prototypeNavigationRenderedCount += 1;
+  const replaceProp = navigation.replace ? " replace" : "";
+  return ` component={RouterLink} to={${literal(navigation.routePath)}}${replaceProp}`;
+};
+
+const toNavigateHandlerProps = ({
+  navigation,
+  context
+}: {
+  navigation: ResolvedPrototypeNavigation;
+  context: RenderContext;
+}): {
+  onClickProp: string;
+  onKeyDownProp: string;
+  roleProp: string;
+  tabIndexProp: string;
+} => {
+  context.usesNavigateHandler = true;
+  context.prototypeNavigationRenderedCount += 1;
+  const navigateCall = navigation.replace
+    ? `navigate(${literal(navigation.routePath)}, { replace: true })`
+    : `navigate(${literal(navigation.routePath)})`;
+  return {
+    onClickProp: ` onClick={() => ${navigateCall}}`,
+    onKeyDownProp:
+      ' onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); ' +
+      `${navigateCall}; } }}`,
+    roleProp: ' role="button"',
+    tabIndexProp: " tabIndex={0}"
+  };
+};
+
 const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
@@ -3645,6 +3721,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     mappedDisabled: mappedMuiProps?.disabled,
     buttonTextColor
   });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
 
   if (iconNode && isIconOnlyButton) {
     registerMuiImports(context, "IconButton");
@@ -3675,7 +3752,8 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     });
     const disabledProp = inferredDisabled ? " disabled" : "";
     const ariaLabel = resolveIconButtonAriaLabel({ element, iconNode });
-    return `${indent}<IconButton aria-label=${literal(ariaLabel)}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
+    const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
+    return `${indent}<IconButton aria-label=${literal(ariaLabel)}${linkProps}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
   }
 
   const iconExpression = iconNode
@@ -3750,9 +3828,10 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const disabledProp = inferredDisabled ? " disabled" : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
-  const typeProp = ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
+  const typeProp = navigation ? "" : ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
+  const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
 
-  return `${indent}<Button variant="${variant}"${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
+  return `${indent}<Button variant="${variant}"${linkProps}${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
 };
 
 const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
@@ -4272,6 +4351,8 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
     context,
     preferInsetShadow: false
   });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const elevationProp = typeof cardElevation === "number" && cardElevation > 0 ? ` elevation={${cardElevation}}` : "";
   const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
   const mediaCandidate = sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
@@ -4339,7 +4420,11 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
       })()
     : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
-  return `${indent}<Card${elevationProp} sx={{ ${sx} }}>
+  const roleProp = navigationProps?.roleProp ?? "";
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  return `${indent}<Card${elevationProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp} sx={{ ${sx} }}>
 ${mediaBlock}${contentBlock}${actionsBlock}
 ${indent}</Card>`;
 };
@@ -4360,10 +4445,12 @@ const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const label = firstText(element)?.trim() || element.name;
   const chipVariant = toChipVariant(mappedMuiProps?.variant);
   const chipSize = toChipSize(mappedMuiProps?.size);
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
   const variantProp = chipVariant ? ` variant="${chipVariant}"` : "";
   const sizeProp = chipSize ? ` size="${chipSize}"` : "";
   const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
-  return `${indent}<Chip label={${literal(label)}}${variantProp}${sizeProp}${disabledProp} sx={{ ${sx} }} />`;
+  const linkProps = navigation && !mappedMuiProps?.disabled ? toRouterLinkProps({ navigation, context }) : "";
+  return `${indent}<Chip label={${literal(label)}}${linkProps}${variantProp}${sizeProp}${disabledProp} sx={{ ${sx} }} />`;
 };
 
 const renderSelectionControl = ({
@@ -4422,6 +4509,10 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
     return renderContainer(element, depth, parent, context);
   }
   registerMuiImports(context, "List", "ListItem", "ListItemText");
+  const itemNavigations = items.map((item) => resolvePrototypeNavigationBinding({ element: item.node, context }));
+  if (itemNavigations.some((entry) => Boolean(entry))) {
+    registerMuiImports(context, "ListItemButton");
+  }
   const hasListIcons = items.some((item) => Boolean(pickBestIconNode(item.node)));
   if (hasListIcons) {
     registerMuiImports(context, "ListItemIcon");
@@ -4433,7 +4524,7 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
     context
   });
   const renderedItems = items
-    .map((item) => {
+    .map((item, index) => {
       const iconNode = pickBestIconNode(item.node);
       const iconBlock = iconNode
         ? `<ListItemIcon>${renderFallbackIconExpression({
@@ -4443,7 +4534,12 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
             ariaHidden: true
           })}</ListItemIcon>`
         : "";
-      return `${indent}  <ListItem key={${literal(item.id)}} disablePadding>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItem>`;
+      const navigation = itemNavigations[index];
+      if (!navigation) {
+        return `${indent}  <ListItem key={${literal(item.id)}} disablePadding>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItem>`;
+      }
+      const linkProps = toRouterLinkProps({ navigation, context });
+      return `${indent}  <ListItem key={${literal(item.id)}} disablePadding><ListItemButton${linkProps}>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItemButton></ListItem>`;
     })
     .join("\n");
   return `${indent}<List sx={{ ${sx} }}>
@@ -4473,7 +4569,7 @@ ${indent}</AppBar>`;
 };
 
 const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const tabs = collectRenderedItemLabels(element);
+  const tabs = collectRenderedItems(element);
   if (tabs.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4484,7 +4580,13 @@ const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualPare
     parent,
     context
   });
-  const renderedTabs = tabs.map((tab, index) => `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}} />`).join("\n");
+  const renderedTabs = tabs
+    .map((tab, index) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: tab.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}}${linkProps} />`;
+    })
+    .join("\n");
   return `${indent}<Tabs value={0} sx={{ ${sx} }}>
 ${renderedTabs}
 ${indent}</Tabs>`;
@@ -4609,7 +4711,7 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
 };
 
 const renderNavigation = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const actions = collectRenderedItemLabels(element);
+  const actions = collectRenderedItems(element);
   if (actions.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4621,10 +4723,11 @@ const renderNavigation = (element: ScreenElementIR, depth: number, parent: Virtu
     context
   });
   const renderedActions = actions
-    .map(
-      (action, index) =>
-        `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}} />`
-    )
+    .map((action, index) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: action.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      return `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}}${linkProps} />`;
+    })
     .join("\n");
   return `${indent}<BottomNavigation role="navigation" showLabels value={0} sx={{ ${sx} }}>
 ${renderedActions}
@@ -4688,6 +4791,8 @@ const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualPar
     parent,
     context
   });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 1,
@@ -4697,12 +4802,15 @@ const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualPar
   const variantProp = variant ? ` variant="${variant}"` : "";
   const landmarkRole = inferLandmarkRole({ element, context });
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
-  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
-  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
   if (!renderedChildren.trim()) {
-    return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+    return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
+  return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Paper>`;
 };
@@ -5104,21 +5212,26 @@ const renderContainer = (
     parent,
     context
   });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const landmarkRole = inferLandmarkRole({ element, context });
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
-  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
-  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
 
   if (!renderedChildren.trim()) {
-    if (!hasVisualStyle(element)) {
+    if (!hasVisualStyle(element) && !navigation) {
       return null;
     }
     registerMuiImports(context, "Box");
-    return `${indent}<Box${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+    return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
 
   registerMuiImports(context, "Box");
-  return `${indent}<Box${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
+  return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Box>`;
 };
@@ -5276,6 +5389,7 @@ export const appTheme = createTheme({
 
 interface FallbackScreenFileResult {
   file: GeneratedFile;
+  prototypeNavigationRenderedCount: number;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
     code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
@@ -5307,6 +5421,7 @@ const fallbackScreenFile = ({
   tokens,
   iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
   imageAssetMap = {},
+  routePathByScreenId = new Map<string, string>(),
   truncationMetric,
   componentNameOverride,
   filePathOverride
@@ -5317,6 +5432,7 @@ const fallbackScreenFile = ({
   tokens?: DesignTokens | undefined;
   iconResolver?: IconFallbackResolver;
   imageAssetMap?: Record<string, string>;
+  routePathByScreenId?: Map<string, string>;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -5350,6 +5466,10 @@ const fallbackScreenFile = ({
     iconImports: [],
     iconResolver,
     imageAssetMap,
+    routePathByScreenId,
+    usesRouterLink: false,
+    usesNavigateHandler: false,
+    prototypeNavigationRenderedCount: 0,
     mappedImports: [],
     spacingBase: resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
@@ -5612,6 +5732,16 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
 
   const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
+  const routerImports: string[] = [];
+  if (renderContext.usesRouterLink) {
+    routerImports.push("Link as RouterLink");
+  }
+  if (renderContext.usesNavigateHandler) {
+    routerImports.push("useNavigate");
+  }
+  const reactRouterImport =
+    routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
+  const navigationHookBlock = renderContext.usesNavigateHandler ? "const navigate = useNavigate();" : "";
   if (rendered.length === 0) {
     registerMuiImports(renderContext, "Typography");
   }
@@ -5626,11 +5756,14 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   return {
     file: {
       path: filePath,
-      content: `${truncationComment}${reactImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+      content: `${truncationComment}${reactImport}${reactRouterImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
 
 export default function ${componentName}Screen() {
-${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}
   return (
     <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
@@ -5639,6 +5772,7 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
 }
 `
     },
+    prototypeNavigationRenderedCount: renderContext.prototypeNavigationRenderedCount,
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
     mappingWarnings: renderContext.mappingWarnings,
     accessibilityWarnings: renderContext.accessibilityWarnings
@@ -5653,11 +5787,21 @@ export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
   return fallbackThemeFile(ir);
 };
 
-export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile => {
+export const createDeterministicScreenFile = (
+  screen: ScreenIR,
+  options?: {
+    routePathByScreenId?: Map<string, string> | Record<string, string>;
+  }
+): GeneratedFile => {
+  const routePathByScreenId =
+    options?.routePathByScreenId instanceof Map
+      ? options.routePathByScreenId
+      : new Map(Object.entries(options?.routePathByScreenId ?? {}));
   return fallbackScreenFile({
     screen,
     mappingByNodeId: new Map<string, ComponentMappingRule>(),
-    spacingBase: DEFAULT_SPACING_BASE
+    spacingBase: DEFAULT_SPACING_BASE,
+    routePathByScreenId
   }).file;
 };
 
@@ -6325,7 +6469,11 @@ export const generateArtifacts = async ({
     skippedPlaceholders: ir.metrics?.skippedPlaceholders ?? 0,
     screenElementCounts: [...(ir.metrics?.screenElementCounts ?? [])],
     truncatedScreens: [...(ir.metrics?.truncatedScreens ?? [])],
-    degradedGeometryNodes: [...(ir.metrics?.degradedGeometryNodes ?? [])]
+    degradedGeometryNodes: [...(ir.metrics?.degradedGeometryNodes ?? [])],
+    prototypeNavigationDetected: ir.metrics?.prototypeNavigationDetected ?? 0,
+    prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
+    prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
+    prototypeNavigationRendered: 0
   };
   const truncationByScreenId = new Map(
     generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)
@@ -6381,8 +6529,12 @@ export const generateArtifacts = async ({
   generatedPaths.add(deterministicTheme.path);
 
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
+  const routePathByScreenId = new Map(
+    Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
+  );
   const usedMappingNodeIds = new Set<string>();
   const accessibilityWarnings: AccessibilityWarning[] = [];
+  let prototypeNavigationRenderedCount = 0;
   const deterministicScreens = ir.screens.map((screen) => {
     const identity = identitiesByScreenId.get(screen.id);
     const truncationMetric = truncationByScreenId.get(screen.id);
@@ -6398,10 +6550,12 @@ export const generateArtifacts = async ({
       tokens: ir.tokens,
       iconResolver,
       imageAssetMap,
+      routePathByScreenId,
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
     });
+    prototypeNavigationRenderedCount += deterministicScreen.prototypeNavigationRenderedCount;
     for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
       usedMappingNodeIds.add(nodeId);
     }
@@ -6474,6 +6628,7 @@ export const generateArtifacts = async ({
   generatedPaths.add("src/App.tsx");
 
   const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
+  generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;
   const generationMetricsPayload = {
     ...generationMetrics,
     accessibilityWarnings
@@ -6483,6 +6638,18 @@ export const generateArtifacts = async ({
 
   if (generationMetrics.degradedGeometryNodes.length > 0) {
     onLog(`Geometry degraded for ${generationMetrics.degradedGeometryNodes.length} node(s) during staged fetch.`);
+  }
+  if ((generationMetrics.prototypeNavigationDetected ?? 0) > 0 || (generationMetrics.prototypeNavigationRendered ?? 0) > 0) {
+    onLog(
+      `Prototype navigation: detected=${generationMetrics.prototypeNavigationDetected ?? 0}, resolved=${
+        generationMetrics.prototypeNavigationResolved ?? 0
+      }, unresolved=${generationMetrics.prototypeNavigationUnresolved ?? 0}, rendered=${generationMetrics.prototypeNavigationRendered ?? 0}`
+    );
+  }
+  if ((generationMetrics.prototypeNavigationUnresolved ?? 0) > 0) {
+    onLog(
+      `Warning: ${generationMetrics.prototypeNavigationUnresolved} prototype navigation target(s) were unresolved and ignored.`
+    );
   }
   if (accessibilityWarnings.length > 0) {
     for (const warning of accessibilityWarnings) {

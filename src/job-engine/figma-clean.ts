@@ -35,7 +35,8 @@ const ALLOWED_NODE_KEYS = new Set([
   "cornerRadius",
   "effects",
   "componentProperties",
-  "componentPropertyDefinitions"
+  "componentPropertyDefinitions",
+  "interactions"
 ]);
 
 const ALLOWED_COLOR_KEYS = new Set(["r", "g", "b", "a"]);
@@ -49,6 +50,9 @@ const ALLOWED_EFFECT_KEYS = new Set(["type", "visible", "color", "radius", "offs
 const ALLOWED_EFFECT_OFFSET_KEYS = new Set(["x", "y"]);
 const ALLOWED_COMPONENT_PROPERTY_KEYS = new Set(["type", "value"]);
 const ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS = new Set(["type", "defaultValue", "variantOptions"]);
+const ALLOWED_INTERACTION_KEYS = new Set(["trigger", "action", "actions"]);
+const ALLOWED_INTERACTION_TRIGGER_KEYS = new Set(["type"]);
+const ALLOWED_INTERACTION_ACTION_KEYS = new Set(["type", "destinationId", "navigation", "transitionNodeID", "transitionNodeId"]);
 
 interface FigmaCleaningAccumulator {
   outputNodeCount: number;
@@ -514,6 +518,147 @@ const sanitizeVariantComponentPropertyDefinitions = (
   return Object.keys(next).length > 0 ? next : undefined;
 };
 
+const sanitizeInteractionTrigger = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): { type: string } | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  metrics.removedPropertyCount += countRemovedKeys(value, ALLOWED_INTERACTION_TRIGGER_KEYS);
+  if (typeof value.type !== "string") {
+    return undefined;
+  }
+  const type = value.type.trim().toUpperCase();
+  if (type.length === 0) {
+    return undefined;
+  }
+  return { type };
+};
+
+const sanitizeInteractionAction = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+):
+  | {
+      type: string;
+      destinationId?: string;
+      navigation?: string;
+      transitionNodeID?: string;
+      transitionNodeId?: string;
+    }
+  | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  metrics.removedPropertyCount += countRemovedKeys(value, ALLOWED_INTERACTION_ACTION_KEYS);
+  if (typeof value.type !== "string") {
+    return undefined;
+  }
+  const type = value.type.trim().toUpperCase();
+  if (type.length === 0) {
+    return undefined;
+  }
+
+  const nextAction: {
+    type: string;
+    destinationId?: string;
+    navigation?: string;
+    transitionNodeID?: string;
+    transitionNodeId?: string;
+  } = { type };
+  if (typeof value.destinationId === "string" && value.destinationId.trim().length > 0) {
+    nextAction.destinationId = value.destinationId.trim();
+  }
+  if (typeof value.navigation === "string" && value.navigation.trim().length > 0) {
+    nextAction.navigation = value.navigation.trim().toUpperCase();
+  }
+  if (typeof value.transitionNodeID === "string" && value.transitionNodeID.trim().length > 0) {
+    nextAction.transitionNodeID = value.transitionNodeID.trim();
+  }
+  if (typeof value.transitionNodeId === "string" && value.transitionNodeId.trim().length > 0) {
+    nextAction.transitionNodeId = value.transitionNodeId.trim();
+  }
+  return nextAction;
+};
+
+const sanitizeInteractions = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+):
+  | Array<{
+      trigger: {
+        type: string;
+      };
+      actions: Array<{
+        type: string;
+        destinationId?: string;
+        navigation?: string;
+        transitionNodeID?: string;
+        transitionNodeId?: string;
+      }>;
+    }>
+  | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const nextInteractions = value
+    .map((interactionCandidate) => {
+      if (!isRecord(interactionCandidate)) {
+        return undefined;
+      }
+      metrics.removedPropertyCount += countRemovedKeys(interactionCandidate, ALLOWED_INTERACTION_KEYS);
+      const trigger = sanitizeInteractionTrigger(interactionCandidate.trigger, metrics);
+      if (!trigger) {
+        return undefined;
+      }
+      const actionCandidates = Array.isArray(interactionCandidate.actions)
+        ? interactionCandidate.actions
+        : interactionCandidate.action !== undefined
+          ? [interactionCandidate.action]
+          : [];
+      const actions = actionCandidates
+        .map((actionCandidate) => sanitizeInteractionAction(actionCandidate, metrics))
+        .filter(
+          (
+            action
+          ): action is {
+            type: string;
+            destinationId?: string;
+            navigation?: string;
+            transitionNodeID?: string;
+            transitionNodeId?: string;
+          } => Boolean(action)
+        );
+      if (actions.length === 0) {
+        return undefined;
+      }
+      return {
+        trigger,
+        actions
+      };
+    })
+    .filter(
+      (
+        interaction
+      ): interaction is {
+        trigger: {
+          type: string;
+        };
+        actions: Array<{
+          type: string;
+          destinationId?: string;
+          navigation?: string;
+          transitionNodeID?: string;
+          transitionNodeId?: string;
+        }>;
+      } => Boolean(interaction)
+    );
+
+  return nextInteractions.length > 0 ? nextInteractions : undefined;
+};
+
 const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record<string, unknown> | null => {
   const { metrics } = context;
   if (!isRecord(nodeCandidate)) {
@@ -634,6 +779,11 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
   );
   if (componentPropertyDefinitions) {
     nextNode.componentPropertyDefinitions = componentPropertyDefinitions;
+  }
+
+  const interactions = sanitizeInteractions(nodeCandidate.interactions, metrics);
+  if (interactions) {
+    nextNode.interactions = interactions;
   }
 
   const isNextInstanceContext =

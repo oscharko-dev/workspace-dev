@@ -432,3 +432,73 @@ test("cleanFigmaForCodegen preserves visible IMAGE paints for downstream image c
   assert.ok(imageNode);
   assert.deepEqual(imageNode?.fills, [{ type: "IMAGE", opacity: 0.8 }]);
 });
+
+test("cleanFigmaForCodegen preserves deterministic interaction payload for prototype navigation mapping", () => {
+  const input = {
+    name: "Prototype Navigation Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-nav",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "nav-source",
+                  type: "FRAME",
+                  name: "CTA",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 160, height: 48 },
+                  interactions: [
+                    {
+                      trigger: { type: "on_click", unexpected: true },
+                      actions: [
+                        {
+                          type: "node",
+                          destinationId: "screen-target",
+                          navigation: "navigate",
+                          extra: "drop-me"
+                        }
+                      ],
+                      anotherField: "drop-me"
+                    },
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      action: {
+                        type: "NODE",
+                        transitionNodeID: "legacy-target",
+                        navigation: "replace",
+                        hidden: "drop-me"
+                      }
+                    }
+                  ],
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+  const navSourceNode = findNodeById(result.cleanedFile.document, "nav-source");
+  assert.ok(navSourceNode);
+  assert.deepEqual(navSourceNode?.interactions, [
+    {
+      trigger: { type: "ON_CLICK" },
+      actions: [{ type: "NODE", destinationId: "screen-target", navigation: "NAVIGATE" }]
+    },
+    {
+      trigger: { type: "ON_CLICK" },
+      actions: [{ type: "NODE", navigation: "REPLACE", transitionNodeID: "legacy-target" }]
+    }
+  ]);
+});
