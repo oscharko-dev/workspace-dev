@@ -6,7 +6,7 @@
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
-import type { WorkspaceBrandTheme } from "./contracts/index.js";
+import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "./contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "./generation-locale.js";
 import { createWorkspaceServer } from "./server.js";
 
@@ -26,6 +26,7 @@ const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
+const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
@@ -52,6 +53,7 @@ interface CliOptions {
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
   generationLocale: string;
+  routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
@@ -107,6 +109,23 @@ const parseBrandTheme = ({
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === "derived" || normalized === "sparkasse") {
+    return normalized;
+  }
+  return fallback;
+};
+
+const parseRouterMode = ({
+  value,
+  fallback
+}: {
+  value: string | undefined;
+  fallback: WorkspaceRouterMode;
+}): WorkspaceRouterMode => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "browser" || normalized === "hash") {
     return normalized;
   }
   return fallback;
@@ -200,6 +219,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     requestedLocale: process.env.FIGMAPIPE_WORKSPACE_GENERATION_LOCALE,
     fallbackLocale: DEFAULT_GENERATION_LOCALE
   }).locale;
+  let routerMode = parseRouterMode({
+    value: process.env.FIGMAPIPE_WORKSPACE_ROUTER,
+    fallback: DEFAULT_ROUTER_MODE
+  });
   let commandTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
     fallback: DEFAULT_COMMAND_TIMEOUT_MS,
@@ -401,6 +424,15 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--router") {
+      routerMode = parseRouterMode({
+        value: args[index + 1],
+        fallback: routerMode
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--command-timeout-ms") {
       commandTimeoutMs = parseIntInRange({
         raw: args[index + 1],
@@ -469,6 +501,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaScreenElementMaxDepth,
     brandTheme,
     generationLocale,
+    routerMode,
     commandTimeoutMs,
     enableUiValidation,
     installPreferOffline,
@@ -517,6 +550,7 @@ Options:
                              Token brand policy for ir.derive (default: ${DEFAULT_BRAND_THEME})
   --generation-locale <locale>
                              Locale for deterministic select-option number derivation (default: ${DEFAULT_GENERATION_LOCALE})
+  --router <browser|hash>    Router mode for generated App.tsx shell (default: ${DEFAULT_ROUTER_MODE})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
@@ -549,6 +583,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_BRAND
   FIGMAPIPE_WORKSPACE_GENERATION_LOCALE
+  FIGMAPIPE_WORKSPACE_ROUTER
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
@@ -615,6 +650,7 @@ const main = async (): Promise<void> => {
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
       generationLocale: options.generationLocale,
+      routerMode: options.routerMode,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
       installPreferOffline: options.installPreferOffline,
@@ -650,6 +686,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
     console.log(`[workspace-dev] Generation locale default: ${options.generationLocale}`);
+    console.log(`[workspace-dev] Router mode default: ${options.routerMode}`);
     console.log(
       `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
     );
