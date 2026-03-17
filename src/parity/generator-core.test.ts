@@ -13,6 +13,56 @@ import {
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
+const toRgba = (hex: string): { r: number; g: number; b: number } => {
+  const normalized = hex.replace("#", "");
+  const payload = normalized.length >= 6 ? normalized.slice(0, 6) : normalized;
+  if (!/^[0-9a-f]{6}$/i.test(payload)) {
+    throw new Error(`Invalid hex color '${hex}'`);
+  }
+  return {
+    r: Number.parseInt(payload.slice(0, 2), 16),
+    g: Number.parseInt(payload.slice(2, 4), 16),
+    b: Number.parseInt(payload.slice(4, 6), 16)
+  };
+};
+
+const toLuminance = (hex: string): number => {
+  const { r, g, b } = toRgba(hex);
+  const toLinear = (channel: number): number => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+};
+
+const contrastRatio = (foreground: string, background: string): number => {
+  const foregroundLuminance = toLuminance(foreground);
+  const backgroundLuminance = toLuminance(background);
+  const brighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (brighter + 0.05) / (darker + 0.05);
+};
+
+const extractThemeHex = ({
+  themeContent,
+  scheme,
+  token
+}: {
+  themeContent: string;
+  scheme: "light" | "dark";
+  token: "primary" | "secondary" | "success" | "warning" | "error" | "info" | "background" | "divider";
+}): string => {
+  const pattern =
+    token === "background"
+      ? new RegExp(`${scheme}: \\{[\\s\\S]*?background: \\{ default: "(#[0-9a-f]+)"`, "i")
+      : token === "divider"
+        ? new RegExp(`${scheme}: \\{[\\s\\S]*?divider: "(#[0-9a-f]+)"`, "i")
+        : new RegExp(`${scheme}: \\{[\\s\\S]*?${token}: \\{ main: "(#[0-9a-f]+)"`, "i");
+  const match = themeContent.match(pattern);
+  assert.ok(match?.[1], `Expected ${scheme}.${token} hex in generated theme.`);
+  return match[1];
+};
+
 const createIr = () => ({
   sourceName: "Demo",
   tokens: {
@@ -451,22 +501,81 @@ test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
   const themeContent = createDeterministicThemeFile(ir).content;
+  const appContent = createDeterministicAppFile(ir.screens).content;
 
   assert.equal(toDeterministicScreenPath("Kredit Übersicht"), "src/screens/Kredit_bersicht.tsx");
   assert.equal(createDeterministicThemeFile(ir).path, "src/theme/theme.ts");
   assert.equal(createDeterministicScreenFile(screen).path.startsWith("src/screens/"), true);
   assert.equal(createDeterministicAppFile(ir.screens).path, "src/App.tsx");
+  assert.ok(themeContent.includes("colorSchemes: {"));
+  assert.ok(themeContent.includes("light: {"));
+  assert.ok(themeContent.includes("dark: {"));
+  assert.equal(themeContent.includes('palette: {\n    mode: "light"'), false);
   assert.ok(themeContent.includes('success: { main: "#16a34a" }'));
   assert.ok(themeContent.includes('warning: { main: "#d97706" }'));
   assert.ok(themeContent.includes('error: { main: "#dc2626" }'));
   assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
   assert.ok(themeContent.includes('divider: "#2222221f"'));
   assert.ok(themeContent.includes('focus: "#ee00001f"'));
+  assert.ok(themeContent.includes('background: { default: "#121212", paper: "#1e1e1e" }'));
+  assert.ok(themeContent.includes('divider: "#f5f7fb1f"'));
   assert.ok(themeContent.includes('subtitle1: { fontSize:'));
   assert.ok(themeContent.includes('button: { fontSize:'));
   assert.ok(themeContent.includes('overline: { fontSize:'));
   assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
   assert.ok(themeContent.includes('textTransform: "none"'));
+  assert.ok(appContent.includes('import { useColorScheme } from "@mui/material/styles";'));
+  assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
+  assert.ok(appContent.includes('window.matchMedia("(prefers-color-scheme: dark)")'));
+  assert.ok(appContent.includes('setMode(nextMode)'));
+});
+
+test("deterministic theme dark palette remains byte-stable and accessible on dark surfaces", () => {
+  const ir = createIr();
+  const firstTheme = createDeterministicThemeFile(ir).content;
+  const secondTheme = createDeterministicThemeFile(ir).content;
+
+  assert.equal(firstTheme, secondTheme);
+
+  const darkBackground = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "background"
+  });
+  const darkPrimary = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "primary"
+  });
+  const darkSecondary = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "secondary"
+  });
+  const darkSuccess = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "success"
+  });
+  const darkWarning = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "warning"
+  });
+  const darkError = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "error"
+  });
+  const darkInfo = extractThemeHex({
+    themeContent: firstTheme,
+    scheme: "dark",
+    token: "info"
+  });
+
+  for (const color of [darkPrimary, darkSecondary, darkSuccess, darkWarning, darkError, darkInfo]) {
+    assert.ok(contrastRatio(color, darkBackground) >= 4.5);
+  }
 });
 
 test("deterministic screen rendering uses a single root Container without unnecessary Box import", () => {
@@ -5456,6 +5565,7 @@ test("generateArtifacts writes semantic palette fields to theme and tokens files
   });
 
   const themeContent = await readFile(path.join(projectDir, "src/theme/theme.ts"), "utf8");
+  const appContent = await readFile(path.join(projectDir, "src/App.tsx"), "utf8");
   const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src/theme/tokens.json"), "utf8")) as {
     palette: {
       success: string;
@@ -5483,16 +5593,25 @@ test("generateArtifacts writes semantic palette fields to theme and tokens files
     };
   };
 
+  assert.ok(themeContent.includes("colorSchemes: {"));
+  assert.ok(themeContent.includes("light: {"));
+  assert.ok(themeContent.includes("dark: {"));
   assert.ok(themeContent.includes('success: { main: "#16a34a" }'));
   assert.ok(themeContent.includes('warning: { main: "#d97706" }'));
   assert.ok(themeContent.includes('error: { main: "#dc2626" }'));
   assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
   assert.ok(themeContent.includes('divider: "#2222221f"'));
   assert.ok(themeContent.includes('disabledBackground: "#2222221f"'));
+  assert.ok(themeContent.includes('background: { default: "#121212", paper: "#1e1e1e" }'));
+  assert.ok(themeContent.includes('text: { primary: "#f5f7fb" }'));
+  assert.ok(themeContent.includes('divider: "#f5f7fb1f"'));
   assert.ok(themeContent.includes("subtitle1: {"));
   assert.ok(themeContent.includes("button: {"));
   assert.ok(themeContent.includes("caption: {"));
   assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
+  assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
+  assert.ok(appContent.includes('useColorScheme'));
+  assert.ok(appContent.includes('Switch to dark mode'));
   assert.equal(tokensContent.palette.success, "#16a34a");
   assert.equal(tokensContent.palette.warning, "#d97706");
   assert.equal(tokensContent.palette.error, "#dc2626");
