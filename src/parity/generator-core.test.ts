@@ -4782,6 +4782,359 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes('role="main"'));
 });
 
+test("deterministic screen rendering promotes repeating row patterns to semantic list with secondaryAction and divider", () => {
+  const makeRow = ({ id, y, title, subtitle, iconName }: { id: string; y: number; title: string; subtitle: string; iconName: string }) => ({
+    id,
+    name: `Row ${id}`,
+    nodeType: "FRAME",
+    type: "container" as const,
+    layoutMode: "HORIZONTAL" as const,
+    x: 0,
+    y,
+    width: 328,
+    height: 48,
+    children: [
+      {
+        id: `${id}-icon`,
+        name: iconName,
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 8,
+        y: y + 14,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: `${id}-title`,
+        name: `${id}-title`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: title,
+        x: 44,
+        y: y + 8
+      },
+      {
+        id: `${id}-subtitle`,
+        name: `${id}-subtitle`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: subtitle,
+        x: 44,
+        y: y + 26
+      },
+      {
+        id: `${id}-action`,
+        name: `${id}-action`,
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 300,
+        y: y + 12,
+        width: 24,
+        height: 24,
+        children: [
+          {
+            id: `${id}-action-icon`,
+            name: "ic_more_vert",
+            nodeType: "INSTANCE",
+            type: "container" as const,
+            x: 302,
+            y: y + 14,
+            width: 20,
+            height: 20,
+            children: []
+          }
+        ]
+      }
+    ]
+  });
+
+  const screen = {
+    id: "list-pattern-screen",
+    name: "List Pattern Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "list-pattern-container",
+        name: "Pattern Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 336,
+        height: 176,
+        children: [
+          makeRow({ id: "row-a", y: 0, title: "Eintrag A", subtitle: "Beschreibung A", iconName: "ic_search" }),
+          {
+            id: "row-divider-a",
+            name: "Divider",
+            nodeType: "RECTANGLE",
+            type: "divider" as const,
+            x: 0,
+            y: 52,
+            width: 336,
+            height: 1,
+            fillColor: "#d4d4d4",
+            children: []
+          },
+          makeRow({ id: "row-b", y: 56, title: "Eintrag B", subtitle: "Beschreibung B", iconName: "ic_add" }),
+          {
+            id: "row-divider-b",
+            name: "Divider",
+            nodeType: "RECTANGLE",
+            type: "divider" as const,
+            x: 0,
+            y: 108,
+            width: 336,
+            height: 1,
+            fillColor: "#d4d4d4",
+            children: []
+          },
+          makeRow({ id: "row-c", y: 112, title: "Eintrag C", subtitle: "Beschreibung C", iconName: "ic_home" })
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<List "));
+  assert.ok(content.includes("<ListItemIcon>"));
+  assert.ok(content.includes('secondaryAction={<IconButton edge="end"'));
+  assert.ok(content.includes('secondary={"Beschreibung A"}'));
+  assert.ok(content.includes('<Divider component="li" />'));
+  assert.equal((content.match(/<ListItem key=\{/g) ?? []).length, 3);
+});
+
+test("deterministic screen rendering renders ListItemAvatar when repeating rows have avatars", () => {
+  const makeAvatarRow = ({ id, y, initials, label }: { id: string; y: number; initials: string; label: string }) => ({
+    id,
+    name: `Avatar ${id}`,
+    nodeType: "FRAME",
+    type: "container" as const,
+    layoutMode: "HORIZONTAL" as const,
+    x: 0,
+    y,
+    width: 320,
+    height: 44,
+    children: [
+      {
+        id: `${id}-avatar`,
+        name: "Avatar",
+        nodeType: "FRAME",
+        type: "avatar" as const,
+        x: 8,
+        y: y + 8,
+        width: 28,
+        height: 28,
+        children: [
+          {
+            id: `${id}-avatar-text`,
+            name: "Avatar Text",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: initials,
+            x: 14,
+            y: y + 14
+          }
+        ]
+      },
+      {
+        id: `${id}-label`,
+        name: `${id}-label`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: label,
+        x: 50,
+        y: y + 14
+      }
+    ]
+  });
+
+  const screen = {
+    id: "list-avatar-pattern-screen",
+    name: "List Avatar Pattern",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "list-avatar-container",
+        name: "List Avatar Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 152,
+        children: [
+          makeAvatarRow({ id: "avatar-row-a", y: 0, initials: "AB", label: "Anna Becker" }),
+          makeAvatarRow({ id: "avatar-row-b", y: 52, initials: "CD", label: "Clara Damm" }),
+          makeAvatarRow({ id: "avatar-row-c", y: 104, initials: "EF", label: "Emil Funk" })
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<List "));
+  assert.ok(content.includes("<ListItemAvatar><Avatar>"));
+  assert.ok(content.includes('primary={"Anna Becker"}'));
+  assert.ok(content.includes('{\"AB\"}'));
+});
+
+test("deterministic screen rendering keeps stack fallback when list pattern has only two rows", () => {
+  const makeRow = ({ id, y, label }: { id: string; y: number; label: string }) => ({
+    id,
+    name: `Compact ${id}`,
+    nodeType: "FRAME",
+    type: "container" as const,
+    layoutMode: "HORIZONTAL" as const,
+    x: 0,
+    y,
+    width: 300,
+    height: 42,
+    children: [
+      {
+        id: `${id}-icon`,
+        name: "ic_search",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 8,
+        y: y + 10,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: `${id}-label`,
+        name: `${id}-label`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: label,
+        x: 44,
+        y: y + 12
+      },
+      {
+        id: `${id}-action`,
+        name: "icon-action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 272,
+        y: y + 8,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  });
+
+  const screen = {
+    id: "list-regression-two-rows-screen",
+    name: "List Regression Two Rows",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "list-regression-two-rows-container",
+        name: "Rows Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 100,
+        children: [makeRow({ id: "row-1", y: 0, label: "Erster Punkt" }), makeRow({ id: "row-2", y: 52, label: "Zweiter Punkt" })]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<List "), false);
+  assert.ok(content.includes("<Stack "));
+});
+
+test("deterministic screen rendering keeps stack fallback when repeating rows have inconsistent structure", () => {
+  const screen = {
+    id: "list-regression-structure-screen",
+    name: "List Regression Structure",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "list-regression-structure-container",
+        name: "Rows Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 168,
+        children: [
+          {
+            id: "reg-row-a",
+            name: "Row A",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 48,
+            children: [
+              { id: "reg-row-a-icon", name: "ic_search", nodeType: "INSTANCE", type: "container" as const, x: 8, y: 14, width: 20, height: 20, children: [] },
+              { id: "reg-row-a-text", name: "A", nodeType: "TEXT", type: "text" as const, text: "Eintrag A", x: 44, y: 16 },
+              { id: "reg-row-a-action", name: "icon-action", nodeType: "FRAME", type: "button" as const, x: 292, y: 12, width: 20, height: 20, children: [] }
+            ]
+          },
+          {
+            id: "reg-row-b",
+            name: "Row B",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 0,
+            y: 56,
+            width: 320,
+            height: 48,
+            children: [
+              { id: "reg-row-b-icon", name: "ic_add", nodeType: "INSTANCE", type: "container" as const, x: 8, y: 70, width: 20, height: 20, children: [] },
+              { id: "reg-row-b-text", name: "B", nodeType: "TEXT", type: "text" as const, text: "Eintrag B", x: 44, y: 72 },
+              { id: "reg-row-b-action", name: "icon-action", nodeType: "FRAME", type: "button" as const, x: 292, y: 68, width: 20, height: 20, children: [] }
+            ]
+          },
+          {
+            id: "reg-row-c",
+            name: "Row C",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 0,
+            y: 112,
+            width: 320,
+            height: 48,
+            children: [
+              { id: "reg-row-c-icon", name: "ic_home", nodeType: "INSTANCE", type: "container" as const, x: 8, y: 126, width: 20, height: 20, children: [] },
+              { id: "reg-row-c-text", name: "C", nodeType: "TEXT", type: "text" as const, text: "Eintrag C", x: 44, y: 128 }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<List "), false);
+  assert.ok(content.includes("<Stack "));
+});
+
 test("deterministic extended renderer falls back to container for implausible models", () => {
   const screen = {
     id: "fallback-screen",
