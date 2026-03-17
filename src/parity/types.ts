@@ -778,6 +778,12 @@ export interface ScreenElementIR {
     bottom: number;
     left: number;
   };
+  margin?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
   cornerRadius?: number;
   prototypeNavigation?: {
     targetScreenId: string;
