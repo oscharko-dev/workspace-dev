@@ -3420,8 +3420,13 @@ ${indent}</FormControl>`;
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
   const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
-  const inputProps = `inputProps: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`;
-  const inputPropsWithAdornment = endAdornment ? `${endAdornment}, ${inputProps}` : inputProps;
+  const slotPropsEntries = [
+    endAdornment ? `input: { ${endAdornment} }` : "",
+    `htmlInput: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`,
+    `formHelperText: { id: ${literal(helperTextId)} }`
+  ]
+    .filter((entry) => entry.length > 0)
+    .join(`,\n${indent}    `);
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
 ${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
@@ -3437,8 +3442,9 @@ ${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
 ${indent}    "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} },
 ${indent}    "& .MuiInputLabel-root": { ${inputLabelStyle} }
 ${indent}  }}
-${indent}  FormHelperTextProps={{ id: ${literal(helperTextId)} }}
-${indent}  InputProps={{ ${inputPropsWithAdornment} }}
+${indent}  slotProps={{
+${indent}    ${slotPropsEntries}
+${indent}  }}
 ${indent}/>`;
 };
 

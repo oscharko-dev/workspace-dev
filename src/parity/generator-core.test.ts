@@ -1228,10 +1228,52 @@ test("deterministic screen rendering infers required fields from star labels and
   assert.ok(block.includes("required"));
   assert.ok(block.includes('aria-describedby={"email_input_required_email-helper-text"}'));
   assert.ok(block.includes('"aria-required": "true"'));
-  assert.ok(block.includes('FormHelperTextProps={{ id: "email_input_required_email-helper-text" }}'));
+  assert.ok(block.includes("slotProps={{"));
+  assert.ok(block.includes('htmlInput: { "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }'));
+  assert.ok(block.includes('formHelperText: { id: "email_input_required_email-helper-text" }'));
+  assert.equal(block.includes("InputProps={{"), false);
+  assert.equal(block.includes("InputLabelProps={{"), false);
+  assert.equal(block.includes("FormHelperTextProps={{"), false);
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("helperText={"));
   assert.ok(block.includes("onBlur={() => handleFieldBlur("));
+});
+
+test("deterministic screen rendering maps TextField suffix adornment via slotProps.input and avoids deprecated props", () => {
+  const amountInput = createSemanticInputNode({
+    id: "amount-input",
+    name: "Amount Input",
+    label: "Betrag"
+  });
+  amountInput.children.push({
+    id: "amount-input-suffix",
+    name: "Suffix",
+    nodeType: "TEXT",
+    type: "text" as const,
+    text: "€",
+    x: 260,
+    y: 28
+  });
+
+  const screen = {
+    id: "textfield-suffix-screen",
+    name: "TextField Suffix Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [amountInput]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const block = findRenderedTextFieldBlock({ content, label: "Betrag" });
+  assert.ok(content.includes("InputAdornment"));
+  assert.ok(block.includes("slotProps={{"));
+  assert.ok(block.includes('input: { endAdornment: <InputAdornment position="end">{"€"}</InputAdornment> }'));
+  assert.ok(block.includes('htmlInput: { "aria-describedby": "amount_input_amount_input-helper-text" }'));
+  assert.ok(block.includes('formHelperText: { id: "amount_input_amount_input-helper-text" }'));
+  assert.equal(block.includes("InputProps={{"), false);
+  assert.equal(block.includes("InputLabelProps={{"), false);
+  assert.equal(block.includes("FormHelperTextProps={{"), false);
 });
 
 test("deterministic screen rendering emits form validation state scaffolding for interactive fields", () => {
