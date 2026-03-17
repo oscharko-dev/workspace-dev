@@ -16,6 +16,7 @@ test("schema: valid submit body parses correctly", () => {
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
     brandTheme: "Sparkasse",
+    generationLocale: "en-US",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
@@ -23,6 +24,7 @@ test("schema: valid submit body parses correctly", () => {
   if (result.success) {
     assert.equal(result.data.figmaFileKey, "abc123");
     assert.equal(result.data.brandTheme, "sparkasse");
+    assert.equal(result.data.generationLocale, "en-US");
     assert.equal(result.data.figmaSourceMode, "rest");
     assert.equal(result.data.enableGitPr, false);
   }
@@ -64,7 +66,8 @@ test("schema: optional fields must be strings when provided", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
-    projectName: 123
+    projectName: 123,
+    generationLocale: 5
   });
   assert.equal(result.success, false);
 });

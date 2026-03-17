@@ -428,6 +428,7 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(request.repoToken, undefined);
     assert.equal(request.enableGitPr, false);
     assert.equal(request.brandTheme, "derived");
+    assert.equal(request.generationLocale, "de-DE");
     assert.equal(preview.enabled, true);
 
     const generatedProjectDir = path.join(outputRoot, "jobs", jobId, "generated-app");
@@ -508,7 +509,7 @@ test("workspace server fails validate.project when skipInstall=true and dependen
   }
 });
 
-test("workspace server resolves submit brandTheme override over server default", async () => {
+test("workspace server resolves submit brandTheme and generationLocale overrides over server defaults", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
   const server = await createWorkspaceServer({
@@ -516,6 +517,7 @@ test("workspace server resolves submit brandTheme override over server default",
     host: "127.0.0.1",
     outputRoot,
     brandTheme: "sparkasse",
+    generationLocale: "de-DE",
     fetchImpl: createFakeFigmaFetch()
   });
 
@@ -528,6 +530,7 @@ test("workspace server resolves submit brandTheme override over server default",
         figmaFileKey: "test-key",
         figmaAccessToken: "figd_xxx",
         brandTheme: "derived",
+        generationLocale: "en-US",
         figmaSourceMode: "rest",
         llmCodegenMode: "deterministic"
       }
@@ -541,6 +544,7 @@ test("workspace server resolves submit brandTheme override over server default",
 
     assert.equal(finalStatus.status, "completed");
     assert.equal(request.brandTheme, "derived");
+    assert.equal(request.generationLocale, "en-US");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

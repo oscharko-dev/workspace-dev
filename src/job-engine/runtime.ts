@@ -1,4 +1,5 @@
 import type { WorkspaceBrandTheme } from "../contracts/index.js";
+import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import type { JobEngineRuntime } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -46,6 +47,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementBudget,
   figmaScreenElementMaxDepth,
   brandTheme,
+  generationLocale,
   commandTimeoutMs,
   enableUiValidation,
   installPreferOffline,
@@ -68,6 +70,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementBudget?: number;
   figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
+  generationLocale?: string;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
   installPreferOffline?: boolean;
@@ -125,6 +128,10 @@ export const resolveRuntimeSettings = ({
         : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
     brandTheme:
       typeof brandTheme === "string" ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME) : DEFAULT_BRAND_THEME,
+    generationLocale: resolveGenerationLocale({
+      requestedLocale: generationLocale,
+      fallbackLocale: DEFAULT_GENERATION_LOCALE
+    }).locale,
     commandTimeoutMs:
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))

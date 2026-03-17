@@ -23,6 +23,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.9.0] - 2026-03-17
+
+### Configurable generation locale for deterministic select-option derivation
+
+Added:
+
+- `WorkspaceStartOptions.generationLocale?: string` (default `de-DE`)
+- `WorkspaceJobInput.generationLocale?: string` (optional per-job override)
+- `WorkspaceJobRequestMetadata.generationLocale: string` (resolved effective locale)
+
 ## [2.8.0] - 2026-03-17
 
 ### Deterministic image export runtime switch
