@@ -1608,6 +1608,84 @@ test("figmaToDesignIrWithOptions classifies extended element types deterministic
   assert.equal(byId.get("node-container"), "container");
 });
 
+test("figmaToDesignIrWithOptions classifies visible IMAGE-paint nodes as image", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Image Paint",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-image-paint",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "image-paint-node",
+                  type: "RECTANGLE",
+                  name: "Hero",
+                  fills: [{ type: "IMAGE" }],
+                  absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 120 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const typeById = new Map(ir.screens[0]?.children.map((child) => [child.id, child.type]));
+  assert.equal(typeById.get("image-paint-node"), "image");
+});
+
+test("figmaToDesignIrWithOptions classifies explicit VECTOR image nodes and keeps icon helpers unchanged", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Vector Images",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-vector-image",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "vector-image-node",
+                  type: "VECTOR",
+                  name: "Photo Illustration",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 64, height: 64 }
+                },
+                {
+                  id: "vector-icon-node",
+                  type: "VECTOR",
+                  name: "icon/photo",
+                  absoluteBoundingBox: { x: 80, y: 0, width: 24, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const typeById = new Map(ir.screens[0]?.children.map((child) => [child.id, child.type]));
+  assert.equal(typeById.get("vector-image-node"), "image");
+  assert.equal(typeById.get("vector-icon-node"), "container");
+});
+
 test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types", () => {
   const ir = figmaToDesignIrWithOptions(createSemanticHintOverrideFigmaFile(), {
     mcpEnrichment: {

@@ -151,12 +151,14 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ICON_MAP_FILE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_EXPORT_IMAGES/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--icon-map-file/i);
+  assert.match(result.stdout, /--export-images/i);
   assert.match(result.stdout, /--skip-install/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--brand/i);
@@ -300,6 +302,55 @@ test("cli contract: --icon-map-file is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Icon fallback map file: .*tmp\/icon-map\.json/i);
     assert.match(output, /Icon fallback map file: .*tmp\/icon-map\.json/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --export-images is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--export-images", "false"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Export images: false/i);
+    assert.match(output, /Export images: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --export-images flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--export-images", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_EXPORT_IMAGES: "false"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Export images: true/i);
+    assert.match(output, /Export images: true/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

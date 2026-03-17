@@ -260,6 +260,12 @@ const resolveFirstVisibleGradientPaint = (paints: FigmaPaint[] | undefined): Fig
   });
 };
 
+const resolveFirstVisibleImagePaint = (paints: FigmaPaint[] | undefined): FigmaPaint | undefined => {
+  return paints?.find((paint) => {
+    return paint.visible !== false && normalizePaintType(paint.type) === "IMAGE";
+  });
+};
+
 const toCssNumber = (value: number, precision = 2): string => {
   const normalized = Number.isFinite(value) ? value : 0;
   const fixed = normalized.toFixed(precision).replace(/\.?0+$/, "");
@@ -694,6 +700,19 @@ const hasAnySubstring = (value: string, tokens: string[]): boolean => {
 
 const hasAnyWord = (value: string, words: string[]): boolean => {
   return words.some((word) => new RegExp(`\\b${escapeRegExp(word)}\\b`, "i").test(value));
+};
+
+const isIconLikeNodeName = (value: string): boolean => {
+  return (
+    value.includes("muisvgiconroot") ||
+    value.includes("iconcomponent") ||
+    value.startsWith("ic_") ||
+    value.startsWith("icon/") ||
+    value.startsWith("icons/") ||
+    value.startsWith("icon-") ||
+    value.startsWith("icon_") ||
+    hasAnyWord(value, ["icon"])
+  );
 };
 
 interface NormalizedVariantData {
@@ -1154,6 +1173,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
   const hasChildren = childCount > 0;
   const hasSolidFill = Boolean(resolveFirstVisibleSolidPaint(node.fills));
   const hasGradientFill = Boolean(resolveFirstVisibleGradientPaint(node.fills));
+  const hasImageFill = Boolean(resolveFirstVisibleImagePaint(node.fills));
   const hasShadow = hasVisibleShadowEffect(node.effects);
   const hasVisualFill = hasSolidFill || hasGradientFill;
   const hasVisualSurface = hasVisualFill || hasShadow;
@@ -1204,6 +1224,7 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
   const hasStrongImageName = hasAnyWord(name, ["image", "photo", "illustration", "hero", "banner"]);
+  const hasIconLikeName = isIconLikeNodeName(name);
   const rowBuckets = (() => {
     const values = (node.children ?? [])
       .map((child) => child.absoluteBoundingBox?.y)
@@ -1398,7 +1419,15 @@ const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
     return "button";
   }
 
+  if ((node.type === "RECTANGLE" || node.type === "FRAME" || node.type === "VECTOR") && hasImageFill && !hasChildren && !hasIconLikeName) {
+    return "image";
+  }
+
   if ((node.type === "RECTANGLE" || node.type === "FRAME") && hasStrongImageName && !hasChildren) {
+    return "image";
+  }
+
+  if (node.type === "VECTOR" && hasStrongImageName && !hasChildren && !hasIconLikeName) {
     return "image";
   }
 

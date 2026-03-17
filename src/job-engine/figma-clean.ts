@@ -39,7 +39,7 @@ const ALLOWED_NODE_KEYS = new Set([
 ]);
 
 const ALLOWED_COLOR_KEYS = new Set(["r", "g", "b", "a"]);
-const ALLOWED_PAINT_KEYS = new Set(["type", "color", "opacity", "gradientStops", "gradientHandlePositions"]);
+const ALLOWED_PAINT_KEYS = new Set(["type", "visible", "color", "opacity", "gradientStops", "gradientHandlePositions"]);
 const ALLOWED_BOX_KEYS = new Set(["x", "y", "width", "height"]);
 const ALLOWED_STYLE_KEYS = new Set(["fontSize", "fontWeight", "fontFamily", "lineHeightPx", "textAlignHorizontal"]);
 const ALLOWED_GEOMETRY_KEYS = new Set(["path", "windingRule"]);
@@ -236,11 +236,23 @@ const sanitizePaints = (value: unknown, metrics: FigmaCleaningAccumulator): Arra
 
       metrics.removedPropertyCount += countRemovedKeys(paintCandidate, ALLOWED_PAINT_KEYS);
 
+      if (paintCandidate.visible === false) {
+        return undefined;
+      }
+
       const type = typeof paintCandidate.type === "string" ? paintCandidate.type : undefined;
       if (!type) {
         return undefined;
       }
       const normalizedType = type.trim().toUpperCase();
+
+      if (normalizedType === "IMAGE") {
+        const nextPaint: Record<string, unknown> = { type: normalizedType };
+        if (isFiniteNumber(paintCandidate.opacity)) {
+          nextPaint.opacity = paintCandidate.opacity;
+        }
+        return nextPaint;
+      }
 
       if (normalizedType === "SOLID") {
         const color = sanitizeColor(paintCandidate.color, metrics);

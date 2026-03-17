@@ -187,3 +187,120 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
   assert.equal(raw.length > cleaned.length, true);
   assert.equal(cleaned.includes('"visible": false'), false);
 });
+
+const createImageBoardPayload = () => ({
+  name: "Image Board",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-image",
+            type: "FRAME",
+            name: "Image Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+            children: [
+              {
+                id: "image-node",
+                type: "RECTANGLE",
+                name: "Hero",
+                fills: [{ type: "IMAGE" }],
+                absoluteBoundingBox: { x: 0, y: 0, width: 320, height: 180 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+test("createJobEngine skips /v1/images export calls when exportImages=false", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-no-image-export-"));
+  const payload = createImageBoardPayload();
+  let imageEndpointCalls = 0;
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      exportImages: false,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (input) => {
+        const rawUrl = typeof input === "string" ? input : input.toString();
+        if (rawUrl.includes("/v1/images/")) {
+          imageEndpointCalls += 1;
+        }
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(imageEndpointCalls, 0);
+  assert.equal(status.stages.find((stage) => stage.name === "codegen.generate")?.status, "completed");
+});
+
+test("createJobEngine continues codegen when image export warns on /v1/images failures", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-image-export-warn-"));
+  const payload = createImageBoardPayload();
+  let imageEndpointCalls = 0;
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      exportImages: true,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (input) => {
+        const rawUrl = typeof input === "string" ? input : input.toString();
+        if (rawUrl.includes("/v1/images/")) {
+          imageEndpointCalls += 1;
+          return new Response(JSON.stringify({ err: "upstream unavailable" }), {
+            status: 500,
+            headers: {
+              "content-type": "application/json"
+            }
+          });
+        }
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        });
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(imageEndpointCalls > 0, true);
+  assert.equal(status.stages.find((stage) => stage.name === "codegen.generate")?.status, "completed");
+  assert.ok(status.logs.some((entry) => entry.message.toLowerCase().includes("image asset export warning")));
+});
