@@ -52,9 +52,9 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = 
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
   "scripts/perf-runner.mjs": "f236d2543bd33b3cf7c0088f221091e4b1144c156ac97adf202b3fdd95e59c63",
   "src/App.tsx": "3e2284af4c28946708128ed4feeeb643178010781a99409acc76269363a603ef",
-  "src/main.tsx": "b0eb6415571d137571820c60016e3e97e4f04afe8e6f1562824ff4745a3925e8",
+  "src/main.tsx": "e4ab9640e86610c9e4373c8436d5845230dda0997b8ad8d02b47649599cec8f0",
   "src/performance/report-web-vitals.ts": "4a818db2533f3290aac059f7117beacb45cb8b604a643ad0f227ca8d3d213e5d",
-  "src/theme/theme.ts": "db3d5849c0f85cc08e324eba84169ad1a3e9ea5c45652449dd41a8031550cd34"
+  "src/theme/theme.ts": "6d873ec1d31aaa36bb233f2cb0df6adc0fd52bf12740e3325995a5264858be64"
 };
 
 test("template integrity: bundled template matches deterministic hash snapshot", async () => {
@@ -94,8 +94,18 @@ test("template semantics: React 19 dependencies and JSX typing coverage are expl
 
 test("template semantics: main entry retains CssBaseline global reset", async () => {
   const mainContent = await readFile(path.join(templateRoot, "src/main.tsx"), "utf8");
-  assert.match(mainContent, /import\s*\{\s*ThemeProvider,\s*CssBaseline\s*\}\s*from\s*["']@mui\/material["'];?/);
+  assert.match(mainContent, /import\s+CssBaseline\s+from\s+["']@mui\/material\/CssBaseline["'];?/);
+  assert.match(mainContent, /import\s*\{\s*ThemeProvider\s*\}\s*from\s*["']@mui\/material\/styles["'];?/);
+  assert.match(mainContent, /<ThemeProvider[^>]*defaultMode="system"[^>]*noSsr[^>]*>/);
   assert.match(mainContent, /<CssBaseline\s*\/>/);
+});
+
+test("template semantics: theme baseline ships both light and dark color schemes", async () => {
+  const themeContent = await readFile(path.join(templateRoot, "src/theme/theme.ts"), "utf8");
+  assert.match(themeContent, /colorSchemes:\s*\{/);
+  assert.match(themeContent, /light:\s*\{/);
+  assert.match(themeContent, /dark:\s*\{/);
+  assert.match(themeContent, /MuiButton:\s*\{/);
 });
 
 test("template semantics: Vite baseline remains at least major 6 with React plugin wiring", async () => {
