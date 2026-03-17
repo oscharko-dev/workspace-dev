@@ -14,7 +14,20 @@ const createIrWithImages = (): DesignIR => {
         primary: "#d4001a",
         secondary: "#1f2937",
         background: "#ffffff",
-        text: "#111111"
+        text: "#111111",
+        success: "#16a34a",
+        warning: "#d97706",
+        error: "#dc2626",
+        info: "#0288d1",
+        divider: "#1111111f",
+        action: {
+          active: "#1111118a",
+          hover: "#d4001a0a",
+          selected: "#d4001a14",
+          disabled: "#11111142",
+          disabledBackground: "#1111111f",
+          focus: "#d4001a1f"
+        }
       },
       borderRadius: 8,
       spacingBase: 8,

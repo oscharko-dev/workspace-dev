@@ -2881,6 +2881,249 @@ test("deriveTokensForTesting boosts style-tagged brand colors", () => {
   assert.equal(tokens.palette.primary, "#0b84f3");
 });
 
+test("deriveTokensForTesting derives semantic palette colors from explicit figma signals", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Semantic Demo",
+    styles: {
+      "S:SUCCESS": { name: "System Success", styleType: "FILL" },
+      "S:WARNING": { name: "System Warning", styleType: "FILL" },
+      "S:ERROR": { name: "System Error", styleType: "FILL" },
+      "S:INFO": { name: "System Info", styleType: "FILL" },
+      "S:DIVIDER": { name: "Divider Border", styleType: "FILL" }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Semantic Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f8fafc") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 900 },
+              children: [
+                {
+                  id: "heading",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Statusübersicht",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  style: { fontSize: 32, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 340, height: 40 }
+                },
+                {
+                  id: "primary-cta",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  absoluteBoundingBox: { x: 40, y: 760, width: 260, height: 56 }
+                },
+                {
+                  id: "success-message",
+                  type: "TEXT",
+                  name: "Success Message",
+                  characters: "Erfolgreich validiert",
+                  styles: { fill: "S:SUCCESS" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#16a34a") }],
+                  style: { fontSize: 16, fontWeight: 500, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 120, width: 260, height: 24 }
+                },
+                {
+                  id: "warning-message",
+                  type: "TEXT",
+                  name: "Warning Banner",
+                  characters: "Prüfung empfohlen",
+                  styles: { fill: "S:WARNING" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d97706") }],
+                  style: { fontSize: 16, fontWeight: 500, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 160, width: 260, height: 24 }
+                },
+                {
+                  id: "error-message",
+                  type: "TEXT",
+                  name: "Error Text",
+                  characters: "Ungültige Eingabe",
+                  styles: { fill: "S:ERROR" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#f05d6c") }],
+                  style: { fontSize: 16, fontWeight: 500, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 200, width: 220, height: 24 }
+                },
+                {
+                  id: "info-message",
+                  type: "TEXT",
+                  name: "Info Hint",
+                  characters: "Weitere Informationen",
+                  styles: { fill: "S:INFO" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#0288d1") }],
+                  style: { fontSize: 16, fontWeight: 500, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 240, width: 260, height: 24 }
+                },
+                {
+                  id: "divider",
+                  type: "RECTANGLE",
+                  name: "Divider Horizontal",
+                  styles: { fill: "S:DIVIDER" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#cbd5e1") }],
+                  absoluteBoundingBox: { x: 40, y: 300, width: 520, height: 1 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.success, "#16a34a");
+  assert.equal(tokens.palette.warning, "#d97706");
+  assert.equal(tokens.palette.error, "#f05d6c");
+  assert.equal(tokens.palette.info, "#0288d1");
+  assert.equal(tokens.palette.divider, "#cbd5e1");
+  assert.equal(tokens.palette.action.active, `${tokens.palette.text}8a`);
+});
+
+test("deriveTokensForTesting keeps info distinct when primary is already blue", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Blue Primary Demo",
+    styles: {
+      "S:PRIMARY": { name: "Brand Primary", styleType: "FILL" },
+      "S:INFO": { name: "System Info", styleType: "FILL" }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Blue Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f8fafc") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1080, height: 720 },
+              children: [
+                {
+                  id: "title",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Blue primary",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  style: { fontSize: 30, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 240, height: 36 }
+                },
+                {
+                  id: "primary-button",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  styles: { fill: "S:PRIMARY" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#0b84f3") }],
+                  absoluteBoundingBox: { x: 40, y: 620, width: 260, height: 56 }
+                },
+                {
+                  id: "info-banner",
+                  type: "TEXT",
+                  name: "Info Banner",
+                  characters: "Zusätzliche Informationen",
+                  styles: { fill: "S:INFO" },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#36a2eb") }],
+                  style: { fontSize: 16, fontWeight: 500, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 120, width: 280, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.primary, "#0b84f3");
+  assert.equal(tokens.palette.info !== tokens.palette.primary, true);
+});
+
+test("deriveTokensForTesting falls back to semantic defaults when boards have no semantic signals", () => {
+  const tokens = deriveTokensForTesting({
+    name: "No Semantic Signals Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Overview Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#fdfdfd") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+              children: [
+                {
+                  id: "headline",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Kontenübersicht",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#272727") }],
+                  style: { fontSize: 28, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 320, height: 36 }
+                },
+                {
+                  id: "primary-cta",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  absoluteBoundingBox: { x: 40, y: 760, width: 260, height: 56 }
+                },
+                {
+                  id: "generic-green",
+                  type: "RECTANGLE",
+                  name: "Promo Tile",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#2e7d32") }],
+                  absoluteBoundingBox: { x: 40, y: 140, width: 240, height: 120 }
+                },
+                {
+                  id: "generic-orange",
+                  type: "RECTANGLE",
+                  name: "Metric Tile",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#ed6c02") }],
+                  absoluteBoundingBox: { x: 320, y: 140, width: 240, height: 120 }
+                },
+                {
+                  id: "generic-blue",
+                  type: "RECTANGLE",
+                  name: "Side Panel",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1976d2") }],
+                  absoluteBoundingBox: { x: 600, y: 140, width: 240, height: 120 }
+                },
+                {
+                  id: "generic-line",
+                  type: "RECTANGLE",
+                  name: "Thin Line",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#565656") }],
+                  absoluteBoundingBox: { x: 40, y: 320, width: 560, height: 1 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.success, "#16A34A");
+  assert.equal(tokens.palette.warning, "#D97706");
+  assert.equal(tokens.palette.error, "#DC2626");
+  assert.equal(tokens.palette.info, "#0288D1");
+  assert.equal(tokens.palette.divider, "#2727271f");
+});
+
 test("deriveTokensForTesting stays stable with sparse token signals", () => {
   const tokens = deriveTokensForTesting({
     name: "Sparse Demo",
@@ -2901,6 +3144,13 @@ test("deriveTokensForTesting stays stable with sparse token signals", () => {
   assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.secondary), true);
   assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.background), true);
   assert.equal(/^#[0-9a-f]{6}$/i.test(tokens.palette.text), true);
+  assert.equal(tokens.palette.success, "#16A34A");
+  assert.equal(tokens.palette.warning, "#D97706");
+  assert.equal(tokens.palette.error, "#DC2626");
+  assert.equal(tokens.palette.info, "#0288D1");
+  assert.equal(tokens.palette.divider, "#1f29371f");
+  assert.equal(tokens.palette.action.disabledBackground, "#1f29371f");
+  assert.equal(tokens.palette.action.focus, "#d4001a1f");
   assert.equal(tokens.spacingBase >= 1, true);
   assert.equal(tokens.borderRadius >= 1, true);
   assert.equal(tokens.headingSize >= tokens.bodySize, true);
