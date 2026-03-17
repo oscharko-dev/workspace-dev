@@ -70,6 +70,7 @@ export interface JobEngineRuntime {
   figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
+  iconMapFilePath: string | undefined;
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
