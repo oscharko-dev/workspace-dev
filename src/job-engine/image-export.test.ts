@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { DesignIR } from "../parity/types.js";
 import { exportImageAssetsFromFigma } from "./image-export.js";
+import { buildTypographyScaleFromAliases } from "../parity/typography-tokens.js";
 
 const createIrWithImages = (): DesignIR => {
   return {
@@ -33,7 +34,12 @@ const createIrWithImages = (): DesignIR => {
       spacingBase: 8,
       fontFamily: "Sparkasse Sans",
       headingSize: 28,
-      bodySize: 16
+      bodySize: 16,
+      typography: buildTypographyScaleFromAliases({
+        fontFamily: "Sparkasse Sans",
+        headingSize: 28,
+        bodySize: 16
+      })
     },
     screens: [
       {

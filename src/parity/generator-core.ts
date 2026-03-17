@@ -4,6 +4,7 @@ import type {
   ComponentMappingRule,
   DesignTokens,
   DesignIR,
+  DesignTokenTypographyVariantName,
   GenerationMetrics,
   GeneratedFile,
   LlmCodegenMode,
@@ -16,6 +17,7 @@ import type {
 } from "./types.js";
 import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
+import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import type { WorkspaceRouterMode } from "../contracts/index.js";
@@ -360,6 +362,34 @@ const toRemLiteral = (value: number | undefined): string | undefined => {
   return literal(`${remString}rem`);
 };
 
+const toEmLiteral = (value: number | undefined): string | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const em = Math.round(value * 10000) / 10000;
+  const emString = Number.isInteger(em) ? String(em) : em.toString();
+  return literal(`${emString}em`);
+};
+
+const toLetterSpacingEm = ({
+  letterSpacingPx,
+  fontSizePx
+}: {
+  letterSpacingPx: number | undefined;
+  fontSizePx: number | undefined;
+}): number | undefined => {
+  if (
+    typeof letterSpacingPx !== "number" ||
+    !Number.isFinite(letterSpacingPx) ||
+    typeof fontSizePx !== "number" ||
+    !Number.isFinite(fontSizePx) ||
+    fontSizePx <= 0
+  ) {
+    return undefined;
+  }
+  return Math.round((letterSpacingPx / fontSizePx) * 10000) / 10000;
+};
+
 const normalizeHexColor = (value: string | undefined): string | undefined => {
   if (!value) {
     return undefined;
@@ -438,7 +468,7 @@ const toThemeColorLiteral = ({
 type ButtonVariant = "contained" | "outlined" | "text";
 type ButtonSize = "small" | "medium" | "large";
 type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
-type HeadingComponent = "h1" | "h2" | "h3";
+type HeadingComponent = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 type LandmarkRole = "navigation";
 
 interface RgbaColor {
@@ -1526,7 +1556,14 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const indent = "  ".repeat(depth);
   const text = literal(element.text?.trim() || element.name);
   const headingComponent = context.headingComponentByNodeId.get(element.id);
+  const typographyVariantName = context.typographyVariantByNodeId.get(element.id);
+  const typographyVariant = typographyVariantName && context.tokens ? context.tokens.typography[typographyVariantName] : undefined;
   const normalizedFont = normalizeFontFamily(element.fontFamily);
+  const normalizedVariantFont = normalizeFontFamily(typographyVariant?.fontFamily ?? context.tokens?.fontFamily);
+  const letterSpacingEm = toLetterSpacingEm({
+    letterSpacingPx: element.letterSpacing,
+    fontSizePx: element.fontSize
+  });
   const textLayoutEntries = [
     ...baseLayoutEntries(element, parent, {
       includePaints: false,
@@ -1543,12 +1580,44 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
   });
 
   const isLinkLikeColor = element.fillColor && /^#0[0-4][0-9a-f]{4}$/i.test(element.fillColor);
+  const omitFontSize = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.fontSize,
+        right: typographyVariant.fontSizePx,
+        tolerance: 2
+      })
+    : false;
+  const omitFontWeight = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.fontWeight,
+        right: typographyVariant.fontWeight,
+        tolerance: 75
+      })
+    : false;
+  const omitLineHeight = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.lineHeight,
+        right: typographyVariant.lineHeightPx,
+        tolerance: 3
+      })
+    : false;
+  const omitFontFamily = typographyVariant
+    ? (!normalizedFont && !normalizedVariantFont) || normalizedFont === normalizedVariantFont
+    : false;
+  const omitLetterSpacing = typographyVariant
+    ? approximatelyEqualNumber({
+        left: letterSpacingEm,
+        right: typographyVariant.letterSpacingEm,
+        tolerance: 0.02
+      })
+    : false;
   const sx = sxString([
     ...textLayoutEntries,
-    ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
-    ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
-    ["fontFamily", normalizedFont ? literal(normalizedFont) : undefined],
+    ["fontSize", omitFontSize ? undefined : element.fontSize ? toRemLiteral(element.fontSize) : undefined],
+    ["fontWeight", omitFontWeight ? undefined : element.fontWeight ? Math.round(element.fontWeight) : undefined],
+    ["lineHeight", omitLineHeight ? undefined : element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
+    ["fontFamily", omitFontFamily ? undefined : normalizedFont ? literal(normalizedFont) : undefined],
+    ["letterSpacing", omitLetterSpacing ? undefined : toEmLiteral(letterSpacingEm)],
     ["color", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })],
     [
       "textAlign",
@@ -1584,8 +1653,9 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
     }
   }
 
+  const variantProp = typographyVariantName ? ` variant="${typographyVariantName}"` : "";
   const headingProp = headingComponent ? ` component="${headingComponent}"` : "";
-  return `${indent}<Typography${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
+  return `${indent}<Typography${variantProp}${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
 };
 
 const firstText = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
@@ -1659,6 +1729,99 @@ const collectTextNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR
   const local = element.type === "text" && element.text?.trim() ? [element] : [];
   const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child, visited));
   return [...local, ...nested];
+};
+
+const approximatelyEqualNumber = ({
+  left,
+  right,
+  tolerance
+}: {
+  left: number | undefined;
+  right: number | undefined;
+  tolerance: number;
+}): boolean => {
+  if (typeof left !== "number" || !Number.isFinite(left) || typeof right !== "number" || !Number.isFinite(right)) {
+    return false;
+  }
+  return Math.abs(left - right) <= tolerance;
+};
+
+const isHeadingTypographyVariant = (variantName: DesignTokenTypographyVariantName): boolean => {
+  return /^h[1-6]$/.test(variantName);
+};
+
+const isHeadingLikeTextNode = (node: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(node.name);
+  return (
+    HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint)) ||
+    (typeof node.fontSize === "number" && node.fontSize >= 20) ||
+    (typeof node.fontWeight === "number" && node.fontWeight >= 650)
+  );
+};
+
+const resolveTypographyVariantByNodeId = ({
+  elements,
+  tokens
+}: {
+  elements: ScreenElementIR[];
+  tokens: DesignTokens | undefined;
+}): Map<string, DesignTokenTypographyVariantName> => {
+  const byNodeId = new Map<string, DesignTokenTypographyVariantName>();
+  if (!tokens) {
+    return byNodeId;
+  }
+
+  const variants = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => ({
+    variantName,
+    variant: tokens.typography[variantName]
+  }));
+
+  for (const node of elements.flatMap((element) => collectTextNodes(element))) {
+    if (
+      typeof node.fontSize !== "number" &&
+      typeof node.fontWeight !== "number" &&
+      typeof node.lineHeight !== "number" &&
+      !node.fontFamily
+    ) {
+      continue;
+    }
+    const elementLetterSpacingEm = toLetterSpacingEm({
+      letterSpacingPx: node.letterSpacing,
+      fontSizePx: node.fontSize
+    });
+    const elementFontFamily = normalizeFontFamily(node.fontFamily);
+    const headingLike = isHeadingLikeTextNode(node);
+
+    const ranked = variants
+      .map(({ variantName, variant }) => {
+        const sizeDiff = Math.abs((node.fontSize ?? variant.fontSizePx) - variant.fontSizePx);
+        const weightDiff = Math.abs((node.fontWeight ?? variant.fontWeight) - variant.fontWeight);
+        const lineDiff = Math.abs((node.lineHeight ?? variant.lineHeightPx) - variant.lineHeightPx);
+        const letterSpacingDiff = Math.abs((elementLetterSpacingEm ?? 0) - (variant.letterSpacingEm ?? 0));
+        const tokenFontFamily = normalizeFontFamily(variant.fontFamily ?? tokens.fontFamily);
+        const familyMismatch = elementFontFamily && tokenFontFamily && elementFontFamily !== tokenFontFamily ? 1.25 : 0;
+        const headingPenalty = headingLike === isHeadingTypographyVariant(variantName) ? 0 : 0.75;
+        return {
+          variantName,
+          score: sizeDiff * 3 + weightDiff / 200 + lineDiff / 4 + letterSpacingDiff * 8 + familyMismatch + headingPenalty,
+          sizeDiff,
+          weightDiff,
+          lineDiff
+        };
+      })
+      .sort((left, right) => left.score - right.score || left.sizeDiff - right.sizeDiff);
+
+    const bestMatch = ranked[0];
+    if (!bestMatch) {
+      continue;
+    }
+    if (bestMatch.sizeDiff > 2 || bestMatch.weightDiff > 350 || bestMatch.lineDiff > 6 || bestMatch.score > 9) {
+      continue;
+    }
+    byNodeId.set(node.id, bestMatch.variantName);
+  }
+
+  return byNodeId;
 };
 
 const hasMeaningfulTextDescendants = ({
@@ -1934,7 +2097,7 @@ const inferHeadingComponentByNodeId = (elements: ScreenElementIR[]): Map<string,
     });
 
   const byNodeId = new Map<string, HeadingComponent>();
-  const levelByIndex: HeadingComponent[] = ["h1", "h2", "h3"];
+  const levelByIndex: HeadingComponent[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
   for (const candidate of headingCandidates) {
     if (byNodeId.has(candidate.id)) {
       continue;
@@ -2161,6 +2324,7 @@ interface RenderContext {
   interactiveDescendantCache: Map<string, boolean>;
   meaningfulTextDescendantCache: Map<string, boolean>;
   headingComponentByNodeId: Map<string, HeadingComponent>;
+  typographyVariantByNodeId: Map<string, DesignTokenTypographyVariantName>;
   accessibilityWarnings: AccessibilityWarning[];
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
@@ -7329,6 +7493,21 @@ const renderElement = (
 
 const fallbackThemeFile = (ir: DesignIR): GeneratedFile => {
   const tokens = ir.tokens;
+  const typographyEntries = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => {
+    const variant = tokens.typography[variantName];
+    const entries = [
+      ["fontSize", toRemLiteral(variant.fontSizePx)],
+      ["fontWeight", Math.round(variant.fontWeight)],
+      ["lineHeight", toRemLiteral(variant.lineHeightPx)],
+      ["fontFamily", variant.fontFamily ? literal(variant.fontFamily) : undefined],
+      ["letterSpacing", typeof variant.letterSpacingEm === "number" ? toEmLiteral(variant.letterSpacingEm) : undefined],
+      ["textTransform", variant.textTransform ? literal(variant.textTransform) : undefined]
+    ]
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+    return `    ${variantName}: { ${entries} }`;
+  }).join(",\n");
   return {
     path: "src/theme/theme.ts",
     content: `import { createTheme } from "@mui/material/styles";
@@ -7360,8 +7539,7 @@ export const appTheme = createTheme({
   spacing: ${Math.max(1, Math.round(tokens.spacingBase))},
   typography: {
     fontFamily: "${tokens.fontFamily}",
-    h1: { fontSize: ${Math.max(1, Math.round(tokens.headingSize))} },
-    body1: { fontSize: ${Math.max(1, Math.round(tokens.bodySize))} }
+${typographyEntries}
   },
   components: {
     MuiButton: {
@@ -7444,6 +7622,10 @@ const fallbackScreenFile = ({
 
   const simplifiedChildren = simplifyElements(screen.children);
   const headingComponentByNodeId = inferHeadingComponentByNodeId(simplifiedChildren);
+  const typographyVariantByNodeId = resolveTypographyVariantByNodeId({
+    elements: simplifiedChildren,
+    tokens
+  });
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
   const minY = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.y ?? 0)) : 0;
   const renderContext: RenderContext = {
@@ -7460,6 +7642,7 @@ const fallbackScreenFile = ({
     interactiveDescendantCache: new Map<string, boolean>(),
     meaningfulTextDescendantCache: new Map<string, boolean>(),
     headingComponentByNodeId,
+    typographyVariantByNodeId,
     accessibilityWarnings: [],
     muiImports: new Set<string>(["Container"]),
     iconImports: [],

@@ -11,6 +11,7 @@ import {
   toDeterministicScreenPath
 } from "./generator-core.js";
 import { figmaToDesignIr } from "./ir.js";
+import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
 const createIr = () => ({
   sourceName: "Demo",
@@ -38,7 +39,12 @@ const createIr = () => ({
     spacingBase: 8,
     fontFamily: "Sparkasse Sans",
     headingSize: 28,
-    bodySize: 16
+    bodySize: 16,
+    typography: buildTypographyScaleFromAliases({
+      fontFamily: "Sparkasse Sans",
+      headingSize: 28,
+      bodySize: 16
+    })
   },
   screens: [
     {
@@ -456,6 +462,11 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
   assert.ok(themeContent.includes('divider: "#2222221f"'));
   assert.ok(themeContent.includes('focus: "#ee00001f"'));
+  assert.ok(themeContent.includes('subtitle1: { fontSize:'));
+  assert.ok(themeContent.includes('button: { fontSize:'));
+  assert.ok(themeContent.includes('overline: { fontSize:'));
+  assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
+  assert.ok(themeContent.includes('textTransform: "none"'));
 });
 
 test("deterministic screen rendering uses a single root Container without unnecessary Box import", () => {
@@ -2125,6 +2136,33 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         fontWeight: 600
       },
       {
+        id: "heading-detail",
+        name: "Detail Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Detail Heading",
+        fontSize: 22,
+        fontWeight: 600
+      },
+      {
+        id: "heading-minor",
+        name: "Minor Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Minor Heading",
+        fontSize: 20,
+        fontWeight: 600
+      },
+      {
+        id: "heading-note",
+        name: "Note Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Note Heading",
+        fontSize: 18,
+        fontWeight: 650
+      },
+      {
         id: "body-copy",
         name: "Body Copy",
         nodeType: "TEXT",
@@ -2140,11 +2178,114 @@ test("deterministic screen rendering infers heading hierarchy components from ty
   const h1Line = findRenderedTypographyLine({ content, text: "Main Heading" });
   const h2Line = findRenderedTypographyLine({ content, text: "Section Heading" });
   const h3Line = findRenderedTypographyLine({ content, text: "Sub Heading" });
+  const h4Line = findRenderedTypographyLine({ content, text: "Detail Heading" });
+  const h5Line = findRenderedTypographyLine({ content, text: "Minor Heading" });
+  const h6Line = findRenderedTypographyLine({ content, text: "Note Heading" });
   const bodyLine = findRenderedTypographyLine({ content, text: "Body text" });
   assert.ok(h1Line.includes('component="h1"'));
   assert.ok(h2Line.includes('component="h2"'));
   assert.ok(h3Line.includes('component="h3"'));
+  assert.ok(h4Line.includes('component="h4"'));
+  assert.ok(h5Line.includes('component="h5"'));
+  assert.ok(h6Line.includes('component="h6"'));
   assert.equal(bodyLine.includes('component="h'), false);
+});
+
+test("generateArtifacts renders typography variants and keeps only targeted inline typography overrides", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-typography-variants-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "typography-variant-screen",
+      name: "Typography Variant Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "variant-heading",
+          name: "Main Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Main Heading",
+          fontSize: 28,
+          fontWeight: 700,
+          lineHeight: 37,
+          fontFamily: "Sparkasse Sans"
+        },
+        {
+          id: "variant-body",
+          name: "Body Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Body Copy",
+          y: 48,
+          fontSize: 16,
+          fontWeight: 400,
+          lineHeight: 24,
+          fontFamily: "Sparkasse Sans"
+        },
+        {
+          id: "variant-caption",
+          name: "Caption",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Caption Copy",
+          y: 80,
+          fontSize: 14,
+          fontWeight: 400,
+          lineHeight: 20,
+          fontFamily: "Sparkasse Sans"
+        },
+        {
+          id: "variant-custom",
+          name: "Body Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Custom Copy",
+          y: 112,
+          fontSize: 16,
+          fontWeight: 400,
+          lineHeight: 28,
+          fontFamily: "Custom Display"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Typography Variant Screen")), "utf8");
+  const headingLine = findRenderedTypographyLine({ content, text: "Main Heading" });
+  const bodyLine = findRenderedTypographyLine({ content, text: "Body Copy" });
+  const captionLine = findRenderedTypographyLine({ content, text: "Caption Copy" });
+  const customLine = findRenderedTypographyLine({ content, text: "Custom Copy" });
+
+  assert.ok(headingLine.includes('variant="h1"'));
+  assert.ok(headingLine.includes('component="h1"'));
+  assert.equal(headingLine.includes("fontSize:"), false);
+  assert.equal(headingLine.includes("fontWeight:"), false);
+  assert.equal(headingLine.includes("lineHeight:"), false);
+
+  assert.ok(bodyLine.includes('variant="body1"'));
+  assert.equal(bodyLine.includes("fontSize:"), false);
+  assert.equal(bodyLine.includes("fontWeight:"), false);
+  assert.equal(bodyLine.includes("lineHeight:"), false);
+
+  assert.ok(captionLine.includes('variant="caption"'));
+  assert.equal(captionLine.includes("fontSize:"), false);
+
+  assert.ok(customLine.includes('variant="body1"'));
+  assert.ok(customLine.includes("lineHeight: \"1.75rem\""));
+  assert.ok(customLine.includes('fontFamily: "Custom Display, Roboto, Arial, sans-serif"'));
 });
 
 test("deterministic screen rendering emits <img> accessibility semantics with deterministic placeholder fallback", () => {
@@ -5326,6 +5467,20 @@ test("generateArtifacts writes semantic palette fields to theme and tokens files
         focus: string;
       };
     };
+    typography: {
+      h1: {
+        fontSizePx: number;
+      };
+      body1: {
+        fontSizePx: number;
+      };
+      overline: {
+        letterSpacingEm?: number;
+      };
+      button: {
+        textTransform?: string;
+      };
+    };
   };
 
   assert.ok(themeContent.includes('success: { main: "#16a34a" }'));
@@ -5334,12 +5489,20 @@ test("generateArtifacts writes semantic palette fields to theme and tokens files
   assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
   assert.ok(themeContent.includes('divider: "#2222221f"'));
   assert.ok(themeContent.includes('disabledBackground: "#2222221f"'));
+  assert.ok(themeContent.includes("subtitle1: {"));
+  assert.ok(themeContent.includes("button: {"));
+  assert.ok(themeContent.includes("caption: {"));
+  assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
   assert.equal(tokensContent.palette.success, "#16a34a");
   assert.equal(tokensContent.palette.warning, "#d97706");
   assert.equal(tokensContent.palette.error, "#dc2626");
   assert.equal(tokensContent.palette.info, "#0288d1");
   assert.equal(tokensContent.palette.divider, "#2222221f");
   assert.equal(tokensContent.palette.action.focus, "#ee00001f");
+  assert.equal(tokensContent.typography.h1.fontSizePx, 28);
+  assert.equal(tokensContent.typography.body1.fontSizePx, 16);
+  assert.equal(tokensContent.typography.button.textTransform, "none");
+  assert.equal(tokensContent.typography.overline.letterSpacingEm, 0.08);
 });
 
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {
