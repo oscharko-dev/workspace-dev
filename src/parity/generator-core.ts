@@ -840,14 +840,184 @@ const simplifyElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   return result;
 };
 
-const sortChildren = (children: ScreenElementIR[], layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE"): ScreenElementIR[] => {
-  const copied = [...children];
-  if (layoutMode === "HORIZONTAL") {
-    copied.sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
-  } else {
-    copied.sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+const RTL_LANGUAGE_CODES = new Set(["ar", "he", "fa", "ur"]);
+const VISUAL_SORT_ROW_TOLERANCE_PX = 18;
+
+interface SortChildrenOptions {
+  generationLocale?: string;
+}
+
+interface SortableChild {
+  child: ScreenElementIR;
+  sourceIndex: number;
+  rowIndex: number;
+  semanticBucket: number;
+}
+
+const toLocaleLanguageCode = (locale: string | undefined): string | undefined => {
+  if (typeof locale !== "string") {
+    return undefined;
   }
-  return copied;
+  const trimmed = locale.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const canonical = Intl.getCanonicalLocales(trimmed)[0];
+    if (!canonical) {
+      return undefined;
+    }
+    const [language] = canonical.toLowerCase().split("-");
+    return language;
+  } catch {
+    const [fallback] = trimmed.toLowerCase().split(/[_-]+/);
+    return fallback || undefined;
+  }
+};
+
+const isRtlLocale = (locale: string | undefined): boolean => {
+  const languageCode = toLocaleLanguageCode(locale);
+  if (!languageCode) {
+    return false;
+  }
+  return RTL_LANGUAGE_CODES.has(languageCode);
+};
+
+const toSortSemanticBucket = (element: ScreenElementIR): number => {
+  const normalizedName = normalizeInputSemanticText(element.name || "");
+  const normalizedText = normalizeInputSemanticText(element.text?.trim() || "");
+  const combinedSemanticText = `${normalizedName} ${normalizedText}`.trim();
+  const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => combinedSemanticText.includes(hint));
+  const fontSize = typeof element.fontSize === "number" && Number.isFinite(element.fontSize) ? element.fontSize : 0;
+  const fontWeight = typeof element.fontWeight === "number" && Number.isFinite(element.fontWeight) ? element.fontWeight : 0;
+  const isLargeHeadingText = element.type === "text" && (fontSize >= 24 || (fontSize >= 20 && fontWeight >= 600));
+  if (hasHeadingHint || isLargeHeadingText) {
+    return 0;
+  }
+
+  const hasNavigationHint = A11Y_NAVIGATION_HINTS.some((hint) => normalizedName.includes(hint));
+  if (element.type === "navigation" || hasNavigationHint) {
+    return 1;
+  }
+
+  const hasReadableText = Boolean(firstText(element)?.trim() || element.text?.trim());
+  const isDecorativeImage =
+    element.type === "image" &&
+    A11Y_IMAGE_DECORATIVE_HINTS.some((hint) => normalizedName.includes(hint));
+  const isIconOnlyDecorative = (isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasReadableText;
+  const isDecorative = element.type === "divider" || element.type === "skeleton" || isDecorativeImage || isIconOnlyDecorative;
+  if (isDecorative) {
+    return 3;
+  }
+
+  return 2;
+};
+
+const hasOverlap = (left: ScreenElementIR, right: ScreenElementIR): boolean => {
+  const leftX = left.x;
+  const leftY = left.y;
+  const leftWidth = left.width;
+  const leftHeight = left.height;
+  const rightX = right.x;
+  const rightY = right.y;
+  const rightWidth = right.width;
+  const rightHeight = right.height;
+  if (
+    typeof leftX !== "number" ||
+    typeof leftY !== "number" ||
+    typeof leftWidth !== "number" ||
+    typeof leftHeight !== "number" ||
+    typeof rightX !== "number" ||
+    typeof rightY !== "number" ||
+    typeof rightWidth !== "number" ||
+    typeof rightHeight !== "number" ||
+    !Number.isFinite(leftX) ||
+    !Number.isFinite(leftY) ||
+    !Number.isFinite(leftWidth) ||
+    !Number.isFinite(leftHeight) ||
+    !Number.isFinite(rightX) ||
+    !Number.isFinite(rightY) ||
+    !Number.isFinite(rightWidth) ||
+    !Number.isFinite(rightHeight) ||
+    leftWidth <= 0 ||
+    leftHeight <= 0 ||
+    rightWidth <= 0 ||
+    rightHeight <= 0
+  ) {
+    return false;
+  }
+  const leftMaxX = leftX + leftWidth;
+  const leftMaxY = leftY + leftHeight;
+  const rightMaxX = rightX + rightWidth;
+  const rightMaxY = rightY + rightHeight;
+  return leftX < rightMaxX && leftMaxX > rightX && leftY < rightMaxY && leftMaxY > rightY;
+};
+
+const sortChildren = (
+  children: ScreenElementIR[],
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE",
+  options?: SortChildrenOptions
+): ScreenElementIR[] => {
+  const copied = [...children];
+  if (copied.length <= 1) {
+    return copied;
+  }
+
+  if (layoutMode === "HORIZONTAL") {
+    copied.sort((left, right) => (left.x ?? 0) - (right.x ?? 0));
+    return copied;
+  }
+
+  if (layoutMode === "VERTICAL") {
+    copied.sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+    return copied;
+  }
+
+  const rowClusters = clusterAxisValues({
+    values: copied.map((child) => child.y ?? 0),
+    tolerance: VISUAL_SORT_ROW_TOLERANCE_PX
+  });
+  const rtl = isRtlLocale(options?.generationLocale);
+  const sortableChildren: SortableChild[] = copied.map((child, sourceIndex) => {
+    const rowIndex = toNearestClusterIndex({
+      value: child.y ?? 0,
+      clusters: rowClusters
+    });
+    return {
+      child,
+      sourceIndex,
+      rowIndex,
+      semanticBucket: toSortSemanticBucket(child)
+    };
+  });
+
+  sortableChildren.sort((left, right) => {
+    if (left.rowIndex !== right.rowIndex) {
+      return left.rowIndex - right.rowIndex;
+    }
+
+    if (hasOverlap(left.child, right.child)) {
+      return left.sourceIndex - right.sourceIndex;
+    }
+
+    if (left.semanticBucket !== right.semanticBucket) {
+      return left.semanticBucket - right.semanticBucket;
+    }
+
+    const yDelta = (left.child.y ?? 0) - (right.child.y ?? 0);
+    if (yDelta !== 0) {
+      return yDelta;
+    }
+
+    const xDelta = rtl ? (right.child.x ?? 0) - (left.child.x ?? 0) : (left.child.x ?? 0) - (right.child.x ?? 0);
+    if (xDelta !== 0) {
+      return xDelta;
+    }
+
+    return left.sourceIndex - right.sourceIndex;
+  });
+
+  return sortableChildren.map((entry) => entry.child);
 };
 
 const sxString = (entries: Array<[string, string | number | undefined]>): string => {
@@ -3622,7 +3792,9 @@ const renderSemanticAccordion = (
   const detailsRoot = findFirstByName(element, "collapsewrapper") ?? element.children?.[1] ?? element;
   const detailsContainer = detailsRoot.children?.length === 1 ? (detailsRoot.children[0] ?? detailsRoot) : detailsRoot;
 
-  const summaryChildren = sortChildren(summaryContent.children ?? [], summaryContent.layoutMode ?? "NONE");
+  const summaryChildren = sortChildren(summaryContent.children ?? [], summaryContent.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   const renderedSummary = summaryChildren
     .map((child) =>
       renderElement(
@@ -3642,7 +3814,9 @@ const renderSemanticAccordion = (
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
 
-  const detailChildren = sortChildren(detailsContainer.children ?? [], detailsContainer.layoutMode ?? "NONE");
+  const detailChildren = sortChildren(detailsContainer.children ?? [], detailsContainer.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   const renderedDetails = detailChildren
     .map((child) =>
       renderElement(
@@ -3993,7 +4167,9 @@ const renderChildrenIntoParent = ({
   depth: number;
   context: RenderContext;
 }): string => {
-  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   return children
     .map((child) =>
       renderElement(
@@ -4202,8 +4378,9 @@ interface RenderedItem {
   node: ScreenElementIR;
 }
 
-const collectRenderedItems = (element: ScreenElementIR): RenderedItem[] => {
-  return sortChildren(element.children ?? [], element.layoutMode ?? "NONE")
+const collectRenderedItems = (element: ScreenElementIR, generationLocale?: string): RenderedItem[] => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  return sortChildren(element.children ?? [], element.layoutMode ?? "NONE", sortOptions)
     .map((child, index) => ({
       id: child.id || `${element.id}-item-${index + 1}`,
       label: firstText(child)?.trim() || child.name || `Item ${index + 1}`,
@@ -4212,8 +4389,8 @@ const collectRenderedItems = (element: ScreenElementIR): RenderedItem[] => {
     .filter((entry) => entry.label.trim().length > 0);
 };
 
-const collectRenderedItemLabels = (element: ScreenElementIR): Array<{ id: string; label: string }> => {
-  return collectRenderedItems(element).map((item) => ({
+const collectRenderedItemLabels = (element: ScreenElementIR, generationLocale?: string): Array<{ id: string; label: string }> => {
+  return collectRenderedItems(element, generationLocale).map((item) => ({
     id: item.id,
     label: item.label
   }));
@@ -4372,7 +4549,7 @@ const renderGridLayout = ({
   equalColumns?: boolean;
   columnCountHint?: number;
 }): string | null => {
-  const items = collectRenderedItems(element);
+  const items = collectRenderedItems(element, context.generationLocale);
   if (items.length < 2) {
     return null;
   }
@@ -4489,7 +4666,9 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const navigation = resolvePrototypeNavigationBinding({ element, context });
   const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const elevationProp = typeof cardElevation === "number" && cardElevation > 0 ? ` elevation={${cardElevation}}` : "";
-  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   const mediaCandidate = sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
   const actionCandidates = sortedChildren.filter((child) => {
     if (child.type === "button") {
@@ -4613,7 +4792,7 @@ const renderSelectionControl = ({
     includePaints: false
   });
   if (componentName === "Radio") {
-    const options = collectRenderedItems(element);
+    const options = collectRenderedItems(element, context.generationLocale);
     if (options.length > 1) {
       registerMuiImports(context, "RadioGroup", "FormControlLabel", "Radio");
       const renderedOptions = options
@@ -4639,7 +4818,7 @@ ${indent}</RadioGroup>`;
 };
 
 const renderList = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const items = collectRenderedItems(element);
+  const items = collectRenderedItems(element, context.generationLocale);
   if (items.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4704,7 +4883,7 @@ ${indent}</AppBar>`;
 };
 
 const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const tabs = collectRenderedItems(element);
+  const tabs = collectRenderedItems(element, context.generationLocale);
   if (tabs.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4753,7 +4932,7 @@ ${indent}</Dialog>`;
 };
 
 const renderStepper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const steps = collectRenderedItemLabels(element);
+  const steps = collectRenderedItemLabels(element, context.generationLocale);
   if (steps.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4846,7 +5025,7 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
 };
 
 const renderNavigation = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const actions = collectRenderedItems(element);
+  const actions = collectRenderedItems(element, context.generationLocale);
   if (actions.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -4958,9 +5137,13 @@ const subtreeContainsElementType = (element: ScreenElementIR, targetType: Screen
 };
 
 const renderTable = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL")
+  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL", {
+    generationLocale: context.generationLocale
+  })
     .map((row) => {
-      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL");
+      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL", {
+        generationLocale: context.generationLocale
+      });
       if (rowChildren.length === 0) {
         return [row];
       }
@@ -5012,7 +5195,9 @@ const renderTooltipElement = (element: ScreenElementIR, depth: number, parent: V
   registerMuiImports(context, "Tooltip", "Box");
   const indent = "  ".repeat(depth);
   const title = firstText(element)?.trim() || element.name || "Info";
-  const anchorNode = sortChildren(element.children ?? [], element.layoutMode ?? "NONE")[0];
+  const anchorNode = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  })[0];
   const sx = toElementSx({
     element,
     parent,
@@ -5064,7 +5249,7 @@ ${indent}</Drawer>`;
 };
 
 const renderBreadcrumbs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const crumbs = collectRenderedItemLabels(element);
+  const crumbs = collectRenderedItemLabels(element, context.generationLocale);
   if (crumbs.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
@@ -5102,7 +5287,7 @@ const renderSlider = (element: ScreenElementIR, depth: number, parent: VirtualPa
 const renderSelectElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   const key = toStateKey(element);
   const existing = context.fields.find((field) => field.key === key);
-  const optionsFromChildren = collectRenderedItems(element)
+  const optionsFromChildren = collectRenderedItems(element, context.generationLocale)
     .map((item) => sanitizeSelectOptionValue(item.label))
     .filter((value) => value.length > 0);
   const fallbackDefault = sanitizeSelectOptionValue(element.text?.trim() || firstText(element)?.trim() || "Option 1");
@@ -5311,7 +5496,9 @@ const renderContainer = (
     });
   }
 
-  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
 
   const renderedChildren = children
     .map((child) => renderElement(child, depth + 1, {
