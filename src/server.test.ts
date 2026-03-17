@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, readlink, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -545,6 +545,46 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
     assert.equal(finalStatus.status, "completed");
     assert.equal(request.brandTheme, "derived");
     assert.equal(request.generationLocale, "en-US");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server applies hash router runtime mode to generated App shell", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    routerMode: "hash",
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    assert.equal(finalStatus.status, "completed");
+
+    const appPath = path.join(outputRoot, "jobs", jobId, "generated-app", "src", "App.tsx");
+    const appContent = await readFile(appPath, "utf8");
+    assert.ok(appContent.includes("HashRouter"));
+    assert.equal(appContent.includes("BrowserRouter"), false);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

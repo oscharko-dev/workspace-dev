@@ -7,6 +7,7 @@ import type {
   WorkspaceJobLog,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
+  WorkspaceRouterMode,
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
@@ -76,6 +77,7 @@ export interface JobEngineRuntime {
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
   generationLocale: string;
+  routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;

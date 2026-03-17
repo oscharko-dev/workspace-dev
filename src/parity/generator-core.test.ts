@@ -965,7 +965,8 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.ok(logs.some((entry) => entry.includes("deterministic")));
 
   const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
-  assert.ok(appContent.includes("HashRouter"));
+  assert.ok(appContent.includes("BrowserRouter"));
+  assert.equal(appContent.includes("HashRouter"), false);
   assert.ok(appContent.includes("Suspense"));
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
@@ -1458,8 +1459,29 @@ test("createDeterministicAppFile uses lazy route-level loading for non-initial s
   ]);
 
   assert.ok(appFile.content.includes("Suspense"));
+  assert.ok(appFile.content.includes("BrowserRouter"));
   assert.ok(appFile.content.includes("const LazySettingsScreen = lazy"));
   assert.ok(appFile.content.includes('element={<LazySettingsScreen />}'));
+});
+
+test("createDeterministicAppFile emits BrowserRouter basename resolver by default", () => {
+  const ir = createIr();
+  const appFile = createDeterministicAppFile([ir.screens[0]]);
+
+  assert.ok(appFile.content.includes("resolveBrowserBasename"));
+  assert.ok(appFile.content.includes('window.location.pathname.match(/^\\/workspace\\/repros\\/[^/]+/)'));
+  assert.ok(appFile.content.includes("<BrowserRouter basename={browserBasename}>"));
+  assert.equal(appFile.content.includes("HashRouter"), false);
+});
+
+test("createDeterministicAppFile supports hash router mode override", () => {
+  const ir = createIr();
+  const appFile = createDeterministicAppFile([ir.screens[0]], { routerMode: "hash" });
+
+  assert.ok(appFile.content.includes("<HashRouter>"));
+  assert.ok(appFile.content.includes('import { HashRouter, Navigate, Route, Routes } from "react-router-dom";'));
+  assert.equal(appFile.content.includes("BrowserRouter"), false);
+  assert.equal(appFile.content.includes("resolveBrowserBasename"), false);
 });
 
 test("createDeterministicAppFile omits lazy import when only one screen exists", () => {

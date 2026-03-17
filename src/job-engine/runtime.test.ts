@@ -21,6 +21,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaScreenElementMaxDepth, 14);
   assert.equal(runtime.brandTheme, "derived");
   assert.equal(runtime.generationLocale, "de-DE");
+  assert.equal(runtime.routerMode, "browser");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, true);
@@ -44,6 +45,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaScreenElementMaxDepth: -9,
     brandTheme: "SPARKASSE",
     generationLocale: "EN-us",
+    routerMode: "HASH",
     commandTimeoutMs: 10,
     enableUiValidation: false,
     installPreferOffline: false,
@@ -64,6 +66,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaScreenElementMaxDepth, 1);
   assert.equal(runtime.brandTheme, "sparkasse");
   assert.equal(runtime.generationLocale, "en-US");
+  assert.equal(runtime.routerMode, "hash");
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.installPreferOffline, false);
@@ -89,9 +92,11 @@ test("resolveRuntimeSettings normalizes empty icon map path to undefined", () =>
 test("resolveRuntimeSettings falls back to derived brand theme for unknown values", () => {
   const runtime = resolveRuntimeSettings({
     brandTheme: "unknown",
-    generationLocale: "invalid_locale"
+    generationLocale: "invalid_locale",
+    routerMode: "invalid_router_mode"
   });
 
   assert.equal(runtime.brandTheme, "derived");
   assert.equal(runtime.generationLocale, "de-DE");
+  assert.equal(runtime.routerMode, "browser");
 });
