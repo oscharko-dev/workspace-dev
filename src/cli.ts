@@ -44,6 +44,7 @@ interface CliOptions {
   figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
+  iconMapFilePath: string | undefined;
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
@@ -170,6 +171,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 1_000,
     max: 24 * 60 * 60_000
   });
+  let iconMapFilePath = process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
   let figmaScreenElementBudget = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
@@ -334,6 +336,13 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--icon-map-file") {
+      const nextValue = args[index + 1]?.trim();
+      iconMapFilePath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--figma-screen-element-budget") {
       figmaScreenElementBudget = parseIntInRange({
         raw: args[index + 1],
@@ -427,6 +436,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaScreenNamePattern,
     figmaCacheEnabled,
     figmaCacheTtlMs,
+    iconMapFilePath,
     figmaScreenElementBudget,
     figmaScreenElementMaxDepth,
     brandTheme,
@@ -467,6 +477,7 @@ Options:
                              Case-insensitive regex include-filter for staged screen names
   --no-cache                 Disable figma.source file-system cache
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
+  --icon-map-file <path>     Override icon fallback mapping file path
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
   --figma-screen-element-max-depth <n>
@@ -499,6 +510,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
+  FIGMAPIPE_WORKSPACE_ICON_MAP_FILE
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_BRAND
@@ -562,6 +574,7 @@ const main = async (): Promise<void> => {
         : {}),
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
+      ...(options.iconMapFilePath !== undefined ? { iconMapFilePath: options.iconMapFilePath } : {}),
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
@@ -593,6 +606,9 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
+    console.log(
+      `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
+    );
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
     console.log(

@@ -121,6 +121,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const designIrFile = path.join(jobDir, "design-ir.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
+    const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -294,6 +295,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           return await generateArtifacts({
             projectDir: generatedProjectDir,
             ir,
+            iconMapFilePath,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
             onLog: (message) => {

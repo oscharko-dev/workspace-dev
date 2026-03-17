@@ -107,6 +107,7 @@ By default, generated files are written under:
 - `.workspace-dev/jobs/<jobId>/design-ir.json`
 - `.workspace-dev/repros/<jobId>/`
 - `.workspace-dev/jobs/<jobId>/repo/` (only when `enableGitPr=true`)
+- `.workspace-dev/icon-fallback-map.json` (auto-bootstrapped fallback icon mapping catalog)
 
 ## CLI
 
@@ -129,6 +130,7 @@ workspace-dev start [options]
 - `--figma-screen-name-pattern <regex>` (default unset, case-insensitive include-filter for staged candidate names)
 - `--no-cache` (default `false`, disables figma.source file-system cache)
 - `--figma-cache-ttl-ms <ms>` (default `900000`)
+- `--icon-map-file <path>` (default `<outputRoot>/icon-fallback-map.json`)
 - `--figma-screen-element-budget <n>` (default `1200`)
 - `--figma-screen-element-max-depth <n>` (default `14`)
 - `--brand <derived|sparkasse>` (default `derived`)
@@ -154,6 +156,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN`
 - `FIGMAPIPE_WORKSPACE_NO_CACHE`
 - `FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS`
+- `FIGMAPIPE_WORKSPACE_ICON_MAP_FILE`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH`
 - `FIGMAPIPE_WORKSPACE_BRAND`

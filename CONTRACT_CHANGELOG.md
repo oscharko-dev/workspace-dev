@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.7.0] - 2026-03-17
+
+### Configurable icon fallback map path
+
+Added:
+
+- `WorkspaceStartOptions.iconMapFilePath?: string` (default `<outputRoot>/icon-fallback-map.json`)
+
 ## [2.6.0] - 2026-03-16
 
 ### Skip-install runtime switch for validate.project

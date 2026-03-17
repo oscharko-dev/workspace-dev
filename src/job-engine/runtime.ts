@@ -40,6 +40,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern,
   figmaCacheEnabled,
   figmaCacheTtlMs,
+  iconMapFilePath,
   figmaScreenElementBudget,
   figmaScreenElementMaxDepth,
   brandTheme,
@@ -60,6 +61,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern?: string;
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
+  iconMapFilePath?: string;
   figmaScreenElementBudget?: number;
   figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
@@ -108,6 +110,7 @@ export const resolveRuntimeSettings = ({
       typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
         : DEFAULT_FIGMA_CACHE_TTL_MS,
+    iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
     figmaScreenElementBudget:
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))

@@ -62,6 +62,12 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const absoluteOutputRoot = path.isAbsolute(outputRoot)
     ? path.normalize(outputRoot)
     : path.resolve(workDir, outputRoot);
+  const absoluteIconMapFilePath =
+    typeof options.iconMapFilePath === "string" && options.iconMapFilePath.trim().length > 0
+      ? path.isAbsolute(options.iconMapFilePath)
+        ? path.normalize(options.iconMapFilePath)
+        : path.resolve(workDir, options.iconMapFilePath)
+      : undefined;
 
   const startedAt = Date.now();
   const defaults = getWorkspaceDefaults();
@@ -84,6 +90,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       : {}),
     ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
     ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
+    ...(absoluteIconMapFilePath !== undefined ? { iconMapFilePath: absoluteIconMapFilePath } : {}),
     ...(options.figmaScreenElementBudget !== undefined
       ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
       : {}),

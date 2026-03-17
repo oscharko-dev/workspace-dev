@@ -12,6 +12,7 @@
 - Execute autonomous job lifecycle (`queued -> running -> completed|failed`)
 - Fetch Figma file over REST
 - Derive deterministic IR and generate local code artifacts
+- Auto-bootstrap deterministic icon fallback mapping at `<outputRoot>/icon-fallback-map.json`
 - Export and serve local preview from `.workspace-dev/repros/<jobId>`
 
 ## Explicit Non-Goals
