@@ -85,6 +85,7 @@ Optional Git/PR input:
 Optional token branding input:
 
 - `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
+- `generationLocale` (optional BCP 47 locale string; defaults to server runtime setting, fallback `de-DE`)
 
 With `enableGitPr=false`, generation is local-only.
 
@@ -136,6 +137,7 @@ workspace-dev start [options]
 - `--figma-screen-element-budget <n>` (default `1200`)
 - `--figma-screen-element-max-depth <n>` (default `14`)
 - `--brand <derived|sparkasse>` (default `derived`)
+- `--generation-locale <locale>` (default `de-DE`)
 - `--command-timeout-ms <ms>` (default `900000`)
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
@@ -163,6 +165,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH`
 - `FIGMAPIPE_WORKSPACE_BRAND`
+- `FIGMAPIPE_WORKSPACE_GENERATION_LOCALE`
 - `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
 - `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
@@ -200,6 +203,7 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
     "figmaFileKey":"demo-file-key",
     "figmaAccessToken":"figd_...",
     "brandTheme":"derived",
+    "generationLocale":"en-US",
     "enableGitPr": false,
     "figmaSourceMode":"rest",
     "llmCodegenMode":"deterministic"

@@ -7,6 +7,7 @@
  */
 
 import type { WorkspaceBrandTheme } from "./contracts/index.js";
+import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "./generation-locale.js";
 import { createWorkspaceServer } from "./server.js";
 
 const DEFAULT_PORT = 1983;
@@ -50,6 +51,7 @@ interface CliOptions {
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
+  generationLocale: string;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
@@ -194,6 +196,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
     fallback: DEFAULT_BRAND_THEME
   });
+  let generationLocale = resolveGenerationLocale({
+    requestedLocale: process.env.FIGMAPIPE_WORKSPACE_GENERATION_LOCALE,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  }).locale;
   let commandTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
     fallback: DEFAULT_COMMAND_TIMEOUT_MS,
@@ -386,6 +392,15 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--generation-locale") {
+      generationLocale = resolveGenerationLocale({
+        requestedLocale: args[index + 1],
+        fallbackLocale: generationLocale
+      }).locale;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--command-timeout-ms") {
       commandTimeoutMs = parseIntInRange({
         raw: args[index + 1],
@@ -453,6 +468,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaScreenElementBudget,
     figmaScreenElementMaxDepth,
     brandTheme,
+    generationLocale,
     commandTimeoutMs,
     enableUiValidation,
     installPreferOffline,
@@ -499,6 +515,8 @@ Options:
                              Baseline depth cap for dynamic IR traversal (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH})
   --brand <derived|sparkasse>
                              Token brand policy for ir.derive (default: ${DEFAULT_BRAND_THEME})
+  --generation-locale <locale>
+                             Locale for deterministic select-option number derivation (default: ${DEFAULT_GENERATION_LOCALE})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
@@ -530,6 +548,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_BRAND
+  FIGMAPIPE_WORKSPACE_GENERATION_LOCALE
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
@@ -595,6 +614,7 @@ const main = async (): Promise<void> => {
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
+      generationLocale: options.generationLocale,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
       installPreferOffline: options.installPreferOffline,
@@ -629,6 +649,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Export images: ${options.exportImages}`);
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
+    console.log(`[workspace-dev] Generation locale default: ${options.generationLocale}`);
     console.log(
       `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
     );

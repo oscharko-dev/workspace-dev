@@ -101,7 +101,8 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "llmCodegenMode",
     "projectName",
     "targetPath",
-    "brandTheme"
+    "brandTheme",
+    "generationLocale"
   ]);
 
   for (const key of Object.keys(input)) {
@@ -174,6 +175,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
+  const generationLocale = parseStringField({
+    input,
+    key: "generationLocale",
+    required: false,
+    issues
+  });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
       return undefined;
@@ -224,6 +231,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (brandTheme !== undefined) {
     data.brandTheme = brandTheme;
+  }
+  if (generationLocale !== undefined) {
+    data.generationLocale = generationLocale;
   }
 
   return {

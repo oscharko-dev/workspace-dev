@@ -375,6 +375,43 @@ const createSemanticInputNode = ({
   };
 };
 
+const createSemanticSelectInputNode = ({
+  id,
+  label,
+  value
+}: {
+  id: string;
+  label: string;
+  value: string;
+}): any => {
+  return {
+    id,
+    name: "Styled(div)",
+    nodeType: "FRAME",
+    type: "input" as const,
+    width: 320,
+    height: 72,
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: label,
+        y: 0
+      },
+      {
+        id: `${id}-value`,
+        name: "MuiSelectSelect",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: value,
+        y: 24
+      }
+    ]
+  };
+};
+
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
@@ -1070,6 +1107,103 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.ok(content.includes('top: "40px"'));
   assert.ok(content.includes('width: "560px"'));
   assert.ok(content.includes('minHeight: "66px"'));
+});
+
+test("deterministic screen rendering derives semantic select options with locale-aware number formatting", () => {
+  const screen = {
+    id: "semantic-select-locale-screen",
+    name: "Semantic Select Locale Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [createSemanticSelectInputNode({ id: "rate-input", label: "Rate", value: "10,00 %" })]
+  };
+
+  const defaultLocaleContent = createDeterministicScreenFile(screen).content;
+  assert.ok(defaultLocaleContent.includes('"9,75 %"'));
+  assert.equal(defaultLocaleContent.includes('"9.75 %"'), false);
+
+  const enUsContent = createDeterministicScreenFile(screen, { generationLocale: "en-US" }).content;
+  assert.ok(enUsContent.includes('"9.75 %"'));
+  assert.equal(enUsContent.includes('"9,75 %"'), false);
+});
+
+test("deterministic screen rendering derives select fallback options with locale-aware number formatting", () => {
+  const screen = {
+    id: "select-fallback-locale-screen",
+    name: "Select Fallback Locale Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "rate-select",
+        name: "Rate Select",
+        nodeType: "FRAME",
+        type: "select" as const,
+        text: "10,00 %",
+        width: 260,
+        height: 56,
+        children: []
+      }
+    ]
+  };
+
+  const defaultLocaleContent = createDeterministicScreenFile(screen).content;
+  assert.ok(defaultLocaleContent.includes('"9,75 %"'));
+  assert.equal(defaultLocaleContent.includes('"9.75 %"'), false);
+
+  const enUsContent = createDeterministicScreenFile(screen, { generationLocale: "en-US" }).content;
+  assert.ok(enUsContent.includes('"9.75 %"'));
+  assert.equal(enUsContent.includes('"9,75 %"'), false);
+});
+
+test("generateArtifacts falls back to de-DE and logs warning for invalid generationLocale", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-locale-fallback-"));
+  const logs: string[] = [];
+  const ir = {
+    ...createIr(),
+    screens: [
+      {
+        id: "locale-fallback-screen",
+        name: "Locale Fallback",
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: [
+          {
+            id: "fallback-rate-select",
+            name: "Rate Select",
+            nodeType: "FRAME",
+            type: "select" as const,
+            text: "10,00 %",
+            width: 260,
+            height: 56,
+            children: []
+          }
+        ]
+      }
+    ]
+  };
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    generationLocale: "invalid_locale",
+    llmCodegenMode: "deterministic",
+    llmModelName: "qwen",
+    onLog: (message) => logs.push(message)
+  });
+
+  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Locale Fallback"));
+  const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
+  assert.ok(generatedScreenContent.includes('"9,75 %"'));
+  assert.equal(
+    logs.some((entry) =>
+      entry.includes("Invalid generationLocale 'invalid_locale' configured for deterministic generation")
+    ),
+    true
+  );
 });
 
 test("deterministic screen rendering maps textRole placeholder to TextField placeholder without default prefill", () => {

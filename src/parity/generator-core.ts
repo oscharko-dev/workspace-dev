@@ -19,6 +19,7 @@ import { isLlmClientError, type LlmClient } from "./llm.js";
 import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { WorkflowError } from "./workflow-error.js";
+import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 
 type TypeScriptRuntime = typeof ts;
 
@@ -28,6 +29,7 @@ interface GenerateArtifactsInput {
   componentMappings?: ComponentMappingRule[];
   iconMapFilePath?: string;
   imageAssetMap?: Record<string, string>;
+  generationLocale?: string;
   llmClient?: LlmClient;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
@@ -1914,6 +1916,7 @@ interface RenderedButtonModel {
 interface RenderContext {
   screenId: string;
   screenName: string;
+  generationLocale: string;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
   buttons: RenderedButtonModel[];
@@ -2158,25 +2161,129 @@ const toStateKey = (element: ScreenElementIR): string => {
   return normalized.length > 0 ? normalized : "field";
 };
 
-const parseLocalizedNumber = (value: string): number | undefined => {
-  const normalized = value
-    .replace(/\s+/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.-]/g, "");
+const escapeRegExpToken = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+interface LocaleNumberFormatSpec {
+  decimalSymbol: string;
+  separatorSymbols: Set<string>;
+  separatorPattern: RegExp;
+}
+
+const localeNumberFormatSpecCache = new Map<string, LocaleNumberFormatSpec>();
+
+const isLikelyGroupingPattern = ({
+  value,
+  separator
+}: {
+  value: string;
+  separator: string;
+}): boolean => {
+  if (separator.length !== 1) {
+    return false;
+  }
+  const segments = value.split(separator);
+  if (segments.length <= 1 || segments.some((segment) => segment.length === 0)) {
+    return false;
+  }
+  const [first, ...rest] = segments;
+  if (!first || first.length < 1 || first.length > 3) {
+    return false;
+  }
+  return rest.every((segment) => segment.length === 3);
+};
+
+const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
+  const cached = localeNumberFormatSpecCache.get(locale);
+  if (cached) {
+    return cached;
+  }
+
+  const parts = new Intl.NumberFormat(locale).formatToParts(1_234_567.89);
+  const decimalSymbol = parts.find((part) => part.type === "decimal")?.value ?? ".";
+  const separators = new Set<string>([".", ",", "'", "’", " ", "\u00A0", "\u202F", decimalSymbol]);
+  for (const part of parts) {
+    if (part.type === "group" && part.value.length > 0) {
+      separators.add(part.value);
+    }
+  }
+  const separatorPattern = new RegExp([...separators].map((symbol) => escapeRegExpToken(symbol)).join("|"), "g");
+  const spec: LocaleNumberFormatSpec = {
+    decimalSymbol,
+    separatorSymbols: separators,
+    separatorPattern
+  };
+  localeNumberFormatSpecCache.set(locale, spec);
+  return spec;
+};
+
+const parseLocalizedNumber = (value: string, locale: string): number | undefined => {
+  const { decimalSymbol, separatorPattern, separatorSymbols } = getLocaleNumberFormatSpec(locale);
+  const compactRaw = value.replace(/[\s\u00A0\u202F]/g, "").replace(/[−﹣－]/g, "-");
+  const compact = [...compactRaw]
+    .filter((character) => /\d/.test(character) || character === "+" || character === "-" || separatorSymbols.has(character))
+    .join("");
+  if (!compact || !/\d/.test(compact)) {
+    return undefined;
+  }
+
+  const sign = compact.startsWith("-") ? "-" : compact.startsWith("+") ? "+" : "";
+  const unsigned = compact.slice(sign.length).replace(/[+-]/g, "");
+  if (!/\d/.test(unsigned)) {
+    return undefined;
+  }
+
+  let decimalIndex = -1;
+  if (decimalSymbol.length === 1 && unsigned.includes(decimalSymbol)) {
+    decimalIndex = unsigned.lastIndexOf(decimalSymbol);
+  } else {
+    const fallbackSeparators = [".", ","].filter((symbol) => symbol !== decimalSymbol && unsigned.includes(symbol));
+    if (fallbackSeparators.length === 1) {
+      const separator = fallbackSeparators[0];
+      decimalIndex = separator
+        ? isLikelyGroupingPattern({ value: unsigned, separator })
+          ? -1
+          : unsigned.lastIndexOf(separator)
+        : -1;
+    } else if (fallbackSeparators.length > 1) {
+      decimalIndex = Math.max(...fallbackSeparators.map((symbol) => unsigned.lastIndexOf(symbol)));
+    }
+  }
+
+  const normalized =
+    decimalIndex >= 0
+      ? (() => {
+          const integerPart = unsigned.slice(0, decimalIndex).replace(separatorPattern, "");
+          const fractionPart = unsigned.slice(decimalIndex + 1).replace(separatorPattern, "");
+          if (integerPart.length === 0 && fractionPart.length === 0) {
+            return "";
+          }
+          return `${sign}${integerPart.length > 0 ? integerPart : "0"}${fractionPart.length > 0 ? `.${fractionPart}` : ""}`;
+        })()
+      : (() => {
+          const integerPart = unsigned.replace(separatorPattern, "");
+          if (integerPart.length === 0) {
+            return "";
+          }
+          return `${sign}${integerPart}`;
+        })();
+
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const formatLocalizedNumber = (value: number, fractionDigits = 2): string => {
+const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string): string => {
   const safe = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("de-DE", {
+  return new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits
   }).format(safe);
 };
 
-const deriveSelectOptions = (defaultValue: string): string[] => {
+const deriveSelectOptions = (defaultValue: string, generationLocale: string): string[] => {
   const trimmed = defaultValue.trim();
   if (!trimmed) {
     return ["Option 1", "Option 2", "Option 3"];
@@ -2191,21 +2298,23 @@ const deriveSelectOptions = (defaultValue: string): string[] => {
   }
 
   if (trimmed.includes("%")) {
-    const parsed = parseLocalizedNumber(trimmed);
+    const parsed = parseLocalizedNumber(trimmed, generationLocale);
     if (typeof parsed === "number") {
       const deltas = [-0.25, 0, 0.25];
-      return [...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta))} %`))];
+      return [
+        ...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta), 2, generationLocale)} %`))
+      ];
     }
   }
 
-  const parsed = parseLocalizedNumber(trimmed);
+  const parsed = parseLocalizedNumber(trimmed, generationLocale);
   if (typeof parsed === "number") {
     const deltas = [-0.1, 0, 0.1];
     return [
       ...new Set(
         deltas.map((delta) => {
           const value = parsed * (1 + delta);
-          return formatLocalizedNumber(Math.max(0, value));
+          return formatLocalizedNumber(Math.max(0, value), 2, generationLocale);
         })
       )
     ];
@@ -3165,7 +3274,7 @@ const registerInteractiveField = ({
   const placeholder = model.placeholderNode?.text?.trim();
   const defaultValue = model.valueNode?.text?.trim() ?? "";
   const isSelect = model.isSelect;
-  const options = isSelect ? deriveSelectOptions(defaultValue) : [];
+  const options = isSelect ? deriveSelectOptions(defaultValue, context.generationLocale) : [];
   const semanticHints = isSelect ? [] : collectInputSemanticHints({ element, label, placeholder });
   const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
   const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
@@ -4979,8 +5088,11 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
   const optionsFromChildren = collectRenderedItems(element)
     .map((item) => sanitizeSelectOptionValue(item.label))
     .filter((value) => value.length > 0);
-  const fallbackDefault = sanitizeSelectOptionValue(firstText(element)?.trim() || "Option 1");
-  const options = optionsFromChildren.length > 0 ? [...new Set(optionsFromChildren)] : deriveSelectOptions(fallbackDefault);
+  const fallbackDefault = sanitizeSelectOptionValue(element.text?.trim() || firstText(element)?.trim() || "Option 1");
+  const options =
+    optionsFromChildren.length > 0
+      ? [...new Set(optionsFromChildren)]
+      : deriveSelectOptions(fallbackDefault, context.generationLocale);
   const rawLabel = firstText(element)?.trim() || element.name;
   const required = inferRequiredFromLabel(rawLabel);
   const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
@@ -5431,6 +5543,7 @@ const fallbackScreenFile = ({
   iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
   imageAssetMap = {},
   routePathByScreenId = new Map<string, string>(),
+  generationLocale,
   truncationMetric,
   componentNameOverride,
   filePathOverride
@@ -5442,6 +5555,7 @@ const fallbackScreenFile = ({
   iconResolver?: IconFallbackResolver;
   imageAssetMap?: Record<string, string>;
   routePathByScreenId?: Map<string, string>;
+  generationLocale?: string;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -5454,6 +5568,10 @@ const fallbackScreenFile = ({
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
   const truncationComment = toTruncationComment(truncationMetric);
   const resolvedSpacingBase = normalizeSpacingBase(spacingBase);
+  const resolvedGenerationLocale = resolveGenerationLocale({
+    requestedLocale: generationLocale,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  }).locale;
 
   const simplifiedChildren = simplifyElements(screen.children);
   const headingComponentByNodeId = inferHeadingComponentByNodeId(simplifiedChildren);
@@ -5462,6 +5580,7 @@ const fallbackScreenFile = ({
   const renderContext: RenderContext = {
     screenId: screen.id,
     screenName: screen.name,
+    generationLocale: resolvedGenerationLocale,
     fields: [],
     accordions: [],
     buttons: [],
@@ -5800,6 +5919,7 @@ export const createDeterministicScreenFile = (
   screen: ScreenIR,
   options?: {
     routePathByScreenId?: Map<string, string> | Record<string, string>;
+    generationLocale?: string;
   }
 ): GeneratedFile => {
   const routePathByScreenId =
@@ -5810,7 +5930,8 @@ export const createDeterministicScreenFile = (
     screen,
     mappingByNodeId: new Map<string, ComponentMappingRule>(),
     spacingBase: DEFAULT_SPACING_BASE,
-    routePathByScreenId
+    routePathByScreenId,
+    ...(options?.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {})
   }).file;
 };
 
@@ -6456,6 +6577,7 @@ export const generateArtifacts = async ({
   componentMappings,
   iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
   imageAssetMap = {},
+  generationLocale,
   llmClient,
   llmModelName,
   llmCodegenMode,
@@ -6469,6 +6591,17 @@ export const generateArtifacts = async ({
       retryable: false,
       message: "Only deterministic code generation is supported in workspace-dev."
     });
+  }
+
+  const resolvedGenerationLocale = resolveGenerationLocale({
+    requestedLocale: generationLocale,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  });
+  if (resolvedGenerationLocale.usedFallback && typeof generationLocale === "string") {
+    onLog(
+      `Warning: Invalid generationLocale '${generationLocale}' configured for deterministic generation. ` +
+        `Falling back to '${resolvedGenerationLocale.locale}'.`
+    );
   }
 
   const generatedPaths = new Set<string>();
@@ -6560,6 +6693,7 @@ export const generateArtifacts = async ({
       iconResolver,
       imageAssetMap,
       routePathByScreenId,
+      generationLocale: resolvedGenerationLocale.locale,
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
