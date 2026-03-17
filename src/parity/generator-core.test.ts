@@ -323,6 +323,22 @@ const findRenderedTypographyLine = ({
   return line ?? "";
 };
 
+const assertMarkersInOrder = ({
+  content,
+  markers
+}: {
+  content: string;
+  markers: string[];
+}): void => {
+  let previousIndex = -1;
+  for (const marker of markers) {
+    const index = content.indexOf(marker);
+    assert.ok(index >= 0, `Expected marker '${marker}' to be present in output.`);
+    assert.ok(index > previousIndex, `Expected marker '${marker}' to appear after previous markers.`);
+    previousIndex = index;
+  }
+};
+
 const createSemanticInputNode = ({
   id,
   name,
@@ -492,6 +508,348 @@ test("deterministic screen rendering omits redundant boxSizing and visible overf
   assert.equal(content.includes('boxSizing: "border-box"'), false);
   assert.equal(content.includes('overflow: "visible"'), false);
   assert.ok(content.includes("<Container maxWidth="));
+});
+
+test("sortChildren visual hierarchy keeps row grouping for layout NONE with x interleaving", () => {
+  const screen = {
+    id: "sortchildren-row-grouping-screen",
+    name: "SortChildren Row Grouping",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "row-grouping-container",
+        name: "Row Grouping Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 220,
+        children: [
+          {
+            id: "row-bottom-left",
+            name: "Bottom Left",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Bottom Left Item",
+            x: 20,
+            y: 120
+          },
+          {
+            id: "row-top-right",
+            name: "Top Right",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Top Right Item",
+            x: 250,
+            y: 10
+          },
+          {
+            id: "row-bottom-right",
+            name: "Bottom Right",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Bottom Right Item",
+            x: 260,
+            y: 120
+          },
+          {
+            id: "row-top-left",
+            name: "Top Left",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Top Left Item",
+            x: 10,
+            y: 10
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertMarkersInOrder({
+    content,
+    markers: ['{"Top Left Item"}', '{"Top Right Item"}', '{"Bottom Left Item"}', '{"Bottom Right Item"}']
+  });
+});
+
+test("sortChildren visual hierarchy preserves overlap order via source index", () => {
+  const screen = {
+    id: "sortchildren-overlap-screen",
+    name: "SortChildren Overlap",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "overlap-container",
+        name: "Overlap Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 180,
+        children: [
+          {
+            id: "overlap-first",
+            name: "First Layer",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Overlap First Layer",
+            x: 120,
+            y: 24,
+            width: 160,
+            height: 28
+          },
+          {
+            id: "overlap-second",
+            name: "Second Layer",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Overlap Second Layer",
+            x: 80,
+            y: 24,
+            width: 160,
+            height: 28
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertMarkersInOrder({
+    content,
+    markers: ['{"Overlap First Layer"}', '{"Overlap Second Layer"}']
+  });
+});
+
+test("sortChildren visual hierarchy orders row semantics as header navigation content decorative", () => {
+  const screen = {
+    id: "sortchildren-semantic-screen",
+    name: "SortChildren Semantic",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "semantic-container",
+        name: "Semantic Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 420,
+        height: 200,
+        children: [
+          {
+            id: "semantic-content",
+            name: "Body Copy",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Semantic Content",
+            x: 20,
+            y: 20
+          },
+          {
+            id: "semantic-divider",
+            name: "Decorative Divider",
+            nodeType: "FRAME",
+            type: "divider" as const,
+            x: 140,
+            y: 20,
+            width: 200,
+            height: 1,
+            fillColor: "#e5e7eb"
+          },
+          {
+            id: "semantic-navigation",
+            name: "Main Navigation",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Semantic Navigation",
+            x: 220,
+            y: 20
+          },
+          {
+            id: "semantic-header",
+            name: "Page Heading",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Semantic Header",
+            x: 320,
+            y: 20,
+            fontSize: 30,
+            fontWeight: 700
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertMarkersInOrder({
+    content,
+    markers: ['{"Semantic Header"}', '{"Semantic Navigation"}', '{"Semantic Content"}', '<Divider aria-hidden="true"']
+  });
+});
+
+test("sortChildren visual hierarchy supports rtl locale x ordering for NONE rows", () => {
+  const screen = {
+    id: "sortchildren-rtl-screen",
+    name: "SortChildren RTL",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "rtl-container",
+        name: "RTL Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 160,
+        children: [
+          {
+            id: "rtl-left",
+            name: "Left Item",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "RTL Left",
+            x: 20,
+            y: 24
+          },
+          {
+            id: "rtl-right",
+            name: "Right Item",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "RTL Right",
+            x: 220,
+            y: 24
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { generationLocale: "ar-EG" }).content;
+  assertMarkersInOrder({
+    content,
+    markers: ['{"RTL Right"}', '{"RTL Left"}']
+  });
+});
+
+test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged", () => {
+  const screen = {
+    id: "sortchildren-regression-screen",
+    name: "SortChildren Regression",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "horizontal-container",
+        name: "Horizontal",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 80,
+        children: [
+          {
+            id: "horizontal-right",
+            name: "Horizontal Right",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Horizontal Right",
+            x: 240,
+            y: 10
+          },
+          {
+            id: "horizontal-left",
+            name: "Horizontal Left",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Horizontal Left",
+            x: 20,
+            y: 10
+          },
+          {
+            id: "horizontal-middle",
+            name: "Horizontal Middle",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Horizontal Middle",
+            x: 140,
+            y: 10
+          }
+        ]
+      },
+      {
+        id: "vertical-container",
+        name: "Vertical",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 120,
+        width: 360,
+        height: 140,
+        children: [
+          {
+            id: "vertical-bottom",
+            name: "Vertical Bottom",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Vertical Bottom",
+            x: 0,
+            y: 90
+          },
+          {
+            id: "vertical-top",
+            name: "Vertical Top",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Vertical Top",
+            x: 0,
+            y: 10
+          },
+          {
+            id: "vertical-middle",
+            name: "Vertical Middle",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Vertical Middle",
+            x: 0,
+            y: 50
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertMarkersInOrder({
+    content,
+    markers: ['{"Horizontal Left"}', '{"Horizontal Middle"}', '{"Horizontal Right"}']
+  });
+  assertMarkersInOrder({
+    content,
+    markers: ['{"Vertical Top"}', '{"Vertical Middle"}', '{"Vertical Bottom"}']
+  });
 });
 
 test("deterministic screen rendering maps container maxWidth boundaries from content width", () => {
