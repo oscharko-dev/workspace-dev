@@ -11,6 +11,7 @@ import type {
 } from "./contracts/index.js";
 import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
+import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
 import { fetchFigmaFile } from "./job-engine/figma-source.js";
 import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { runGitPrFlow } from "./job-engine/git-pr.js";
@@ -292,10 +293,49 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "codegen.generate",
         action: async () => {
+          let imageAssetMap: Record<string, string> = {};
+          if (!runtime.exportImages) {
+            pushLog({
+              job,
+              level: "info",
+              stage: "codegen.generate",
+              message: "Image asset export disabled by runtime configuration."
+            });
+          } else {
+            try {
+              const exportResult = await exportImageAssetsFromFigma({
+                fileKey: input.figmaFileKey,
+                accessToken: input.figmaAccessToken,
+                ir,
+                generatedProjectDir,
+                fetchImpl: runtime.fetchImpl,
+                timeoutMs: runtime.figmaTimeoutMs,
+                maxRetries: runtime.figmaMaxRetries,
+                onLog: (message) => {
+                  pushLog({
+                    job,
+                    level: message.toLowerCase().includes("warning") ? "warn" : "info",
+                    stage: "codegen.generate",
+                    message
+                  });
+                }
+              });
+              imageAssetMap = exportResult.imageAssetMap;
+            } catch (error) {
+              pushLog({
+                job,
+                level: "warn",
+                stage: "codegen.generate",
+                message: `Image asset export failed; falling back to placeholders: ${getErrorMessage(error)}`
+              });
+            }
+          }
+
           return await generateArtifacts({
             projectDir: generatedProjectDir,
             ir,
             iconMapFilePath,
+            imageAssetMap,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
             onLog: (message) => {

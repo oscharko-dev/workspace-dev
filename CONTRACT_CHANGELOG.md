@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.8.0] - 2026-03-17
+
+### Deterministic image export runtime switch
+
+Added:
+
+- `WorkspaceStartOptions.exportImages?: boolean` (default `true`)
+
 ## [2.7.0] - 2026-03-17
 
 ### Configurable icon fallback map path

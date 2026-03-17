@@ -10,6 +10,7 @@ const DEFAULT_ADAPTIVE_BATCHING_ENABLED = true;
 const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
@@ -41,6 +42,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled,
   figmaCacheTtlMs,
   iconMapFilePath,
+  exportImages,
   figmaScreenElementBudget,
   figmaScreenElementMaxDepth,
   brandTheme,
@@ -62,6 +64,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
   iconMapFilePath?: string;
+  exportImages?: boolean;
   figmaScreenElementBudget?: number;
   figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
@@ -111,6 +114,7 @@ export const resolveRuntimeSettings = ({
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
         : DEFAULT_FIGMA_CACHE_TTL_MS,
     iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
+    exportImages: typeof exportImages === "boolean" ? exportImages : DEFAULT_EXPORT_IMAGES,
     figmaScreenElementBudget:
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))

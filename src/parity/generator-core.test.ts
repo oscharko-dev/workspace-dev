@@ -539,6 +539,137 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(Array.isArray(metrics.truncatedScreens), true);
 });
 
+test("generateArtifacts injects exported image asset paths into image and CardMedia rendering", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-images-"));
+  const imageScreen = {
+    id: "image-screen",
+    name: "Image Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "hero-image",
+        name: "Hero Image",
+        nodeType: "RECTANGLE",
+        type: "image" as const,
+        width: 320,
+        height: 180
+      },
+      {
+        id: "summary-card",
+        name: "Summary Card",
+        nodeType: "FRAME",
+        type: "card" as const,
+        width: 320,
+        height: 260,
+        fillColor: "#ffffff",
+        children: [
+          {
+            id: "card-media-image",
+            name: "Card Media",
+            nodeType: "RECTANGLE",
+            type: "image" as const,
+            width: 320,
+            height: 140
+          },
+          {
+            id: "card-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Card headline"
+          }
+        ]
+      },
+      {
+        id: "table-with-image",
+        name: "Table With Image",
+        nodeType: "FRAME",
+        type: "table" as const,
+        width: 400,
+        height: 180,
+        children: [
+          {
+            id: "table-header-row",
+            name: "Header Row",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              {
+                id: "table-header-col-1",
+                name: "Product",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Product"
+              },
+              {
+                id: "table-header-col-2",
+                name: "Details",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Details"
+              }
+            ]
+          },
+          {
+            id: "table-body-row",
+            name: "Body Row",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              {
+                id: "table-image-cell",
+                name: "Table Image",
+                nodeType: "RECTANGLE",
+                type: "image" as const,
+                width: 120,
+                height: 80
+              },
+              {
+                id: "table-text-cell",
+                name: "Details Text",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Shown with image"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  await generateArtifacts({
+    projectDir,
+    ir: {
+      ...createIr(),
+      screens: [imageScreen]
+    },
+    imageAssetMap: {
+      "hero-image": "/images/hero.png",
+      "card-media-image": "/images/card-media.png",
+      "table-image-cell": "/images/table-image.png"
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
+  assert.ok(generatedScreenContent.includes('component="img" src={"/images/hero.png"} alt={"Hero Image"}'));
+  assert.ok(
+    generatedScreenContent.includes(
+      '<CardMedia component="img" image={"/images/card-media.png"} alt={"Card Media"}'
+    )
+  );
+  assert.ok(generatedScreenContent.includes('component="img" src={"/images/table-image.png"} alt={"Table Image"}'));
+});
+
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-mode-"));
 
@@ -1278,7 +1409,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
   assert.equal(bodyLine.includes('component="h'), false);
 });
 
-test("deterministic screen rendering emits image accessibility semantics for informative and decorative images", () => {
+test("deterministic screen rendering emits <img> accessibility semantics with deterministic placeholder fallback", () => {
   const screen = {
     id: "image-a11y-screen",
     name: "Image Accessibility Screen",
@@ -1308,8 +1439,10 @@ test("deterministic screen rendering emits image accessibility semantics for inf
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes('<Box role="img" aria-label={"Product Image"}'));
-  assert.ok(content.includes('<Box aria-hidden="true"'));
+  assert.ok(content.includes('<Box component="img"'));
+  assert.ok(content.includes('src={"data:image/svg+xml;utf8,'));
+  assert.ok(content.includes('alt={"Product Image"}'));
+  assert.ok(content.includes('alt="" aria-hidden="true"'));
 });
 
 test("deterministic screen rendering infers navigation landmark roles for nav-like containers", () => {

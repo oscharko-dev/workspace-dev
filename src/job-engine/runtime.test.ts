@@ -16,6 +16,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
   assert.equal(runtime.iconMapFilePath, undefined);
+  assert.equal(runtime.exportImages, true);
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
   assert.equal(runtime.figmaScreenElementMaxDepth, 14);
   assert.equal(runtime.brandTheme, "derived");
@@ -37,6 +38,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaCacheEnabled: false,
     figmaCacheTtlMs: 999_999_999,
     iconMapFilePath: "  /tmp/icon-map.json  ",
+    exportImages: false,
     figmaScreenElementBudget: 999_999,
     figmaScreenElementMaxDepth: -9,
     brandTheme: "SPARKASSE",
@@ -55,6 +57,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaCacheEnabled, false);
   assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
   assert.equal(runtime.iconMapFilePath, "/tmp/icon-map.json");
+  assert.equal(runtime.exportImages, false);
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
   assert.equal(runtime.figmaScreenElementMaxDepth, 1);
   assert.equal(runtime.brandTheme, "sparkasse");

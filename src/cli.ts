@@ -21,6 +21,7 @@ const DEFAULT_FIGMA_ADAPTIVE_BATCHING = true;
 const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
@@ -45,6 +46,7 @@ interface CliOptions {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   iconMapFilePath: string | undefined;
+  exportImages: boolean;
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
@@ -172,6 +174,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     max: 24 * 60 * 60_000
   });
   let iconMapFilePath = process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
+  let exportImages = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_EXPORT_IMAGES,
+    DEFAULT_EXPORT_IMAGES
+  );
   let figmaScreenElementBudget = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
@@ -343,6 +349,12 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--export-images") {
+      exportImages = parseBooleanLike(args[index + 1], exportImages);
+      index += 1;
+      continue;
+    }
+
     if (arg === "--figma-screen-element-budget") {
       figmaScreenElementBudget = parseIntInRange({
         raw: args[index + 1],
@@ -437,6 +449,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaCacheEnabled,
     figmaCacheTtlMs,
     iconMapFilePath,
+    exportImages,
     figmaScreenElementBudget,
     figmaScreenElementMaxDepth,
     brandTheme,
@@ -478,6 +491,8 @@ Options:
   --no-cache                 Disable figma.source file-system cache
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --icon-map-file <path>     Override icon fallback mapping file path
+  --export-images <true|false>
+                             Export image assets from Figma into generated-app/public/images (default: ${DEFAULT_EXPORT_IMAGES})
   --figma-screen-element-budget <n>
                              Max IR elements per screen before truncation (default: ${DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET})
   --figma-screen-element-max-depth <n>
@@ -511,6 +526,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_ICON_MAP_FILE
+  FIGMAPIPE_WORKSPACE_EXPORT_IMAGES
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_BRAND
@@ -575,6 +591,7 @@ const main = async (): Promise<void> => {
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       ...(options.iconMapFilePath !== undefined ? { iconMapFilePath: options.iconMapFilePath } : {}),
+      exportImages: options.exportImages,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
@@ -609,6 +626,7 @@ const main = async (): Promise<void> => {
     console.log(
       `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
     );
+    console.log(`[workspace-dev] Export images: ${options.exportImages}`);
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
     console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
     console.log(
