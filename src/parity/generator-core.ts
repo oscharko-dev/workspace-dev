@@ -1057,9 +1057,7 @@ const baseLayoutEntries = (
         insetShadow: element.insetShadow,
         preferInsetShadow
       })
-    ],
-    ["boxSizing", literal("border-box")],
-    ["overflow", literal("visible")]
+    ]
   ];
 
   return entries;
@@ -4004,9 +4002,7 @@ const SIMPLE_STACK_GEOMETRY_SX_KEYS = new Set([
   "width",
   "maxWidth",
   "height",
-  "minHeight",
-  "boxSizing",
-  "overflow"
+  "minHeight"
 ]);
 
 const hasResponsiveTopLevelLayoutOverrides = ({
@@ -5678,7 +5674,6 @@ const fallbackScreenFile = ({
     ],
     ["px", containerPadding],
     ["py", containerPadding],
-    ["boxSizing", literal("border-box")],
     ...toScreenResponsiveRootMediaEntries({
       screen,
       spacingBase: renderContext.spacingBase

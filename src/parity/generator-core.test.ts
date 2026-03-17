@@ -453,6 +453,47 @@ test("deterministic screen rendering uses a single root Container without unnece
   assert.ok(content.includes('sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)"'));
 });
 
+test("deterministic screen rendering omits redundant boxSizing and visible overflow defaults", () => {
+  const screen = {
+    id: "no-redundant-defaults-screen",
+    name: "No Redundant Defaults",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "defaults-container",
+        name: "Defaults Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 120,
+        fillColor: "#ffffff",
+        children: [
+          {
+            id: "defaults-text",
+            name: "Defaults Text",
+            nodeType: "TEXT",
+            type: "text" as const,
+            x: 16,
+            y: 16,
+            width: 160,
+            height: 20,
+            text: "Kontostand"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes('boxSizing: "border-box"'), false);
+  assert.equal(content.includes('overflow: "visible"'), false);
+  assert.ok(content.includes("<Container maxWidth="));
+});
+
 test("deterministic screen rendering maps container maxWidth boundaries from content width", () => {
   const buildScreen = (width: number) => ({
     id: `container-width-${width}`,
