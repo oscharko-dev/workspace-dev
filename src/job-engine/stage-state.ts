@@ -39,12 +39,17 @@ export const createInitialStages = (): WorkspaceJobStage[] => {
   }));
 };
 
-export const toAcceptedModes = (): {
+export const toAcceptedModes = ({
+  figmaSourceMode
+}: {
+  figmaSourceMode?: string;
+} = {}): {
   figmaSourceMode: WorkspaceFigmaSourceMode;
   llmCodegenMode: WorkspaceLlmCodegenMode;
 } => {
+  const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
   return {
-    figmaSourceMode: "rest",
+    figmaSourceMode: normalizedFigmaSourceMode === "local_json" ? "local_json" : "rest",
     llmCodegenMode: "deterministic"
   };
 };

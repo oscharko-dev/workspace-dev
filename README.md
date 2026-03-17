@@ -7,7 +7,7 @@
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MIT License](https://img.shields.io/github/license/oscharko-dev/workspace-dev)](https://github.com/oscharko-dev/workspace-dev/blob/dev/LICENSE)
 
-Autonomous local Workspace runtime for REST-based deterministic Figma-to-code generation.
+Autonomous local Workspace runtime for deterministic Figma-to-code generation via REST or local JSON input.
 
 `workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the full Workspace Dev platform backend stack.
 
@@ -45,7 +45,7 @@ The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
 
 - Vite 8 build output is emitted into `dist/ui`
 - Runtime serves `index.html` and hashed bundles under `/workspace/ui/assets/*`
-- API contracts remain unchanged (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
+- API contracts are versioned (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
 
 Useful scripts:
 
@@ -61,6 +61,7 @@ Useful scripts:
 `workspace-dev` enforces:
 
 - `figmaSourceMode=rest`
+- `figmaSourceMode=local_json`
 - `llmCodegenMode=deterministic`
 
 Not available:
@@ -71,8 +72,11 @@ Not available:
 
 ## Required submit input
 
-- `figmaFileKey`
-- `figmaAccessToken`
+- `figmaSourceMode=rest`:
+  - `figmaFileKey`
+  - `figmaAccessToken`
+- `figmaSourceMode=local_json`:
+  - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 
 Optional Git/PR input:
 
@@ -217,6 +221,19 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
     "generationLocale":"en-US",
     "enableGitPr": false,
     "figmaSourceMode":"rest",
+    "llmCodegenMode":"deterministic"
+  }'
+```
+
+Local JSON submit mode:
+
+```bash
+curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
+  -H 'content-type: application/json' \
+  -d '{
+    "figmaSourceMode":"local_json",
+    "figmaJsonPath":"./fixtures/figma-export.json",
+    "enableGitPr": false,
     "llmCodegenMode":"deterministic"
   }'
 ```

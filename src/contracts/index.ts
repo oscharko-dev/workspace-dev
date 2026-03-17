@@ -4,12 +4,12 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.10.0
+ * Contract version: 2.11.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
 /** Allowed Figma source modes for workspace-dev. */
-export type WorkspaceFigmaSourceMode = "rest";
+export type WorkspaceFigmaSourceMode = "rest" | "local_json";
 
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
@@ -111,8 +111,9 @@ export interface WorkspaceStatus {
 
 /** Submission payload accepted by workspace-dev. */
 export interface WorkspaceJobInput {
-  figmaFileKey: string;
-  figmaAccessToken: string;
+  figmaFileKey?: string;
+  figmaAccessToken?: string;
+  figmaJsonPath?: string;
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
@@ -126,7 +127,8 @@ export interface WorkspaceJobInput {
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
 export interface WorkspaceJobRequestMetadata {
-  figmaFileKey: string;
+  figmaFileKey?: string;
+  figmaJsonPath?: string;
   repoUrl?: string;
   enableGitPr: boolean;
   figmaSourceMode: WorkspaceFigmaSourceMode;
@@ -237,4 +239,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.10.0" as const;
+export const CONTRACT_VERSION = "2.11.0" as const;

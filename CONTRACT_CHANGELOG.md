@@ -23,6 +23,20 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.11.0] - 2026-03-17
+
+### Local Figma JSON submit mode
+
+Added:
+
+- `WorkspaceFigmaSourceMode` now also supports `"local_json"`.
+- `WorkspaceJobInput.figmaJsonPath?: string` for local JSON ingestion runs.
+
+Changed:
+
+- `WorkspaceJobInput.figmaFileKey` and `figmaAccessToken` are now optional and validated conditionally by `figmaSourceMode`.
+- `WorkspaceJobRequestMetadata.figmaFileKey` is now optional and `figmaJsonPath?: string` was added.
+
 ## [2.10.0] - 2026-03-17
 
 ### Configurable generated app router mode

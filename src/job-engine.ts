@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   WorkspaceBrandTheme,
+  WorkspaceFigmaSourceMode,
   WorkspaceJobInput,
   WorkspaceJobResult,
   WorkspaceJobStageName,
@@ -29,7 +30,7 @@ import {
   updateStage
 } from "./job-engine/stage-state.js";
 import { createTemplateCopyFilter } from "./job-engine/template-copy-filter.js";
-import type { CreateJobEngineInput, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
+import type { CreateJobEngineInput, FigmaFileResponse, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
 import { runProjectValidation } from "./job-engine/validation.js";
 import { generateArtifacts } from "./parity/generator-core.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
@@ -73,6 +74,18 @@ const resolveJobGenerationLocale = ({
     };
   }
   return { locale: runtimeLocale };
+};
+
+const resolveFigmaSourceMode = ({
+  submitFigmaSourceMode
+}: {
+  submitFigmaSourceMode: string | undefined;
+}): WorkspaceFigmaSourceMode => {
+  const normalized = submitFigmaSourceMode?.trim().toLowerCase();
+  if (normalized === "local_json") {
+    return "local_json";
+  }
+  return "rest";
 };
 
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
@@ -139,6 +152,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     job.status = "running";
     job.startedAt = nowIso();
     const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
+    const resolvedFigmaSourceMode = resolveFigmaSourceMode({ submitFigmaSourceMode: input.figmaSourceMode });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale
@@ -190,9 +204,110 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "figma.source",
         action: async () => {
+          const writeAndClean = async ({
+            sourceFile,
+            diagnostics
+          }: {
+            sourceFile: FigmaFileResponse;
+            diagnostics: {
+              sourceMode: "geometry-paths" | "staged-nodes" | "local-json";
+              fetchedNodes: number;
+              degradedGeometryNodes: string[];
+            };
+          }) => {
+            await writeFile(figmaRawJsonFile, `${JSON.stringify(sourceFile, null, 2)}\n`, "utf8");
+            const cleaning = cleanFigmaForCodegen({ file: sourceFile });
+            await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
+            pushLog({
+              job,
+              level: "info",
+              stage: "figma.source",
+              message:
+                `Figma source mode=${diagnostics.sourceMode}, fetchedNodes=${diagnostics.fetchedNodes}, ` +
+                `degradedGeometryNodes=${diagnostics.degradedGeometryNodes.length}, cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
+                `removedHidden=${cleaning.report.removedHiddenNodes}, removedPlaceholders=${cleaning.report.removedPlaceholderNodes}, ` +
+                `removedHelpers=${cleaning.report.removedHelperNodes}, removedInvalid=${cleaning.report.removedInvalidNodes}, removedProperties=${cleaning.report.removedPropertyCount}`
+            });
+            return {
+              file: cleaning.cleanedFile,
+              diagnostics,
+              cleaning
+            };
+          };
+
+          if (resolvedFigmaSourceMode === "local_json") {
+            const localPath = input.figmaJsonPath?.trim();
+            if (!localPath) {
+              throw createPipelineError({
+                code: "E_FIGMA_LOCAL_JSON_PATH",
+                stage: "figma.source",
+                message: "figmaJsonPath is required when figmaSourceMode=local_json."
+              });
+            }
+
+            const resolvedLocalPath = path.resolve(localPath);
+            let localFileContent: string;
+            try {
+              localFileContent = await readFile(resolvedLocalPath, "utf8");
+            } catch (error) {
+              throw createPipelineError({
+                code: "E_FIGMA_LOCAL_JSON_READ",
+                stage: "figma.source",
+                message: `Could not read local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
+                cause: error
+              });
+            }
+
+            let parsedLocalFile: unknown;
+            try {
+              parsedLocalFile = JSON.parse(localFileContent);
+            } catch (error) {
+              throw createPipelineError({
+                code: "E_FIGMA_PARSE",
+                stage: "figma.source",
+                message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
+                cause: error
+              });
+            }
+
+            if (typeof parsedLocalFile !== "object" || parsedLocalFile === null || Array.isArray(parsedLocalFile)) {
+              throw createPipelineError({
+                code: "E_FIGMA_PARSE",
+                stage: "figma.source",
+                message: `Local Figma JSON file '${localPath}' must contain a JSON object root.`
+              });
+            }
+
+            pushLog({
+              job,
+              level: "info",
+              stage: "figma.source",
+              message: `Loaded local Figma JSON from '${resolvedLocalPath}'.`
+            });
+
+            return await writeAndClean({
+              sourceFile: parsedLocalFile as FigmaFileResponse,
+              diagnostics: {
+                sourceMode: "local-json",
+                fetchedNodes: 0,
+                degradedGeometryNodes: []
+              }
+            });
+          }
+
+          const fileKey = input.figmaFileKey?.trim();
+          const accessToken = input.figmaAccessToken?.trim();
+          if (!fileKey || !accessToken) {
+            throw createPipelineError({
+              code: "E_FIGMA_REST_INPUT",
+              stage: "figma.source",
+              message: "figmaFileKey and figmaAccessToken are required when figmaSourceMode=rest."
+            });
+          }
+
           const result = await fetchFigmaFile({
-            fileKey: input.figmaFileKey,
-            accessToken: input.figmaAccessToken,
+            fileKey,
+            accessToken,
             timeoutMs: runtime.figmaTimeoutMs,
             maxRetries: runtime.figmaMaxRetries,
             bootstrapDepth: runtime.figmaBootstrapDepth,
@@ -216,24 +331,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               });
             }
           });
-          await writeFile(figmaRawJsonFile, `${JSON.stringify(result.file, null, 2)}\n`, "utf8");
-          const cleaning = cleanFigmaForCodegen({ file: result.file });
-          await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
-          pushLog({
-            job,
-            level: "info",
-            stage: "figma.source",
-            message:
-              `Figma source mode=${result.diagnostics.sourceMode}, fetchedNodes=${result.diagnostics.fetchedNodes}, ` +
-              `degradedGeometryNodes=${result.diagnostics.degradedGeometryNodes.length}, cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
-              `removedHidden=${cleaning.report.removedHiddenNodes}, removedPlaceholders=${cleaning.report.removedPlaceholderNodes}, ` +
-              `removedHelpers=${cleaning.report.removedHelperNodes}, removedInvalid=${cleaning.report.removedInvalidNodes}, removedProperties=${cleaning.report.removedPropertyCount}`
+          return await writeAndClean({
+            sourceFile: result.file,
+            diagnostics: result.diagnostics
           });
-          return {
-            ...result,
-            file: cleaning.cleanedFile,
-            cleaning
-          };
         }
       });
 
@@ -339,33 +440,51 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               stage: "codegen.generate",
               message: "Image asset export disabled by runtime configuration."
             });
+          } else if (resolvedFigmaSourceMode !== "rest") {
+            pushLog({
+              job,
+              level: "info",
+              stage: "codegen.generate",
+              message: "Image asset export skipped for figmaSourceMode=local_json."
+            });
           } else {
-            try {
-              const exportResult = await exportImageAssetsFromFigma({
-                fileKey: input.figmaFileKey,
-                accessToken: input.figmaAccessToken,
-                ir,
-                generatedProjectDir,
-                fetchImpl: runtime.fetchImpl,
-                timeoutMs: runtime.figmaTimeoutMs,
-                maxRetries: runtime.figmaMaxRetries,
-                onLog: (message) => {
-                  pushLog({
-                    job,
-                    level: message.toLowerCase().includes("warning") ? "warn" : "info",
-                    stage: "codegen.generate",
-                    message
-                  });
-                }
-              });
-              imageAssetMap = exportResult.imageAssetMap;
-            } catch (error) {
+            const fileKey = input.figmaFileKey?.trim();
+            const accessToken = input.figmaAccessToken?.trim();
+            if (!fileKey || !accessToken) {
               pushLog({
                 job,
                 level: "warn",
                 stage: "codegen.generate",
-                message: `Image asset export failed; falling back to placeholders: ${getErrorMessage(error)}`
+                message: "Image asset export skipped because figmaFileKey/figmaAccessToken are missing."
               });
+            } else {
+              try {
+                const exportResult = await exportImageAssetsFromFigma({
+                  fileKey,
+                  accessToken,
+                  ir,
+                  generatedProjectDir,
+                  fetchImpl: runtime.fetchImpl,
+                  timeoutMs: runtime.figmaTimeoutMs,
+                  maxRetries: runtime.figmaMaxRetries,
+                  onLog: (message) => {
+                    pushLog({
+                      job,
+                      level: message.toLowerCase().includes("warning") ? "warn" : "info",
+                      stage: "codegen.generate",
+                      message
+                    });
+                  }
+                });
+                imageAssetMap = exportResult.imageAssetMap;
+              } catch (error) {
+                pushLog({
+                  job,
+                  level: "warn",
+                  stage: "codegen.generate",
+                  message: `Image asset export failed; falling back to placeholders: ${getErrorMessage(error)}`
+                });
+              }
             }
           }
 
@@ -538,19 +657,24 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const submitJob = (input: WorkspaceJobInput) => {
     const jobId = randomUUID();
-    const acceptedModes = toAcceptedModes();
+    const acceptedModes = toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale
     });
     const request: WorkspaceJobStatus["request"] = {
-      figmaFileKey: input.figmaFileKey,
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
       brandTheme: input.brandTheme ?? runtime.brandTheme,
       generationLocale: generationLocaleResolution.locale
     };
+    if (input.figmaFileKey) {
+      request.figmaFileKey = input.figmaFileKey;
+    }
+    if (input.figmaJsonPath) {
+      request.figmaJsonPath = input.figmaJsonPath;
+    }
     if (input.repoUrl) {
       request.repoUrl = input.repoUrl;
     }

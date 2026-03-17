@@ -20,7 +20,7 @@ export interface FigmaFileResponse {
 }
 
 export interface FigmaFetchDiagnostics {
-  sourceMode: "geometry-paths" | "staged-nodes";
+  sourceMode: "geometry-paths" | "staged-nodes" | "local-json";
   fetchedNodes: number;
   degradedGeometryNodes: string[];
 }

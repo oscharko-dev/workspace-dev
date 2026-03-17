@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,40 @@ import { createWorkspaceServer } from "./server.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_NODE_MODULES_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app/node_modules");
+
+const createLocalFigmaPayload = () => ({
+  name: "Workspace Dev Demo",
+  document: {
+    id: "0:1",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "1:1",
+        name: "Page 1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "2:1",
+            name: "Landing",
+            type: "FRAME",
+            absoluteBoundingBox: { width: 1440, height: 1024 },
+            children: [
+              { id: "3:1", name: "Header", type: "FRAME", children: [] },
+              { id: "3:2", name: "Hero", type: "FRAME", children: [] }
+            ]
+          },
+          {
+            id: "2:2",
+            name: "Checkout",
+            type: "FRAME",
+            absoluteBoundingBox: { width: 390, height: 844 },
+            children: [{ id: "4:1", name: "Container", type: "FRAME", children: [] }]
+          }
+        ]
+      }
+    ]
+  }
+});
 
 const createFakeFigmaFetch = (): typeof fetch => {
   return async (input) => {
@@ -21,39 +55,7 @@ const createFakeFigmaFetch = (): typeof fetch => {
       });
     }
 
-    const payload = {
-      name: "Workspace Dev Demo",
-      document: {
-        id: "0:1",
-        type: "DOCUMENT",
-        children: [
-          {
-            id: "1:1",
-            name: "Page 1",
-            type: "CANVAS",
-            children: [
-              {
-                id: "2:1",
-                name: "Landing",
-                type: "FRAME",
-                absoluteBoundingBox: { width: 1440, height: 1024 },
-                children: [
-                  { id: "3:1", name: "Header", type: "FRAME", children: [] },
-                  { id: "3:2", name: "Hero", type: "FRAME", children: [] }
-                ]
-              },
-              {
-                id: "2:2",
-                name: "Checkout",
-                type: "FRAME",
-                absoluteBoundingBox: { width: 390, height: 844 },
-                children: [{ id: "4:1", name: "Container", type: "FRAME", children: [] }]
-              }
-            ]
-          }
-        ]
-      }
-    };
+    const payload = createLocalFigmaPayload();
 
     return new Response(JSON.stringify(payload), {
       status: 200,
@@ -389,6 +391,39 @@ test("workspace server rejects submit requests without required fields", async (
   }
 });
 
+test("workspace server rejects ambiguous source inputs that mix rest and local_json fields", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: "./figma.json",
+        figmaFileKey: "demo",
+        figmaAccessToken: "figd_xxx"
+      }
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.issues));
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server accepts submit with 202 and job polling reaches completed", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -464,6 +499,59 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(previewResponse.statusCode, 200);
     assert.match(previewResponse.headers["content-type"] ?? "", /text\/html/i);
     assert.equal(previewResponse.body.includes('<div id="root"></div>'), true);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server accepts local_json submit and completes without Figma REST fetches", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const localJsonPath = path.join(outputRoot, "local-figma.json");
+  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  let fetchCalls = 0;
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error("Unexpected network fetch in local_json mode.");
+    }
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: localJsonPath,
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const acceptedModes = submitBody.acceptedModes as Record<string, unknown>;
+    assert.equal(acceptedModes.figmaSourceMode, "local_json");
+    assert.equal(acceptedModes.llmCodegenMode, "deterministic");
+
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const request = finalStatus.request as Record<string, unknown>;
+    assert.equal(finalStatus.status, "completed");
+    assert.equal(request.figmaSourceMode, "local_json");
+    assert.equal(request.figmaJsonPath, localJsonPath);
+    assert.equal(request.figmaFileKey, undefined);
+    assert.equal(fetchCalls, 0);
+
+    const cleanedFigmaPath = path.join(outputRoot, "jobs", jobId, "figma.json");
+    const cleanedFigma = await readFile(cleanedFigmaPath, "utf8");
+    assert.match(cleanedFigma, /Workspace Dev Demo/i);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
