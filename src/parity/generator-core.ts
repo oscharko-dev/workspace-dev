@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type * as ts from "typescript";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -15,13 +14,10 @@ import type {
   ScreenIR,
   VariantStateStyle
 } from "./types.js";
-import { isLlmClientError, type LlmClient } from "./llm.js";
 import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
-
-type TypeScriptRuntime = typeof ts;
 
 interface GenerateArtifactsInput {
   projectDir: string;
@@ -30,7 +26,6 @@ interface GenerateArtifactsInput {
   iconMapFilePath?: string;
   imageAssetMap?: Record<string, string>;
   generationLocale?: string;
-  llmClient?: LlmClient;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
   onLog: (message: string) => void;
@@ -120,45 +115,6 @@ const normalizeFontFamily = (rawFamily: string | undefined): string | undefined 
     return normalized;
   }
   return `${normalized}, Roboto, Arial, sans-serif`;
-};
-
-const EGRESS_POLICY_DENY_MARKER = "egress policy denied";
-
-const isEgressPolicyDenyError = (error: unknown): boolean => {
-  const queue: unknown[] = [error];
-  const visited = new Set<unknown>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-
-    if (typeof current === "string") {
-      if (current.toLowerCase().includes(EGRESS_POLICY_DENY_MARKER)) {
-        return true;
-      }
-      continue;
-    }
-
-    if (typeof current !== "object") {
-      continue;
-    }
-
-    const typed = current as { code?: unknown; message?: unknown; cause?: unknown };
-    if (typed.code === "E_EGRESS_POLICY_DENY") {
-      return true;
-    }
-    if (typeof typed.message === "string" && typed.message.toLowerCase().includes(EGRESS_POLICY_DENY_MARKER)) {
-      return true;
-    }
-    if (typed.cause !== undefined) {
-      queue.push(typed.cause);
-    }
-  }
-
-  return false;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -2382,13 +2338,6 @@ const INPUT_PLACEHOLDER_GENERIC_PATTERNS = [
 ];
 
 const ACCORDION_NAME_HINTS = ["accordion", "accordionsummarycontent", "collapsewrapper"];
-const PLACEHOLDER_TEXT_PATTERNS = [
-  /\beingabe\s*\d+\b/i,
-  /\boption\s*\d+\b/i,
-  /\blorem\b/i,
-  /\bplaceholder\b/i,
-  /\bfield\s*\d+\b/i
-];
 
 const hasAnySubtreeName = (element: ScreenElementIR, patterns: string[]): boolean => {
   return patterns.some((pattern) => hasSubtreeName(element, pattern));
@@ -6026,12 +5975,6 @@ const writeGeneratedFile = async (rootDir: string, file: GeneratedFile): Promise
   await writeFile(absolutePath, file.content, "utf-8");
 };
 
-interface ScreenInteractivityExpectation {
-  inputCount: number;
-  selectCount: number;
-  accordionCount: number;
-}
-
 const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   const all: ScreenElementIR[] = [];
   const stack = [...elements];
@@ -6048,524 +5991,6 @@ const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   return all;
 };
 
-const normalizeSemanticText = (rawValue: string): string => {
-  return rawValue
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9äöüß€%]+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
-const isLikelySemanticLabel = (text: string): boolean => {
-  const trimmed = text.trim();
-  if (trimmed.length < 2 || trimmed.length > 56) {
-    return false;
-  }
-  if (!/[A-Za-zÄÖÜäöüß]/.test(trimmed)) {
-    return false;
-  }
-  if (/^\d+(?:[.,]\d+)*(?:\s?(?:€|%|p\.a\.))?$/i.test(trimmed)) {
-    return false;
-  }
-  if (trimmed.split(/\s+/).length > 7) {
-    return false;
-  }
-  return true;
-};
-
-const collectSemanticLabelCandidates = (screen: ScreenIR): string[] => {
-  const orderedTextNodes = flattenElements(screen.children)
-    .filter((node) => node.type === "text" && typeof node.text === "string" && isLikelySemanticLabel(node.text))
-    .map((node) => ({
-      label: normalizeSemanticText(node.text ?? ""),
-      y: node.y ?? Number.MAX_SAFE_INTEGER,
-      x: node.x ?? Number.MAX_SAFE_INTEGER
-    }))
-    .filter((entry) => entry.label.length > 0)
-    .sort((left, right) => {
-      if (left.y !== right.y) {
-        return left.y - right.y;
-      }
-      return left.x - right.x;
-    });
-
-  const uniqueLabels: string[] = [];
-  for (const entry of orderedTextNodes) {
-    if (uniqueLabels.includes(entry.label)) {
-      continue;
-    }
-    uniqueLabels.push(entry.label);
-    if (uniqueLabels.length >= 24) {
-      break;
-    }
-  }
-
-  return uniqueLabels;
-};
-
-const collectLiteralLabelCandidates = (screen: ScreenIR): string[] => {
-  const orderedTextNodes = flattenElements(screen.children)
-    .filter((node) => node.type === "text" && typeof node.text === "string" && isLikelySemanticLabel(node.text))
-    .map((node) => ({
-      label: node.text?.trim() ?? "",
-      y: node.y ?? Number.MAX_SAFE_INTEGER,
-      x: node.x ?? Number.MAX_SAFE_INTEGER
-    }))
-    .filter((entry) => entry.label.length > 0)
-    .sort((left, right) => {
-      if (left.y !== right.y) {
-        return left.y - right.y;
-      }
-      return left.x - right.x;
-    });
-
-  const uniqueLabels: string[] = [];
-  for (const entry of orderedTextNodes) {
-    if (uniqueLabels.includes(entry.label)) {
-      continue;
-    }
-    uniqueLabels.push(entry.label);
-    if (uniqueLabels.length >= 24) {
-      break;
-    }
-  }
-
-  return uniqueLabels;
-};
-
-const collectPlaceholderMatches = (content: string): string[] => {
-  const uniqueMatches = new Set<string>();
-  for (const pattern of PLACEHOLDER_TEXT_PATTERNS) {
-    const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
-    let match: RegExpExecArray | null;
-    match = globalPattern.exec(content);
-    while (match) {
-      const normalized = normalizeSemanticText(match[0]);
-      if (normalized.length > 0) {
-        uniqueMatches.add(normalized);
-      }
-      match = globalPattern.exec(content);
-    }
-  }
-  return Array.from(uniqueMatches);
-};
-
-const resolveLabelCoverageThreshold = (expectedCount: number): number => {
-  if (expectedCount <= 4) {
-    return 0.85;
-  }
-  if (expectedCount <= 8) {
-    return 0.75;
-  }
-  if (expectedCount <= 16) {
-    return 0.65;
-  }
-  return 0.55;
-};
-
-const collectSelectOptionLiterals = (source: string): string[] => {
-  const unique = new Set<string>();
-  const selectOptionsMatch = source.match(/const\s+selectOptions\s*:\s*Record<string,\s*string\[]>\s*=\s*({[\s\S]*?});/);
-  if (selectOptionsMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(selectOptionsMatch[1]) as Record<string, unknown>;
-      for (const value of Object.values(parsed)) {
-        if (!Array.isArray(value)) {
-          continue;
-        }
-        for (const entry of value) {
-          if (typeof entry !== "string") {
-            continue;
-          }
-          const trimmed = entry.trim();
-          if (trimmed.length > 0) {
-            unique.add(trimmed);
-          }
-        }
-      }
-    } catch {
-      // Ignore parse failures and continue with fallback extraction.
-    }
-  }
-
-  const menuItemRegex = /<MenuItem[^>]*>\s*([^<\n][^<]*?)\s*<\/MenuItem>/g;
-  let menuItemMatch = menuItemRegex.exec(source);
-  while (menuItemMatch) {
-    const capturedValue = menuItemMatch[1];
-    if (!capturedValue) {
-      menuItemMatch = menuItemRegex.exec(source);
-      continue;
-    }
-    const value = capturedValue.trim();
-    if (value.length > 0 && !value.includes("{")) {
-      unique.add(value);
-    }
-    menuItemMatch = menuItemRegex.exec(source);
-  }
-
-  return Array.from(unique).slice(0, 24);
-};
-
-const validateSemanticFidelity = ({
-  screen,
-  generatedContent,
-  baselineContent,
-  requiredLabelSet
-}: {
-  screen: ScreenIR;
-  generatedContent: string;
-  baselineContent: string;
-  requiredLabelSet?: string[];
-}): { isValid: boolean; reason?: string } => {
-  const expectedLabels = collectSemanticLabelCandidates(screen);
-  const requiredLabels = (requiredLabelSet ?? [])
-    .map((value) => normalizeSemanticText(value))
-    .filter((value) => value.length > 0 && !expectedLabels.includes(value));
-  const requiredFirstLabels = [...requiredLabels, ...expectedLabels];
-  const uniqueExpectedLabels = requiredFirstLabels.filter((value, index) => requiredFirstLabels.indexOf(value) === index);
-  if (uniqueExpectedLabels.length === 0) {
-    return { isValid: true };
-  }
-
-  const normalizedGeneratedContent = normalizeSemanticText(generatedContent);
-  const matchedLabels = uniqueExpectedLabels.filter((label) => normalizedGeneratedContent.includes(label));
-  const coverage = matchedLabels.length / uniqueExpectedLabels.length;
-  const coverageThreshold = resolveLabelCoverageThreshold(uniqueExpectedLabels.length);
-
-  if (coverage < coverageThreshold) {
-    const missingLabels = uniqueExpectedLabels.filter((label) => !matchedLabels.includes(label)).slice(0, 6);
-    return {
-      isValid: false,
-      reason: `label fidelity too low (${Math.round(coverage * 100)}% < ${Math.round(
-        coverageThreshold * 100
-      )}%), missing: ${missingLabels.join(", ")}`
-    };
-  }
-
-  const baselinePlaceholders = new Set(collectPlaceholderMatches(baselineContent));
-  const candidatePlaceholders = collectPlaceholderMatches(generatedContent);
-  const introducedPlaceholders = candidatePlaceholders.filter((value) => !baselinePlaceholders.has(value));
-  if (introducedPlaceholders.length > 0) {
-    return {
-      isValid: false,
-      reason: `generic placeholders introduced (${introducedPlaceholders.slice(0, 3).join(", ")}) although semantic labels are available`
-    };
-  }
-
-  return { isValid: true };
-};
-
-const validateSelectLiteralFidelity = ({
-  generatedContent,
-  baselineContent,
-  expectation
-}: {
-  generatedContent: string;
-  baselineContent: string;
-  expectation: ScreenInteractivityExpectation;
-}): { isValid: boolean; reason?: string } => {
-  if (expectation.selectCount <= 0) {
-    return { isValid: true };
-  }
-
-  const baselineSelectLiterals = collectSelectOptionLiterals(baselineContent);
-  if (baselineSelectLiterals.length === 0) {
-    return { isValid: true };
-  }
-
-  const normalizedGeneratedContent = normalizeSemanticText(generatedContent);
-  const normalizedBaselineLiterals = baselineSelectLiterals.map((value) => normalizeSemanticText(value)).filter((value) => value.length > 0);
-  if (normalizedBaselineLiterals.length === 0) {
-    return { isValid: true };
-  }
-
-  const matchedCount = normalizedBaselineLiterals.filter((value) => normalizedGeneratedContent.includes(value)).length;
-  const minMatchCount =
-    normalizedBaselineLiterals.length <= 3
-      ? normalizedBaselineLiterals.length
-      : Math.max(2, Math.ceil(normalizedBaselineLiterals.length * 0.66));
-  if (matchedCount < minMatchCount) {
-    const missingPreview = baselineSelectLiterals
-      .filter((value) => {
-        const normalized = normalizeSemanticText(value);
-        return normalized.length > 0 && !normalizedGeneratedContent.includes(normalized);
-      })
-      .slice(0, 4);
-    return {
-      isValid: false,
-      reason: `missing select options from deterministic baseline: ${missingPreview.join(", ")}`
-    };
-  }
-
-  return { isValid: true };
-};
-
-const inferScreenInteractivityExpectation = (screen: ScreenIR): ScreenInteractivityExpectation => {
-  const nodes = flattenElements(screen.children);
-  const names = nodes.map((node) => node.name.toLowerCase());
-
-  const selectCount =
-    names.filter((name) => name.includes("muiselectselect") || name.includes("select")).length +
-    nodes.filter((node) => node.type === "select").length;
-  const inputCount =
-    names.filter((name) => INPUT_NAME_HINTS.some((pattern) => name.includes(pattern))).length +
-    nodes.filter((node) => node.type === "input").length;
-  const accordionCount = names.filter((name) => name.includes("accordionsummarycontent") || name.includes("collapsewrapper"))
-    .length;
-
-  return {
-    inputCount,
-    selectCount,
-    accordionCount
-  };
-};
-
-const validateLlmScreenByExpectation = (
-  file: GeneratedFile,
-  expectedPath: string,
-  expectation: ScreenInteractivityExpectation,
-  screen: ScreenIR,
-  baselineContent: string,
-  typeScriptRuntime: TypeScriptRuntime,
-  requiredLabelSet?: string[]
-): { isValid: boolean; reason?: string } => {
-  const normalizedExpectedPath = path.posix.normalize(expectedPath.replace(/\\/g, "/"));
-
-  if (normalizedExpectedPath.startsWith("/") || normalizedExpectedPath.includes("..")) {
-    return { isValid: false, reason: `unsafe screen path '${expectedPath}'` };
-  }
-
-  const content = file.content;
-  if (!content.includes("export default") || !content.includes("@mui")) {
-    return { isValid: false, reason: "missing export/@mui imports" };
-  }
-  if (!/@mui\/material/.test(content)) {
-    return { isValid: false, reason: "missing @mui/material import usage" };
-  }
-
-  const screenDiagnostics = typeScriptRuntime.transpileModule(content, {
-    compilerOptions: {
-      module: typeScriptRuntime.ModuleKind.ESNext,
-      target: typeScriptRuntime.ScriptTarget.ES2022,
-      jsx: typeScriptRuntime.JsxEmit.ReactJSX
-    },
-    fileName: file.path,
-    reportDiagnostics: true
-  }).diagnostics;
-  if (screenDiagnostics && screenDiagnostics.length > 0) {
-    const firstDiagnostic = screenDiagnostics[0];
-    return {
-      isValid: false,
-      reason: firstDiagnostic
-        ? typeScriptRuntime.flattenDiagnosticMessageText(firstDiagnostic.messageText, "\n")
-        : "TypeScript diagnostics reported an unknown issue"
-    };
-  }
-
-  const hasInputLikeControl =
-    /\b(TextField|InputBase|OutlinedInput|FilledInput|Input|TextareaAutosize|Checkbox|Switch|RadioGroup|Radio|Slider|Autocomplete|Select|NativeSelect)\b/.test(
-      content
-    );
-  const hasSelectControl =
-    /\b(Select|NativeSelect)\b/.test(content) || /<TextField[\s\S]{0,220}?\bselect\b/.test(content);
-  const hasAccordion = /\bAccordionSummary\b/.test(content) || /\bAccordionDetails\b/.test(content);
-  const hasHandlerBinding = /\b(onChange|onInput|onClick|onBlur)\s*=\s*\{/.test(content);
-  const hasDefaultBinding = /\bdefault(Value|Checked|Open)\s*=/.test(content);
-  const hasControlledBinding = /\b(value|checked|open)\s*=\s*\{[^}]+\}/.test(content);
-  const hasReadOnlyPattern = hasControlledBinding && !hasHandlerBinding && !hasDefaultBinding;
-
-  if (expectation.inputCount > 0 && !hasInputLikeControl) {
-    return { isValid: false, reason: "missing MUI form controls for detected input nodes" };
-  }
-  if (expectation.inputCount > 0 && hasReadOnlyPattern) {
-    return { isValid: false, reason: "read-only value/checked/open bindings detected for form controls" };
-  }
-  if (expectation.selectCount > 0 && !hasSelectControl) {
-    return { isValid: false, reason: "missing select-like MUI control for detected select nodes" };
-  }
-  if (expectation.accordionCount > 0 && !hasAccordion) {
-    return { isValid: false, reason: "missing Accordion primitives for detected accordion nodes" };
-  }
-
-  const selectLiteralValidation = validateSelectLiteralFidelity({
-    generatedContent: content,
-    baselineContent,
-    expectation
-  });
-  if (!selectLiteralValidation.isValid) {
-    return selectLiteralValidation;
-  }
-
-  const fidelityValidation = validateSemanticFidelity({
-    screen,
-    generatedContent: content,
-    baselineContent,
-    ...(requiredLabelSet ? { requiredLabelSet } : {})
-  });
-  if (!fidelityValidation.isValid) {
-    return fidelityValidation;
-  }
-
-  return { isValid: true };
-};
-
-const isWeakLlmForCodegen = (modelName: string): boolean => {
-  const normalized = modelName.toLowerCase();
-  return normalized.includes("qwen2.5-0.5b-instruct-4bit");
-};
-
-const getObjectPropertyName = ({
-  propertyName,
-  typeScriptRuntime
-}: {
-  propertyName: ts.PropertyName;
-  typeScriptRuntime: TypeScriptRuntime;
-}): string | undefined => {
-  if (
-    typeScriptRuntime.isIdentifier(propertyName) ||
-    typeScriptRuntime.isStringLiteral(propertyName) ||
-    typeScriptRuntime.isNumericLiteral(propertyName)
-  ) {
-    return propertyName.text;
-  }
-  return undefined;
-};
-
-const hasTopLevelBorderRadiusInCreateTheme = ({
-  source,
-  typeScriptRuntime
-}: {
-  source: ts.SourceFile;
-  typeScriptRuntime: TypeScriptRuntime;
-}): boolean => {
-  let detected = false;
-
-  const visit = (node: ts.Node): void => {
-    if (detected) {
-      return;
-    }
-
-    if (
-      typeScriptRuntime.isCallExpression(node) &&
-      typeScriptRuntime.isIdentifier(node.expression) &&
-      node.expression.text === "createTheme"
-    ) {
-      const firstArgument = node.arguments[0];
-      if (firstArgument && typeScriptRuntime.isObjectLiteralExpression(firstArgument)) {
-        for (const property of firstArgument.properties) {
-          if (!typeScriptRuntime.isPropertyAssignment(property) && !typeScriptRuntime.isShorthandPropertyAssignment(property)) {
-            continue;
-          }
-          const propertyName = getObjectPropertyName({
-            propertyName: property.name,
-            typeScriptRuntime
-          });
-          if (propertyName === "borderRadius") {
-            detected = true;
-            return;
-          }
-        }
-      }
-    }
-
-    typeScriptRuntime.forEachChild(node, visit);
-  };
-
-  visit(source);
-  return detected;
-};
-
-const normalizeThemeCandidateContent = (content: string): string => {
-  if (/export\s+const\s+appTheme\b/.test(content)) {
-    return content;
-  }
-
-  let normalized = content;
-
-  normalized = normalized.replace(
-    /export\s+default\s+createTheme\s*\(/,
-    "export const appTheme = createTheme("
-  );
-  if (/export\s+const\s+appTheme\b/.test(normalized)) {
-    return normalized;
-  }
-
-  const themedVarMatch = normalized.match(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*createTheme\s*\(/);
-  if (themedVarMatch?.[1]) {
-    const varName = themedVarMatch[1];
-    const defaultVarExportPattern = new RegExp(`export\\s+default\\s+${varName}\\s*;?`);
-    if (defaultVarExportPattern.test(normalized)) {
-      normalized = normalized.replace(defaultVarExportPattern, `export const appTheme = ${varName};`);
-    }
-  }
-
-  return normalized;
-};
-
-const validateLlmThemeCandidate = ({
-  file,
-  expectedPath,
-  typeScriptRuntime
-}: {
-  file: GeneratedFile;
-  expectedPath: string;
-  typeScriptRuntime: TypeScriptRuntime;
-}): { isValid: boolean; reason?: string } => {
-  const normalizedExpectedPath = path.posix.normalize(expectedPath.replace(/\\/g, "/"));
-
-  if (normalizedExpectedPath.startsWith("/") || normalizedExpectedPath.includes("..")) {
-    return { isValid: false, reason: `unsafe theme path '${expectedPath}'` };
-  }
-
-  const content = file.content;
-  const hasNamedThemeExport = /export\s+const\s+appTheme\b/.test(content);
-  if (!hasNamedThemeExport) {
-    return { isValid: false, reason: "missing named export 'appTheme'" };
-  }
-  if (!/\bcreateTheme\s*\(/.test(content)) {
-    return { isValid: false, reason: "missing createTheme() call" };
-  }
-  if (!/from\s+["']@mui\/material\/styles["']/.test(content)) {
-    return { isValid: false, reason: "missing createTheme import from @mui/material/styles" };
-  }
-  if (/from\s+["']\.\.?\//.test(content)) {
-    return { isValid: false, reason: "relative imports are not allowed in theme.ts" };
-  }
-
-  const syntaxDiagnostics = typeScriptRuntime.transpileModule(content, {
-    compilerOptions: {
-      module: typeScriptRuntime.ModuleKind.ESNext,
-      target: typeScriptRuntime.ScriptTarget.ES2022
-    },
-    fileName: file.path,
-    reportDiagnostics: true
-  }).diagnostics;
-  if (syntaxDiagnostics && syntaxDiagnostics.length > 0) {
-    const firstDiagnostic = syntaxDiagnostics[0];
-    return {
-      isValid: false,
-      reason: firstDiagnostic
-        ? typeScriptRuntime.flattenDiagnosticMessageText(firstDiagnostic.messageText, "\n")
-        : "TypeScript diagnostics reported an unknown issue"
-    };
-  }
-  const source = typeScriptRuntime.createSourceFile(
-    file.path,
-    content,
-    typeScriptRuntime.ScriptTarget.ESNext,
-    true,
-    typeScriptRuntime.ScriptKind.TS
-  );
-
-  if (hasTopLevelBorderRadiusInCreateTheme({ source, typeScriptRuntime })) {
-    return { isValid: false, reason: "top-level borderRadius is invalid; use shape.borderRadius" };
-  }
-
-  return { isValid: true };
-};
-
 export const generateArtifacts = async ({
   projectDir,
   ir,
@@ -6573,12 +5998,11 @@ export const generateArtifacts = async ({
   iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
   imageAssetMap = {},
   generationLocale,
-  llmClient,
   llmModelName,
   llmCodegenMode,
   onLog
 }: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
-  const requestedMode = String(llmCodegenMode);
+  void llmModelName;
   if (llmCodegenMode !== "deterministic") {
     throw new WorkflowError({
       code: "E_LLM_RUNTIME_UNAVAILABLE",
@@ -6705,14 +6129,8 @@ export const generateArtifacts = async ({
     }
     accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
 
-    const file = deterministicScreen.file;
     return {
-      screen,
-      file,
-      requiredLiteralTexts: [
-        ...collectLiteralLabelCandidates(screen),
-        ...collectSelectOptionLiterals(file.content)
-      ].filter((value, index, values) => value.trim().length > 0 && values.indexOf(value) === index)
+      file: deterministicScreen.file
     };
   });
   await Promise.all(
@@ -6798,27 +6216,14 @@ export const generateArtifacts = async ({
 
   onLog("Generated deterministic baseline artifacts");
 
-  let themeApplied = false;
-  let screenApplied = 0;
+  const themeApplied = false;
+  const screenApplied = 0;
   const screenRejected: RejectedScreenEnhancement[] = [];
   const llmWarnings: Array<{
     code: "W_LLM_RESPONSES_INCOMPLETE";
     message: string;
   }> = [];
   const screenTotal = deterministicScreens.length;
-
-  const pushLlmIncompleteWarning = (message: string): void => {
-    if (llmWarnings.some((warning) => warning.message === message)) {
-      return;
-    }
-    llmWarnings.push({
-      code: "W_LLM_RESPONSES_INCOMPLETE",
-      message
-    });
-  };
-
-  const strictLlmMode = requestedMode === "llm_strict";
-  const deterministicMode = requestedMode === "deterministic";
   const mappingCoverage = {
     usedMappings: usedMappingNodeIds.size,
     fallbackNodes: Math.max(0, mappingByNodeId.size - usedMappingNodeIds.size),
@@ -6830,220 +6235,7 @@ export const generateArtifacts = async ({
     contractMismatchCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_CONTRACT_MISMATCH").length,
     disabledMappingCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_DISABLED").length
   };
-  if (deterministicMode) {
-    onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
-    return {
-      generatedPaths: Array.from(generatedPaths),
-      generationMetrics,
-      themeApplied,
-      screenApplied,
-      screenTotal,
-      screenRejected,
-      llmWarnings,
-      mappingCoverage,
-      mappingDiagnostics,
-      mappingWarnings: dedupedMappingWarnings
-    };
-  }
-
-  if (!llmClient) {
-    throw new Error("LLM client is required for hybrid and llm_strict modes");
-  }
-
-  const skipLlmEnhancement = requestedMode === "hybrid" && isWeakLlmForCodegen(llmModelName);
-  if (skipLlmEnhancement) {
-    onLog(
-      `LLM enhancement skipped for model '${llmModelName}' in hybrid mode; deterministic output retained`
-    );
-    return {
-      generatedPaths: Array.from(generatedPaths),
-      generationMetrics,
-      themeApplied,
-      screenApplied,
-      screenTotal,
-      screenRejected,
-      llmWarnings,
-      mappingCoverage,
-      mappingDiagnostics,
-      mappingWarnings: dedupedMappingWarnings
-    };
-  }
-
-  let typeScriptRuntime: TypeScriptRuntime;
-  try {
-    typeScriptRuntime = await import("typescript");
-  } catch (error) {
-    throw new WorkflowError({
-      code: "E_LLM_RUNTIME_UNAVAILABLE",
-      stage: "codegen.generate",
-      retryable: false,
-      message: `TypeScript runtime unavailable for non-deterministic mode: ${error instanceof Error ? error.message : "unknown error"}`
-    });
-  }
-
-  try {
-    onLog("Running optional LLM theme enhancement");
-    const llmTheme = await llmClient.generateTheme(ir);
-    const normalizedThemeContent = normalizeThemeCandidateContent(llmTheme.content);
-    const themeValidation = validateLlmThemeCandidate({
-      file: {
-        path: llmTheme.path,
-        content: normalizedThemeContent
-      },
-      expectedPath: deterministicTheme.path,
-      typeScriptRuntime
-    });
-    if (!themeValidation.isValid) {
-      const message = strictLlmMode
-        ? `LLM theme enhancement rejected by strict contract: ${
-            themeValidation.reason ?? "contract validation failed"
-          }; deterministic output retained`
-        : `LLM theme enhancement skipped: ${
-            themeValidation.reason ?? "contract validation failed"
-          }; deterministic output retained`;
-      onLog(message);
-    } else {
-      await writeGeneratedFile(projectDir, {
-        path: deterministicTheme.path,
-        content: normalizedThemeContent
-      });
-      themeApplied = true;
-      onLog("LLM theme enhancement applied");
-    }
-  } catch (error) {
-    if (isEgressPolicyDenyError(error)) {
-      throw new WorkflowError({
-        code: "E_EGRESS_POLICY_DENY",
-        stage: "codegen.generate",
-        retryable: false,
-        message: error instanceof Error ? error.message : "Egress policy denied outbound request"
-      });
-    }
-    const llmIncomplete = isLlmClientError(error) && error.code === "E_LLM_RESPONSES_INCOMPLETE";
-    if (llmIncomplete) {
-      const incompleteMessage = `LLM responses incomplete during theme enhancement; deterministic theme retained`;
-      if (strictLlmMode) {
-        throw new WorkflowError({
-          code: "E_LLM_RESPONSES_INCOMPLETE",
-          stage: "codegen.generate",
-          retryable: false,
-          message: `${incompleteMessage} (${error.message})`
-        });
-      }
-      pushLlmIncompleteWarning(incompleteMessage);
-    }
-    const message = strictLlmMode
-      ? `LLM theme enhancement rejected by strict execution error: ${
-          error instanceof Error ? error.message : "unknown error"
-        }; deterministic output retained`
-      : `LLM theme enhancement skipped: ${error instanceof Error ? error.message : "unknown error"}; deterministic output retained`;
-    onLog(message);
-  }
-
-  for (const { screen, file: deterministicScreen, requiredLiteralTexts } of deterministicScreens) {
-    const interactivityExpectation = inferScreenInteractivityExpectation(screen);
-    const totalAttempts = 3;
-    let lastFailureReason = "contract validation failed";
-    let screenAppliedInAttempt = false;
-
-    onLog(`Running optional LLM screen enhancement: ${screen.name}`);
-
-    for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-      try {
-        const llmFile =
-          attempt < totalAttempts
-            ? await llmClient.generateScreen(screen, ir.tokens, deterministicScreen.path, {
-                ...interactivityExpectation,
-                ...(attempt === 1 ? {} : { repairReason: lastFailureReason }),
-                requiredLabelSet: requiredLiteralTexts
-              })
-            : await llmClient.generateScreenFromBaseline({
-                screen,
-                tokens: ir.tokens,
-                expectedPath: deterministicScreen.path,
-                baselineSource: deterministicScreen.content,
-                requiredLiteralTexts,
-                forbiddenPlaceholderPolicy:
-                  "Never introduce generic placeholders that do not already exist in baseline content.",
-                hints: {
-                  ...interactivityExpectation,
-                  repairReason: lastFailureReason,
-                  requiredLabelSet: requiredLiteralTexts
-                }
-              });
-
-        const validation = validateLlmScreenByExpectation(
-          llmFile,
-          deterministicScreen.path,
-          interactivityExpectation,
-          screen,
-          deterministicScreen.content,
-          typeScriptRuntime,
-          requiredLiteralTexts
-        );
-
-        if (validation.isValid) {
-          await writeGeneratedFile(projectDir, { path: deterministicScreen.path, content: llmFile.content });
-          screenApplied += 1;
-          screenAppliedInAttempt = true;
-          onLog(`LLM screen enhancement applied (${screen.name}) [attempt ${attempt}/${totalAttempts}]`);
-          break;
-        }
-
-        lastFailureReason = validation.reason ?? "contract validation failed";
-        if (attempt < totalAttempts) {
-          onLog(
-            `LLM screen enhancement retry (${screen.name}) [attempt ${attempt + 1}/${totalAttempts}]: ${lastFailureReason}`
-          );
-        }
-      } catch (error) {
-        if (isEgressPolicyDenyError(error)) {
-          throw new WorkflowError({
-            code: "E_EGRESS_POLICY_DENY",
-            stage: "codegen.generate",
-            retryable: false,
-            message: error instanceof Error ? error.message : "Egress policy denied outbound request"
-          });
-        }
-        lastFailureReason = error instanceof Error ? error.message : "unknown error";
-        const llmIncomplete = isLlmClientError(error) && error.code === "E_LLM_RESPONSES_INCOMPLETE";
-        if (llmIncomplete) {
-          const incompleteMessage = `LLM responses incomplete during screen enhancement (${screen.name}); deterministic screen retained`;
-          if (strictLlmMode) {
-            throw new WorkflowError({
-              code: "E_LLM_RESPONSES_INCOMPLETE",
-              stage: "codegen.generate",
-              retryable: false,
-              message: `${incompleteMessage} (${lastFailureReason})`
-            });
-          }
-          pushLlmIncompleteWarning(incompleteMessage);
-        }
-        if (attempt < totalAttempts) {
-          onLog(
-            `LLM screen enhancement retry (${screen.name}) [attempt ${attempt + 1}/${totalAttempts}]: ${lastFailureReason}`
-          );
-        }
-      }
-    }
-
-    if (!screenAppliedInAttempt) {
-      screenRejected.push({
-        screenName: screen.name,
-        reason: lastFailureReason
-      });
-      if (lastFailureReason.includes("E_LLM_RESPONSES_INCOMPLETE")) {
-        pushLlmIncompleteWarning(
-          `LLM responses incomplete during screen enhancement (${screen.name}); deterministic screen retained`
-        );
-      }
-      const message = strictLlmMode
-        ? `LLM screen enhancement rejected by strict contract (${screen.name}) [attempt ${totalAttempts}/${totalAttempts}]: ${lastFailureReason}; deterministic output retained`
-        : `LLM screen enhancement skipped (${screen.name}) [attempt ${totalAttempts}/${totalAttempts}]: ${lastFailureReason}; deterministic output retained`;
-      onLog(message);
-    }
-  }
-  onLog(`LLM enhancement summary: themeApplied=${String(themeApplied)}, screensApplied=${screenApplied}/${screenTotal}`);
+  onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
   return {
     generatedPaths: Array.from(generatedPaths),
     generationMetrics,
