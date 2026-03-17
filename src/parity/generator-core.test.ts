@@ -593,6 +593,8 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(result.themeApplied, false);
   assert.equal(result.screenApplied, 0);
   assert.equal(result.screenTotal, 1);
+  assert.deepEqual(result.screenRejected, []);
+  assert.deepEqual(result.llmWarnings, []);
   assert.equal(result.generatedPaths.includes("src/App.tsx"), true);
   assert.equal(result.generatedPaths.includes("generation-metrics.json"), true);
   assert.equal(result.generationMetrics.fetchedNodes, 0);
