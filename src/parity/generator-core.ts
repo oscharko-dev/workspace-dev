@@ -69,7 +69,21 @@ interface VirtualParent {
   width?: number | undefined;
   height?: number | undefined;
   name?: string | undefined;
+  fillColor?: string | undefined;
+  fillGradient?: string | undefined;
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE" | undefined;
+}
+
+interface AccessibilityWarning {
+  code: "W_A11Y_LOW_CONTRAST";
+  screenId: string;
+  screenName: string;
+  nodeId: string;
+  nodeName: string;
+  message: string;
+  foreground: string;
+  background: string;
+  contrastRatio: number;
 }
 
 interface ScreenArtifactIdentity {
@@ -359,6 +373,8 @@ const toThemeColorLiteral = ({
 type ButtonVariant = "contained" | "outlined" | "text";
 type ButtonSize = "small" | "medium" | "large";
 type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+type HeadingComponent = "h1" | "h2" | "h3";
+type LandmarkRole = "navigation";
 
 interface RgbaColor {
   r: number;
@@ -374,6 +390,7 @@ const BUTTON_NEUTRAL_CHANNEL_DELTA_MAX = 24;
 const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
 const FIELD_ERROR_RED_MIN_CHANNEL = 150;
 const FIELD_ERROR_RED_DELTA_MIN = 32;
+const WCAG_AA_NORMAL_TEXT_CONTRAST_MIN = 4.5;
 
 const hasVisibleGradient = (value: string | undefined): boolean => {
   return typeof value === "string" && value.trim().length > 0;
@@ -443,6 +460,28 @@ const isLikelyErrorRedColor = (color: RgbaColor | undefined): boolean => {
   const redOverGreen = color.r - color.g;
   const redOverBlue = color.r - color.b;
   return color.r >= FIELD_ERROR_RED_MIN_CHANNEL && redOverGreen >= FIELD_ERROR_RED_DELTA_MIN && redOverBlue >= FIELD_ERROR_RED_DELTA_MIN;
+};
+
+const toRelativeLuminance = (color: RgbaColor): number => {
+  const toLinear = (channel: number): number => {
+    const normalized = clamp(channel / 255, 0, 1);
+    if (normalized <= 0.03928) {
+      return normalized / 12.92;
+    }
+    return ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  const r = toLinear(color.r);
+  const g = toLinear(color.g);
+  const b = toLinear(color.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const toContrastRatio = (foreground: RgbaColor, background: RgbaColor): number => {
+  const foregroundLuminance = toRelativeLuminance(foreground);
+  const backgroundLuminance = toRelativeLuminance(background);
+  const brighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (brighter + 0.05) / (darker + 0.05);
 };
 
 const inferButtonVariant = ({
@@ -1235,6 +1274,7 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
   registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text?.trim() || element.name);
+  const headingComponent = context.headingComponentByNodeId.get(element.id);
   const normalizedFont = normalizeFontFamily(element.fontFamily);
   const textLayoutEntries = [
     ...baseLayoutEntries(element, parent, {
@@ -1274,15 +1314,39 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
     ["whiteSpace", literal("pre-wrap")]
   ]);
 
-  return `${indent}<Typography sx={{ ${sx} }}>{${text}}</Typography>`;
+  const foregroundHex = normalizeHexColor(element.fillColor);
+  const backgroundHex = resolveBackgroundHexForText({ parent, context });
+  if (foregroundHex && backgroundHex) {
+    const foregroundRgba = toRgbaColor(foregroundHex);
+    const backgroundRgba = toRgbaColor(backgroundHex);
+    if (foregroundRgba && backgroundRgba) {
+      const contrastRatio = toContrastRatio(foregroundRgba, backgroundRgba);
+      if (contrastRatio < WCAG_AA_NORMAL_TEXT_CONTRAST_MIN) {
+        pushLowContrastWarning({
+          context,
+          element,
+          foreground: foregroundHex,
+          background: backgroundHex,
+          contrastRatio
+        });
+      }
+    }
+  }
+
+  const headingProp = headingComponent ? ` component="${headingComponent}"` : "";
+  return `${indent}<Typography${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
 };
 
-const firstText = (element: ScreenElementIR): string | undefined => {
+const firstText = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
   if (element.type === "text" && element.text?.trim()) {
     return element.text.trim();
   }
   for (const child of element.children ?? []) {
-    const match = firstText(child);
+    const match = firstText(child, visited);
     if (match) {
       return match;
     }
@@ -1290,12 +1354,16 @@ const firstText = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const firstTextColor = (element: ScreenElementIR): string | undefined => {
+const firstTextColor = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
   if (element.type === "text" && element.fillColor) {
     return element.fillColor;
   }
   for (const child of element.children ?? []) {
-    const match = firstTextColor(child);
+    const match = firstTextColor(child, visited);
     if (match) {
       return match;
     }
@@ -1303,20 +1371,28 @@ const firstTextColor = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const collectVectorPaths = (element: ScreenElementIR): string[] => {
+const collectVectorPaths = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
   const localPaths = Array.isArray(element.vectorPaths)
     ? element.vectorPaths.filter((path): path is string => typeof path === "string" && path.length > 0)
     : [];
-  const nestedPaths = (element.children ?? []).flatMap((child) => collectVectorPaths(child));
+  const nestedPaths = (element.children ?? []).flatMap((child) => collectVectorPaths(child, visited));
   return [...new Set([...localPaths, ...nestedPaths])];
 };
 
-const firstVectorColor = (element: ScreenElementIR): string | undefined => {
+const firstVectorColor = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
   if (Array.isArray(element.vectorPaths) && element.vectorPaths.length > 0 && element.fillColor) {
     return element.fillColor;
   }
   for (const child of element.children ?? []) {
-    const match = firstVectorColor(child);
+    const match = firstVectorColor(child, visited);
     if (match) {
       return match;
     }
@@ -1324,30 +1400,308 @@ const firstVectorColor = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const collectTextNodes = (element: ScreenElementIR): ScreenElementIR[] => {
+const collectTextNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
   const local = element.type === "text" && element.text?.trim() ? [element] : [];
-  const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child));
+  const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child, visited));
   return [...local, ...nested];
 };
 
-const hasMeaningfulTextDescendants = (element: ScreenElementIR): boolean => {
-  return collectTextNodes(element).some((node) => {
+const hasMeaningfulTextDescendants = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  const cached = context.meaningfulTextDescendantCache.get(element.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = collectTextNodes(element).some((node) => {
     const text = node.text?.trim() ?? "";
     if (!text) {
       return false;
     }
     return /[a-z0-9]/i.test(text);
   });
+  context.meaningfulTextDescendantCache.set(element.id, resolved);
+  return resolved;
 };
 
-const collectIconNodes = (element: ScreenElementIR): ScreenElementIR[] => {
+const collectIconNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
   const local = isIconLikeNode(element) ? [element] : [];
-  const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child));
+  const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child, visited));
   return [...local, ...nested];
 };
 
-const collectSubtreeNames = (element: ScreenElementIR): string[] => {
-  return [element.name, ...(element.children ?? []).flatMap((child) => collectSubtreeNames(child))];
+const collectSubtreeNames = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element.name, ...(element.children ?? []).flatMap((child) => collectSubtreeNames(child, visited))];
+};
+
+const A11Y_GENERIC_LABEL_PATTERNS = [
+  /^frame\s*\d*$/i,
+  /^group\s*\d*$/i,
+  /^rectangle\s*\d*$/i,
+  /^vector\s*\d*$/i,
+  /^instance\s*\d*$/i,
+  /^node\s*\d*$/i,
+  /^component\s*\d*$/i,
+  /^styled\(div\)$/i,
+  /^mui[a-z0-9_-]+$/i
+];
+const A11Y_IMAGE_DECORATIVE_HINTS = ["decorative", "background", "placeholder", "pattern", "shape"];
+const A11Y_NAVIGATION_HINTS = ["navigation", "navbar", "nav bar", "menu", "sidebar", "tabbar", "drawer"];
+const A11Y_INTERACTIVE_TYPES = new Set<ScreenElementIR["type"]>([
+  "button",
+  "input",
+  "select",
+  "switch",
+  "checkbox",
+  "radio",
+  "slider",
+  "rating",
+  "tab",
+  "navigation",
+  "breadcrumbs",
+  "drawer"
+]);
+const HEADING_NAME_HINTS = ["heading", "headline", "title", "h1", "h2", "h3", "ueberschrift", "überschrift", "titel"];
+
+const toA11yHumanizedLabel = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .replace(/[_./:-]+/g, " ")
+    .replace(/\b(ic|icon|root|wrapper|container|component)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (A11Y_GENERIC_LABEL_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return undefined;
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const resolveElementA11yLabel = ({
+  element,
+  fallback
+}: {
+  element: ScreenElementIR;
+  fallback: string;
+}): string => {
+  const textLabel = toA11yHumanizedLabel(firstText(element)?.trim());
+  if (textLabel) {
+    return textLabel;
+  }
+  const nameLabel = toA11yHumanizedLabel(element.name);
+  if (nameLabel) {
+    return nameLabel;
+  }
+  return fallback;
+};
+
+const resolveIconButtonAriaLabel = ({
+  element,
+  iconNode
+}: {
+  element: ScreenElementIR;
+  iconNode: ScreenElementIR | undefined;
+}): string => {
+  const elementLabel = toA11yHumanizedLabel(element.name);
+  if (elementLabel) {
+    return elementLabel;
+  }
+  const iconLabel = toA11yHumanizedLabel(iconNode?.name);
+  if (iconLabel) {
+    return iconLabel;
+  }
+  return "Button";
+};
+
+const hasInteractiveDescendants = ({
+  element,
+  context,
+  visited = new Set<ScreenElementIR>()
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+  visited?: Set<ScreenElementIR>;
+}): boolean => {
+  if (visited.has(element)) {
+    return false;
+  }
+  const cached = context.interactiveDescendantCache.get(element.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  visited.add(element);
+  const resolved =
+    A11Y_INTERACTIVE_TYPES.has(element.type) ||
+    (element.children ?? []).some((child) => hasInteractiveDescendants({ element: child, context, visited }));
+  visited.delete(element);
+  context.interactiveDescendantCache.set(element.id, resolved);
+  return resolved;
+};
+
+const inferLandmarkRole = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): LandmarkRole | undefined => {
+  if (element.type === "navigation") {
+    return "navigation";
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  if (!normalizedName) {
+    return undefined;
+  }
+  const hasHint = A11Y_NAVIGATION_HINTS.some((hint) => normalizedName.includes(hint));
+  if (!hasHint) {
+    return undefined;
+  }
+  if (element.type === "input" || element.type === "select") {
+    return undefined;
+  }
+  return hasInteractiveDescendants({ element, context }) ? "navigation" : undefined;
+};
+
+const isDecorativeImageElement = (element: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(element.name);
+  if (!normalizedName) {
+    return false;
+  }
+  const hasDecorativeHint = A11Y_IMAGE_DECORATIVE_HINTS.some((hint) => normalizedName.includes(hint));
+  if (hasDecorativeHint) {
+    return true;
+  }
+  return !toA11yHumanizedLabel(element.name);
+};
+
+const isDecorativeElement = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type === "divider" || element.type === "skeleton") {
+    return true;
+  }
+  if (element.type === "image") {
+    return isDecorativeImageElement(element);
+  }
+  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants({ element, context })) {
+    return true;
+  }
+  if (A11Y_INTERACTIVE_TYPES.has(element.type)) {
+    return false;
+  }
+  return !hasMeaningfulTextDescendants({ element, context }) && !hasInteractiveDescendants({ element, context });
+};
+
+const inferHeadingComponentByNodeId = (elements: ScreenElementIR[]): Map<string, HeadingComponent> => {
+  const headingCandidates = elements
+    .flatMap((element) => collectTextNodes(element))
+    .filter((node) => {
+      const normalizedName = normalizeInputSemanticText(node.name);
+      const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+      const fontSize = typeof node.fontSize === "number" ? node.fontSize : 0;
+      const fontWeight = typeof node.fontWeight === "number" ? node.fontWeight : 0;
+      return hasHeadingHint || fontSize >= 20 || fontWeight >= 650;
+    })
+    .sort((left, right) => {
+      const leftFontSize = typeof left.fontSize === "number" ? left.fontSize : 0;
+      const rightFontSize = typeof right.fontSize === "number" ? right.fontSize : 0;
+      if (leftFontSize !== rightFontSize) {
+        return rightFontSize - leftFontSize;
+      }
+      const leftWeight = typeof left.fontWeight === "number" ? left.fontWeight : 0;
+      const rightWeight = typeof right.fontWeight === "number" ? right.fontWeight : 0;
+      if (leftWeight !== rightWeight) {
+        return rightWeight - leftWeight;
+      }
+      return (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0) || left.id.localeCompare(right.id);
+    });
+
+  const byNodeId = new Map<string, HeadingComponent>();
+  const levelByIndex: HeadingComponent[] = ["h1", "h2", "h3"];
+  for (const candidate of headingCandidates) {
+    if (byNodeId.has(candidate.id)) {
+      continue;
+    }
+    const nextLevel = levelByIndex[byNodeId.size];
+    if (!nextLevel) {
+      break;
+    }
+    byNodeId.set(candidate.id, nextLevel);
+  }
+  return byNodeId;
+};
+
+const resolveBackgroundHexForText = ({
+  parent,
+  context
+}: {
+  parent: VirtualParent;
+  context: RenderContext;
+}): string | undefined => {
+  const normalizedParentColor = normalizeHexColor(parent.fillColor);
+  if (normalizedParentColor) {
+    return normalizedParentColor;
+  }
+  return (
+    context.pageBackgroundColorNormalized ??
+    normalizeHexColor(context.tokens?.palette.background)
+  );
+};
+
+const pushLowContrastWarning = ({
+  context,
+  element,
+  foreground,
+  background,
+  contrastRatio
+}: {
+  context: RenderContext;
+  element: ScreenElementIR;
+  foreground: string;
+  background: string;
+  contrastRatio: number;
+}): void => {
+  const warningKey = `${element.id}:${foreground}:${background}`;
+  if (context.emittedAccessibilityWarningKeys.has(warningKey)) {
+    return;
+  }
+  context.emittedAccessibilityWarningKeys.add(warningKey);
+  const ratioLiteral = `${Math.round(contrastRatio * 100) / 100}:1`;
+  context.accessibilityWarnings.push({
+    code: "W_A11Y_LOW_CONTRAST",
+    screenId: context.screenId,
+    screenName: context.screenName,
+    nodeId: element.id,
+    nodeName: element.name,
+    message: `Low contrast (${ratioLiteral}) for text node '${element.name}' on screen '${context.screenName}'`,
+    foreground,
+    background,
+    contrastRatio: Math.round(contrastRatio * 1000) / 1000
+  });
 };
 
 const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | undefined => {
@@ -1462,9 +1816,17 @@ interface RenderedButtonModel {
 }
 
 interface RenderContext {
+  screenId: string;
+  screenName: string;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
   buttons: RenderedButtonModel[];
+  activeRenderElements: Set<ScreenElementIR>;
+  renderNodeVisitCount: number;
+  interactiveDescendantCache: Map<string, boolean>;
+  meaningfulTextDescendantCache: Map<string, boolean>;
+  headingComponentByNodeId: Map<string, HeadingComponent>;
+  accessibilityWarnings: AccessibilityWarning[];
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
   mappedImports: MappedImportSpec[];
@@ -1478,6 +1840,7 @@ interface RenderContext {
     message: string;
   }>;
   emittedWarningKeys: Set<string>;
+  emittedAccessibilityWarningKeys: Set<string>;
   pageBackgroundColorNormalized: string | undefined;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }
@@ -2138,11 +2501,13 @@ const renderFallbackIconExpression = ({
   element,
   parent,
   context,
+  ariaHidden = false,
   extraEntries = []
 }: {
   element: ScreenElementIR;
   parent: Pick<VirtualParent, "name">;
   context: RenderContext;
+  ariaHidden?: boolean;
   extraEntries?: Array<[string, string | number | undefined]>;
 }): string => {
   const vectorPaths = collectVectorPaths(element);
@@ -2155,6 +2520,7 @@ const renderFallbackIconExpression = ({
         height: element.height
       },
       context,
+      ariaHidden,
       extraEntries
     });
   }
@@ -2169,7 +2535,8 @@ const renderFallbackIconExpression = ({
     ["color", toThemeColorLiteral({ color, tokens: context.tokens })],
     ...extraEntries
   ]);
-  return `<${iconComponent} sx={{ ${sx} }} fontSize="inherit" />`;
+  const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
+  return `<${iconComponent}${ariaHiddenProp} sx={{ ${sx} }} fontSize="inherit" />`;
 };
 
 const registerInteractiveField = ({
@@ -2347,10 +2714,12 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
 const renderInlineSvgIcon = ({
   icon,
   context,
+  ariaHidden = false,
   extraEntries = []
 }: {
   icon: SemanticIconModel;
   context: RenderContext;
+  ariaHidden?: boolean;
   extraEntries?: Array<[string, string | number | undefined]>;
 }): string => {
   registerMuiImports(context, "SvgIcon");
@@ -2363,7 +2732,8 @@ const renderInlineSvgIcon = ({
   const width = Math.max(1, Math.round(icon.width ?? 24));
   const height = Math.max(1, Math.round(icon.height ?? 24));
   const paths = icon.paths.map((pathData) => `<path d={${literal(pathData)}} />`).join("");
-  return `<SvgIcon sx={{ ${sx} }} viewBox={${literal(`0 0 ${width} ${height}`)}}>${paths}</SvgIcon>`;
+  const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
+  return `<SvgIcon${ariaHiddenProp} sx={{ ${sx} }} viewBox={${literal(`0 0 ${width} ${height}`)}}>${paths}</SvgIcon>`;
 };
 
 const renderSemanticInput = (
@@ -2408,7 +2778,9 @@ const renderSemanticInput = (
       : "";
   const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
   const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
+  const helperTextId = `${field.key}-helper-text`;
   const requiredProp = field.required ? `${indent}    required\n` : "";
+  const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
 
   if (field.isSelect) {
     registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
@@ -2424,6 +2796,8 @@ ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-describedby={${literal(helperTextId)}}
+${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${indent}    sx={{
 ${indent}      ${inputRootStyle},
 ${indent}      "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} }
@@ -2433,7 +2807,7 @@ ${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
 ${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
 ${indent}    ))}
 ${indent}  </Select>
-${indent}  <FormHelperText>{${fieldHelperTextExpression}}</FormHelperText>
+${indent}  <FormHelperText id={${literal(helperTextId)}}>{${fieldHelperTextExpression}}</FormHelperText>
 ${indent}</FormControl>`;
   }
 
@@ -2445,6 +2819,8 @@ ${indent}</FormControl>`;
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
   const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
+  const inputProps = `inputProps: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`;
+  const inputPropsWithAdornment = endAdornment ? `${endAdornment}, ${inputProps}` : inputProps;
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
 ${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
@@ -2452,13 +2828,16 @@ ${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.ta
 ${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}  error={${fieldErrorExpression}}
 ${indent}  helperText={${fieldHelperTextExpression}}
+${indent}  aria-label={${literal(field.label)}}
+${indent}  aria-describedby={${literal(helperTextId)}}
 ${indent}  sx={{
 ${indent}    ${fieldSx},
 ${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
 ${indent}    "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} },
 ${indent}    "& .MuiInputLabel-root": { ${inputLabelStyle} }
 ${indent}  }}
-${indent}  InputProps={{ ${endAdornment} }}
+${indent}  FormHelperTextProps={{ id: ${literal(helperTextId)} }}
+${indent}  InputProps={{ ${inputPropsWithAdornment} }}
 ${indent}/>`;
 };
 
@@ -2700,10 +3079,12 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
       element: iconNode,
       parent: { name: endIconRoot?.name ?? element.name },
       context,
+      ariaHidden: true,
       extraEntries: [["fontSize", literal("inherit")]]
     });
     const disabledProp = inferredDisabled ? " disabled" : "";
-    return `${indent}<IconButton aria-label=${literal(element.name)}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
+    const ariaLabel = resolveIconButtonAriaLabel({ element, iconNode });
+    return `${indent}<IconButton aria-label=${literal(ariaLabel)}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
   }
 
   const iconExpression = iconNode
@@ -2711,6 +3092,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
         element: iconNode,
         parent: { name: endIconRoot?.name ?? element.name },
         context,
+        ariaHidden: true,
         extraEntries: [["fontSize", literal("inherit")]]
       })
     : undefined;
@@ -2816,6 +3198,8 @@ const renderChildrenIntoParent = ({
           width: element.width,
           height: element.height,
           name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
           layoutMode: element.layoutMode ?? "NONE"
         },
         context
@@ -2885,7 +3269,7 @@ const isElevatedSurfaceContainerForPaper = ({
   if ((element.children?.length ?? 0) === 0) {
     return false;
   }
-  if (!hasMeaningfulTextDescendants(element)) {
+  if (!hasMeaningfulTextDescendants({ element, context })) {
     return false;
   }
   if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
@@ -2979,11 +3363,17 @@ const renderSimpleFlexContainerAsStack = ({
     parent,
     context
   });
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? `role="${landmarkRole}"` : undefined;
+  const ariaHiddenProp = isDecorative ? 'aria-hidden="true"' : undefined;
   const props = [
     `direction=${literal(direction)}`,
     `spacing={${spacing}}`,
     alignItems ? `alignItems=${literal(alignItems)}` : undefined,
     justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
+    roleProp,
+    ariaHiddenProp,
     sx ? `sx={{ ${sx} }}` : undefined
   ]
     .filter((entry): entry is string => Boolean(entry))
@@ -3222,6 +3612,8 @@ const renderGridLayout = ({
           width: element.width,
           height: element.height,
           name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
           layoutMode: element.layoutMode ?? "NONE"
         },
         context
@@ -3346,7 +3738,15 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
     : `${indent}  <CardContent />`;
-  const mediaBlock = mediaCandidate ? `${indent}  <CardMedia sx={{ ${mediaSx} }} />\n` : "";
+  const mediaBlock = mediaCandidate
+    ? (() => {
+        if (isDecorativeImageElement(mediaCandidate)) {
+          return `${indent}  <CardMedia aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
+        }
+        const mediaLabel = resolveElementA11yLabel({ element: mediaCandidate, fallback: "Image" });
+        return `${indent}  <CardMedia role="img" aria-label={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
+      })()
+    : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
   return `${indent}<Card${elevationProp} sx={{ ${sx} }}>
 ${mediaBlock}${contentBlock}${actionsBlock}
@@ -3448,7 +3848,8 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
         ? `<ListItemIcon>${renderFallbackIconExpression({
             element: iconNode,
             parent: { name: item.node.name },
-            context
+            context,
+            ariaHidden: true
           })}</ListItemIcon>`
         : "";
       return `${indent}  <ListItem key={${literal(item.id)}} disablePadding>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItem>`;
@@ -3473,7 +3874,7 @@ const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualPa
     context
   });
   const fallbackTitle = firstText(element)?.trim() || element.name || "App";
-  return `${indent}<AppBar position="static" sx={{ ${sx} }}>
+  return `${indent}<AppBar role="banner" position="static" sx={{ ${sx} }}>
 ${indent}  <Toolbar>
 ${renderedChildren || `${indent}    <Typography variant="h6">{${literal(fallbackTitle)}}</Typography>`}
 ${indent}  </Toolbar>
@@ -3613,7 +4014,7 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
     }),
     ["borderColor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
   ]);
-  return `${indent}<Divider sx={{ ${sx} }} />`;
+  return `${indent}<Divider aria-hidden="true" sx={{ ${sx} }} />`;
 };
 
 const renderNavigation = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
@@ -3634,7 +4035,7 @@ const renderNavigation = (element: ScreenElementIR, depth: number, parent: Virtu
         `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}} />`
     )
     .join("\n");
-  return `${indent}<BottomNavigation showLabels value={0} sx={{ ${sx} }}>
+  return `${indent}<BottomNavigation role="navigation" showLabels value={0} sx={{ ${sx} }}>
 ${renderedActions}
 ${indent}</BottomNavigation>`;
 };
@@ -3669,15 +4070,19 @@ const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualPar
     parent,
     context
   });
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
+  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 1,
     context
   });
   if (!renderedChildren.trim()) {
-    return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}} sx={{ ${sx} }} />`;
+    return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}} sx={{ ${sx} }}>
+  return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Stack>`;
 };
@@ -3699,10 +4104,14 @@ const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualPar
   });
   const elevationProp = typeof elevation === "number" && elevation > 0 ? ` elevation={${elevation}}` : "";
   const variantProp = variant ? ` variant="${variant}"` : "";
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
+  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
   if (!renderedChildren.trim()) {
-    return `${indent}<Paper${elevationProp}${variantProp} sx={{ ${sx} }} />`;
+    return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Paper${elevationProp}${variantProp} sx={{ ${sx} }}>
+  return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Paper>`;
 };
@@ -3774,6 +4183,8 @@ const renderTooltipElement = (element: ScreenElementIR, depth: number, parent: V
           width: element.width,
           height: element.height,
           name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
           layoutMode: element.layoutMode ?? "NONE"
         },
         context
@@ -3799,7 +4210,7 @@ const renderDrawer = (element: ScreenElementIR, depth: number, parent: VirtualPa
     depth: depth + 2,
     context
   });
-  return `${indent}<Drawer open variant="persistent" sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+  return `${indent}<Drawer open variant="persistent" PaperProps={{ role: "navigation" }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
 ${indent}  <Box sx={{ width: "100%" }}>
 ${renderedChildren || `${indent}    <Box />`}
 ${indent}  </Box>
@@ -3879,9 +4290,11 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
     includePaints: false
   });
   const labelId = `${field.key}-label`;
+  const helperTextId = `${field.key}-helper-text`;
   const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
   const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
   const requiredProp = field.required ? `${indent}  required\n` : "";
+  const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
   return `${indent}<FormControl
 ${requiredProp}${indent}  error={${fieldErrorExpression}}
 ${indent}  sx={{ ${sx} }}
@@ -3893,12 +4306,14 @@ ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-describedby={${literal(helperTextId)}}
+${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${indent}  >
 ${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
 ${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
 ${indent}    ))}
 ${indent}  </Select>
-${indent}  <FormHelperText>{${fieldHelperTextExpression}}</FormHelperText>
+${indent}  <FormHelperText id={${literal(helperTextId)}}>{${fieldHelperTextExpression}}</FormHelperText>
 ${indent}</FormControl>`;
 };
 
@@ -3942,7 +4357,22 @@ const renderSkeleton = (element: ScreenElementIR, depth: number, parent: Virtual
     context,
     includePaints: false
   });
-  return `${indent}<Skeleton variant="${variant}" sx={{ ${sx} }} />`;
+  return `${indent}<Skeleton aria-hidden="true" variant="${variant}" sx={{ ${sx} }} />`;
+};
+
+const renderImageElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Box");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  if (isDecorativeImageElement(element)) {
+    return `${indent}<Box aria-hidden="true" sx={{ ${sx} }} />`;
+  }
+  const ariaLabel = resolveElementA11yLabel({ element, fallback: "Image" });
+  return `${indent}<Box role="img" aria-label={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
 };
 
 const renderContainer = (
@@ -3964,11 +4394,12 @@ const renderContainer = (
     return renderButton(element, depth, parent, context);
   }
 
-  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants(element)) {
+  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants({ element, context })) {
     const iconExpression = renderFallbackIconExpression({
       element,
       parent,
       context,
+      ariaHidden: true,
       extraEntries: [
         ...baseLayoutEntries(element, parent, {
           includePaints: false,
@@ -4026,6 +4457,8 @@ const renderContainer = (
       width: element.width,
       height: element.height,
       name: element.name,
+      fillColor: element.fillColor,
+      fillGradient: element.fillGradient,
       layoutMode: element.layoutMode ?? "NONE"
     }, context))
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
@@ -4046,7 +4479,7 @@ const renderContainer = (
       ["borderColor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
     ]);
     registerMuiImports(context, "Divider");
-    return `${indent}<Divider sx={{ ${sx} }} />`;
+    return `${indent}<Divider aria-hidden="true" sx={{ ${sx} }} />`;
   }
 
   const sx = toElementSx({
@@ -4054,17 +4487,21 @@ const renderContainer = (
     parent,
     context
   });
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
+  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
 
   if (!renderedChildren.trim()) {
     if (!hasVisualStyle(element)) {
       return null;
     }
     registerMuiImports(context, "Box");
-    return `${indent}<Box sx={{ ${sx} }} />`;
+    return `${indent}<Box${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
 
   registerMuiImports(context, "Box");
-  return `${indent}<Box sx={{ ${sx} }}>
+  return `${indent}<Box${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Box>`;
 };
@@ -4075,98 +4512,111 @@ const renderElement = (
   parent: VirtualParent,
   context: RenderContext
 ): string | null => {
-  const mappedElement = renderMappedElement(element, depth, parent, context);
-  if (mappedElement) {
-    return mappedElement;
+  context.renderNodeVisitCount += 1;
+  if (context.renderNodeVisitCount > 200_000) {
+    throw new Error(`Render traversal exceeded safety limit for screen '${context.screenName}'`);
   }
-
-  if (element.nodeType === "VECTOR") {
+  if (context.activeRenderElements.has(element)) {
     return null;
   }
+  context.activeRenderElements.add(element);
+  try {
+    const mappedElement = renderMappedElement(element, depth, parent, context);
+    if (mappedElement) {
+      return mappedElement;
+    }
 
-  switch (element.type) {
-    case "text":
-      return renderText(element, depth, parent, context);
-    case "input":
-      return renderSemanticInput(element, depth, parent, context);
-    case "select":
-      return renderSelectElement(element, depth, parent, context);
-    case "button":
-      return renderButton(element, depth, parent, context);
-    case "grid":
-      return renderGrid(element, depth, parent, context);
-    case "stack":
-      return renderStack(element, depth, parent, context);
-    case "paper":
-      return renderPaper(element, depth, parent, context);
-    case "card":
-      return renderCard(element, depth, parent, context);
-    case "chip":
-      return renderChip(element, depth, parent, context);
-    case "switch":
-      return renderSelectionControl({
-        element,
-        depth,
-        parent,
-        context,
-        componentName: "Switch"
-      });
-    case "checkbox":
-      return renderSelectionControl({
-        element,
-        depth,
-        parent,
-        context,
-        componentName: "Checkbox"
-      });
-    case "radio":
-      return renderSelectionControl({
-        element,
-        depth,
-        parent,
-        context,
-        componentName: "Radio"
-      });
-    case "slider":
-      return renderSlider(element, depth, parent, context);
-    case "rating":
-      return renderRatingElement(element, depth, parent, context);
-    case "list":
-      return renderList(element, depth, parent, context);
-    case "table":
-      return renderTable(element, depth, parent, context);
-    case "tooltip":
-      return renderTooltipElement(element, depth, parent, context);
-    case "appbar":
-      return renderAppBar(element, depth, parent, context);
-    case "drawer":
-      return renderDrawer(element, depth, parent, context);
-    case "breadcrumbs":
-      return renderBreadcrumbs(element, depth, parent, context);
-    case "tab":
-      return renderTabs(element, depth, parent, context);
-    case "dialog":
-      return renderDialog(element, depth, parent, context);
-    case "snackbar":
-      return renderSnackbar(element, depth, parent, context);
-    case "stepper":
-      return renderStepper(element, depth, parent, context);
-    case "progress":
-      return renderProgress(element, depth, parent, context);
-    case "skeleton":
-      return renderSkeleton(element, depth, parent, context);
-    case "avatar":
-      return renderAvatar(element, depth, parent, context);
-    case "badge":
-      return renderBadge(element, depth, parent, context);
-    case "divider":
-      return renderDividerElement(element, depth, parent, context);
-    case "navigation":
-      return renderNavigation(element, depth, parent, context);
-    case "image":
-    case "container":
-    default:
-      return renderContainer(element, depth, parent, context);
+    if (element.nodeType === "VECTOR") {
+      return null;
+    }
+
+    switch (element.type) {
+      case "text":
+        return renderText(element, depth, parent, context);
+      case "input":
+        return renderSemanticInput(element, depth, parent, context);
+      case "select":
+        return renderSelectElement(element, depth, parent, context);
+      case "button":
+        return renderButton(element, depth, parent, context);
+      case "grid":
+        return renderGrid(element, depth, parent, context);
+      case "stack":
+        return renderStack(element, depth, parent, context);
+      case "paper":
+        return renderPaper(element, depth, parent, context);
+      case "card":
+        return renderCard(element, depth, parent, context);
+      case "chip":
+        return renderChip(element, depth, parent, context);
+      case "switch":
+        return renderSelectionControl({
+          element,
+          depth,
+          parent,
+          context,
+          componentName: "Switch"
+        });
+      case "checkbox":
+        return renderSelectionControl({
+          element,
+          depth,
+          parent,
+          context,
+          componentName: "Checkbox"
+        });
+      case "radio":
+        return renderSelectionControl({
+          element,
+          depth,
+          parent,
+          context,
+          componentName: "Radio"
+        });
+      case "slider":
+        return renderSlider(element, depth, parent, context);
+      case "rating":
+        return renderRatingElement(element, depth, parent, context);
+      case "list":
+        return renderList(element, depth, parent, context);
+      case "table":
+        return renderTable(element, depth, parent, context);
+      case "tooltip":
+        return renderTooltipElement(element, depth, parent, context);
+      case "appbar":
+        return renderAppBar(element, depth, parent, context);
+      case "drawer":
+        return renderDrawer(element, depth, parent, context);
+      case "breadcrumbs":
+        return renderBreadcrumbs(element, depth, parent, context);
+      case "tab":
+        return renderTabs(element, depth, parent, context);
+      case "dialog":
+        return renderDialog(element, depth, parent, context);
+      case "snackbar":
+        return renderSnackbar(element, depth, parent, context);
+      case "stepper":
+        return renderStepper(element, depth, parent, context);
+      case "progress":
+        return renderProgress(element, depth, parent, context);
+      case "skeleton":
+        return renderSkeleton(element, depth, parent, context);
+      case "avatar":
+        return renderAvatar(element, depth, parent, context);
+      case "badge":
+        return renderBadge(element, depth, parent, context);
+      case "divider":
+        return renderDividerElement(element, depth, parent, context);
+      case "navigation":
+        return renderNavigation(element, depth, parent, context);
+      case "image":
+        return renderImageElement(element, depth, parent, context);
+      case "container":
+      default:
+        return renderContainer(element, depth, parent, context);
+    }
+  } finally {
+    context.activeRenderElements.delete(element);
   }
 };
 
@@ -4215,6 +4665,7 @@ interface FallbackScreenFileResult {
     nodeId: string;
     message: string;
   }>;
+  accessibilityWarnings: AccessibilityWarning[];
 }
 
 const toTruncationComment = (
@@ -4259,12 +4710,21 @@ const fallbackScreenFile = ({
   const resolvedSpacingBase = normalizeSpacingBase(spacingBase);
 
   const simplifiedChildren = simplifyElements(screen.children);
+  const headingComponentByNodeId = inferHeadingComponentByNodeId(simplifiedChildren);
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
   const minY = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.y ?? 0)) : 0;
   const renderContext: RenderContext = {
+    screenId: screen.id,
+    screenName: screen.name,
     fields: [],
     accordions: [],
     buttons: [],
+    activeRenderElements: new Set<ScreenElementIR>(),
+    renderNodeVisitCount: 0,
+    interactiveDescendantCache: new Map<string, boolean>(),
+    meaningfulTextDescendantCache: new Map<string, boolean>(),
+    headingComponentByNodeId,
+    accessibilityWarnings: [],
     muiImports: new Set<string>(["Container"]),
     iconImports: [],
     mappedImports: [],
@@ -4274,6 +4734,7 @@ const fallbackScreenFile = ({
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
     emittedWarningKeys: new Set<string>(),
+    emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
@@ -4291,6 +4752,8 @@ const fallbackScreenFile = ({
           width: screen.width,
           height: screen.height,
           name: screen.name,
+          fillColor: screen.fillColor,
+          fillGradient: screen.fillGradient,
           layoutMode: screen.layoutMode
         },
         renderContext
@@ -4546,7 +5009,7 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
-    <Container maxWidth="${containerMaxWidth}"${containerFormProps} sx={{ ${screenContainerSx} }}>
+    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
     </Container>
   );
@@ -4554,7 +5017,8 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
 `
     },
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
-    mappingWarnings: renderContext.mappingWarnings
+    mappingWarnings: renderContext.mappingWarnings,
+    accessibilityWarnings: renderContext.accessibilityWarnings
   };
 };
 
@@ -5288,6 +5752,7 @@ export const generateArtifacts = async ({
 
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
   const usedMappingNodeIds = new Set<string>();
+  const accessibilityWarnings: AccessibilityWarning[] = [];
   const deterministicScreens = ir.screens.map((screen) => {
     const identity = identitiesByScreenId.get(screen.id);
     const truncationMetric = truncationByScreenId.get(screen.id);
@@ -5314,6 +5779,7 @@ export const generateArtifacts = async ({
         message: warning.message
       });
     }
+    accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
 
     const file = deterministicScreen.file;
     return {
@@ -5376,11 +5842,21 @@ export const generateArtifacts = async ({
   generatedPaths.add("src/App.tsx");
 
   const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
-  await writeFile(generationMetricsPath, `${JSON.stringify(generationMetrics, null, 2)}\n`, "utf-8");
+  const generationMetricsPayload = {
+    ...generationMetrics,
+    accessibilityWarnings
+  };
+  await writeFile(generationMetricsPath, `${JSON.stringify(generationMetricsPayload, null, 2)}\n`, "utf-8");
   generatedPaths.add("generation-metrics.json");
 
   if (generationMetrics.degradedGeometryNodes.length > 0) {
     onLog(`Geometry degraded for ${generationMetrics.degradedGeometryNodes.length} node(s) during staged fetch.`);
+  }
+  if (accessibilityWarnings.length > 0) {
+    for (const warning of accessibilityWarnings) {
+      onLog(`[a11y] ${warning.message}`);
+    }
+    onLog(`Accessibility warnings: ${accessibilityWarnings.length} potential contrast issue(s).`);
   }
 
   onLog("Generated deterministic baseline artifacts");
