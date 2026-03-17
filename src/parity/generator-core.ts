@@ -400,8 +400,13 @@ const toThemePaletteLiteral = ({
   const exactMatches: Array<[string, string | undefined]> = [
     ["primary.main", tokens.palette.primary],
     ["secondary.main", tokens.palette.secondary],
+    ["success.main", tokens.palette.success],
+    ["warning.main", tokens.palette.warning],
+    ["error.main", tokens.palette.error],
+    ["info.main", tokens.palette.info],
     ["background.default", tokens.palette.background],
-    ["text.primary", tokens.palette.text]
+    ["text.primary", tokens.palette.text],
+    ["divider", tokens.palette.divider]
   ];
 
   for (const [tokenPath, tokenColor] of exactMatches) {
@@ -7333,8 +7338,21 @@ export const appTheme = createTheme({
     mode: "light",
     primary: { main: "${tokens.palette.primary}" },
     secondary: { main: "${tokens.palette.secondary}" },
+    success: { main: "${tokens.palette.success}" },
+    warning: { main: "${tokens.palette.warning}" },
+    error: { main: "${tokens.palette.error}" },
+    info: { main: "${tokens.palette.info}" },
     background: { default: "${tokens.palette.background}", paper: "${tokens.palette.background}" },
-    text: { primary: "${tokens.palette.text}" }
+    text: { primary: "${tokens.palette.text}" },
+    divider: "${tokens.palette.divider}",
+    action: {
+      active: "${tokens.palette.action.active}",
+      hover: "${tokens.palette.action.hover}",
+      selected: "${tokens.palette.action.selected}",
+      disabled: "${tokens.palette.action.disabled}",
+      disabledBackground: "${tokens.palette.action.disabledBackground}",
+      focus: "${tokens.palette.action.focus}"
+    }
   },
   shape: {
     borderRadius: ${Math.max(0, Math.round(tokens.borderRadius))}

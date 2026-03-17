@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LlmClient, LlmClientError, isLlmClientError } from "./llm.js";
 
+const palette = {
+  primary: "#111111",
+  secondary: "#222222",
+  background: "#333333",
+  text: "#444444",
+  success: "#555555",
+  warning: "#666666",
+  error: "#777777",
+  info: "#888888",
+  divider: "#999999",
+  action: {
+    active: "#aaaaaa",
+    hover: "#bbbbbb",
+    selected: "#cccccc",
+    disabled: "#dddddd",
+    disabledBackground: "#eeeeee",
+    focus: "#ffffff"
+  }
+};
+
 test("LlmClientError exposes code/endpoint/status and type guard", () => {
   const error = new LlmClientError({
     code: "E_LLM_PROVIDER_HTTP",
@@ -23,7 +43,12 @@ test("LlmClient deterministic runtime methods reject with transport error", asyn
   const client = new LlmClient();
 
   await assert.rejects(
-    () => client.generateTheme({ sourceName: "demo", screens: [], tokens: { palette: { primary: "#1", secondary: "#2", background: "#3", text: "#4" }, borderRadius: 8, spacingBase: 8, fontFamily: "Roboto", headingSize: 24, bodySize: 14 } }),
+    () =>
+      client.generateTheme({
+        sourceName: "demo",
+        screens: [],
+        tokens: { palette, borderRadius: 8, spacingBase: 8, fontFamily: "Roboto", headingSize: 24, bodySize: 14 }
+      }),
     (error: unknown) => (error as { code?: string }).code === "E_LLM_TRANSPORT"
   );
 
@@ -39,7 +64,7 @@ test("LlmClient deterministic runtime methods reject with transport error", asyn
           children: []
         },
         {
-          palette: { primary: "#1", secondary: "#2", background: "#3", text: "#4" },
+          palette,
           borderRadius: 8,
           spacingBase: 8,
           fontFamily: "Roboto",
@@ -63,7 +88,7 @@ test("LlmClient deterministic runtime methods reject with transport error", asyn
           children: []
         },
         tokens: {
-          palette: { primary: "#1", secondary: "#2", background: "#3", text: "#4" },
+          palette,
           borderRadius: 8,
           spacingBase: 8,
           fontFamily: "Roboto",

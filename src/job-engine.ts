@@ -657,7 +657,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const submitJob = (input: WorkspaceJobInput) => {
     const jobId = randomUUID();
-    const acceptedModes = toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
+    const acceptedModes =
+      input.figmaSourceMode === undefined ? toAcceptedModes() : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale

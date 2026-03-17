@@ -621,6 +621,21 @@ export interface DesignTokenPalette {
   secondary: string;
   background: string;
   text: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  divider: string;
+  action: DesignTokenActionPalette;
+}
+
+export interface DesignTokenActionPalette {
+  active: string;
+  hover: string;
+  selected: string;
+  disabled: string;
+  disabledBackground: string;
+  focus: string;
 }
 
 export interface DesignTokens {
