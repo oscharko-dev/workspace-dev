@@ -99,6 +99,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       ? { figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth }
       : {}),
     ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
+    ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
     ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),

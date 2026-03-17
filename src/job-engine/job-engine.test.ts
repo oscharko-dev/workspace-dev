@@ -45,7 +45,7 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
 
-test("createJobEngine resolves request brandTheme with submit override precedence", () => {
+test("createJobEngine resolves request brandTheme and generationLocale with submit override precedence", () => {
   const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-brand-theme");
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -56,6 +56,7 @@ test("createJobEngine resolves request brandTheme with submit override precedenc
     },
     runtime: resolveRuntimeSettings({
       brandTheme: "sparkasse",
+      generationLocale: "de-DE",
       figmaMaxRetries: 1,
       figmaRequestTimeoutMs: 1000,
       fetchImpl: async () => {
@@ -67,14 +68,81 @@ test("createJobEngine resolves request brandTheme with submit override precedenc
   const defaultAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
   const defaultRequest = engine.getJob(defaultAccepted.jobId)?.request;
   assert.equal(defaultRequest?.brandTheme, "sparkasse");
+  assert.equal(defaultRequest?.generationLocale, "de-DE");
 
   const overrideAccepted = engine.submitJob({
     figmaFileKey: "abc",
     figmaAccessToken: "token",
-    brandTheme: "derived"
+    brandTheme: "derived",
+    generationLocale: "en-US"
   });
   const overrideRequest = engine.getJob(overrideAccepted.jobId)?.request;
   assert.equal(overrideRequest?.brandTheme, "derived");
+  assert.equal(overrideRequest?.generationLocale, "en-US");
+});
+
+test("createJobEngine falls back invalid submit generationLocale and emits deterministic warning log", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"));
+  const payload = {
+    name: "Locale board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Locale Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+              children: [{ id: "title", type: "TEXT", characters: "Hello", absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 } }]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+    generationLocale: "invalid_locale"
+  });
+  const request = engine.getJob(accepted.jobId)?.request;
+  assert.equal(request?.generationLocale, "de-DE");
+
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(
+    status.logs.some((entry) =>
+      entry.message.includes("Invalid generationLocale override 'invalid_locale' - falling back to 'de-DE'.")
+    ),
+    true
+  );
 });
 
 test("createJobEngine marks jobs failed when figma source cannot be fetched", async () => {

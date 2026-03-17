@@ -10,13 +10,14 @@ const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRec
   jobId,
   status: "running",
   submittedAt: new Date().toISOString(),
-    request: {
-      figmaFileKey: "demo-file",
-      enableGitPr: true,
-      figmaSourceMode: "rest",
-      llmCodegenMode: "deterministic",
-      brandTheme: "derived"
-    },
+  request: {
+    figmaFileKey: "demo-file",
+    enableGitPr: true,
+    figmaSourceMode: "rest",
+    llmCodegenMode: "deterministic",
+    brandTheme: "derived",
+    generationLocale: "de-DE"
+  },
   stages: [],
   logs: [],
   artifacts: {

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.8.0
+ * Contract version: 2.9.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -73,6 +73,8 @@ export interface WorkspaceStartOptions {
   figmaScreenElementMaxDepth?: number;
   /** Token brand policy used when deriving IR tokens. Default: "derived" */
   brandTheme?: WorkspaceBrandTheme;
+  /** Locale used for deterministic select-option number derivation. Default: "de-DE" */
+  generationLocale?: string;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
   /** Run static UI validation in validate.project. Default: true */
@@ -114,6 +116,7 @@ export interface WorkspaceJobInput {
   projectName?: string;
   targetPath?: string;
   brandTheme?: WorkspaceBrandTheme;
+  generationLocale?: string;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -126,6 +129,7 @@ export interface WorkspaceJobRequestMetadata {
   projectName?: string;
   targetPath?: string;
   brandTheme: WorkspaceBrandTheme;
+  generationLocale: string;
 }
 
 /** Submit response for accepted jobs. */
@@ -228,4 +232,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.8.0" as const;
+export const CONTRACT_VERSION = "2.9.0" as const;

@@ -17,6 +17,7 @@ import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-
 import { runGitPrFlow } from "./job-engine/git-pr.js";
 import { getContentType, normalizePathPart } from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
+import { DEFAULT_GENERATION_LOCALE, normalizeGenerationLocale, resolveGenerationLocale } from "./generation-locale.js";
 import {
   createInitialStages,
   nowIso,
@@ -48,6 +49,30 @@ const isPerfValidationEnabled = (): boolean => {
   }
   const normalized = raw.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+};
+
+const resolveJobGenerationLocale = ({
+  submitGenerationLocale,
+  runtimeGenerationLocale
+}: {
+  submitGenerationLocale: string | undefined;
+  runtimeGenerationLocale: string;
+}): { locale: string; warningMessage?: string } => {
+  const runtimeLocale = resolveGenerationLocale({
+    requestedLocale: runtimeGenerationLocale,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  }).locale;
+  const normalizedSubmitLocale = normalizeGenerationLocale(submitGenerationLocale);
+  if (normalizedSubmitLocale) {
+    return { locale: normalizedSubmitLocale };
+  }
+  if (typeof submitGenerationLocale === "string" && submitGenerationLocale.trim().length > 0) {
+    return {
+      locale: runtimeLocale,
+      warningMessage: `Invalid generationLocale override '${submitGenerationLocale}' - falling back to '${runtimeLocale}'.`
+    };
+  }
+  return { locale: runtimeLocale };
 };
 
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
@@ -114,6 +139,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     job.status = "running";
     job.startedAt = nowIso();
     const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
+    const generationLocaleResolution = resolveJobGenerationLocale({
+      submitGenerationLocale: input.generationLocale,
+      runtimeGenerationLocale: runtime.generationLocale
+    });
+    const resolvedGenerationLocale = generationLocaleResolution.locale;
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -293,6 +323,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "codegen.generate",
         action: async () => {
+          if (generationLocaleResolution.warningMessage) {
+            pushLog({
+              job,
+              level: "warn",
+              stage: "codegen.generate",
+              message: generationLocaleResolution.warningMessage
+            });
+          }
           let imageAssetMap: Record<string, string> = {};
           if (!runtime.exportImages) {
             pushLog({
@@ -336,6 +374,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             ir,
             iconMapFilePath,
             imageAssetMap,
+            generationLocale: resolvedGenerationLocale,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
             onLog: (message) => {
@@ -499,12 +538,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const submitJob = (input: WorkspaceJobInput) => {
     const jobId = randomUUID();
     const acceptedModes = toAcceptedModes();
+    const generationLocaleResolution = resolveJobGenerationLocale({
+      submitGenerationLocale: input.generationLocale,
+      runtimeGenerationLocale: runtime.generationLocale
+    });
     const request: WorkspaceJobStatus["request"] = {
       figmaFileKey: input.figmaFileKey,
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
-      brandTheme: input.brandTheme ?? runtime.brandTheme
+      brandTheme: input.brandTheme ?? runtime.brandTheme,
+      generationLocale: generationLocaleResolution.locale
     };
     if (input.repoUrl) {
       request.repoUrl = input.repoUrl;

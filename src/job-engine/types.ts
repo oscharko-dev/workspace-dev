@@ -75,6 +75,7 @@ export interface JobEngineRuntime {
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
+  generationLocale: string;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
   installPreferOffline: boolean;
