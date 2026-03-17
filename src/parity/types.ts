@@ -638,6 +638,32 @@ export interface DesignTokenActionPalette {
   focus: string;
 }
 
+export type DesignTokenTypographyVariantName =
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
+  | "subtitle1"
+  | "subtitle2"
+  | "body1"
+  | "body2"
+  | "button"
+  | "caption"
+  | "overline";
+
+export interface DesignTokenTypographyVariant {
+  fontSizePx: number;
+  fontWeight: number;
+  lineHeightPx: number;
+  fontFamily?: string;
+  letterSpacingEm?: number;
+  textTransform?: "none" | "capitalize" | "uppercase" | "lowercase";
+}
+
+export type DesignTokenTypographyScale = Record<DesignTokenTypographyVariantName, DesignTokenTypographyVariant>;
+
 export interface DesignTokens {
   palette: DesignTokenPalette;
   borderRadius: number;
@@ -645,6 +671,7 @@ export interface DesignTokens {
   fontFamily: string;
   headingSize: number;
   bodySize: number;
+  typography: DesignTokenTypographyScale;
 }
 
 export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
@@ -781,6 +808,7 @@ export interface ScreenElementIR {
   fontWeight?: number;
   fontFamily?: string;
   lineHeight?: number;
+  letterSpacing?: number;
   textAlign?: "LEFT" | "CENTER" | "RIGHT";
   vectorPaths?: string[];
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";

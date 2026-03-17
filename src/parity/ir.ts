@@ -2,6 +2,9 @@ import type { WorkspaceBrandTheme } from "../contracts/index.js";
 import type {
   CounterAxisAlignItems,
   DesignIR,
+  DesignTokenTypographyScale,
+  DesignTokenTypographyVariant,
+  DesignTokenTypographyVariantName,
   DesignTokens,
   FigmaMcpEnrichment,
   GenerationMetrics,
@@ -20,6 +23,10 @@ import type {
   ScreenIR
 } from "./types.js";
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
+import {
+  HEADING_TYPOGRAPHY_VARIANTS,
+  completeTypographyScale
+} from "./typography-tokens.js";
 
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
@@ -146,6 +153,7 @@ interface FigmaNode {
     fontWeight?: number;
     fontFamily?: string;
     lineHeightPx?: number;
+    letterSpacing?: number;
     textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT";
   };
   cornerRadius?: number;
@@ -209,6 +217,24 @@ interface FontSample {
   role: "heading" | "body";
   size: number;
   weight: number;
+  fontWeight: number;
+  lineHeight: number;
+  letterSpacingPx?: number;
+  isButtonLike: boolean;
+  isUppercaseLike: boolean;
+}
+
+interface TypographyCluster {
+  normalizedSize: number;
+  totalWeight: number;
+  headingWeight: number;
+  bodyWeight: number;
+  buttonWeight: number;
+  uppercaseWeight: number;
+  fontWeight: number;
+  lineHeight: number;
+  fontFamily?: string;
+  letterSpacingEm?: number;
 }
 
 interface MetricsAccumulator {
@@ -1980,6 +2006,9 @@ const mapElement = ({
   if (node.style?.lineHeightPx !== undefined) {
     element.lineHeight = node.style.lineHeightPx;
   }
+  if (node.style?.letterSpacing !== undefined) {
+    element.letterSpacing = node.style.letterSpacing;
+  }
   if (node.style?.textAlignHorizontal !== undefined) {
     element.textAlign = node.style.textAlignHorizontal;
   }
@@ -3103,11 +3132,18 @@ const TOKEN_DERIVATION_DEFAULTS: DesignTokens = {
   spacingBase: 8,
   fontFamily: "Roboto, Arial, sans-serif",
   headingSize: 24,
-  bodySize: 14
+  bodySize: 14,
+  typography: completeTypographyScale({
+    fontFamily: "Roboto, Arial, sans-serif",
+    headingSize: 24,
+    bodySize: 14
+  })
 };
 
 const COLOR_CLUSTER_STEP = 16;
 const COLOR_CLUSTER_MERGE_THRESHOLD = 0.12;
+const TYPOGRAPHY_SIZE_SNAP_THRESHOLD_PX = 1.75;
+const TYPOGRAPHY_INTEGER_EPSILON_PX = 0.15;
 
 const emptyContextWeights = (): Record<ColorSampleContext, number> => ({
   button: 0,
@@ -3832,26 +3868,399 @@ const chooseSecondaryColor = ({
   return selected;
 };
 
-const collectFontSamples = (textNodes: FigmaNode[]): FontSample[] => {
+const isUppercaseLikeText = (value: string | undefined): boolean => {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const letters = value.replace(/[^A-Za-zÄÖÜäöüß]/g, "");
+  if (letters.length < 2) {
+    return false;
+  }
+  const uppercaseLetters = letters.replace(/[^A-ZÄÖÜ]/g, "");
+  return uppercaseLetters.length / letters.length >= 0.8;
+};
+
+const isButtonLikeTextNode = ({
+  node,
+  ancestorNames
+}: {
+  node: FigmaNode;
+  ancestorNames: string[];
+}): boolean => {
+  const combined = [node.name, ...ancestorNames].join(" ").toLowerCase();
+  return (
+    hasAnySubstring(combined, ["muibutton", "buttonbase", "buttonlabel"]) ||
+    hasAnyWord(combined, ["button", "cta", "chip", "tab", "step", "pill"])
+  );
+};
+
+const collectFontSamples = (root: FigmaNode | undefined): FontSample[] => {
+  if (!root) {
+    return [];
+  }
+
   const samples: FontSample[] = [];
-  for (const node of textNodes) {
-    const family = node.style?.fontFamily?.trim();
-    if (!family) {
+  const visit = (node: FigmaNode, ancestorNames: string[]): void => {
+    if (node.visible === false) {
+      return;
+    }
+
+    if (node.type === "TEXT" && hasMeaningfulNodeText(node)) {
+      const role = resolveTextRole(node);
+      const size = node.style?.fontSize ?? (role === "heading" ? 24 : 14);
+      const height = node.absoluteBoundingBox?.height ?? Math.max(size * (role === "heading" ? 1.3 : 1.5), size);
+      const width = node.absoluteBoundingBox?.width ?? 120;
+      const family = node.style?.fontFamily?.trim() || (TOKEN_DERIVATION_DEFAULTS.fontFamily.split(",")[0] ?? "Roboto");
+      const fontWeight = node.style?.fontWeight ?? (role === "heading" ? 700 : 400);
+      const lineHeight = node.style?.lineHeightPx ?? Math.max(Math.round(size * (role === "heading" ? 1.3 : 1.5)), size);
+      const isButtonLike = isButtonLikeTextNode({ node, ancestorNames });
+      const roleWeight = role === "heading" ? 1.8 : 1;
+      const prominenceWeight = clamp(size / 16, 0.75, 2.5);
+      const geometryWeight = clamp(width / 160 + height / 96, 1, 8);
+      samples.push({
+        family,
+        role,
+        size,
+        weight: geometryWeight * roleWeight * prominenceWeight * (isButtonLike ? 1.15 : 1),
+        fontWeight,
+        lineHeight,
+        ...(typeof node.style?.letterSpacing === "number" && Number.isFinite(node.style.letterSpacing)
+          ? { letterSpacingPx: node.style.letterSpacing }
+          : {}),
+        isButtonLike,
+        isUppercaseLike: isUppercaseLikeText(node.characters)
+      });
+    }
+
+    const nextAncestorNames = node.name ? [node.name, ...ancestorNames] : ancestorNames;
+    for (const child of node.children ?? []) {
+      visit(child, nextAncestorNames);
+    }
+  };
+
+  visit(root, []);
+  return samples;
+};
+
+const resolveTypographyAnchorSizes = (samples: FontSample[]): number[] => {
+  const anchors = new Set<number>();
+  for (const sample of samples) {
+    const rounded = Math.round(sample.size);
+    if (Math.abs(sample.size - rounded) <= TYPOGRAPHY_INTEGER_EPSILON_PX) {
+      anchors.add(rounded);
+    }
+  }
+  if (anchors.size === 0) {
+    anchors.add(TOKEN_DERIVATION_DEFAULTS.headingSize);
+    anchors.add(TOKEN_DERIVATION_DEFAULTS.bodySize);
+  }
+  return [...anchors].sort((left, right) => right - left);
+};
+
+const normalizeTypographyClusterSize = ({
+  size,
+  anchors
+}: {
+  size: number;
+  anchors: number[];
+}): number => {
+  const rounded = Math.round(size);
+  if (Math.abs(size - rounded) <= TYPOGRAPHY_INTEGER_EPSILON_PX) {
+    return Math.max(10, rounded);
+  }
+  const snapped = anchors.find((anchor) => anchor <= size && size - anchor <= TYPOGRAPHY_SIZE_SNAP_THRESHOLD_PX);
+  return Math.max(10, snapped ?? rounded);
+};
+
+const resolveDominantClusterFontFamily = (samples: FontSample[]): string | undefined => {
+  const weights = new Map<string, number>();
+  for (const sample of samples) {
+    weights.set(sample.family, (weights.get(sample.family) ?? 0) + sample.weight);
+  }
+  return [...weights.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+};
+
+const clusterTypographySamples = (samples: FontSample[]): TypographyCluster[] => {
+  if (samples.length === 0) {
+    return [];
+  }
+
+  const anchors = resolveTypographyAnchorSizes(samples);
+  const grouped = new Map<number, FontSample[]>();
+  for (const sample of samples) {
+    const key = normalizeTypographyClusterSize({
+      size: sample.size,
+      anchors
+    });
+    grouped.set(key, [...(grouped.get(key) ?? []), sample]);
+  }
+
+  return [...grouped.entries()]
+    .map(([normalizedSize, clusterSamples]) => {
+      const totalWeight = clusterSamples.reduce((sum, sample) => sum + sample.weight, 0);
+      const headingWeight = clusterSamples
+        .filter((sample) => sample.role === "heading")
+        .reduce((sum, sample) => sum + sample.weight, 0);
+      const bodyWeight = clusterSamples
+        .filter((sample) => sample.role === "body")
+        .reduce((sum, sample) => sum + sample.weight, 0);
+      const buttonWeight = clusterSamples
+        .filter((sample) => sample.isButtonLike)
+        .reduce((sum, sample) => sum + sample.weight, 0);
+      const uppercaseWeight = clusterSamples
+        .filter((sample) => sample.isUppercaseLike)
+        .reduce((sum, sample) => sum + sample.weight, 0);
+      const cluster: TypographyCluster = {
+        normalizedSize,
+        totalWeight,
+        headingWeight,
+        bodyWeight,
+        buttonWeight,
+        uppercaseWeight,
+        fontWeight: Math.round(
+          weightedMedian(
+            clusterSamples.map((sample) => ({
+              value: sample.fontWeight,
+              weight: sample.weight
+            }))
+          ) ?? 400
+        ),
+        lineHeight: Math.round(
+          weightedMedian(
+            clusterSamples.map((sample) => ({
+              value: sample.lineHeight,
+              weight: sample.weight
+            }))
+          ) ?? Math.max(normalizedSize, Math.round(normalizedSize * 1.4))
+        )
+      };
+      const dominantFontFamily = resolveDominantClusterFontFamily(clusterSamples);
+      if (dominantFontFamily) {
+        cluster.fontFamily = dominantFontFamily;
+      }
+      const letterSpacingEm = weightedMedian(
+        clusterSamples
+          .filter(
+            (sample): sample is FontSample & { letterSpacingPx: number } =>
+              typeof sample.letterSpacingPx === "number" && Number.isFinite(sample.letterSpacingPx) && sample.size > 0
+          )
+          .map((sample) => ({
+            value: sample.letterSpacingPx / sample.size,
+            weight: sample.weight
+          }))
+      );
+      if (typeof letterSpacingEm === "number") {
+        cluster.letterSpacingEm = letterSpacingEm;
+      }
+      return cluster;
+    })
+    .sort((left, right) => {
+      if (right.normalizedSize !== left.normalizedSize) {
+        return right.normalizedSize - left.normalizedSize;
+      }
+      if (right.headingWeight !== left.headingWeight) {
+        return right.headingWeight - left.headingWeight;
+      }
+      return right.totalWeight - left.totalWeight;
+    });
+};
+
+const toTypographyVariantFromCluster = ({
+  cluster,
+  fallbackFontFamily,
+  textTransform,
+  letterSpacingEm
+}: {
+  cluster: TypographyCluster;
+  fallbackFontFamily: string;
+  textTransform?: DesignTokenTypographyVariant["textTransform"];
+  letterSpacingEm?: number;
+}): DesignTokenTypographyVariant => {
+  return {
+    fontSizePx: cluster.normalizedSize,
+    fontWeight: cluster.fontWeight,
+    lineHeightPx: Math.max(cluster.normalizedSize, cluster.lineHeight),
+    fontFamily: cluster.fontFamily ?? fallbackFontFamily,
+    ...(typeof (letterSpacingEm ?? cluster.letterSpacingEm) === "number"
+      ? { letterSpacingEm: letterSpacingEm ?? cluster.letterSpacingEm }
+      : {}),
+    ...(textTransform ? { textTransform } : {})
+  };
+};
+
+const chooseBodyTypographyCluster = (clusters: TypographyCluster[]): TypographyCluster | undefined => {
+  return [...clusters].sort((left, right) => {
+    const leftScore =
+      left.bodyWeight * 2.6 + left.totalWeight * 0.9 + (left.normalizedSize >= 12 && left.normalizedSize <= 18 ? 2 : 0);
+    const rightScore =
+      right.bodyWeight * 2.6 +
+      right.totalWeight * 0.9 +
+      (right.normalizedSize >= 12 && right.normalizedSize <= 18 ? 2 : 0);
+    if (rightScore !== leftScore) {
+      return rightScore - leftScore;
+    }
+    return right.totalWeight - left.totalWeight;
+  })[0];
+};
+
+const chooseButtonTypographyCluster = (clusters: TypographyCluster[]): TypographyCluster | undefined => {
+  return [...clusters].sort((left, right) => {
+    const leftScore =
+      left.buttonWeight * 3 + left.fontWeight * 0.01 + left.totalWeight * 0.4 + (left.normalizedSize >= 14 ? 0.5 : 0);
+    const rightScore =
+      right.buttonWeight * 3 +
+      right.fontWeight * 0.01 +
+      right.totalWeight * 0.4 +
+      (right.normalizedSize >= 14 ? 0.5 : 0);
+    if (rightScore !== leftScore) {
+      return rightScore - leftScore;
+    }
+    return right.normalizedSize - left.normalizedSize;
+  })[0];
+};
+
+const findNextLargerTypographyCluster = ({
+  clusters,
+  size
+}: {
+  clusters: TypographyCluster[];
+  size: number;
+}): TypographyCluster | undefined => {
+  return [...clusters].reverse().find((cluster) => cluster.normalizedSize > size);
+};
+
+const findNextSmallerTypographyCluster = ({
+  clusters,
+  size
+}: {
+  clusters: TypographyCluster[];
+  size: number;
+}): TypographyCluster | undefined => {
+  return clusters.find((cluster) => cluster.normalizedSize < size);
+};
+
+const chooseHeadingTypographyClusters = ({
+  clusters,
+  bodySize
+}: {
+  clusters: TypographyCluster[];
+  bodySize: number;
+}): TypographyCluster[] => {
+  const preferred = clusters.filter(
+    (cluster) => cluster.normalizedSize > bodySize || cluster.headingWeight >= cluster.bodyWeight
+  );
+  const pool = preferred.length > 0 ? preferred : clusters;
+  return [...pool]
+    .sort((left, right) => {
+      if (right.normalizedSize !== left.normalizedSize) {
+        return right.normalizedSize - left.normalizedSize;
+      }
+      if (right.headingWeight !== left.headingWeight) {
+        return right.headingWeight - left.headingWeight;
+      }
+      return right.totalWeight - left.totalWeight;
+    })
+    .slice(0, HEADING_TYPOGRAPHY_VARIANTS.length);
+};
+
+const buildDerivedTypographyScale = ({
+  clusters,
+  fontFamily,
+  headingSize,
+  bodySize
+}: {
+  clusters: TypographyCluster[];
+  fontFamily: string;
+  headingSize: number;
+  bodySize: number;
+}): DesignTokenTypographyScale => {
+  const partialScale: Partial<Record<DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>>> = {};
+  const body1Cluster = chooseBodyTypographyCluster(clusters);
+  const body2Cluster = body1Cluster
+    ? findNextSmallerTypographyCluster({ clusters, size: body1Cluster.normalizedSize }) ?? body1Cluster
+    : undefined;
+  const subtitle2Cluster = body1Cluster
+    ? findNextLargerTypographyCluster({ clusters, size: body1Cluster.normalizedSize }) ?? body1Cluster
+    : undefined;
+  const subtitle1Cluster = subtitle2Cluster
+    ? findNextLargerTypographyCluster({ clusters, size: subtitle2Cluster.normalizedSize }) ?? subtitle2Cluster
+    : body1Cluster;
+  const captionCluster = [...clusters].sort((left, right) => left.normalizedSize - right.normalizedSize)[0] ?? body2Cluster;
+  const overlineCluster =
+    [...clusters]
+      .filter((cluster) => cluster.normalizedSize <= (captionCluster?.normalizedSize ?? Number.POSITIVE_INFINITY))
+      .sort((left, right) => right.uppercaseWeight - left.uppercaseWeight || left.normalizedSize - right.normalizedSize)[0] ??
+    captionCluster;
+  const buttonCluster = chooseButtonTypographyCluster(clusters) ?? body2Cluster ?? subtitle2Cluster ?? body1Cluster;
+  const headingClusters = chooseHeadingTypographyClusters({
+    clusters,
+    bodySize: body1Cluster?.normalizedSize ?? bodySize
+  });
+
+  let lastHeadingCluster = headingClusters[0] ?? subtitle1Cluster ?? body1Cluster;
+  for (const [index, variantName] of HEADING_TYPOGRAPHY_VARIANTS.entries()) {
+    const cluster = headingClusters[index] ?? lastHeadingCluster;
+    if (!cluster) {
       continue;
     }
-    const role = resolveTextRole(node);
-    const size = node.style?.fontSize ?? (role === "heading" ? 24 : 14);
-    const width = node.absoluteBoundingBox?.width ?? 120;
-    const baseWeight = clamp(width / 160, 1, 6);
-    const roleWeight = role === "heading" ? 2 : 1;
-    samples.push({
-      family,
-      role,
-      size,
-      weight: baseWeight * roleWeight
+    partialScale[variantName] = toTypographyVariantFromCluster({
+      cluster,
+      fallbackFontFamily: fontFamily
+    });
+    lastHeadingCluster = cluster;
+  }
+
+  if (subtitle1Cluster) {
+    partialScale.subtitle1 = toTypographyVariantFromCluster({
+      cluster: subtitle1Cluster,
+      fallbackFontFamily: fontFamily
     });
   }
-  return samples;
+  if (subtitle2Cluster ?? subtitle1Cluster) {
+    partialScale.subtitle2 = toTypographyVariantFromCluster({
+      cluster: subtitle2Cluster ?? subtitle1Cluster ?? body1Cluster!,
+      fallbackFontFamily: fontFamily
+    });
+  }
+  if (body1Cluster) {
+    partialScale.body1 = toTypographyVariantFromCluster({
+      cluster: body1Cluster,
+      fallbackFontFamily: fontFamily
+    });
+  }
+  if (body2Cluster ?? body1Cluster) {
+    partialScale.body2 = toTypographyVariantFromCluster({
+      cluster: body2Cluster ?? body1Cluster!,
+      fallbackFontFamily: fontFamily
+    });
+  }
+  if (buttonCluster) {
+    partialScale.button = toTypographyVariantFromCluster({
+      cluster: buttonCluster,
+      fallbackFontFamily: fontFamily,
+      textTransform: "none"
+    });
+  }
+  if (captionCluster) {
+    partialScale.caption = toTypographyVariantFromCluster({
+      cluster: captionCluster,
+      fallbackFontFamily: fontFamily
+    });
+  }
+  if (overlineCluster ?? captionCluster) {
+    partialScale.overline = toTypographyVariantFromCluster({
+      cluster: overlineCluster ?? captionCluster!,
+      fallbackFontFamily: fontFamily,
+      letterSpacingEm: overlineCluster?.letterSpacingEm ?? 0.08
+    });
+  }
+
+  return completeTypographyScale({
+    partialScale,
+    fontFamily,
+    headingSize,
+    bodySize
+  });
 };
 
 const resolveDominantFont = (samples: FontSample[], role: "heading" | "body"): string | undefined => {
@@ -3866,7 +4275,6 @@ const resolveDominantFont = (samples: FontSample[], role: "heading" | "body"): s
 
 const deriveTokens = (file: FigmaFile): DesignTokens => {
   const nodes = file.document ? collectNodes(file.document, () => true) : [];
-  const textNodes = nodes.filter((node) => node.type === "TEXT");
   const styleCatalog = resolveNodeStyleCatalog(file);
   const colorSamples = collectColorSamples({ nodes, styleCatalog });
   const clusters = clusterSamples(colorSamples);
@@ -3934,7 +4342,7 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
     .map((node) => node.cornerRadius)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
 
-  const fontSamples = collectFontSamples(textNodes);
+  const fontSamples = collectFontSamples(file.document);
   const headingSize = Math.round(
     weightedMedian(
       fontSamples
@@ -3961,6 +4369,16 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
 
   const resolvedHeadingSize = Math.max(bodySize + 2, headingSize);
   const resolvedBodySize = Math.max(10, bodySize);
+  const resolvedFontFamily = normalizeFontStack(
+    [dominantBodyFont, dominantHeadingFont].filter((value): value is string => typeof value === "string")
+  );
+  const typographyClusters = clusterTypographySamples(fontSamples);
+  const typography = buildDerivedTypographyScale({
+    clusters: typographyClusters,
+    fontFamily: resolvedFontFamily,
+    headingSize: resolvedHeadingSize,
+    bodySize: resolvedBodySize
+  });
 
   return {
     palette: {
@@ -3980,11 +4398,10 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
     },
     borderRadius: Math.max(1, Math.round(median(radii) ?? TOKEN_DERIVATION_DEFAULTS.borderRadius)),
     spacingBase: Math.max(1, Math.round(median(spacings) ?? TOKEN_DERIVATION_DEFAULTS.spacingBase)),
-    fontFamily: normalizeFontStack(
-      [dominantBodyFont, dominantHeadingFont].filter((value): value is string => typeof value === "string")
-    ),
-    headingSize: resolvedHeadingSize,
-    bodySize: resolvedBodySize
+    fontFamily: resolvedFontFamily,
+    headingSize: typography.h1.fontSizePx,
+    bodySize: typography.body1.fontSizePx,
+    typography
   };
 };
 
