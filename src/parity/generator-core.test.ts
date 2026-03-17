@@ -268,6 +268,20 @@ const extractContainerMaxWidth = (content: string): "sm" | "md" | "lg" | "xl" | 
   return undefined;
 };
 
+const findRenderedButtonLine = ({
+  content,
+  label
+}: {
+  content: string;
+  label: string;
+}): string => {
+  const line = content
+    .split("\n")
+    .find((entry) => entry.includes("<Button ") && entry.includes(`{"${label}"}`));
+  assert.ok(line, `Expected rendered Button line for label '${label}'`);
+  return line ?? "";
+};
+
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
@@ -1490,6 +1504,239 @@ test("deterministic screen rendering maps variant metadata to MUI props and pseu
   assert.ok(content.includes('"&:active": { borderColor: "#6b7280" }'));
 });
 
+test("deterministic screen rendering infers contained buttons and strips redundant contained sx when fullWidth is inferred", () => {
+  const screen = {
+    id: "button-contained-screen",
+    name: "Button Contained Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 320,
+    height: 120,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-contained-primary",
+        name: "Primary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 48,
+        fillColor: "#ee0000",
+        children: [
+          {
+            id: "btn-contained-primary-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Continue",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const buttonLine = findRenderedButtonLine({ content, label: "Continue" });
+  assert.ok(buttonLine.includes('variant="contained" size="large" fullWidth disableElevation'));
+  assert.equal(buttonLine.includes('width: "320px"'), false);
+  assert.equal(buttonLine.includes('maxWidth: "320px"'), false);
+  assert.equal(buttonLine.includes("border:"), false);
+  assert.equal(buttonLine.includes("borderColor:"), false);
+});
+
+test("deterministic screen rendering infers outlined medium buttons and strips outlined variant sx", () => {
+  const screen = {
+    id: "button-outlined-screen",
+    name: "Button Outlined Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 320,
+    height: 140,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-outlined",
+        name: "Secondary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 36,
+        strokeColor: "#565656",
+        children: [
+          {
+            id: "btn-outlined-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Secondary",
+            fillColor: "#d4001a"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const buttonLine = findRenderedButtonLine({ content, label: "Secondary" });
+  assert.ok(buttonLine.includes('variant="outlined" size="medium" disableElevation'));
+  assert.equal(buttonLine.includes(" disabled "), false);
+  assert.equal(buttonLine.includes("background:"), false);
+  assert.equal(buttonLine.includes("bgcolor:"), false);
+  assert.equal(buttonLine.includes("border:"), false);
+  assert.equal(buttonLine.includes("borderColor:"), false);
+});
+
+test("deterministic screen rendering infers text small buttons and strips text variant sx", () => {
+  const screen = {
+    id: "button-text-screen",
+    name: "Button Text Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 320,
+    height: 140,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-text",
+        name: "Text Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 130,
+        height: 30,
+        children: [
+          {
+            id: "btn-text-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Text Action",
+            fillColor: "#292929"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const buttonLine = findRenderedButtonLine({ content, label: "Text Action" });
+  assert.ok(buttonLine.includes('variant="text" size="small" disableElevation'));
+  assert.equal(buttonLine.includes("background:"), false);
+  assert.equal(buttonLine.includes("bgcolor:"), false);
+  assert.equal(buttonLine.includes("border:"), false);
+  assert.equal(buttonLine.includes("borderColor:"), false);
+});
+
+test("deterministic screen rendering infers disabled buttons from opacity and neutral gray fill/text patterns", () => {
+  const screen = {
+    id: "button-disabled-screen",
+    name: "Button Disabled Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 320,
+    height: 220,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-opacity-disabled",
+        name: "Opacity Disabled",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 44,
+        opacity: 0.5,
+        fillColor: "#ee0000",
+        children: [
+          {
+            id: "btn-opacity-disabled-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Dimmed",
+            fillColor: "#ffffff"
+          }
+        ]
+      },
+      {
+        id: "btn-neutral-disabled",
+        name: "Neutral Disabled",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 64,
+        width: 200,
+        height: 48,
+        fillColor: "#d1d5db",
+        children: [
+          {
+            id: "btn-neutral-disabled-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Muted",
+            fillColor: "#6b7280"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const opacityLine = findRenderedButtonLine({ content, label: "Dimmed" });
+  const neutralLine = findRenderedButtonLine({ content, label: "Muted" });
+  assert.ok(opacityLine.includes('variant="contained" size="large" disabled disableElevation'));
+  assert.ok(neutralLine.includes('variant="contained" size="large" disabled disableElevation'));
+});
+
+test("deterministic screen rendering keeps custom contained backgrounds in button sx", () => {
+  const screen = {
+    id: "button-custom-contained-screen",
+    name: "Button Custom Contained Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 320,
+    height: 140,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-custom-contained",
+        name: "Brand Custom",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "btn-custom-contained-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Brand Custom",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const buttonLine = findRenderedButtonLine({ content, label: "Brand Custom" });
+  assert.ok(buttonLine.includes('variant="contained" size="large" disableElevation'));
+  assert.equal(buttonLine.includes(" fullWidth "), false);
+  assert.ok(buttonLine.includes('bgcolor: "#d4001a"'));
+});
+
 test("deterministic screen rendering emits responsive maxWidth and layout overrides from ScreenIR metadata", () => {
   const screen = {
     id: "responsive-screen",
@@ -1934,7 +2181,9 @@ test("generateArtifacts maps exact token palette colors to MUI theme references 
   assert.ok(content.includes('bgcolor: "background.default"'));
   assert.ok(content.includes('borderColor: "secondary.main"'));
   assert.ok(content.includes('color: "text.primary"'));
-  assert.ok(content.includes('bgcolor: "primary.main"'));
+  const tokenButtonLine = findRenderedButtonLine({ content, label: "Continue" });
+  assert.ok(tokenButtonLine.includes('variant="contained" size="large"'));
+  assert.equal(tokenButtonLine.includes('bgcolor: "primary.main"'), false);
 });
 
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {

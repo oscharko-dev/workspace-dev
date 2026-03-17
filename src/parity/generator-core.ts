@@ -356,6 +356,215 @@ const toThemeColorLiteral = ({
   return literal(mapped ?? trimmed);
 };
 
+type ButtonVariant = "contained" | "outlined" | "text";
+type ButtonSize = "small" | "medium" | "large";
+
+interface RgbaColor {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+const BUTTON_FULL_WIDTH_EPSILON = 0.02;
+const BUTTON_VISIBLE_ALPHA_THRESHOLD = 0.08;
+const BUTTON_DISABLED_OPACITY_THRESHOLD = 0.55;
+const BUTTON_NEUTRAL_CHANNEL_DELTA_MAX = 24;
+const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
+
+const hasVisibleGradient = (value: string | undefined): boolean => {
+  return typeof value === "string" && value.trim().length > 0;
+};
+
+const toRgbaColor = (value: string | undefined): RgbaColor | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const payload = normalized.slice(1);
+  if (payload.length !== 6 && payload.length !== 8) {
+    return undefined;
+  }
+  const r = Number.parseInt(payload.slice(0, 2), 16);
+  const g = Number.parseInt(payload.slice(2, 4), 16);
+  const b = Number.parseInt(payload.slice(4, 6), 16);
+  const alphaHex = payload.length === 8 ? payload.slice(6, 8) : "ff";
+  const alphaRaw = Number.parseInt(alphaHex, 16);
+  if ([r, g, b, alphaRaw].some((entry) => !Number.isFinite(entry))) {
+    return undefined;
+  }
+  return {
+    r,
+    g,
+    b,
+    a: Math.round((alphaRaw / 255) * 1000) / 1000
+  };
+};
+
+const isVisibleColor = (color: RgbaColor | undefined, minAlpha = BUTTON_VISIBLE_ALPHA_THRESHOLD): boolean => {
+  if (!color) {
+    return false;
+  }
+  return color.a >= minAlpha;
+};
+
+const isNearWhiteColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const channelDelta = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
+  return channelDelta <= BUTTON_NEUTRAL_CHANNEL_DELTA_MAX && color.r >= BUTTON_NEAR_WHITE_MIN_CHANNEL && color.g >= BUTTON_NEAR_WHITE_MIN_CHANNEL && color.b >= BUTTON_NEAR_WHITE_MIN_CHANNEL;
+};
+
+const isNeutralGrayColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color, 0.2)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const channelDelta = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
+  return channelDelta <= BUTTON_NEUTRAL_CHANNEL_DELTA_MAX;
+};
+
+const inferButtonVariant = ({
+  element,
+  mappedVariant
+}: {
+  element: ScreenElementIR;
+  mappedVariant: ButtonVariant | undefined;
+}): ButtonVariant => {
+  if (mappedVariant) {
+    return mappedVariant;
+  }
+  const gradientFill = hasVisibleGradient(element.fillGradient);
+  const fillColor = toRgbaColor(element.fillColor);
+  const hasVisibleFill = gradientFill || isVisibleColor(fillColor);
+  const hasContainedFill = gradientFill || (isVisibleColor(fillColor) && !isNearWhiteColor(fillColor));
+  const strokeWidth = typeof element.strokeWidth === "number" && Number.isFinite(element.strokeWidth) ? element.strokeWidth : 1;
+  const strokeColor = toRgbaColor(element.strokeColor);
+  const hasVisibleBorder = strokeWidth > 0 && isVisibleColor(strokeColor);
+
+  if (hasContainedFill) {
+    return "contained";
+  }
+  if (hasVisibleBorder && !hasVisibleFill) {
+    return "outlined";
+  }
+  if (!hasVisibleBorder && !hasVisibleFill) {
+    return "text";
+  }
+  if (hasVisibleBorder) {
+    return "outlined";
+  }
+  return "contained";
+};
+
+const inferButtonSize = ({
+  element,
+  mappedSize
+}: {
+  element: ScreenElementIR;
+  mappedSize: ButtonSize | undefined;
+}): ButtonSize | undefined => {
+  if (mappedSize) {
+    return mappedSize;
+  }
+  const height = typeof element.height === "number" && Number.isFinite(element.height) ? element.height : undefined;
+  if (height === undefined) {
+    return undefined;
+  }
+  if (height <= 32) {
+    return "small";
+  }
+  if (height <= 40) {
+    return "medium";
+  }
+  return "large";
+};
+
+const inferButtonFullWidth = ({
+  element,
+  parent
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+}): boolean => {
+  const elementWidth = typeof element.width === "number" && Number.isFinite(element.width) && element.width > 0 ? element.width : undefined;
+  const parentWidth = typeof parent.width === "number" && Number.isFinite(parent.width) && parent.width > 0 ? parent.width : undefined;
+  if (elementWidth === undefined || parentWidth === undefined) {
+    return false;
+  }
+  return Math.abs(parentWidth - elementWidth) / parentWidth <= BUTTON_FULL_WIDTH_EPSILON;
+};
+
+const inferButtonDisabled = ({
+  element,
+  mappedDisabled,
+  buttonTextColor
+}: {
+  element: ScreenElementIR;
+  mappedDisabled: boolean | undefined;
+  buttonTextColor: string | undefined;
+}): boolean => {
+  if (mappedDisabled) {
+    return true;
+  }
+  if (typeof element.opacity === "number" && Number.isFinite(element.opacity) && element.opacity <= BUTTON_DISABLED_OPACITY_THRESHOLD) {
+    return true;
+  }
+
+  const fillColor = toRgbaColor(element.fillColor);
+  const textColor = toRgbaColor(buttonTextColor);
+  const hasNeutralFillAndText = isNeutralGrayColor(fillColor) && isNeutralGrayColor(textColor);
+  return hasNeutralFillAndText;
+};
+
+const filterButtonVariantEntries = ({
+  entries,
+  variant,
+  element,
+  fullWidth,
+  tokens
+}: {
+  entries: Array<[string, string | number | undefined]>;
+  variant: ButtonVariant;
+  element: ScreenElementIR;
+  fullWidth: boolean;
+  tokens: DesignTokens | undefined;
+}): Array<[string, string | number | undefined]> => {
+  const keysToDrop = new Set<string>();
+  if (fullWidth) {
+    keysToDrop.add("width");
+    keysToDrop.add("maxWidth");
+  }
+
+  if (variant === "contained") {
+    keysToDrop.add("border");
+    keysToDrop.add("borderColor");
+    if (hasVisibleGradient(element.fillGradient)) {
+      keysToDrop.add("bgcolor");
+    } else {
+      keysToDrop.add("background");
+      const normalizedFill = normalizeHexColor(element.fillColor);
+      const mappedFill = toThemePaletteLiteral({ color: element.fillColor, tokens });
+      if (!normalizedFill || mappedFill === "primary.main") {
+        keysToDrop.add("bgcolor");
+      }
+    }
+  } else {
+    keysToDrop.add("background");
+    keysToDrop.add("bgcolor");
+    keysToDrop.add("border");
+    keysToDrop.add("borderColor");
+  }
+
+  return entries.filter(([key]) => !keysToDrop.has(key));
+};
+
 const mapPrimaryAxisAlignToJustifyContent = (
   value: ScreenElementIR["primaryAxisAlignItems"]
 ): string | undefined => {
@@ -2278,6 +2487,11 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const endIconRoot = findFirstByName(element, "buttonendicon");
   const iconNode = pickBestIconNode(element) ?? endIconRoot;
   const isIconOnlyButton = !label && Boolean(iconNode);
+  const inferredDisabled = inferButtonDisabled({
+    element,
+    mappedDisabled: mappedMuiProps?.disabled,
+    buttonTextColor
+  });
 
   if (iconNode && isIconOnlyButton) {
     registerMuiImports(context, "IconButton");
@@ -2305,7 +2519,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
       context,
       extraEntries: [["fontSize", literal("inherit")]]
     });
-    const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
+    const disabledProp = inferredDisabled ? " disabled" : "";
     return `${indent}<IconButton aria-label=${literal(element.name)}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
   }
 
@@ -2327,7 +2541,21 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
         iconNode.x > labelNode.x
     );
 
-  const sx = sxString([
+  const variant = inferButtonVariant({
+    element,
+    mappedVariant: mappedMuiProps?.variant
+  });
+  const size = inferButtonSize({
+    element,
+    mappedSize: mappedMuiProps?.size
+  });
+  const fullWidth = inferButtonFullWidth({
+    element,
+    parent
+  });
+
+  const sxEntries = filterButtonVariantEntries({
+    entries: [
     ...baseLayoutEntries(element, parent, {
       spacingBase: context.spacingBase,
       tokens: context.tokens
@@ -2343,20 +2571,26 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     ["color", toThemeColorLiteral({ color: buttonTextColor, tokens: context.tokens })],
     ["textTransform", literal("none")],
     ["justifyContent", literal("center")]
-  ]);
+    ],
+    variant,
+    element,
+    fullWidth,
+    tokens: context.tokens
+  });
+  const sx = sxString(sxEntries);
 
   const sxWithVariantStates = appendVariantStateOverridesToSx({
     sx,
     element,
     tokens: context.tokens
   });
-  const variant = mappedMuiProps?.variant ?? (element.fillColor || element.fillGradient ? "contained" : "outlined");
-  const sizeProp = mappedMuiProps?.size ? ` size="${mappedMuiProps.size}"` : "";
-  const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
+  const sizeProp = size ? ` size="${size}"` : "";
+  const fullWidthProp = fullWidth ? " fullWidth" : "";
+  const disabledProp = inferredDisabled ? " disabled" : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
 
-  return `${indent}<Button variant="${variant}"${sizeProp}${disabledProp} disableElevation${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
+  return `${indent}<Button variant="${variant}"${sizeProp}${fullWidthProp}${disabledProp} disableElevation${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
 };
 
 const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
