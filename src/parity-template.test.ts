@@ -92,6 +92,12 @@ test("template semantics: React 19 dependencies and JSX typing coverage are expl
   assert.equal(tsconfigJson.compilerOptions?.types?.includes("react-dom"), true);
 });
 
+test("template semantics: main entry retains CssBaseline global reset", async () => {
+  const mainContent = await readFile(path.join(templateRoot, "src/main.tsx"), "utf8");
+  assert.match(mainContent, /import\s*\{\s*ThemeProvider,\s*CssBaseline\s*\}\s*from\s*["']@mui\/material["'];?/);
+  assert.match(mainContent, /<CssBaseline\s*\/>/);
+});
+
 test("template semantics: Vite baseline remains at least major 6 with React plugin wiring", async () => {
   const packageJson = JSON.parse(await readFile(path.join(templateRoot, "package.json"), "utf8")) as {
     devDependencies?: Record<string, string>;
