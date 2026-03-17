@@ -2689,6 +2689,542 @@ test("deterministic screen rendering does not map single-action footer bars to B
   assert.ok(content.includes("<Button "));
 });
 
+test("deterministic screen rendering maps top-level tab interface patterns to Tabs with interactive state and tab panels", () => {
+  const screen = {
+    id: "tab-pattern-screen",
+    name: "Tab Pattern Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "tab-host",
+        name: "Main Content Tabs Host",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 160,
+        width: 390,
+        height: 360,
+        children: [
+          {
+            id: "tab-strip",
+            name: "Main Tabs",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 16,
+            y: 160,
+            width: 358,
+            height: 48,
+            children: [
+              {
+                id: "tab-overview",
+                name: "Overview Tab",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Übersicht",
+                x: 20,
+                y: 175,
+                fillColor: "#101010",
+                fontWeight: 700
+              },
+              {
+                id: "tab-activity",
+                name: "Activity Tab",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Aktivität",
+                x: 138,
+                y: 175,
+                fillColor: "#6b7280",
+                fontWeight: 500
+              },
+              {
+                id: "tab-settings",
+                name: "Settings Tab",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Einstellungen",
+                x: 256,
+                y: 175,
+                fillColor: "#6b7280",
+                fontWeight: 500
+              }
+            ]
+          },
+          {
+            id: "tab-panel-1",
+            name: "Panel Overview",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 224,
+            width: 358,
+            height: 72,
+            children: [{ id: "tab-panel-1-text", name: "Panel Text 1", nodeType: "TEXT", type: "text" as const, text: "Kontostand" }]
+          },
+          {
+            id: "tab-panel-2",
+            name: "Panel Activity",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 304,
+            width: 358,
+            height: 72,
+            children: [{ id: "tab-panel-2-text", name: "Panel Text 2", nodeType: "TEXT", type: "text" as const, text: "Letzte Buchungen" }]
+          },
+          {
+            id: "tab-panel-3",
+            name: "Panel Settings",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 384,
+            width: 358,
+            height: 72,
+            children: [{ id: "tab-panel-3-text", name: "Panel Text 3", nodeType: "TEXT", type: "text" as const, text: "Benachrichtigungen" }]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Tabs value={tabValue1} onChange={handleTabChange1}"));
+  assert.ok(content.includes("const [tabValue1, setTabValue1] = useState<number>(0);"));
+  assert.ok(content.includes("const handleTabChange1 = (_event: unknown, newValue: number): void => {"));
+  assert.equal((content.match(/role=\"tabpanel\"/g) ?? []).length, 3);
+});
+
+test("deterministic screen rendering maps top-level table tab patterns to Tabs", () => {
+  const screen = {
+    id: "table-tab-pattern-screen",
+    name: "Table Tab Pattern Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "table-tab-host",
+        name: "Account Tabs Table",
+        nodeType: "FRAME",
+        type: "table" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 120,
+        width: 390,
+        height: 320,
+        children: [
+          {
+            id: "table-tab-strip",
+            name: "Tab Row",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 16,
+            y: 120,
+            width: 358,
+            height: 48,
+            children: [
+              {
+                id: "table-tab-a",
+                name: "Tab A",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Konten",
+                x: 24,
+                y: 136,
+                fillColor: "#1f2937",
+                fontWeight: 700
+              },
+              {
+                id: "table-tab-b",
+                name: "Tab B",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Karten",
+                x: 152,
+                y: 136,
+                fillColor: "#6b7280",
+                fontWeight: 500
+              }
+            ]
+          },
+          {
+            id: "table-tab-panel-a",
+            name: "Panel A",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 184,
+            width: 358,
+            height: 72,
+            children: [{ id: "table-tab-panel-a-text", name: "A", nodeType: "TEXT", type: "text" as const, text: "Kontoinhalte" }]
+          },
+          {
+            id: "table-tab-panel-b",
+            name: "Panel B",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 264,
+            width: 358,
+            height: 72,
+            children: [{ id: "table-tab-panel-b-text", name: "B", nodeType: "TEXT", type: "text" as const, text: "Karteninhalte" }]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Tabs value={tabValue1} onChange={handleTabChange1}"));
+  assert.equal(content.includes("<Table size=\"small\""), false);
+});
+
+test("deterministic screen rendering maps top-level overlay modal patterns to Dialog with state and actions", () => {
+  const screen = {
+    id: "dialog-pattern-screen",
+    name: "Dialog Pattern Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "overlay-shell",
+        name: "Modal Overlay",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 844,
+        opacity: 0.72,
+        fillColor: "#121212",
+        children: [
+          {
+            id: "dialog-panel",
+            name: "Dialog Panel",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "VERTICAL" as const,
+            x: 45,
+            y: 210,
+            width: 300,
+            height: 320,
+            fillColor: "#ffffff",
+            elevation: 12,
+            children: [
+              {
+                id: "dialog-close",
+                name: "Close Button",
+                nodeType: "FRAME",
+                type: "button" as const,
+                x: 310,
+                y: 226,
+                width: 24,
+                height: 24,
+                children: [{ id: "dialog-close-icon", name: "ic_close", nodeType: "INSTANCE", type: "container" as const, width: 16, height: 16 }]
+              },
+              {
+                id: "dialog-title-text",
+                name: "Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Überweisung bestätigen",
+                x: 69,
+                y: 250,
+                fillColor: "#111827",
+                fontWeight: 700
+              },
+              {
+                id: "dialog-body-text",
+                name: "Body",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Möchten Sie die Zahlung jetzt ausführen?",
+                x: 69,
+                y: 292,
+                fillColor: "#374151"
+              },
+              {
+                id: "dialog-action-row",
+                name: "Action Row",
+                nodeType: "FRAME",
+                type: "container" as const,
+                layoutMode: "HORIZONTAL" as const,
+                x: 73,
+                y: 468,
+                width: 244,
+                height: 40,
+                children: [
+                  {
+                    id: "dialog-action-cancel",
+                    name: "Cancel Action",
+                    nodeType: "FRAME",
+                    type: "button" as const,
+                    x: 73,
+                    y: 468,
+                    width: 112,
+                    height: 40,
+                    children: [{ id: "dialog-action-cancel-label", name: "Cancel Label", nodeType: "TEXT", type: "text" as const, text: "Abbrechen" }]
+                  },
+                  {
+                    id: "dialog-action-confirm",
+                    name: "Confirm Action",
+                    nodeType: "FRAME",
+                    type: "button" as const,
+                    x: 205,
+                    y: 468,
+                    width: 112,
+                    height: 40,
+                    children: [{ id: "dialog-action-confirm-label", name: "Confirm Label", nodeType: "TEXT", type: "text" as const, text: "Bestätigen" }]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Dialog open={isDialogOpen1} onClose={handleDialogClose1}"));
+  assert.ok(content.includes("const [isDialogOpen1, setIsDialogOpen1] = useState<boolean>(true);"));
+  assert.ok(content.includes("const handleDialogClose1 = (): void => {"));
+  assert.ok(content.includes("<DialogActions>"));
+  assert.ok(content.includes("onClick={handleDialogClose1}"));
+});
+
+test("deterministic screen rendering keeps top-level data table patterns as Table instead of Tabs", () => {
+  const screen = {
+    id: "tab-regression-data-table-screen",
+    name: "Tab Regression Data Table Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "tab-regression-data-table",
+        name: "Umsatzliste",
+        nodeType: "FRAME",
+        type: "table" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 96,
+        width: 390,
+        height: 220,
+        children: [
+          {
+            id: "tab-regression-row-1",
+            name: "Header Row",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "tab-regression-h1", name: "Date Header", nodeType: "TEXT", type: "text" as const, text: "Datum", fontWeight: 700 },
+              { id: "tab-regression-h2", name: "Amount Header", nodeType: "TEXT", type: "text" as const, text: "Betrag", fontWeight: 700 }
+            ]
+          },
+          {
+            id: "tab-regression-row-2",
+            name: "Row 1",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "tab-regression-c1", name: "Date Cell", nodeType: "TEXT", type: "text" as const, text: "01.03.2026" },
+              { id: "tab-regression-c2", name: "Amount Cell", nodeType: "TEXT", type: "text" as const, text: "100,00 €" }
+            ]
+          },
+          {
+            id: "tab-regression-row-3",
+            name: "Row 2",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "tab-regression-c3", name: "Date Cell 2", nodeType: "TEXT", type: "text" as const, text: "02.03.2026" },
+              { id: "tab-regression-c4", name: "Amount Cell 2", nodeType: "TEXT", type: "text" as const, text: "250,00 €" }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Table size=\"small\""));
+  assert.equal(content.includes("<Tabs "), false);
+});
+
+test("deterministic screen rendering keeps non-overlay centered panels as generic containers and not Dialog", () => {
+  const screen = {
+    id: "dialog-regression-non-overlay-screen",
+    name: "Dialog Regression Non Overlay Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "plain-page-shell",
+        name: "Content Shell",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 844,
+        fillColor: "#f8fafc",
+        children: [
+          {
+            id: "plain-centered-panel",
+            name: "Centered Panel",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 35,
+            y: 220,
+            width: 320,
+            height: 260,
+            fillColor: "#ffffff",
+            elevation: 8,
+            children: [{ id: "plain-centered-panel-text", name: "Panel Text", nodeType: "TEXT", type: "text" as const, text: "Kein Dialog Overlay" }]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<Dialog "), false);
+  assert.ok(content.includes("<Box "));
+});
+
+test("deterministic screen rendering does not promote nested tab or dialog-like patterns below top-level depth", () => {
+  const screen = {
+    id: "nested-pattern-regression-screen",
+    name: "Nested Pattern Regression Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "nested-wrapper",
+        name: "Wrapper",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 844,
+        children: [
+          {
+            id: "nested-tab-host",
+            name: "Nested Tabs Host",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "VERTICAL" as const,
+            x: 16,
+            y: 160,
+            width: 358,
+            height: 260,
+            children: [
+              {
+                id: "nested-tab-strip",
+                name: "Nested Tabs",
+                nodeType: "FRAME",
+                type: "container" as const,
+                layoutMode: "HORIZONTAL" as const,
+                x: 16,
+                y: 160,
+                width: 358,
+                height: 48,
+                children: [
+                  { id: "nested-tab-a", name: "Nested Tab A", nodeType: "TEXT", type: "text" as const, text: "A", x: 24, y: 176, fontWeight: 700 },
+                  { id: "nested-tab-b", name: "Nested Tab B", nodeType: "TEXT", type: "text" as const, text: "B", x: 96, y: 176, fontWeight: 500 }
+                ]
+              },
+              {
+                id: "nested-tab-panel-a",
+                name: "Nested Panel A",
+                nodeType: "FRAME",
+                type: "container" as const,
+                x: 16,
+                y: 224,
+                width: 358,
+                height: 72,
+                children: [{ id: "nested-tab-panel-a-text", name: "Nested A", nodeType: "TEXT", type: "text" as const, text: "Panel A" }]
+              },
+              {
+                id: "nested-tab-panel-b",
+                name: "Nested Panel B",
+                nodeType: "FRAME",
+                type: "container" as const,
+                x: 16,
+                y: 304,
+                width: 358,
+                height: 72,
+                children: [{ id: "nested-tab-panel-b-text", name: "Nested B", nodeType: "TEXT", type: "text" as const, text: "Panel B" }]
+              }
+            ]
+          },
+          {
+            id: "nested-overlay-shell",
+            name: "Nested Overlay",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "NONE" as const,
+            x: 16,
+            y: 460,
+            width: 358,
+            height: 300,
+            opacity: 0.7,
+            fillColor: "#111111",
+            children: [
+              {
+                id: "nested-dialog-panel",
+                name: "Nested Dialog Panel",
+                nodeType: "FRAME",
+                type: "container" as const,
+                x: 48,
+                y: 500,
+                width: 280,
+                height: 180,
+                fillColor: "#ffffff",
+                elevation: 8,
+                children: [{ id: "nested-dialog-title", name: "Nested Dialog Title", nodeType: "TEXT", type: "text" as const, text: "Nicht top-level" }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<Tabs value={tabValue"), false);
+  assert.equal(content.includes("<Dialog open={isDialogOpen"), false);
+});
+
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
   const screen = {
     id: "layout-screen",
