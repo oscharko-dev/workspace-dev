@@ -308,6 +308,20 @@ const findRenderedFormControlBlock = ({
   return block ?? "";
 };
 
+const findRenderedTypographyLine = ({
+  content,
+  text
+}: {
+  content: string;
+  text: string;
+}): string => {
+  const line = content
+    .split("\n")
+    .find((entry) => entry.includes("<Typography") && entry.includes(`{"${text}"}`));
+  assert.ok(line, `Expected rendered Typography line for text '${text}'`);
+  return line ?? "";
+};
+
 const createSemanticInputNode = ({
   id,
   name,
@@ -543,6 +557,49 @@ test("generateArtifacts rejects non-deterministic mode in workspace-dev", async 
   );
 });
 
+test("generateArtifacts logs and writes accessibility contrast warnings", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-a11y-"));
+  const logs: string[] = [];
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "contrast-screen",
+      name: "Contrast Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      fillColor: "#ffffff",
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "low-contrast-text",
+          name: "Primary Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Low contrast copy",
+          fillColor: "#8a8a8a",
+          fontSize: 16,
+          fontWeight: 400
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "qwen",
+    onLog: (message) => logs.push(message)
+  });
+
+  assert.ok(logs.some((entry) => entry.includes("[a11y] Low contrast")));
+  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metrics = JSON.parse(metricsContent) as { accessibilityWarnings?: Array<{ code?: string }> };
+  assert.equal(Array.isArray(metrics.accessibilityWarnings), true);
+  assert.ok((metrics.accessibilityWarnings ?? []).length > 0);
+  assert.equal(metrics.accessibilityWarnings?.[0]?.code, "W_A11Y_LOW_CONTRAST");
+});
+
 test("createDeterministicAppFile uses lazy route-level loading for non-initial screens", () => {
   const ir = createIr();
   const appFile = createDeterministicAppFile([
@@ -761,6 +818,9 @@ test("deterministic screen rendering infers required fields from star labels and
   assert.equal(block.includes('label={"Email *"}'), false);
   assert.ok(block.includes('label={"Email"}'));
   assert.ok(block.includes("required"));
+  assert.ok(block.includes('aria-describedby={"email_input_required_email-helper-text"}'));
+  assert.ok(block.includes('"aria-required": "true"'));
+  assert.ok(block.includes('FormHelperTextProps={{ id: "email_input_required_email-helper-text" }}'));
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("helperText={"));
   assert.ok(block.includes("onBlur={() => handleFieldBlur("));
@@ -904,9 +964,11 @@ test("deterministic screen rendering applies validation bindings for select cont
   assert.equal(block.includes('label={"Status *"}'), false);
   assert.ok(block.includes('label={"Status"}'));
   assert.ok(block.includes("required"));
+  assert.ok(block.includes('aria-describedby={"status_select_status_select-helper-text"}'));
+  assert.ok(block.includes('aria-required="true"'));
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("onBlur={() => handleFieldBlur("));
-  assert.ok(block.includes("<FormHelperText>{"));
+  assert.ok(block.includes('<FormHelperText id={"status_select_status_select-helper-text"}>{'));
 });
 
 test("deterministic screen rendering assigns a single primary submit button and explicit button types", () => {
@@ -998,6 +1060,145 @@ test("deterministic screen rendering assigns a single primary submit button and 
 
   const disabledLine = findRenderedButtonLine({ content, label: "Disabled" });
   assert.ok(disabledLine.includes('type={primarySubmitButtonKey === "disabled_action_btn_disabled" ? "submit" : "button"}'));
+});
+
+test("deterministic screen rendering infers heading hierarchy components from typography prominence", () => {
+  const screen = {
+    id: "heading-hierarchy-screen",
+    name: "Heading Hierarchy Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "heading-main",
+        name: "Main Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Main Heading",
+        fontSize: 40,
+        fontWeight: 700
+      },
+      {
+        id: "heading-section",
+        name: "Section Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Section Heading",
+        fontSize: 30,
+        fontWeight: 650
+      },
+      {
+        id: "heading-sub",
+        name: "Sub Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Sub Heading",
+        fontSize: 24,
+        fontWeight: 600
+      },
+      {
+        id: "body-copy",
+        name: "Body Copy",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Body text",
+        fontSize: 14,
+        fontWeight: 400
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const h1Line = findRenderedTypographyLine({ content, text: "Main Heading" });
+  const h2Line = findRenderedTypographyLine({ content, text: "Section Heading" });
+  const h3Line = findRenderedTypographyLine({ content, text: "Sub Heading" });
+  const bodyLine = findRenderedTypographyLine({ content, text: "Body text" });
+  assert.ok(h1Line.includes('component="h1"'));
+  assert.ok(h2Line.includes('component="h2"'));
+  assert.ok(h3Line.includes('component="h3"'));
+  assert.equal(bodyLine.includes('component="h'), false);
+});
+
+test("deterministic screen rendering emits image accessibility semantics for informative and decorative images", () => {
+  const screen = {
+    id: "image-a11y-screen",
+    name: "Image Accessibility Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "product-image",
+        name: "Product Image",
+        nodeType: "RECTANGLE",
+        type: "image" as const,
+        width: 320,
+        height: 180,
+        fillColor: "#d9d9d9"
+      },
+      {
+        id: "decorative-image",
+        name: "Decorative Background Shape",
+        nodeType: "RECTANGLE",
+        type: "image" as const,
+        width: 320,
+        height: 80,
+        fillColor: "#f5f5f5"
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('<Box role="img" aria-label={"Product Image"}'));
+  assert.ok(content.includes('<Box aria-hidden="true"'));
+});
+
+test("deterministic screen rendering infers navigation landmark roles for nav-like containers", () => {
+  const buttonNode = (id: string, text: string, y: number) => ({
+    id,
+    name: `${text} Button`,
+    nodeType: "FRAME",
+    type: "button" as const,
+    x: 0,
+    y,
+    width: 140,
+    height: 40,
+    fillColor: "#d4001a",
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text,
+        fillColor: "#ffffff"
+      }
+    ]
+  });
+  const screen = {
+    id: "nav-landmark-screen",
+    name: "Navigation Landmark Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "main-nav-container",
+        name: "Main Navigation",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        width: 320,
+        height: 140,
+        gap: 8,
+        children: [buttonNode("nav-home", "Home", 0), buttonNode("nav-search", "Search", 50)]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('role="navigation"'));
 });
 
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
@@ -1319,15 +1520,15 @@ test("deterministic screen rendering keeps decorative elevated containers on Box
         elevation: 4,
         children: [
           {
-            id: "paper-surface-negative-decorative-icon",
-            name: "ic_add",
-            nodeType: "INSTANCE",
-            type: "container" as const,
+            id: "paper-surface-negative-decorative-shape",
+            name: "Decorative Background Shape",
+            nodeType: "RECTANGLE",
+            type: "image" as const,
             x: 0,
             y: 0,
             width: 24,
             height: 24,
-            children: []
+            fillColor: "#d8deeb"
           }
         ]
       }
@@ -1338,7 +1539,7 @@ test("deterministic screen rendering keeps decorative elevated containers on Box
 
   assert.equal(content.includes("<Paper elevation={4}"), false);
   assert.ok(content.includes("boxShadow: 4"));
-  assert.ok(content.includes("<Box sx={{"));
+  assert.ok(content.includes("<Box sx={{") || content.includes('<Box aria-hidden="true" sx={{'));
 });
 
 test("deterministic screen rendering keeps same-background elevated containers on Box fallback", () => {
@@ -3076,15 +3277,15 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<RadioGroup "));
   assert.ok(content.includes("<List "));
   assert.ok(content.includes("<ListItemIcon>"));
-  assert.ok(content.includes("<AppBar "));
+  assert.ok(content.includes('<AppBar role="banner" '));
   assert.ok(content.includes("<Tabs "));
   assert.ok(content.includes("<Dialog "));
   assert.ok(content.includes("<Stepper "));
   assert.ok(content.includes("<LinearProgress "));
   assert.ok(content.includes("<Avatar "));
   assert.ok(content.includes("<Badge "));
-  assert.ok(content.includes("<Divider "));
-  assert.ok(content.includes("<BottomNavigation "));
+  assert.ok(content.includes('<Divider aria-hidden="true" '));
+  assert.ok(content.includes('<BottomNavigation role="navigation" '));
   assert.ok(content.includes("<Grid container"));
   assert.ok(content.includes("<Stack "));
   assert.ok(content.includes("<Paper "));
@@ -3092,17 +3293,18 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<CardActions>"));
   assert.ok(content.includes("<Table "));
   assert.ok(content.includes("<Tooltip "));
-  assert.ok(content.includes("<Drawer "));
+  assert.ok(content.includes('<Drawer open variant="persistent" PaperProps={{ role: "navigation" }}'));
   assert.ok(content.includes("<Breadcrumbs "));
   assert.ok(content.includes("<Select"));
   assert.ok(content.includes("<Slider "));
   assert.ok(content.includes("<Rating "));
   assert.ok(content.includes("<Snackbar "));
   assert.ok(content.includes("<Alert "));
-  assert.ok(content.includes("<Skeleton "));
+  assert.ok(content.includes('<Skeleton aria-hidden="true" '));
   assert.equal(content.includes("<TextField\n  select"), false);
   assert.ok(content.includes("<TextField"));
-  assert.ok(content.includes("<Container maxWidth="));
+  assert.ok(content.includes('<Container maxWidth="'));
+  assert.ok(content.includes('role="main"'));
 });
 
 test("deterministic extended renderer falls back to container for implausible models", () => {
