@@ -358,6 +358,7 @@ const toThemeColorLiteral = ({
 
 type ButtonVariant = "contained" | "outlined" | "text";
 type ButtonSize = "small" | "medium" | "large";
+type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
 
 interface RgbaColor {
   r: number;
@@ -371,6 +372,8 @@ const BUTTON_VISIBLE_ALPHA_THRESHOLD = 0.08;
 const BUTTON_DISABLED_OPACITY_THRESHOLD = 0.55;
 const BUTTON_NEUTRAL_CHANNEL_DELTA_MAX = 24;
 const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
+const FIELD_ERROR_RED_MIN_CHANNEL = 150;
+const FIELD_ERROR_RED_DELTA_MIN = 32;
 
 const hasVisibleGradient = (value: string | undefined): boolean => {
   return typeof value === "string" && value.trim().length > 0;
@@ -428,6 +431,18 @@ const isNeutralGrayColor = (color: RgbaColor | undefined): boolean => {
   }
   const channelDelta = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
   return channelDelta <= BUTTON_NEUTRAL_CHANNEL_DELTA_MAX;
+};
+
+const isLikelyErrorRedColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color, 0.2)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const redOverGreen = color.r - color.g;
+  const redOverBlue = color.r - color.b;
+  return color.r >= FIELD_ERROR_RED_MIN_CHANNEL && redOverGreen >= FIELD_ERROR_RED_DELTA_MIN && redOverBlue >= FIELD_ERROR_RED_DELTA_MIN;
 };
 
 const inferButtonVariant = ({
@@ -1414,6 +1429,10 @@ interface InteractiveFieldModel {
   options: string[];
   inputType?: TextFieldInputType | undefined;
   autoComplete?: string | undefined;
+  required?: boolean | undefined;
+  validationType?: ValidationFieldType | undefined;
+  validationMessage?: string | undefined;
+  hasVisualErrorExample?: boolean | undefined;
   suffixText?: string | undefined;
   labelFontFamily?: string | undefined;
   labelColor?: string | undefined;
@@ -1436,9 +1455,16 @@ interface MappedImportSpec {
   modulePath: string;
 }
 
+interface RenderedButtonModel {
+  key: string;
+  preferredSubmit: boolean;
+  eligibleForSubmit: boolean;
+}
+
 interface RenderContext {
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
+  buttons: RenderedButtonModel[];
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
   mappedImports: MappedImportSpec[];
@@ -1866,6 +1892,38 @@ const inferTextFieldAutoComplete = (inputType: TextFieldInputType | undefined): 
   }
 };
 
+const inferRequiredFromLabel = (label: string): boolean => {
+  return /(?:^|\s)\*(?:\s|$)|\*\s*$/.test(label);
+};
+
+const sanitizeRequiredLabel = (label: string): string => {
+  return label.replace(/\s*\*\s*/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const inferTextFieldValidationMessage = (validationType: ValidationFieldType | undefined): string | undefined => {
+  switch (validationType) {
+    case "email":
+      return "Please enter a valid email address.";
+    case "tel":
+      return "Please enter a valid phone number.";
+    case "url":
+      return "Please enter a valid URL.";
+    case "number":
+      return "Please enter a valid number.";
+    case "date":
+      return "Please enter a valid date (YYYY-MM-DD).";
+    default:
+      return undefined;
+  }
+};
+
+const inferVisualErrorFromOutline = (element: ScreenElementIR): boolean => {
+  const outlineContainer = findFirstByName(element, "muioutlinedinputroot") ?? element;
+  const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
+  const outlineColor = toRgbaColor(outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor ?? element.strokeColor);
+  return isLikelyErrorRedColor(outlineColor);
+};
+
 const isLikelyInputPlaceholderText = (value: string | undefined): boolean => {
   if (typeof value !== "string") {
     return false;
@@ -2129,7 +2187,10 @@ const registerInteractiveField = ({
     return existing;
   }
 
-  const label = model.labelNode?.text?.trim() ?? element.name;
+  const rawLabel = model.labelNode?.text?.trim() ?? element.name;
+  const required = inferRequiredFromLabel(rawLabel);
+  const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
+  const label = sanitizedLabel.length > 0 ? sanitizedLabel : rawLabel;
   const placeholder = model.placeholderNode?.text?.trim();
   const defaultValue = model.valueNode?.text?.trim() ?? "";
   const isSelect = model.isSelect;
@@ -2137,6 +2198,9 @@ const registerInteractiveField = ({
   const semanticHints = isSelect ? [] : collectInputSemanticHints({ element, label, placeholder });
   const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
   const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
+  const validationType = isSelect ? undefined : inputType;
+  const validationMessage = inferTextFieldValidationMessage(validationType);
+  const hasVisualErrorExample = inferVisualErrorFromOutline(element);
 
   const created: InteractiveFieldModel = {
     key,
@@ -2147,6 +2211,10 @@ const registerInteractiveField = ({
     options,
     ...(inputType ? { inputType } : {}),
     ...(autoComplete ? { autoComplete } : {}),
+    ...(required ? { required } : {}),
+    ...(validationType ? { validationType } : {}),
+    ...(validationMessage ? { validationMessage } : {}),
+    ...(hasVisualErrorExample ? { hasVisualErrorExample } : {}),
     suffixText: isSelect ? undefined : model.suffixText,
     labelFontFamily: normalizeFontFamily(model.labelNode?.fontFamily),
     labelColor: model.labelNode?.fillColor,
@@ -2338,17 +2406,24 @@ const renderSemanticInput = (
     !field.isSelect && field.suffixText
       ? `endAdornment: <InputAdornment position="end">{${literal(field.suffixText)}}</InputAdornment>`
       : "";
+  const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
+  const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
+  const requiredProp = field.required ? `${indent}    required\n` : "";
 
   if (field.isSelect) {
-    registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem");
+    registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
     const selectLabelId = `${field.key}-label`;
-    return `${indent}<FormControl sx={{ ${fieldSx} }}>
+    return `${indent}<FormControl
+${requiredProp}${indent}    error={${fieldErrorExpression}}
+${indent}    sx={{ ${fieldSx} }}
+${indent}  >
 ${indent}  <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
 ${indent}  <Select
 ${indent}    labelId={${literal(selectLabelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    sx={{
 ${indent}      ${inputRootStyle},
 ${indent}      "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} }
@@ -2358,6 +2433,7 @@ ${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
 ${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
 ${indent}    ))}
 ${indent}  </Select>
+${indent}  <FormHelperText>{${fieldHelperTextExpression}}</FormHelperText>
 ${indent}</FormControl>`;
   }
 
@@ -2368,10 +2444,14 @@ ${indent}</FormControl>`;
   const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
+  const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
-${placeholderProp}${typeProp}${autoCompleteProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
+${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
 ${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
+${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}  error={${fieldErrorExpression}}
+${indent}  helperText={${fieldHelperTextExpression}}
 ${indent}  sx={{
 ${indent}    ${fieldSx},
 ${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
@@ -2579,6 +2659,7 @@ ${indent}</Accordion>`;
 const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
+  const buttonKey = toStateKey(element);
   const mappedMuiProps = element.variantMapping?.muiProps;
   const textNodes = collectTextNodes(element)
     .filter((node) => Boolean(node.text?.trim()))
@@ -2647,6 +2728,11 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     element,
     mappedVariant: mappedMuiProps?.variant
   });
+  context.buttons.push({
+    key: buttonKey,
+    preferredSubmit: variant === "contained",
+    eligibleForSubmit: !inferredDisabled
+  });
   const size = inferButtonSize({
     element,
     mappedSize: mappedMuiProps?.size
@@ -2691,8 +2777,9 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const disabledProp = inferredDisabled ? " disabled" : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
+  const typeProp = ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
 
-  return `${indent}<Button variant="${variant}"${sizeProp}${fullWidthProp}${disabledProp} disableElevation${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
+  return `${indent}<Button variant="${variant}"${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
 };
 
 const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
@@ -3763,20 +3850,27 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
     .filter((value) => value.length > 0);
   const fallbackDefault = sanitizeSelectOptionValue(firstText(element)?.trim() || "Option 1");
   const options = optionsFromChildren.length > 0 ? [...new Set(optionsFromChildren)] : deriveSelectOptions(fallbackDefault);
+  const rawLabel = firstText(element)?.trim() || element.name;
+  const required = inferRequiredFromLabel(rawLabel);
+  const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
+  const label = sanitizedLabel.length > 0 ? sanitizedLabel : rawLabel;
+  const hasVisualErrorExample = inferVisualErrorFromOutline(element);
   const field: InteractiveFieldModel =
     existing ??
     (() => {
       const created: InteractiveFieldModel = {
         key,
-        label: firstText(element)?.trim() || element.name,
+        label,
         defaultValue: options[0] ?? fallbackDefault,
         isSelect: true,
-        options
+        options,
+        ...(required ? { required } : {}),
+        ...(hasVisualErrorExample ? { hasVisualErrorExample } : {})
       };
       context.fields.push(created);
       return created;
     })();
-  registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem");
+  registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
   const indent = "  ".repeat(depth);
   const sx = toElementSx({
     element,
@@ -3785,18 +3879,26 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
     includePaints: false
   });
   const labelId = `${field.key}-label`;
-  return `${indent}<FormControl sx={{ ${sx} }}>
+  const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
+  const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
+  const requiredProp = field.required ? `${indent}  required\n` : "";
+  return `${indent}<FormControl
+${requiredProp}${indent}  error={${fieldErrorExpression}}
+${indent}  sx={{ ${sx} }}
+${indent}>
 ${indent}  <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
 ${indent}  <Select
 ${indent}    labelId={${literal(labelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}  >
 ${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
 ${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
 ${indent}    ))}
 ${indent}  </Select>
+${indent}  <FormHelperText>{${fieldHelperTextExpression}}</FormHelperText>
 ${indent}</FormControl>`;
 };
 
@@ -4162,6 +4264,7 @@ const fallbackScreenFile = ({
   const renderContext: RenderContext = {
     fields: [],
     accordions: [],
+    buttons: [],
     muiImports: new Set<string>(["Container"]),
     iconImports: [],
     mappedImports: [],
@@ -4249,21 +4352,164 @@ const fallbackScreenFile = ({
   ]);
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
+  const requiredFieldMap = Object.fromEntries(
+    renderContext.fields.filter((field) => field.required).map((field) => [field.key, true])
+  );
+  const validationTypeMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.validationType)
+      .map((field) => [field.key, field.validationType as ValidationFieldType])
+  );
+  const validationMessageMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.validationMessage)
+      .map((field) => [field.key, field.validationMessage as string])
+  );
+  const initialVisualErrorsMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.hasVisualErrorExample)
+      .map((field) => [field.key, field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.")])
+  );
   const selectOptionsMap = Object.fromEntries(
     renderContext.fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
   );
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
   );
+  const preferredSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
+  const fallbackSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit);
+  const primarySubmitButtonKey = hasInteractiveFields
+    ? (preferredSubmitButton?.key ?? fallbackSubmitButton?.key ?? "")
+    : "";
+
   const selectOptionsDeclaration = hasSelectField
     ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
     : "";
+  const submitButtonDeclaration =
+    renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
 
   const fieldStateBlock = hasInteractiveFields
-    ? `const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+    ? `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
 
-${selectOptionsDeclaration}const updateFieldValue = (fieldKey: string, value: string): void => {
+const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? \`\${integerPart}.\${fractionPart}\` : \`0.\${fractionPart}\`;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const validateFieldValue = (fieldKey: string, value: string): string => {
+  const trimmed = value.trim();
+  if (requiredFields[fieldKey] && trimmed.length === 0) {
+    return "This field is required.";
+  }
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const validationType = fieldValidationTypes[fieldKey];
+  if (!validationType) {
+    return "";
+  }
+  const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+  switch (validationType) {
+    case "email":
+      return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+    case "tel": {
+      const compactTel = trimmed.replace(/\\s+/g, "");
+      const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+      return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
+    }
+    case "url": {
+      try {
+        const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : \`https://\${trimmed}\`;
+        const parsed = new URL(normalizedUrl);
+        return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
+      } catch {
+        return validationMessage;
+      }
+    }
+    case "number":
+      return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
+    case "date": {
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+        return validationMessage;
+      }
+      const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+      if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+        return validationMessage;
+      }
+      const date = new Date(Date.UTC(year, month - 1, day));
+      const isValidDate =
+        date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+      return isValidDate ? "" : validationMessage;
+    }
+    default:
+      return "";
+  }
+};
+
+const validateForm = (values: Record<string, string>): Record<string, string> => {
+  return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+    nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
+    return nextErrors;
+  }, {});
+};
+
+const updateFieldValue = (fieldKey: string, value: string): void => {
   setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
+  if (!touchedFields[fieldKey]) {
+    return;
+  }
+  const nextError = validateFieldValue(fieldKey, value);
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleFieldBlur = (fieldKey: string): void => {
+  setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
+  const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleSubmit = (event: { preventDefault: () => void }): void => {
+  event.preventDefault();
+  const nextErrors = validateForm(formValues);
+  setFieldErrors(nextErrors);
+  setTouchedFields((previous) =>
+    Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
+      nextTouched[fieldKey] = true;
+      return nextTouched;
+    }, { ...previous })
+  );
+
+  const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
+  if (hasErrors) {
+    return;
+  }
 };`
     : "";
   const accordionStateBlock = hasInteractiveAccordions
@@ -4273,8 +4519,11 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   setAccordionState((previous) => ({ ...previous, [accordionKey]: expanded }));
 };`
     : "";
-  const stateBlock = [fieldStateBlock, accordionStateBlock].filter((chunk) => chunk.length > 0).join("\n\n");
+  const stateBlock = [submitButtonDeclaration, fieldStateBlock, accordionStateBlock]
+    .filter((chunk) => chunk.length > 0)
+    .join("\n\n");
   const hasStatefulElements = hasInteractiveFields || hasInteractiveAccordions;
+  const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
 
   const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
   if (rendered.length === 0) {
@@ -4297,7 +4546,7 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 export default function ${componentName}Screen() {
 ${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
   return (
-    <Container maxWidth="${containerMaxWidth}" sx={{ ${screenContainerSx} }}>
+    <Container maxWidth="${containerMaxWidth}"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
     </Container>
   );
