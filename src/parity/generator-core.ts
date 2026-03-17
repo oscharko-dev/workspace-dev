@@ -4378,6 +4378,406 @@ interface RenderedItem {
   node: ScreenElementIR;
 }
 
+interface ListRowAnalysis {
+  node: ScreenElementIR;
+  primaryText: string;
+  secondaryText?: string;
+  leadingAvatarNode?: ScreenElementIR;
+  leadingIconNode?: ScreenElementIR;
+  trailingActionNode?: ScreenElementIR;
+  hasLeadingVisual: boolean;
+  hasTrailingAction: boolean;
+  structureSignature: string;
+}
+
+interface ListRowCollection {
+  rowNodes: ScreenElementIR[];
+  hasInterItemDivider: boolean;
+}
+
+interface DetectedListPattern {
+  rows: ListRowAnalysis[];
+  hasInterItemDivider: boolean;
+}
+
+const LIST_PATTERN_MIN_ROWS = 3;
+const LIST_PATTERN_VERTICAL_DELTA_MIN_PX = 8;
+const LIST_PATTERN_VERTICAL_DELTA_RATIO_TOLERANCE = 0.35;
+const LIST_PATTERN_VERTICAL_DELTA_ABSOLUTE_TOLERANCE_PX = 12;
+const LIST_ACTION_RIGHT_REGION_RATIO = 0.62;
+const LIST_ACTION_NAME_HINTS = [
+  "action",
+  "more",
+  "menu",
+  "next",
+  "arrow",
+  "edit",
+  "delete",
+  "remove",
+  "open",
+  "close",
+  "chevron"
+];
+
+const isDividerLikeListSeparator = (element: ScreenElementIR): boolean => {
+  if (element.type === "divider") {
+    return true;
+  }
+  if ((element.children?.length ?? 0) > 0) {
+    return false;
+  }
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const hasVisualSignal = Boolean(element.fillColor || element.strokeColor);
+  if (!hasVisualSignal) {
+    return false;
+  }
+  const horizontalLine = width >= 16 && height > 0 && height <= 2;
+  const verticalLine = height >= 16 && width > 0 && width <= 2;
+  return horizontalLine || verticalLine;
+};
+
+const isAvatarLikeListNode = (element: ScreenElementIR): boolean => {
+  if (element.type === "avatar") {
+    return true;
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return normalizedName.includes("avatar");
+};
+
+const isListActionLikeNode = (element: ScreenElementIR): boolean => {
+  if (element.prototypeNavigation) {
+    return true;
+  }
+  if (element.type === "button" || element.type === "switch" || element.type === "checkbox" || element.type === "radio") {
+    return true;
+  }
+  if (isIconLikeNode(element) || isSemanticIconWrapper(element)) {
+    return true;
+  }
+  if (pickBestIconNode(element)) {
+    return true;
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return LIST_ACTION_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+};
+
+const toListNodeStartX = (node: ScreenElementIR): number | undefined => {
+  if (typeof node.x !== "number" || !Number.isFinite(node.x)) {
+    return undefined;
+  }
+  return node.x;
+};
+
+const toListNodeEndX = (node: ScreenElementIR): number | undefined => {
+  if (typeof node.x !== "number" || !Number.isFinite(node.x)) {
+    return undefined;
+  }
+  if (typeof node.width === "number" && Number.isFinite(node.width) && node.width > 0) {
+    return node.x + node.width;
+  }
+  return node.x;
+};
+
+const toListRowHorizontalBounds = ({
+  children
+}: {
+  children: ScreenElementIR[];
+}): { minX: number; maxX: number } | undefined => {
+  const startValues = children.map(toListNodeStartX).filter((value): value is number => typeof value === "number");
+  const endValues = children.map(toListNodeEndX).filter((value): value is number => typeof value === "number");
+  if (startValues.length === 0 || endValues.length === 0) {
+    return undefined;
+  }
+  const minX = Math.min(...startValues);
+  const maxX = Math.max(...endValues);
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || maxX <= minX) {
+    return undefined;
+  }
+  return { minX, maxX };
+};
+
+const isRightAlignedListActionCandidate = ({
+  node,
+  bounds
+}: {
+  node: ScreenElementIR;
+  bounds: { minX: number; maxX: number } | undefined;
+}): boolean => {
+  if (!bounds) {
+    return false;
+  }
+  const nodeStartX = toListNodeStartX(node);
+  if (typeof nodeStartX !== "number") {
+    return false;
+  }
+  const width = Math.max(1, bounds.maxX - bounds.minX);
+  const threshold = bounds.minX + width * LIST_ACTION_RIGHT_REGION_RATIO;
+  return nodeStartX >= threshold;
+};
+
+const collectSubtreeNodeIds = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element.id, ...(element.children ?? []).flatMap((child) => collectSubtreeNodeIds(child, visited))];
+};
+
+const analyzeListRow = ({
+  row,
+  generationLocale
+}: {
+  row: ScreenElementIR;
+  generationLocale: string | undefined;
+}): ListRowAnalysis => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  const sortedChildren = sortChildren(row.children ?? [], row.layoutMode ?? "NONE", sortOptions).filter(
+    (child) => !isDividerLikeListSeparator(child)
+  );
+  const bounds = toListRowHorizontalBounds({ children: sortedChildren });
+
+  let trailingActionNode: ScreenElementIR | undefined;
+  for (const child of [...sortedChildren].reverse()) {
+    if (!isListActionLikeNode(child)) {
+      continue;
+    }
+    if (!isRightAlignedListActionCandidate({ node: child, bounds })) {
+      continue;
+    }
+    trailingActionNode = child;
+    break;
+  }
+
+  const leadingAvatarNode = sortedChildren.find((child) => child.id !== trailingActionNode?.id && isAvatarLikeListNode(child));
+  const leadingIconNode = leadingAvatarNode
+    ? undefined
+    : sortedChildren.find((child) => {
+        if (child.id === trailingActionNode?.id) {
+          return false;
+        }
+        if (isIconLikeNode(child) || isSemanticIconWrapper(child)) {
+          return true;
+        }
+        if (child.type === "container") {
+          return Boolean(pickBestIconNode(child));
+        }
+        return false;
+      });
+
+  const excludedTextNodeIds = new Set<string>();
+  if (trailingActionNode) {
+    for (const nodeId of collectSubtreeNodeIds(trailingActionNode)) {
+      excludedTextNodeIds.add(nodeId);
+    }
+  }
+  if (leadingAvatarNode) {
+    for (const nodeId of collectSubtreeNodeIds(leadingAvatarNode)) {
+      excludedTextNodeIds.add(nodeId);
+    }
+  }
+
+  const textNodes = collectTextNodes(row)
+    .filter((node) => !excludedTextNodeIds.has(node.id))
+    .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+  const textValues = textNodes.map((node) => node.text?.trim() ?? "").filter((value) => value.length > 0);
+  const fallbackLabel = firstText(row)?.trim() || row.name || "Item";
+  const primaryText = textValues[0] ?? fallbackLabel;
+  const secondaryText = textValues[1] && textValues[1] !== primaryText ? textValues[1] : undefined;
+  const hasLeadingVisual = Boolean(leadingAvatarNode || leadingIconNode);
+  const hasTrailingAction = Boolean(trailingActionNode);
+  const leadingSignature = leadingAvatarNode ? "avatar" : leadingIconNode ? "icon" : "none";
+  const textSignature = textValues.length >= 2 ? "text2" : textValues.length === 1 ? "text1" : "text0";
+  const actionSignature = hasTrailingAction ? "action" : "none";
+
+  return {
+    node: row,
+    primaryText,
+    ...(secondaryText ? { secondaryText } : {}),
+    ...(leadingAvatarNode ? { leadingAvatarNode } : {}),
+    ...(leadingIconNode ? { leadingIconNode } : {}),
+    ...(trailingActionNode ? { trailingActionNode } : {}),
+    hasLeadingVisual,
+    hasTrailingAction,
+    structureSignature: `${leadingSignature}|${textSignature}|${actionSignature}`
+  };
+};
+
+const collectListRows = (element: ScreenElementIR, generationLocale?: string): ListRowCollection => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", sortOptions);
+  const rowNodes: ScreenElementIR[] = [];
+  let hasInterItemDivider = false;
+  let seenRow = false;
+  for (const child of sortedChildren) {
+    if (isDividerLikeListSeparator(child)) {
+      if (seenRow) {
+        hasInterItemDivider = true;
+      }
+      continue;
+    }
+    rowNodes.push(child);
+    seenRow = true;
+  }
+  return {
+    rowNodes,
+    hasInterItemDivider
+  };
+};
+
+const detectRepeatedListPattern = ({
+  element,
+  generationLocale
+}: {
+  element: ScreenElementIR;
+  generationLocale: string;
+}): DetectedListPattern | undefined => {
+  if (element.type !== "container") {
+    return undefined;
+  }
+  const collectedRows = collectListRows(element, generationLocale);
+  if (collectedRows.rowNodes.length < LIST_PATTERN_MIN_ROWS) {
+    return undefined;
+  }
+
+  const rowAnalyses = collectedRows.rowNodes.map((row) => analyzeListRow({ row, generationLocale }));
+  const baselineSignature = rowAnalyses[0]?.structureSignature;
+  if (!baselineSignature || rowAnalyses.some((analysis) => analysis.structureSignature !== baselineSignature)) {
+    return undefined;
+  }
+  if (!rowAnalyses[0]?.hasLeadingVisual && !rowAnalyses[0]?.hasTrailingAction) {
+    return undefined;
+  }
+  if (rowAnalyses.some((analysis) => analysis.primaryText.trim().length === 0)) {
+    return undefined;
+  }
+
+  const rowYValues = collectedRows.rowNodes
+    .map((row) => row.y)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (rowYValues.length !== collectedRows.rowNodes.length) {
+    return undefined;
+  }
+  const yDeltas = rowYValues.slice(1).map((value, index) => value - rowYValues[index]!);
+  if (yDeltas.some((delta) => delta < LIST_PATTERN_VERTICAL_DELTA_MIN_PX)) {
+    return undefined;
+  }
+  const averageDelta = yDeltas.reduce((total, delta) => total + delta, 0) / yDeltas.length;
+  const tolerance = Math.max(
+    LIST_PATTERN_VERTICAL_DELTA_ABSOLUTE_TOLERANCE_PX,
+    averageDelta * LIST_PATTERN_VERTICAL_DELTA_RATIO_TOLERANCE
+  );
+  if (yDeltas.some((delta) => Math.abs(delta - averageDelta) > tolerance)) {
+    return undefined;
+  }
+
+  return {
+    rows: rowAnalyses,
+    hasInterItemDivider: collectedRows.hasInterItemDivider
+  };
+};
+
+const toListSecondaryActionExpression = ({
+  actionNode,
+  context
+}: {
+  actionNode: ScreenElementIR | undefined;
+  context: RenderContext;
+}): string | undefined => {
+  if (!actionNode) {
+    return undefined;
+  }
+  const actionIconNode = pickBestIconNode(actionNode) ?? (isIconLikeNode(actionNode) ? actionNode : undefined);
+  if (!actionIconNode) {
+    return undefined;
+  }
+  registerMuiImports(context, "IconButton");
+  const ariaLabel = resolveIconButtonAriaLabel({ element: actionNode, iconNode: actionIconNode });
+  const navigation = resolvePrototypeNavigationBinding({ element: actionNode, context });
+  const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+  const iconExpression = renderFallbackIconExpression({
+    element: actionIconNode,
+    parent: { name: actionNode.name },
+    context,
+    ariaHidden: true,
+    extraEntries: [["fontSize", literal("inherit")]]
+  });
+  return `<IconButton edge="end" aria-label=${literal(ariaLabel)}${linkProps}>${iconExpression}</IconButton>`;
+};
+
+const renderListFromRows = ({
+  element,
+  rows,
+  hasInterItemDivider,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  rows: ListRowAnalysis[];
+  hasInterItemDivider: boolean;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  registerMuiImports(context, "List", "ListItem", "ListItemText");
+  if (rows.some((row) => Boolean(row.leadingIconNode))) {
+    registerMuiImports(context, "ListItemIcon");
+  }
+  if (rows.some((row) => Boolean(row.leadingAvatarNode))) {
+    registerMuiImports(context, "ListItemAvatar", "Avatar");
+  }
+  if (hasInterItemDivider) {
+    registerMuiImports(context, "Divider");
+  }
+
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedItems = rows
+    .map((row, index) => {
+      const listNavigation = resolvePrototypeNavigationBinding({ element: row.node, context });
+      const secondaryActionExpression = toListSecondaryActionExpression({
+        actionNode: row.trailingActionNode,
+        context
+      });
+      const secondaryActionProp = secondaryActionExpression ? ` secondaryAction={${secondaryActionExpression}}` : "";
+      const avatarBlock = row.leadingAvatarNode
+        ? `<ListItemAvatar><Avatar>${(() => {
+            const avatarText = firstText(row.leadingAvatarNode)?.trim();
+            return avatarText ? `{${literal(avatarText)}}` : "";
+          })()}</Avatar></ListItemAvatar>`
+        : "";
+      const iconBlock = row.leadingIconNode
+        ? `<ListItemIcon>${renderFallbackIconExpression({
+            element: row.leadingIconNode,
+            parent: { name: row.node.name },
+            context,
+            ariaHidden: true
+          })}</ListItemIcon>`
+        : "";
+      const textProps = row.secondaryText
+        ? ` primary={${literal(row.primaryText)}} secondary={${literal(row.secondaryText)}}`
+        : ` primary={${literal(row.primaryText)}}`;
+      const textBlock = `<ListItemText${textProps} />`;
+      const content = `${avatarBlock}${iconBlock}${textBlock}`;
+      if (listNavigation) {
+        registerMuiImports(context, "ListItemButton");
+      }
+      const linkProps = listNavigation ? toRouterLinkProps({ navigation: listNavigation, context }) : "";
+      const itemBody = listNavigation ? `<ListItemButton${linkProps}>${content}</ListItemButton>` : content;
+      const dividerBlock = hasInterItemDivider && index < rows.length - 1 ? `\n${indent}  <Divider component="li" />` : "";
+      return `${indent}  <ListItem key={${literal(row.node.id)}} disablePadding${secondaryActionProp}>${itemBody}</ListItem>${dividerBlock}`;
+    })
+    .join("\n");
+  return `${indent}<List sx={{ ${sx} }}>
+${renderedItems}
+${indent}</List>`;
+};
+
 const collectRenderedItems = (element: ScreenElementIR, generationLocale?: string): RenderedItem[] => {
   const sortOptions = generationLocale ? { generationLocale } : undefined;
   return sortChildren(element.children ?? [], element.layoutMode ?? "NONE", sortOptions)
@@ -4818,47 +5218,24 @@ ${indent}</RadioGroup>`;
 };
 
 const renderList = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const items = collectRenderedItems(element, context.generationLocale);
-  if (items.length === 0) {
+  const collectedRows = collectListRows(element, context.generationLocale);
+  if (collectedRows.rowNodes.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
-  registerMuiImports(context, "List", "ListItem", "ListItemText");
-  const itemNavigations = items.map((item) => resolvePrototypeNavigationBinding({ element: item.node, context }));
-  if (itemNavigations.some((entry) => Boolean(entry))) {
-    registerMuiImports(context, "ListItemButton");
-  }
-  const hasListIcons = items.some((item) => Boolean(pickBestIconNode(item.node)));
-  if (hasListIcons) {
-    registerMuiImports(context, "ListItemIcon");
-  }
-  const indent = "  ".repeat(depth);
-  const sx = toElementSx({
+  const rows = collectedRows.rowNodes.map((row) =>
+    analyzeListRow({
+      row,
+      generationLocale: context.generationLocale
+    })
+  );
+  return renderListFromRows({
     element,
+    rows,
+    hasInterItemDivider: collectedRows.hasInterItemDivider,
+    depth,
     parent,
     context
   });
-  const renderedItems = items
-    .map((item, index) => {
-      const iconNode = pickBestIconNode(item.node);
-      const iconBlock = iconNode
-        ? `<ListItemIcon>${renderFallbackIconExpression({
-            element: iconNode,
-            parent: { name: item.node.name },
-            context,
-            ariaHidden: true
-          })}</ListItemIcon>`
-        : "";
-      const navigation = itemNavigations[index];
-      if (!navigation) {
-        return `${indent}  <ListItem key={${literal(item.id)}} disablePadding>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItem>`;
-      }
-      const linkProps = toRouterLinkProps({ navigation, context });
-      return `${indent}  <ListItem key={${literal(item.id)}} disablePadding><ListItemButton${linkProps}>${iconBlock}<ListItemText primary={${literal(item.label)}} /></ListItemButton></ListItem>`;
-    })
-    .join("\n");
-  return `${indent}<List sx={{ ${sx} }}>
-${renderedItems}
-${indent}</List>`;
 };
 
 const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
@@ -5485,6 +5862,21 @@ const renderContainer = (
 
   if (isElevatedSurfaceContainerForPaper({ element, context })) {
     return renderPaper(element, depth, parent, context);
+  }
+
+  const detectedListPattern = detectRepeatedListPattern({
+    element,
+    generationLocale: context.generationLocale
+  });
+  if (detectedListPattern) {
+    return renderListFromRows({
+      element,
+      rows: detectedListPattern.rows,
+      hasInterItemDivider: detectedListPattern.hasInterItemDivider,
+      depth,
+      parent,
+      context
+    });
   }
 
   if (isSimpleFlexContainerForStack({ element, context })) {
