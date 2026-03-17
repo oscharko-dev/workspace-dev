@@ -2831,6 +2831,298 @@ test("deriveTokensForTesting builds stable font stack from heading and body fami
   assert.equal(tokens.headingSize > tokens.bodySize, true);
 });
 
+test("deriveTokensForTesting derives a complete typography scale from multiple text tiers", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Typography Scale Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 960 },
+              children: [
+                {
+                  id: "hero",
+                  type: "TEXT",
+                  name: "Main Title",
+                  characters: "Vorhabensansicht",
+                  style: { fontSize: 32, fontWeight: 700, fontFamily: "Sparkasse Head", lineHeightPx: 40 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  absoluteBoundingBox: { x: 24, y: 24, width: 420, height: 40 }
+                },
+                {
+                  id: "section",
+                  type: "TEXT",
+                  name: "Section Title",
+                  characters: "Finanzierungsdetails",
+                  style: { fontSize: 28, fontWeight: 700, fontFamily: "Sparkasse Head", lineHeightPx: 36 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  absoluteBoundingBox: { x: 24, y: 84, width: 360, height: 36 }
+                },
+                {
+                  id: "subsection",
+                  type: "TEXT",
+                  name: "Sub Title",
+                  characters: "Monatliche Belastung",
+                  style: { fontSize: 24, fontWeight: 600, fontFamily: "Sparkasse Medium", lineHeightPx: 32 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  absoluteBoundingBox: { x: 24, y: 136, width: 320, height: 32 }
+                },
+                {
+                  id: "subtitle-1",
+                  type: "TEXT",
+                  name: "Subtitle",
+                  characters: "Rechner",
+                  style: { fontSize: 20, fontWeight: 600, fontFamily: "Sparkasse Medium", lineHeightPx: 28 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  absoluteBoundingBox: { x: 24, y: 184, width: 220, height: 28 }
+                },
+                {
+                  id: "subtitle-2",
+                  type: "TEXT",
+                  name: "Detail Title",
+                  characters: "Tilgung",
+                  style: { fontSize: 18, fontWeight: 600, fontFamily: "Sparkasse Medium", lineHeightPx: 26 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  absoluteBoundingBox: { x: 24, y: 228, width: 200, height: 26 }
+                },
+                {
+                  id: "body-1",
+                  type: "TEXT",
+                  name: "Body Copy",
+                  characters: "Die Rate bleibt konstant über die gesamte Laufzeit.",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 24 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#374151") }],
+                  absoluteBoundingBox: { x: 24, y: 280, width: 560, height: 24 }
+                },
+                {
+                  id: "body-2",
+                  type: "TEXT",
+                  name: "Body Copy Secondary",
+                  characters: "Optional kann die Sondertilgung später angepasst werden.",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 24 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#374151") }],
+                  absoluteBoundingBox: { x: 24, y: 314, width: 620, height: 24 }
+                },
+                {
+                  id: "small-body",
+                  type: "TEXT",
+                  name: "Helper Text",
+                  characters: "Zinssatz gebunden bis 31.12.2035",
+                  style: { fontSize: 15, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 22 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#4b5563") }],
+                  absoluteBoundingBox: { x: 24, y: 354, width: 300, height: 22 }
+                },
+                {
+                  id: "caption",
+                  type: "TEXT",
+                  name: "Caption",
+                  characters: "Stand: 17.03.2026",
+                  style: { fontSize: 12, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 18 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#6b7280") }],
+                  absoluteBoundingBox: { x: 24, y: 392, width: 180, height: 18 }
+                },
+                {
+                  id: "button-root",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  absoluteBoundingBox: { x: 24, y: 460, width: 240, height: 52 },
+                  children: [
+                    {
+                      id: "button-label",
+                      type: "TEXT",
+                      name: "Button Label",
+                      characters: "Weiter",
+                      style: { fontSize: 15, fontWeight: 700, fontFamily: "Sparkasse Medium", lineHeightPx: 22 },
+                      fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                      absoluteBoundingBox: { x: 72, y: 476, width: 96, height: 22 }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.h1.fontSizePx, 32);
+  assert.equal(tokens.typography.h2.fontSizePx, 28);
+  assert.equal(tokens.typography.h3.fontSizePx, 24);
+  assert.equal(tokens.typography.subtitle1.fontSizePx >= tokens.typography.subtitle2.fontSizePx, true);
+  assert.equal(tokens.typography.body1.fontSizePx, 16);
+  assert.equal(tokens.typography.body2.fontSizePx, 15);
+  assert.equal(tokens.typography.caption.fontSizePx, 12);
+  assert.equal(tokens.typography.button.textTransform, "none");
+  assert.equal(tokens.typography.overline.letterSpacingEm, 0.08);
+  assert.equal(tokens.headingSize, tokens.typography.h1.fontSizePx);
+  assert.equal(tokens.bodySize, tokens.typography.body1.fontSizePx);
+});
+
+test("deriveTokensForTesting normalizes fractional typography sizes into stable clusters", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Fractional Typography Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1080, height: 880 },
+              children: [
+                {
+                  id: "heading-a",
+                  type: "TEXT",
+                  name: "Main Title",
+                  characters: "Vorhabensansicht",
+                  style: { fontSize: 21.6, fontWeight: 700, fontFamily: "Sparkasse Head", lineHeightPx: 32 },
+                  absoluteBoundingBox: { x: 24, y: 24, width: 360, height: 32 }
+                },
+                {
+                  id: "heading-b",
+                  type: "TEXT",
+                  name: "Section Title",
+                  characters: "Konditionen",
+                  style: { fontSize: 20, fontWeight: 700, fontFamily: "Sparkasse Head", lineHeightPx: 30 },
+                  absoluteBoundingBox: { x: 24, y: 72, width: 260, height: 30 }
+                },
+                {
+                  id: "body-a",
+                  type: "TEXT",
+                  name: "Body Copy",
+                  characters: "Monatliche Rate",
+                  style: { fontSize: 16.8, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 24, y: 136, width: 320, height: 24 }
+                },
+                {
+                  id: "body-b",
+                  type: "TEXT",
+                  name: "Body Copy Secondary",
+                  characters: "Tilgungsrate",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 24, y: 170, width: 340, height: 24 }
+                },
+                {
+                  id: "body-c",
+                  type: "TEXT",
+                  name: "Helper Text",
+                  characters: "Beginn im April",
+                  style: { fontSize: 15.2, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 22 },
+                  absoluteBoundingBox: { x: 24, y: 208, width: 260, height: 22 }
+                },
+                {
+                  id: "body-d",
+                  type: "TEXT",
+                  name: "Helper Text Alt",
+                  characters: "Ende im März",
+                  style: { fontSize: 15, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 22 },
+                  absoluteBoundingBox: { x: 24, y: 240, width: 240, height: 22 }
+                },
+                {
+                  id: "caption-a",
+                  type: "TEXT",
+                  name: "Caption",
+                  characters: "Stand 03/2026",
+                  style: { fontSize: 12.8, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 18 },
+                  absoluteBoundingBox: { x: 24, y: 286, width: 180, height: 18 }
+                },
+                {
+                  id: "caption-b",
+                  type: "TEXT",
+                  name: "Caption Secondary",
+                  characters: "Zwischenstand",
+                  style: { fontSize: 12, fontWeight: 400, fontFamily: "Sparkasse Text", lineHeightPx: 18 },
+                  absoluteBoundingBox: { x: 24, y: 314, width: 180, height: 18 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.h1.fontSizePx, 20);
+  assert.equal(tokens.typography.body1.fontSizePx, 16);
+  assert.equal(tokens.typography.body2.fontSizePx, 15);
+  assert.equal(tokens.typography.caption.fontSizePx, 12);
+});
+
+test("deriveTokensForTesting ignores technical and empty text placeholders for typography derivation", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Placeholder Typography Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 600 },
+              children: [
+                {
+                  id: "placeholder-empty",
+                  type: "TEXT",
+                  name: "Empty Placeholder",
+                  characters: "   ",
+                  style: { fontSize: 52, fontWeight: 700, fontFamily: "Display Sans", lineHeightPx: 60 },
+                  absoluteBoundingBox: { x: 20, y: 20, width: 400, height: 60 }
+                },
+                {
+                  id: "placeholder-alt",
+                  type: "TEXT",
+                  name: "Alt Placeholder",
+                  characters: "Alternativtext",
+                  style: { fontSize: 48, fontWeight: 700, fontFamily: "Display Sans", lineHeightPx: 56 },
+                  absoluteBoundingBox: { x: 20, y: 96, width: 320, height: 56 }
+                },
+                {
+                  id: "real-heading",
+                  type: "TEXT",
+                  name: "Main Title",
+                  characters: "Reale Überschrift",
+                  style: { fontSize: 24, fontWeight: 700, fontFamily: "Inter", lineHeightPx: 32 },
+                  absoluteBoundingBox: { x: 20, y: 180, width: 280, height: 32 }
+                },
+                {
+                  id: "real-body",
+                  type: "TEXT",
+                  name: "Body Copy",
+                  characters: "Realer Inhalt",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 20, y: 228, width: 220, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.h1.fontSizePx, 24);
+  assert.equal(tokens.typography.body1.fontSizePx, 16);
+});
+
 test("deriveTokensForTesting boosts style-tagged brand colors", () => {
   const tokens = deriveTokensForTesting({
     name: "Style Boost Demo",
@@ -3155,4 +3447,7 @@ test("deriveTokensForTesting stays stable with sparse token signals", () => {
   assert.equal(tokens.borderRadius >= 1, true);
   assert.equal(tokens.headingSize >= tokens.bodySize, true);
   assert.equal(tokens.fontFamily.includes("sans-serif"), true);
+  assert.equal(Object.keys(tokens.typography).length, 13);
+  assert.equal(tokens.typography.button.textTransform, "none");
+  assert.equal(tokens.typography.overline.letterSpacingEm, 0.08);
 });

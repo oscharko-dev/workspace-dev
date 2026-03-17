@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LlmClient, LlmClientError, isLlmClientError } from "./llm.js";
+import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
 const palette = {
   primary: "#111111",
@@ -41,13 +42,26 @@ test("LlmClientError exposes code/endpoint/status and type guard", () => {
 
 test("LlmClient deterministic runtime methods reject with transport error", async () => {
   const client = new LlmClient();
+  const typography = buildTypographyScaleFromAliases({
+    fontFamily: "Roboto",
+    headingSize: 24,
+    bodySize: 14
+  });
 
   await assert.rejects(
     () =>
       client.generateTheme({
         sourceName: "demo",
         screens: [],
-        tokens: { palette, borderRadius: 8, spacingBase: 8, fontFamily: "Roboto", headingSize: 24, bodySize: 14 }
+        tokens: {
+          palette,
+          borderRadius: 8,
+          spacingBase: 8,
+          fontFamily: "Roboto",
+          headingSize: 24,
+          bodySize: 14,
+          typography
+        }
       }),
     (error: unknown) => (error as { code?: string }).code === "E_LLM_TRANSPORT"
   );
@@ -69,7 +83,8 @@ test("LlmClient deterministic runtime methods reject with transport error", asyn
           spacingBase: 8,
           fontFamily: "Roboto",
           headingSize: 24,
-          bodySize: 14
+          bodySize: 14,
+          typography
         },
         "src/screens/Screen.tsx"
       ),
@@ -93,7 +108,8 @@ test("LlmClient deterministic runtime methods reject with transport error", asyn
           spacingBase: 8,
           fontFamily: "Roboto",
           headingSize: 24,
-          bodySize: 14
+          bodySize: 14,
+          typography
         },
         baselineSource: "baseline"
       }),

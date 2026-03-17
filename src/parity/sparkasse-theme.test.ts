@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,24 @@ test("sparkasse theme loads configured token file and applies fallback-safe typo
         fontSize: {
           "2xl": { $value: 30 },
           md: { $value: 15 }
+        },
+        variants: {
+          h2: {
+            fontSize: { $value: 26 },
+            fontWeight: { $value: 700 },
+            lineHeight: { $value: 34 }
+          },
+          button: {
+            fontSize: { $value: 15 },
+            fontWeight: { $value: 600 },
+            lineHeight: { $value: 22 },
+            textTransform: { $value: "none" }
+          },
+          overline: {
+            fontSize: { $value: 12 },
+            lineHeight: { $value: 18 },
+            letterSpacing: { $value: 0.12 }
+          }
         }
       }
     }),
@@ -76,6 +95,9 @@ test("sparkasse theme loads configured token file and applies fallback-safe typo
   assert.equal(defaults.spacingBase, 10);
   assert.equal(defaults.headingSize, 30);
   assert.equal(defaults.bodySize, 15);
+  assert.equal(defaults.typography.h2.fontSizePx, 26);
+  assert.equal(defaults.typography.button.textTransform, "none");
+  assert.equal(defaults.typography.overline.letterSpacingEm, 0.12);
 
   const applied = mod.applySparkasseThemeDefaults({
     palette: {
@@ -101,7 +123,12 @@ test("sparkasse theme loads configured token file and applies fallback-safe typo
     spacingBase: 1,
     fontFamily: "MyFont",
     headingSize: 20,
-    bodySize: 12
+    bodySize: 12,
+    typography: buildTypographyScaleFromAliases({
+      fontFamily: "MyFont",
+      headingSize: 20,
+      bodySize: 12
+    })
   });
 
   assert.equal(applied.palette.primary, "#001122");
@@ -119,4 +146,7 @@ test("sparkasse theme loads configured token file and applies fallback-safe typo
   assert.ok(applied.fontFamily.includes("Roboto"));
   assert.equal(applied.headingSize, 30);
   assert.equal(applied.bodySize, 15);
+  assert.equal(applied.typography.h2.fontSizePx, 26);
+  assert.equal(applied.typography.button.textTransform, "none");
+  assert.equal(applied.typography.overline.letterSpacingEm, 0.12);
 });
