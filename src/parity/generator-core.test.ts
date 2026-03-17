@@ -3593,15 +3593,148 @@ test("deterministic screen rendering emits spacing units and rem typography with
 
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes("gap: 1.5"));
-  assert.ok(content.includes("pt: 2"));
-  assert.ok(content.includes("pr: 2"));
-  assert.ok(content.includes("pb: 2"));
-  assert.ok(content.includes("pl: 2"));
+  assert.ok(content.includes("p: 2"));
+  assert.equal(content.includes("pt: 2"), false);
+  assert.equal(content.includes("pr: 2"), false);
+  assert.equal(content.includes("pb: 2"), false);
+  assert.equal(content.includes("pl: 2"), false);
   assert.ok(content.includes('fontSize: "0.875rem"'));
   assert.ok(content.includes('lineHeight: "1.25rem"'));
   assert.ok(content.includes('fontSize: "1rem"'));
   assert.ok(content.includes('lineHeight: "1.5rem"'));
-  assert.equal(/\b(gap|p[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
+  assert.equal(/\b(gap|p|px|py|p[trbl]|m|mx|my|m[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
+});
+
+test("deterministic screen rendering applies padding shorthand for equal and paired sides", () => {
+  const screen = {
+    id: "padding-shorthand-screen",
+    name: "Padding Shorthand Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "padding-all-equal",
+        name: "Padding All Equal",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 80,
+        padding: { top: 20, right: 20, bottom: 20, left: 20 },
+        children: []
+      },
+      {
+        id: "padding-axis-equal",
+        name: "Padding Axis Equal",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 80,
+        padding: { top: 4, right: 12, bottom: 4, left: 12 },
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("p: 2.5"));
+  assert.ok(content.includes("py: 0.5"));
+  assert.ok(content.includes("px: 1.5"));
+  assert.equal(content.includes("pt: 2.5"), false);
+  assert.equal(content.includes("pr: 1.5"), false);
+});
+
+test("deterministic screen rendering applies margin shorthand when explicit IR margin is present", () => {
+  const screen = {
+    id: "margin-shorthand-screen",
+    name: "Margin Shorthand Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "margin-all-equal",
+        name: "Margin All Equal",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 80,
+        margin: { top: 16, right: 16, bottom: 16, left: 16 },
+        children: []
+      },
+      {
+        id: "margin-axis-equal",
+        name: "Margin Axis Equal",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 80,
+        margin: { top: 8, right: 24, bottom: 8, left: 24 },
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("m: 2"));
+  assert.ok(content.includes("my: 1"));
+  assert.ok(content.includes("mx: 3"));
+  assert.equal(content.includes("mt: 2"), false);
+  assert.equal(content.includes("mr: 3"), false);
+});
+
+test("deterministic screen rendering keeps fallback side-specific spacing entries for mixed values", () => {
+  const screen = {
+    id: "spacing-fallback-sides-screen",
+    name: "Spacing Fallback Sides Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "padding-side-specific",
+        name: "Padding Side Specific",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 80,
+        padding: { top: 4, right: 8, bottom: 12, left: 16 },
+        children: []
+      },
+      {
+        id: "margin-side-specific",
+        name: "Margin Side Specific",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 80,
+        margin: { top: 8, right: 12, bottom: 16, left: 20 },
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("pt: 0.5"));
+  assert.ok(content.includes("pr: 1"));
+  assert.ok(content.includes("pb: 1.5"));
+  assert.ok(content.includes("pl: 2"));
+  assert.ok(content.includes("mt: 1"));
+  assert.ok(content.includes("mr: 1.5"));
+  assert.ok(content.includes("mb: 2"));
+  assert.ok(content.includes("ml: 2.5"));
 });
 
 test("generateArtifacts maps borderRadius to theme shape scale in sx", async () => {

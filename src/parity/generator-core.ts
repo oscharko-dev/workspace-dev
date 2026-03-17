@@ -256,6 +256,75 @@ const toSpacingUnitValue = ({
   return normalized;
 };
 
+const toSpacingEdgeUnit = ({
+  value,
+  spacingBase
+}: {
+  value: number | undefined;
+  spacingBase: number;
+}): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return toSpacingUnitValue({ value, spacingBase });
+};
+
+const toBoxSpacingSxEntries = ({
+  values,
+  spacingBase,
+  allKey,
+  xKey,
+  yKey,
+  topKey,
+  rightKey,
+  bottomKey,
+  leftKey
+}: {
+  values:
+    | {
+        top: number;
+        right: number;
+        bottom: number;
+        left: number;
+      }
+    | undefined;
+  spacingBase: number;
+  allKey: string;
+  xKey: string;
+  yKey: string;
+  topKey: string;
+  rightKey: string;
+  bottomKey: string;
+  leftKey: string;
+}): Array<[string, string | number | undefined]> => {
+  if (!values) {
+    return [];
+  }
+
+  const top = toSpacingEdgeUnit({ value: values.top, spacingBase });
+  const right = toSpacingEdgeUnit({ value: values.right, spacingBase });
+  const bottom = toSpacingEdgeUnit({ value: values.bottom, spacingBase });
+  const left = toSpacingEdgeUnit({ value: values.left, spacingBase });
+
+  if (top !== undefined && top === right && right === bottom && bottom === left) {
+    return [[allKey, top]];
+  }
+
+  if (top === bottom && right === left) {
+    return [
+      [yKey, top],
+      [xKey, right]
+    ];
+  }
+
+  return [
+    [topKey, top],
+    [rightKey, right],
+    [bottomKey, bottom],
+    [leftKey, left]
+  ];
+};
+
 const toThemeBorderRadiusValue = ({
   radiusPx,
   tokens
@@ -655,7 +724,9 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
         (element.padding.top > 0 ||
           element.padding.right > 0 ||
           element.padding.bottom > 0 ||
-          element.padding.left > 0))
+          element.padding.left > 0)) ||
+      (element.margin &&
+        (element.margin.top > 0 || element.margin.right > 0 || element.margin.bottom > 0 || element.margin.left > 0))
   );
 };
 
@@ -990,30 +1061,28 @@ const baseLayoutEntries = (
       "gap",
       element.gap && element.gap > 0 ? toSpacingUnitValue({ value: element.gap, spacingBase }) : undefined
     ],
-    [
-      "pt",
-      element.padding && element.padding.top > 0
-        ? toSpacingUnitValue({ value: element.padding.top, spacingBase })
-        : undefined
-    ],
-    [
-      "pr",
-      element.padding && element.padding.right > 0
-        ? toSpacingUnitValue({ value: element.padding.right, spacingBase })
-        : undefined
-    ],
-    [
-      "pb",
-      element.padding && element.padding.bottom > 0
-        ? toSpacingUnitValue({ value: element.padding.bottom, spacingBase })
-        : undefined
-    ],
-    [
-      "pl",
-      element.padding && element.padding.left > 0
-        ? toSpacingUnitValue({ value: element.padding.left, spacingBase })
-        : undefined
-    ],
+    ...toBoxSpacingSxEntries({
+      values: element.padding,
+      spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    }),
+    ...toBoxSpacingSxEntries({
+      values: element.margin,
+      spacingBase,
+      allKey: "m",
+      xKey: "mx",
+      yKey: "my",
+      topKey: "mt",
+      rightKey: "mr",
+      bottomKey: "mb",
+      leftKey: "ml"
+    }),
     ["opacity", normalizeOpacityForSx(element.opacity)],
     ...toPaintSxEntries({
       fillColor: element.fillColor,
@@ -3642,58 +3711,32 @@ const renderSemanticAccordion = (
         ? toSpacingUnitValue({ value: detailsContainer.gap, spacingBase: context.spacingBase })
         : undefined
     ],
-    [
-      "pt",
-      detailsContainer.padding && detailsContainer.padding.top > 0
-        ? toSpacingUnitValue({ value: detailsContainer.padding.top, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pr",
-      detailsContainer.padding && detailsContainer.padding.right > 0
-        ? toSpacingUnitValue({ value: detailsContainer.padding.right, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pb",
-      detailsContainer.padding && detailsContainer.padding.bottom > 0
-        ? toSpacingUnitValue({ value: detailsContainer.padding.bottom, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pl",
-      detailsContainer.padding && detailsContainer.padding.left > 0
-        ? toSpacingUnitValue({ value: detailsContainer.padding.left, spacingBase: context.spacingBase })
-        : undefined
-    ]
+    ...toBoxSpacingSxEntries({
+      values: detailsContainer.padding,
+      spacingBase: context.spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    })
   ]);
 
   const summarySx = sxString([
     ["minHeight", toPxLiteral(summaryRoot.height)],
-    [
-      "pt",
-      summaryRoot.padding && summaryRoot.padding.top > 0
-        ? toSpacingUnitValue({ value: summaryRoot.padding.top, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pr",
-      summaryRoot.padding && summaryRoot.padding.right > 0
-        ? toSpacingUnitValue({ value: summaryRoot.padding.right, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pb",
-      summaryRoot.padding && summaryRoot.padding.bottom > 0
-        ? toSpacingUnitValue({ value: summaryRoot.padding.bottom, spacingBase: context.spacingBase })
-        : undefined
-    ],
-    [
-      "pl",
-      summaryRoot.padding && summaryRoot.padding.left > 0
-        ? toSpacingUnitValue({ value: summaryRoot.padding.left, spacingBase: context.spacingBase })
-        : undefined
-    ]
+    ...toBoxSpacingSxEntries({
+      values: summaryRoot.padding,
+      spacingBase: context.spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    })
   ]);
 
   const accordionSx = sxString([

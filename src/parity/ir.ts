@@ -130,6 +130,10 @@ interface FigmaNode {
   paddingRight?: number;
   paddingBottom?: number;
   paddingLeft?: number;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
   opacity?: number;
   fills?: FigmaPaint[];
   strokes?: FigmaPaint[];
@@ -1465,6 +1469,19 @@ const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: numb
   };
 };
 
+const mapMargin = (node: FigmaNode): { top: number; right: number; bottom: number; left: number } | undefined => {
+  const mappedMargin = {
+    top: node.marginTop ?? 0,
+    right: node.marginRight ?? 0,
+    bottom: node.marginBottom ?? 0,
+    left: node.marginLeft ?? 0
+  };
+  if (mappedMargin.top <= 0 && mappedMargin.right <= 0 && mappedMargin.bottom <= 0 && mappedMargin.left <= 0) {
+    return undefined;
+  }
+  return mappedMargin;
+};
+
 const normalizePlaceholderText = (value: string): string => {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 };
@@ -1865,6 +1882,7 @@ const mapElement = ({
     metrics,
     navigationContext
   });
+  const margin = mapMargin(node);
   const element: ScreenElementIR = {
     id: node.id,
     name: node.name ?? node.type,
@@ -1873,6 +1891,7 @@ const mapElement = ({
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),
+    ...(margin ? { margin } : {}),
     ...(prototypeNavigation ? { prototypeNavigation } : {}),
     ...(variantMapping ? { variantMapping } : {}),
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
