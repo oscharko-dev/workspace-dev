@@ -820,11 +820,11 @@ const extractVariantPropertiesFromComponentProperties = (
   }
   const parsed: Record<string, string> = {};
   for (const [rawKey, propertyValue] of Object.entries(componentProperties)) {
-    const propertyType = typeof propertyValue?.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
+    const propertyType = typeof propertyValue.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
     if (propertyType !== "VARIANT") {
       continue;
     }
-    if (typeof propertyValue?.value !== "string") {
+    if (typeof propertyValue.value !== "string") {
       continue;
     }
     const key = normalizeVariantKey(rawKey);
@@ -972,7 +972,7 @@ const extractDefaultVariantProperties = (
   }
   const properties: Record<string, string> = {};
   for (const [rawKey, definition] of Object.entries(componentPropertyDefinitions)) {
-    const definitionType = typeof definition?.type === "string" ? definition.type.trim().toUpperCase() : "";
+    const definitionType = typeof definition.type === "string" ? definition.type.trim().toUpperCase() : "";
     if (definitionType !== "VARIANT") {
       continue;
     }
