@@ -2087,6 +2087,16 @@ interface InteractiveAccordionModel {
   defaultExpanded: boolean;
 }
 
+interface InteractiveTabsModel {
+  elementId: string;
+  stateId: number;
+}
+
+interface InteractiveDialogModel {
+  elementId: string;
+  stateId: number;
+}
+
 interface IconImportSpec {
   localName: string;
   modulePath: string;
@@ -2135,6 +2145,8 @@ interface RenderContext {
   generationLocale: string;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
+  tabs: InteractiveTabsModel[];
+  dialogs: InteractiveDialogModel[];
   buttons: RenderedButtonModel[];
   activeRenderElements: Set<ScreenElementIR>;
   renderNodeVisitCount: number;
@@ -2375,6 +2387,44 @@ const toStateKey = (element: ScreenElementIR): string => {
   const source = `${element.name}_${element.id}`.toLowerCase();
   const normalized = source.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return normalized.length > 0 ? normalized : "field";
+};
+
+const ensureTabsStateModel = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): InteractiveTabsModel => {
+  const existing = context.tabs.find((candidate) => candidate.elementId === element.id);
+  if (existing) {
+    return existing;
+  }
+  const created: InteractiveTabsModel = {
+    elementId: element.id,
+    stateId: context.tabs.length + 1
+  };
+  context.tabs.push(created);
+  return created;
+};
+
+const ensureDialogStateModel = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): InteractiveDialogModel => {
+  const existing = context.dialogs.find((candidate) => candidate.elementId === element.id);
+  if (existing) {
+    return existing;
+  }
+  const created: InteractiveDialogModel = {
+    elementId: element.id,
+    stateId: context.dialogs.length + 1
+  };
+  context.dialogs.push(created);
+  return created;
 };
 
 const escapeRegExpToken = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -4192,6 +4242,44 @@ const renderChildrenIntoParent = ({
     .join("\n");
 };
 
+const renderNodesIntoParent = ({
+  nodes,
+  parent,
+  depth,
+  context,
+  layoutMode = "NONE"
+}: {
+  nodes: ScreenElementIR[];
+  parent: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+}): string => {
+  const sortedNodes = sortChildren(nodes, layoutMode, {
+    generationLocale: context.generationLocale
+  });
+  return sortedNodes
+    .map((node) =>
+      renderElement(
+        node,
+        depth,
+        {
+          x: parent.x,
+          y: parent.y,
+          width: parent.width,
+          height: parent.height,
+          name: parent.name,
+          fillColor: parent.fillColor,
+          fillGradient: parent.fillGradient,
+          layoutMode: parent.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
+    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+    .join("\n");
+};
+
 const SIMPLE_STACK_GEOMETRY_SX_KEYS = new Set([
   "position",
   "left",
@@ -4378,6 +4466,25 @@ interface RenderedItem {
   node: ScreenElementIR;
 }
 
+interface DetectedTabInterfacePattern {
+  tabStripNode: ScreenElementIR;
+  tabItems: RenderedItem[];
+  panelNodes: ScreenElementIR[];
+}
+
+interface DialogActionModel {
+  id: string;
+  label: string;
+  isPrimary: boolean;
+}
+
+interface DetectedDialogOverlayPattern {
+  panelNode: ScreenElementIR;
+  title: string | undefined;
+  contentNodes: ScreenElementIR[];
+  actionModels: DialogActionModel[];
+}
+
 const NAVIGATION_BAR_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>(["container", "stack", "table"]);
 const NAVIGATION_BAR_TOP_LEVEL_DEPTH = 3;
 const NAVIGATION_BAR_MIN_HEIGHT_PX = 40;
@@ -4388,6 +4495,23 @@ const NAVIGATION_BAR_MIN_RENDERABLE_BOTTOM_ACTIONS = 2;
 const NAVIGATION_BAR_DATA_TABLE_MIN_ROWS = 2;
 const NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS = 2;
 const NAVIGATION_BAR_DATA_TABLE_TEXT_CELL_RATIO_MIN = 0.75;
+const TAB_PATTERN_MIN_ACTIONS = 2;
+const TAB_PATTERN_MAX_ACTIONS = 8;
+const TAB_PATTERN_ROW_CENTER_TOLERANCE_PX = 16;
+const TAB_PATTERN_GAP_TOLERANCE_RATIO = 0.65;
+const TAB_PATTERN_GAP_TOLERANCE_PX = 24;
+const TAB_PATTERN_PANEL_MIN_CONTENT_HEIGHT_PX = 24;
+const TAB_PATTERN_STRIP_NAME_HINTS = ["tab", "tabs", "tab bar", "tabbar"];
+const DIALOG_PATTERN_MIN_WIDTH_RATIO = 0.85;
+const DIALOG_PATTERN_MIN_HEIGHT_RATIO = 0.55;
+const DIALOG_PATTERN_PANEL_MIN_WIDTH_RATIO = 0.3;
+const DIALOG_PATTERN_PANEL_MAX_WIDTH_RATIO = 0.95;
+const DIALOG_PATTERN_PANEL_MIN_HEIGHT_RATIO = 0.2;
+const DIALOG_PATTERN_PANEL_MAX_HEIGHT_RATIO = 0.95;
+const DIALOG_PATTERN_CENTER_TOLERANCE_RATIO = 0.2;
+const DIALOG_PATTERN_CENTER_TOLERANCE_PX = 80;
+const DIALOG_ACTION_HINTS = ["ok", "confirm", "save", "cancel", "discard", "apply", "close", "bestätigen", "speichern", "abbrechen"];
+const DIALOG_CLOSE_HINTS = ["close", "dismiss", "cancel", "x", "schließen", "abbrechen"];
 
 interface ListRowAnalysis {
   node: ScreenElementIR;
@@ -4896,6 +5020,685 @@ const isRenderableBottomNavigationAction = ({
     return true;
   }
   return hasMeaningfulTextDescendants({ element: action.node, context });
+};
+
+const isRenderableTabAction = ({
+  action,
+  context
+}: {
+  action: RenderedItem;
+  context: RenderContext;
+}): boolean => {
+  if (action.label.trim().length === 0) {
+    return false;
+  }
+  if (action.node.type === "text" || action.node.type === "tab" || action.node.type === "button") {
+    return true;
+  }
+  if (action.node.prototypeNavigation) {
+    return true;
+  }
+  return hasMeaningfulTextDescendants({ element: action.node, context });
+};
+
+const hasHorizontalRowAlignment = ({
+  nodes,
+  layoutMode
+}: {
+  nodes: ScreenElementIR[];
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+}): boolean => {
+  if (nodes.length < TAB_PATTERN_MIN_ACTIONS) {
+    return false;
+  }
+  if (layoutMode === "HORIZONTAL") {
+    return true;
+  }
+  const centerYValues = nodes
+    .map((node) => {
+      const y = toFiniteNumber(node.y);
+      const height = toFiniteNumber(node.height);
+      if (y === undefined) {
+        return undefined;
+      }
+      return y + (height ?? 0) / 2;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (centerYValues.length !== nodes.length) {
+    return false;
+  }
+  const minCenterY = Math.min(...centerYValues);
+  const maxCenterY = Math.max(...centerYValues);
+  return maxCenterY - minCenterY <= TAB_PATTERN_ROW_CENTER_TOLERANCE_PX;
+};
+
+const hasUniformHorizontalSpacing = (nodes: ScreenElementIR[]): boolean => {
+  const sortedNodes = [...nodes].sort((left, right) => (left.x ?? 0) - (right.x ?? 0));
+  const centerXValues = sortedNodes
+    .map((node) => {
+      const x = toFiniteNumber(node.x);
+      const width = toFiniteNumber(node.width);
+      if (x === undefined) {
+        return undefined;
+      }
+      return x + (width ?? 0) / 2;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (centerXValues.length !== sortedNodes.length) {
+    return false;
+  }
+  const gaps = centerXValues.slice(1).map((centerX, index) => centerX - centerXValues[index]!);
+  if (gaps.length === 0 || gaps.some((gap) => gap <= 0)) {
+    return false;
+  }
+  if (gaps.length === 1) {
+    return true;
+  }
+  const averageGap = gaps.reduce((sum, value) => sum + value, 0) / gaps.length;
+  const maxDelta = Math.max(...gaps.map((gap) => Math.abs(gap - averageGap)));
+  return maxDelta <= Math.max(TAB_PATTERN_GAP_TOLERANCE_PX, averageGap * TAB_PATTERN_GAP_TOLERANCE_RATIO);
+};
+
+const hasTabNameHint = (element: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return TAB_PATTERN_STRIP_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+};
+
+const hasUnderlineIndicatorInTabStrip = ({
+  tabStripNode,
+  tabActionNodeIds
+}: {
+  tabStripNode: ScreenElementIR;
+  tabActionNodeIds: Set<string>;
+}): boolean => {
+  const stripY = toFiniteNumber(tabStripNode.y);
+  const stripHeight = toFiniteNumber(tabStripNode.height);
+  const stripWidth = toFiniteNumber(tabStripNode.width);
+  const stripBottom = stripY !== undefined && stripHeight !== undefined ? stripY + stripHeight : undefined;
+  return (tabStripNode.children ?? []).some((candidate) => {
+    if (tabActionNodeIds.has(candidate.id)) {
+      return false;
+    }
+    const normalizedName = normalizeInputSemanticText(candidate.name);
+    if (normalizedName.includes("indicator") || normalizedName.includes("underline")) {
+      return true;
+    }
+    if (isDividerLikeListSeparator(candidate)) {
+      const candidateHeight = toFiniteNumber(candidate.height);
+      const candidateWidth = toFiniteNumber(candidate.width);
+      const candidateY = toFiniteNumber(candidate.y);
+      if (
+        stripBottom === undefined ||
+        candidateHeight === undefined ||
+        candidateWidth === undefined ||
+        candidateY === undefined
+      ) {
+        return false;
+      }
+      if (stripWidth !== undefined && candidateWidth >= stripWidth * 0.9) {
+        return false;
+      }
+      return Math.abs(stripBottom - (candidateY + candidateHeight)) <= 12;
+    }
+    const candidateHeight = toFiniteNumber(candidate.height);
+    const candidateWidth = toFiniteNumber(candidate.width);
+    const candidateY = toFiniteNumber(candidate.y);
+    if (
+      candidateHeight === undefined ||
+      candidateWidth === undefined ||
+      candidateY === undefined ||
+      !candidate.fillColor ||
+      candidateHeight > 4
+    ) {
+      return false;
+    }
+    if (stripWidth !== undefined && candidateWidth >= stripWidth * 0.9) {
+      return false;
+    }
+    if (stripBottom === undefined) {
+      return false;
+    }
+    return Math.abs(stripBottom - (candidateY + candidateHeight)) <= 12;
+  });
+};
+
+const hasTabActiveVisualSignal = ({
+  tabStripNode,
+  tabItems
+}: {
+  tabStripNode: ScreenElementIR;
+  tabItems: RenderedItem[];
+}): boolean => {
+  const colorSignals = new Set<string>();
+  const fontWeights: number[] = [];
+  for (const tabItem of tabItems) {
+    const textNode = collectTextNodes(tabItem.node)[0];
+    const color = normalizeHexColor(firstTextColor(tabItem.node) ?? tabItem.node.fillColor);
+    if (color) {
+      colorSignals.add(color);
+    }
+    const fontWeight = toFiniteNumber(textNode?.fontWeight ?? tabItem.node.fontWeight);
+    if (fontWeight !== undefined) {
+      fontWeights.push(fontWeight);
+    }
+  }
+  const hasColorDelta = colorSignals.size >= 2;
+  const hasWeightDelta = fontWeights.length >= 2 && Math.max(...fontWeights) - Math.min(...fontWeights) >= 120;
+  const hasUnderlineSignal = hasUnderlineIndicatorInTabStrip({
+    tabStripNode,
+    tabActionNodeIds: new Set(tabItems.map((tabItem) => tabItem.node.id))
+  });
+  return hasColorDelta || hasWeightDelta || hasUnderlineSignal;
+};
+
+const toTabStripPatternCandidate = ({
+  tabStripNode,
+  context
+}: {
+  tabStripNode: ScreenElementIR;
+  context: RenderContext;
+}): { tabItems: RenderedItem[] } | undefined => {
+  const tabItems = collectRenderedItems(tabStripNode, context.generationLocale).filter((action) =>
+    isRenderableTabAction({
+      action,
+      context
+    })
+  );
+  if (tabItems.length < TAB_PATTERN_MIN_ACTIONS || tabItems.length > TAB_PATTERN_MAX_ACTIONS) {
+    return undefined;
+  }
+  const tabActionNodes = tabItems.map((tabItem) => tabItem.node);
+  if (
+    !hasHorizontalRowAlignment({
+      nodes: tabActionNodes,
+      layoutMode: tabStripNode.layoutMode ?? "NONE"
+    })
+  ) {
+    return undefined;
+  }
+  if (!hasUniformHorizontalSpacing(tabActionNodes)) {
+    return undefined;
+  }
+  const tabActionNodeIds = new Set(tabItems.map((tabItem) => tabItem.node.id));
+  const hasUnderlineSignal = hasUnderlineIndicatorInTabStrip({
+    tabStripNode,
+    tabActionNodeIds
+  });
+  const hasTabHintSignal = hasTabNameHint(tabStripNode) || tabItems.some((tabItem) => hasTabNameHint(tabItem.node));
+  const hasInteractiveTabSignal = tabItems.some((tabItem) => {
+    if (tabItem.node.type === "button" || tabItem.node.prototypeNavigation) {
+      return true;
+    }
+    return hasInteractiveDescendants({
+      element: tabItem.node,
+      context
+    });
+  });
+  if (!hasTabHintSignal && !hasInteractiveTabSignal && !hasUnderlineSignal) {
+    return undefined;
+  }
+  if (
+    !hasTabActiveVisualSignal({
+      tabStripNode,
+      tabItems
+    })
+  ) {
+    return undefined;
+  }
+  return { tabItems };
+};
+
+const resolveTabPanelNodes = ({
+  hostElement,
+  tabStripNode,
+  tabCount,
+  context
+}: {
+  hostElement: ScreenElementIR;
+  tabStripNode: ScreenElementIR;
+  tabCount: number;
+  context: RenderContext;
+}): ScreenElementIR[] => {
+  if (hostElement.id === tabStripNode.id) {
+    return [];
+  }
+  const siblings = sortChildren(hostElement.children ?? [], hostElement.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  }).filter((child) => child.id !== tabStripNode.id && !isDividerLikeListSeparator(child));
+  if (siblings.length !== tabCount) {
+    return [];
+  }
+
+  const stripY = toFiniteNumber(tabStripNode.y);
+  const stripHeight = toFiniteNumber(tabStripNode.height);
+  const stripBottom = stripY !== undefined && stripHeight !== undefined ? stripY + stripHeight : undefined;
+  const hasInvalidPanels = siblings.some((candidate) => {
+    const hasMeaningfulContent =
+      hasMeaningfulTextDescendants({
+        element: candidate,
+        context
+      }) || (candidate.children?.length ?? 0) > 0;
+    if (!hasMeaningfulContent) {
+      return true;
+    }
+    const candidateHeight = toFiniteNumber(candidate.height);
+    if (candidateHeight !== undefined && candidateHeight < TAB_PATTERN_PANEL_MIN_CONTENT_HEIGHT_PX) {
+      return true;
+    }
+    if (stripBottom === undefined) {
+      return false;
+    }
+    const candidateY = toFiniteNumber(candidate.y);
+    return candidateY !== undefined && candidateY < stripBottom - 8;
+  });
+  if (hasInvalidPanels) {
+    return [];
+  }
+  return siblings;
+};
+
+const detectTabInterfacePattern = ({
+  element,
+  depth,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+}): DetectedTabInterfacePattern | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const dataTableLike = isLikelyStructuredDataTable({
+    element,
+    generationLocale: context.generationLocale
+  });
+
+  const directTabStripCandidate = toTabStripPatternCandidate({
+    tabStripNode: element,
+    context
+  });
+  if (directTabStripCandidate) {
+    const hasPrimarySignal =
+      hasTabNameHint(element) ||
+      hasNavigationNameHintInSubtree(element) ||
+      directTabStripCandidate.tabItems.some((tabItem) => tabItem.node.prototypeNavigation);
+    if (dataTableLike && !hasPrimarySignal) {
+      return undefined;
+    }
+    return {
+      tabStripNode: element,
+      tabItems: directTabStripCandidate.tabItems,
+      panelNodes: []
+    };
+  }
+
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  for (const child of sortedChildren) {
+    const stripCandidate = toTabStripPatternCandidate({
+      tabStripNode: child,
+      context
+    });
+    if (!stripCandidate) {
+      continue;
+    }
+
+    const hasPrimarySignal =
+      hasTabNameHint(element) ||
+      hasTabNameHint(child) ||
+      stripCandidate.tabItems.some((tabItem) => tabItem.node.prototypeNavigation) ||
+      hasNavigationNameHintInSubtree(child);
+    if (dataTableLike && !hasPrimarySignal) {
+      continue;
+    }
+
+    const panelNodes = resolveTabPanelNodes({
+      hostElement: element,
+      tabStripNode: child,
+      tabCount: stripCandidate.tabItems.length,
+      context
+    });
+    return {
+      tabStripNode: child,
+      tabItems: stripCandidate.tabItems,
+      panelNodes
+    };
+  }
+
+  return undefined;
+};
+
+const toHexColorAlpha = (value: string | undefined): number | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const payload = normalized.slice(1);
+  if (payload.length !== 8) {
+    return undefined;
+  }
+  const alpha = Number.parseInt(payload.slice(6, 8), 16);
+  if (!Number.isFinite(alpha)) {
+    return undefined;
+  }
+  return alpha / 255;
+};
+
+const hasSemiTransparentOverlaySignal = (element: ScreenElementIR): boolean => {
+  const opacity = toFiniteNumber(element.opacity);
+  if (opacity !== undefined && opacity < 0.96) {
+    return true;
+  }
+  const fillAlpha = toHexColorAlpha(element.fillColor);
+  return fillAlpha !== undefined && fillAlpha < 0.96;
+};
+
+const collectSubtreeElements = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element, ...(element.children ?? []).flatMap((child) => collectSubtreeElements(child, visited))];
+};
+
+const toElementBounds = (
+  element: ScreenElementIR
+):
+  | {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      centerX: number;
+      centerY: number;
+    }
+  | undefined => {
+  const x = toFiniteNumber(element.x);
+  const y = toFiniteNumber(element.y);
+  const width = toFiniteNumber(element.width);
+  const height = toFiniteNumber(element.height);
+  if (x === undefined || y === undefined || width === undefined || height === undefined || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return {
+    x,
+    y,
+    width,
+    height,
+    centerX: x + width / 2,
+    centerY: y + height / 2
+  };
+};
+
+const hasDialogHint = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  const normalized = normalizeInputSemanticText(value);
+  return normalized.includes("dialog") || normalized.includes("modal") || normalized.includes("overlay");
+};
+
+const isDialogActionLikeNode = ({
+  node,
+  context
+}: {
+  node: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (node.type === "button") {
+    return true;
+  }
+  if (node.prototypeNavigation) {
+    return true;
+  }
+  const semanticSignals = [node.name, firstText(node) ?? node.text ?? ""]
+    .map((value) => normalizeInputSemanticText(value))
+    .filter((value) => value.length > 0);
+  if (semanticSignals.some((signal) => DIALOG_ACTION_HINTS.some((hint) => signal.includes(hint)))) {
+    return true;
+  }
+  return hasInteractiveDescendants({ element: node, context });
+};
+
+const isDialogCloseControlNode = ({
+  node,
+  panelNode
+}: {
+  node: ScreenElementIR;
+  panelNode: ScreenElementIR;
+}): boolean => {
+  const semanticSignals = [node.name, firstText(node) ?? node.text ?? ""]
+    .map((value) => normalizeInputSemanticText(value))
+    .filter((value) => value.length > 0);
+  const hasCloseHint = semanticSignals.some((signal) => DIALOG_CLOSE_HINTS.some((hint) => signal.includes(hint)));
+  const isControlLike =
+    node.type === "button" || isIconLikeNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node));
+  if (!hasCloseHint && !isControlLike) {
+    return false;
+  }
+
+  const panelBounds = toElementBounds(panelNode);
+  const nodeBounds = toElementBounds(node);
+  if (!panelBounds || !nodeBounds) {
+    return hasCloseHint;
+  }
+  const isTopRight =
+    nodeBounds.centerX >= panelBounds.x + panelBounds.width * 0.58 &&
+    nodeBounds.centerY <= panelBounds.y + panelBounds.height * 0.35;
+  return hasCloseHint || (isControlLike && isTopRight);
+};
+
+const resolveDialogActionModels = ({
+  panelNode,
+  context
+}: {
+  panelNode: ScreenElementIR;
+  context: RenderContext;
+}): {
+  actionModels: DialogActionModel[];
+  actionHostNodeId?: string;
+} => {
+  const panelChildren = sortChildren(panelNode.children ?? [], panelNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  const bottomToTopChildren = [...panelChildren].reverse();
+  for (const child of bottomToTopChildren) {
+    if (child.layoutMode !== "HORIZONTAL") {
+      continue;
+    }
+    const actionItems = collectRenderedItems(child, context.generationLocale).filter((item) =>
+      isDialogActionLikeNode({
+        node: item.node,
+        context
+      })
+    );
+    if (actionItems.length < TAB_PATTERN_MIN_ACTIONS) {
+      continue;
+    }
+    return {
+      actionHostNodeId: child.id,
+      actionModels: actionItems.map((item, index) => ({
+        id: item.id,
+        label: item.label,
+        isPrimary: index === actionItems.length - 1
+      }))
+    };
+  }
+
+  const directActionNodes = panelChildren.filter((child) =>
+    isDialogActionLikeNode({
+      node: child,
+      context
+    })
+  );
+  if (directActionNodes.length === 0) {
+    return { actionModels: [] };
+  }
+  return {
+    actionModels: directActionNodes.map((node, index) => ({
+      id: node.id,
+      label: firstText(node)?.trim() || node.name || `Action ${index + 1}`,
+      isPrimary: index === directActionNodes.length - 1
+    }))
+  };
+};
+
+const resolveCenteredDialogPanelNode = ({
+  overlayNode,
+  context
+}: {
+  overlayNode: ScreenElementIR;
+  context: RenderContext;
+}): ScreenElementIR | undefined => {
+  const overlayBounds = toElementBounds(overlayNode);
+  if (!overlayBounds) {
+    return undefined;
+  }
+  const sortedChildren = sortChildren(overlayNode.children ?? [], overlayNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  let bestMatch: {
+    node: ScreenElementIR;
+    score: number;
+  } | undefined;
+  for (const child of sortedChildren) {
+    const childBounds = toElementBounds(child);
+    if (!childBounds) {
+      continue;
+    }
+    const widthRatio = childBounds.width / overlayBounds.width;
+    const heightRatio = childBounds.height / overlayBounds.height;
+    if (
+      widthRatio < DIALOG_PATTERN_PANEL_MIN_WIDTH_RATIO ||
+      widthRatio > DIALOG_PATTERN_PANEL_MAX_WIDTH_RATIO ||
+      heightRatio < DIALOG_PATTERN_PANEL_MIN_HEIGHT_RATIO ||
+      heightRatio > DIALOG_PATTERN_PANEL_MAX_HEIGHT_RATIO
+    ) {
+      continue;
+    }
+
+    const centerDeltaX = Math.abs(childBounds.centerX - overlayBounds.centerX);
+    const centerDeltaY = Math.abs(childBounds.centerY - overlayBounds.centerY);
+    const maxCenterDeltaX = Math.max(DIALOG_PATTERN_CENTER_TOLERANCE_PX, overlayBounds.width * DIALOG_PATTERN_CENTER_TOLERANCE_RATIO);
+    const maxCenterDeltaY = Math.max(DIALOG_PATTERN_CENTER_TOLERANCE_PX, overlayBounds.height * DIALOG_PATTERN_CENTER_TOLERANCE_RATIO);
+    if (centerDeltaX > maxCenterDeltaX || centerDeltaY > maxCenterDeltaY) {
+      continue;
+    }
+
+    const hasVisualSignal = hasVisualStyle(child) || Boolean(child.fillColor || child.strokeColor || child.elevation);
+    if (!hasVisualSignal) {
+      continue;
+    }
+    const hasContentSignal =
+      hasMeaningfulTextDescendants({
+        element: child,
+        context
+      }) || (child.children?.length ?? 0) > 0;
+    if (!hasContentSignal) {
+      continue;
+    }
+    const score =
+      centerDeltaX + centerDeltaY - Math.min(childBounds.width / overlayBounds.width, childBounds.height / overlayBounds.height);
+    if (!bestMatch || score < bestMatch.score) {
+      bestMatch = {
+        node: child,
+        score
+      };
+    }
+  }
+  return bestMatch?.node;
+};
+
+const detectDialogOverlayPattern = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): DetectedDialogOverlayPattern | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const elementWidth = toFiniteNumber(element.width);
+  const elementHeight = toFiniteNumber(element.height);
+  const parentWidth = toFiniteNumber(parent.width);
+  const parentHeight = toFiniteNumber(parent.height);
+  if (
+    elementWidth === undefined ||
+    elementHeight === undefined ||
+    parentWidth === undefined ||
+    parentHeight === undefined ||
+    parentWidth <= 0 ||
+    parentHeight <= 0
+  ) {
+    return undefined;
+  }
+  if (elementWidth / parentWidth < DIALOG_PATTERN_MIN_WIDTH_RATIO || elementHeight / parentHeight < DIALOG_PATTERN_MIN_HEIGHT_RATIO) {
+    return undefined;
+  }
+  const hasOverlaySignal = hasSemiTransparentOverlaySignal(element);
+  if (!hasOverlaySignal) {
+    return undefined;
+  }
+
+  const panelNode = resolveCenteredDialogPanelNode({
+    overlayNode: element,
+    context
+  });
+  if (!panelNode) {
+    return undefined;
+  }
+
+  const extraction = resolveDialogActionModels({
+    panelNode,
+    context
+  });
+  const closeControls = collectSubtreeElements(panelNode).filter((candidate) =>
+    isDialogCloseControlNode({
+      node: candidate,
+      panelNode
+    })
+  );
+  const hasCloseControl = closeControls.length > 0;
+  const hasDialogSemanticHint = hasDialogHint(element.name) || hasDialogHint(panelNode.name);
+  if (!hasDialogSemanticHint && !hasCloseControl && extraction.actionModels.length < TAB_PATTERN_MIN_ACTIONS) {
+    return undefined;
+  }
+
+  const contentNodes = sortChildren(panelNode.children ?? [], panelNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  }).filter((child) => child.id !== extraction.actionHostNodeId && !closeControls.some((closeNode) => closeNode.id === child.id));
+  const hasContentSignal =
+    contentNodes.some((node) =>
+      hasMeaningfulTextDescendants({
+        element: node,
+        context
+      })
+    ) || hasMeaningfulTextDescendants({ element: panelNode, context });
+  if (!hasContentSignal) {
+    return undefined;
+  }
+  const title = firstText(contentNodes[0] ?? panelNode)?.trim();
+  return {
+    panelNode,
+    title,
+    contentNodes,
+    actionModels: extraction.actionModels
+  };
 };
 
 const detectNavigationBarPattern = ({
@@ -5566,31 +6369,142 @@ ${indent}  </Toolbar>
 ${indent}</AppBar>`;
 };
 
-const renderTabs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
-  const tabs = collectRenderedItems(element, context.generationLocale);
-  if (tabs.length === 0) {
+const renderTabs = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext,
+  detectedPattern?: DetectedTabInterfacePattern
+): string | null => {
+  const resolvedPattern = detectedPattern;
+  const tabItems =
+    resolvedPattern?.tabItems ??
+    collectRenderedItems(element, context.generationLocale).filter((action) =>
+      isRenderableTabAction({
+        action,
+        context
+      })
+    );
+  if (tabItems.length === 0) {
     return renderContainer(element, depth, parent, context);
   }
+
+  const tabsStateModel = ensureTabsStateModel({
+    element,
+    context
+  });
+  const tabValueVar = `tabValue${tabsStateModel.stateId}`;
+  const tabChangeHandlerVar = `handleTabChange${tabsStateModel.stateId}`;
+  const tabStripNode = resolvedPattern?.tabStripNode ?? element;
+  const panelNodes = resolvedPattern?.panelNodes ?? [];
+
   registerMuiImports(context, "Tabs", "Tab");
+  if (panelNodes.length === tabItems.length && panelNodes.length > 0) {
+    registerMuiImports(context, "Box");
+  }
   const indent = "  ".repeat(depth);
   const sx = toElementSx({
-    element,
+    element: tabStripNode,
     parent,
     context
   });
-  const renderedTabs = tabs
+  const renderedTabs = tabItems
     .map((tab, index) => {
       const navigation = resolvePrototypeNavigationBinding({ element: tab.node, context });
       const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
       return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}}${linkProps} />`;
     })
     .join("\n");
-  return `${indent}<Tabs value={0} sx={{ ${sx} }}>
+  const renderedPanels =
+    panelNodes.length === tabItems.length && panelNodes.length > 0
+      ? panelNodes
+          .map((panelNode, index) => {
+            const panelContent =
+              renderElement(
+                panelNode,
+                depth + 2,
+                {
+                  x: element.x,
+                  y: element.y,
+                  width: element.width,
+                  height: element.height,
+                  name: element.name,
+                  fillColor: element.fillColor,
+                  fillGradient: element.fillGradient,
+                  layoutMode: element.layoutMode ?? "NONE"
+                },
+                context
+              ) ?? `${indent}    <Box />`;
+            return `${indent}  <Box key={${literal(panelNode.id)}} role="tabpanel" hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
+${panelContent}
+${indent}  </Box>`;
+          })
+          .join("\n")
+      : "";
+  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} sx={{ ${sx} }}>
 ${renderedTabs}
-${indent}</Tabs>`;
+${indent}</Tabs>${renderedPanels ? `\n${renderedPanels}` : ""}`;
 };
 
-const renderDialog = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+const renderDialog = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext,
+  detectedPattern?: DetectedDialogOverlayPattern
+): string | null => {
+  const dialogStateModel = ensureDialogStateModel({
+    element,
+    context
+  });
+  const dialogOpenVar = `isDialogOpen${dialogStateModel.stateId}`;
+  const dialogCloseHandlerVar = `handleDialogClose${dialogStateModel.stateId}`;
+  const indent = "  ".repeat(depth);
+
+  if (detectedPattern) {
+    registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
+    if (detectedPattern.actionModels.length > 0) {
+      registerMuiImports(context, "DialogActions", "Button");
+    }
+    const sx = toElementSx({
+      element: detectedPattern.panelNode,
+      parent: {
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        name: element.name,
+        fillColor: element.fillColor,
+        fillGradient: element.fillGradient,
+        layoutMode: element.layoutMode ?? "NONE"
+      },
+      context
+    });
+    const renderedContent = renderNodesIntoParent({
+      nodes: detectedPattern.contentNodes,
+      parent: detectedPattern.panelNode,
+      depth: depth + 2,
+      context,
+      layoutMode: detectedPattern.panelNode.layoutMode ?? "NONE"
+    });
+    const contentBlock = renderedContent.trim()
+      ? `${indent}  <DialogContent>\n${renderedContent}\n${indent}  </DialogContent>`
+      : `${indent}  <DialogContent />`;
+    const renderedActions =
+      detectedPattern.actionModels.length > 0
+        ? detectedPattern.actionModels
+            .map((actionModel) => {
+              const variantProp = actionModel.isPrimary ? ' variant="contained"' : "";
+              return `${indent}    <Button key={${literal(actionModel.id)}} onClick={${dialogCloseHandlerVar}}${variantProp}>{${literal(actionModel.label)}}</Button>`;
+            })
+            .join("\n")
+        : "";
+    const actionsBlock = renderedActions ? `\n${indent}  <DialogActions>\n${renderedActions}\n${indent}  </DialogActions>` : "";
+    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${detectedPattern.title ? `${indent}  <DialogTitle>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
+${indent}</Dialog>`;
+  }
+
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 2,
@@ -5601,7 +6515,6 @@ const renderDialog = (element: ScreenElementIR, depth: number, parent: VirtualPa
     return renderContainer(element, depth, parent, context);
   }
   registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
-  const indent = "  ".repeat(depth);
   const sx = toElementSx({
     element,
     parent,
@@ -5610,7 +6523,7 @@ const renderDialog = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
     : `${indent}  <DialogContent />`;
-  return `${indent}<Dialog open sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
 ${title ? `${indent}  <DialogTitle>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
 ${indent}</Dialog>`;
 };
@@ -6297,6 +7210,25 @@ const renderElement = (
       return renderNavigation(element, depth, parent, context);
     }
 
+    const tabInterfacePattern = detectTabInterfacePattern({
+      element,
+      depth,
+      context
+    });
+    if (tabInterfacePattern) {
+      return renderTabs(element, depth, parent, context, tabInterfacePattern);
+    }
+
+    const dialogOverlayPattern = detectDialogOverlayPattern({
+      element,
+      depth,
+      parent,
+      context
+    });
+    if (dialogOverlayPattern) {
+      return renderDialog(element, depth, parent, context, dialogOverlayPattern);
+    }
+
     switch (element.type) {
       case "text":
         return renderText(element, depth, parent, context);
@@ -6499,6 +7431,8 @@ const fallbackScreenFile = ({
     generationLocale: resolvedGenerationLocale,
     fields: [],
     accordions: [],
+    tabs: [],
+    dialogs: [],
     buttons: [],
     activeRenderElements: new Set<ScreenElementIR>(),
     renderNodeVisitCount: 0,
@@ -6768,10 +7702,41 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   setAccordionState((previous) => ({ ...previous, [accordionKey]: expanded }));
 };`
     : "";
-  const stateBlock = [submitButtonDeclaration, fieldStateBlock, accordionStateBlock]
+  const tabsStateBlock =
+    renderContext.tabs.length > 0
+      ? renderContext.tabs
+          .map((tabModel) => {
+            const tabValueVar = `tabValue${tabModel.stateId}`;
+            const tabSetterVar = `setTabValue${tabModel.stateId}`;
+            const tabChangeHandlerVar = `handleTabChange${tabModel.stateId}`;
+            return `const [${tabValueVar}, ${tabSetterVar}] = useState<number>(0);
+
+const ${tabChangeHandlerVar} = (_event: unknown, newValue: number): void => {
+  ${tabSetterVar}(newValue);
+};`;
+          })
+          .join("\n\n")
+      : "";
+  const dialogsStateBlock =
+    renderContext.dialogs.length > 0
+      ? renderContext.dialogs
+          .map((dialogModel) => {
+            const dialogOpenVar = `isDialogOpen${dialogModel.stateId}`;
+            const dialogSetterVar = `setIsDialogOpen${dialogModel.stateId}`;
+            const dialogCloseHandlerVar = `handleDialogClose${dialogModel.stateId}`;
+            return `const [${dialogOpenVar}, ${dialogSetterVar}] = useState<boolean>(true);
+
+const ${dialogCloseHandlerVar} = (): void => {
+  ${dialogSetterVar}(false);
+};`;
+          })
+          .join("\n\n")
+      : "";
+  const stateBlock = [submitButtonDeclaration, fieldStateBlock, accordionStateBlock, tabsStateBlock, dialogsStateBlock]
     .filter((chunk) => chunk.length > 0)
     .join("\n\n");
-  const hasStatefulElements = hasInteractiveFields || hasInteractiveAccordions;
+  const hasStatefulElements =
+    hasInteractiveFields || hasInteractiveAccordions || renderContext.tabs.length > 0 || renderContext.dialogs.length > 0;
   const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
 
   const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
