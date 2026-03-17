@@ -138,6 +138,7 @@ workspace-dev start [options]
 - `--figma-screen-element-max-depth <n>` (default `14`)
 - `--brand <derived|sparkasse>` (default `derived`)
 - `--generation-locale <locale>` (default `de-DE`)
+- `--router <browser|hash>` (default `browser`)
 - `--command-timeout-ms <ms>` (default `900000`)
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
@@ -166,6 +167,7 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH`
 - `FIGMAPIPE_WORKSPACE_BRAND`
 - `FIGMAPIPE_WORKSPACE_GENERATION_LOCALE`
+- `FIGMAPIPE_WORKSPACE_ROUTER`
 - `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
 - `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`

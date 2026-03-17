@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.9.0
+ * Contract version: 2.10.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -16,6 +16,9 @@ export type WorkspaceLlmCodegenMode = "deterministic";
 
 /** Theme brand policy applied during IR token derivation. */
 export type WorkspaceBrandTheme = "derived" | "sparkasse";
+
+/** Router mode for generated React application shells. */
+export type WorkspaceRouterMode = "browser" | "hash";
 
 /** Runtime status values for asynchronous workspace jobs. */
 export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed";
@@ -75,6 +78,8 @@ export interface WorkspaceStartOptions {
   brandTheme?: WorkspaceBrandTheme;
   /** Locale used for deterministic select-option number derivation. Default: "de-DE" */
   generationLocale?: string;
+  /** Router mode for generated App.tsx shell. Default: "browser" */
+  routerMode?: WorkspaceRouterMode;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
   /** Run static UI validation in validate.project. Default: true */
@@ -232,4 +237,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.9.0" as const;
+export const CONTRACT_VERSION = "2.10.0" as const;

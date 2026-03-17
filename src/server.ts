@@ -100,6 +100,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       : {}),
     ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
     ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
+    ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
     ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),

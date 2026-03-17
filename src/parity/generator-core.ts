@@ -18,6 +18,7 @@ import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
+import type { WorkspaceRouterMode } from "../contracts/index.js";
 
 interface GenerateArtifactsInput {
   projectDir: string;
@@ -26,6 +27,7 @@ interface GenerateArtifactsInput {
   iconMapFilePath?: string;
   imageAssetMap?: Record<string, string>;
   generationLocale?: string;
+  routerMode?: WorkspaceRouterMode;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
   onLog: (message: string) => void;
@@ -231,6 +233,7 @@ const toPercentLiteralFromRatio = (ratio: number | undefined): string | undefine
 
 const DEFAULT_SPACING_BASE = 8;
 const REM_BASE = 16;
+const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 
 const normalizeSpacingBase = (value: number | undefined): number => {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -7815,27 +7818,54 @@ export const createDeterministicScreenFile = (
   }).file;
 };
 
-export const createDeterministicAppFile = (screens: ScreenIR[]): GeneratedFile => {
+export const createDeterministicAppFile = (
+  screens: ScreenIR[],
+  options?: {
+    routerMode?: WorkspaceRouterMode;
+  }
+): GeneratedFile => {
   const identitiesByScreenId = buildScreenArtifactIdentities(screens);
   return {
     path: "src/App.tsx",
     content: makeAppFile({
       screens,
-      identitiesByScreenId
+      identitiesByScreenId,
+      ...(options?.routerMode !== undefined ? { routerMode: options.routerMode } : {})
     })
   };
 };
 
 const makeAppFile = ({
   screens,
-  identitiesByScreenId = buildScreenArtifactIdentities(screens)
+  identitiesByScreenId = buildScreenArtifactIdentities(screens),
+  routerMode = DEFAULT_ROUTER_MODE
 }: {
   screens: ScreenIR[];
   identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
+  routerMode?: WorkspaceRouterMode;
 }): string => {
   const lazyScreens = screens.slice(1);
   const hasLazyRoutes = lazyScreens.length > 0;
   const reactImport = hasLazyRoutes ? 'import { Suspense, lazy } from "react";' : 'import { Suspense } from "react";';
+  const resolvedRouterMode: WorkspaceRouterMode = routerMode === "hash" ? "hash" : "browser";
+  const routerComponentName = resolvedRouterMode === "hash" ? "HashRouter" : "BrowserRouter";
+  const routerOpenTag = resolvedRouterMode === "hash" ? "<HashRouter>" : "<BrowserRouter basename={browserBasename}>";
+  const routerCloseTag = resolvedRouterMode === "hash" ? "</HashRouter>" : "</BrowserRouter>";
+  const browserBasenameBlock =
+    resolvedRouterMode === "browser"
+      ? `
+const resolveBrowserBasename = (): string | undefined => {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const reproMatch = window.location.pathname.match(/^\\/workspace\\/repros\\/[^/]+/);
+  return reproMatch?.[0];
+};
+
+const browserBasename = resolveBrowserBasename();
+`
+      : "";
 
   const eagerImports = screens
     .slice(0, 1)
@@ -7876,7 +7906,7 @@ const makeAppFile = ({
 
   return `${reactImport}
 import { Box, CircularProgress } from "@mui/material";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
 ${eagerImports}
 ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
 
@@ -7885,10 +7915,11 @@ const routeLoadingFallback = (
     <CircularProgress size={32} />
   </Box>
 );
+${browserBasenameBlock}
 
 export default function App() {
   return (
-    <HashRouter>
+    ${routerOpenTag}
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
 ${routes}
@@ -7896,7 +7927,7 @@ ${routes}
           <Route path="*" element={<Navigate to="${firstRoute}" replace />} />
         </Routes>
       </Suspense>
-    </HashRouter>
+    ${routerCloseTag}
   );
 }
 `;
@@ -7934,6 +7965,7 @@ export const generateArtifacts = async ({
   iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
   imageAssetMap = {},
   generationLocale,
+  routerMode,
   llmModelName,
   llmCodegenMode,
   onLog
@@ -8113,7 +8145,8 @@ export const generateArtifacts = async ({
     path.join(projectDir, "src", "App.tsx"),
     makeAppFile({
       screens: ir.screens,
-      identitiesByScreenId
+      identitiesByScreenId,
+      ...(routerMode !== undefined ? { routerMode } : {})
     }),
     "utf-8"
   );

@@ -23,6 +23,15 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.10.0] - 2026-03-17
+
+### Configurable generated app router mode
+
+Added:
+
+- `WorkspaceRouterMode = "browser" | "hash"`
+- `WorkspaceStartOptions.routerMode?: WorkspaceRouterMode` (default `browser`)
+
 ## [2.9.0] - 2026-03-17
 
 ### Configurable generation locale for deterministic select-option derivation

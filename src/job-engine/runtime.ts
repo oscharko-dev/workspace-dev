@@ -1,4 +1,4 @@
-import type { WorkspaceBrandTheme } from "../contracts/index.js";
+import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "../contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import type { JobEngineRuntime } from "./types.js";
 
@@ -15,6 +15,7 @@ const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
+const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
@@ -26,6 +27,17 @@ const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | u
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === "derived" || normalized === "sparkasse") {
+    return normalized;
+  }
+  return undefined;
+};
+
+const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "browser" || normalized === "hash") {
     return normalized;
   }
   return undefined;
@@ -48,6 +60,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementMaxDepth,
   brandTheme,
   generationLocale,
+  routerMode,
   commandTimeoutMs,
   enableUiValidation,
   installPreferOffline,
@@ -71,6 +84,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
   generationLocale?: string;
+  routerMode?: string;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
   installPreferOffline?: boolean;
@@ -132,6 +146,8 @@ export const resolveRuntimeSettings = ({
       requestedLocale: generationLocale,
       fallbackLocale: DEFAULT_GENERATION_LOCALE
     }).locale,
+    routerMode:
+      typeof routerMode === "string" ? (normalizeRouterMode(routerMode) ?? DEFAULT_ROUTER_MODE) : DEFAULT_ROUTER_MODE,
     commandTimeoutMs:
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))

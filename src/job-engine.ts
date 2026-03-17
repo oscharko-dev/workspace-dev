@@ -375,6 +375,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             iconMapFilePath,
             imageAssetMap,
             generationLocale: resolvedGenerationLocale,
+            routerMode: runtime.routerMode,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
             onLog: (message) => {
