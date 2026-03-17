@@ -295,6 +295,19 @@ const findRenderedTextFieldBlock = ({
   return block ?? "";
 };
 
+const findRenderedFormControlBlock = ({
+  content,
+  label
+}: {
+  content: string;
+  label: string;
+}): string => {
+  const formControlBlocks = content.match(/<FormControl[\s\S]*?<\/FormControl>/g) ?? [];
+  const block = formControlBlocks.find((entry) => entry.includes(`label={"${label}"}`));
+  assert.ok(block, `Expected rendered FormControl block for label '${label}'`);
+  return block ?? "";
+};
+
 const createSemanticInputNode = ({
   id,
   name,
@@ -731,6 +744,260 @@ test("deterministic screen rendering prioritizes password type when multiple sem
   const block = findRenderedTextFieldBlock({ content, label: "Email Passwort" });
   assert.ok(block.includes('type={"password"}'));
   assert.ok(block.includes('autoComplete={"current-password"}'));
+});
+
+test("deterministic screen rendering infers required fields from star labels and removes star from TextField label", () => {
+  const screen = {
+    id: "textfield-required-screen",
+    name: "TextField Required Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [createSemanticInputNode({ id: "required-email", name: "Email Input", label: "Email *" })]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const block = findRenderedTextFieldBlock({ content, label: "Email" });
+  assert.equal(block.includes('label={"Email *"}'), false);
+  assert.ok(block.includes('label={"Email"}'));
+  assert.ok(block.includes("required"));
+  assert.ok(block.includes("error={"));
+  assert.ok(block.includes("helperText={"));
+  assert.ok(block.includes("onBlur={() => handleFieldBlur("));
+});
+
+test("deterministic screen rendering emits form validation state scaffolding for interactive fields", () => {
+  const screen = {
+    id: "validation-scaffold-screen",
+    name: "Validation Scaffold Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 200,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "email-field", name: "Email Input", label: "Email *", placeholder: "name@example.com" }),
+      {
+        id: "primary-submit",
+        name: "Primary Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "primary-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Continue",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('component="form" onSubmit={handleSubmit} noValidate'));
+  assert.ok(content.includes("const initialVisualErrors: Record<string, string> = "));
+  assert.ok(content.includes("const requiredFields: Record<string, boolean> = "));
+  assert.ok(content.includes("const fieldValidationTypes: Record<string, string> = "));
+  assert.ok(content.includes("const fieldValidationMessages: Record<string, string> = "));
+  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"));
+  assert.ok(content.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"));
+  assert.ok(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
+  assert.ok(content.includes("const validateForm = (values: Record<string, string>): Record<string, string> => {"));
+  assert.ok(content.includes("const handleFieldBlur = (fieldKey: string): void => {"));
+  assert.ok(content.includes("const handleSubmit = (event: { preventDefault: () => void }): void => {"));
+  assert.ok(content.includes('const primarySubmitButtonKey = "primary_submit_primary_submit";'));
+});
+
+test("deterministic screen rendering seeds visual error examples from red outlines", () => {
+  const screen = {
+    id: "visual-error-screen",
+    name: "Visual Error Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "visual-error-field",
+        name: "Email Input",
+        nodeType: "FRAME",
+        type: "input" as const,
+        layoutMode: "VERTICAL" as const,
+        gap: 4,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        width: 320,
+        height: 72,
+        strokeColor: "#d32f2f",
+        children: [
+          {
+            id: "visual-error-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Email",
+            y: 0
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('"email_input_visual_error_field": "Please enter a valid email address."'));
+  const block = findRenderedTextFieldBlock({ content, label: "Email" });
+  assert.ok(block.includes("error={"));
+  assert.ok(block.includes("helperText={"));
+});
+
+test("deterministic screen rendering applies validation bindings for select controls", () => {
+  const screen = {
+    id: "select-validation-screen",
+    name: "Select Validation Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "status-select",
+        name: "Status Select",
+        nodeType: "FRAME",
+        type: "select" as const,
+        width: 260,
+        height: 56,
+        strokeColor: "#d32f2f",
+        children: [
+          {
+            id: "status-select-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Status *"
+          },
+          {
+            id: "status-select-option-1",
+            name: "Option 1",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Aktiv"
+          },
+          {
+            id: "status-select-option-2",
+            name: "Option 2",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Inaktiv"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const block = findRenderedFormControlBlock({ content, label: "Status" });
+  assert.equal(block.includes('label={"Status *"}'), false);
+  assert.ok(block.includes('label={"Status"}'));
+  assert.ok(block.includes("required"));
+  assert.ok(block.includes("error={"));
+  assert.ok(block.includes("onBlur={() => handleFieldBlur("));
+  assert.ok(block.includes("<FormHelperText>{"));
+});
+
+test("deterministic screen rendering assigns a single primary submit button and explicit button types", () => {
+  const screen = {
+    id: "submit-wiring-screen",
+    name: "Submit Wiring Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 360,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "submit-email", name: "Email Input", label: "Email" }),
+      {
+        id: "btn-secondary",
+        name: "Secondary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 120,
+        width: 180,
+        height: 36,
+        strokeColor: "#565656",
+        children: [
+          {
+            id: "btn-secondary-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Secondary",
+            fillColor: "#292929"
+          }
+        ]
+      },
+      {
+        id: "btn-primary",
+        name: "Primary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 176,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "btn-primary-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Primary",
+            fillColor: "#ffffff"
+          }
+        ]
+      },
+      {
+        id: "btn-disabled",
+        name: "Disabled Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 236,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        opacity: 0.45,
+        children: [
+          {
+            id: "btn-disabled-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Disabled",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('const primarySubmitButtonKey = "primary_action_btn_primary";'));
+
+  const secondaryLine = findRenderedButtonLine({ content, label: "Secondary" });
+  assert.ok(secondaryLine.includes('type={primarySubmitButtonKey === "secondary_action_btn_secondary" ? "submit" : "button"}'));
+
+  const primaryLine = findRenderedButtonLine({ content, label: "Primary" });
+  assert.ok(primaryLine.includes('type={primarySubmitButtonKey === "primary_action_btn_primary" ? "submit" : "button"}'));
+
+  const disabledLine = findRenderedButtonLine({ content, label: "Disabled" });
+  assert.ok(disabledLine.includes('type={primarySubmitButtonKey === "disabled_action_btn_disabled" ? "submit" : "button"}'));
 });
 
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
