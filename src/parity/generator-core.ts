@@ -2557,7 +2557,10 @@ const buildIconFallbackMapFilePayload = (map: IconFallbackMap): IconFallbackMap 
     entries: map.entries.map((entry) => ({
       iconName: entry.iconName,
       aliases: Array.from(
-        new Set([...(toGeneratedAliasesForIconName(entry.iconName) ?? []), ...((entry.aliases ?? []).map((alias) => normalizeIconLookupText(alias)) ?? [])])
+        new Set([
+          ...toGeneratedAliasesForIconName(entry.iconName),
+          ...(entry.aliases ?? []).map((alias) => normalizeIconLookupText(alias))
+        ])
       ).filter((alias) => alias.length > 0)
     })),
     ...(map.synonyms ? { synonyms: map.synonyms } : {})
@@ -2839,11 +2842,11 @@ const toBoundedLevenshteinDistance = ({
 
   for (let row = 1; row <= left.length; row += 1) {
     current[0] = row;
-    let rowMin = current[0] ?? 0;
+    let rowMin = row;
     for (let col = 1; col <= right.length; col += 1) {
-      const deletion = (previous[col] ?? maxDistance + 1) + 1;
-      const insertion = (current[col - 1] ?? maxDistance + 1) + 1;
-      const substitution = (previous[col - 1] ?? maxDistance + 1) + (left[row - 1] === right[col - 1] ? 0 : 1);
+      const deletion = previous[col]! + 1;
+      const insertion = current[col - 1]! + 1;
+      const substitution = previous[col - 1]! + (left[row - 1] === right[col - 1] ? 0 : 1);
       const nextValue = Math.min(deletion, insertion, substitution);
       current[col] = nextValue;
       rowMin = Math.min(rowMin, nextValue);
