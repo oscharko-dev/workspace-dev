@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { WorkspaceStatus } from "../contracts/index.js";
+import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { enforceModeLock } from "../mode-lock.js";
@@ -193,9 +193,12 @@ export function createWorkspaceRequestHandler({
       }
 
       const { figmaSourceMode, llmCodegenMode } = parsed.data;
+      const resolvedFigmaSourceMode =
+        (figmaSourceMode?.trim().toLowerCase() as WorkspaceFigmaSourceMode | undefined) ?? defaults.figmaSourceMode;
+      const resolvedLlmCodegenMode = llmCodegenMode ?? defaults.llmCodegenMode;
       const modeLockInput = {
-        ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
-        ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {})
+        figmaSourceMode: resolvedFigmaSourceMode,
+        llmCodegenMode: resolvedLlmCodegenMode
       };
 
       try {
@@ -212,6 +215,7 @@ export function createWorkspaceRequestHandler({
             }),
             allowedModes: {
               figmaSourceMode: defaults.figmaSourceMode,
+              figmaSourceModes: ["rest", "local_json"],
               llmCodegenMode: defaults.llmCodegenMode
             }
           }
@@ -221,7 +225,7 @@ export function createWorkspaceRequestHandler({
 
       const accepted = jobEngine.submitJob({
         ...parsed.data,
-        figmaSourceMode: defaults.figmaSourceMode,
+        figmaSourceMode: resolvedFigmaSourceMode,
         llmCodegenMode: defaults.llmCodegenMode
       });
 

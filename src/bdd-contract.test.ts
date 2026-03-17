@@ -42,6 +42,16 @@ test("bdd contract: locked modes stay valid", () => {
   assert.deepEqual(result.errors, []);
 });
 
+test("bdd contract: local_json mode stays valid", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic"
+  });
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+});
+
 test("bdd contract: unsupported modes stay rejected with guidance", () => {
   const result = validateModeLock({
     figmaSourceMode: "mcp",

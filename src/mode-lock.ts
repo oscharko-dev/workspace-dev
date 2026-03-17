@@ -1,11 +1,12 @@
 /**
  * Mode-lock enforcement for workspace-dev.
  *
- * Only `figmaSourceMode=rest` and `llmCodegenMode=deterministic` are allowed.
+ * Only `figmaSourceMode=rest|local_json` and `llmCodegenMode=deterministic` are allowed.
  * All other modes are blocked with explicit error messages.
  */
 
-const ALLOWED_FIGMA_SOURCE_MODE = "rest" as const;
+const ALLOWED_FIGMA_SOURCE_MODE_DEFAULT = "rest" as const;
+const ALLOWED_FIGMA_SOURCE_MODES = ["rest", "local_json"] as const;
 const ALLOWED_LLM_CODEGEN_MODE = "deterministic" as const;
 
 const BLOCKED_FIGMA_MODES: readonly string[] = ["mcp", "hybrid"];
@@ -23,17 +24,17 @@ export function validateModeLock(input: {
   const errors: string[] = [];
 
   const figmaMode = input.figmaSourceMode?.trim().toLowerCase();
-  if (figmaMode && figmaMode !== ALLOWED_FIGMA_SOURCE_MODE) {
+  if (figmaMode && !ALLOWED_FIGMA_SOURCE_MODES.includes(figmaMode as (typeof ALLOWED_FIGMA_SOURCE_MODES)[number])) {
     const isKnownBlocked = BLOCKED_FIGMA_MODES.includes(figmaMode);
     if (isKnownBlocked) {
       errors.push(
         `Mode '${figmaMode}' is not available in workspace-dev. ` +
-        `Only 'rest' is supported. MCP and hybrid modes require the full Workspace Dev platform deployment.`
+        `Only 'rest' and 'local_json' are supported. MCP and hybrid modes require the full Workspace Dev platform deployment.`
       );
     } else {
       errors.push(
         `Unknown figmaSourceMode '${figmaMode}'. ` +
-        `workspace-dev supports only 'rest'.`
+        `workspace-dev supports only 'rest' and 'local_json'.`
       );
     }
   }
@@ -73,11 +74,11 @@ export function enforceModeLock(input: {
 }
 
 export function getWorkspaceDefaults(): {
-  figmaSourceMode: typeof ALLOWED_FIGMA_SOURCE_MODE;
+  figmaSourceMode: typeof ALLOWED_FIGMA_SOURCE_MODE_DEFAULT;
   llmCodegenMode: typeof ALLOWED_LLM_CODEGEN_MODE;
 } {
   return {
-    figmaSourceMode: ALLOWED_FIGMA_SOURCE_MODE,
+    figmaSourceMode: ALLOWED_FIGMA_SOURCE_MODE_DEFAULT,
     llmCodegenMode: ALLOWED_LLM_CODEGEN_MODE
   };
 }

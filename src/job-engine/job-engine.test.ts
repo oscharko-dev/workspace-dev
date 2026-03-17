@@ -25,6 +25,29 @@ const waitForTerminalStatus = async ({
   throw new Error("Timed out waiting for job status");
 };
 
+const createLocalFigmaPayload = () => ({
+  name: "Local JSON Board",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-1",
+            type: "FRAME",
+            name: "Local Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+            children: [{ id: "title", type: "TEXT", characters: "Hello", absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 } }]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 test("createJobEngine accepts jobs and exposes queued status", () => {
   const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-accept");
   const engine = createJobEngine({
@@ -169,6 +192,44 @@ test("createJobEngine marks jobs failed when figma source cannot be fetched", as
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_NETWORK");
   assert.equal(status.error?.stage, "figma.source");
+});
+
+test("createJobEngine supports local_json mode without Figma REST calls", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-local-json-"));
+  const localJsonPath = path.join(tempRoot, "local-figma.json");
+  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  let fetchCalls = 0;
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        throw new Error("unexpected fetch call");
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: localJsonPath
+  });
+  assert.equal(accepted.acceptedModes.figmaSourceMode, "local_json");
+
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.stages.find((stage) => stage.name === "figma.source")?.status, "completed");
+  assert.equal(fetchCalls, 0);
+  assert.equal(status.request.figmaSourceMode, "local_json");
+  assert.equal(status.request.figmaJsonPath, localJsonPath);
 });
 
 test("resolvePreviewAsset enforces safe job id/path and supports index fallback", async () => {
