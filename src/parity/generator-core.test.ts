@@ -3604,6 +3604,118 @@ test("deterministic screen rendering emits spacing units and rem typography with
   assert.equal(/\b(gap|p[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
 });
 
+test("generateArtifacts maps borderRadius to theme shape scale in sx", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-token-radius-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "token-radius-screen",
+      name: "Token Radius Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "token-radius-surface",
+          name: "Token Radius Surface",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 0,
+          y: 0,
+          width: 280,
+          height: 120,
+          cornerRadius: 12,
+          children: []
+        },
+        {
+          id: "token-radius-input",
+          name: "Styled(div)",
+          nodeType: "FRAME",
+          type: "input" as const,
+          x: 0,
+          y: 140,
+          width: 320,
+          height: 72,
+          cornerRadius: 6,
+          children: [
+            {
+              id: "token-radius-input-label",
+              name: "MuiTypographyRoot",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Monatliche Sparrate"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Token Radius Screen")), "utf8");
+  assert.ok(content.includes("borderRadius: 1"));
+  assert.ok(content.includes("borderRadius: 0.5"));
+  assert.equal(content.includes('borderRadius: "12px"'), false);
+  assert.equal(content.includes('borderRadius: "6px"'), false);
+});
+
+test("deterministic screen rendering keeps px borderRadius fallback when tokens are unavailable", () => {
+  const screen = {
+    id: "tokenless-radius-screen",
+    name: "Tokenless Radius Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "tokenless-radius-surface",
+        name: "Tokenless Radius Surface",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 280,
+        height: 120,
+        cornerRadius: 12,
+        children: []
+      },
+      {
+        id: "tokenless-radius-input",
+        name: "Styled(div)",
+        nodeType: "FRAME",
+        type: "input" as const,
+        x: 0,
+        y: 140,
+        width: 320,
+        height: 72,
+        cornerRadius: 6,
+        children: [
+          {
+            id: "tokenless-radius-input-label",
+            name: "MuiTypographyRoot",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Monatliche Sparrate"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('borderRadius: "12px"'));
+  assert.ok(content.includes('borderRadius: "6px"'));
+});
+
 test("generateArtifacts maps exact token palette colors to MUI theme references in sx", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-token-colors-"));
   const ir = createIr();
