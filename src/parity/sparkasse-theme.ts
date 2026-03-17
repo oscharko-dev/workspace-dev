@@ -44,6 +44,16 @@ const readColor = (source: unknown, path: string[]): string | undefined => {
   return raw.trim();
 };
 
+const readFirstColor = (source: unknown, paths: string[][]): string | undefined => {
+  for (const path of paths) {
+    const color = readColor(source, path);
+    if (color) {
+      return color;
+    }
+  }
+  return undefined;
+};
+
 const readNumber = (source: unknown, path: string[]): number | undefined => {
   const raw = readRawTokenValue(source, path);
   if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -66,12 +76,54 @@ const readFontFamily = (source: unknown, path: string[]): string | undefined => 
   return raw.trim();
 };
 
+const toHexWithAlpha = (hex: string, alpha: number): string => {
+  const normalized = hex.replace("#", "");
+  const colorPayload = normalized.length >= 6 ? normalized.slice(0, 6) : normalized;
+  if (!/^[0-9a-f]{6}$/i.test(colorPayload)) {
+    return hex;
+  }
+  const alphaHex = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+    .toString(16)
+    .padStart(2, "0");
+  return `#${colorPayload}${alphaHex}`;
+};
+
+const buildActionPalette = ({
+  primaryColor,
+  textColor
+}: {
+  primaryColor: string;
+  textColor: string;
+}): DesignTokens["palette"]["action"] => {
+  return {
+    active: toHexWithAlpha(textColor, 0.54),
+    hover: toHexWithAlpha(primaryColor, 0.04),
+    selected: toHexWithAlpha(primaryColor, 0.08),
+    disabled: toHexWithAlpha(textColor, 0.26),
+    disabledBackground: toHexWithAlpha(textColor, 0.12),
+    focus: toHexWithAlpha(primaryColor, 0.12)
+  };
+};
+
 const defaultSparkasseTokens: DesignTokens = {
   palette: {
     primary: "#EE0000",
     secondary: "#43A047",
     background: "#FAFAFA",
-    text: "#222222"
+    text: "#222222",
+    success: "#43A047",
+    warning: "#D97706",
+    error: "#DC2626",
+    info: "#0288D1",
+    divider: "#2222221f",
+    action: {
+      active: "#2222228a",
+      hover: "#EE00000a",
+      selected: "#EE000014",
+      disabled: "#22222242",
+      disabledBackground: "#2222221f",
+      focus: "#EE00001f"
+    }
   },
   borderRadius: 12,
   spacingBase: 8,
@@ -89,16 +141,60 @@ const loadSparkasseTokensFromSchema = (): DesignTokens => {
   try {
     const rawFile = readFileSync(tokensFile, "utf-8");
     const parsed = JSON.parse(rawFile) as SparkasseTokenSchema;
+    const primary =
+      readFirstColor(parsed, [["color", "brand", "primary"]]) ?? defaultSparkasseTokens.palette.primary;
+    const text = readFirstColor(parsed, [["color", "neutral", "gray-900"]]) ?? defaultSparkasseTokens.palette.text;
+    const success =
+      readFirstColor(parsed, [
+        ["color", "system", "success"],
+        ["color", "system", "success-alt"],
+        ["color", "semantic", "success"]
+      ]) ?? defaultSparkasseTokens.palette.success;
+    const warning =
+      readFirstColor(parsed, [
+        ["color", "system", "warning"],
+        ["color", "system", "warn"],
+        ["color", "semantic", "warning"]
+      ]) ?? defaultSparkasseTokens.palette.warning;
+    const error =
+      readFirstColor(parsed, [
+        ["color", "system", "error"],
+        ["color", "semantic", "error"],
+        ["color", "feedback", "error"]
+      ]) ?? defaultSparkasseTokens.palette.error;
+    const info =
+      readFirstColor(parsed, [
+        ["color", "system", "info"],
+        ["color", "semantic", "info"],
+        ["color", "feedback", "info"]
+      ]) ?? defaultSparkasseTokens.palette.info;
+    const divider =
+      readFirstColor(parsed, [
+        ["color", "neutral", "gray-200"],
+        ["color", "neutral", "gray-300"],
+        ["color", "border", "default"]
+      ]) ?? toHexWithAlpha(text, 0.12);
+    const secondary =
+      readFirstColor(parsed, [
+        ["color", "system", "success-alt"],
+        ["color", "system", "success"]
+      ]) ?? defaultSparkasseTokens.palette.secondary;
 
     return {
       palette: {
-        primary: readColor(parsed, ["color", "brand", "primary"]) ?? defaultSparkasseTokens.palette.primary,
-        secondary:
-          readColor(parsed, ["color", "system", "success-alt"]) ??
-          readColor(parsed, ["color", "system", "success"]) ??
-          defaultSparkasseTokens.palette.secondary,
-        background: readColor(parsed, ["color", "neutral", "gray-50"]) ?? defaultSparkasseTokens.palette.background,
-        text: readColor(parsed, ["color", "neutral", "gray-900"]) ?? defaultSparkasseTokens.palette.text
+        primary,
+        secondary,
+        background: readFirstColor(parsed, [["color", "neutral", "gray-50"]]) ?? defaultSparkasseTokens.palette.background,
+        text,
+        success,
+        warning,
+        error,
+        info,
+        divider,
+        action: buildActionPalette({
+          primaryColor: primary,
+          textColor: text
+        })
       },
       borderRadius: readNumber(parsed, ["borderRadius", "lg"]) ?? defaultSparkasseTokens.borderRadius,
       spacingBase: readNumber(parsed, ["spacing", "xs"]) ?? defaultSparkasseTokens.spacingBase,
@@ -144,7 +240,13 @@ export const applySparkasseThemeDefaults = (tokens: DesignTokens): DesignTokens 
           ? tokens.palette.secondary
           : sparkasseDefaults.palette.secondary,
       background: sparkasseDefaults.palette.background,
-      text: sparkasseDefaults.palette.text
+      text: sparkasseDefaults.palette.text,
+      success: sparkasseDefaults.palette.success,
+      warning: sparkasseDefaults.palette.warning,
+      error: sparkasseDefaults.palette.error,
+      info: sparkasseDefaults.palette.info,
+      divider: sparkasseDefaults.palette.divider,
+      action: { ...sparkasseDefaults.palette.action }
     },
     borderRadius: sparkasseDefaults.borderRadius,
     spacingBase: sparkasseDefaults.spacingBase,

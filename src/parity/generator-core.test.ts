@@ -19,7 +19,20 @@ const createIr = () => ({
       primary: "#ee0000",
       secondary: "#00aa55",
       background: "#fafafa",
-      text: "#222222"
+      text: "#222222",
+      success: "#16a34a",
+      warning: "#d97706",
+      error: "#dc2626",
+      info: "#0288d1",
+      divider: "#2222221f",
+      action: {
+        active: "#2222228a",
+        hover: "#ee00000a",
+        selected: "#ee000014",
+        disabled: "#22222242",
+        disabledBackground: "#2222221f",
+        focus: "#ee00001f"
+      }
     },
     borderRadius: 12,
     spacingBase: 8,
@@ -431,11 +444,18 @@ const createSemanticSelectInputNode = ({
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
+  const themeContent = createDeterministicThemeFile(ir).content;
 
   assert.equal(toDeterministicScreenPath("Kredit Übersicht"), "src/screens/Kredit_bersicht.tsx");
   assert.equal(createDeterministicThemeFile(ir).path, "src/theme/theme.ts");
   assert.equal(createDeterministicScreenFile(screen).path.startsWith("src/screens/"), true);
   assert.equal(createDeterministicAppFile(ir.screens).path, "src/App.tsx");
+  assert.ok(themeContent.includes('success: { main: "#16a34a" }'));
+  assert.ok(themeContent.includes('warning: { main: "#d97706" }'));
+  assert.ok(themeContent.includes('error: { main: "#dc2626" }'));
+  assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
+  assert.ok(themeContent.includes('divider: "#2222221f"'));
+  assert.ok(themeContent.includes('focus: "#ee00001f"'));
 });
 
 test("deterministic screen rendering uses a single root Container without unnecessary Box import", () => {
@@ -5200,6 +5220,57 @@ test("generateArtifacts maps exact token palette colors to MUI theme references 
               text: "Continue"
             }
           ]
+        },
+        {
+          id: "token-success",
+          name: "Success Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Success",
+          x: 0,
+          y: 210,
+          fillColor: "#16a34a"
+        },
+        {
+          id: "token-warning",
+          name: "Warning Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Warning",
+          x: 0,
+          y: 240,
+          fillColor: "#d97706"
+        },
+        {
+          id: "token-error",
+          name: "Error Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Error",
+          x: 0,
+          y: 270,
+          fillColor: "#dc2626"
+        },
+        {
+          id: "token-info",
+          name: "Info Copy",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Info",
+          x: 0,
+          y: 300,
+          fillColor: "#0288d1"
+        },
+        {
+          id: "token-divider",
+          name: "Divider Token",
+          nodeType: "RECTANGLE",
+          type: "divider" as const,
+          x: 0,
+          y: 330,
+          width: 240,
+          height: 1,
+          fillColor: "#2222221f"
         }
       ]
     }
@@ -5219,9 +5290,56 @@ test("generateArtifacts maps exact token palette colors to MUI theme references 
   assert.ok(content.includes('bgcolor: "background.default"'));
   assert.ok(content.includes('borderColor: "secondary.main"'));
   assert.ok(content.includes('color: "text.primary"'));
+  assert.ok(content.includes('color: "success.main"'));
+  assert.ok(content.includes('color: "warning.main"'));
+  assert.ok(content.includes('color: "error.main"'));
+  assert.ok(content.includes('color: "info.main"'));
+  assert.ok(content.includes('borderColor: "divider"'));
   const tokenButtonLine = findRenderedButtonLine({ content, label: "Continue" });
   assert.ok(tokenButtonLine.includes('variant="contained" size="large"'));
   assert.equal(tokenButtonLine.includes('bgcolor: "primary.main"'), false);
+});
+
+test("generateArtifacts writes semantic palette fields to theme and tokens files", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-semantic-theme-"));
+  const ir = createIr();
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const themeContent = await readFile(path.join(projectDir, "src/theme/theme.ts"), "utf8");
+  const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src/theme/tokens.json"), "utf8")) as {
+    palette: {
+      success: string;
+      warning: string;
+      error: string;
+      info: string;
+      divider: string;
+      action: {
+        focus: string;
+      };
+    };
+  };
+
+  assert.ok(themeContent.includes('success: { main: "#16a34a" }'));
+  assert.ok(themeContent.includes('warning: { main: "#d97706" }'));
+  assert.ok(themeContent.includes('error: { main: "#dc2626" }'));
+  assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
+  assert.ok(themeContent.includes('divider: "#2222221f"'));
+  assert.ok(themeContent.includes('disabledBackground: "#2222221f"'));
+  assert.equal(tokensContent.palette.success, "#16a34a");
+  assert.equal(tokensContent.palette.warning, "#d97706");
+  assert.equal(tokensContent.palette.error, "#dc2626");
+  assert.equal(tokensContent.palette.info, "#0288d1");
+  assert.equal(tokensContent.palette.divider, "#2222221f");
+  assert.equal(tokensContent.palette.action.focus, "#ee00001f");
 });
 
 test("generateArtifacts emits truncation notice comment when screen was budget-truncated", async () => {

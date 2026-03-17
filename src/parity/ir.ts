@@ -170,7 +170,20 @@ interface FigmaFile {
 }
 
 type ColorSampleContext = "button" | "heading" | "body" | "surface" | "decorative";
-type StyleSignalKey = "primary" | "secondary" | "background" | "text" | "brand" | "accent";
+type StyleSignalKey =
+  | "primary"
+  | "secondary"
+  | "background"
+  | "text"
+  | "brand"
+  | "accent"
+  | "success"
+  | "warning"
+  | "error"
+  | "info"
+  | "divider";
+type SemanticPaletteKey = "success" | "warning" | "error" | "info" | "divider";
+type ColorFamily = "red" | "orange" | "yellow" | "green" | "blue" | "neutral" | "other";
 
 interface ColorSample {
   color: string;
@@ -596,6 +609,15 @@ const toHexFromRgb = (red: number, green: number, blue: number): string => {
   return `#${toHexFromChannel(red)}${toHexFromChannel(green)}${toHexFromChannel(blue)}`;
 };
 
+const toHexWithAlpha = (hex: string, alpha: number): string => {
+  const normalized = hex.replace("#", "");
+  const colorPayload = normalized.length >= 6 ? normalized.slice(0, 6) : normalized;
+  if (!/^[0-9a-f]{6}$/i.test(colorPayload)) {
+    return hex;
+  }
+  return `#${colorPayload}${toHexFromChannel(clamp(alpha, 0, 1) * 255)}`;
+};
+
 const quantizeColorKey = (hex: string, step: number): string => {
   const normalized = hex.replace("#", "");
   const parseChannel = (start: number): number => {
@@ -677,7 +699,12 @@ const emptyStyleSignals = (): Record<StyleSignalKey, number> => ({
   background: 0,
   text: 0,
   brand: 0,
-  accent: 0
+  accent: 0,
+  success: 0,
+  warning: 0,
+  error: 0,
+  info: 0,
+  divider: 0
 });
 
 const addStyleSignals = (
@@ -3057,7 +3084,20 @@ const TOKEN_DERIVATION_DEFAULTS: DesignTokens = {
     primary: "#d4001a",
     secondary: "#5f8f2f",
     background: "#f7f8fb",
-    text: "#1f2937"
+    text: "#1f2937",
+    success: "#16A34A",
+    warning: "#D97706",
+    error: "#DC2626",
+    info: "#0288D1",
+    divider: "#1f29371f",
+    action: {
+      active: "#1f29378a",
+      hover: "#d4001a0a",
+      selected: "#d4001a14",
+      disabled: "#1f293742",
+      disabledBackground: "#1f29371f",
+      focus: "#d4001a1f"
+    }
   },
   borderRadius: 8,
   spacingBase: 8,
@@ -3136,26 +3176,52 @@ const resolveNodeStyleNames = (node: FigmaNode, styleCatalog: Map<string, string
   return [...new Set(names)];
 };
 
-const deriveStyleSignals = (styleNames: string[]): Record<StyleSignalKey, number> => {
+const deriveStyleSignals = ({
+  styleNames,
+  nodeName
+}: {
+  styleNames: string[];
+  nodeName: string | undefined;
+}): Record<StyleSignalKey, number> => {
   const signals = emptyStyleSignals();
-  for (const styleName of styleNames) {
-    if (hasAnySubstring(styleName, ["primary"])) {
+  const signalSources = [...styleNames];
+  if (typeof nodeName === "string" && nodeName.trim().length > 0) {
+    signalSources.push(nodeName.toLowerCase());
+  }
+
+  for (const signalSource of signalSources) {
+    if (hasAnySubstring(signalSource, ["primary"])) {
       signals.primary += 1;
     }
-    if (hasAnySubstring(styleName, ["secondary"])) {
+    if (hasAnySubstring(signalSource, ["secondary"])) {
       signals.secondary += 1;
     }
-    if (hasAnySubstring(styleName, ["background", "surface", "canvas", "paper"])) {
+    if (hasAnySubstring(signalSource, ["background", "surface", "canvas", "paper"])) {
       signals.background += 1;
     }
-    if (hasAnySubstring(styleName, ["text", "foreground", "content"])) {
+    if (hasAnySubstring(signalSource, ["text", "foreground", "content"])) {
       signals.text += 1;
     }
-    if (hasAnySubstring(styleName, ["brand"])) {
+    if (hasAnySubstring(signalSource, ["brand"])) {
       signals.brand += 1;
     }
-    if (hasAnySubstring(styleName, ["accent", "highlight"])) {
+    if (hasAnySubstring(signalSource, ["accent", "highlight"])) {
       signals.accent += 1;
+    }
+    if (hasAnySubstring(signalSource, ["success", "valid", "done", "positive"])) {
+      signals.success += 1;
+    }
+    if (hasAnySubstring(signalSource, ["warning", "alert", "caution"])) {
+      signals.warning += 1;
+    }
+    if (hasAnySubstring(signalSource, ["error", "danger", "invalid", "negative"])) {
+      signals.error += 1;
+    }
+    if (hasAnySubstring(signalSource, ["info", "hint", "help", "notice"])) {
+      signals.info += 1;
+    }
+    if (hasAnySubstring(signalSource, ["divider", "separator", "border", "outline", "stroke"])) {
+      signals.divider += 1;
     }
   }
   return signals;
@@ -3237,7 +3303,7 @@ const collectColorSamples = ({
 
   for (const node of nodes) {
     const styleNames = resolveNodeStyleNames(node, styleCatalog);
-    const styleSignals = deriveStyleSignals(styleNames);
+    const styleSignals = deriveStyleSignals({ styleNames, nodeName: node.name });
 
     const fillColor = resolveFillColor(node);
     if (fillColor) {
@@ -3339,6 +3405,258 @@ const clusterSamples = (samples: ColorSample[]): ColorCluster[] => {
   }
 
   return merged.sort((left, right) => right.totalWeight - left.totalWeight);
+};
+
+const resolveHue = (hex: string): number | undefined => {
+  const { r, g, b } = parseHex(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) {
+    return undefined;
+  }
+
+  let hue = 0;
+  if (max === r) {
+    hue = ((g - b) / delta) % 6;
+  } else if (max === g) {
+    hue = (b - r) / delta + 2;
+  } else {
+    hue = (r - g) / delta + 4;
+  }
+  return (hue * 60 + 360) % 360;
+};
+
+const resolveColorFamily = (hex: string): ColorFamily => {
+  if (saturation(hex) <= 0.12) {
+    return "neutral";
+  }
+
+  const hue = resolveHue(hex);
+  if (hue === undefined) {
+    return "other";
+  }
+  if (hue < 20 || hue >= 345) {
+    return "red";
+  }
+  if (hue < 50) {
+    return "orange";
+  }
+  if (hue < 75) {
+    return "yellow";
+  }
+  if (hue < 170) {
+    return "green";
+  }
+  if (hue < 330) {
+    return "blue";
+  }
+  return "other";
+};
+
+const resolveSemanticFamilyScore = ({
+  semanticKey,
+  color
+}: {
+  semanticKey: SemanticPaletteKey;
+  color: string;
+}): number => {
+  const family = resolveColorFamily(color);
+  if (semanticKey === "divider") {
+    return family === "neutral" ? 5 : family === "other" ? -1 : -3;
+  }
+
+  const familyPreferences: Record<Exclude<SemanticPaletteKey, "divider">, ColorFamily[]> = {
+    success: ["green"],
+    warning: ["orange", "yellow"],
+    error: ["red"],
+    info: ["blue"]
+  };
+  const preferences = familyPreferences[semanticKey];
+  const index = preferences.indexOf(family);
+  if (index === 0) {
+    return 5;
+  }
+  if (index === 1) {
+    return 3.5;
+  }
+  if (family === "neutral") {
+    return -3.5;
+  }
+  return -1.5;
+};
+
+const isDistinctFromColors = ({
+  color,
+  references,
+  minDistance
+}: {
+  color: string;
+  references: Array<string | undefined>;
+  minDistance: number;
+}): boolean => {
+  return references.every((reference) => !reference || colorDistance(color, reference) >= minDistance);
+};
+
+const pickDistinctColor = ({
+  candidates,
+  references,
+  minDistance
+}: {
+  candidates: string[];
+  references: Array<string | undefined>;
+  minDistance: number;
+}): string => {
+  return candidates.find((candidate) => isDistinctFromColors({ color: candidate, references, minDistance })) ?? candidates[0]!;
+};
+
+const resolveSemanticFallbackColor = ({
+  semanticKey,
+  textColor,
+  primaryColor
+}: {
+  semanticKey: SemanticPaletteKey;
+  textColor: string;
+  primaryColor: string;
+}): string => {
+  switch (semanticKey) {
+    case "success":
+      return TOKEN_DERIVATION_DEFAULTS.palette.success;
+    case "warning":
+      return TOKEN_DERIVATION_DEFAULTS.palette.warning;
+    case "error":
+      return TOKEN_DERIVATION_DEFAULTS.palette.error;
+    case "info":
+      return pickDistinctColor({
+        candidates: ["#0288D1", "#1976D2", "#4DABF5"],
+        references: [primaryColor],
+        minDistance: 0.08
+      });
+    case "divider":
+      return toHexWithAlpha(textColor, 0.12);
+  }
+};
+
+const buildActionPalette = ({
+  primaryColor,
+  textColor
+}: {
+  primaryColor: string;
+  textColor: string;
+}): DesignTokens["palette"]["action"] => {
+  return {
+    active: toHexWithAlpha(textColor, 0.54),
+    hover: toHexWithAlpha(primaryColor, 0.04),
+    selected: toHexWithAlpha(primaryColor, 0.08),
+    disabled: toHexWithAlpha(textColor, 0.26),
+    disabledBackground: toHexWithAlpha(textColor, 0.12),
+    focus: toHexWithAlpha(primaryColor, 0.12)
+  };
+};
+
+const chooseSemanticColor = ({
+  semanticKey,
+  clusters,
+  backgroundColor,
+  textColor,
+  primaryColor,
+  secondaryColor
+}: {
+  semanticKey: SemanticPaletteKey;
+  clusters: ColorCluster[];
+  backgroundColor: string;
+  textColor: string;
+  primaryColor: string;
+  secondaryColor: string;
+}): string => {
+  const fallback = resolveSemanticFallbackColor({
+    semanticKey,
+    textColor,
+    primaryColor
+  });
+  if (clusters.length === 0) {
+    return fallback;
+  }
+
+  const pool = clusters.filter((cluster) => {
+    if (semanticKey === "divider") {
+      return colorDistance(cluster.color, backgroundColor) >= 0.02;
+    }
+    return colorDistance(cluster.color, backgroundColor) >= 0.08 && colorDistance(cluster.color, textColor) >= 0.08;
+  });
+  const candidates = (pool.length > 0 ? pool : clusters).filter((cluster) => cluster.styleSignals[semanticKey] > 0);
+  if (candidates.length === 0) {
+    return fallback;
+  }
+
+  const scored = candidates
+    .map((cluster) => {
+      if (semanticKey === "divider") {
+        const distanceFromBackground = colorDistance(cluster.color, backgroundColor);
+        let score =
+          cluster.styleSignals.divider * 7 +
+          cluster.contexts.decorative * 1.5 +
+          cluster.contexts.surface * 1.1 +
+          cluster.totalWeight * 0.03 +
+          resolveSemanticFamilyScore({ semanticKey, color: cluster.color });
+        if (distanceFromBackground >= 0.03 && distanceFromBackground <= 0.22) {
+          score += 2.5;
+        } else if (distanceFromBackground > 0.3) {
+          score -= 1.5;
+        }
+        const ratio = contrastRatio(cluster.color, backgroundColor);
+        if (ratio >= 1.1 && ratio <= 2) {
+          score += 1.2;
+        }
+        if (colorDistance(cluster.color, textColor) < 0.04) {
+          score -= 5;
+        }
+        return { color: cluster.color, score };
+      }
+
+      const ratio = contrastRatio(cluster.color, backgroundColor);
+      let score =
+        cluster.styleSignals[semanticKey] * 6 +
+        cluster.contexts.button * 1.4 +
+        cluster.contexts.body +
+        cluster.contexts.heading * 0.8 +
+        cluster.contexts.decorative * 0.4 +
+        cluster.totalWeight * 0.03 +
+        resolveSemanticFamilyScore({ semanticKey, color: cluster.color });
+      if (cluster.styleSignals[semanticKey] === 0) {
+        score -= 3.5;
+      }
+      if (ratio >= 3) {
+        score += 1.5;
+      } else {
+        score -= 1.5;
+      }
+      if (colorDistance(cluster.color, primaryColor) < 0.05) {
+        score -= semanticKey === "info" ? 10 : 2.5;
+      }
+      if (colorDistance(cluster.color, secondaryColor) < 0.05) {
+        score -= 1;
+      }
+      return { color: cluster.color, score };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const threshold = semanticKey === "divider" ? 2.5 : 3.5;
+  const selected = scored.find(({ color, score }) => {
+    if (score < threshold) {
+      return false;
+    }
+    if (semanticKey === "info") {
+      return isDistinctFromColors({
+        color,
+        references: [primaryColor],
+        minDistance: 0.08
+      });
+    }
+    return true;
+  })?.color;
+
+  return selected ?? fallback;
 };
 
 const chooseBackgroundColor = (clusters: ColorCluster[]): string => {
@@ -3568,6 +3886,46 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
     backgroundColor: background,
     primaryColor: primary
   });
+  const success = chooseSemanticColor({
+    semanticKey: "success",
+    clusters,
+    backgroundColor: background,
+    textColor: text,
+    primaryColor: primary,
+    secondaryColor: secondary
+  });
+  const warning = chooseSemanticColor({
+    semanticKey: "warning",
+    clusters,
+    backgroundColor: background,
+    textColor: text,
+    primaryColor: primary,
+    secondaryColor: secondary
+  });
+  const error = chooseSemanticColor({
+    semanticKey: "error",
+    clusters,
+    backgroundColor: background,
+    textColor: text,
+    primaryColor: primary,
+    secondaryColor: secondary
+  });
+  const info = chooseSemanticColor({
+    semanticKey: "info",
+    clusters,
+    backgroundColor: background,
+    textColor: text,
+    primaryColor: primary,
+    secondaryColor: secondary
+  });
+  const divider = chooseSemanticColor({
+    semanticKey: "divider",
+    clusters,
+    backgroundColor: background,
+    textColor: text,
+    primaryColor: primary,
+    secondaryColor: secondary
+  });
 
   const spacings = nodes
     .map((node) => node.itemSpacing)
@@ -3609,7 +3967,16 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
       primary,
       secondary,
       background,
-      text
+      text,
+      success,
+      warning,
+      error,
+      info,
+      divider,
+      action: buildActionPalette({
+        primaryColor: primary,
+        textColor: text
+      })
     },
     borderRadius: Math.max(1, Math.round(median(radii) ?? TOKEN_DERIVATION_DEFAULTS.borderRadius)),
     spacingBase: Math.max(1, Math.round(median(spacings) ?? TOKEN_DERIVATION_DEFAULTS.spacingBase)),
