@@ -942,6 +942,64 @@ test("figmaToDesignIr maps SECTION-contained screens and prunes hidden subtrees"
   assert.ok((ir.metrics?.skippedHidden ?? 0) >= 1);
 });
 
+test("figmaToDesignIr maps explicit margin fields on ScreenElementIR nodes", () => {
+  const ir = figmaToDesignIr({
+    name: "Margin Mapping",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: [
+                {
+                  id: "margin-node",
+                  type: "FRAME",
+                  name: "Margin Node",
+                  marginTop: 8,
+                  marginRight: 12,
+                  marginBottom: 16,
+                  marginLeft: 20,
+                  absoluteBoundingBox: { x: 20, y: 20, width: 200, height: 80 },
+                  children: []
+                },
+                {
+                  id: "sibling-node",
+                  type: "FRAME",
+                  name: "Sibling Node",
+                  absoluteBoundingBox: { x: 20, y: 120, width: 200, height: 80 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const marginNode = ir.screens[0]?.children.find((child) => child.id === "margin-node");
+  assert.deepEqual(marginNode?.margin, {
+    top: 8,
+    right: 12,
+    bottom: 16,
+    left: 20
+  });
+});
+
+test("figmaToDesignIr omits margin when absent and explicit fields are not provided", () => {
+  const ir = figmaToDesignIr(createSampleFigmaFile());
+  const inputNode = ir.screens[0]?.children.find((child) => child.id === "i1");
+  assert.equal(inputNode?.margin, undefined);
+});
+
 test("figmaToDesignIrWithOptions applies brand theme policy deterministically", () => {
   const sample = createSampleFigmaFile();
   const derivedTokens = deriveTokensForTesting(sample);
