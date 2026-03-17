@@ -2309,6 +2309,386 @@ test("deterministic screen rendering infers navigation landmark roles for nav-li
   assert.ok(content.includes('role="navigation"'));
 });
 
+test("deterministic screen rendering maps top-level container header patterns to AppBar", () => {
+  const screen = {
+    id: "top-level-container-appbar-screen",
+    name: "Top-Level Container AppBar",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 640,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "header-container",
+        name: "Primary Header",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        primaryAxisAlignItems: "SPACE_BETWEEN" as const,
+        counterAxisAlignItems: "CENTER" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 72,
+        fillColor: "#ee0000",
+        children: [
+          {
+            id: "header-title",
+            name: "Header Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Dashboard",
+            x: 16,
+            y: 24,
+            fillColor: "#ffffff"
+          },
+          {
+            id: "header-action",
+            name: "Open Menu",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 312,
+            y: 20,
+            width: 32,
+            height: 32,
+            children: [
+              {
+                id: "header-action-icon",
+                name: "ic_menu",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                x: 316,
+                y: 24,
+                width: 24,
+                height: 24,
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('<AppBar role="banner" '));
+  assert.ok(content.includes("<Toolbar>"));
+  assert.ok(content.includes("<IconButton edge=\"end\""));
+});
+
+test("deterministic screen rendering maps top-level table header patterns to AppBar", () => {
+  const screen = {
+    id: "top-level-table-appbar-screen",
+    name: "Top-Level Table AppBar",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 640,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "header-table",
+        name: "Header Navigation Shell",
+        nodeType: "FRAME",
+        type: "table" as const,
+        layoutMode: "HORIZONTAL" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 88,
+        fillColor: "#f5f5f5",
+        children: [
+          {
+            id: "header-table-title",
+            name: "Header Title Group",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 24,
+            width: 220,
+            height: 40,
+            children: [
+              {
+                id: "header-table-title-text",
+                name: "Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Kontoübersicht",
+                x: 16,
+                y: 32
+              }
+            ]
+          },
+          {
+            id: "header-table-action",
+            name: "Header Action",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 300,
+            y: 28,
+            width: 32,
+            height: 32,
+            children: [
+              {
+                id: "header-table-action-icon",
+                name: "ic_settings",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                x: 304,
+                y: 32,
+                width: 24,
+                height: 24,
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('<AppBar role="banner" '));
+  assert.equal(content.includes("<Table size=\"small\""), false);
+});
+
+test("deterministic screen rendering maps bottom bar patterns to BottomNavigation", () => {
+  const screen = {
+    id: "bottom-navigation-screen",
+    name: "Bottom Navigation Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 640,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "bottom-navigation-screen-title",
+        name: "Screen Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Übersicht",
+        x: 16,
+        y: 24,
+        width: 160,
+        height: 24
+      },
+      {
+        id: "bottom-nav-shell",
+        name: "Primary Bottom Navigation",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        counterAxisAlignItems: "CENTER" as const,
+        x: 0,
+        y: 580,
+        width: 360,
+        height: 60,
+        fillColor: "#ffffff",
+        children: [
+          {
+            id: "bottom-nav-home",
+            name: "Home Action",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 0,
+            y: 580,
+            width: 180,
+            height: 60,
+            children: [
+              {
+                id: "bottom-nav-home-icon",
+                name: "ic_home",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                x: 24,
+                y: 594,
+                width: 24,
+                height: 24,
+                children: []
+              },
+              {
+                id: "bottom-nav-home-label",
+                name: "Home Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Home",
+                x: 56,
+                y: 598
+              }
+            ]
+          },
+          {
+            id: "bottom-nav-profile",
+            name: "Profile Action",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 180,
+            y: 580,
+            width: 180,
+            height: 60,
+            children: [
+              {
+                id: "bottom-nav-profile-icon",
+                name: "ic_person",
+                nodeType: "INSTANCE",
+                type: "container" as const,
+                x: 204,
+                y: 594,
+                width: 24,
+                height: 24,
+                children: []
+              },
+              {
+                id: "bottom-nav-profile-label",
+                name: "Profile Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Profil",
+                x: 236,
+                y: 598
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('<BottomNavigation role="navigation" '));
+  assert.equal((content.match(/<BottomNavigationAction /g) ?? []).length, 2);
+});
+
+test("deterministic screen rendering keeps top-level data tables as Table", () => {
+  const screen = {
+    id: "top-level-data-table-screen",
+    name: "Top-Level Data Table Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 640,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "top-data-table",
+        name: "Kundendaten Tabelle",
+        nodeType: "FRAME",
+        type: "table" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 120,
+        children: [
+          {
+            id: "top-data-table-row-1",
+            name: "Row 1",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "top-data-table-h1", name: "Name", nodeType: "TEXT", type: "text" as const, text: "Name" },
+              { id: "top-data-table-h2", name: "Wert", nodeType: "TEXT", type: "text" as const, text: "Wert" }
+            ]
+          },
+          {
+            id: "top-data-table-row-2",
+            name: "Row 2",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "top-data-table-c1", name: "Name 1", nodeType: "TEXT", type: "text" as const, text: "A" },
+              { id: "top-data-table-c2", name: "Wert 1", nodeType: "TEXT", type: "text" as const, text: "1" }
+            ]
+          },
+          {
+            id: "top-data-table-row-3",
+            name: "Row 3",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            children: [
+              { id: "top-data-table-c3", name: "Name 2", nodeType: "TEXT", type: "text" as const, text: "B" },
+              { id: "top-data-table-c4", name: "Wert 2", nodeType: "TEXT", type: "text" as const, text: "2" }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Table size=\"small\""));
+  assert.equal(content.includes('<AppBar role="banner" '), false);
+});
+
+test("deterministic screen rendering does not map single-action footer bars to BottomNavigation", () => {
+  const screen = {
+    id: "single-action-footer-screen",
+    name: "Single Action Footer Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 640,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "single-footer-screen-title",
+        name: "Screen Title",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Übersicht",
+        x: 16,
+        y: 24,
+        width: 160,
+        height: 24
+      },
+      {
+        id: "single-footer-shell",
+        name: "Footer Navigation Shell",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        x: 0,
+        y: 580,
+        width: 360,
+        height: 60,
+        fillColor: "#ffffff",
+        children: [
+          {
+            id: "single-footer-action",
+            name: "Footer Action",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 0,
+            y: 580,
+            width: 180,
+            height: 60,
+            children: [
+              {
+                id: "single-footer-action-label",
+                name: "Action Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Home",
+                x: 16,
+                y: 598
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("<BottomNavigation "), false);
+  assert.ok(content.includes("<Button "));
+});
+
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
   const screen = {
     id: "layout-screen",

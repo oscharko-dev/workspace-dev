@@ -4378,6 +4378,17 @@ interface RenderedItem {
   node: ScreenElementIR;
 }
 
+const NAVIGATION_BAR_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>(["container", "stack", "table"]);
+const NAVIGATION_BAR_TOP_LEVEL_DEPTH = 3;
+const NAVIGATION_BAR_MIN_HEIGHT_PX = 40;
+const NAVIGATION_BAR_MAX_HEIGHT_PX = 180;
+const NAVIGATION_BAR_MIN_WIDTH_RATIO = 0.9;
+const NAVIGATION_BAR_EDGE_PROXIMITY_PX = 56;
+const NAVIGATION_BAR_MIN_RENDERABLE_BOTTOM_ACTIONS = 2;
+const NAVIGATION_BAR_DATA_TABLE_MIN_ROWS = 2;
+const NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS = 2;
+const NAVIGATION_BAR_DATA_TABLE_TEXT_CELL_RATIO_MIN = 0.75;
+
 interface ListRowAnalysis {
   node: ScreenElementIR;
   primaryText: string;
@@ -4794,6 +4805,187 @@ const collectRenderedItemLabels = (element: ScreenElementIR, generationLocale?: 
     id: item.id,
     label: item.label
   }));
+};
+
+const hasNavigationNameHintInSubtree = (element: ScreenElementIR): boolean => {
+  const semanticCandidates = [element.name, element.text ?? "", ...collectSubtreeNames(element)];
+  return semanticCandidates.some((candidate) => {
+    const normalized = normalizeInputSemanticText(candidate);
+    if (!normalized) {
+      return false;
+    }
+    return A11Y_NAVIGATION_HINTS.some((hint) => normalized.includes(hint));
+  });
+};
+
+const hasPrototypeNavigationInSubtree = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): boolean => {
+  if (visited.has(element)) {
+    return false;
+  }
+  visited.add(element);
+  if (element.prototypeNavigation) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => hasPrototypeNavigationInSubtree(child, visited));
+};
+
+const toFiniteNumber = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+};
+
+const isLikelyStructuredDataTable = ({
+  element,
+  generationLocale
+}: {
+  element: ScreenElementIR;
+  generationLocale: string;
+}): boolean => {
+  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL", {
+    generationLocale
+  })
+    .map((row) => {
+      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL", {
+        generationLocale
+      });
+      return rowChildren.length > 0 ? rowChildren : [row];
+    })
+    .filter((row) => row.length > 0);
+
+  if (rows.length < NAVIGATION_BAR_DATA_TABLE_MIN_ROWS) {
+    return false;
+  }
+
+  const columnCounts = rows.map((row) => row.length);
+  const minColumns = Math.min(...columnCounts);
+  const maxColumns = Math.max(...columnCounts);
+  if (minColumns < NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS || maxColumns - minColumns > 1) {
+    return false;
+  }
+
+  const flattenedCells = rows.flat();
+  if (flattenedCells.length < NAVIGATION_BAR_DATA_TABLE_MIN_ROWS * NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS) {
+    return false;
+  }
+  const textCellCount = flattenedCells.filter((cell) => Boolean(firstText(cell)?.trim() || cell.type === "text")).length;
+  return textCellCount / flattenedCells.length >= NAVIGATION_BAR_DATA_TABLE_TEXT_CELL_RATIO_MIN;
+};
+
+const isRenderableBottomNavigationAction = ({
+  action,
+  context
+}: {
+  action: RenderedItem;
+  context: RenderContext;
+}): boolean => {
+  if (action.label.trim().length === 0) {
+    return false;
+  }
+  if (action.node.type === "button" || action.node.type === "navigation" || action.node.type === "tab") {
+    return true;
+  }
+  if (action.node.prototypeNavigation) {
+    return true;
+  }
+  if (isIconLikeNode(action.node) || isSemanticIconWrapper(action.node) || Boolean(pickBestIconNode(action.node))) {
+    return true;
+  }
+  if (hasInteractiveDescendants({ element: action.node, context })) {
+    return true;
+  }
+  return hasMeaningfulTextDescendants({ element: action.node, context });
+};
+
+const detectNavigationBarPattern = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): "appbar" | "navigation" | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const elementWidth = toFiniteNumber(element.width);
+  const elementHeight = toFiniteNumber(element.height);
+  const parentWidth = toFiniteNumber(parent.width);
+  const parentHeight = toFiniteNumber(parent.height);
+  const elementY = toFiniteNumber(element.y);
+  const parentY = toFiniteNumber(parent.y);
+
+  if (
+    elementWidth === undefined ||
+    elementHeight === undefined ||
+    parentWidth === undefined ||
+    parentHeight === undefined ||
+    elementY === undefined ||
+    parentY === undefined ||
+    parentWidth <= 0 ||
+    parentHeight <= 0
+  ) {
+    return undefined;
+  }
+
+  if (elementHeight < NAVIGATION_BAR_MIN_HEIGHT_PX || elementHeight > NAVIGATION_BAR_MAX_HEIGHT_PX) {
+    return undefined;
+  }
+
+  const widthRatio = elementWidth / parentWidth;
+  if (widthRatio < NAVIGATION_BAR_MIN_WIDTH_RATIO) {
+    return undefined;
+  }
+
+  const topDistance = Math.abs(elementY - parentY);
+  const bottomDistance = Math.abs(parentY + parentHeight - (elementY + elementHeight));
+  const isNearTop = topDistance <= NAVIGATION_BAR_EDGE_PROXIMITY_PX;
+  const isNearBottom = bottomDistance <= NAVIGATION_BAR_EDGE_PROXIMITY_PX;
+  if (!isNearTop && !isNearBottom) {
+    return undefined;
+  }
+
+  const hasTitleSignal = Boolean(firstText(element)?.trim());
+  const hasIconSignal = collectIconNodes(element).length > 0 || Boolean(pickBestIconNode(element));
+  const hasInteractiveSignal =
+    hasInteractiveDescendants({ element, context }) || hasPrototypeNavigationInSubtree(element);
+  const hasNavigationHintSignal = hasNavigationNameHintInSubtree(element);
+  const hasPrimaryNavSignal = hasIconSignal || hasInteractiveSignal || hasNavigationHintSignal;
+
+  if (
+    isLikelyStructuredDataTable({
+      element,
+      generationLocale: context.generationLocale
+    }) &&
+    !hasPrimaryNavSignal
+  ) {
+    return undefined;
+  }
+
+  if (isNearBottom) {
+    const renderableActionCount = collectRenderedItems(element, context.generationLocale).filter((action) =>
+      isRenderableBottomNavigationAction({
+        action,
+        context
+      })
+    ).length;
+    if (renderableActionCount >= NAVIGATION_BAR_MIN_RENDERABLE_BOTTOM_ACTIONS && hasPrimaryNavSignal) {
+      return "navigation";
+    }
+  }
+
+  if (isNearTop && hasTitleSignal && hasPrimaryNavSignal) {
+    return "appbar";
+  }
+  return undefined;
 };
 
 const GRID_CLUSTER_TOLERANCE_PX = 18;
@@ -5238,6 +5430,113 @@ const renderList = (element: ScreenElementIR, depth: number, parent: VirtualPare
   });
 };
 
+const isLikelyAppBarToolbarActionNode = ({
+  node,
+  context
+}: {
+  node: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (node.type === "button" || node.type === "navigation" || node.type === "tab") {
+    return true;
+  }
+  if (node.prototypeNavigation) {
+    return true;
+  }
+  if (isIconLikeNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node))) {
+    return true;
+  }
+  return hasInteractiveDescendants({ element: node, context });
+};
+
+interface AppBarToolbarActionModel {
+  node: ScreenElementIR;
+  iconNode: ScreenElementIR;
+  ariaLabel: string;
+}
+
+const renderStructuredAppBarToolbarChildren = ({
+  element,
+  depth,
+  context,
+  fallbackTitle
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+  fallbackTitle: string;
+}): string | undefined => {
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  if (children.length === 0) {
+    return undefined;
+  }
+
+  const titleNode =
+    children.find((child) => child.type === "text" && Boolean(child.text?.trim())) ??
+    children.find((child) => {
+      if (isLikelyAppBarToolbarActionNode({ node: child, context })) {
+        return false;
+      }
+      return hasMeaningfulTextDescendants({ element: child, context });
+    });
+  const title = titleNode ? firstText(titleNode)?.trim() : fallbackTitle;
+  if (!title) {
+    return undefined;
+  }
+
+  const toolbarActions = children
+    .filter((child) => child.id !== titleNode?.id)
+    .map((child) => {
+      if (!isLikelyAppBarToolbarActionNode({ node: child, context })) {
+        return undefined;
+      }
+      const iconNode = isIconLikeNode(child) || isSemanticIconWrapper(child) ? child : pickBestIconNode(child);
+      if (!iconNode) {
+        return undefined;
+      }
+      return {
+        node: child,
+        iconNode,
+        ariaLabel: resolveIconButtonAriaLabel({
+          element: child,
+          iconNode
+        })
+      } satisfies AppBarToolbarActionModel;
+    })
+    .filter((action): action is AppBarToolbarActionModel => Boolean(action));
+
+  if (toolbarActions.length === 0) {
+    return undefined;
+  }
+
+  const unstructuredChildren = children.filter(
+    (child) => child.id !== titleNode?.id && !toolbarActions.some((action) => action.node.id === child.id)
+  );
+  if (unstructuredChildren.length > 0) {
+    return undefined;
+  }
+
+  registerMuiImports(context, "IconButton");
+  const indent = "  ".repeat(depth);
+  const renderedActions = toolbarActions
+    .map((action) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: action.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      const iconExpression = renderFallbackIconExpression({
+        element: action.iconNode,
+        parent: { name: action.node.name },
+        context,
+        ariaHidden: true,
+        extraEntries: [["fontSize", literal("inherit")]]
+      });
+      return `${indent}    <IconButton edge="end" aria-label={${literal(action.ariaLabel)}}${linkProps}>${iconExpression}</IconButton>`;
+    })
+    .join("\n");
+  return `${indent}    <Typography variant="h6" sx={{ flexGrow: 1 }}>{${literal(title)}}</Typography>\n${renderedActions}`;
+};
+
 const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "AppBar", "Toolbar", "Typography");
   const indent = "  ".repeat(depth);
@@ -5246,12 +5545,20 @@ const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualPa
     parent,
     context
   });
-  const renderedChildren = renderChildrenIntoParent({
-    element,
-    depth: depth + 2,
-    context
-  });
   const fallbackTitle = firstText(element)?.trim() || element.name || "App";
+  const structuredToolbarChildren = renderStructuredAppBarToolbarChildren({
+    element,
+    depth,
+    context,
+    fallbackTitle
+  });
+  const renderedChildren =
+    structuredToolbarChildren ??
+    renderChildrenIntoParent({
+      element,
+      depth: depth + 2,
+      context
+    });
   return `${indent}<AppBar role="banner" position="static" sx={{ ${sx} }}>
 ${indent}  <Toolbar>
 ${renderedChildren || `${indent}    <Typography variant="h6">{${literal(fallbackTitle)}}</Typography>`}
@@ -5975,6 +6282,19 @@ const renderElement = (
 
     if (element.nodeType === "VECTOR" && element.type !== "image") {
       return null;
+    }
+
+    const navigationBarPattern = detectNavigationBarPattern({
+      element,
+      depth,
+      parent,
+      context
+    });
+    if (navigationBarPattern === "appbar") {
+      return renderAppBar(element, depth, parent, context);
+    }
+    if (navigationBarPattern === "navigation") {
+      return renderNavigation(element, depth, parent, context);
     }
 
     switch (element.type) {
