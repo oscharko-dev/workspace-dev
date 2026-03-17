@@ -134,7 +134,8 @@ export const runGitPrFlowWithDeps = async ({
     throw new Error("Only GitHub repositories are supported in workspace-dev git.pr mode.");
   }
 
-  const boardKey = resolveBoardKey(input.figmaFileKey);
+  const boardKeySeed = input.figmaFileKey?.trim() || input.figmaJsonPath?.trim() || "local-json";
+  const boardKey = resolveBoardKey(boardKeySeed);
   const repoDir = path.join(jobDir, "repo");
   const redactions = [repoToken];
   const authedUrl = toGithubAuthedUrl({ repoUrl, token: repoToken });

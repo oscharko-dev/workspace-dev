@@ -11,6 +11,15 @@ test("mode-lock allows rest + deterministic", () => {
   assert.equal(result.errors.length, 0);
 });
 
+test("mode-lock allows local_json + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic"
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
 test("mode-lock allows empty/undefined modes (defaults apply)", () => {
   const result = validateModeLock({});
   assert.equal(result.valid, true);
@@ -73,6 +82,9 @@ test("enforceModeLock throws for blocked modes", () => {
 test("enforceModeLock does not throw for valid modes", () => {
   assert.doesNotThrow(() =>
     enforceModeLock({ figmaSourceMode: "rest", llmCodegenMode: "deterministic" })
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({ figmaSourceMode: "local_json", llmCodegenMode: "deterministic" })
   );
 });
 

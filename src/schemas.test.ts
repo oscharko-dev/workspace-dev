@@ -30,6 +30,32 @@ test("schema: valid submit body parses correctly", () => {
   }
 });
 
+test("schema: valid local_json submit body parses correctly", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: "./fixtures/figma.json",
+    llmCodegenMode: "deterministic"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "local_json");
+    assert.equal(result.data.figmaJsonPath, "./fixtures/figma.json");
+    assert.equal(result.data.figmaFileKey, undefined);
+    assert.equal(result.data.figmaAccessToken, undefined);
+  }
+});
+
+test("schema: local_json mode is inferred from figmaJsonPath when figmaSourceMode is omitted", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaJsonPath: "./fixtures/figma.json"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "local_json");
+    assert.equal(result.data.figmaJsonPath, "./fixtures/figma.json");
+  }
+});
+
 test("schema: missing required fields fails validation", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123"
@@ -41,6 +67,33 @@ test("schema: empty required values fail validation", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "",
     figmaAccessToken: ""
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: local_json mode rejects missing figmaJsonPath", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: local_json mode rejects rest credentials", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: "./fixtures/figma.json",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: rest mode rejects figmaJsonPath", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "rest",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    figmaJsonPath: "./fixtures/figma.json"
   });
   assert.equal(result.success, false);
 });
@@ -131,6 +184,21 @@ test("schema: workspace status rejects non-rest figmaSourceMode", () => {
     previewEnabled: true
   });
   assert.equal(result.success, false);
+});
+
+test("schema: workspace status allows local_json figmaSourceMode", () => {
+  const result = WorkspaceStatusSchema.safeParse({
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic",
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true
+  });
+  assert.equal(result.success, true);
 });
 
 test("schema: workspace status requires outputRoot and previewEnabled", () => {

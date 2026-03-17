@@ -5,7 +5,7 @@
  * dependencies to keep the package air-gap compatible.
  */
 
-import type { WorkspaceBrandTheme, WorkspaceJobInput, WorkspaceStatus } from "./contracts/index.js";
+import type { WorkspaceBrandTheme, WorkspaceFigmaSourceMode, WorkspaceJobInput, WorkspaceStatus } from "./contracts/index.js";
 
 type PathSegment = string | number;
 
@@ -94,6 +94,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const allowedKeys = new Set([
     "figmaFileKey",
     "figmaAccessToken",
+    "figmaJsonPath",
     "repoUrl",
     "repoToken",
     "enableGitPr",
@@ -114,13 +115,19 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const figmaFileKey = parseStringField({
     input,
     key: "figmaFileKey",
-    required: true,
+    required: false,
     issues
   });
   const figmaAccessToken = parseStringField({
     input,
     key: "figmaAccessToken",
-    required: true,
+    required: false,
+    issues
+  });
+  const figmaJsonPath = parseStringField({
+    input,
+    key: "figmaJsonPath",
+    required: false,
     issues
   });
   const repoUrl = parseStringField({
@@ -193,6 +200,41 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     return undefined;
   })();
 
+  const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
+  const resolvedFigmaSourceMode: WorkspaceFigmaSourceMode | undefined = (() => {
+    if (normalizedFigmaSourceMode === undefined) {
+      return figmaJsonPath !== undefined ? "local_json" : "rest";
+    }
+    if (normalizedFigmaSourceMode === "rest" || normalizedFigmaSourceMode === "local_json") {
+      return normalizedFigmaSourceMode as WorkspaceFigmaSourceMode;
+    }
+    return undefined;
+  })();
+
+  if (resolvedFigmaSourceMode === "rest") {
+    if (!figmaFileKey) {
+      pushIssue(issues, ["figmaFileKey"], "figmaFileKey is required when figmaSourceMode=rest");
+    }
+    if (!figmaAccessToken) {
+      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken is required when figmaSourceMode=rest");
+    }
+    if (figmaJsonPath !== undefined) {
+      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath must be omitted when figmaSourceMode=rest");
+    }
+  }
+
+  if (resolvedFigmaSourceMode === "local_json") {
+    if (!figmaJsonPath) {
+      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath is required when figmaSourceMode=local_json");
+    }
+    if (figmaFileKey !== undefined) {
+      pushIssue(issues, ["figmaFileKey"], "figmaFileKey must be omitted when figmaSourceMode=local_json");
+    }
+    if (figmaAccessToken !== undefined) {
+      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken must be omitted when figmaSourceMode=local_json");
+    }
+  }
+
   if (enableGitPr) {
     if (!repoUrl) {
       pushIssue(issues, ["repoUrl"], "repoUrl is required when enableGitPr=true");
@@ -202,23 +244,32 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     }
   }
 
-  if (issues.length > 0 || !figmaFileKey || !figmaAccessToken) {
+  if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
 
   const data: WorkspaceJobInput = {
-    figmaFileKey,
-    figmaAccessToken,
     enableGitPr
   };
+  if (figmaSourceMode !== undefined) {
+    data.figmaSourceMode = figmaSourceMode;
+  } else if (resolvedFigmaSourceMode !== undefined) {
+    data.figmaSourceMode = resolvedFigmaSourceMode;
+  }
+  if (figmaFileKey !== undefined) {
+    data.figmaFileKey = figmaFileKey;
+  }
+  if (figmaAccessToken !== undefined) {
+    data.figmaAccessToken = figmaAccessToken;
+  }
+  if (figmaJsonPath !== undefined) {
+    data.figmaJsonPath = figmaJsonPath;
+  }
   if (repoUrl !== undefined) {
     data.repoUrl = repoUrl;
   }
   if (repoToken !== undefined) {
     data.repoToken = repoToken;
-  }
-  if (figmaSourceMode !== undefined) {
-    data.figmaSourceMode = figmaSourceMode;
   }
   if (llmCodegenMode !== undefined) {
     data.llmCodegenMode = llmCodegenMode;
@@ -265,8 +316,8 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1) {
     pushIssue(issues, ["port"], "port must be a positive integer");
   }
-  if (figmaSourceMode !== "rest") {
-    pushIssue(issues, ["figmaSourceMode"], "figmaSourceMode must equal 'rest'");
+  if (figmaSourceMode !== "rest" && figmaSourceMode !== "local_json") {
+    pushIssue(issues, ["figmaSourceMode"], "figmaSourceMode must be one of: rest, local_json");
   }
   if (llmCodegenMode !== "deterministic") {
     pushIssue(issues, ["llmCodegenMode"], "llmCodegenMode must equal 'deterministic'");
@@ -292,7 +343,7 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
       url: url as string,
       host: host as string,
       port: port as number,
-      figmaSourceMode: "rest",
+      figmaSourceMode: figmaSourceMode as WorkspaceFigmaSourceMode,
       llmCodegenMode: "deterministic",
       uptimeMs: uptimeMs as number,
       outputRoot: outputRoot as string,

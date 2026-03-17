@@ -602,7 +602,7 @@ Capabilities:
   - GET /workspace/repros/:id/     Open generated local preview
 
 Mode lock is always enforced:
-  figmaSourceMode=rest
+  figmaSourceMode=rest|local_json
   llmCodegenMode=deterministic
 `);
 };
@@ -623,7 +623,7 @@ const main = async (): Promise<void> => {
   }
 
   console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
-  console.log("[workspace-dev] Mode lock: figmaSourceMode=rest, llmCodegenMode=deterministic");
+  console.log("[workspace-dev] Mode lock: figmaSourceMode=rest|local_json, llmCodegenMode=deterministic");
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
 
