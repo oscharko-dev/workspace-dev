@@ -486,6 +486,11 @@ const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
 const FIELD_ERROR_RED_MIN_CHANNEL = 150;
 const FIELD_ERROR_RED_DELTA_MIN = 32;
 const WCAG_AA_NORMAL_TEXT_CONTRAST_MIN = 4.5;
+const DARK_MODE_BACKGROUND_DEFAULT = "#121212";
+const DARK_MODE_BACKGROUND_PAPER = "#1e1e1e";
+const DARK_MODE_TEXT_PRIMARY = "#f5f7fb";
+const LIGHTEN_TO_WHITE_STEP = 0.08;
+const LIGHTEN_TO_WHITE_MAX_STEPS = 11;
 
 const hasVisibleGradient = (value: string | undefined): boolean => {
   return typeof value === "string" && value.trim().length > 0;
@@ -577,6 +582,218 @@ const toContrastRatio = (foreground: RgbaColor, background: RgbaColor): number =
   const brighter = Math.max(foregroundLuminance, backgroundLuminance);
   const darker = Math.min(foregroundLuminance, backgroundLuminance);
   return (brighter + 0.05) / (darker + 0.05);
+};
+
+const toOpaqueHex = (value: string | undefined): string | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return `#${normalized.slice(1, 7)}`;
+};
+
+const toHexChannel = (value: number): string => {
+  return clamp(Math.round(value), 0, 255)
+    .toString(16)
+    .padStart(2, "0");
+};
+
+const toRgbHex = (color: { r: number; g: number; b: number }): string => {
+  return `#${toHexChannel(color.r)}${toHexChannel(color.g)}${toHexChannel(color.b)}`;
+};
+
+const mixHexColors = ({
+  left,
+  right,
+  amount
+}: {
+  left: string;
+  right: string;
+  amount: number;
+}): string => {
+  const leftColor = toRgbaColor(toOpaqueHex(left));
+  const rightColor = toRgbaColor(toOpaqueHex(right));
+  if (!leftColor || !rightColor) {
+    return left;
+  }
+  const normalizedAmount = clamp(amount, 0, 1);
+  const mixChannel = (from: number, to: number): number => from + (to - from) * normalizedAmount;
+  return toRgbHex({
+    r: mixChannel(leftColor.r, rightColor.r),
+    g: mixChannel(leftColor.g, rightColor.g),
+    b: mixChannel(leftColor.b, rightColor.b)
+  });
+};
+
+const toHexWithAlpha = (hex: string, alpha: number): string => {
+  const normalized = toOpaqueHex(hex);
+  if (!normalized) {
+    return hex;
+  }
+  const alphaHex = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+    .toString(16)
+    .padStart(2, "0");
+  return `${normalized}${alphaHex}`;
+};
+
+const ensureContrastAgainstBackground = ({
+  color,
+  background,
+  minContrast = WCAG_AA_NORMAL_TEXT_CONTRAST_MIN
+}: {
+  color: string;
+  background: string;
+  minContrast?: number;
+}): string => {
+  const baseColor = toOpaqueHex(color);
+  const baseBackground = toOpaqueHex(background);
+  const backgroundRgba = toRgbaColor(baseBackground);
+  if (!baseColor || !baseBackground || !backgroundRgba) {
+    return color;
+  }
+
+  for (let step = 0; step <= LIGHTEN_TO_WHITE_MAX_STEPS; step += 1) {
+    const candidate =
+      step === 0 ? baseColor : mixHexColors({ left: baseColor, right: "#ffffff", amount: step * LIGHTEN_TO_WHITE_STEP });
+    const candidateRgba = toRgbaColor(candidate);
+    if (candidateRgba && toContrastRatio(candidateRgba, backgroundRgba) >= minContrast) {
+      return candidate;
+    }
+  }
+
+  return mixHexColors({ left: baseColor, right: "#ffffff", amount: LIGHTEN_TO_WHITE_MAX_STEPS * LIGHTEN_TO_WHITE_STEP });
+};
+
+const buildActionPalette = ({
+  primaryColor,
+  textColor
+}: {
+  primaryColor: string;
+  textColor: string;
+}): DesignTokens["palette"]["action"] => {
+  return {
+    active: toHexWithAlpha(textColor, 0.54),
+    hover: toHexWithAlpha(primaryColor, 0.04),
+    selected: toHexWithAlpha(primaryColor, 0.08),
+    disabled: toHexWithAlpha(textColor, 0.26),
+    disabledBackground: toHexWithAlpha(textColor, 0.12),
+    focus: toHexWithAlpha(primaryColor, 0.12)
+  };
+};
+
+interface ResolvedThemePalette {
+  primary: string;
+  secondary: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  background: {
+    default: string;
+    paper: string;
+  };
+  text: {
+    primary: string;
+  };
+  divider: string;
+  action: DesignTokens["palette"]["action"];
+}
+
+const toLightThemePalette = (tokens: DesignTokens): ResolvedThemePalette => {
+  return {
+    primary: tokens.palette.primary,
+    secondary: tokens.palette.secondary,
+    success: tokens.palette.success,
+    warning: tokens.palette.warning,
+    error: tokens.palette.error,
+    info: tokens.palette.info,
+    background: {
+      default: tokens.palette.background,
+      paper: tokens.palette.background
+    },
+    text: {
+      primary: tokens.palette.text
+    },
+    divider: tokens.palette.divider,
+    action: tokens.palette.action
+  };
+};
+
+const toDarkThemePalette = (tokens: DesignTokens): ResolvedThemePalette => {
+  const adjustedPrimary = ensureContrastAgainstBackground({
+    color: tokens.palette.primary,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedSecondary = ensureContrastAgainstBackground({
+    color: tokens.palette.secondary,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedSuccess = ensureContrastAgainstBackground({
+    color: tokens.palette.success,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedWarning = ensureContrastAgainstBackground({
+    color: tokens.palette.warning,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedError = ensureContrastAgainstBackground({
+    color: tokens.palette.error,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedInfo = ensureContrastAgainstBackground({
+    color: tokens.palette.info,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+
+  return {
+    primary: adjustedPrimary,
+    secondary: adjustedSecondary,
+    success: adjustedSuccess,
+    warning: adjustedWarning,
+    error: adjustedError,
+    info: adjustedInfo,
+    background: {
+      default: DARK_MODE_BACKGROUND_DEFAULT,
+      paper: DARK_MODE_BACKGROUND_PAPER
+    },
+    text: {
+      primary: DARK_MODE_TEXT_PRIMARY
+    },
+    divider: toHexWithAlpha(DARK_MODE_TEXT_PRIMARY, 0.12),
+    action: buildActionPalette({
+      primaryColor: adjustedPrimary,
+      textColor: DARK_MODE_TEXT_PRIMARY
+    })
+  };
+};
+
+const toThemePaletteBlock = ({
+  mode,
+  palette
+}: {
+  mode: "light" | "dark";
+  palette: ResolvedThemePalette;
+}): string => {
+  return `{
+      mode: "${mode}",
+      primary: { main: "${palette.primary}" },
+      secondary: { main: "${palette.secondary}" },
+      success: { main: "${palette.success}" },
+      warning: { main: "${palette.warning}" },
+      error: { main: "${palette.error}" },
+      info: { main: "${palette.info}" },
+      background: { default: "${palette.background.default}", paper: "${palette.background.paper}" },
+      text: { primary: "${palette.text.primary}" },
+      divider: "${palette.divider}",
+      action: {
+        active: "${palette.action.active}",
+        hover: "${palette.action.hover}",
+        selected: "${palette.action.selected}",
+        disabled: "${palette.action.disabled}",
+        disabledBackground: "${palette.action.disabledBackground}",
+        focus: "${palette.action.focus}"
+      }
+    }`;
 };
 
 const inferButtonVariant = ({
@@ -7493,6 +7710,8 @@ const renderElement = (
 
 const fallbackThemeFile = (ir: DesignIR): GeneratedFile => {
   const tokens = ir.tokens;
+  const lightPalette = toLightThemePalette(tokens);
+  const darkPalette = toDarkThemePalette(tokens);
   const typographyEntries = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => {
     const variant = tokens.typography[variantName];
     const entries = [
@@ -7513,24 +7732,12 @@ const fallbackThemeFile = (ir: DesignIR): GeneratedFile => {
     content: `import { createTheme } from "@mui/material/styles";
 
 export const appTheme = createTheme({
-  palette: {
-    mode: "light",
-    primary: { main: "${tokens.palette.primary}" },
-    secondary: { main: "${tokens.palette.secondary}" },
-    success: { main: "${tokens.palette.success}" },
-    warning: { main: "${tokens.palette.warning}" },
-    error: { main: "${tokens.palette.error}" },
-    info: { main: "${tokens.palette.info}" },
-    background: { default: "${tokens.palette.background}", paper: "${tokens.palette.background}" },
-    text: { primary: "${tokens.palette.text}" },
-    divider: "${tokens.palette.divider}",
-    action: {
-      active: "${tokens.palette.action.active}",
-      hover: "${tokens.palette.action.hover}",
-      selected: "${tokens.palette.action.selected}",
-      disabled: "${tokens.palette.action.disabled}",
-      disabledBackground: "${tokens.palette.action.disabledBackground}",
-      focus: "${tokens.palette.action.focus}"
+  colorSchemes: {
+    light: {
+      palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}
+    },
+    dark: {
+      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}
     }
   },
   shape: {
@@ -8106,7 +8313,10 @@ const browserBasename = resolveBrowserBasename();
   const firstRoute = firstIdentity?.routePath ?? (firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/");
 
   return `${reactImport}
-import { Box, CircularProgress } from "@mui/material";
+import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
+import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
+import { Box, CircularProgress, IconButton, Tooltip } from "@mui/material";
+import { useColorScheme } from "@mui/material/styles";
 import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
 ${eagerImports}
 ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
@@ -8118,9 +8328,48 @@ const routeLoadingFallback = (
 );
 ${browserBasenameBlock}
 
+function ThemeModeToggle() {
+  const { mode, setMode, systemMode } = useColorScheme();
+  const prefersDarkMode =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false;
+  const resolvedMode =
+    mode === "dark" || (mode !== "light" && (systemMode === "dark" || (systemMode === undefined && prefersDarkMode)))
+      ? "dark"
+      : "light";
+  const nextMode = resolvedMode === "dark" ? "light" : "dark";
+  const label = resolvedMode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+
+  return (
+    <Box sx={{ position: "fixed", top: 16, right: 16, zIndex: 1301 }}>
+      <Tooltip title={label}>
+        <IconButton
+          aria-label={label}
+          data-testid="theme-mode-toggle"
+          onClick={() => setMode(nextMode)}
+          sx={{
+            bgcolor: "background.paper",
+            color: "text.primary",
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: 3,
+            "&:hover": {
+              bgcolor: "action.hover"
+            }
+          }}
+        >
+          {resolvedMode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+}
+
 export default function App() {
   return (
     ${routerOpenTag}
+      <ThemeModeToggle />
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
 ${routes}
