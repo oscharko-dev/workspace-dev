@@ -1393,6 +1393,8 @@ interface SemanticIconModel {
   height?: number | undefined;
 }
 
+type TextFieldInputType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+
 interface SemanticInputModel {
   labelNode?: ScreenElementIR | undefined;
   valueNode?: ScreenElementIR | undefined;
@@ -1410,6 +1412,8 @@ interface InteractiveFieldModel {
   placeholder?: string;
   isSelect: boolean;
   options: string[];
+  inputType?: TextFieldInputType | undefined;
+  autoComplete?: string | undefined;
   suffixText?: string | undefined;
   labelFontFamily?: string | undefined;
   labelColor?: string | undefined;
@@ -1728,6 +1732,39 @@ const INPUT_NAME_HINTS = [
   "muiselectselect",
   "textfield"
 ];
+const TEXT_FIELD_TYPE_RULES: Array<{
+  type: TextFieldInputType;
+  patterns: RegExp[];
+}> = [
+  {
+    type: "password",
+    patterns: [/\bpassword\b/, /\bpasswort\b/, /\bkennwort\b/]
+  },
+  {
+    type: "email",
+    patterns: [/\be\s*mail\b/, /\bemail\b/, /\bmail\b/]
+  },
+  {
+    type: "tel",
+    patterns: [/\bphone\b/, /\btelefon\b/, /\btel\b/]
+  },
+  {
+    type: "url",
+    patterns: [/\burl\b/, /\bwebsite\b/, /\blink\b/]
+  },
+  {
+    type: "number",
+    patterns: [/\bnumber\b/, /\bamount\b/, /\bbetrag\b/, /\banzahl\b/]
+  },
+  {
+    type: "date",
+    patterns: [/\bdate\b/, /\bdatum\b/, /\bbirthday\b/, /\bgeburtstag\b/]
+  },
+  {
+    type: "search",
+    patterns: [/\bsearch\b/, /\bsuche\b/]
+  }
+];
 
 const INPUT_PLACEHOLDER_TECHNICAL_VALUES = new Set([
   "swap component",
@@ -1769,6 +1806,64 @@ const isValueLikeText = (value: string): boolean => {
 
 const normalizeInputPlaceholderText = (value: string): string => {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const normalizeInputSemanticText = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_./:-]+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const collectInputSemanticHints = ({
+  element,
+  label,
+  placeholder
+}: {
+  element: ScreenElementIR;
+  label: string;
+  placeholder: string | undefined;
+}): string[] => {
+  const uniqueHints = new Set<string>();
+  const rawHints = [label, placeholder, ...collectSubtreeNames(element)];
+  for (const value of rawHints) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const normalized = normalizeInputSemanticText(value);
+    if (!normalized) {
+      continue;
+    }
+    uniqueHints.add(normalized);
+  }
+  return Array.from(uniqueHints);
+};
+
+const inferTextFieldType = (hints: string[]): TextFieldInputType | undefined => {
+  for (const rule of TEXT_FIELD_TYPE_RULES) {
+    if (hints.some((hint) => rule.patterns.some((pattern) => pattern.test(hint)))) {
+      return rule.type;
+    }
+  }
+  return undefined;
+};
+
+const inferTextFieldAutoComplete = (inputType: TextFieldInputType | undefined): string | undefined => {
+  switch (inputType) {
+    case "email":
+      return "email";
+    case "password":
+      return "current-password";
+    case "tel":
+      return "tel";
+    case "url":
+      return "url";
+    default:
+      return undefined;
+  }
 };
 
 const isLikelyInputPlaceholderText = (value: string | undefined): boolean => {
@@ -2039,6 +2134,9 @@ const registerInteractiveField = ({
   const defaultValue = model.valueNode?.text?.trim() ?? "";
   const isSelect = model.isSelect;
   const options = isSelect ? deriveSelectOptions(defaultValue) : [];
+  const semanticHints = isSelect ? [] : collectInputSemanticHints({ element, label, placeholder });
+  const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
+  const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
 
   const created: InteractiveFieldModel = {
     key,
@@ -2047,6 +2145,8 @@ const registerInteractiveField = ({
     ...(placeholder && !isSelect ? { placeholder } : {}),
     isSelect,
     options,
+    ...(inputType ? { inputType } : {}),
+    ...(autoComplete ? { autoComplete } : {}),
     suffixText: isSelect ? undefined : model.suffixText,
     labelFontFamily: normalizeFontFamily(model.labelNode?.fontFamily),
     labelColor: model.labelNode?.fillColor,
@@ -2266,9 +2366,11 @@ ${indent}</FormControl>`;
     registerMuiImports(context, "InputAdornment");
   }
   const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
+  const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
+  const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
-${placeholderProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
+${placeholderProp}${typeProp}${autoCompleteProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
 ${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}  sx={{
 ${indent}    ${fieldSx},

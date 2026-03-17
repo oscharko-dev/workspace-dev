@@ -282,6 +282,71 @@ const findRenderedButtonLine = ({
   return line ?? "";
 };
 
+const findRenderedTextFieldBlock = ({
+  content,
+  label
+}: {
+  content: string;
+  label: string;
+}): string => {
+  const textFieldBlocks = content.match(/<TextField[\s\S]*?\/>/g) ?? [];
+  const block = textFieldBlocks.find((entry) => entry.includes(`label={"${label}"}`));
+  assert.ok(block, `Expected rendered TextField block for label '${label}'`);
+  return block ?? "";
+};
+
+const createSemanticInputNode = ({
+  id,
+  name,
+  label,
+  placeholder,
+  width = 320,
+  height = 72
+}: {
+  id: string;
+  name: string;
+  label?: string;
+  placeholder?: string;
+  width?: number;
+  height?: number;
+}): any => {
+  const children: any[] = [];
+  if (label) {
+    children.push({
+      id: `${id}-label`,
+      name: "Label",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: label,
+      y: 0
+    });
+  }
+  if (placeholder) {
+    children.push({
+      id: `${id}-placeholder`,
+      name: "Placeholder",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: placeholder,
+      textRole: "placeholder" as const,
+      y: label ? 24 : 0
+    });
+  }
+
+  return {
+    id,
+    name,
+    nodeType: "FRAME",
+    type: "input" as const,
+    layoutMode: "VERTICAL" as const,
+    gap: 4,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    width,
+    height,
+    children
+  };
+};
+
 test("deterministic file helpers create expected paths and content", () => {
   const ir = createIr();
   const screen = ir.screens[0];
@@ -574,6 +639,98 @@ test("deterministic screen rendering maps textRole placeholder to TextField plac
   assert.ok(content.includes('label={"Loan amount"}'));
   assert.ok(content.includes('placeholder={"Type here"}'));
   assert.equal(/":\s*"Type here"/.test(content), false);
+});
+
+test("deterministic screen rendering infers TextField type and conservative autoComplete from semantic labels", () => {
+  const screen = {
+    id: "textfield-type-label-screen",
+    name: "TextField Type Label Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "input-email", name: "Email Field", label: "Email" }),
+      createSemanticInputNode({ id: "input-password", name: "Password Field", label: "Passwort" }),
+      createSemanticInputNode({ id: "input-phone", name: "Phone Field", label: "Telefon" }),
+      createSemanticInputNode({ id: "input-number", name: "Number Field", label: "Betrag" }),
+      createSemanticInputNode({ id: "input-date", name: "Date Field", label: "Datum" }),
+      createSemanticInputNode({ id: "input-url", name: "URL Field", label: "Website" }),
+      createSemanticInputNode({ id: "input-search", name: "Search Field", label: "Suche" })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const cases: Array<{ label: string; type: string; autoComplete?: string }> = [
+    { label: "Email", type: "email", autoComplete: "email" },
+    { label: "Passwort", type: "password", autoComplete: "current-password" },
+    { label: "Telefon", type: "tel", autoComplete: "tel" },
+    { label: "Betrag", type: "number" },
+    { label: "Datum", type: "date" },
+    { label: "Website", type: "url", autoComplete: "url" },
+    { label: "Suche", type: "search" }
+  ];
+
+  for (const testCase of cases) {
+    const block = findRenderedTextFieldBlock({ content, label: testCase.label });
+    assert.ok(block.includes(`type={"${testCase.type}"}`));
+    if (testCase.autoComplete) {
+      assert.ok(block.includes(`autoComplete={"${testCase.autoComplete}"}`));
+    } else {
+      assert.equal(block.includes("autoComplete={"), false);
+    }
+    assert.ok(block.includes("value={formValues["));
+    assert.ok(block.includes("onChange={(event) => updateFieldValue("));
+  }
+});
+
+test("deterministic screen rendering infers TextField type from node name and placeholder hints", () => {
+  const screen = {
+    id: "textfield-type-hints-screen",
+    name: "TextField Type Hints Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "name-email", name: "input-email", label: "Kontakt" }),
+      createSemanticInputNode({ id: "name-password", name: "password-field", label: "Zugang" }),
+      createSemanticInputNode({
+        id: "placeholder-url",
+        name: "generic-input",
+        label: "Wert",
+        placeholder: "Website Link eingeben"
+      })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const emailBlock = findRenderedTextFieldBlock({ content, label: "Kontakt" });
+  assert.ok(emailBlock.includes('type={"email"}'));
+  assert.ok(emailBlock.includes('autoComplete={"email"}'));
+
+  const passwordBlock = findRenderedTextFieldBlock({ content, label: "Zugang" });
+  assert.ok(passwordBlock.includes('type={"password"}'));
+  assert.ok(passwordBlock.includes('autoComplete={"current-password"}'));
+
+  const placeholderBlock = findRenderedTextFieldBlock({ content, label: "Wert" });
+  assert.ok(placeholderBlock.includes('placeholder={"Website Link eingeben"}'));
+  assert.ok(placeholderBlock.includes('type={"url"}'));
+  assert.ok(placeholderBlock.includes('autoComplete={"url"}'));
+});
+
+test("deterministic screen rendering prioritizes password type when multiple semantic keywords match", () => {
+  const screen = {
+    id: "textfield-type-priority-screen",
+    name: "TextField Type Priority Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [createSemanticInputNode({ id: "priority-field", name: "priority-field", label: "Email Passwort" })]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const block = findRenderedTextFieldBlock({ content, label: "Email Passwort" });
+  assert.ok(block.includes('type={"password"}'));
+  assert.ok(block.includes('autoComplete={"current-password"}'));
 });
 
 test("deterministic screen rendering preserves auto-layout alignment and icon fallbacks", () => {
