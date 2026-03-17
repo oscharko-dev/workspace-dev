@@ -256,6 +256,29 @@ const toSpacingUnitValue = ({
   return normalized;
 };
 
+const toThemeBorderRadiusValue = ({
+  radiusPx,
+  tokens
+}: {
+  radiusPx: number | undefined;
+  tokens: DesignTokens | undefined;
+}): string | number | undefined => {
+  if (typeof radiusPx !== "number" || !Number.isFinite(radiusPx) || radiusPx <= 0) {
+    return undefined;
+  }
+
+  const tokenBorderRadius = tokens?.borderRadius;
+  if (typeof tokenBorderRadius !== "number" || !Number.isFinite(tokenBorderRadius) || tokenBorderRadius <= 0) {
+    return toPxLiteral(radiusPx);
+  }
+
+  const normalized = Math.round((radiusPx / tokenBorderRadius) * 1000) / 1000;
+  if (normalized === 0) {
+    return 0.125;
+  }
+  return normalized;
+};
+
 const toRemLiteral = (value: number | undefined): string | undefined => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return undefined;
@@ -1005,7 +1028,7 @@ const baseLayoutEntries = (
         : undefined
     ],
     ["borderColor", includePaints ? toThemeColorLiteral({ color: element.strokeColor, tokens }) : undefined],
-    ["borderRadius", element.cornerRadius ? toPxLiteral(element.cornerRadius) : undefined],
+    ["borderRadius", toThemeBorderRadiusValue({ radiusPx: element.cornerRadius, tokens })],
     [
       "boxShadow",
       toShadowSxEntry({
@@ -3423,7 +3446,13 @@ const renderSemanticInput = (
   ]);
 
   const inputRootStyle = sxString([
-    ["borderRadius", toPxLiteral(outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius)],
+    [
+      "borderRadius",
+      toThemeBorderRadiusValue({
+        radiusPx: outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius,
+        tokens: context.tokens
+      })
+    ],
     ["fontFamily", field.valueFontFamily ? literal(field.valueFontFamily) : undefined],
     ["color", toThemeColorLiteral({ color: field.valueColor, tokens: context.tokens })]
   ]);
