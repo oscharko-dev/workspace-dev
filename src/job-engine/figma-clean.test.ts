@@ -391,3 +391,44 @@ test("cleanFigmaForCodegen keeps only finite node opacity values in [0,1)", () =
   assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-string") ?? {}), false);
   assert.equal("opacity" in (findNodeById(result.cleanedFile.document, "opacity-invalid-nan") ?? {}), false);
 });
+
+test("cleanFigmaForCodegen preserves visible IMAGE paints for downstream image classification", () => {
+  const input = {
+    name: "Image Paint Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-image-paint",
+              type: "FRAME",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "image-node",
+                  type: "RECTANGLE",
+                  name: "Hero",
+                  fills: [
+                    { type: "IMAGE", opacity: 0.8, scaleMode: "FILL" },
+                    { type: "SOLID", visible: false, color: { r: 1, g: 0, b: 0, a: 1 } }
+                  ],
+                  absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 100 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+  const imageNode = findNodeById(result.cleanedFile.document, "image-node");
+  assert.ok(imageNode);
+  assert.deepEqual(imageNode?.fills, [{ type: "IMAGE", opacity: 0.8 }]);
+});

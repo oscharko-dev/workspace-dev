@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.7.0
+ * Contract version: 2.8.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -65,6 +65,8 @@ export interface WorkspaceStartOptions {
   figmaCacheTtlMs?: number;
   /** Path to icon fallback mapping file (JSON). Default: <outputRoot>/icon-fallback-map.json */
   iconMapFilePath?: string;
+  /** Enable Figma image asset export to generated-app/public/images. Default: true */
+  exportImages?: boolean;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
   figmaScreenElementBudget?: number;
   /** Configured baseline depth limit for dynamic IR child traversal. Default: 14 */
@@ -226,4 +228,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.7.0" as const;
+export const CONTRACT_VERSION = "2.8.0" as const;

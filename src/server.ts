@@ -91,6 +91,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
     ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
     ...(absoluteIconMapFilePath !== undefined ? { iconMapFilePath: absoluteIconMapFilePath } : {}),
+    ...(options.exportImages !== undefined ? { exportImages: options.exportImages } : {}),
     ...(options.figmaScreenElementBudget !== undefined
       ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
       : {}),

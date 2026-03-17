@@ -27,6 +27,7 @@ interface GenerateArtifactsInput {
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
   iconMapFilePath?: string;
+  imageAssetMap?: Record<string, string>;
   llmClient?: LlmClient;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
@@ -739,6 +740,10 @@ const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
 
   if (simplified.type === "text") {
     return simplified.text?.trim() ? simplified : null;
+  }
+
+  if (simplified.type === "image") {
+    return simplified;
   }
 
   if (hasVectorPayload) {
@@ -1529,6 +1534,48 @@ const resolveElementA11yLabel = ({
   return fallback;
 };
 
+const escapeXmlText = (value: string): string => {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+};
+
+const toDeterministicImagePlaceholderSrc = ({
+  element,
+  label
+}: {
+  element: ScreenElementIR;
+  label: string;
+}): string => {
+  const width = Math.max(1, Math.round(element.width ?? 320));
+  const height = Math.max(1, Math.round(element.height ?? 180));
+  const safeLabel = escapeXmlText(label.trim() || "Image");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#f3f4f6"/><stop offset="100%" stop-color="#e5e7eb"/></linearGradient></defs><rect width="${width}" height="${height}" fill="url(#g)"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Roboto, Arial, sans-serif" font-size="14" fill="#6b7280">${safeLabel}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+const resolveImageSource = ({
+  element,
+  context,
+  fallbackLabel
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+  fallbackLabel: string;
+}): string => {
+  const mappedSource = context.imageAssetMap[element.id];
+  if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
+    return mappedSource.trim();
+  }
+  return toDeterministicImagePlaceholderSrc({
+    element,
+    label: fallbackLabel
+  });
+};
+
 const resolveIconButtonAriaLabel = ({
   element,
   iconNode
@@ -1873,6 +1920,7 @@ interface RenderContext {
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
   iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
   mappedImports: MappedImportSpec[];
   spacingBase: number;
   tokens?: DesignTokens | undefined;
@@ -4252,13 +4300,8 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const mediaSx = mediaCandidate
     ? sxString([
         ["height", toPxLiteral(mediaCandidate.height ?? 140)],
-        ["background", mediaCandidate.fillGradient ? literal(mediaCandidate.fillGradient) : undefined],
-        [
-          "bgcolor",
-          !mediaCandidate.fillGradient
-            ? toThemeColorLiteral({ color: mediaCandidate.fillColor, tokens: context.tokens })
-            : undefined
-        ]
+        ["objectFit", literal("cover")],
+        ["display", literal("block")]
       ])
     : undefined;
   if (mediaCandidate) {
@@ -4283,11 +4326,16 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
     : `${indent}  <CardContent />`;
   const mediaBlock = mediaCandidate
     ? (() => {
-        if (isDecorativeImageElement(mediaCandidate)) {
-          return `${indent}  <CardMedia aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
-        }
         const mediaLabel = resolveElementA11yLabel({ element: mediaCandidate, fallback: "Image" });
-        return `${indent}  <CardMedia role="img" aria-label={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
+        const mediaSource = resolveImageSource({
+          element: mediaCandidate,
+          context,
+          fallbackLabel: mediaLabel
+        });
+        if (isDecorativeImageElement(mediaCandidate)) {
+          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
+        }
+        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
       })()
     : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
@@ -4659,6 +4707,13 @@ ${renderedChildren}
 ${indent}</Paper>`;
 };
 
+const subtreeContainsElementType = (element: ScreenElementIR, targetType: ScreenElementIR["type"]): boolean => {
+  if (element.type === targetType) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => subtreeContainsElementType(child, targetType));
+};
+
 const renderTable = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
   const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL")
     .map((row) => {
@@ -4670,6 +4725,11 @@ const renderTable = (element: ScreenElementIR, depth: number, parent: VirtualPar
     })
     .filter((row) => row.length > 0);
   if (rows.length < 2 || rows.some((row) => row.length < 2)) {
+    return renderContainer(element, depth, parent, context);
+  }
+  const containsImageCell = rows.some((row) => row.some((cell) => subtreeContainsElementType(cell, "image")));
+  if (containsImageCell) {
+    // Keep rich cell content (for example exported image assets) instead of flattening cells to plain strings.
     return renderContainer(element, depth, parent, context);
   }
   registerMuiImports(context, "Table", "TableHead", "TableBody", "TableRow", "TableCell");
@@ -4906,16 +4966,30 @@ const renderSkeleton = (element: ScreenElementIR, depth: number, parent: Virtual
 const renderImageElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Box");
   const indent = "  ".repeat(depth);
-  const sx = toElementSx({
+  const sx = sxString([
+    ...baseLayoutEntries(element, parent, {
+      includePaints: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
+    }),
+    ["objectFit", literal("cover")],
+    ["display", literal("block")]
+  ]);
+  const ariaLabel = resolveElementA11yLabel({ element, fallback: "Image" });
+  const src = resolveImageSource({
     element,
-    parent,
-    context
+    context,
+    fallbackLabel: ariaLabel
   });
   if (isDecorativeImageElement(element)) {
-    return `${indent}<Box aria-hidden="true" sx={{ ${sx} }} />`;
+    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true" sx={{ ${sx} }} />`;
   }
-  const ariaLabel = resolveElementA11yLabel({ element, fallback: "Image" });
-  return `${indent}<Box role="img" aria-label={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
+  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
 };
 
 const renderContainer = (
@@ -5069,7 +5143,7 @@ const renderElement = (
       return mappedElement;
     }
 
-    if (element.nodeType === "VECTOR") {
+    if (element.nodeType === "VECTOR" && element.type !== "image") {
       return null;
     }
 
@@ -5232,6 +5306,7 @@ const fallbackScreenFile = ({
   spacingBase,
   tokens,
   iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
+  imageAssetMap = {},
   truncationMetric,
   componentNameOverride,
   filePathOverride
@@ -5241,6 +5316,7 @@ const fallbackScreenFile = ({
   spacingBase?: number;
   tokens?: DesignTokens | undefined;
   iconResolver?: IconFallbackResolver;
+  imageAssetMap?: Record<string, string>;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -5273,6 +5349,7 @@ const fallbackScreenFile = ({
     muiImports: new Set<string>(["Container"]),
     iconImports: [],
     iconResolver,
+    imageAssetMap,
     mappedImports: [],
     spacingBase: resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
@@ -6225,6 +6302,7 @@ export const generateArtifacts = async ({
   ir,
   componentMappings,
   iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
+  imageAssetMap = {},
   llmClient,
   llmModelName,
   llmCodegenMode,
@@ -6319,6 +6397,7 @@ export const generateArtifacts = async ({
       spacingBase: ir.tokens.spacingBase,
       tokens: ir.tokens,
       iconResolver,
+      imageAssetMap,
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})

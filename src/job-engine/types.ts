@@ -71,6 +71,7 @@ export interface JobEngineRuntime {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   iconMapFilePath: string | undefined;
+  exportImages: boolean;
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
