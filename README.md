@@ -178,6 +178,15 @@ workspace-dev start [options]
 
 When `skipInstall` is enabled and `generated-app/node_modules` is missing, `validate.project` fails fast with a deterministic error message.
 
+### Router mode
+
+Use `--router <browser|hash>` (or `FIGMAPIPE_WORKSPACE_ROUTER`) to control the generated `App.tsx` router:
+
+- `browser` (default): clean URLs like `/dashboard`; deployment requires SPA rewrites so app routes resolve to `index.html`.
+- `hash`: compatibility mode with URLs like `/#/dashboard`; no server-side rewrites are required.
+
+For local preview (`/workspace/repros/:jobId/*`), generated BrowserRouter apps auto-resolve a matching `basename` so deep links continue to work under the preview path.
+
 ## Web performance workflow
 
 Bundled template (`template/react-mui-app`) includes a baseline + assertion pipeline:
