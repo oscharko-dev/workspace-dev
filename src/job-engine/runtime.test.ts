@@ -15,6 +15,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaScreenNamePattern, undefined);
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
+  assert.equal(runtime.iconMapFilePath, undefined);
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
   assert.equal(runtime.figmaScreenElementMaxDepth, 14);
   assert.equal(runtime.brandTheme, "derived");
@@ -35,6 +36,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaScreenNamePattern: "  ^auth/(login|register)$  ",
     figmaCacheEnabled: false,
     figmaCacheTtlMs: 999_999_999,
+    iconMapFilePath: "  /tmp/icon-map.json  ",
     figmaScreenElementBudget: 999_999,
     figmaScreenElementMaxDepth: -9,
     brandTheme: "SPARKASSE",
@@ -52,6 +54,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaScreenNamePattern, "^auth/(login|register)$");
   assert.equal(runtime.figmaCacheEnabled, false);
   assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
+  assert.equal(runtime.iconMapFilePath, "/tmp/icon-map.json");
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
   assert.equal(runtime.figmaScreenElementMaxDepth, 1);
   assert.equal(runtime.brandTheme, "sparkasse");
@@ -67,6 +70,14 @@ test("resolveRuntimeSettings normalizes empty figma screen name pattern to undef
   });
 
   assert.equal(runtime.figmaScreenNamePattern, undefined);
+});
+
+test("resolveRuntimeSettings normalizes empty icon map path to undefined", () => {
+  const runtime = resolveRuntimeSettings({
+    iconMapFilePath: "   "
+  });
+
+  assert.equal(runtime.iconMapFilePath, undefined);
 });
 
 test("resolveRuntimeSettings falls back to derived brand theme for unknown values", () => {

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type * as ts from "typescript";
 import type {
@@ -16,6 +16,7 @@ import type {
   VariantStateStyle
 } from "./types.js";
 import { isLlmClientError, type LlmClient } from "./llm.js";
+import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { WorkflowError } from "./workflow-error.js";
 
@@ -25,6 +26,7 @@ interface GenerateArtifactsInput {
   projectDir: string;
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
+  iconMapFilePath?: string;
   llmClient?: LlmClient;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
@@ -154,6 +156,10 @@ const isEgressPolicyDenyError = (error: unknown): boolean => {
   }
 
   return false;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
 };
 
 const toComponentName = (rawName: string): string => {
@@ -673,7 +679,15 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
 
 const isIconLikeNode = (element: ScreenElementIR): boolean => {
   const loweredName = element.name.toLowerCase();
-  return loweredName.includes("muisvgiconroot") || loweredName.includes("iconcomponent") || loweredName.startsWith("ic_");
+  return (
+    loweredName.includes("muisvgiconroot") ||
+    loweredName.includes("iconcomponent") ||
+    loweredName.startsWith("ic_") ||
+    loweredName.startsWith("icon/") ||
+    loweredName.startsWith("icons/") ||
+    loweredName.startsWith("icon-") ||
+    loweredName.startsWith("icon_")
+  );
 };
 
 const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
@@ -1713,6 +1727,9 @@ const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | undefined
       if (lowered.startsWith("ic_")) {
         total += 6;
       }
+      if (lowered.startsWith("icon/") || lowered.startsWith("icons/") || lowered.startsWith("icon-") || lowered.startsWith("icon_")) {
+        total += 5;
+      }
       if (lowered.includes("muisvgiconroot")) {
         total += 4;
       }
@@ -1804,6 +1821,32 @@ interface IconImportSpec {
   modulePath: string;
 }
 
+interface IconFallbackMapEntry {
+  iconName: string;
+  aliases?: string[] | undefined;
+}
+
+interface IconFallbackMap {
+  version: number;
+  entries: IconFallbackMapEntry[];
+  synonyms?: Record<string, string> | undefined;
+}
+
+interface CompiledIconFallbackEntry {
+  iconName: string;
+  aliases: string[];
+  importSpec: IconImportSpec;
+  priority: number;
+}
+
+interface IconFallbackResolver {
+  entries: CompiledIconFallbackEntry[];
+  byIconName: Map<string, CompiledIconFallbackEntry>;
+  exactAliasMap: Map<string, CompiledIconFallbackEntry>;
+  tokenIndex: Map<string, CompiledIconFallbackEntry[]>;
+  synonymMap: Map<string, CompiledIconFallbackEntry>;
+}
+
 interface MappedImportSpec {
   localName: string;
   modulePath: string;
@@ -1829,6 +1872,7 @@ interface RenderContext {
   accessibilityWarnings: AccessibilityWarning[];
   muiImports: Set<string>;
   iconImports: IconImportSpec[];
+  iconResolver: IconFallbackResolver;
   mappedImports: MappedImportSpec[];
   spacingBase: number;
   tokens?: DesignTokens | undefined;
@@ -2394,66 +2438,562 @@ const resolveIconColor = (element: ScreenElementIR): string | undefined => {
   return firstVectorColor(element) ?? firstTextColor(element) ?? element.fillColor;
 };
 
-const FALLBACK_ICON_SPECS: Array<{ patterns: string[]; importSpec: IconImportSpec }> = [
-  {
-    patterns: ["bookmark", "merken"],
-    importSpec: { localName: "BookmarkBorderIcon", modulePath: "@mui/icons-material/BookmarkBorder" }
-  },
-  {
-    patterns: ["help", "hilfe", "questionmark"],
-    importSpec: { localName: "HelpOutlineIcon", modulePath: "@mui/icons-material/HelpOutline" }
-  },
-  {
-    patterns: ["homepage", "startseite", "house", "home"],
-    importSpec: { localName: "HomeOutlinedIcon", modulePath: "@mui/icons-material/HomeOutlined" }
-  },
-  {
-    patterns: ["personensuche", "person_search", "search_person", "person search"],
-    importSpec: { localName: "PersonSearchIcon", modulePath: "@mui/icons-material/PersonSearch" }
-  },
-  {
-    patterns: ["messenger", "speechbubble", "speech_bubble", "chat", "forum"],
-    importSpec: { localName: "ForumOutlinedIcon", modulePath: "@mui/icons-material/ForumOutlined" }
-  },
-  {
-    patterns: ["folder", "document", "two_documents"],
-    importSpec: { localName: "FolderOutlinedIcon", modulePath: "@mui/icons-material/FolderOutlined" }
-  },
-  {
-    patterns: ["edit", "pencil"],
-    importSpec: { localName: "EditOutlinedIcon", modulePath: "@mui/icons-material/EditOutlined" }
-  },
-  {
-    patterns: ["delete", "trash"],
-    importSpec: { localName: "DeleteOutlineIcon", modulePath: "@mui/icons-material/DeleteOutline" }
-  },
-  {
-    patterns: ["mail", "postbox"],
-    importSpec: { localName: "MailOutlineIcon", modulePath: "@mui/icons-material/MailOutline" }
-  },
-  {
-    patterns: ["add", "plus"],
-    importSpec: { localName: "AddIcon", modulePath: "@mui/icons-material/Add" }
-  },
-  {
-    patterns: ["search", "magnifier"],
-    importSpec: { localName: "SearchIcon", modulePath: "@mui/icons-material/Search" }
-  },
-  {
-    patterns: ["info", "hint"],
-    importSpec: { localName: "InfoOutlinedIcon", modulePath: "@mui/icons-material/InfoOutlined" }
+const ICON_FALLBACK_FILE_NAME = "icon-fallback-map.json";
+const ICON_FALLBACK_DEFAULT_IMPORT_SPEC: IconImportSpec = {
+  localName: "InfoOutlinedIcon",
+  modulePath: "@mui/icons-material/InfoOutlined"
+};
+const ICON_FALLBACK_STYLE_TOKENS = new Set(["outlined", "rounded", "sharp", "twotone", "two", "tone", "filled"]);
+const ICON_FALLBACK_MAX_PHRASE_LENGTH = 3;
+const ICON_FALLBACK_FUZZY_STOPWORDS = new Set(["icon", "icons", "name", "real"]);
+
+const normalizeIconLookupText = (value: string): string => {
+  return normalizeInputSemanticText(value);
+};
+
+const toIconNameTokens = (iconName: string): string[] => {
+  return iconName
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token.length > 0);
+};
+
+const toIconImportSpec = (iconName: string): IconImportSpec => {
+  return {
+    localName: `${iconName}Icon`,
+    modulePath: `@mui/icons-material/${iconName}`
+  };
+};
+
+const isValidIconName = (value: string): boolean => {
+  return /^[A-Za-z][A-Za-z0-9]*$/.test(value);
+};
+
+const toGeneratedAliasesForIconName = (iconName: string): string[] => {
+  const rawTokens = toIconNameTokens(iconName);
+  if (rawTokens.length === 0) {
+    return [];
   }
-];
+  const baseTokens = rawTokens.filter((token) => !ICON_FALLBACK_STYLE_TOKENS.has(token));
+  const aliases = new Set<string>();
+  const pushAlias = (candidate: string): void => {
+    const normalized = normalizeIconLookupText(candidate);
+    if (normalized.length > 0) {
+      aliases.add(normalized);
+    }
+  };
+  pushAlias(rawTokens.join(" "));
+  if (baseTokens.length > 0) {
+    pushAlias(baseTokens.join(" "));
+  }
+  if (baseTokens.length === 1) {
+    pushAlias(baseTokens[0] ?? "");
+  }
+  return Array.from(aliases).sort((left, right) => left.localeCompare(right));
+};
+
+const buildIconFallbackMapFilePayload = (map: IconFallbackMap): IconFallbackMap => {
+  return {
+    version: ICON_FALLBACK_MAP_VERSION,
+    entries: map.entries.map((entry) => ({
+      iconName: entry.iconName,
+      aliases: Array.from(
+        new Set([...(toGeneratedAliasesForIconName(entry.iconName) ?? []), ...((entry.aliases ?? []).map((alias) => normalizeIconLookupText(alias)) ?? [])])
+      ).filter((alias) => alias.length > 0)
+    })),
+    ...(map.synonyms ? { synonyms: map.synonyms } : {})
+  };
+};
+
+const toUniqueAliasList = ({
+  iconName,
+  aliases
+}: {
+  iconName: string;
+  aliases?: string[] | undefined;
+}): string[] => {
+  const unique = new Set<string>();
+  for (const alias of [...toGeneratedAliasesForIconName(iconName), ...(aliases ?? [])]) {
+    const normalized = normalizeIconLookupText(alias);
+    if (normalized.length > 0) {
+      unique.add(normalized);
+    }
+  }
+  return Array.from(unique).sort((left, right) => left.localeCompare(right));
+};
+
+const compileIconFallbackResolver = ({ map }: { map: IconFallbackMap }): IconFallbackResolver => {
+  const entries: CompiledIconFallbackEntry[] = [];
+  const byIconName = new Map<string, CompiledIconFallbackEntry>();
+
+  for (const [index, entry] of map.entries.entries()) {
+    if (!isValidIconName(entry.iconName)) {
+      continue;
+    }
+    const aliases = toUniqueAliasList({
+      iconName: entry.iconName,
+      ...(entry.aliases ? { aliases: entry.aliases } : {})
+    });
+    if (aliases.length === 0) {
+      continue;
+    }
+    const compiled: CompiledIconFallbackEntry = {
+      iconName: entry.iconName,
+      aliases,
+      importSpec: toIconImportSpec(entry.iconName),
+      priority: index
+    };
+    entries.push(compiled);
+    if (!byIconName.has(compiled.iconName)) {
+      byIconName.set(compiled.iconName, compiled);
+    }
+  }
+
+  const exactAliasMap = new Map<string, CompiledIconFallbackEntry>();
+  const tokenIndex = new Map<string, CompiledIconFallbackEntry[]>();
+
+  for (const entry of entries) {
+    for (const alias of entry.aliases) {
+      const existing = exactAliasMap.get(alias);
+      if (
+        !existing ||
+        entry.priority < existing.priority ||
+        (entry.priority === existing.priority && entry.iconName.localeCompare(existing.iconName) < 0)
+      ) {
+        exactAliasMap.set(alias, entry);
+      }
+      for (const token of alias.split(" ")) {
+        if (!token) {
+          continue;
+        }
+        const bucket = tokenIndex.get(token);
+        if (!bucket) {
+          tokenIndex.set(token, [entry]);
+          continue;
+        }
+        if (!bucket.some((candidate) => candidate.iconName === entry.iconName)) {
+          bucket.push(entry);
+        }
+      }
+    }
+  }
+
+  const synonymMap = new Map<string, CompiledIconFallbackEntry>();
+  const synonyms = map.synonyms ?? {};
+  const orderedSynonymEntries = Object.entries(synonyms).sort(([left], [right]) => left.localeCompare(right));
+  for (const [rawSynonym, iconName] of orderedSynonymEntries) {
+    const normalizedSynonym = normalizeIconLookupText(rawSynonym);
+    if (!normalizedSynonym) {
+      continue;
+    }
+    const entry = byIconName.get(iconName);
+    if (!entry) {
+      continue;
+    }
+    if (!synonymMap.has(normalizedSynonym)) {
+      synonymMap.set(normalizedSynonym, entry);
+    }
+  }
+
+  for (const bucket of tokenIndex.values()) {
+    bucket.sort((left, right) => left.priority - right.priority || left.iconName.localeCompare(right.iconName));
+  }
+
+  return {
+    entries,
+    byIconName,
+    exactAliasMap,
+    tokenIndex,
+    synonymMap
+  };
+};
+
+const ICON_FALLBACK_ALIAS_OVERRIDES: Record<string, string[]> = {
+  BookmarkBorder: ["bookmark outline", "bookmark_outline", "bookmark outlined", "merken"],
+  HelpOutline: ["questionmark", "hilfe"],
+  HomeOutlined: ["homepage", "startseite"],
+  PersonSearch: ["personensuche", "person_search", "search_person", "search person", "person search"],
+  Forum: ["messenger", "speechbubble", "speech_bubble", "speech bubble"],
+  Folder: ["document", "two documents", "two_documents"],
+  EditOutlined: ["pencil"],
+  Delete: ["trash"],
+  Mail: ["postbox"],
+  Add: ["plus"],
+  Search: ["magnifier"],
+  InfoOutlined: ["hint", "info hint", "info_hint"]
+};
+
+const ICON_FALLBACK_BUILTIN_MAP: IconFallbackMap = {
+  version: ICON_FALLBACK_MAP_VERSION,
+  entries: BUILTIN_ICON_FALLBACK_CATALOG.entries.map((entry) => ({
+    iconName: entry.iconName,
+    ...(ICON_FALLBACK_ALIAS_OVERRIDES[entry.iconName] ? { aliases: ICON_FALLBACK_ALIAS_OVERRIDES[entry.iconName] } : {})
+  })),
+  synonyms: BUILTIN_ICON_FALLBACK_CATALOG.synonyms
+};
+
+const ICON_FALLBACK_BUILTIN_RESOLVER = compileIconFallbackResolver({
+  map: ICON_FALLBACK_BUILTIN_MAP
+});
+
+const parseIconFallbackMapFile = ({ input }: { input: unknown }): IconFallbackMap | undefined => {
+  if (!isPlainRecord(input)) {
+    return undefined;
+  }
+
+  const version = input.version;
+  if (version !== ICON_FALLBACK_MAP_VERSION) {
+    return undefined;
+  }
+
+  const rawEntries = input.entries;
+  if (!Array.isArray(rawEntries) || rawEntries.length === 0) {
+    return undefined;
+  }
+
+  const entries: IconFallbackMapEntry[] = [];
+  for (const rawEntry of rawEntries) {
+    if (!isPlainRecord(rawEntry)) {
+      continue;
+    }
+    const iconName = typeof rawEntry.iconName === "string" ? rawEntry.iconName.trim() : "";
+    if (!isValidIconName(iconName)) {
+      continue;
+    }
+    const aliases =
+      Array.isArray(rawEntry.aliases) && rawEntry.aliases.every((alias) => typeof alias === "string")
+        ? rawEntry.aliases.map((alias) => alias.trim()).filter((alias) => alias.length > 0)
+        : undefined;
+    entries.push({
+      iconName,
+      ...(aliases ? { aliases } : {})
+    });
+  }
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  let synonyms: Record<string, string> | undefined;
+  if (isPlainRecord(input.synonyms)) {
+    const normalizedSynonyms: Record<string, string> = {};
+    for (const [rawSynonym, rawIconName] of Object.entries(input.synonyms)) {
+      if (typeof rawIconName !== "string") {
+        continue;
+      }
+      const synonym = rawSynonym.trim();
+      const iconName = rawIconName.trim();
+      if (!synonym || !isValidIconName(iconName)) {
+        continue;
+      }
+      normalizedSynonyms[synonym] = iconName;
+    }
+    if (Object.keys(normalizedSynonyms).length > 0) {
+      synonyms = normalizedSynonyms;
+    }
+  }
+
+  return {
+    version: ICON_FALLBACK_MAP_VERSION,
+    entries,
+    ...(synonyms ? { synonyms } : {})
+  };
+};
+
+const loadIconFallbackResolver = async ({
+  iconMapFilePath,
+  onLog
+}: {
+  iconMapFilePath: string;
+  onLog: (message: string) => void;
+}): Promise<IconFallbackResolver> => {
+  try {
+    const rawContent = await readFile(iconMapFilePath, "utf8");
+    const parsed = parseIconFallbackMapFile({
+      input: JSON.parse(rawContent)
+    });
+    if (!parsed) {
+      onLog(`Icon fallback map at '${iconMapFilePath}' is invalid; using built-in deterministic catalog.`);
+      return ICON_FALLBACK_BUILTIN_RESOLVER;
+    }
+    return compileIconFallbackResolver({
+      map: parsed
+    });
+  } catch (error) {
+    const typedError = error as NodeJS.ErrnoException;
+    if (typedError.code !== "ENOENT") {
+      onLog(`Failed to load icon fallback map at '${iconMapFilePath}': ${getErrorMessage(error)}; using built-in catalog.`);
+      return ICON_FALLBACK_BUILTIN_RESOLVER;
+    }
+
+    const bootstrapPayload = buildIconFallbackMapFilePayload(ICON_FALLBACK_BUILTIN_MAP);
+    try {
+      await mkdir(path.dirname(iconMapFilePath), { recursive: true });
+      await writeFile(iconMapFilePath, `${JSON.stringify(bootstrapPayload, null, 2)}\n`, "utf8");
+      onLog(`Bootstrapped icon fallback map at '${iconMapFilePath}'.`);
+    } catch (bootstrapError) {
+      onLog(
+        `Failed to bootstrap icon fallback map at '${iconMapFilePath}': ${getErrorMessage(bootstrapError)}; using built-in catalog.`
+      );
+    }
+    return ICON_FALLBACK_BUILTIN_RESOLVER;
+  }
+};
+
+const toIconInputTokens = (normalizedInput: string): string[] => {
+  return normalizedInput.split(" ").filter((token) => token.length > 0);
+};
+
+const containsBoundaryAlias = ({ text, alias }: { text: string; alias: string }): boolean => {
+  return text === alias || text.startsWith(`${alias} `) || text.endsWith(` ${alias}`) || text.includes(` ${alias} `);
+};
+
+const collectInputPhrases = ({ tokens }: { tokens: string[] }): string[] => {
+  const phrases: string[] = [];
+  for (let length = ICON_FALLBACK_MAX_PHRASE_LENGTH; length >= 1; length -= 1) {
+    if (tokens.length < length) {
+      continue;
+    }
+    for (let index = 0; index <= tokens.length - length; index += 1) {
+      const phrase = tokens.slice(index, index + length).join(" ");
+      if (!phrases.includes(phrase)) {
+        phrases.push(phrase);
+      }
+    }
+  }
+  return phrases;
+};
+
+const toBoundedLevenshteinDistance = ({
+  left,
+  right,
+  maxDistance
+}: {
+  left: string;
+  right: string;
+  maxDistance: number;
+}): number | undefined => {
+  if (Math.abs(left.length - right.length) > maxDistance) {
+    return undefined;
+  }
+  const previous = new Array<number>(right.length + 1).fill(0).map((_, index) => index);
+  const current = new Array<number>(right.length + 1).fill(0);
+
+  for (let row = 1; row <= left.length; row += 1) {
+    current[0] = row;
+    let rowMin = current[0] ?? 0;
+    for (let col = 1; col <= right.length; col += 1) {
+      const deletion = (previous[col] ?? maxDistance + 1) + 1;
+      const insertion = (current[col - 1] ?? maxDistance + 1) + 1;
+      const substitution = (previous[col - 1] ?? maxDistance + 1) + (left[row - 1] === right[col - 1] ? 0 : 1);
+      const nextValue = Math.min(deletion, insertion, substitution);
+      current[col] = nextValue;
+      rowMin = Math.min(rowMin, nextValue);
+    }
+    if (rowMin > maxDistance) {
+      return undefined;
+    }
+    for (let col = 0; col <= right.length; col += 1) {
+      previous[col] = current[col] ?? maxDistance + 1;
+    }
+  }
+
+  const result = previous[right.length] ?? maxDistance + 1;
+  return result <= maxDistance ? result : undefined;
+};
+
+const resolveFallbackIconByExactPhrase = ({
+  normalizedInput,
+  resolver
+}: {
+  normalizedInput: string;
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  return resolver.exactAliasMap.get(normalizedInput);
+};
+
+const resolveFallbackIconByTokenBoundary = ({
+  normalizedInput,
+  tokens,
+  resolver
+}: {
+  normalizedInput: string;
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  const candidateEntries = new Map<string, CompiledIconFallbackEntry>();
+  for (const token of tokens) {
+    for (const entry of resolver.tokenIndex.get(token) ?? []) {
+      candidateEntries.set(entry.iconName, entry);
+    }
+  }
+  const rankedCandidates: Array<{ entry: CompiledIconFallbackEntry; score: number }> = [];
+  for (const entry of candidateEntries.values()) {
+    let bestScore = 0;
+    for (const alias of entry.aliases) {
+      if (!containsBoundaryAlias({ text: normalizedInput, alias })) {
+        continue;
+      }
+      const tokenScore = alias.split(" ").length;
+      bestScore = Math.max(bestScore, tokenScore * 100 + alias.length);
+    }
+    if (bestScore > 0) {
+      rankedCandidates.push({ entry, score: bestScore });
+    }
+  }
+  if (rankedCandidates.length === 0) {
+    return undefined;
+  }
+  rankedCandidates.sort((left, right) => {
+    return (
+      right.score - left.score ||
+      left.entry.priority - right.entry.priority ||
+      left.entry.iconName.localeCompare(right.entry.iconName)
+    );
+  });
+  return rankedCandidates[0]?.entry;
+};
+
+const resolveFallbackIconBySynonym = ({
+  tokens,
+  resolver
+}: {
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  for (const phrase of collectInputPhrases({ tokens })) {
+    const match = resolver.synonymMap.get(phrase);
+    if (match) {
+      return match;
+    }
+  }
+  return undefined;
+};
+
+const resolveFallbackIconByFuzzyDistance = ({
+  normalizedInput,
+  tokens,
+  resolver
+}: {
+  normalizedInput: string;
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  const phraseTerms = normalizedInput.includes(" ") ? [] : [normalizedInput];
+  const terms = [...new Set([...phraseTerms, ...tokens])]
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 4 && !ICON_FALLBACK_FUZZY_STOPWORDS.has(term));
+  const candidates: Array<{ entry: CompiledIconFallbackEntry; distance: number; tokenScore: number }> = [];
+  for (const entry of resolver.entries) {
+    let bestDistance: number | undefined;
+    let bestTokenScore = 0;
+    for (const alias of entry.aliases) {
+      for (const term of terms) {
+        if (!term || Math.abs(alias.length - term.length) > 3) {
+          continue;
+        }
+        const maxDistance = Math.max(1, Math.min(3, Math.floor(Math.min(alias.length, term.length) / 4)));
+        const distance = toBoundedLevenshteinDistance({
+          left: alias,
+          right: term,
+          maxDistance
+        });
+        if (distance === undefined) {
+          continue;
+        }
+        const tokenScore = alias.split(" ").length;
+        if (
+          bestDistance === undefined ||
+          distance < bestDistance ||
+          (distance === bestDistance && tokenScore > bestTokenScore)
+        ) {
+          bestDistance = distance;
+          bestTokenScore = tokenScore;
+        }
+      }
+    }
+    if (bestDistance !== undefined) {
+      candidates.push({
+        entry,
+        distance: bestDistance,
+        tokenScore: bestTokenScore
+      });
+    }
+  }
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  candidates.sort((left, right) => {
+    return (
+      left.distance - right.distance ||
+      right.tokenScore - left.tokenScore ||
+      left.entry.priority - right.entry.priority ||
+      left.entry.iconName.localeCompare(right.entry.iconName)
+    );
+  });
+  return candidates[0]?.entry;
+};
+
+const resolveIconImportSpecFromCatalog = ({
+  rawInput,
+  resolver
+}: {
+  rawInput: string;
+  resolver: IconFallbackResolver;
+}): IconImportSpec => {
+  const normalizedInput = normalizeIconLookupText(rawInput);
+  if (!normalizedInput) {
+    return ICON_FALLBACK_DEFAULT_IMPORT_SPEC;
+  }
+
+  const tokens = toIconInputTokens(normalizedInput);
+  const exact = resolveFallbackIconByExactPhrase({
+    normalizedInput,
+    resolver
+  });
+  if (exact) {
+    return exact.importSpec;
+  }
+
+  const tokenBoundary = resolveFallbackIconByTokenBoundary({
+    normalizedInput,
+    tokens,
+    resolver
+  });
+  if (tokenBoundary) {
+    return tokenBoundary.importSpec;
+  }
+
+  const synonym = resolveFallbackIconBySynonym({
+    tokens,
+    resolver
+  });
+  if (synonym) {
+    return synonym.importSpec;
+  }
+
+  const fuzzy = resolveFallbackIconByFuzzyDistance({
+    normalizedInput,
+    tokens,
+    resolver
+  });
+  if (fuzzy) {
+    return fuzzy.importSpec;
+  }
+
+  return ICON_FALLBACK_DEFAULT_IMPORT_SPEC;
+};
 
 const hasDownIndicatorHint = (subtreeNameBlob: string): boolean => {
+  const normalized = normalizeIconLookupText(subtreeNameBlob);
   return (
-    subtreeNameBlob.includes("expand_more") ||
-    subtreeNameBlob.includes("chevron_down") ||
-    subtreeNameBlob.includes("arrow_drop_down") ||
-    subtreeNameBlob.includes("keyboard_arrow_down") ||
-    subtreeNameBlob.includes("caret_down") ||
-    subtreeNameBlob.includes("ic_down") ||
-    /\bdown\b/.test(subtreeNameBlob)
+    normalized.includes("expand more") ||
+    normalized.includes("chevron down") ||
+    normalized.includes("arrow drop down") ||
+    normalized.includes("keyboard arrow down") ||
+    normalized.includes("caret down") ||
+    normalized.includes("ic down") ||
+    /\bdown\b/.test(normalized)
   );
 };
 
@@ -2467,10 +3007,13 @@ const resolveFallbackIconComponent = ({
   context: RenderContext;
 }): string => {
   const parentName = parent.name?.toLowerCase() ?? "";
-  const subtreeNameBlob = collectSubtreeNames(element).join(" ").toLowerCase();
+  const subtreeNameBlob = collectSubtreeNames(element).join(" ");
+  const normalizedSubtreeName = normalizeIconLookupText(subtreeNameBlob);
 
   const spec =
-    parentName.includes("buttonendicon") || subtreeNameBlob.includes("chevron_right") || subtreeNameBlob.includes("arrow_right")
+    parentName.includes("buttonendicon") ||
+    normalizedSubtreeName.includes("chevron right") ||
+    normalizedSubtreeName.includes("arrow right")
       ? {
           localName: "ChevronRightIcon",
           modulePath: "@mui/icons-material/ChevronRight"
@@ -2479,7 +3022,7 @@ const resolveFallbackIconComponent = ({
           parentName.includes("outlinedinputroot") ||
           parentName.includes("formcontrolroot") ||
           parentName.includes("select") ||
-          hasDownIndicatorHint(subtreeNameBlob)
+          hasDownIndicatorHint(normalizedSubtreeName)
         ? {
             localName: "ExpandMoreIcon",
             modulePath: "@mui/icons-material/ExpandMore"
@@ -2489,10 +3032,10 @@ const resolveFallbackIconComponent = ({
               localName: "TuneIcon",
               modulePath: "@mui/icons-material/Tune"
             }
-          : FALLBACK_ICON_SPECS.find(({ patterns }) => patterns.some((pattern) => subtreeNameBlob.includes(pattern)))?.importSpec ?? {
-              localName: "InfoOutlinedIcon",
-              modulePath: "@mui/icons-material/InfoOutlined"
-            };
+          : resolveIconImportSpecFromCatalog({
+              rawInput: subtreeNameBlob,
+              resolver: context.iconResolver
+            });
 
   return registerIconImport(context, spec);
 };
@@ -4688,6 +5231,7 @@ const fallbackScreenFile = ({
   mappingByNodeId,
   spacingBase,
   tokens,
+  iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
   truncationMetric,
   componentNameOverride,
   filePathOverride
@@ -4696,6 +5240,7 @@ const fallbackScreenFile = ({
   mappingByNodeId: Map<string, ComponentMappingRule>;
   spacingBase?: number;
   tokens?: DesignTokens | undefined;
+  iconResolver?: IconFallbackResolver;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -4727,6 +5272,7 @@ const fallbackScreenFile = ({
     accessibilityWarnings: [],
     muiImports: new Set<string>(["Container"]),
     iconImports: [],
+    iconResolver,
     mappedImports: [],
     spacingBase: resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
@@ -5678,6 +6224,7 @@ export const generateArtifacts = async ({
   projectDir,
   ir,
   componentMappings,
+  iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
   llmClient,
   llmModelName,
   llmCodegenMode,
@@ -5742,6 +6289,11 @@ export const generateArtifacts = async ({
   await mkdir(path.join(projectDir, "src", "screens"), { recursive: true });
   await mkdir(path.join(projectDir, "src", "theme"), { recursive: true });
 
+  const iconResolver = await loadIconFallbackResolver({
+    iconMapFilePath,
+    onLog
+  });
+
   const tokensPath = path.join(projectDir, "src", "theme", "tokens.json");
   await writeFile(tokensPath, JSON.stringify(ir.tokens, null, 2), "utf-8");
   generatedPaths.add("src/theme/tokens.json");
@@ -5766,6 +6318,7 @@ export const generateArtifacts = async ({
       mappingByNodeId,
       spacingBase: ir.tokens.spacingBase,
       tokens: ir.tokens,
+      iconResolver,
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})

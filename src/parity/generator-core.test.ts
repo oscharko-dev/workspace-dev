@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -555,6 +555,164 @@ test("generateArtifacts rejects non-deterministic mode in workspace-dev", async 
       }),
     /Only deterministic code generation is supported/
   );
+});
+
+test("generateArtifacts auto-bootstraps icon fallback map file when missing", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-bootstrap-"));
+  const outputRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-icon-map-root-"));
+  const iconMapFilePath = path.join(outputRoot, "icon-fallback-map.json");
+  const logs: string[] = [];
+
+  await generateArtifacts({
+    projectDir,
+    ir: {
+      ...createIr(),
+      screens: [
+        {
+          id: "icon-bootstrap-screen",
+          name: "Icon Bootstrap Screen",
+          layoutMode: "NONE" as const,
+          gap: 0,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          children: [
+            {
+              id: "icon-bootstrap-node",
+              name: "icon/download",
+              nodeType: "INSTANCE",
+              type: "container" as const,
+              x: 0,
+              y: 0,
+              width: 24,
+              height: 24,
+              children: []
+            }
+          ]
+        }
+      ]
+    },
+    iconMapFilePath,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  const mapFileContent = await readFile(iconMapFilePath, "utf8");
+  const parsedMap = JSON.parse(mapFileContent) as { version?: number; entries?: unknown[] };
+  assert.equal(parsedMap.version, 1);
+  assert.equal(Array.isArray(parsedMap.entries), true);
+  assert.ok((parsedMap.entries ?? []).length >= 200);
+  assert.ok(logs.some((entry) => entry.includes("Bootstrapped icon fallback map")));
+
+  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Bootstrap Screen"));
+  const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
+  assert.ok(generatedScreenContent.includes('import DownloadIcon from "@mui/icons-material/Download";'));
+});
+
+test("generateArtifacts uses custom icon fallback map file when valid", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-custom-"));
+  const iconMapFilePath = path.join(projectDir, "icon-map.custom.json");
+  await writeFile(
+    iconMapFilePath,
+    `${JSON.stringify(
+      {
+        version: 1,
+        entries: [{ iconName: "Delete", aliases: ["trash"] }],
+        synonyms: {
+          "remove item": "Delete"
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  await generateArtifacts({
+    projectDir,
+    ir: {
+      ...createIr(),
+      screens: [
+        {
+          id: "icon-custom-screen",
+          name: "Icon Custom Screen",
+          layoutMode: "NONE" as const,
+          gap: 0,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          children: [
+            {
+              id: "icon-custom-node",
+              name: "icon/trash",
+              nodeType: "INSTANCE",
+              type: "container" as const,
+              x: 0,
+              y: 0,
+              width: 24,
+              height: 24,
+              children: []
+            }
+          ]
+        }
+      ]
+    },
+    iconMapFilePath,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Custom Screen"));
+  const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
+  assert.ok(generatedScreenContent.includes('import DeleteIcon from "@mui/icons-material/Delete";'));
+  assert.equal(generatedScreenContent.includes("InfoOutlinedIcon"), false);
+});
+
+test("generateArtifacts falls back to built-in icon catalog when icon map file is invalid", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-invalid-"));
+  const iconMapFilePath = path.join(projectDir, "icon-map.invalid.json");
+  const logs: string[] = [];
+  await writeFile(iconMapFilePath, `{\"version\":1,\"entries\":\"invalid\"}\n`, "utf8");
+
+  await generateArtifacts({
+    projectDir,
+    ir: {
+      ...createIr(),
+      screens: [
+        {
+          id: "icon-invalid-screen",
+          name: "Icon Invalid Screen",
+          layoutMode: "NONE" as const,
+          gap: 0,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          children: [
+            {
+              id: "icon-invalid-node",
+              name: "icon/user",
+              nodeType: "INSTANCE",
+              type: "container" as const,
+              x: 0,
+              y: 0,
+              width: 24,
+              height: 24,
+              children: []
+            }
+          ]
+        }
+      ]
+    },
+    iconMapFilePath,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  assert.ok(
+    logs.some((entry) => entry.toLowerCase().includes("icon fallback map") && entry.toLowerCase().includes("invalid"))
+  );
+  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Invalid Screen"));
+  const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
+  assert.ok(generatedScreenContent.includes('import PersonIcon from "@mui/icons-material/Person";'));
 });
 
 test("generateArtifacts logs and writes accessibility contrast warnings", async () => {
@@ -2025,6 +2183,128 @@ test("deterministic screen rendering uses vector paths on non-VECTOR icon nodes"
   assert.ok(content.includes("<SvgIcon"));
   assert.ok(content.includes('d={"M0 0L10 0L10 10Z"}'));
   assert.equal(content.includes("InfoOutlinedIcon"), false);
+});
+
+test("deterministic screen rendering supports icon library names like icon/search", () => {
+  const screen = {
+    id: "icon-library-screen",
+    name: "Icon Library Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "library-search-icon",
+        name: "icon/search",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('import SearchIcon from "@mui/icons-material/Search";'));
+  assert.ok(content.includes("<SearchIcon"));
+});
+
+test("deterministic screen rendering applies synonym mapping for user and trash hints", () => {
+  const screen = {
+    id: "synonym-icon-screen",
+    name: "Synonym Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "synonym-user-icon",
+        name: "icon/user",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: "synonym-trash-icon",
+        name: "icon/trash",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 24,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+  assert.deepEqual(iconImportLines, [
+    'import DeleteIcon from "@mui/icons-material/Delete";',
+    'import PersonIcon from "@mui/icons-material/Person";'
+  ]);
+});
+
+test("deterministic screen rendering applies bounded fuzzy matching for icon names", () => {
+  const screen = {
+    id: "fuzzy-icon-screen",
+    name: "Fuzzy Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "fuzzy-search-icon",
+        name: "icon/serch",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('import SearchIcon from "@mui/icons-material/Search";'));
+  assert.ok(content.includes("<SearchIcon"));
+});
+
+test("deterministic screen rendering falls back to InfoOutlinedIcon for unknown icon names", () => {
+  const screen = {
+    id: "unknown-icon-screen",
+    name: "Unknown Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "unknown-icon",
+        name: "icon/not-a-real-icon-name",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";'));
+  assert.ok(content.includes("<InfoOutlinedIcon"));
 });
 
 test("deterministic screen rendering maps variant metadata to MUI props and pseudo-state sx overrides", () => {

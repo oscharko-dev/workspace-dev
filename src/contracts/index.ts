@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.6.0
+ * Contract version: 2.7.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -63,6 +63,8 @@ export interface WorkspaceStartOptions {
   figmaCacheEnabled?: boolean;
   /** Cache TTL for figma.source entries in milliseconds. Default: 900000 */
   figmaCacheTtlMs?: number;
+  /** Path to icon fallback mapping file (JSON). Default: <outputRoot>/icon-fallback-map.json */
+  iconMapFilePath?: string;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
   figmaScreenElementBudget?: number;
   /** Configured baseline depth limit for dynamic IR child traversal. Default: 14 */
@@ -71,7 +73,6 @@ export interface WorkspaceStartOptions {
   brandTheme?: WorkspaceBrandTheme;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
-  /** Run static UI validation in validate.project. Default: false */
   /** Run static UI validation in validate.project. Default: true */
   enableUiValidation?: boolean;
   /** Prefer offline package resolution during generated-project install. Default: true */
@@ -225,4 +226,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.6.0" as const;
+export const CONTRACT_VERSION = "2.7.0" as const;
