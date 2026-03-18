@@ -22,6 +22,24 @@ const collectRecordIds = (value: unknown): Set<string> => {
   return ids;
 };
 
+const findNodeById = (value: unknown, id: string): Record<string, unknown> | undefined => {
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      continue;
+    }
+    const record = current as Record<string, unknown>;
+    if (record.id === id) {
+      return record;
+    }
+    if (Array.isArray(record.children)) {
+      stack.push(...record.children);
+    }
+  }
+  return undefined;
+};
+
 const collectIrIds = (screens: Array<{ id: string; children?: unknown[] }>): Set<string> => {
   const ids = new Set<string>();
   const stack = [...screens];
@@ -36,6 +54,28 @@ const collectIrIds = (screens: Array<{ id: string; children?: unknown[] }>): Set
     }
   }
   return ids;
+};
+
+const findIrElementById = (
+  elements: Array<{ id: string; children?: unknown[] }>,
+  id: string
+): { id: string; children?: unknown[]; letterSpacing?: number } | undefined => {
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop() as
+      | { id: string; children?: unknown[]; letterSpacing?: number }
+      | undefined;
+    if (!current) {
+      continue;
+    }
+    if (current.id === id) {
+      return current;
+    }
+    if (Array.isArray(current.children)) {
+      stack.push(...(current.children as Array<{ id: string; children?: unknown[]; letterSpacing?: number }>));
+    }
+  }
+  return undefined;
 };
 
 test("cleaner and IR remove technical placeholders only in instance context", () => {
@@ -178,4 +218,76 @@ test("cleaner and IR remove empty helper item nodes but keep non-empty helper va
   assert.equal(irIds.has("helper-non-empty"), true);
   assert.equal(cleanedIds.has("helper-no-bounds"), true);
   assert.equal(irIds.has("helper-no-bounds"), true);
+});
+
+test("cleaner to IR parity preserves finite letterSpacing from text styles", () => {
+  const file = {
+    name: "Letter spacing parity",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-letter-spacing",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+              children: [
+                {
+                  id: "text-positive",
+                  type: "TEXT",
+                  characters: "AB",
+                  style: {
+                    fontSize: 20,
+                    fontWeight: 400,
+                    lineHeightPx: 24,
+                    letterSpacing: 1.5
+                  },
+                  absoluteBoundingBox: { x: 20, y: 20, width: 100, height: 24 }
+                },
+                {
+                  id: "text-zero",
+                  type: "TEXT",
+                  characters: "CD",
+                  style: {
+                    fontSize: 16,
+                    lineHeightPx: 20,
+                    letterSpacing: 0
+                  },
+                  absoluteBoundingBox: { x: 20, y: 56, width: 100, height: 20 }
+                },
+                {
+                  id: "text-invalid",
+                  type: "TEXT",
+                  characters: "EF",
+                  style: {
+                    fontSize: 16,
+                    lineHeightPx: 20,
+                    letterSpacing: Number.POSITIVE_INFINITY
+                  },
+                  absoluteBoundingBox: { x: 20, y: 92, width: 100, height: 20 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const cleaned = cleanFigmaForCodegen({ file });
+  const ir = figmaToDesignIrWithOptions(cleaned.cleanedFile);
+  const screenChildren = ir.screens[0]?.children as Array<{ id: string; children?: unknown[]; letterSpacing?: number }>;
+
+  assert.equal(findNodeById(cleaned.cleanedFile.document, "text-positive")?.style?.letterSpacing, 1.5);
+  assert.equal(findNodeById(cleaned.cleanedFile.document, "text-zero")?.style?.letterSpacing, 0);
+  assert.equal("letterSpacing" in (findNodeById(cleaned.cleanedFile.document, "text-invalid")?.style ?? {}), false);
+
+  assert.equal(findIrElementById(screenChildren, "text-positive")?.letterSpacing, 1.5);
+  assert.equal(findIrElementById(screenChildren, "text-zero")?.letterSpacing, 0);
+  assert.equal(findIrElementById(screenChildren, "text-invalid")?.letterSpacing, undefined);
 });

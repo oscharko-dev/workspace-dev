@@ -73,6 +73,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                         fontWeight: 700,
                         fontFamily: "Sparkasse Sans",
                         lineHeightPx: 22,
+                        letterSpacing: -0.5,
                         textAlignHorizontal: "LEFT",
                         ignoredStyleProp: "drop"
                       }
@@ -211,6 +212,16 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   assert.equal(serialized.includes("pluginData"), false);
   assert.equal(serialized.includes("extraDocumentField"), false);
   assert.equal(serialized.includes("randomCanvasField"), false);
+  const keptTextNode = findNodeById(result.cleanedFile.document, "keep-1");
+  assert.ok(keptTextNode);
+  assert.deepEqual(keptTextNode?.style, {
+    fontSize: 16,
+    fontWeight: 700,
+    fontFamily: "Sparkasse Sans",
+    lineHeightPx: 22,
+    letterSpacing: -0.5,
+    textAlignHorizontal: "LEFT"
+  });
 
   const regularNode = findNodeById(result.cleanedFile.document, "regular-1");
   assert.ok(regularNode);
@@ -285,6 +296,85 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   assert.equal(result.report.removedHelperNodes >= 2, true);
   assert.equal(result.report.removedPropertyCount > 0, true);
   assert.equal(result.report.outputNodeCount < result.report.inputNodeCount, true);
+});
+
+test("cleanFigmaForCodegen keeps finite letterSpacing style values and drops invalid ones", () => {
+  const input = {
+    name: "LetterSpacing style",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-ls",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: [
+                {
+                  id: "text-zero",
+                  type: "TEXT",
+                  characters: "Zero",
+                  style: {
+                    fontSize: 16,
+                    letterSpacing: 0
+                  }
+                },
+                {
+                  id: "text-negative",
+                  type: "TEXT",
+                  characters: "Negative",
+                  style: {
+                    fontSize: 16,
+                    letterSpacing: -1.25
+                  }
+                },
+                {
+                  id: "text-invalid-nan",
+                  type: "TEXT",
+                  characters: "NaN",
+                  style: {
+                    fontSize: 16,
+                    letterSpacing: Number.NaN
+                  }
+                },
+                {
+                  id: "text-invalid-infinity",
+                  type: "TEXT",
+                  characters: "Infinity",
+                  style: {
+                    fontSize: 16,
+                    letterSpacing: Number.POSITIVE_INFINITY
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+
+  assert.deepEqual(findNodeById(result.cleanedFile.document, "text-zero")?.style, {
+    fontSize: 16,
+    letterSpacing: 0
+  });
+  assert.deepEqual(findNodeById(result.cleanedFile.document, "text-negative")?.style, {
+    fontSize: 16,
+    letterSpacing: -1.25
+  });
+  assert.deepEqual(findNodeById(result.cleanedFile.document, "text-invalid-nan")?.style, {
+    fontSize: 16
+  });
+  assert.deepEqual(findNodeById(result.cleanedFile.document, "text-invalid-infinity")?.style, {
+    fontSize: 16
+  });
 });
 
 test("cleanFigmaForCodegen reports zero screen candidates when nothing screen-like remains", () => {
