@@ -36,7 +36,14 @@ const ALLOWED_NODE_KEYS = new Set([
 const ALLOWED_COLOR_KEYS = new Set(["r", "g", "b", "a"]);
 const ALLOWED_PAINT_KEYS = new Set(["type", "visible", "color", "opacity", "gradientStops", "gradientHandlePositions"]);
 const ALLOWED_BOX_KEYS = new Set(["x", "y", "width", "height"]);
-const ALLOWED_STYLE_KEYS = new Set(["fontSize", "fontWeight", "fontFamily", "lineHeightPx", "textAlignHorizontal"]);
+const ALLOWED_STYLE_KEYS = new Set([
+  "fontSize",
+  "fontWeight",
+  "fontFamily",
+  "lineHeightPx",
+  "letterSpacing",
+  "textAlignHorizontal"
+]);
 const ALLOWED_GEOMETRY_KEYS = new Set(["path", "windingRule"]);
 const ALLOWED_GRADIENT_STOP_KEYS = new Set(["position", "color"]);
 const ALLOWED_GRADIENT_HANDLE_POSITION_KEYS = new Set(["x", "y"]);
@@ -357,6 +364,9 @@ const sanitizeStyle = (value: unknown, metrics: FigmaCleaningAccumulator): Recor
   }
   if (isFiniteNumber(value.lineHeightPx)) {
     next.lineHeightPx = value.lineHeightPx;
+  }
+  if (isFiniteNumber(value.letterSpacing)) {
+    next.letterSpacing = value.letterSpacing;
   }
   if (typeof value.textAlignHorizontal === "string") {
     next.textAlignHorizontal = value.textAlignHorizontal;
