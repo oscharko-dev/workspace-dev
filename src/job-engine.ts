@@ -52,6 +52,21 @@ const isPerfValidationEnabled = (): boolean => {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 };
 
+const isLintAutofixEnabled = (): boolean => {
+  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
+  if (!raw) {
+    return true;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  return true;
+};
+
 const resolveJobGenerationLocale = ({
   submitGenerationLocale,
   runtimeGenerationLocale
@@ -519,6 +534,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         action: async () => {
           await runProjectValidation({
             generatedProjectDir,
+            enableLintAutofix: isLintAutofixEnabled(),
             enablePerfValidation: isPerfValidationEnabled(),
             enableUiValidation: runtime.enableUiValidation,
             commandTimeoutMs: runtime.commandTimeoutMs,
