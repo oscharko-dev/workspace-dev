@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -147,10 +148,12 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   const result = await runCliToExit({ args: ["--help"] });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /workspace-dev start/i);
+  assert.match(result.stdout, /workspace-dev scan-design-system/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ICON_MAP_FILE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_EXPORT_IMAGES/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
@@ -161,6 +164,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--icon-map-file/i);
+  assert.match(result.stdout, /--design-system-file/i);
   assert.match(result.stdout, /--export-images/i);
   assert.match(result.stdout, /--skip-install/i);
   assert.match(result.stdout, /--lint-autofix/i);
@@ -170,6 +174,10 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--router/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /--figma-screen-element-max-depth/i);
+  assert.match(result.stdout, /--project-root/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--library/i);
+  assert.match(result.stdout, /--force/i);
   assert.match(result.stdout, /workspace\/jobs\/\:id/i);
 });
 
@@ -177,6 +185,107 @@ test("cli contract: unknown command exits with code 1", async () => {
   const result = await runCliToExit({ args: ["nope"] });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /Unknown command/i);
+});
+
+test("cli contract: scan-design-system writes config to default output path", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-cli-scan-default-"));
+  const srcDir = path.join(projectRoot, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "App.tsx"),
+    `import { PrimaryButton, ContentCard } from "@acme/ui";
+
+export function App() {
+  return (
+    <>
+      <PrimaryButton>Start</PrimaryButton>
+      <ContentCard />
+    </>
+  );
+}
+`,
+    "utf8"
+  );
+
+  const result = await runCliToExit({
+    args: ["scan-design-system", "--project-root", projectRoot]
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /Design system scan completed/i);
+
+  const configPath = path.join(projectRoot, ".workspace-dev", "design-system.json");
+  const configRaw = await readFile(configPath, "utf8");
+  const config = JSON.parse(configRaw) as {
+    library: string;
+    mappings: Record<string, { component: string }>;
+  };
+  assert.equal(config.library, "@acme/ui");
+  assert.equal(config.mappings.Button?.component, "PrimaryButton");
+  assert.equal(config.mappings.Card?.component, "ContentCard");
+});
+
+test("cli contract: scan-design-system respects --output --library and --force", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-cli-scan-force-"));
+  const srcDir = path.join(projectRoot, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "View.tsx"),
+    `import { PrimaryButton } from "@acme/ui";
+
+export function View() {
+  return <PrimaryButton>Go</PrimaryButton>;
+}
+`,
+    "utf8"
+  );
+
+  const outputPath = path.join(projectRoot, "custom-design-system.json");
+  const firstRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui"
+    ]
+  });
+  assert.equal(firstRun.exitCode, 0);
+
+  const firstConfig = JSON.parse(await readFile(outputPath, "utf8")) as { library: string };
+  assert.equal(firstConfig.library, "@forced/ui");
+  const firstRaw = await readFile(outputPath, "utf8");
+
+  const secondRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui"
+    ]
+  });
+  assert.equal(secondRun.exitCode, 1);
+  assert.match(secondRun.stderr, /already exists/i);
+
+  const forcedRun = await runCliToExit({
+    args: [
+      "scan-design-system",
+      "--project-root",
+      projectRoot,
+      "--output",
+      outputPath,
+      "--library",
+      "@forced/ui",
+      "--force"
+    ]
+  });
+  assert.equal(forcedRun.exitCode, 0);
+  const secondRaw = await readFile(outputPath, "utf8");
+  assert.equal(secondRaw, firstRaw);
 });
 
 test("cli contract: CLI flag overrides environment port", async () => {
@@ -357,6 +466,39 @@ test("cli contract: --icon-map-file is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Icon fallback map file: .*tmp\/icon-map\.json/i);
     assert.match(output, /Icon fallback map file: .*tmp\/icon-map\.json/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --design-system-file is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--design-system-file",
+      "./tmp/design-system.json"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Design system file: .*tmp\/design-system\.json/i);
+    assert.match(output, /Design system file: .*tmp\/design-system\.json/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

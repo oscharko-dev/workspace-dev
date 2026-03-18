@@ -55,6 +55,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled,
   figmaCacheTtlMs,
   iconMapFilePath,
+  designSystemFilePath,
   exportImages,
   figmaScreenElementBudget,
   figmaScreenElementMaxDepth,
@@ -79,6 +80,7 @@ export const resolveRuntimeSettings = ({
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
   iconMapFilePath?: string;
+  designSystemFilePath?: string;
   exportImages?: boolean;
   figmaScreenElementBudget?: number;
   figmaScreenElementMaxDepth?: number;
@@ -131,6 +133,10 @@ export const resolveRuntimeSettings = ({
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
         : DEFAULT_FIGMA_CACHE_TTL_MS,
     iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
+    designSystemFilePath:
+      typeof designSystemFilePath === "string" && designSystemFilePath.trim().length > 0
+        ? designSystemFilePath.trim()
+        : undefined,
     exportImages: typeof exportImages === "boolean" ? exportImages : DEFAULT_EXPORT_IMAGES,
     figmaScreenElementBudget:
       typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)

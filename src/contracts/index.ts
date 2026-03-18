@@ -68,6 +68,8 @@ export interface WorkspaceStartOptions {
   figmaCacheTtlMs?: number;
   /** Path to icon fallback mapping file (JSON). Default: <outputRoot>/icon-fallback-map.json */
   iconMapFilePath?: string;
+  /** Path to design-system mapping file (JSON). Default: <outputRoot>/design-system.json */
+  designSystemFilePath?: string;
   /** Enable Figma image asset export to generated-app/public/images. Default: true */
   exportImages?: boolean;
   /** Maximum IR elements per screen before deterministic truncation. Default: 1200 */
@@ -239,4 +241,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.11.0" as const;
+export const CONTRACT_VERSION = "2.12.0" as const;
