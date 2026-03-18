@@ -101,7 +101,19 @@ interface ThemeComponentDefaults {
     heightPx?: number;
     borderRadiusPx?: number;
   };
+  c1StyleOverrides?: ThemeSxComponentStyleOverrides;
 }
+
+type ThemeSxStyleValue = string | number;
+
+type ThemeSxComponentStyleOverrides = Record<string, Record<string, ThemeSxStyleValue>>;
+
+interface ThemeSxSample {
+  componentName: string;
+  styleValuesByKey: Map<string, ThemeSxStyleValue>;
+}
+
+type ThemeSxSampleCollector = (sample: ThemeSxSample) => void;
 
 interface VirtualParent {
   x?: number | undefined;
@@ -533,7 +545,12 @@ const withOmittedSxKeys = ({
   if (keys.size === 0) {
     return entries;
   }
-  return entries.map(([key, value]) => (keys.has(key) ? [key, undefined] : [key, value]));
+  return entries.map(([key, value]) => {
+    if (keys.has(key)) {
+      return [key, undefined] as [string, string | number | undefined];
+    }
+    return [key, value] as [string, string | number | undefined];
+  });
 };
 
 const toThemePaletteLiteral = ({
@@ -1557,7 +1574,7 @@ const sortChildren = (
   return sortableChildren.map((entry) => entry.child);
 };
 
-const sxString = (entries: Array<[string, string | number | undefined]>): string => {
+const dedupeSxEntries = (entries: Array<[string, string | number | undefined]>): Array<[string, string | number]> => {
   const deduped: Array<[string, string | number]> = [];
   const seen = new Set<string>();
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -1572,12 +1589,259 @@ const sxString = (entries: Array<[string, string | number | undefined]>): string
     seen.add(key);
     deduped.unshift([key, value]);
   }
-  return deduped.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
+  return deduped;
+};
+
+const sxString = (entries: Array<[string, string | number | undefined]>): string => {
+  return dedupeSxEntries(entries).map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
 };
 
 const SHARED_SX_MIN_OCCURRENCES = 3;
 const SHARED_SX_IDENTIFIER_PREFIX = "sharedSxStyle";
 const SX_ATTRIBUTE_PREFIX = "sx={{";
+const THEME_SX_EXTRACTION_THRESHOLD = 0.7;
+const THEME_SX_MIN_SAMPLES = 3;
+const THEME_SX_VISUAL_KEYS = new Set(["borderRadius", "bgcolor", "background", "borderColor", "border", "boxShadow", "color", "textTransform"]);
+const THEME_SX_CANONICAL_VISUAL_KEYS = new Set([
+  "borderRadius",
+  "backgroundColor",
+  "borderColor",
+  "border",
+  "boxShadow",
+  "color",
+  "textTransform"
+]);
+const THEME_SX_COLOR_KEYS = new Set(["backgroundColor", "borderColor", "color"]);
+const THEME_SX_CANONICAL_KEY_ALIAS: Record<string, string> = {
+  bgcolor: "backgroundColor",
+  background: "backgroundColor"
+};
+const THEME_SX_TEXT_TRANSFORM_VALUES = new Set(["none", "capitalize", "uppercase", "lowercase"]);
+const THEME_COMPONENT_ORDER = ["MuiButton", "MuiCard", "MuiTextField", "MuiChip", "MuiPaper", "MuiAppBar", "MuiDivider", "MuiAvatar"];
+
+const parseSxLiteralStringValue = (value: string): string | undefined => {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmedValue) as unknown;
+    return typeof parsed === "string" ? parsed : undefined;
+  } catch {
+    return trimmedValue;
+  }
+};
+
+const roundStableSxNumericValue = (value: number): number => {
+  return Math.round(value * 1000) / 1000;
+};
+
+const toThemeSxCanonicalKey = (value: string): string => {
+  return THEME_SX_CANONICAL_KEY_ALIAS[value] ?? value;
+};
+
+const normalizeThemeSxValueForKey = ({
+  key,
+  value
+}: {
+  key: string;
+  value: string | number | undefined;
+}): ThemeSxStyleValue | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const canonicalKey = toThemeSxCanonicalKey(key);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return undefined;
+    }
+    return roundStableSxNumericValue(value);
+  }
+
+  const literalValue = parseSxLiteralStringValue(value);
+  if (literalValue === undefined) {
+    return undefined;
+  }
+  const trimmedLiteralValue = literalValue.trim();
+  if (!trimmedLiteralValue) {
+    return undefined;
+  }
+
+  if (THEME_SX_COLOR_KEYS.has(canonicalKey)) {
+    return normalizeHexColor(trimmedLiteralValue);
+  }
+  if (canonicalKey === "textTransform") {
+    return THEME_SX_TEXT_TRANSFORM_VALUES.has(trimmedLiteralValue) ? trimmedLiteralValue : undefined;
+  }
+  if (canonicalKey === "borderRadius") {
+    if (/^-?\d+(\.\d+)?(px|rem|em|%)$/i.test(trimmedLiteralValue)) {
+      return trimmedLiteralValue;
+    }
+    return undefined;
+  }
+  if (canonicalKey === "border") {
+    return /(solid|dashed|dotted|double)/i.test(trimmedLiteralValue) ? trimmedLiteralValue : undefined;
+  }
+  if (canonicalKey === "boxShadow") {
+    return trimmedLiteralValue;
+  }
+  return undefined;
+};
+
+const toThemeSxValueKey = (value: ThemeSxStyleValue): string => {
+  return typeof value === "number" ? `n:${value}` : `s:${value}`;
+};
+
+const collectThemeSxSampleFromEntries = ({
+  context,
+  componentName,
+  entries
+}: {
+  context: RenderContext;
+  componentName: string;
+  entries: Array<[string, string | number | undefined]>;
+}): void => {
+  if (!context.themeSxSampleCollector) {
+    return;
+  }
+  const styleValuesByKey = new Map<string, ThemeSxStyleValue>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    if (!THEME_SX_VISUAL_KEYS.has(key)) {
+      continue;
+    }
+    const canonicalKey = toThemeSxCanonicalKey(key);
+    const normalizedValue = normalizeThemeSxValueForKey({
+      key: canonicalKey,
+      value
+    });
+    if (normalizedValue === undefined) {
+      continue;
+    }
+    styleValuesByKey.set(canonicalKey, normalizedValue);
+  }
+  if (styleValuesByKey.size === 0) {
+    return;
+  }
+  context.themeSxSampleCollector({
+    componentName,
+    styleValuesByKey
+  });
+};
+
+const resolveThemeDefaultStyleValue = ({
+  themeComponentDefaults,
+  componentName,
+  key
+}: {
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+  componentName: string;
+  key: string;
+}): ThemeSxStyleValue | undefined => {
+  if (key === "textTransform" && componentName === "MuiButton") {
+    return "none";
+  }
+  switch (componentName) {
+    case "MuiCard":
+      if (key === "borderRadius" && themeComponentDefaults?.MuiCard?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiCard.borderRadiusPx}px`;
+      }
+      break;
+    case "MuiChip":
+      if (key === "borderRadius" && themeComponentDefaults?.MuiChip?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiChip.borderRadiusPx}px`;
+      }
+      break;
+    case "MuiAppBar":
+      if (key === "backgroundColor" && themeComponentDefaults?.MuiAppBar?.backgroundColor) {
+        return themeComponentDefaults.MuiAppBar.backgroundColor;
+      }
+      break;
+    case "MuiDivider":
+      if (key === "borderColor" && themeComponentDefaults?.MuiDivider?.borderColor) {
+        return themeComponentDefaults.MuiDivider.borderColor;
+      }
+      break;
+    case "MuiAvatar":
+      if (key === "width" && themeComponentDefaults?.MuiAvatar?.widthPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.widthPx}px`;
+      }
+      if (key === "height" && themeComponentDefaults?.MuiAvatar?.heightPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.heightPx}px`;
+      }
+      if (key === "borderRadius" && themeComponentDefaults?.MuiAvatar?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.borderRadiusPx}px`;
+      }
+      break;
+    default:
+      break;
+  }
+  return themeComponentDefaults?.c1StyleOverrides?.[componentName]?.[key];
+};
+
+const matchesThemeDefaultSxValue = ({
+  componentName,
+  key,
+  value,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  key: string;
+  value: string | number | undefined;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): boolean => {
+  const canonicalKey = toThemeSxCanonicalKey(key);
+  const normalizedValue = normalizeThemeSxValueForKey({
+    key: canonicalKey,
+    value
+  });
+  if (normalizedValue === undefined) {
+    return false;
+  }
+  const defaultValue = resolveThemeDefaultStyleValue({
+    themeComponentDefaults,
+    componentName,
+    key: canonicalKey
+  });
+  if (defaultValue === undefined) {
+    return false;
+  }
+  const normalizedDefaultValue = normalizeThemeSxValueForKey({
+    key: canonicalKey,
+    value: defaultValue
+  });
+  if (normalizedDefaultValue === undefined) {
+    return false;
+  }
+  return normalizedDefaultValue === normalizedValue;
+};
+
+const collectThemeDefaultMatchedSxKeys = ({
+  context,
+  componentName,
+  entries
+}: {
+  context: RenderContext;
+  componentName: string;
+  entries: Array<[string, string | number | undefined]>;
+}): Set<string> => {
+  const matchedKeys = new Set<string>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    if (!THEME_SX_VISUAL_KEYS.has(key)) {
+      continue;
+    }
+    if (
+      matchesThemeDefaultSxValue({
+        componentName,
+        key,
+        value,
+        themeComponentDefaults: context.themeComponentDefaults
+      })
+    ) {
+      matchedKeys.add(key);
+    }
+  }
+  return matchedKeys;
+};
 
 interface SxAttributeOccurrence {
   startIndex: number;
@@ -4270,6 +4534,7 @@ interface RenderContext {
   emittedAccessibilityWarningKeys: Set<string>;
   pageBackgroundColorNormalized: string | undefined;
   themeComponentDefaults?: ThemeComponentDefaults;
+  themeSxSampleCollector?: ThemeSxSampleCollector;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
 }
@@ -5822,7 +6087,7 @@ const renderSemanticInput = (
     value: outlinedInputRadiusSource,
     target: textFieldDefaults?.outlinedInputBorderRadiusPx
   });
-  const fieldSx = sxString([
+  const fieldSxEntries: Array<[string, string | number | undefined]> = [
     ...baseLayoutEntries(outlineContainer, parent, {
       includePaints: false,
       spacingBase: context.spacingBase,
@@ -5833,8 +6098,8 @@ const renderSemanticInput = (
       overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id],
       spacingBase: context.spacingBase
     }),
-    ["bgcolor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })]
-  ]);
+    ["bgcolor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })] as [string, string | number | undefined]
+  ];
 
   const inputRootStyle = sxString([
     [
@@ -5866,6 +6131,21 @@ const renderSemanticInput = (
 
   if (field.isSelect) {
     registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiFormControl",
+      entries: fieldSxEntries
+    });
+    const fieldSx = sxString(
+      withOmittedSxKeys({
+        entries: fieldSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiFormControl",
+          entries: fieldSxEntries
+        })
+      })
+    );
     const selectLabelId = `${field.key}-label`;
     const selectSxEntries = [
       inputRootStyle,
@@ -5904,6 +6184,21 @@ ${indent}</FormControl>`;
   if (field.suffixText) {
     registerMuiImports(context, "InputAdornment");
   }
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiTextField",
+    entries: fieldSxEntries
+  });
+  const fieldSx = sxString(
+    withOmittedSxKeys({
+      entries: fieldSxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiTextField",
+        entries: fieldSxEntries
+      })
+    })
+  );
   const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
@@ -6205,7 +6500,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   if (iconNode && isIconOnlyButton) {
     registerMuiImports(context, "IconButton");
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
-    const iconButtonSx = sxString([
+    const iconButtonSxEntries: Array<[string, string | number | undefined]> = [
       ...baseLayoutEntries(element, parent, {
         spacingBase: context.spacingBase,
         tokens: context.tokens
@@ -6215,8 +6510,23 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
         overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
         spacingBase: context.spacingBase
       }),
-      ["color", toThemeColorLiteral({ color: iconColor, tokens: context.tokens })]
-    ]);
+      ["color", toThemeColorLiteral({ color: iconColor, tokens: context.tokens })] as [string, string | number | undefined]
+    ];
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiIconButton",
+      entries: iconButtonSxEntries
+    });
+    const iconButtonSx = sxString(
+      withOmittedSxKeys({
+        entries: iconButtonSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiIconButton",
+          entries: iconButtonSxEntries
+        })
+      })
+    );
     const iconButtonSxWithState = appendVariantStateOverridesToSx({
       sx: iconButtonSx,
       element,
@@ -6296,7 +6606,21 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     fullWidth,
     tokens: context.tokens
   });
-  const sx = sxString(sxEntries);
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiButton",
+    entries: sxEntries
+  });
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: sxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiButton",
+        entries: sxEntries
+      })
+    })
+  );
 
   const sxWithVariantStates = appendVariantStateOverridesToSx({
     sx,
@@ -8189,20 +8513,33 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   if (omitDefaultElevation) {
     omitSxKeys.add("boxShadow");
   }
+  const cardSxEntries = [
+    ...baseLayoutEntries(element, parent, {
+      preferInsetShadow: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiCard",
+    entries: cardSxEntries
+  });
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiCard",
+    entries: cardSxEntries
+  })) {
+    omitSxKeys.add(key);
+  }
   const sx = sxString(
     withOmittedSxKeys({
-      entries: [
-        ...baseLayoutEntries(element, parent, {
-          preferInsetShadow: false,
-          spacingBase: context.spacingBase,
-          tokens: context.tokens
-        }),
-        ...toResponsiveLayoutMediaEntries({
-          baseLayoutMode: element.layoutMode ?? "NONE",
-          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-          spacingBase: context.spacingBase
-        })
-      ],
+      entries: cardSxEntries,
       keys: omitSxKeys
     })
   );
@@ -8303,15 +8640,27 @@ const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualPare
       spacingBase: context.spacingBase
     })
   ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiChip",
+    entries: chipLayoutEntries
+  });
+  const chipMatchedDefaultKeys = collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiChip",
+    entries: chipLayoutEntries
+  });
   const chipSxEntries = withOmittedSxKeys({
     entries: chipLayoutEntries,
-    keys:
-      matchesRoundedInteger({
+    keys: new Set<string>([
+      ...chipMatchedDefaultKeys,
+      ...(matchesRoundedInteger({
         value: element.cornerRadius,
         target: chipDefaults?.borderRadiusPx
       })
-        ? new Set<string>(["borderRadius"])
-        : new Set<string>()
+        ? ["borderRadius"]
+        : [])
+    ])
   });
   const sx = appendVariantStateOverridesToSx({
     sx: sxString(chipSxEntries),
@@ -8516,20 +8865,34 @@ const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const appBarBackgroundMatchesDefault =
     normalizeHexColor(element.fillColor) !== undefined &&
     normalizeHexColor(element.fillColor) === normalizeHexColor(appBarDefaults?.backgroundColor);
+  const appBarSxEntries = [
+    ...baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiAppBar",
+    entries: appBarSxEntries
+  });
+  const appBarMatchedDefaultKeys = collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiAppBar",
+    entries: appBarSxEntries
+  });
   const sx = sxString(
     withOmittedSxKeys({
-      entries: [
-        ...baseLayoutEntries(element, parent, {
-          spacingBase: context.spacingBase,
-          tokens: context.tokens
-        }),
-        ...toResponsiveLayoutMediaEntries({
-          baseLayoutMode: element.layoutMode ?? "NONE",
-          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-          spacingBase: context.spacingBase
-        })
-      ],
-      keys: appBarBackgroundMatchesDefault ? new Set<string>(["bgcolor"]) : new Set<string>()
+      entries: appBarSxEntries,
+      keys: new Set<string>([
+        ...appBarMatchedDefaultKeys,
+        ...(appBarBackgroundMatchesDefault ? ["bgcolor"] : [])
+      ])
     })
   );
   const fallbackTitle = firstText(element)?.trim() || element.name || "App";
@@ -8771,8 +9134,20 @@ const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualPa
       spacingBase: context.spacingBase
     })
   ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiAvatar",
+    entries: avatarSxEntries
+  });
   const hasRelativeWidthLogic = avatarSxEntries.some(([key, value]) => key === "maxWidth" && value !== undefined);
   const omitSxKeys = new Set<string>();
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiAvatar",
+    entries: avatarSxEntries
+  })) {
+    omitSxKeys.add(key);
+  }
   if (
     matchesRoundedInteger({
       value: element.cornerRadius,
@@ -8837,7 +9212,7 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
   const matchesDefaultBorderColor =
     normalizeHexColor(element.fillColor) !== undefined &&
     normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
-  const sx = sxString([
+  const dividerSxEntries: Array<[string, string | number | undefined]> = [
     ...baseLayoutEntries(element, parent, {
       includePaints: false,
       spacingBase: context.spacingBase,
@@ -8848,8 +9223,26 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
       spacingBase: context.spacingBase
     }),
-    ["borderColor", !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined]
-  ]);
+    [
+      "borderColor",
+      !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined
+    ] as [string, string | number | undefined]
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiDivider",
+    entries: dividerSxEntries
+  });
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: dividerSxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiDivider",
+        entries: dividerSxEntries
+      })
+    })
+  );
   const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
   return `${indent}<Divider aria-hidden="true"${sxProp} />`;
 };
@@ -8936,20 +9329,37 @@ const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualPar
     typeof paperDefaults?.elevation === "number" &&
     paperDefaults.elevation === elevation;
   const variant = elevation && elevation > 0 ? undefined : element.strokeColor ? "outlined" : undefined;
+  const paperSxEntries = [
+    ...baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    }),
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiPaper",
+    entries: paperSxEntries
+  });
+  const omitPaperKeys = new Set<string>();
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiPaper",
+    entries: paperSxEntries
+  })) {
+    omitPaperKeys.add(key);
+  }
+  if (omitDefaultElevation) {
+    omitPaperKeys.add("boxShadow");
+  }
   const sx = sxString(
     withOmittedSxKeys({
-      entries: [
-        ...baseLayoutEntries(element, parent, {
-          spacingBase: context.spacingBase,
-          tokens: context.tokens
-        }),
-        ...toResponsiveLayoutMediaEntries({
-          baseLayoutMode: element.layoutMode ?? "NONE",
-          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-          spacingBase: context.spacingBase
-        })
-      ],
-      keys: omitDefaultElevation ? new Set<string>(["boxShadow"]) : new Set<string>()
+      entries: paperSxEntries,
+      keys: omitPaperKeys
     })
   );
   const navigation = resolvePrototypeNavigationBinding({ element, context });
@@ -9383,7 +9793,7 @@ const renderContainer = (
     const matchesDefaultBorderColor =
       normalizeHexColor(element.fillColor) !== undefined &&
       normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
-    const sx = sxString([
+    const dividerSxEntries: Array<[string, string | number | undefined]> = [
       ...baseLayoutEntries(element, parent, {
         spacingBase: context.spacingBase,
         tokens: context.tokens
@@ -9393,8 +9803,26 @@ const renderContainer = (
         overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
         spacingBase: context.spacingBase
       }),
-      ["borderColor", !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined]
-    ]);
+      [
+        "borderColor",
+        !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined
+      ] as [string, string | number | undefined]
+    ];
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiDivider",
+      entries: dividerSxEntries
+    });
+    const sx = sxString(
+      withOmittedSxKeys({
+        entries: dividerSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiDivider",
+          entries: dividerSxEntries
+        })
+      })
+    );
     registerMuiImports(context, "Divider");
     const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
     return `${indent}<Divider aria-hidden="true"${sxProp} />`;
@@ -9596,12 +10024,16 @@ const createThemeDerivationRenderContext = ({
   screen,
   generationLocale,
   spacingBase,
-  tokens
+  tokens,
+  themeComponentDefaults,
+  themeSxSampleCollector
 }: {
   screen: ScreenIR;
   generationLocale: string;
   spacingBase: number;
   tokens?: DesignTokens;
+  themeComponentDefaults?: ThemeComponentDefaults;
+  themeSxSampleCollector?: ThemeSxSampleCollector;
 }): RenderContext => {
   const baseContext: RenderContext = {
     screenId: `${screen.id}:theme-defaults`,
@@ -9635,6 +10067,8 @@ const createThemeDerivationRenderContext = ({
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+    ...(themeSxSampleCollector ? { themeSxSampleCollector } : {}),
     extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
   };
   if (tokens) {
@@ -9690,6 +10124,147 @@ const collectAppBarDefaultsCandidates = ({
     byId.set(candidate.id, candidate);
   }
   return Array.from(byId.values());
+};
+
+const collectThemeSxSamplesFromScreens = ({
+  screens,
+  generationLocale,
+  spacingBase,
+  tokens,
+  themeComponentDefaults
+}: {
+  screens: ScreenIR[];
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+  themeComponentDefaults?: ThemeComponentDefaults;
+}): ThemeSxSample[] => {
+  const samples: ThemeSxSample[] = [];
+  for (const screen of screens) {
+    const context = createThemeDerivationRenderContext({
+      screen,
+      generationLocale,
+      spacingBase,
+      ...(tokens ? { tokens } : {}),
+      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      themeSxSampleCollector: (sample) => {
+        samples.push(sample);
+      }
+    });
+    const rootParent: ScreenElementIR = {
+      id: `${screen.id}:theme-c1-root`,
+      nodeType: "FRAME",
+      type: "container",
+      x: 0,
+      y: 0,
+      name: screen.name,
+      layoutMode: screen.layoutMode,
+      ...(typeof screen.width === "number" ? { width: screen.width } : {}),
+      ...(typeof screen.height === "number" ? { height: screen.height } : {}),
+      ...(screen.fillColor ? { fillColor: screen.fillColor } : {}),
+      ...(screen.fillGradient ? { fillGradient: screen.fillGradient } : {}),
+      children: screen.children
+    };
+    renderNodesIntoParent({
+      nodes: screen.children,
+      parent: rootParent,
+      depth: 3,
+      context,
+      layoutMode: screen.layoutMode
+    });
+  }
+  return samples;
+};
+
+const deriveThemeSxComponentStyleOverridesFromSamples = ({
+  samples
+}: {
+  samples: ThemeSxSample[];
+}): ThemeSxComponentStyleOverrides | undefined => {
+  const componentStats = new Map<
+    string,
+    {
+      sampleCount: number;
+      valuesByKey: Map<
+        string,
+        Map<
+          string,
+          {
+            value: ThemeSxStyleValue;
+            count: number;
+          }
+        >
+      >;
+    }
+  >();
+
+  for (const sample of samples) {
+    const componentName = sample.componentName.trim();
+    if (!componentName) {
+      continue;
+    }
+    let stats = componentStats.get(componentName);
+    if (!stats) {
+      stats = {
+        sampleCount: 0,
+        valuesByKey: new Map()
+      };
+      componentStats.set(componentName, stats);
+    }
+    stats.sampleCount += 1;
+
+    for (const [key, value] of sample.styleValuesByKey.entries()) {
+      if (!THEME_SX_CANONICAL_VISUAL_KEYS.has(key)) {
+        continue;
+      }
+      let valuesByNormalizedValueKey = stats.valuesByKey.get(key);
+      if (!valuesByNormalizedValueKey) {
+        valuesByNormalizedValueKey = new Map();
+        stats.valuesByKey.set(key, valuesByNormalizedValueKey);
+      }
+      const normalizedValueKey = toThemeSxValueKey(value);
+      const existing = valuesByNormalizedValueKey.get(normalizedValueKey);
+      if (!existing) {
+        valuesByNormalizedValueKey.set(normalizedValueKey, {
+          value,
+          count: 1
+        });
+        continue;
+      }
+      existing.count += 1;
+    }
+  }
+
+  const overrides: ThemeSxComponentStyleOverrides = {};
+  const orderedComponentNames = Array.from(componentStats.keys()).sort((left, right) => left.localeCompare(right));
+  for (const componentName of orderedComponentNames) {
+    const stats = componentStats.get(componentName);
+    if (!stats || stats.sampleCount < THEME_SX_MIN_SAMPLES) {
+      continue;
+    }
+
+    const resolvedEntries: Array<[string, ThemeSxStyleValue]> = [];
+    const orderedKeys = Array.from(stats.valuesByKey.keys()).sort((left, right) => left.localeCompare(right));
+    for (const key of orderedKeys) {
+      const valueCandidates = Array.from(stats.valuesByKey.get(key)?.values() ?? []).sort((left, right) => {
+        return right.count - left.count || toThemeSxValueKey(left.value).localeCompare(toThemeSxValueKey(right.value));
+      });
+      const winner = valueCandidates[0];
+      if (!winner) {
+        continue;
+      }
+      if (winner.count / stats.sampleCount < THEME_SX_EXTRACTION_THRESHOLD) {
+        continue;
+      }
+      resolvedEntries.push([key, winner.value]);
+    }
+
+    if (resolvedEntries.length > 0) {
+      overrides[componentName] = Object.fromEntries(resolvedEntries);
+    }
+  }
+
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
 };
 
 const deriveThemeComponentDefaultsFromScreens = ({
@@ -9853,6 +10428,20 @@ const deriveThemeComponentDefaultsFromScreens = ({
       ...(avatarBorderRadius !== undefined ? { borderRadiusPx: avatarBorderRadius } : {})
     };
   }
+
+  const c1StyleOverrides = deriveThemeSxComponentStyleOverridesFromSamples({
+    samples: collectThemeSxSamplesFromScreens({
+      screens,
+      generationLocale,
+      spacingBase,
+      ...(tokens ? { tokens } : {}),
+      ...(Object.keys(defaults).length > 0 ? { themeComponentDefaults: defaults } : {})
+    })
+  });
+  if (c1StyleOverrides) {
+    defaults.c1StyleOverrides = c1StyleOverrides;
+  }
+
   return Object.keys(defaults).length > 0 ? defaults : undefined;
 };
 
@@ -9869,6 +10458,164 @@ const deriveThemeComponentDefaultsFromIr = ({
     spacingBase: normalizeSpacingBase(ir.tokens.spacingBase),
     tokens: ir.tokens
   });
+};
+
+interface ThemeComponentBlockDraft {
+  defaultPropsEntries: Array<[string, string | number]>;
+  rootStyleEntries: Array<[string, ThemeSxStyleValue]>;
+  nestedRootStyleEntries: Array<{
+    selector: string;
+    entries: Array<[string, ThemeSxStyleValue]>;
+  }>;
+}
+
+const toThemeSxStyleValueLiteral = (value: ThemeSxStyleValue): string => {
+  if (typeof value === "number") {
+    return String(roundStableSxNumericValue(value));
+  }
+  return literal(value);
+};
+
+const createThemeComponentBlockDraft = ({
+  componentName,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): ThemeComponentBlockDraft => {
+  const draft: ThemeComponentBlockDraft = {
+    defaultPropsEntries: [],
+    rootStyleEntries: [],
+    nestedRootStyleEntries: []
+  };
+
+  if (componentName === "MuiButton") {
+    draft.rootStyleEntries.push(["textTransform", "none"]);
+    return draft;
+  }
+  if (componentName === "MuiCard") {
+    if (themeComponentDefaults?.MuiCard?.elevation !== undefined) {
+      draft.defaultPropsEntries.push(["elevation", themeComponentDefaults.MuiCard.elevation]);
+    }
+    if (themeComponentDefaults?.MuiCard?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiCard.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiTextField") {
+    if (themeComponentDefaults?.MuiTextField?.outlinedInputBorderRadiusPx !== undefined) {
+      draft.nestedRootStyleEntries.push({
+        selector: "& .MuiOutlinedInput-root",
+        entries: [["borderRadius", `${themeComponentDefaults.MuiTextField.outlinedInputBorderRadiusPx}px`]]
+      });
+    }
+    return draft;
+  }
+  if (componentName === "MuiChip") {
+    if (themeComponentDefaults?.MuiChip?.size) {
+      draft.defaultPropsEntries.push(["size", themeComponentDefaults.MuiChip.size]);
+    }
+    if (themeComponentDefaults?.MuiChip?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiChip.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiPaper") {
+    if (themeComponentDefaults?.MuiPaper?.elevation !== undefined) {
+      draft.defaultPropsEntries.push(["elevation", themeComponentDefaults.MuiPaper.elevation]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiAppBar") {
+    if (themeComponentDefaults?.MuiAppBar?.backgroundColor) {
+      draft.rootStyleEntries.push(["backgroundColor", themeComponentDefaults.MuiAppBar.backgroundColor]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiDivider") {
+    if (themeComponentDefaults?.MuiDivider?.borderColor) {
+      draft.rootStyleEntries.push(["borderColor", themeComponentDefaults.MuiDivider.borderColor]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiAvatar") {
+    if (themeComponentDefaults?.MuiAvatar?.widthPx !== undefined) {
+      draft.rootStyleEntries.push(["width", `${themeComponentDefaults.MuiAvatar.widthPx}px`]);
+    }
+    if (themeComponentDefaults?.MuiAvatar?.heightPx !== undefined) {
+      draft.rootStyleEntries.push(["height", `${themeComponentDefaults.MuiAvatar.heightPx}px`]);
+    }
+    if (themeComponentDefaults?.MuiAvatar?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiAvatar.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  return draft;
+};
+
+const appendC1ThemeStyleEntriesToDraft = ({
+  componentName,
+  draft,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  draft: ThemeComponentBlockDraft;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): void => {
+  const c1Entries = themeComponentDefaults?.c1StyleOverrides?.[componentName];
+  if (!c1Entries) {
+    return;
+  }
+  const existingRootKeys = new Set(draft.rootStyleEntries.map(([key]) => key));
+  const orderedC1Keys = Object.keys(c1Entries).sort((left, right) => left.localeCompare(right));
+  for (const key of orderedC1Keys) {
+    if (existingRootKeys.has(key)) {
+      continue;
+    }
+    const value = c1Entries[key];
+    const normalizedValue = normalizeThemeSxValueForKey({
+      key,
+      value
+    });
+    if (normalizedValue === undefined) {
+      continue;
+    }
+    draft.rootStyleEntries.push([key, normalizedValue]);
+    existingRootKeys.add(key);
+  }
+};
+
+const renderThemeComponentBlock = ({
+  componentName,
+  draft
+}: {
+  componentName: string;
+  draft: ThemeComponentBlockDraft;
+}): string | undefined => {
+  const componentEntries: string[] = [];
+  if (draft.defaultPropsEntries.length > 0) {
+    componentEntries.push(
+      `      defaultProps: { ${draft.defaultPropsEntries
+        .map(([key, value]) => `${key}: ${typeof value === "number" ? value : literal(value)}`)
+        .join(", ")} }`
+    );
+  }
+  if (draft.rootStyleEntries.length > 0 || draft.nestedRootStyleEntries.length > 0) {
+    const rootEntries = draft.rootStyleEntries.map(
+      ([key, value]) => `          ${key}: ${toThemeSxStyleValueLiteral(value)}`
+    );
+    for (const nestedEntry of draft.nestedRootStyleEntries) {
+      const nestedLines = nestedEntry.entries.map(
+        ([key, value]) => `            ${key}: ${toThemeSxStyleValueLiteral(value)}`
+      );
+      rootEntries.push(`          ${literal(nestedEntry.selector)}: {\n${nestedLines.join(",\n")}\n          }`);
+    }
+    componentEntries.push(`      styleOverrides: {\n        root: {\n${rootEntries.join(",\n")}\n        }\n      }`);
+  }
+  if (componentEntries.length === 0) {
+    return undefined;
+  }
+  return `    ${componentName}: {\n${componentEntries.join(",\n")}\n    }`;
 };
 
 const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults): GeneratedFile => {
@@ -9890,95 +10637,27 @@ const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponent
       .join(", ");
     return `    ${variantName}: { ${entries} }`;
   }).join(",\n");
-  const componentBlocks: string[] = [
-    `    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: "none"
-        }
-      }
-    }`
-  ];
-  if (themeComponentDefaults?.MuiCard) {
-    const entries = [
-      themeComponentDefaults.MuiCard.elevation !== undefined
-        ? `      defaultProps: { elevation: ${themeComponentDefaults.MuiCard.elevation} }`
-        : undefined,
-      themeComponentDefaults.MuiCard.borderRadiusPx !== undefined
-        ? `      styleOverrides: { root: { borderRadius: ${literal(`${themeComponentDefaults.MuiCard.borderRadiusPx}px`)} } }`
-        : undefined
-    ].filter((entry): entry is string => Boolean(entry));
-    if (entries.length > 0) {
-      componentBlocks.push(`    MuiCard: {\n${entries.join(",\n")}\n    }`);
-    }
-  }
-  if (themeComponentDefaults?.MuiTextField?.outlinedInputBorderRadiusPx !== undefined) {
-    componentBlocks.push(`    MuiTextField: {
-      styleOverrides: {
-        root: {
-          "& .MuiOutlinedInput-root": {
-            borderRadius: ${literal(`${themeComponentDefaults.MuiTextField.outlinedInputBorderRadiusPx}px`)}
-          }
-        }
-      }
-    }`);
-  }
-  if (themeComponentDefaults?.MuiChip) {
-    const entries = [
-      themeComponentDefaults.MuiChip.size ? `      defaultProps: { size: ${literal(themeComponentDefaults.MuiChip.size)} }` : undefined,
-      themeComponentDefaults.MuiChip.borderRadiusPx !== undefined
-        ? `      styleOverrides: { root: { borderRadius: ${literal(`${themeComponentDefaults.MuiChip.borderRadiusPx}px`)} } }`
-        : undefined
-    ].filter((entry): entry is string => Boolean(entry));
-    if (entries.length > 0) {
-      componentBlocks.push(`    MuiChip: {\n${entries.join(",\n")}\n    }`);
-    }
-  }
-  if (themeComponentDefaults?.MuiPaper?.elevation !== undefined) {
-    componentBlocks.push(`    MuiPaper: {
-      defaultProps: { elevation: ${themeComponentDefaults.MuiPaper.elevation} }
-    }`);
-  }
-  if (themeComponentDefaults?.MuiAppBar?.backgroundColor) {
-    componentBlocks.push(`    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          backgroundColor: ${literal(themeComponentDefaults.MuiAppBar.backgroundColor)}
-        }
-      }
-    }`);
-  }
-  if (themeComponentDefaults?.MuiDivider?.borderColor) {
-    componentBlocks.push(`    MuiDivider: {
-      styleOverrides: {
-        root: {
-          borderColor: ${literal(themeComponentDefaults.MuiDivider.borderColor)}
-        }
-      }
-    }`);
-  }
-  if (themeComponentDefaults?.MuiAvatar) {
-    const avatarRootEntries = [
-      themeComponentDefaults.MuiAvatar.widthPx !== undefined
-        ? `            width: ${literal(`${themeComponentDefaults.MuiAvatar.widthPx}px`)}`
-        : undefined,
-      themeComponentDefaults.MuiAvatar.heightPx !== undefined
-        ? `            height: ${literal(`${themeComponentDefaults.MuiAvatar.heightPx}px`)}`
-        : undefined,
-      themeComponentDefaults.MuiAvatar.borderRadiusPx !== undefined
-        ? `            borderRadius: ${literal(`${themeComponentDefaults.MuiAvatar.borderRadiusPx}px`)}`
-        : undefined
-    ].filter((entry): entry is string => Boolean(entry));
-    if (avatarRootEntries.length > 0) {
-      componentBlocks.push(`    MuiAvatar: {
-      styleOverrides: {
-        root: {
-${avatarRootEntries.join(",\n")}
-        }
-      }
-    }`);
-    }
-  }
+  const c1ComponentNames = Object.keys(themeComponentDefaults?.c1StyleOverrides ?? {})
+    .filter((componentName) => !THEME_COMPONENT_ORDER.includes(componentName))
+    .sort((left, right) => left.localeCompare(right));
+  const componentOrder = [...THEME_COMPONENT_ORDER, ...c1ComponentNames];
+  const componentBlocks = componentOrder
+    .map((componentName) => {
+      const draft = createThemeComponentBlockDraft({
+        componentName,
+        themeComponentDefaults
+      });
+      appendC1ThemeStyleEntriesToDraft({
+        componentName,
+        draft,
+        themeComponentDefaults
+      });
+      return renderThemeComponentBlock({
+        componentName,
+        draft
+      });
+    })
+    .filter((block): block is string => Boolean(block));
 
   return {
     path: "src/theme/theme.ts",
