@@ -3588,20 +3588,15 @@ const chooseSemanticColor = ({
     return fallback;
   }
 
-  const pool = clusters.filter((cluster) => {
-    if (semanticKey === "divider") {
-      return colorDistance(cluster.color, backgroundColor) >= 0.02;
+  if (semanticKey === "divider") {
+    const pool = clusters.filter((cluster) => colorDistance(cluster.color, backgroundColor) >= 0.02);
+    const candidates = (pool.length > 0 ? pool : clusters).filter((cluster) => cluster.styleSignals.divider > 0);
+    if (candidates.length === 0) {
+      return fallback;
     }
-    return colorDistance(cluster.color, backgroundColor) >= 0.08 && colorDistance(cluster.color, textColor) >= 0.08;
-  });
-  const candidates = (pool.length > 0 ? pool : clusters).filter((cluster) => cluster.styleSignals[semanticKey] > 0);
-  if (candidates.length === 0) {
-    return fallback;
-  }
 
-  const scored = candidates
-    .map((cluster) => {
-      if (semanticKey === "divider") {
+    const scored = candidates
+      .map((cluster) => {
         const distanceFromBackground = colorDistance(cluster.color, backgroundColor);
         let score =
           cluster.styleSignals.divider * 7 +
@@ -3622,38 +3617,92 @@ const chooseSemanticColor = ({
           score -= 5;
         }
         return { color: cluster.color, score };
-      }
+      })
+      .sort((left, right) => right.score - left.score);
 
-      const ratio = contrastRatio(cluster.color, backgroundColor);
-      let score =
-        cluster.styleSignals[semanticKey] * 6 +
-        cluster.contexts.button * 1.4 +
-        cluster.contexts.body +
-        cluster.contexts.heading * 0.8 +
-        cluster.contexts.decorative * 0.4 +
-        cluster.totalWeight * 0.03 +
-        resolveSemanticFamilyScore({ semanticKey, color: cluster.color });
-      if (cluster.styleSignals[semanticKey] === 0) {
-        score -= 3.5;
-      }
-      if (ratio >= 3) {
-        score += 1.5;
-      } else {
-        score -= 1.5;
-      }
-      if (colorDistance(cluster.color, primaryColor) < 0.05) {
-        score -= semanticKey === "info" ? 10 : 2.5;
-      }
-      if (colorDistance(cluster.color, secondaryColor) < 0.05) {
-        score -= 1;
-      }
-      return { color: cluster.color, score };
-    })
-    .sort((left, right) => right.score - left.score);
+    const selected = scored.find(({ score }) => score >= 2.5)?.color;
+    return selected ?? fallback;
+  }
 
-  const threshold = semanticKey === "divider" ? 2.5 : 3.5;
-  const selected = scored.find(({ color, score }) => {
-    if (score < threshold) {
+  const pool = clusters.filter(
+    (cluster) => colorDistance(cluster.color, backgroundColor) >= 0.08 && colorDistance(cluster.color, textColor) >= 0.08
+  );
+  if (pool.length === 0) {
+    return fallback;
+  }
+
+  const scoreSemanticCandidate = (cluster: ColorCluster): { color: string; score: number; familyScore: number } => {
+    const familyScore = resolveSemanticFamilyScore({ semanticKey, color: cluster.color });
+    const ratio = contrastRatio(cluster.color, backgroundColor);
+    let score =
+      cluster.styleSignals[semanticKey] * 6 +
+      cluster.contexts.button * 1.4 +
+      cluster.contexts.body +
+      cluster.contexts.heading * 0.8 +
+      cluster.contexts.decorative * 0.4 +
+      cluster.totalWeight * 0.03 +
+      familyScore;
+    if (cluster.styleSignals[semanticKey] === 0) {
+      score -= 3.5;
+    }
+    if (ratio >= 3) {
+      score += 1.5;
+    } else {
+      score -= 1.5;
+    }
+    if (colorDistance(cluster.color, primaryColor) < 0.05) {
+      score -= semanticKey === "info" ? 10 : 2.5;
+    }
+    if (colorDistance(cluster.color, secondaryColor) < 0.05) {
+      score -= 1;
+    }
+    return { color: cluster.color, score, familyScore };
+  };
+
+  const sortSemanticCandidates = (
+    candidates: ColorCluster[]
+  ): Array<{ color: string; score: number; familyScore: number }> => {
+    return candidates
+      .map(scoreSemanticCandidate)
+      .sort((left, right) => {
+        const scoreDelta = right.score - left.score;
+        if (scoreDelta !== 0) {
+          return scoreDelta;
+        }
+        const familyDelta = right.familyScore - left.familyScore;
+        if (familyDelta !== 0) {
+          return familyDelta;
+        }
+        return left.color.localeCompare(right.color);
+      });
+  };
+
+  const signalCandidates = pool.filter((cluster) => cluster.styleSignals[semanticKey] > 0);
+  if (signalCandidates.length > 0) {
+    const signalSelection = sortSemanticCandidates(signalCandidates).find(({ color, score }) => {
+      if (score < 3.5) {
+        return false;
+      }
+      if (semanticKey === "info") {
+        return isDistinctFromColors({
+          color,
+          references: [primaryColor],
+          minDistance: 0.08
+        });
+      }
+      return true;
+    })?.color;
+    if (signalSelection) {
+      return signalSelection;
+    }
+  }
+
+  const familyCandidates = pool.filter((cluster) => resolveSemanticFamilyScore({ semanticKey, color: cluster.color }) > 0);
+  if (familyCandidates.length === 0) {
+    return fallback;
+  }
+  const familySelection = sortSemanticCandidates(familyCandidates).find(({ color, familyScore }) => {
+    if (familyScore <= 0) {
       return false;
     }
     if (semanticKey === "info") {
@@ -3665,8 +3714,7 @@ const chooseSemanticColor = ({
     }
     return true;
   })?.color;
-
-  return selected ?? fallback;
+  return familySelection ?? fallback;
 };
 
 const chooseBackgroundColor = (clusters: ColorCluster[]): string => {
