@@ -1,5 +1,11 @@
 import type { WorkspaceBrandTheme } from "../contracts/index.js";
 import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../figma-payload-validation.js";
+import {
+  isHelperItemNode,
+  isNodeGeometryEmpty,
+  isTechnicalPlaceholderText,
+  normalizePlaceholderText
+} from "../figma-node-heuristics.js";
 import type {
   CounterAxisAlignItems,
   DesignIR,
@@ -31,12 +37,6 @@ import {
 
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
-const TECHNICAL_PLACEHOLDER_TEXT_VALUES = new Set([
-  "swap component",
-  "instance swap",
-  "add description",
-  "alternativtext"
-]);
 const GENERIC_PLACEHOLDER_TEXT_PATTERNS = [
   /^(type|enter|your)(?:\s+text)?(?:\s+here)?$/i,
   /^(label|title|subtitle|heading)$/i,
@@ -1536,14 +1536,10 @@ const mapMargin = (node: FigmaNode): { top: number; right: number; bottom: numbe
   return mappedMargin;
 };
 
-const normalizePlaceholderText = (value: string): string => {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-};
-
 const toPlaceholderRuleSet = (values: string[] | undefined): Set<string> => {
   const normalizedValues = (values ?? [])
     .filter((value): value is string => typeof value === "string")
-    .map((value) => normalizePlaceholderText(value))
+    .map((value) => normalizePlaceholderText({ value }))
     .filter((value) => value.length > 0);
   return new Set(normalizedValues);
 };
@@ -1567,14 +1563,14 @@ const classifyPlaceholderText = ({
   if (typeof text !== "string") {
     return "none";
   }
-  const normalized = normalizePlaceholderText(text);
+  const normalized = normalizePlaceholderText({ value: text });
   if (!normalized) {
     return "none";
   }
   if (matcher.allowlist.has(normalized)) {
     return "none";
   }
-  if (TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized)) {
+  if (isTechnicalPlaceholderText({ text })) {
     return "technical";
   }
   if (matcher.blocklist.has(normalized)) {
@@ -1600,28 +1596,6 @@ const classifyPlaceholderNode = ({
     text: node.characters,
     matcher
   });
-};
-
-const isGeometryEmpty = (node: FigmaNode): boolean => {
-  const width = node.absoluteBoundingBox?.width;
-  const height = node.absoluteBoundingBox?.height;
-  if (typeof width !== "number" || typeof height !== "number") {
-    return false;
-  }
-  return width <= 0 || height <= 0;
-};
-
-const isHelperItemNode = (node: FigmaNode): boolean => {
-  const normalized = (node.name ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  return (
-    normalized === "_item" ||
-    normalized.startsWith("_item ") ||
-    normalized.startsWith("item_") ||
-    normalized.endsWith("_item")
-  );
 };
 
 const DEPTH_SEMANTIC_TYPES = new Set<ScreenElementIR["type"]>([
@@ -1690,7 +1664,7 @@ interface PrototypeNavigationResolutionContext {
 
 const hasMeaningfulNodeText = (node: FigmaNode): boolean => {
   const normalized = (node.characters ?? "").trim().toLowerCase();
-  return normalized.length > 0 && !TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized);
+  return normalized.length > 0 && !isTechnicalPlaceholderText({ text: normalized });
 };
 
 const isDepthSemanticNode = (node: FigmaNode): boolean => {
@@ -1916,7 +1890,7 @@ const mapElement = ({
     return null;
   }
 
-  if (isHelperItemNode(node) && isGeometryEmpty(node)) {
+  if (isHelperItemNode({ node }) && isNodeGeometryEmpty({ node })) {
     metrics.skippedPlaceholders += countSubtreeNodes(node);
     return null;
   }
@@ -2242,8 +2216,7 @@ const hasMeaningfulTextContent = (value: string | undefined): boolean => {
   if (typeof value !== "string") {
     return false;
   }
-  const normalized = value.trim().toLowerCase();
-  return normalized.length > 0 && !TECHNICAL_PLACEHOLDER_TEXT_VALUES.has(normalized);
+  return value.trim().length > 0 && !isTechnicalPlaceholderText({ text: value });
 };
 
 const hasVisualSubstance = (element: ScreenElementIR): boolean => {
