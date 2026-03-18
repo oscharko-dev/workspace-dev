@@ -2,9 +2,11 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceGitPrStatus,
   WorkspaceJobArtifacts,
+  WorkspaceJobCancellation,
   WorkspaceJobError,
   WorkspaceJobInput,
   WorkspaceJobLog,
+  WorkspaceJobQueueState,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
   WorkspaceRouterMode,
@@ -45,6 +47,9 @@ export interface JobRecord {
     enabled: boolean;
     url?: string;
   };
+  queue: WorkspaceJobQueueState;
+  abortController?: AbortController;
+  cancellation?: WorkspaceJobCancellation;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -84,6 +89,8 @@ export interface JobEngineRuntime {
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
+  maxConcurrentJobs: number;
+  maxQueuedJobs: number;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
 }
@@ -101,6 +108,7 @@ export interface CommandResult {
   stderr: string;
   combined: string;
   timedOut?: boolean;
+  canceled?: boolean;
   durationMs?: number;
 }
 
@@ -114,6 +122,7 @@ export interface GitPrExecutionResult {
 
 export interface JobEngine {
   submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
+  cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
   resolvePreviewAsset: (jobId: string, previewPath: string) => Promise<{ content: Buffer; contentType: string } | undefined>;

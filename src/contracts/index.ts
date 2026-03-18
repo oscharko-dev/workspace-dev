@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.13.0
+ * Contract version: 2.14.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -21,7 +21,7 @@ export type WorkspaceBrandTheme = "derived" | "sparkasse";
 export type WorkspaceRouterMode = "browser" | "hash";
 
 /** Runtime status values for asynchronous workspace jobs. */
-export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed";
+export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed" | "canceled";
 
 /** Stage status values for each pipeline stage. */
 export type WorkspaceJobStageStatus = "queued" | "running" | "completed" | "failed" | "skipped";
@@ -92,6 +92,10 @@ export interface WorkspaceStartOptions {
   installPreferOffline?: boolean;
   /** Skip package installation in validate.project; requires existing node_modules. Default: false */
   skipInstall?: boolean;
+  /** Maximum number of jobs that may run concurrently. Default: 1 */
+  maxConcurrentJobs?: number;
+  /** Maximum number of queued jobs waiting for execution before backpressure rejects submit. Default: 20 */
+  maxQueuedJobs?: number;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -199,6 +203,23 @@ export interface WorkspaceJobError {
   message: string;
 }
 
+/** Queue snapshot attached to job payloads for queue-state visibility. */
+export interface WorkspaceJobQueueState {
+  runningCount: number;
+  queuedCount: number;
+  maxConcurrentJobs: number;
+  maxQueuedJobs: number;
+  position?: number;
+}
+
+/** Cancellation metadata attached to jobs with cancel intent and terminal reason. */
+export interface WorkspaceJobCancellation {
+  requestedAt: string;
+  reason: string;
+  requestedBy: "api";
+  completedAt?: string;
+}
+
 /** Full job status payload for polling endpoint. */
 export interface WorkspaceJobStatus {
   jobId: string;
@@ -215,6 +236,8 @@ export interface WorkspaceJobStatus {
     enabled: boolean;
     url?: string;
   };
+  queue: WorkspaceJobQueueState;
+  cancellation?: WorkspaceJobCancellation;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -229,6 +252,7 @@ export interface WorkspaceJobResult {
     enabled: boolean;
     url?: string;
   };
+  cancellation?: WorkspaceJobCancellation;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -243,4 +267,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.13.0" as const;
+export const CONTRACT_VERSION = "2.14.0" as const;

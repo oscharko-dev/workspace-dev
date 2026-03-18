@@ -17,6 +17,7 @@ interface ValidationDeps {
     env?: NodeJS.ProcessEnv;
     redactions?: string[];
     timeoutMs?: number;
+    abortSignal?: AbortSignal;
   }) => Promise<CommandResult>;
   runValidationFeedback: (input: {
     generatedProjectDir: string;
@@ -122,6 +123,7 @@ export const runProjectValidationWithDeps = async ({
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false,
+  abortSignal,
   deps
 }: {
   generatedProjectDir: string;
@@ -133,6 +135,7 @@ export const runProjectValidationWithDeps = async ({
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  abortSignal?: AbortSignal;
   deps?: Partial<ValidationDeps>;
 }): Promise<void> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
@@ -211,14 +214,28 @@ export const runProjectValidationWithDeps = async ({
     return value === "lint" || value === "typecheck" || value === "build";
   };
 
+  const throwIfCanceled = (): void => {
+    if (!abortSignal?.aborted) {
+      return;
+    }
+    throw new Error("Validation canceled by job cancellation request.");
+  };
+
+  throwIfCanceled();
+
   if (installCommand) {
     onLog(`Running ${installCommand.name}`);
+    throwIfCanceled();
     const installResult = await runCommand({
       cwd: generatedProjectDir,
       command: "pnpm",
       args: installCommand.args,
-      ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {})
+      ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {}),
+      ...(abortSignal ? { abortSignal } : {})
     });
+    if (installResult.canceled) {
+      throw new Error(`${installCommand.name} canceled by job cancellation request.`);
+    }
     if (!installResult.success) {
       const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
       throw new Error(`${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`);
@@ -231,6 +248,7 @@ export const runProjectValidationWithDeps = async ({
 
     for (const command of attemptCommands) {
       onLog(`Running ${command.name}`);
+      throwIfCanceled();
 
       let beforeAutofix = new Map<string, string>();
       let shouldDiffAutofixChanges = command.name === "lint-autofix";
@@ -249,8 +267,12 @@ export const runProjectValidationWithDeps = async ({
         command: "pnpm",
         args: command.args,
         ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
-        ...(command.env ? { env: command.env } : {})
+        ...(command.env ? { env: command.env } : {}),
+        ...(abortSignal ? { abortSignal } : {})
       });
+      if (result.canceled) {
+        throw new Error(`${command.name} canceled by job cancellation request.`);
+      }
 
       if (command.name === "lint-autofix") {
         if (shouldDiffAutofixChanges) {
@@ -333,7 +355,8 @@ export const runProjectValidation = async ({
   enableUnitTestValidation = false,
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
-  skipInstall = false
+  skipInstall = false,
+  abortSignal
 }: {
   generatedProjectDir: string;
   onLog: (message: string) => void;
@@ -344,6 +367,7 @@ export const runProjectValidation = async ({
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  abortSignal?: AbortSignal;
 }): Promise<void> => {
   return await runProjectValidationWithDeps({
     generatedProjectDir,
@@ -354,6 +378,7 @@ export const runProjectValidation = async ({
     enableUnitTestValidation,
     commandTimeoutMs,
     installPreferOffline,
-    skipInstall
+    skipInstall,
+    ...(abortSignal ? { abortSignal } : {})
   });
 };

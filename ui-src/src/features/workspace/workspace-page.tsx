@@ -18,14 +18,15 @@ const endpoints = {
   workspace: "/workspace",
   submit: "/workspace/submit",
   job: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}`,
-  result: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}/result`
+  result: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}/result`,
+  cancel: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`
 };
 
 const RUNTIME_POLL_INTERVAL_MS = 5_000;
 const JOB_POLL_INTERVAL_MS = 1_500;
 
 type BadgeVariant = "default" | "ok" | "warn" | "error";
-type JobLifecycleStatus = "queued" | "running" | "completed" | "failed";
+type JobLifecycleStatus = "queued" | "running" | "completed" | "failed" | "canceled";
 
 interface RuntimeStatusPayload {
   running: boolean;
@@ -53,11 +54,27 @@ interface JobPreviewPayload {
   url?: string;
 }
 
+interface JobQueuePayload {
+  runningCount?: number;
+  queuedCount?: number;
+  maxConcurrentJobs?: number;
+  maxQueuedJobs?: number;
+  position?: number;
+}
+
+interface JobCancellationPayload {
+  requestedAt?: string;
+  reason?: string;
+  completedAt?: string;
+}
+
 interface JobPayload {
   jobId: string;
   status: string;
   stages?: JobStagePayload[];
   preview?: JobPreviewPayload;
+  queue?: JobQueuePayload;
+  cancellation?: JobCancellationPayload;
   error?: JobErrorPayload;
 }
 
@@ -111,19 +128,27 @@ function getJobLifecycleStatus(payload?: JobPayload): JobLifecycleStatus | undef
   if (payload.status === "failed") {
     return "failed";
   }
+  if (payload.status === "canceled") {
+    return "canceled";
+  }
 
   return undefined;
 }
 
 function getSubmitBadge({
   isSubmitting,
-  status
+  status,
+  isCanceling
 }: {
   isSubmitting: boolean;
   status: JobLifecycleStatus | undefined;
+  isCanceling: boolean;
 }): { text: string; variant: BadgeVariant } {
   if (isSubmitting) {
     return { text: "SUBMITTING", variant: "warn" };
+  }
+  if (isCanceling) {
+    return { text: "CANCELING", variant: "warn" };
   }
 
   if (status === "queued") {
@@ -137,6 +162,9 @@ function getSubmitBadge({
   }
   if (status === "failed") {
     return { text: "FAILED", variant: "error" };
+  }
+  if (status === "canceled") {
+    return { text: "CANCELED", variant: "warn" };
   }
 
   return { text: "IDLE", variant: "default" };
@@ -205,6 +233,9 @@ function getPreviewMessage({
   }
 
   if (status === "queued" || status === "running") {
+    if (payload?.cancellation && !payload.cancellation.completedAt) {
+      return "Cancellation requested. Waiting for terminal state...";
+    }
     return "Generation läuft. Bitte warten...";
   }
 
@@ -214,6 +245,9 @@ function getPreviewMessage({
 
   if (status === "failed") {
     return payload?.error?.message || "Generation failed.";
+  }
+  if (status === "canceled") {
+    return payload?.cancellation?.reason || "Generation canceled.";
   }
 
   return "Polling job status...";
@@ -237,6 +271,13 @@ function getJobSummary({
   }
 
   if (status === "queued" || status === "running") {
+    if (payload.cancellation && !payload.cancellation.completedAt) {
+      return `Job ${payload.jobId} cancellation requested.`;
+    }
+    const queuePosition = payload.queue?.position;
+    if (typeof queuePosition === "number" && queuePosition > 0 && status === "queued") {
+      return `Job ${payload.jobId} is queued (position ${queuePosition}).`;
+    }
     return `Job ${payload.jobId} is ${status}.`;
   }
 
@@ -247,8 +288,30 @@ function getJobSummary({
   if (status === "failed") {
     return `Job ${payload.jobId} failed.`;
   }
+  if (status === "canceled") {
+    return `Job ${payload.jobId} canceled.`;
+  }
 
   return `Job ${payload.jobId} status is ${payload.status}.`;
+}
+
+function canCancelJob({
+  status,
+  payload
+}: {
+  status: JobLifecycleStatus | undefined;
+  payload: JobPayload | undefined;
+}): boolean {
+  if (!payload || !status) {
+    return false;
+  }
+  if (status !== "queued" && status !== "running") {
+    return false;
+  }
+  if (payload.cancellation && !payload.cancellation.completedAt) {
+    return false;
+  }
+  return true;
 }
 
 function getBadgeClasses(variant: BadgeVariant): string {
@@ -404,6 +467,57 @@ export function WorkspacePage(): JSX.Element {
     }
   });
 
+  const cancelMutation = useMutation<
+    {
+      jobId: string;
+      response: JsonResponse<JobPayload>;
+    },
+    Error,
+    { jobId: string }
+  >({
+    mutationFn: async ({ jobId }) => {
+      const response = await fetchJson<JobPayload>({
+        url: endpoints.cancel({ jobId }),
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            reason: "Cancellation requested from workspace UI."
+          })
+        }
+      });
+      return { jobId, response };
+    },
+    onSuccess: ({ response }) => {
+      setSubmitPayloadView((previous) => {
+        let previousObject: Record<string, unknown> = {};
+        try {
+          const parsed = JSON.parse(previous) as unknown;
+          if (isRecord(parsed)) {
+            previousObject = parsed;
+          }
+        } catch {
+          previousObject = {};
+        }
+
+        return toPrettyJson(
+          redactSecrets({
+            value: {
+              ...previousObject,
+              cancel: {
+                status: response.status,
+                payload: response.payload
+              }
+            }
+          })
+        );
+      });
+      void jobQuery.refetch();
+    }
+  });
+
   const jobPayload = useMemo(() => {
     if (!jobQuery.data?.ok || !isJobPayload(jobQuery.data.payload)) {
       return undefined;
@@ -492,7 +606,8 @@ export function WorkspacePage(): JSX.Element {
   const workspaceBadge = getWorkspaceBadge(runtimeQuery.data?.workspace);
   const submitBadge = getSubmitBadge({
     isSubmitting: submitMutation.isPending,
-    status: jobStatus
+    status: jobStatus,
+    isCanceling: Boolean(jobPayload?.cancellation && !jobPayload.cancellation.completedAt)
   });
 
   const onSubmit = handleSubmit((formData) => {
@@ -511,6 +626,19 @@ export function WorkspacePage(): JSX.Element {
     payload: jobPayload,
     activeJobId
   });
+  const canCancelActiveJob = canCancelJob({
+    status: jobStatus,
+    payload: jobPayload
+  });
+  const queueInfo =
+    jobPayload?.queue &&
+    typeof jobPayload.queue.runningCount === "number" &&
+    typeof jobPayload.queue.queuedCount === "number" &&
+    typeof jobPayload.queue.maxConcurrentJobs === "number" &&
+    typeof jobPayload.queue.maxQueuedJobs === "number"
+      ? `running ${jobPayload.queue.runningCount}/${jobPayload.queue.maxConcurrentJobs}, queued ${jobPayload.queue.queuedCount}/${jobPayload.queue.maxQueuedJobs}`
+      : undefined;
+  const cancelInfo = jobPayload?.cancellation?.reason;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -541,6 +669,19 @@ export function WorkspacePage(): JSX.Element {
               className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
             >
               Refresh
+            </button>
+            <button
+              type="button"
+              disabled={!activeJobId || !canCancelActiveJob || cancelMutation.isPending}
+              onClick={() => {
+                if (!activeJobId) {
+                  return;
+                }
+                cancelMutation.mutate({ jobId: activeJobId });
+              }}
+              className="cursor-pointer rounded-full border border-black bg-white px-3 py-1.5 text-sm font-semibold text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cancelMutation.isPending ? "Canceling..." : "Cancel Job"}
             </button>
             <button
               type="submit"
@@ -734,6 +875,8 @@ export function WorkspacePage(): JSX.Element {
           </div>
           <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
             <p className="m-0">{jobSummary}</p>
+            {queueInfo ? <p className="m-0 mt-1 text-xs text-slate-500">Queue: {queueInfo}</p> : null}
+            {cancelInfo ? <p className="m-0 mt-1 text-xs text-slate-500">Cancellation: {cancelInfo}</p> : null}
             <ul className="mt-2 grid gap-1">
               {jobStages.map((stage) => {
                 const status = (stage.status || "queued").toUpperCase();
