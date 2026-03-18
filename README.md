@@ -55,6 +55,15 @@ Useful scripts:
 - `pnpm run ui:lint`
 - `pnpm run ui:test`
 - `pnpm run ui:test:e2e`
+- `pnpm run test:golden`
+- `pnpm run test:golden:update`
+
+## Golden fixture tests
+
+Golden end-to-end fixtures validate deterministic output from `figma.json -> design-ir -> generated source` using curated local fixtures in `src/parity/fixtures/golden`.
+
+- `pnpm run test:golden` compares generated artifacts against committed expected files.
+- `pnpm run test:golden:update` updates expected golden files intentionally via `FIGMAPIPE_GOLDEN_APPROVE=true`.
 
 ## Scope and mode lock
 
