@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { formatFigmaPayloadPath, safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
+import {
+  FigmaJsonByteLimitError,
+  formatFigmaPayloadPath,
+  parseJsonTextWithByteLimit,
+  readJsonFileWithByteLimit,
+  safeParseFigmaPayload,
+  summarizeFigmaPayloadValidationError
+} from "./figma-payload-validation.js";
 
 const createValidPayload = () => ({
   name: "Demo",
@@ -156,4 +166,64 @@ test("summarizeFigmaPayloadValidationError includes first path and issue count",
   const summary = summarizeFigmaPayloadValidationError({ error: result.error });
   assert.match(summary, /^document\.id:/);
   assert.match(summary, /\+\d+ more issues?/);
+});
+
+test("parseJsonTextWithByteLimit parses valid JSON under byte limit", () => {
+  const parsed = parseJsonTextWithByteLimit({
+    text: '{"name":"Demo"}',
+    maxBytes: 1_024,
+    sourceLabel: "inline-json"
+  }) as { name: string };
+  assert.equal(parsed.name, "Demo");
+});
+
+test("parseJsonTextWithByteLimit throws FigmaJsonByteLimitError for oversized payload text", () => {
+  assert.throws(
+    () =>
+      parseJsonTextWithByteLimit({
+        text: '{"payload":"abcdefghijklmnopqrstuvwxyz"}',
+        maxBytes: 12,
+        sourceLabel: "inline-json"
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof FigmaJsonByteLimitError, true);
+      return true;
+    }
+  );
+});
+
+test("readJsonFileWithByteLimit streams and parses JSON file under limit", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-payload-"));
+  const jsonPath = path.join(tempDir, "payload.json");
+  await writeFile(jsonPath, '{"document":{"id":"0:0","type":"DOCUMENT","children":[]}}', "utf8");
+  try {
+    const parsed = (await readJsonFileWithByteLimit({
+      filePath: jsonPath,
+      maxBytes: 10_000
+    })) as { document: { id: string } };
+    assert.equal(parsed.document.id, "0:0");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("readJsonFileWithByteLimit throws FigmaJsonByteLimitError for oversized file", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-payload-limit-"));
+  const jsonPath = path.join(tempDir, "payload.json");
+  await writeFile(jsonPath, '{"payload":"abcdefghijklmnopqrstuvwxyz"}', "utf8");
+  try {
+    await assert.rejects(
+      () =>
+        readJsonFileWithByteLimit({
+          filePath: jsonPath,
+          maxBytes: 12
+        }),
+      (error: unknown) => {
+        assert.equal(error instanceof FigmaJsonByteLimitError, true);
+        return true;
+      }
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });

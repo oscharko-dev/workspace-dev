@@ -3014,14 +3014,6 @@ const baseLayoutEntries = (
   return entries;
 };
 
-const RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT: Record<ResponsiveBreakpoint, string> = {
-  xs: "@media (max-width: 428px)",
-  sm: "@media (min-width: 429px) and (max-width: 768px)",
-  md: "@media (min-width: 769px) and (max-width: 1024px)",
-  lg: "@media (min-width: 1025px) and (max-width: 1440px)",
-  xl: "@media (min-width: 1441px)"
-};
-
 const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
 
 const pushResponsiveStyleEntry = ({
@@ -3139,7 +3131,7 @@ const toResponsiveMediaEntries = (
     if (!styleBody) {
       continue;
     }
-    entries.push([literal(RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT[breakpoint]), `{ ${styleBody} }`]);
+    entries.push([literal(breakpoint), `{ ${styleBody} }`]);
   }
   return entries;
 };
@@ -5707,6 +5699,7 @@ const renderSemanticInput = (
   const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
   const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
   const helperTextId = `${field.key}-helper-text`;
+  const fieldControlId = `${field.key}-control`;
   const requiredProp = field.required ? `${indent}    required\n` : "";
   const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
 
@@ -5717,14 +5710,16 @@ const renderSemanticInput = (
 ${requiredProp}${indent}    error={${fieldErrorExpression}}
 ${indent}    sx={{ ${fieldSx} }}
 ${indent}  >
-${indent}  <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
+${indent}  <InputLabel id={${literal(selectLabelId)}} htmlFor={${literal(fieldControlId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
 ${indent}  <Select
+${indent}    id={${literal(fieldControlId)}}
 ${indent}    labelId={${literal(selectLabelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
+${indent}    aria-labelledby={${literal(selectLabelId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${indent}    sx={{
 ${indent}      ${inputRootStyle},
@@ -5743,18 +5738,21 @@ ${indent}</FormControl>`;
   if (field.suffixText) {
     registerMuiImports(context, "InputAdornment");
   }
+  const textFieldLabelId = `${field.key}-label`;
   const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
   const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
   const slotPropsEntries = [
     endAdornment ? `input: { ${endAdornment} }` : "",
+    `inputLabel: { id: ${literal(textFieldLabelId)}, htmlFor: ${literal(fieldControlId)} }`,
     `htmlInput: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`,
     `formHelperText: { id: ${literal(helperTextId)} }`
   ]
     .filter((entry) => entry.length > 0)
     .join(`,\n${indent}    `);
   return `${indent}<TextField
+${indent}  id={${literal(fieldControlId)}}
 ${indent}  label={${literal(field.label)}}
 ${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
 ${indent}  onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)}
@@ -5762,6 +5760,7 @@ ${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}  error={${fieldErrorExpression}}
 ${indent}  helperText={${fieldHelperTextExpression}}
 ${indent}  aria-label={${literal(field.label)}}
+${indent}  aria-labelledby={${literal(textFieldLabelId)}}
 ${indent}  aria-describedby={${literal(helperTextId)}}
 ${indent}  sx={{
 ${indent}    ${fieldSx},
@@ -7996,6 +7995,26 @@ const toAlertSeverityFromName = (name: string): "error" | "warning" | "info" | "
   return "info";
 };
 
+const toImageDimensionAttributes = ({
+  width,
+  height
+}: {
+  width: number | undefined;
+  height: number | undefined;
+}): string => {
+  const attributes: string[] = [];
+  if (typeof width === "number" && Number.isFinite(width) && width > 0) {
+    attributes.push(`width={${Math.max(1, Math.round(width))}}`);
+  }
+  if (typeof height === "number" && Number.isFinite(height) && height > 0) {
+    attributes.push(`height={${Math.max(1, Math.round(height))}}`);
+  }
+  if (attributes.length === 0) {
+    return "";
+  }
+  return ` ${attributes.join(" ")}`;
+};
+
 const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
   if ((element.children?.length ?? 0) === 0 && !hasVisualStyle(element)) {
     return renderContainer(element, depth, parent, context);
@@ -8073,10 +8092,14 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
           context,
           fallbackLabel: mediaLabel
         });
+        const mediaDimensionAttributes = toImageDimensionAttributes({
+          width: mediaCandidate.width,
+          height: mediaCandidate.height
+        });
         if (isDecorativeImageElement(mediaCandidate)) {
-          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
+          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true" loading="lazy" decoding="async"${mediaDimensionAttributes} sx={{ ${mediaSx} }} />\n`;
         }
-        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
+        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}} loading="lazy" decoding="async"${mediaDimensionAttributes} sx={{ ${mediaSx} }} />\n`;
       })()
     : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
@@ -8348,6 +8371,8 @@ const renderTabs = (
   const tabChangeHandlerVar = `handleTabChange${tabsStateModel.stateId}`;
   const tabStripNode = resolvedPattern?.tabStripNode ?? element;
   const panelNodes = resolvedPattern?.panelNodes ?? [];
+  const tabsIdPrefix = `${toStateKey(tabStripNode)}_tabs_${tabsStateModel.stateId}`;
+  const tabsListId = `${tabsIdPrefix}-list`;
 
   registerMuiImports(context, "Tabs", "Tab");
   if (panelNodes.length === tabItems.length && panelNodes.length > 0) {
@@ -8363,13 +8388,17 @@ const renderTabs = (
     .map((tab, index) => {
       const navigation = resolvePrototypeNavigationBinding({ element: tab.node, context });
       const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
-      return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}}${linkProps} />`;
+      const tabId = `${tabsIdPrefix}-tab-${index}`;
+      const tabPanelId = `${tabsIdPrefix}-panel-${index}`;
+      return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} id={${literal(tabId)}} aria-controls={${literal(tabPanelId)}} label={${literal(tab.label)}}${linkProps} />`;
     })
     .join("\n");
   const renderedPanels =
     panelNodes.length === tabItems.length && panelNodes.length > 0
       ? panelNodes
           .map((panelNode, index) => {
+            const tabId = `${tabsIdPrefix}-tab-${index}`;
+            const tabPanelId = `${tabsIdPrefix}-panel-${index}`;
             const panelContent =
               renderElement(
                 panelNode,
@@ -8386,13 +8415,13 @@ const renderTabs = (
                 },
                 context
               ) ?? `${indent}    <Box />`;
-            return `${indent}  <Box key={${literal(panelNode.id)}} role="tabpanel" hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
+            return `${indent}  <Box key={${literal(panelNode.id)}} id={${literal(tabPanelId)}} role="tabpanel" aria-labelledby={${literal(tabId)}} hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
 ${panelContent}
 ${indent}  </Box>`;
           })
           .join("\n")
       : "";
-  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} sx={{ ${sx} }}>
+  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} id={${literal(tabsListId)}} aria-label={${literal(tabStripNode.name || "Tabs")}} sx={{ ${sx} }}>
 ${renderedTabs}
 ${indent}</Tabs>${renderedPanels ? `\n${renderedPanels}` : ""}`;
 };
@@ -8410,6 +8439,9 @@ const renderDialog = (
   });
   const dialogOpenVar = `isDialogOpen${dialogStateModel.stateId}`;
   const dialogCloseHandlerVar = `handleDialogClose${dialogStateModel.stateId}`;
+  const dialogIdPrefix = `${toStateKey(element)}_dialog_${dialogStateModel.stateId}`;
+  const dialogTitleId = `${dialogIdPrefix}-title`;
+  const dialogDescriptionId = `${dialogIdPrefix}-description`;
   const indent = "  ".repeat(depth);
 
   if (detectedPattern) {
@@ -8439,8 +8471,8 @@ const renderDialog = (
       layoutMode: detectedPattern.panelNode.layoutMode ?? "NONE"
     });
     const contentBlock = renderedContent.trim()
-      ? `${indent}  <DialogContent>\n${renderedContent}\n${indent}  </DialogContent>`
-      : `${indent}  <DialogContent />`;
+      ? `${indent}  <DialogContent id={${literal(dialogDescriptionId)}}>\n${renderedContent}\n${indent}  </DialogContent>`
+      : `${indent}  <DialogContent id={${literal(dialogDescriptionId)}} />`;
     const renderedActions =
       detectedPattern.actionModels.length > 0
         ? detectedPattern.actionModels
@@ -8451,8 +8483,9 @@ const renderDialog = (
             .join("\n")
         : "";
     const actionsBlock = renderedActions ? `\n${indent}  <DialogActions>\n${renderedActions}\n${indent}  </DialogActions>` : "";
-    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
-${detectedPattern.title ? `${indent}  <DialogTitle>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
+    const ariaLabelledByProp = detectedPattern.title ? ` aria-labelledby={${literal(dialogTitleId)}}` : "";
+    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}}${ariaLabelledByProp} aria-describedby={${literal(dialogDescriptionId)}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${detectedPattern.title ? `${indent}  <DialogTitle id={${literal(dialogTitleId)}}>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
 ${indent}</Dialog>`;
   }
 
@@ -8472,10 +8505,11 @@ ${indent}</Dialog>`;
     context
   });
   const contentBlock = renderedChildren.trim()
-    ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
-    : `${indent}  <DialogContent />`;
-  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
-${title ? `${indent}  <DialogTitle>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
+    ? `${indent}  <DialogContent id={${literal(dialogDescriptionId)}}>\n${renderedChildren}\n${indent}  </DialogContent>`
+    : `${indent}  <DialogContent id={${literal(dialogDescriptionId)}} />`;
+  const ariaLabelledByProp = title ? ` aria-labelledby={${literal(dialogTitleId)}}` : "";
+  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}}${ariaLabelledByProp} aria-describedby={${literal(dialogDescriptionId)}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${title ? `${indent}  <DialogTitle id={${literal(dialogTitleId)}}>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
 ${indent}</Dialog>`;
 };
 
@@ -8789,7 +8823,7 @@ const renderDrawer = (element: ScreenElementIR, depth: number, parent: VirtualPa
     depth: depth + 2,
     context
   });
-  return `${indent}<Drawer open variant="persistent" PaperProps={{ role: "navigation" }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+  return `${indent}<Drawer open variant="persistent" slotProps={{ paper: { role: "navigation" } }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
 ${indent}  <Box sx={{ width: "100%" }}>
 ${renderedChildren || `${indent}    <Box />`}
 ${indent}  </Box>
@@ -8872,6 +8906,7 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
     includePaints: false
   });
   const labelId = `${field.key}-label`;
+  const selectControlId = `${field.key}-control`;
   const helperTextId = `${field.key}-helper-text`;
   const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
   const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
@@ -8881,14 +8916,16 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
 ${requiredProp}${indent}  error={${fieldErrorExpression}}
 ${indent}  sx={{ ${sx} }}
 ${indent}>
-${indent}  <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
+${indent}  <InputLabel id={${literal(labelId)}} htmlFor={${literal(selectControlId)}}>{${literal(field.label)}}</InputLabel>
 ${indent}  <Select
+${indent}    id={${literal(selectControlId)}}
 ${indent}    labelId={${literal(labelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
+${indent}    aria-labelledby={${literal(labelId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${indent}  >
 ${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
@@ -8965,10 +9002,14 @@ const renderImageElement = (element: ScreenElementIR, depth: number, parent: Vir
     context,
     fallbackLabel: ariaLabel
   });
+  const dimensionAttributes = toImageDimensionAttributes({
+    width: element.width,
+    height: element.height
+  });
   if (isDecorativeImageElement(element)) {
-    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true" sx={{ ${sx} }} />`;
+    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true" loading="lazy" decoding="async"${dimensionAttributes} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
+  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} loading="lazy" decoding="async"${dimensionAttributes} sx={{ ${sx} }} />`;
 };
 
 const renderContainer = (

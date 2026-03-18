@@ -9,6 +9,7 @@ const MIN_SCREEN_WIDTH = 320;
 const MIN_SCREEN_HEIGHT = 480;
 const MAX_ERROR_BODY_CHARS = 500;
 const MAX_JSON_RESPONSE_BYTES = 64 * 1024 * 1024;
+const MAX_RETRY_AFTER_DELAY_MS = 120_000;
 const MAX_ICON_RECOVERY_DESCENDANTS = 160;
 const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
@@ -148,6 +149,32 @@ const toRetryDelay = ({ attempt }: { attempt: number }): number => {
   const base = Math.min(8_000, 500 * 2 ** Math.max(0, attempt - 1));
   const jitter = Math.floor(Math.random() * 250);
   return base + jitter;
+};
+
+const parseRetryAfterDelayMs = ({
+  headerValue
+}: {
+  headerValue: string | null;
+}): number | undefined => {
+  if (!headerValue) {
+    return undefined;
+  }
+  const trimmed = headerValue.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  const asSeconds = Number(trimmed);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.min(MAX_RETRY_AFTER_DELAY_MS, Math.max(0, Math.round(asSeconds * 1000)));
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (!Number.isFinite(retryAt)) {
+    return undefined;
+  }
+
+  return Math.min(MAX_RETRY_AFTER_DELAY_MS, Math.max(0, retryAt - Date.now()));
 };
 
 const isTooLargeBody = (body: string): boolean => {
@@ -395,9 +422,13 @@ const executeFigmaRequest = async ({
 
       const status = parseFigmaStatus(response.status);
       if (status.retryable && attempt < maxRetries) {
-        const delayMs = toRetryDelay({ attempt });
+        const retryAfterHeaderValue = response.status === 429 ? response.headers.get("retry-after") : null;
+        const retryAfterDelayMs = parseRetryAfterDelayMs({ headerValue: retryAfterHeaderValue });
+        const delayMs = retryAfterDelayMs ?? toRetryDelay({ attempt });
+        const retryAfterLogSuffix =
+          retryAfterDelayMs !== undefined ? `; honoring Retry-After=${retryAfterHeaderValue ?? "0"}` : "";
         onLog(
-          `Figma API responded ${response.status} (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`
+          `Figma API responded ${response.status} (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries})${retryAfterLogSuffix}.`
         );
         await waitFor(delayMs);
         continue;

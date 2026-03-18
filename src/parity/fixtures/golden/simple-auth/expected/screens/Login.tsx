@@ -8,6 +8,7 @@ function LoginScreenContent() {
     <Container maxWidth="sm" role="main" component="form" onSubmit={handleSubmit} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
       <Typography variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
       <TextField
+        id={"muiformcontrolroot_email_field-control"}
         label={"Email"}
         type={"email"}
         autoComplete={"email"}
@@ -17,6 +18,7 @@ function LoginScreenContent() {
         error={(Boolean((touchedFields["muiformcontrolroot_email_field"] ? fieldErrors["muiformcontrolroot_email_field"] : initialVisualErrors["muiformcontrolroot_email_field"]) ?? ""))}
         helperText={((touchedFields["muiformcontrolroot_email_field"] ? fieldErrors["muiformcontrolroot_email_field"] : initialVisualErrors["muiformcontrolroot_email_field"]) ?? "")}
         aria-label={"Email"}
+        aria-labelledby={"muiformcontrolroot_email_field-label"}
         aria-describedby={"muiformcontrolroot_email_field-helper-text"}
         sx={{
           width: "91.8%", maxWidth: "358px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.8,
@@ -25,6 +27,7 @@ function LoginScreenContent() {
           "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#3d424d" }
         }}
         slotProps={{
+          inputLabel: { id: "muiformcontrolroot_email_field-label", htmlFor: "muiformcontrolroot_email_field-control" },
           htmlInput: { "aria-describedby": "muiformcontrolroot_email_field-helper-text" },
           formHelperText: { id: "muiformcontrolroot_email_field-helper-text" }
         }}

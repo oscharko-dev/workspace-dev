@@ -10,7 +10,13 @@ import type {
   WorkspaceJobStageName,
   WorkspaceJobStatus
 } from "./contracts/index.js";
-import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
+import {
+  FigmaJsonByteLimitError,
+  MAX_FIGMA_JSON_BYTES,
+  readJsonFileWithByteLimit,
+  safeParseFigmaPayload,
+  summarizeFigmaPayloadValidationError
+} from "./figma-payload-validation.js";
 import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
@@ -422,26 +428,36 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             }
 
             const resolvedLocalPath = path.resolve(localPath);
-            let localFileContent: string;
+            let parsedLocalFile: unknown;
             try {
-              localFileContent = await readFile(resolvedLocalPath, "utf8");
+              parsedLocalFile = await readJsonFileWithByteLimit({
+                filePath: resolvedLocalPath,
+                maxBytes: MAX_FIGMA_JSON_BYTES,
+                sourceLabel: `local Figma JSON '${localPath}'`
+              });
             } catch (error) {
+              if (error instanceof FigmaJsonByteLimitError) {
+                throw createPipelineError({
+                  code: "E_FIGMA_PARSE",
+                  stage: "figma.source",
+                  message: `Could not parse local Figma JSON file '${localPath}': ${error.message}`,
+                  cause: error
+                });
+              }
+
+              if (error instanceof SyntaxError) {
+                throw createPipelineError({
+                  code: "E_FIGMA_PARSE",
+                  stage: "figma.source",
+                  message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
+                  cause: error
+                });
+              }
+
               throw createPipelineError({
                 code: "E_FIGMA_LOCAL_JSON_READ",
                 stage: "figma.source",
                 message: `Could not read local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
-                cause: error
-              });
-            }
-
-            let parsedLocalFile: unknown;
-            try {
-              parsedLocalFile = JSON.parse(localFileContent);
-            } catch (error) {
-              throw createPipelineError({
-                code: "E_FIGMA_PARSE",
-                stage: "figma.source",
-                message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
                 cause: error
               });
             }

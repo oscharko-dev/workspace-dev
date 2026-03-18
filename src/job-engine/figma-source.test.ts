@@ -169,6 +169,33 @@ test("fetchFigmaFile retries with Bearer header when PAT is rejected", async () 
   assert.equal(Object.prototype.hasOwnProperty.call(headersSeen[1], "Authorization"), true);
 });
 
+test("fetchFigmaFile honors Retry-After header for 429 responses", async () => {
+  const logs: string[] = [];
+  let call = 0;
+
+  const result = await fetchFigmaFile({
+    ...createRequest(async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: {
+            "retry-after": "0"
+          }
+        });
+      }
+      return jsonResponse({ name: "RetryAfter", document: { id: "0:0", type: "DOCUMENT", children: [] } });
+    }),
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.file.name, "RetryAfter");
+  assert.equal(call, 2);
+  assert.equal(logs.some((entry) => entry.includes("Retry-After=0")), true);
+});
+
 test("fetchFigmaFile falls back to staged fetch when direct request is too large", async () => {
   const fetchImpl: typeof fetch = async (url) => {
     const asString = String(url);

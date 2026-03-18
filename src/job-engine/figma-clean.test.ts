@@ -73,6 +73,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
                         fontWeight: 700,
                         fontFamily: "Sparkasse Sans",
                         lineHeightPx: 22,
+                        letterSpacing: 0.8,
                         textAlignHorizontal: "LEFT",
                         ignoredStyleProp: "drop"
                       }
@@ -211,6 +212,7 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   assert.equal(serialized.includes("pluginData"), false);
   assert.equal(serialized.includes("extraDocumentField"), false);
   assert.equal(serialized.includes("randomCanvasField"), false);
+  assert.equal(serialized.includes('"letterSpacing":0.8'), true);
 
   const regularNode = findNodeById(result.cleanedFile.document, "regular-1");
   assert.ok(regularNode);

@@ -1,6 +1,31 @@
+import { createReadStream } from "node:fs";
+
 type PathSegment = string | number;
 
 const MAX_VALIDATION_ISSUES = 128;
+export const MAX_FIGMA_JSON_BYTES: number = 64 * 1024 * 1024;
+
+export class FigmaJsonByteLimitError extends Error {
+  readonly actualBytes: number;
+  readonly maxBytes: number;
+  readonly sourceLabel: string;
+
+  constructor({
+    actualBytes,
+    maxBytes,
+    sourceLabel
+  }: {
+    actualBytes: number;
+    maxBytes: number;
+    sourceLabel: string;
+  }) {
+    super(`JSON payload exceeds byte limit (${sourceLabel}, bytes=${actualBytes}, maxBytes=${maxBytes}).`);
+    this.name = "FigmaJsonByteLimitError";
+    this.actualBytes = actualBytes;
+    this.maxBytes = maxBytes;
+    this.sourceLabel = sourceLabel;
+  }
+}
 
 export interface FigmaPayloadValidationIssue {
   path: PathSegment[];
@@ -237,4 +262,58 @@ export const summarizeFigmaPayloadValidationError = ({ error }: { error: FigmaPa
   }
   const plural = overflow === 1 ? "issue" : "issues";
   return `${firstPath}: ${firstIssue.message} (+${overflow} more ${plural})`;
+};
+
+export const parseJsonTextWithByteLimit = ({
+  text,
+  maxBytes = MAX_FIGMA_JSON_BYTES,
+  sourceLabel
+}: {
+  text: string;
+  maxBytes?: number;
+  sourceLabel: string;
+}): unknown => {
+  const actualBytes = Buffer.byteLength(text, "utf8");
+  if (actualBytes > maxBytes) {
+    throw new FigmaJsonByteLimitError({
+      actualBytes,
+      maxBytes,
+      sourceLabel
+    });
+  }
+  return JSON.parse(text);
+};
+
+export const readJsonFileWithByteLimit = async ({
+  filePath,
+  maxBytes = MAX_FIGMA_JSON_BYTES,
+  sourceLabel = filePath
+}: {
+  filePath: string;
+  maxBytes?: number;
+  sourceLabel?: string;
+}): Promise<unknown> => {
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const chunks: string[] = [];
+  let actualBytes = 0;
+
+  for await (const chunk of stream) {
+    const chunkText = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    actualBytes += Buffer.byteLength(chunkText, "utf8");
+    if (actualBytes > maxBytes) {
+      stream.destroy();
+      throw new FigmaJsonByteLimitError({
+        actualBytes,
+        maxBytes,
+        sourceLabel
+      });
+    }
+    chunks.push(chunkText);
+  }
+
+  return parseJsonTextWithByteLimit({
+    text: chunks.join(""),
+    maxBytes,
+    sourceLabel
+  });
 };

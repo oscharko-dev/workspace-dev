@@ -2581,11 +2581,13 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
   assert.ok(generatedScreenContent.includes('component="img" src={"/images/hero.png"} alt={"Hero Image"}'));
+  assert.ok(generatedScreenContent.includes('src={"/images/hero.png"} alt={"Hero Image"} loading="lazy" decoding="async" width={320} height={180}'));
   assert.ok(
     generatedScreenContent.includes(
       '<CardMedia component="img" image={"/images/card-media.png"} alt={"Card Media"}'
     )
   );
+  assert.ok(generatedScreenContent.includes('image={"/images/card-media.png"} alt={"Card Media"} loading="lazy" decoding="async" width={320} height={140}'));
   assert.ok(generatedScreenContent.includes('component="img" src={"/images/table-image.png"} alt={"Table Image"}'));
 });
 
@@ -3270,9 +3272,12 @@ test("deterministic screen rendering infers required fields from star labels and
   assert.equal(block.includes('label={"Email *"}'), false);
   assert.ok(block.includes('label={"Email"}'));
   assert.ok(block.includes("required"));
+  assert.ok(block.includes('id={"email_input_required_email-control"}'));
+  assert.ok(block.includes('aria-labelledby={"email_input_required_email-label"}'));
   assert.ok(block.includes('aria-describedby={"email_input_required_email-helper-text"}'));
   assert.ok(block.includes('"aria-required": "true"'));
   assert.ok(block.includes("slotProps={{"));
+  assert.ok(block.includes('inputLabel: { id: "email_input_required_email-label", htmlFor: "email_input_required_email-control" }'));
   assert.ok(block.includes('htmlInput: { "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }'));
   assert.ok(block.includes('formHelperText: { id: "email_input_required_email-helper-text" }'));
   assert.equal(block.includes("InputProps={{"), false);
@@ -3459,6 +3464,9 @@ test("deterministic screen rendering applies validation bindings for select cont
   assert.equal(block.includes('label={"Status *"}'), false);
   assert.ok(block.includes('label={"Status"}'));
   assert.ok(block.includes("required"));
+  assert.ok(block.includes('<InputLabel id={"status_select_status_select-label"} htmlFor={"status_select_status_select-control"}>{'));
+  assert.ok(block.includes('id={"status_select_status_select-control"}'));
+  assert.ok(block.includes('aria-labelledby={"status_select_status_select-label"}'));
   assert.ok(block.includes('aria-describedby={"status_select_status_select-helper-text"}'));
   assert.ok(block.includes('aria-required="true"'));
   assert.ok(block.includes("error={"));
@@ -4448,6 +4456,10 @@ test("deterministic screen rendering maps top-level tab interface patterns to Ta
   assert.ok(content.includes("const [tabValue1, setTabValue1] = useState<number>(0);"));
   assert.ok(content.includes("const handleTabChange1 = (_event: SyntheticEvent, newValue: number): void => {"));
   assert.ok(content.includes('import type { SyntheticEvent } from "react";'));
+  assert.ok(content.includes('id={"main_tabs_tab_strip_tabs_1-tab-0"}'));
+  assert.ok(content.includes('aria-controls={"main_tabs_tab_strip_tabs_1-panel-0"}'));
+  assert.ok(content.includes('id={"main_tabs_tab_strip_tabs_1-panel-0"}'));
+  assert.ok(content.includes('aria-labelledby={"main_tabs_tab_strip_tabs_1-tab-0"}'));
   assert.equal((content.match(/role=\"tabpanel\"/g) ?? []).length, 3);
 });
 
@@ -4653,6 +4665,10 @@ test("deterministic screen rendering maps top-level overlay modal patterns to Di
   assert.ok(content.includes("<Dialog open={isDialogOpen1} onClose={handleDialogClose1}"));
   assert.ok(content.includes("const [isDialogOpen1, setIsDialogOpen1] = useState<boolean>(true);"));
   assert.ok(content.includes("const handleDialogClose1 = (): void => {"));
+  assert.ok(content.includes('aria-describedby={"modal_overlay_overlay_shell_dialog_1-description"}'));
+  assert.ok(content.includes('aria-labelledby={"modal_overlay_overlay_shell_dialog_1-title"}'));
+  assert.ok(content.includes('<DialogTitle id={"modal_overlay_overlay_shell_dialog_1-title"}>'));
+  assert.ok(content.includes('<DialogContent id={"modal_overlay_overlay_shell_dialog_1-description"}>'));
   assert.ok(content.includes("<DialogActions>"));
   assert.ok(content.includes("onClick={handleDialogClose1}"));
 });
@@ -6409,15 +6425,13 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
   const content = createDeterministicScreenFile(screen).content;
   assert.equal(content.includes('<Box sx={{ minHeight: "100vh"'), false);
   assert.ok(content.includes("<Container maxWidth="));
-  assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: 1 }'));
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: 2 }'));
-  assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
+  assert.ok(content.includes('"xs": { maxWidth: "390px", gap: 1 }'));
+  assert.ok(content.includes('"sm": { maxWidth: "768px", gap: 2 }'));
+  assert.ok(content.includes('"lg": { maxWidth: "1336px" }'));
   assert.ok(content.includes('width: "44.9%"'));
   assert.ok(content.includes('maxWidth: "600px"'));
-  assert.ok(
-    content.includes('"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: 1, width: "100%", minHeight: "120px" }')
-  );
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: 1.5, width: "75%" }'));
+  assert.ok(content.includes('"xs": { display: "flex", flexDirection: "column", gap: 1, width: "100%", minHeight: "120px" }'));
+  assert.ok(content.includes('"sm": { gap: 1.5, width: "75%" }'));
 });
 
 test("deterministic screen rendering keeps fallback behavior when responsive metadata is absent", () => {
@@ -7601,7 +7615,7 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<CardActions>"));
   assert.ok(content.includes("<Table "));
   assert.ok(content.includes("<Tooltip "));
-  assert.ok(content.includes('<Drawer open variant="persistent" PaperProps={{ role: "navigation" }}'));
+  assert.ok(content.includes('<Drawer open variant="persistent" slotProps={{ paper: { role: "navigation" } }}'));
   assert.ok(content.includes("<Breadcrumbs "));
   assert.ok(content.includes("<Select"));
   assert.ok(content.includes("<Slider "));
