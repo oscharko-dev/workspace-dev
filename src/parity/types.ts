@@ -879,6 +879,19 @@ export interface DepthTruncatedScreenMetric {
   truncatedBranchCount: number;
 }
 
+export interface SimplificationMetrics {
+  removedEmptyNodes: number;
+  promotedSingleChild: number;
+  promotedGroupMultiChild: number;
+  spacingMerges: number;
+  guardedSkips: number;
+}
+
+export interface ScreenSimplificationMetric extends SimplificationMetrics {
+  screenId: string;
+  screenName: string;
+}
+
 export interface GenerationMetrics {
   fetchedNodes: number;
   skippedHidden: number;
@@ -887,6 +900,10 @@ export interface GenerationMetrics {
   truncatedScreens: TruncatedScreenMetric[];
   depthTruncatedScreens?: DepthTruncatedScreenMetric[];
   degradedGeometryNodes: string[];
+  simplification?: {
+    aggregate: SimplificationMetrics;
+    screens: ScreenSimplificationMetric[];
+  };
   prototypeNavigationDetected?: number;
   prototypeNavigationResolved?: number;
   prototypeNavigationUnresolved?: number;
