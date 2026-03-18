@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../figma-payload-validation.js";
 import { createPipelineError, getErrorMessage } from "./errors.js";
 import type { FigmaFetchResult, FigmaFileResponse } from "./types.js";
 
@@ -292,6 +293,27 @@ const toRecordOrParseError = ({
     code: "E_FIGMA_PARSE",
     stage: "figma.source",
     message: `Could not parse Figma API response (${requestLabel}): response is not an object.`
+  });
+};
+
+const toFigmaFileOrParseError = ({
+  payload,
+  requestLabel
+}: {
+  payload: unknown;
+  requestLabel: string;
+}): FigmaFileResponse => {
+  const parsedRecord = toRecordOrParseError({ payload, requestLabel });
+  const parsedPayload = safeParseFigmaPayload({ input: parsedRecord });
+  if (parsedPayload.success) {
+    return parsedPayload.data;
+  }
+  throw createPipelineError({
+    code: "E_FIGMA_PARSE",
+    stage: "figma.source",
+    message:
+      `Could not parse Figma API response (${requestLabel}): invalid Figma payload ` +
+      `(${summarizeFigmaPayloadValidationError({ error: parsedPayload.error })}).`
   });
 };
 
@@ -1143,7 +1165,7 @@ const fetchBootstrapFile = async ({
         onLog,
         allowTooLargeFallback: true
       });
-      return toRecordOrParseError({ payload, requestLabel: `files depth=${depth}` }) as FigmaFileLike;
+      return toFigmaFileOrParseError({ payload, requestLabel: `files depth=${depth}` }) as FigmaFileLike;
     } catch (error) {
       if (error instanceof FigmaTooLargeError && depth > 1) {
         onLog(`Figma bootstrap depth ${depth} still too large, retrying with depth ${depth - 1}.`);
@@ -1369,7 +1391,7 @@ export const fetchFigmaFile = async ({
 
       return {
         result: {
-          file: toRecordOrParseError({ payload, requestLabel: "files geometry=paths" }) as FigmaFileResponse,
+          file: toFigmaFileOrParseError({ payload, requestLabel: "files geometry=paths" }),
           diagnostics: {
             sourceMode: "geometry-paths",
             fetchedNodes: 0,

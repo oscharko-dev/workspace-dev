@@ -139,7 +139,7 @@ const toLatestIndexPath = ({
 test("fetchFigmaFile returns direct geometry payload when request succeeds", async () => {
   const result = await fetchFigmaFile(
     createRequest(async () => {
-      return jsonResponse({ name: "Demo", document: { id: "0:0", type: "DOCUMENT" } });
+      return jsonResponse({ name: "Demo", document: { id: "0:0", type: "DOCUMENT", children: [] } });
     })
   );
 
@@ -159,7 +159,7 @@ test("fetchFigmaFile retries with Bearer header when PAT is rejected", async () 
       if (call === 1) {
         return new Response("invalid token", { status: 403 });
       }
-      return jsonResponse({ name: "Retried", document: { id: "0:0", type: "DOCUMENT" } });
+      return jsonResponse({ name: "Retried", document: { id: "0:0", type: "DOCUMENT", children: [] } });
     })
   );
 
@@ -921,14 +921,14 @@ test("fetchFigmaFile uses cache for repeated direct geometry requests", async ()
         return jsonResponse({
           name: "Demo",
           lastModified: "2026-03-16T05:00:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
         geometryRequests += 1;
         return jsonResponse({
           name: `Demo-${geometryRequests}`,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       throw new Error(`Unexpected URL: ${asString}`);
@@ -973,14 +973,14 @@ test("fetchFigmaFile bypasses cache when metadata lastModified changes", async (
         return jsonResponse({
           name: "Demo",
           lastModified: metadataRequests === 1 ? "2026-03-16T05:10:00Z" : "2026-03-16T05:11:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
         geometryRequests += 1;
         return jsonResponse({
           name: `Demo-${geometryRequests}`,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       throw new Error(`Unexpected URL: ${asString}`);
@@ -1015,14 +1015,14 @@ test("fetchFigmaFile invalidates stale cache entries based on TTL", async () => 
         return jsonResponse({
           name: "Demo",
           lastModified: "2026-03-16T05:20:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
         geometryRequests += 1;
         return jsonResponse({
           name: `Demo-${geometryRequests}`,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       throw new Error(`Unexpected URL: ${asString}`);
@@ -1067,7 +1067,7 @@ test("fetchFigmaFile skips metadata/cache IO when cache is disabled", async () =
         geometryRequests += 1;
         return jsonResponse({
           name: `Demo-${geometryRequests}`,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       throw new Error(`Unexpected URL: ${asString}`);
@@ -1107,7 +1107,7 @@ test("fetchFigmaFile falls back to fresh fetch when metadata request fails", asy
         geometryRequests += 1;
         return jsonResponse({
           name: "Demo",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       throw new Error(`Unexpected URL: ${asString}`);
@@ -1144,7 +1144,7 @@ test("fetchFigmaFile reuses cached staged result on repeated runs", async () => 
         return jsonResponse({
           name: "Demo",
           lastModified: "2026-03-16T05:30:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
@@ -1235,7 +1235,7 @@ test("fetchFigmaFile incrementally refetches only changed staged candidates", as
         return jsonResponse({
           name: "Demo",
           lastModified: currentLastModified,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
@@ -1375,7 +1375,7 @@ test("fetchFigmaFile incrementally reuses all staged candidates when subtree has
         return jsonResponse({
           name: "Demo",
           lastModified: currentLastModified,
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
@@ -1476,7 +1476,7 @@ test("fetchFigmaFile falls back to full staged fetch when versions endpoint fail
         return jsonResponse({
           name: "Demo",
           lastModified: "2026-03-16T11:00:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
@@ -1584,7 +1584,7 @@ test("fetchFigmaFile treats missing previous subtree snapshot as changed candida
         return jsonResponse({
           name: "Demo",
           lastModified: "2026-03-16T12:10:00Z",
-          document: { id: "0:0", type: "DOCUMENT" }
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
         });
       }
       if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
@@ -1776,5 +1776,32 @@ test("fetchFigmaFile classifies http failures and parse errors", async () => {
         })
       ),
     (error: unknown) => (error as { code?: string }).code === "E_FIGMA_PARSE"
+  );
+});
+
+test("fetchFigmaFile returns path-aware schema validation errors for malformed payloads", async () => {
+  await assert.rejects(
+    () =>
+      fetchFigmaFile(
+        createRequest(async () => {
+          return jsonResponse({
+            name: "Malformed",
+            document: {
+              id: "0:0",
+              type: "DOCUMENT",
+              children: [
+                {
+                  type: "CANVAS",
+                  children: []
+                }
+              ]
+            }
+          });
+        })
+      ),
+    (error: unknown) => {
+      const candidate = error as { code?: string; message?: string };
+      return candidate.code === "E_FIGMA_PARSE" && (candidate.message?.includes("document.children[0].id") ?? false);
+    }
   );
 });

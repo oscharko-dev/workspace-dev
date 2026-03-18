@@ -24,7 +24,7 @@ const createLocalFigmaPayload = () => ({
             id: "2:1",
             name: "Landing",
             type: "FRAME",
-            absoluteBoundingBox: { width: 1440, height: 1024 },
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1024 },
             children: [
               { id: "3:1", name: "Header", type: "FRAME", children: [] },
               { id: "3:2", name: "Hero", type: "FRAME", children: [] }
@@ -34,7 +34,7 @@ const createLocalFigmaPayload = () => ({
             id: "2:2",
             name: "Checkout",
             type: "FRAME",
-            absoluteBoundingBox: { width: 390, height: 844 },
+            absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
             children: [{ id: "4:1", name: "Container", type: "FRAME", children: [] }]
           }
         ]

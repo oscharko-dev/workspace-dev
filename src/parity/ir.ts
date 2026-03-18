@@ -1,4 +1,5 @@
 import type { WorkspaceBrandTheme } from "../contracts/index.js";
+import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../figma-payload-validation.js";
 import type {
   CounterAxisAlignItems,
   DesignIR,
@@ -4586,8 +4587,16 @@ const applyMcpEnrichmentToIr = (ir: DesignIR, enrichment: FigmaMcpEnrichment): D
   };
 };
 
+const parseFigmaPayloadOrThrow = ({ figmaJson }: { figmaJson: unknown }): FigmaFile => {
+  const parsed = safeParseFigmaPayload({ input: figmaJson });
+  if (parsed.success) {
+    return parsed.data;
+  }
+  throw new Error(`Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`);
+};
+
 export const deriveTokensForTesting = (figmaJson: unknown): DesignTokens => {
-  return deriveTokens(figmaJson as FigmaFile);
+  return deriveTokens(parseFigmaPayloadOrThrow({ figmaJson }));
 };
 
 export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
@@ -4595,7 +4604,7 @@ export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
 };
 
 export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
-  const parsed = figmaJson as FigmaFile;
+  const parsed = parseFigmaPayloadOrThrow({ figmaJson });
   const resolvedBrandTheme: WorkspaceBrandTheme = options?.brandTheme === "sparkasse" ? "sparkasse" : "derived";
   const placeholderMatcherConfig = resolvePlaceholderMatcherConfig(options?.placeholderRules);
   const screenElementBudget =

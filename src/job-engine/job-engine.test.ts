@@ -232,6 +232,58 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   assert.equal(status.request.figmaJsonPath, localJsonPath);
 });
 
+test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-local-json-invalid-"));
+  const localJsonPath = path.join(tempRoot, "local-figma-invalid.json");
+  await writeFile(
+    localJsonPath,
+    `${JSON.stringify(
+      {
+        name: "Invalid local payload",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              type: "CANVAS",
+              children: []
+            }
+          ]
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: localJsonPath
+  });
+
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_FIGMA_PARSE");
+  assert.equal(status.error?.stage, "figma.source");
+  assert.equal(status.error?.message.includes("document.children[0].id"), true);
+});
+
 test("resolvePreviewAsset enforces safe job id/path and supports index fallback", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-preview-"));
   const reproDir = path.join(tempRoot, "repros", "safe-job");
