@@ -2279,8 +2279,9 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
 
   const formContextContent = await readFile(path.join(projectDir, "src", "context", "LoanFormFormContext.tsx"), "utf8");
   assert.ok(formContextContent.includes("createContext"));
+  assert.ok(formContextContent.includes('import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";'));
   assert.ok(formContextContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("));
-  assert.ok(formContextContent.includes("const handleSubmit = (event: { preventDefault: () => void }): void => {"));
+  assert.ok(formContextContent.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
 });
 
@@ -3025,7 +3026,7 @@ test("deterministic screen rendering infers TextField type and conservative auto
       assert.equal(block.includes("autoComplete={"), false);
     }
     assert.ok(block.includes("value={formValues["));
-    assert.ok(block.includes("onChange={(event) => updateFieldValue("));
+    assert.ok(block.includes("onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue("));
   }
 });
 
@@ -3190,7 +3191,8 @@ test("deterministic screen rendering emits form validation state scaffolding for
   assert.ok(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
   assert.ok(content.includes("const validateForm = (values: Record<string, string>): Record<string, string> => {"));
   assert.ok(content.includes("const handleFieldBlur = (fieldKey: string): void => {"));
-  assert.ok(content.includes("const handleSubmit = (event: { preventDefault: () => void }): void => {"));
+  assert.ok(content.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
+  assert.ok(content.includes('import type { FormEvent, ChangeEvent } from "react";'));
   assert.ok(content.includes('const primarySubmitButtonKey = "primary_submit_primary_submit";'));
 });
 
@@ -3286,7 +3288,10 @@ test("deterministic screen rendering applies validation bindings for select cont
   assert.ok(block.includes('aria-required="true"'));
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("onBlur={() => handleFieldBlur("));
+  assert.ok(block.includes("onChange={(event: SelectChangeEvent<string>) => updateFieldValue("));
   assert.ok(block.includes('<FormHelperText id={"status_select_status_select-helper-text"}>{'));
+  assert.ok(content.includes('import type { FormEvent } from "react";'));
+  assert.ok(content.includes('import type { SelectChangeEvent } from "@mui/material/Select";'));
 });
 
 test("deterministic screen rendering assigns a single primary submit button and explicit button types", () => {
@@ -3712,10 +3717,16 @@ test("deterministic screen rendering maps prototype navigation on container fall
   }).content;
 
   assert.ok(content.includes('import { useNavigate } from "react-router-dom";'));
+  assert.ok(content.includes('import type { KeyboardEvent as ReactKeyboardEvent } from "react";'));
   assert.ok(content.includes("const navigate = useNavigate();"));
   assert.ok(content.includes('role="button"'));
   assert.ok(content.includes("tabIndex={0}"));
   assert.ok(content.includes('onClick={() => navigate("/target", { replace: true })}'));
+  assert.ok(
+    content.includes(
+      'onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigate("/target", { replace: true }); } }}'
+    )
+  );
 });
 
 test("deterministic screen rendering does not import router bindings without prototype navigation", () => {
@@ -4260,7 +4271,8 @@ test("deterministic screen rendering maps top-level tab interface patterns to Ta
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes("<Tabs value={tabValue1} onChange={handleTabChange1}"));
   assert.ok(content.includes("const [tabValue1, setTabValue1] = useState<number>(0);"));
-  assert.ok(content.includes("const handleTabChange1 = (_event: unknown, newValue: number): void => {"));
+  assert.ok(content.includes("const handleTabChange1 = (_event: SyntheticEvent, newValue: number): void => {"));
+  assert.ok(content.includes('import type { SyntheticEvent } from "react";'));
   assert.equal((content.match(/role=\"tabpanel\"/g) ?? []).length, 3);
 });
 

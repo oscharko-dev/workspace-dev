@@ -5721,7 +5721,7 @@ ${indent}  <Select
 ${indent}    labelId={${literal(selectLabelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
-${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
@@ -5756,7 +5756,7 @@ ${indent}</FormControl>`;
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
 ${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
-${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
+${indent}  onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}  error={${fieldErrorExpression}}
 ${indent}  helperText={${fieldHelperTextExpression}}
@@ -6005,7 +6005,7 @@ const toNavigateHandlerProps = ({
   return {
     onClickProp: ` onClick={() => ${navigateCall}}`,
     onKeyDownProp:
-      ' onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); ' +
+      ' onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); ' +
       `${navigateCall}; } }}`,
     roleProp: ' role="button"',
     tabIndexProp: " tabIndex={0}"
@@ -8884,7 +8884,7 @@ ${indent}  <Select
 ${indent}    labelId={${literal(labelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
-${indent}    onChange={(event) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
@@ -9495,7 +9495,7 @@ const handleFieldBlur = (fieldKey: string): void => {
   setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
 };
 
-const handleSubmit = (event: { preventDefault: () => void }): void => {
+const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
   event.preventDefault();
   const nextErrors = validateForm(formValues);
   setFieldErrors(nextErrors);
@@ -9535,7 +9535,7 @@ const buildFormContextFile = ({
   const contextVarName = `${screenComponentName}FormContext`;
   const contextValueTypeName = `${screenComponentName}FormContextValue`;
   const providerPropsTypeName = `${providerName}Props`;
-  const contextSource = `import { createContext, useContext, useState, type ReactNode } from "react";
+  const contextSource = `import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";
 
 interface ${contextValueTypeName} {
   initialVisualErrors: Record<string, string>;
@@ -9545,7 +9545,7 @@ interface ${contextValueTypeName} {
   touchedFields: Record<string, boolean>;
   updateFieldValue: (fieldKey: string, value: string) => void;
   handleFieldBlur: (fieldKey: string) => void;
-  handleSubmit: (event: { preventDefault: () => void }) => void;
+  handleSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
 const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
@@ -9661,7 +9661,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
     setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
   };
 
-  const handleSubmit = (event: { preventDefault: () => void }): void => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const nextErrors = validateForm(formValues);
     setFieldErrors(nextErrors);
@@ -9849,6 +9849,7 @@ const fallbackScreenFile = ({
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
+  const hasTextInputField = renderContext.fields.some((field) => !field.isSelect);
 
   const contentWidth = clamp(
     Math.round(
@@ -9984,7 +9985,7 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
             const tabChangeHandlerVar = `handleTabChange${tabModel.stateId}`;
             return `const [${tabValueVar}, ${tabSetterVar}] = useState<number>(0);
 
-const ${tabChangeHandlerVar} = (_event: unknown, newValue: number): void => {
+const ${tabChangeHandlerVar} = (_event: SyntheticEvent, newValue: number): void => {
   ${tabSetterVar}(newValue);
 };`;
           })
@@ -10022,7 +10023,26 @@ const ${dialogCloseHandlerVar} = (): void => {
     renderContext.dialogs.length > 0;
   const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
 
-  const reactImport = hasLocalStatefulElements ? 'import { useState } from "react";\n' : "";
+  const reactValueImports = hasLocalStatefulElements ? ["useState"] : [];
+  const reactTypeImports: string[] = [];
+  if (!formContextFileSpec && hasInteractiveFields) {
+    reactTypeImports.push("FormEvent");
+  }
+  if (hasTextInputField) {
+    reactTypeImports.push("ChangeEvent");
+  }
+  if (renderContext.usesNavigateHandler) {
+    reactTypeImports.push("KeyboardEvent as ReactKeyboardEvent");
+  }
+  if (renderContext.tabs.length > 0) {
+    reactTypeImports.push("SyntheticEvent");
+  }
+  const reactImportLines = [
+    ...(reactValueImports.length > 0 ? [`import { ${reactValueImports.join(", ")} } from "react";`] : []),
+    ...(reactTypeImports.length > 0 ? [`import type { ${reactTypeImports.join(", ")} } from "react";`] : [])
+  ];
+  const reactImportBlock = reactImportLines.length > 0 ? `${reactImportLines.join("\n")}\n` : "";
+  const selectChangeEventTypeImport = hasSelectField ? 'import type { SelectChangeEvent } from "@mui/material/Select";\n' : "";
   const routerImports: string[] = [];
   if (renderContext.usesRouterLink) {
     routerImports.push("Link as RouterLink");
@@ -10097,7 +10117,7 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     </Container>
   );
 }`;
-  const screenContent = `${truncationComment}${reactImport}${reactRouterImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+  const screenContent = `${truncationComment}${reactImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;

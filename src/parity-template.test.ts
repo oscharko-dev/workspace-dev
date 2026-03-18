@@ -47,7 +47,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = 
   "package.json": "a165389cca07bdc5defb45346dbcace9917a9980b8b952c6bdfd86524378f3f2",
   "pnpm-lock.yaml": "3184f6ee6d03639e821e081700affe4255891191c10c34871cb86e31680a86eb",
   "vite.config.ts": "3ea49273273aeeb6abbd6477e8211a2279e21eba8b1f827444d94059484f97d9",
-  "tsconfig.json": "d2a0088a2e82572bf9c120e3f226e484705544358a4f428374ef0bc85bc8b4c0",
+  "tsconfig.json": "cd2157acd03b65daacc1df910dc5f387c81ee6ed3d6fb83e768203ca43fe3a47",
   "eslint.config.js": "beca62d859daf895bb540e25cb69d6a5fe6051f4c3627dabb139314c91039910",
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
   "scripts/perf-runner.mjs": "f236d2543bd33b3cf7c0088f221091e4b1144c156ac97adf202b3fdd95e59c63",
