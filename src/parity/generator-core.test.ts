@@ -549,6 +549,199 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(appContent.includes('setMode(nextMode)'));
 });
 
+test("createDeterministicThemeFile derives deterministic component overrides from IR samples", () => {
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-defaults-screen",
+      name: "Theme Defaults Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "theme-card-a",
+          name: "Card A",
+          nodeType: "FRAME",
+          type: "card" as const,
+          x: 0,
+          y: 0,
+          width: 280,
+          height: 160,
+          cornerRadius: 18,
+          elevation: 7,
+          children: [{ id: "theme-card-a-text", name: "Card A Text", nodeType: "TEXT", type: "text" as const, text: "A" }]
+        },
+        {
+          id: "theme-card-b",
+          name: "Card B",
+          nodeType: "FRAME",
+          type: "card" as const,
+          x: 0,
+          y: 180,
+          width: 280,
+          height: 160,
+          cornerRadius: 18,
+          elevation: 7,
+          children: [{ id: "theme-card-b-text", name: "Card B Text", nodeType: "TEXT", type: "text" as const, text: "B" }]
+        },
+        {
+          id: "theme-input",
+          name: "Styled(div)",
+          nodeType: "FRAME",
+          type: "input" as const,
+          x: 0,
+          y: 360,
+          width: 280,
+          height: 56,
+          cornerRadius: 10,
+          children: [{ id: "theme-input-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "IBAN" }]
+        },
+        {
+          id: "theme-chip",
+          name: "Status Chip",
+          nodeType: "FRAME",
+          type: "chip" as const,
+          x: 0,
+          y: 436,
+          width: 120,
+          height: 24,
+          cornerRadius: 14,
+          children: [{ id: "theme-chip-text", name: "Chip Label", nodeType: "TEXT", type: "text" as const, text: "Neu" }]
+        },
+        {
+          id: "theme-paper",
+          name: "Info Paper",
+          nodeType: "FRAME",
+          type: "paper" as const,
+          x: 0,
+          y: 480,
+          width: 280,
+          height: 120,
+          elevation: 3,
+          children: [{ id: "theme-paper-text", name: "Paper Text", nodeType: "TEXT", type: "text" as const, text: "Info" }]
+        },
+        {
+          id: "theme-appbar",
+          name: "Top AppBar",
+          nodeType: "FRAME",
+          type: "appbar" as const,
+          x: 0,
+          y: 620,
+          width: 320,
+          height: 64,
+          fillColor: "#123456",
+          children: [{ id: "theme-appbar-text", name: "AppBar Text", nodeType: "TEXT", type: "text" as const, text: "Übersicht" }]
+        },
+        {
+          id: "theme-divider",
+          name: "Divider",
+          nodeType: "RECTANGLE",
+          type: "divider" as const,
+          x: 0,
+          y: 704,
+          width: 280,
+          height: 1,
+          fillColor: "#d4d4d4"
+        },
+        {
+          id: "theme-avatar",
+          name: "Avatar",
+          nodeType: "FRAME",
+          type: "avatar" as const,
+          x: 0,
+          y: 725,
+          width: 42,
+          height: 42,
+          cornerRadius: 21,
+          children: [{ id: "theme-avatar-text", name: "Avatar Text", nodeType: "TEXT", type: "text" as const, text: "AB" }]
+        }
+      ]
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  const orderedComponents = ["MuiButton", "MuiCard", "MuiTextField", "MuiChip", "MuiPaper", "MuiAppBar", "MuiDivider", "MuiAvatar"];
+  let previousIndex = -1;
+  for (const componentName of orderedComponents) {
+    const currentIndex = themeContent.indexOf(`${componentName}: {`);
+    assert.ok(currentIndex > previousIndex, `Expected '${componentName}' in deterministic component order.`);
+    previousIndex = currentIndex;
+  }
+  assert.ok(themeContent.includes("defaultProps: { elevation: 7 }"));
+  assert.ok(themeContent.includes('styleOverrides: { root: { borderRadius: "18px" } }'));
+  assert.ok(themeContent.includes("& .MuiOutlinedInput-root"));
+  assert.ok(themeContent.includes('borderRadius: "10px"'));
+  assert.ok(themeContent.includes('defaultProps: { size: "small" }'));
+  assert.ok(themeContent.includes('styleOverrides: { root: { borderRadius: "14px" } }'));
+  assert.ok(themeContent.includes("MuiPaper: {"));
+  assert.ok(themeContent.includes("defaultProps: { elevation: 3 }"));
+  assert.ok(themeContent.includes('backgroundColor: "#123456"'));
+  assert.ok(themeContent.includes('borderColor: "#d4d4d4"'));
+  assert.ok(themeContent.includes('width: "42px"'));
+  assert.ok(themeContent.includes('height: "42px"'));
+  assert.ok(themeContent.includes('borderRadius: "21px"'));
+});
+
+test("createDeterministicThemeFile keeps fallback-safe deterministic output when component samples are invalid", () => {
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-invalid-screen",
+      name: "Theme Invalid Screen",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "theme-invalid-card",
+          name: "Invalid Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 280,
+          height: 140,
+          cornerRadius: Number.NaN,
+          elevation: Number.POSITIVE_INFINITY,
+          children: [{ id: "theme-invalid-card-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Invalid" }]
+        },
+        {
+          id: "theme-invalid-paper",
+          name: "Invalid Paper",
+          nodeType: "FRAME",
+          type: "paper" as const,
+          width: 280,
+          height: 120,
+          elevation: Number.NaN,
+          children: [{ id: "theme-invalid-paper-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Invalid" }]
+        },
+        {
+          id: "theme-invalid-avatar",
+          name: "Invalid Avatar",
+          nodeType: "FRAME",
+          type: "avatar" as const,
+          width: Number.POSITIVE_INFINITY,
+          height: Number.NaN,
+          cornerRadius: Number.NaN,
+          children: [{ id: "theme-invalid-avatar-text", name: "Avatar Text", nodeType: "TEXT", type: "text" as const, text: "AV" }]
+        }
+      ]
+    }
+  ];
+
+  const firstTheme = createDeterministicThemeFile(ir).content;
+  const secondTheme = createDeterministicThemeFile(ir).content;
+
+  assert.equal(firstTheme, secondTheme);
+  assert.ok(firstTheme.includes("MuiButton: {"));
+  assert.equal(firstTheme.includes("MuiCard: {"), false);
+  assert.equal(firstTheme.includes("MuiTextField: {"), false);
+  assert.equal(firstTheme.includes("MuiChip: {"), false);
+  assert.equal(firstTheme.includes("MuiPaper: {"), false);
+  assert.equal(firstTheme.includes("MuiAppBar: {"), false);
+  assert.equal(firstTheme.includes("MuiDivider: {"), false);
+  assert.equal(firstTheme.includes("MuiAvatar: {"), false);
+});
+
 test("deterministic theme dark palette remains byte-stable and accessible on dark surfaces", () => {
   const ir = createIr();
   const firstTheme = createDeterministicThemeFile(ir).content;
@@ -6950,6 +7143,245 @@ test("deterministic screen rendering keeps px borderRadius fallback when tokens 
   assert.ok(content.includes('borderRadius: "6px"'));
 });
 
+test("deterministic screen rendering removes only theme-default-equal component sx values", () => {
+  const screen = {
+    id: "theme-dedupe-screen",
+    name: "Theme Dedupe Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "dedupe-card-default",
+        name: "Default Card",
+        nodeType: "FRAME",
+        type: "card" as const,
+        x: 0,
+        y: 0,
+        width: 280,
+        height: 140,
+        cornerRadius: 12,
+        elevation: 4,
+        children: [{ id: "dedupe-card-default-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Default Card" }]
+      },
+      {
+        id: "dedupe-card-custom",
+        name: "Custom Card",
+        nodeType: "FRAME",
+        type: "card" as const,
+        x: 0,
+        y: 160,
+        width: 280,
+        height: 140,
+        cornerRadius: 18,
+        elevation: 6,
+        children: [{ id: "dedupe-card-custom-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Custom Card" }]
+      },
+      {
+        id: "dedupe-paper-default",
+        name: "Default Paper",
+        nodeType: "FRAME",
+        type: "paper" as const,
+        x: 0,
+        y: 320,
+        width: 280,
+        height: 96,
+        elevation: 2,
+        children: [{ id: "dedupe-paper-default-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Default Paper" }]
+      },
+      {
+        id: "dedupe-paper-custom",
+        name: "Custom Paper",
+        nodeType: "FRAME",
+        type: "paper" as const,
+        x: 0,
+        y: 436,
+        width: 280,
+        height: 96,
+        elevation: 5,
+        children: [{ id: "dedupe-paper-custom-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Custom Paper" }]
+      },
+      {
+        id: "dedupe-input-default",
+        name: "Styled(div)",
+        nodeType: "FRAME",
+        type: "input" as const,
+        x: 0,
+        y: 552,
+        width: 280,
+        height: 56,
+        cornerRadius: 8,
+        children: [{ id: "dedupe-input-default-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Default Field" }]
+      },
+      {
+        id: "dedupe-input-custom",
+        name: "Styled(div)",
+        nodeType: "FRAME",
+        type: "input" as const,
+        x: 0,
+        y: 628,
+        width: 280,
+        height: 56,
+        cornerRadius: 12,
+        children: [{ id: "dedupe-input-custom-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Custom Field" }]
+      },
+      {
+        id: "dedupe-chip-default",
+        name: "Default Chip",
+        nodeType: "FRAME",
+        type: "chip" as const,
+        x: 0,
+        y: 704,
+        width: 120,
+        height: 24,
+        cornerRadius: 8,
+        children: [{ id: "dedupe-chip-default-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Default Chip" }]
+      },
+      {
+        id: "dedupe-chip-custom",
+        name: "Custom Chip",
+        nodeType: "FRAME",
+        type: "chip" as const,
+        x: 0,
+        y: 744,
+        width: 140,
+        height: 32,
+        cornerRadius: 12,
+        children: [{ id: "dedupe-chip-custom-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Custom Chip" }]
+      },
+      {
+        id: "dedupe-appbar-default",
+        name: "Default AppBar",
+        nodeType: "FRAME",
+        type: "appbar" as const,
+        x: 0,
+        y: 792,
+        width: 320,
+        height: 64,
+        fillColor: "#123456",
+        children: [{ id: "dedupe-appbar-default-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Default Bar" }]
+      },
+      {
+        id: "dedupe-appbar-custom",
+        name: "Custom AppBar",
+        nodeType: "FRAME",
+        type: "appbar" as const,
+        x: 0,
+        y: 872,
+        width: 320,
+        height: 64,
+        fillColor: "#654321",
+        children: [{ id: "dedupe-appbar-custom-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Custom Bar" }]
+      },
+      {
+        id: "dedupe-divider-default",
+        name: "Default Divider",
+        nodeType: "RECTANGLE",
+        type: "divider" as const,
+        x: 0,
+        y: 956,
+        width: 280,
+        height: 1,
+        fillColor: "#d4d4d4"
+      },
+      {
+        id: "dedupe-divider-custom",
+        name: "Custom Divider",
+        nodeType: "RECTANGLE",
+        type: "divider" as const,
+        x: 0,
+        y: 976,
+        width: 280,
+        height: 1,
+        fillColor: "#999999"
+      },
+      {
+        id: "dedupe-avatar-default",
+        name: "Avatar",
+        nodeType: "FRAME",
+        type: "avatar" as const,
+        x: 0,
+        y: 996,
+        width: 40,
+        height: 40,
+        cornerRadius: 20,
+        children: [{ id: "dedupe-avatar-default-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "AB" }]
+      },
+      {
+        id: "dedupe-avatar-custom",
+        name: "Avatar",
+        nodeType: "FRAME",
+        type: "avatar" as const,
+        x: 0,
+        y: 1052,
+        width: 48,
+        height: 48,
+        cornerRadius: 24,
+        children: [{ id: "dedupe-avatar-custom-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "CD" }]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, {
+    themeComponentDefaults: {
+      MuiCard: { borderRadiusPx: 12, elevation: 4 },
+      MuiTextField: { outlinedInputBorderRadiusPx: 8 },
+      MuiChip: { borderRadiusPx: 8, size: "small" },
+      MuiPaper: { elevation: 2 },
+      MuiAppBar: { backgroundColor: "#123456" },
+      MuiDivider: { borderColor: "#d4d4d4" },
+      MuiAvatar: { widthPx: 40, heightPx: 40, borderRadiusPx: 20 }
+    }
+  }).content;
+
+  assert.equal(content.includes("<Card elevation={4}"), false);
+  assert.ok(content.includes("<Card elevation={6}"));
+  assert.equal(content.includes("boxShadow: 4"), false);
+  assert.ok(content.includes('borderRadius: "18px"'));
+
+  assert.equal(content.includes("<Paper elevation={2}"), false);
+  assert.ok(content.includes("<Paper elevation={5}"));
+  assert.equal(content.includes("boxShadow: 2"), false);
+
+  const defaultInputBlock = findRenderedTextFieldBlock({ content, label: "Default Field" });
+  const customInputBlock = findRenderedTextFieldBlock({ content, label: "Custom Field" });
+  assert.equal(defaultInputBlock.includes("& .MuiOutlinedInput-root"), false);
+  assert.ok(customInputBlock.includes("& .MuiOutlinedInput-root"));
+  assert.ok(customInputBlock.includes('borderRadius: "12px"'));
+
+  const defaultChipLine = content
+    .split("\n")
+    .find((entry) => entry.includes("<Chip ") && entry.includes('label={"Default Chip"}'));
+  const customChipLine = content
+    .split("\n")
+    .find((entry) => entry.includes("<Chip ") && entry.includes('label={"Custom Chip"}'));
+  assert.ok(defaultChipLine);
+  assert.ok(customChipLine);
+  assert.equal(defaultChipLine?.includes('size="small"'), false);
+  assert.equal(defaultChipLine?.includes('borderRadius: "8px"'), false);
+  assert.ok(customChipLine?.includes('borderRadius: "12px"'));
+
+  assert.equal(content.includes('bgcolor: "#123456"'), false);
+  assert.ok(content.includes('bgcolor: "#654321"'));
+  assert.equal(content.includes('borderColor: "#d4d4d4"'), false);
+  assert.ok(content.includes('borderColor: "#999999"'));
+
+  const defaultAvatarLine = content
+    .split("\n")
+    .find((entry) => entry.includes("<Avatar ") && entry.includes('{"AB"}'));
+  const customAvatarLine = content
+    .split("\n")
+    .find((entry) => entry.includes("<Avatar ") && entry.includes('{"CD"}'));
+  assert.ok(defaultAvatarLine);
+  assert.ok(customAvatarLine);
+  assert.equal(defaultAvatarLine?.includes('width: "40px"'), false);
+  assert.equal(defaultAvatarLine?.includes('minHeight: "40px"'), false);
+  assert.equal(defaultAvatarLine?.includes('borderRadius: "20px"'), false);
+  assert.ok(customAvatarLine?.includes('width: "48px"'));
+  assert.ok(customAvatarLine?.includes('minHeight: "48px"'));
+  assert.ok(customAvatarLine?.includes('borderRadius: "24px"'));
+});
+
 test("generateArtifacts maps exact token palette colors to MUI theme references in sx", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-token-colors-"));
   const ir = createIr();
@@ -7079,7 +7511,7 @@ test("generateArtifacts maps exact token palette colors to MUI theme references 
   assert.ok(content.includes('color: "warning.main"'));
   assert.ok(content.includes('color: "error.main"'));
   assert.ok(content.includes('color: "info.main"'));
-  assert.ok(content.includes('borderColor: "divider"'));
+  assert.equal(content.includes('borderColor: "divider"'), false);
   const tokenButtonLine = findRenderedButtonLine({ content, label: "Continue" });
   assert.ok(tokenButtonLine.includes('variant="contained" size="large"'));
   assert.equal(tokenButtonLine.includes('bgcolor: "primary.main"'), false);
