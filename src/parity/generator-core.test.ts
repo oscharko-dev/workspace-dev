@@ -393,6 +393,33 @@ const findRenderedFormControlBlock = ({
   return block ?? "";
 };
 
+const findThemeComponentBlock = ({
+  themeContent,
+  componentName
+}: {
+  themeContent: string;
+  componentName: string;
+}): string => {
+  const marker = `    ${componentName}: {`;
+  const startIndex = themeContent.indexOf(marker);
+  assert.ok(startIndex >= 0, `Expected theme component block for '${componentName}'.`);
+  const openingBraceIndex = themeContent.indexOf("{", startIndex);
+  assert.ok(openingBraceIndex >= 0, `Expected opening brace for '${componentName}'.`);
+  let depth = 0;
+  for (let index = openingBraceIndex; index < themeContent.length; index += 1) {
+    const char = themeContent[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return themeContent.slice(startIndex, index + 1);
+      }
+    }
+  }
+  assert.fail(`Failed to parse theme component block for '${componentName}'.`);
+};
+
 const findRenderedTypographyLine = ({
   content,
   text
@@ -668,12 +695,20 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
     assert.ok(currentIndex > previousIndex, `Expected '${componentName}' in deterministic component order.`);
     previousIndex = currentIndex;
   }
+  const cardBlock = findThemeComponentBlock({
+    themeContent,
+    componentName: "MuiCard"
+  });
+  const chipBlock = findThemeComponentBlock({
+    themeContent,
+    componentName: "MuiChip"
+  });
   assert.ok(themeContent.includes("defaultProps: { elevation: 7 }"));
-  assert.ok(themeContent.includes('styleOverrides: { root: { borderRadius: "18px" } }'));
+  assert.ok(cardBlock.includes('borderRadius: "18px"'));
   assert.ok(themeContent.includes("& .MuiOutlinedInput-root"));
   assert.ok(themeContent.includes('borderRadius: "10px"'));
   assert.ok(themeContent.includes('defaultProps: { size: "small" }'));
-  assert.ok(themeContent.includes('styleOverrides: { root: { borderRadius: "14px" } }'));
+  assert.ok(chipBlock.includes('borderRadius: "14px"'));
   assert.ok(themeContent.includes("MuiPaper: {"));
   assert.ok(themeContent.includes("defaultProps: { elevation: 3 }"));
   assert.ok(themeContent.includes('backgroundColor: "#123456"'));
@@ -681,6 +716,216 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
   assert.ok(themeContent.includes('width: "42px"'));
   assert.ok(themeContent.includes('height: "42px"'));
   assert.ok(themeContent.includes('borderRadius: "21px"'));
+});
+
+test("createDeterministicThemeFile derives C1 sx overrides at 70% threshold and keeps extraction conservative", () => {
+  const createButtonNode = ({
+    id,
+    y,
+    fillColor
+  }: {
+    id: string;
+    y: number;
+    fillColor: string;
+  }) => ({
+    id,
+    name: `Button ${id}`,
+    nodeType: "FRAME",
+    type: "button" as const,
+    x: 0,
+    y,
+    width: 220,
+    height: 48,
+    fillColor,
+    children: [{ id: `${id}-label`, name: "Label", nodeType: "TEXT", type: "text" as const, text: "Weiter" }]
+  });
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-c1-threshold-screen",
+      name: "Theme C1 Threshold",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        createButtonNode({ id: "c1-button-a", y: 0, fillColor: "#1357AA" }),
+        createButtonNode({ id: "c1-button-b", y: 64, fillColor: "#1357AA" }),
+        createButtonNode({ id: "c1-button-c", y: 128, fillColor: "#1357AA" }),
+        createButtonNode({ id: "c1-button-d", y: 192, fillColor: "#226699" })
+      ]
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  const buttonBlock = findThemeComponentBlock({
+    themeContent,
+    componentName: "MuiButton"
+  });
+
+  assert.ok(buttonBlock.includes('textTransform: "none"'));
+  assert.ok(buttonBlock.includes('backgroundColor: "#1357aa"'));
+  assert.equal(buttonBlock.includes("left:"), false);
+  assert.equal(buttonBlock.includes("top:"), false);
+  assert.equal(buttonBlock.includes("width:"), false);
+  assert.equal(buttonBlock.includes("px:"), false);
+});
+
+test("createDeterministicThemeFile does not derive C1 overrides below minimum sample size", () => {
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-c1-min-samples-screen",
+      name: "Theme C1 Min Samples",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "c1-min-button-a",
+          name: "Button A",
+          nodeType: "FRAME",
+          type: "button" as const,
+          x: 0,
+          y: 0,
+          width: 220,
+          height: 48,
+          fillColor: "#0f4c81",
+          children: [{ id: "c1-min-button-a-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Speichern" }]
+        },
+        {
+          id: "c1-min-button-b",
+          name: "Button B",
+          nodeType: "FRAME",
+          type: "button" as const,
+          x: 0,
+          y: 64,
+          width: 220,
+          height: 48,
+          fillColor: "#0f4c81",
+          children: [{ id: "c1-min-button-b-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Speichern" }]
+        }
+      ]
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  const buttonBlock = findThemeComponentBlock({
+    themeContent,
+    componentName: "MuiButton"
+  });
+  assert.equal(buttonBlock.includes("backgroundColor"), false);
+});
+
+test("createDeterministicThemeFile keeps deterministic ordering for C1-only component overrides", () => {
+  const makeIconOnlyButton = ({ id, y }: { id: string; y: number }) => ({
+    id,
+    name: `Icon Button ${id}`,
+    nodeType: "FRAME",
+    type: "button" as const,
+    x: 0,
+    y,
+    width: 40,
+    height: 40,
+    fillColor: "#f1f1f1",
+    children: [{ id: `${id}-icon`, name: "ic_bookmark_outline", nodeType: "INSTANCE", type: "container" as const, width: 24, height: 24 }]
+  });
+  const makeSemanticSelectInputNode = ({
+    id,
+    y
+  }: {
+    id: string;
+    y: number;
+  }) => ({
+    id,
+    name: "Styled(div)",
+    nodeType: "FRAME",
+    type: "input" as const,
+    x: 0,
+    y,
+    width: 320,
+    height: 72,
+    fillColor: "#f5f5f5",
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Kontotyp",
+        y
+      },
+      {
+        id: `${id}-value`,
+        name: "MuiSelectSelect",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Privat",
+        y: y + 24
+      }
+    ]
+  });
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-c1-order-screen",
+      name: "Theme C1 Order",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        makeSemanticSelectInputNode({ id: "c1-select-a", y: 0 }),
+        makeSemanticSelectInputNode({ id: "c1-select-b", y: 84 }),
+        makeSemanticSelectInputNode({ id: "c1-select-c", y: 168 }),
+        makeIconOnlyButton({ id: "c1-icon-a", y: 260 }),
+        makeIconOnlyButton({ id: "c1-icon-b", y: 320 }),
+        makeIconOnlyButton({ id: "c1-icon-c", y: 380 })
+      ]
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  const formControlIndex = themeContent.indexOf("MuiFormControl: {");
+  const iconButtonIndex = themeContent.indexOf("MuiIconButton: {");
+  assert.ok(formControlIndex >= 0);
+  assert.ok(iconButtonIndex > formControlIndex);
+});
+
+test("createDeterministicThemeFile does not allow C1 to override A3 component defaults", () => {
+  const createCardNode = ({ id, y }: { id: string; y: number }) => ({
+    id,
+    name: `Card ${id}`,
+    nodeType: "FRAME",
+    type: "card" as const,
+    x: 0,
+    y,
+    width: 300,
+    height: 160,
+    cornerRadius: 12,
+    elevation: 3,
+    children: [{ id: `${id}-text`, name: "Text", nodeType: "TEXT", type: "text" as const, text: "Info" }]
+  });
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "theme-c1-a3-precedence-screen",
+      name: "Theme C1 A3 Precedence",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [createCardNode({ id: "c1-card-a", y: 0 }), createCardNode({ id: "c1-card-b", y: 176 }), createCardNode({ id: "c1-card-c", y: 352 })]
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  const cardBlock = findThemeComponentBlock({
+    themeContent,
+    componentName: "MuiCard"
+  });
+  assert.ok(cardBlock.includes('borderRadius: "12px"'));
+  assert.equal(/borderRadius:\s*1(?!\d)/.test(cardBlock), false);
 });
 
 test("createDeterministicThemeFile keeps fallback-safe deterministic output when component samples are invalid", () => {
@@ -7380,6 +7625,74 @@ test("deterministic screen rendering removes only theme-default-equal component 
   assert.ok(customAvatarLine?.includes('width: "48px"'));
   assert.ok(customAvatarLine?.includes('minHeight: "48px"'));
   assert.ok(customAvatarLine?.includes('borderRadius: "24px"'));
+});
+
+test("deterministic screen rendering removes only exact C1-equal visual sx keys", () => {
+  const screen = {
+    id: "theme-c1-dedupe-screen",
+    name: "Theme C1 Dedupe Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "c1-dedupe-button-default-a",
+        name: "Default Action A",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 48,
+        fillColor: "#1357AA",
+        children: [{ id: "c1-dedupe-button-default-a-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Default A" }]
+      },
+      {
+        id: "c1-dedupe-button-default-b",
+        name: "Default Action B",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 64,
+        width: 220,
+        height: 48,
+        fillColor: "#1357aa",
+        children: [{ id: "c1-dedupe-button-default-b-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Default B" }]
+      },
+      {
+        id: "c1-dedupe-button-custom",
+        name: "Custom Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 128,
+        width: 220,
+        height: 48,
+        fillColor: "#226699",
+        children: [{ id: "c1-dedupe-button-custom-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Custom" }]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, {
+    themeComponentDefaults: {
+      c1StyleOverrides: {
+        MuiButton: {
+          backgroundColor: "#1357aa"
+        }
+      }
+    }
+  }).content;
+
+  const defaultALine = findRenderedButtonLine({ content, label: "Default A" });
+  const defaultBLine = findRenderedButtonLine({ content, label: "Default B" });
+  const customLine = findRenderedButtonLine({ content, label: "Custom" });
+  assert.equal(defaultALine.includes('bgcolor: "#1357AA"'), false);
+  assert.equal(defaultALine.includes('bgcolor: "#1357aa"'), false);
+  assert.equal(defaultBLine.includes('bgcolor: "#1357aa"'), false);
+  assert.ok(customLine.includes('bgcolor: "#226699"'));
+  assert.ok(defaultALine.includes('width: "220px"'));
+  assert.ok(defaultBLine.includes('width: "220px"'));
 });
 
 test("generateArtifacts maps exact token palette colors to MUI theme references in sx", async () => {
