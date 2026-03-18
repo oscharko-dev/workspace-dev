@@ -22,6 +22,11 @@ import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
+import {
+  applyDesignSystemMappingsToGeneratedTsx,
+  getDefaultDesignSystemConfigPath,
+  loadDesignSystemConfigFile
+} from "../design-system.js";
 import type { WorkspaceRouterMode } from "../contracts/index.js";
 
 interface GenerateArtifactsInput {
@@ -29,6 +34,7 @@ interface GenerateArtifactsInput {
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
   iconMapFilePath?: string;
+  designSystemFilePath?: string;
   imageAssetMap?: Record<string, string>;
   generationLocale?: string;
   routerMode?: WorkspaceRouterMode;
@@ -10443,6 +10449,7 @@ export const generateArtifacts = async ({
   ir,
   componentMappings,
   iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
+  designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
   imageAssetMap = {},
   generationLocale,
   routerMode,
@@ -10470,6 +10477,26 @@ export const generateArtifacts = async ({
         `Falling back to '${resolvedGenerationLocale.locale}'.`
     );
   }
+  const designSystemConfig = await loadDesignSystemConfigFile({
+    designSystemFilePath,
+    onLog
+  });
+  const transformGeneratedFileWithDesignSystem = (file: GeneratedFile): GeneratedFile => {
+    if (!designSystemConfig) {
+      return file;
+    }
+    const transformedContent = applyDesignSystemMappingsToGeneratedTsx({
+      filePath: file.path,
+      content: file.content,
+      config: designSystemConfig
+    });
+    return transformedContent === file.content
+      ? file
+      : {
+          ...file,
+          content: transformedContent
+        };
+  };
 
   const generatedPaths = new Set<string>();
   const generationMetrics: GenerationMetrics = {
@@ -10598,8 +10625,8 @@ export const generateArtifacts = async ({
     accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
 
     return {
-      file: deterministicScreen.file,
-      componentFiles: deterministicScreen.componentFiles,
+      file: transformGeneratedFileWithDesignSystem(deterministicScreen.file),
+      componentFiles: deterministicScreen.componentFiles.map((file) => transformGeneratedFileWithDesignSystem(file)),
       contextFiles: deterministicScreen.contextFiles
     };
   });

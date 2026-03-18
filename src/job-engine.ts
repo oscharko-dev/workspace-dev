@@ -182,6 +182,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
     const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
+    const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -507,6 +508,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             projectDir: generatedProjectDir,
             ir,
             iconMapFilePath,
+            designSystemFilePath,
             imageAssetMap,
             generationLocale: resolvedGenerationLocale,
             routerMode: runtime.routerMode,
