@@ -8470,6 +8470,59 @@ export default ErrorBoundary;
   };
 };
 
+const makeScreenSkeletonFile = (): GeneratedFile => {
+  return {
+    path: "src/components/ScreenSkeleton.tsx",
+    content: `import { Box, Container, LinearProgress, Skeleton, Stack } from "@mui/material";
+
+export default function ScreenSkeleton() {
+  return (
+    <Box
+      component="section"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading screen content"
+      aria-busy="true"
+      sx={{
+        minHeight: "100vh",
+        bgcolor: "background.default",
+        pt: 7,
+        pb: 6
+      }}
+    >
+      <LinearProgress
+        aria-hidden
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1302
+        }}
+      />
+      <Container maxWidth="lg">
+        <Stack spacing={3}>
+          <Skeleton variant="text" width="42%" height={52} />
+          <Stack spacing={1.5}>
+            <Skeleton variant="text" width="90%" />
+            <Skeleton variant="text" width="74%" />
+            <Skeleton variant="text" width="68%" />
+          </Stack>
+          <Skeleton variant="rounded" height={220} />
+          <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
+            <Skeleton variant="rounded" height={170} sx={{ flex: 1 }} />
+            <Skeleton variant="rounded" height={170} sx={{ flex: 1 }} />
+          </Stack>
+          <Skeleton variant="rounded" height={120} />
+        </Stack>
+      </Container>
+    </Box>
+  );
+}
+`
+  };
+};
+
 const makeAppFile = ({
   screens,
   identitiesByScreenId = buildScreenArtifactIdentities(screens),
@@ -8542,18 +8595,15 @@ const browserBasename = resolveBrowserBasename();
   return `${reactImport}
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
-import { Box, CircularProgress, IconButton, Tooltip } from "@mui/material";
+import { Box, IconButton, Tooltip } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
+import ScreenSkeleton from "./components/ScreenSkeleton";
 ${eagerImports}
 ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
 
-const routeLoadingFallback = (
-  <Box sx={{ display: "grid", minHeight: "50vh", placeItems: "center" }}>
-    <CircularProgress size={32} />
-  </Box>
-);
+const routeLoadingFallback = <ScreenSkeleton />;
 ${browserBasenameBlock}
 
 function ThemeModeToggle() {
@@ -8738,6 +8788,10 @@ export const generateArtifacts = async ({
   const deterministicErrorBoundary = makeErrorBoundaryFile();
   await writeGeneratedFile(projectDir, deterministicErrorBoundary);
   generatedPaths.add(deterministicErrorBoundary.path);
+
+  const deterministicScreenSkeleton = makeScreenSkeletonFile();
+  await writeGeneratedFile(projectDir, deterministicScreenSkeleton);
+  generatedPaths.add(deterministicScreenSkeleton.path);
 
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
   const routePathByScreenId = new Map(
