@@ -39,6 +39,8 @@ const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
+const DEFAULT_MAX_CONCURRENT_JOBS = 1;
+const DEFAULT_MAX_QUEUED_JOBS = 20;
 
 interface CliOptions {
   command: string;
@@ -68,6 +70,8 @@ interface CliOptions {
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
+  maxConcurrentJobs: number;
+  maxQueuedJobs: number;
   enableLintAutofix: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
@@ -258,6 +262,18 @@ const parseArgs = (argv: string[]): CliOptions => {
     DEFAULT_INSTALL_PREFER_OFFLINE
   );
   let skipInstall = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL, DEFAULT_SKIP_INSTALL);
+  let maxConcurrentJobs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS,
+    fallback: DEFAULT_MAX_CONCURRENT_JOBS,
+    min: 1,
+    max: 16
+  });
+  let maxQueuedJobs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS,
+    fallback: DEFAULT_MAX_QUEUED_JOBS,
+    min: 0,
+    max: 1000
+  });
   let enableLintAutofix = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX,
     DEFAULT_ENABLE_LINT_AUTOFIX
@@ -508,6 +524,28 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--max-concurrent-jobs") {
+      maxConcurrentJobs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: maxConcurrentJobs,
+        min: 1,
+        max: 16
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--max-queued-jobs") {
+      maxQueuedJobs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: maxQueuedJobs,
+        min: 0,
+        max: 1000
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--lint-autofix") {
       enableLintAutofix = parseBooleanLike(args[index + 1], enableLintAutofix);
       index += 1;
@@ -583,6 +621,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     enableUnitTestValidation,
     installPreferOffline,
     skipInstall,
+    maxConcurrentJobs,
+    maxQueuedJobs,
     enableLintAutofix,
     enablePreview,
     enablePerfValidation,
@@ -646,6 +686,8 @@ Options:
                              Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
   --skip-install <true|false>
                              Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
+  --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
+  --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
   --lint-autofix <true|false>
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
@@ -685,6 +727,8 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
+  FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS
+  FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS
   FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
@@ -697,6 +741,7 @@ Capabilities:
   - POST /workspace/submit         Start autonomous generation job
   - GET /workspace/jobs/:id        Poll job status and stages
   - GET /workspace/jobs/:id/result Fetch compact result payload
+  - POST /workspace/jobs/:id/cancel Request cancellation of queued/running job
   - GET /workspace/repros/:id/     Open generated local preview
 
 Mode lock is always enforced:
@@ -788,6 +833,8 @@ const main = async (): Promise<void> => {
       enableUnitTestValidation: options.enableUnitTestValidation,
       installPreferOffline: options.installPreferOffline,
       skipInstall: options.skipInstall,
+      maxConcurrentJobs: options.maxConcurrentJobs,
+      maxQueuedJobs: options.maxQueuedJobs,
       enablePreview: options.enablePreview
     });
 
@@ -812,6 +859,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Unit test validation enabled: ${options.enableUnitTestValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
+    console.log(`[workspace-dev] Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`);
     console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
     console.log(

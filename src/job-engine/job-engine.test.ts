@@ -17,7 +17,7 @@ const waitForTerminalStatus = async ({
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const status = getStatus(jobId);
-    if (status && (status.status === "completed" || status.status === "failed")) {
+    if (status && (status.status === "completed" || status.status === "failed" || status.status === "canceled")) {
       return status;
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -66,6 +66,145 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
+});
+
+test("createJobEngine rejects submit when queue backpressure cap is reached", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-backpressure-"));
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 1,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true }
+            );
+          }
+        })
+    })
+  });
+
+  const first = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const second = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
+  assert.equal(first.status, "queued");
+  assert.equal(second.status, "queued");
+
+  assert.throws(
+    () => {
+      engine.submitJob({ figmaFileKey: "ghi", figmaAccessToken: "token" });
+    },
+    (error: unknown) => error instanceof Error && "code" in error && (error as { code: string }).code === "E_JOB_QUEUE_FULL"
+  );
+
+  engine.cancelJob({ jobId: first.jobId, reason: "cleanup" });
+  engine.cancelJob({ jobId: second.jobId, reason: "cleanup" });
+  await waitForTerminalStatus({ getStatus: engine.getJob, jobId: first.jobId, timeoutMs: 20_000 });
+});
+
+test("createJobEngine cancels queued jobs with terminal canceled state", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-queued-"));
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 2,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true }
+            );
+          }
+        })
+    })
+  });
+
+  const running = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const queued = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
+  const canceled = engine.cancelJob({ jobId: queued.jobId, reason: "User canceled queued job." });
+
+  assert.equal(canceled?.status, "canceled");
+  assert.equal(canceled?.cancellation?.reason, "User canceled queued job.");
+
+  engine.cancelJob({ jobId: running.jobId, reason: "cleanup" });
+  const runningStatus = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: running.jobId, timeoutMs: 20_000 });
+  assert.equal(runningStatus.status, "canceled");
+});
+
+test("createJobEngine cancels running jobs and records cancellation reason", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-running-"));
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 2,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true }
+            );
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const runningWaitStarted = Date.now();
+  while (Date.now() - runningWaitStarted < 2_000) {
+    const current = engine.getJob(accepted.jobId);
+    if (current?.status === "running") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const canceledJob = engine.cancelJob({ jobId: accepted.jobId, reason: "Manual stop requested." });
+  assert.equal(canceledJob?.cancellation?.reason, "Manual stop requested.");
+
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "canceled");
+  assert.equal(status.cancellation?.reason, "Manual stop requested.");
 });
 
 test("createJobEngine resolves request brandTheme and generationLocale with submit override precedence", () => {

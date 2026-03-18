@@ -110,6 +110,7 @@ With `enableGitPr=false`, generation is local-only.
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
+- `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
 - `GET /workspace/repros/:id/` - generated local preview
 
 ## Output layout
@@ -158,6 +159,8 @@ workspace-dev scan-design-system [options]
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
 - `--skip-install <true|false>` (default `false`; expert mode, requires pre-existing `generated-app/node_modules`)
+- `--max-concurrent-jobs <n>` (default `1`; concurrent running job cap)
+- `--max-queued-jobs <n>` (default `20`; queued job cap before submit backpressure)
 - `--lint-autofix <true|false>` (default `true`; runs `pnpm lint --fix` before final `pnpm lint`)
 - `--preview <true|false>` (default `true`)
 - `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)

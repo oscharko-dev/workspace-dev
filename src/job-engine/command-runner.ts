@@ -14,7 +14,8 @@ export const runCommand = async ({
   args,
   env,
   redactions,
-  timeoutMs
+  timeoutMs,
+  abortSignal
 }: {
   cwd: string;
   command: string;
@@ -22,17 +23,32 @@ export const runCommand = async ({
   env?: NodeJS.ProcessEnv;
   redactions?: string[];
   timeoutMs?: number;
+  abortSignal?: AbortSignal;
 }): Promise<CommandResult> => {
   const safeRedactions = (redactions ?? []).filter((entry) => entry.trim().length > 0);
   const resolvedTimeoutMs =
     typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? Math.max(1_000, Math.trunc(timeoutMs)) : 15 * 60_000;
   const startedAt = Date.now();
 
+  if (abortSignal?.aborted) {
+    return {
+      success: false,
+      code: null,
+      stdout: "",
+      stderr: "Command canceled before start.",
+      combined: "Command canceled before start.",
+      canceled: true,
+      timedOut: false,
+      durationMs: 0
+    };
+  }
+
   return await new Promise<CommandResult>((resolve) => {
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     let settled = false;
     let timeoutTriggered = false;
+    let canceledTriggered = false;
 
     const child = spawn(command, args, {
       cwd,
@@ -49,6 +65,14 @@ export const runCommand = async ({
       timeoutTriggered = true;
       child.kill("SIGKILL");
     }, resolvedTimeoutMs);
+    const onAbort = (): void => {
+      if (settled) {
+        return;
+      }
+      canceledTriggered = true;
+      child.kill("SIGKILL");
+    };
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdout.on("data", (chunk: Buffer | string) => {
       stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -64,6 +88,7 @@ export const runCommand = async ({
       }
       settled = true;
       clearTimeout(timeoutHandle);
+      abortSignal?.removeEventListener("abort", onAbort);
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       const sanitizedStdout = safeRedactions.reduce((acc, secret) => redactValue({ value: acc, secret }), stdout);
@@ -73,15 +98,17 @@ export const runCommand = async ({
       const timeoutMessage = timeoutTriggered
         ? `Command timed out after ${resolvedTimeoutMs}ms: ${command} ${args.join(" ")}`
         : undefined;
-      const mergedCombined = timeoutMessage ? [combined, timeoutMessage].filter((entry) => entry.length > 0).join("\n") : combined;
+      const canceledMessage = canceledTriggered ? `Command canceled: ${command} ${args.join(" ")}` : undefined;
+      const mergedCombined = [combined, timeoutMessage, canceledMessage].filter((entry) => entry && entry.length > 0).join("\n");
 
       resolve({
-        success: code === 0 && !timeoutTriggered,
+        success: code === 0 && !timeoutTriggered && !canceledTriggered,
         code,
         stdout: sanitizedStdout,
         stderr: sanitizedStderr,
         combined: mergedCombined,
         timedOut: timeoutTriggered,
+        canceled: canceledTriggered,
         durationMs
       });
     });
@@ -92,6 +119,7 @@ export const runCommand = async ({
       }
       settled = true;
       clearTimeout(timeoutHandle);
+      abortSignal?.removeEventListener("abort", onAbort);
       const durationMs = Date.now() - startedAt;
       resolve({
         success: false,
@@ -100,6 +128,7 @@ export const runCommand = async ({
         stderr: error.message,
         combined: error.message,
         timedOut: false,
+        canceled: canceledTriggered,
         durationMs
       });
     });

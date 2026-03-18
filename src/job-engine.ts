@@ -107,6 +107,62 @@ const resolveFigmaSourceMode = ({
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
   const resolvedPaths = resolveAbsoluteOutputRoot({ outputRoot: paths.outputRoot });
   const jobs = new Map<string, JobRecord>();
+  const queuedJobIds: string[] = [];
+  const queuedJobInputs = new Map<string, WorkspaceJobInput>();
+  const runningJobIds = new Set<string>();
+
+  const isAbortLikeError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const normalizedMessage = error.message.toLowerCase();
+    return error.name === "AbortError" || normalizedMessage.includes("abort") || normalizedMessage.includes("canceled");
+  };
+
+  class JobQueueBackpressureError extends Error {
+    code = "E_JOB_QUEUE_FULL" as const;
+    queue: WorkspaceJobStatus["queue"];
+
+    constructor({ queue }: { queue: WorkspaceJobStatus["queue"] }) {
+      super(
+        `Job queue limit reached (running=${queue.runningCount}/${queue.maxConcurrentJobs}, queued=${queue.queuedCount}/${queue.maxQueuedJobs}).`
+      );
+      this.name = "JobQueueBackpressureError";
+      this.queue = queue;
+    }
+  }
+
+  class JobCancellationError extends Error {
+    code = "E_JOB_CANCELED" as const;
+    stage: WorkspaceJobStageName;
+
+    constructor({ stage, reason }: { stage: WorkspaceJobStageName; reason: string }) {
+      super(reason);
+      this.name = "JobCancellationError";
+      this.stage = stage;
+    }
+  }
+
+  const isJobCancellationError = (error: unknown): error is JobCancellationError => {
+    return error instanceof JobCancellationError;
+  };
+
+  const toQueueSnapshot = ({ jobId }: { jobId?: string } = {}): WorkspaceJobStatus["queue"] => {
+    const position = jobId ? queuedJobIds.indexOf(jobId) : -1;
+    return {
+      runningCount: runningJobIds.size,
+      queuedCount: queuedJobIds.length,
+      maxConcurrentJobs: runtime.maxConcurrentJobs,
+      maxQueuedJobs: runtime.maxQueuedJobs,
+      ...(position >= 0 ? { position: position + 1 } : {})
+    };
+  };
+
+  const refreshQueueSnapshots = (): void => {
+    for (const [jobId, job] of jobs.entries()) {
+      job.queue = toQueueSnapshot({ jobId });
+    }
+  };
 
   const markStageSkipped = ({
     job,
@@ -121,6 +177,52 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     pushLog({ job, level: "info", stage, message });
   };
 
+  const markQueuedStagesSkippedAfterCancellation = ({
+    job,
+    reason
+  }: {
+    job: JobRecord;
+    reason: string;
+  }): void => {
+    for (const stage of job.stages) {
+      if (stage.status === "queued") {
+        updateStage({ job, stage: stage.name, status: "skipped", message: reason });
+      }
+    }
+  };
+
+  const resolveCancellationReason = ({
+    job,
+    fallbackReason
+  }: {
+    job: JobRecord;
+    fallbackReason: string;
+  }): string => {
+    if (job.cancellation?.reason) {
+      return job.cancellation.reason;
+    }
+    return fallbackReason;
+  };
+
+  const ensureStageNotCanceled = ({
+    job,
+    stage
+  }: {
+    job: JobRecord;
+    stage: WorkspaceJobStageName;
+  }): void => {
+    if (!job.cancellation || job.cancellation.completedAt) {
+      return;
+    }
+    throw new JobCancellationError({
+      stage,
+      reason: resolveCancellationReason({
+        job,
+        fallbackReason: "Cancellation requested."
+      })
+    });
+  };
+
   const runStage = async <T>({
     job,
     stage,
@@ -130,16 +232,57 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     stage: WorkspaceJobStageName;
     action: () => Promise<T>;
   }): Promise<T> => {
+    ensureStageNotCanceled({ job, stage });
     job.currentStage = stage;
     updateStage({ job, stage, status: "running" });
     pushLog({ job, level: "info", stage, message: `Starting stage '${stage}'.` });
 
     try {
       const result = await action();
+      ensureStageNotCanceled({ job, stage });
       updateStage({ job, stage, status: "completed" });
       pushLog({ job, level: "info", stage, message: `Completed stage '${stage}'.` });
       return result;
     } catch (error) {
+      if (isJobCancellationError(error)) {
+        updateStage({
+          job,
+          stage,
+          status: "failed",
+          message: error.message
+        });
+        pushLog({
+          job,
+          level: "warn",
+          stage,
+          message: `${error.code}: ${error.message}`
+        });
+        throw error;
+      }
+
+      if (job.cancellation && isAbortLikeError(error)) {
+        const cancellationError = new JobCancellationError({
+          stage,
+          reason: resolveCancellationReason({
+            job,
+            fallbackReason: "Cancellation requested."
+          })
+        });
+        updateStage({
+          job,
+          stage,
+          status: "failed",
+          message: cancellationError.message
+        });
+        pushLog({
+          job,
+          level: "warn",
+          stage,
+          message: `${cancellationError.code}: ${cancellationError.message}`
+        });
+        throw cancellationError;
+      }
+
       const typedError = isPipelineError(error)
         ? error
         : createPipelineError({
@@ -167,6 +310,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const runJob = async (job: JobRecord, input: WorkspaceJobInput): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
+    const jobAbortController = new AbortController();
+    job.abortController = jobAbortController;
+    const fetchWithCancellation: typeof fetch = async (resource, init) => {
+      if (jobAbortController.signal.aborted) {
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
+      const existingSignal = init?.signal;
+      const mergedSignal =
+        existingSignal instanceof AbortSignal
+          ? AbortSignal.any([existingSignal, jobAbortController.signal])
+          : jobAbortController.signal;
+      return await runtime.fetchImpl(resource, {
+        ...init,
+        signal: mergedSignal
+      });
+    };
     const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
     const resolvedFigmaSourceMode = resolveFigmaSourceMode({ submitFigmaSourceMode: input.figmaSourceMode });
     const generationLocaleResolution = resolveJobGenerationLocale({
@@ -341,7 +500,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             cacheEnabled: runtime.figmaCacheEnabled,
             cacheTtlMs: runtime.figmaCacheTtlMs,
             cacheDir: path.join(resolvedPaths.outputRoot, "cache", "figma-source"),
-            fetchImpl: runtime.fetchImpl,
+            fetchImpl: fetchWithCancellation,
             onLog: (message) => {
               pushLog({
                 job,
@@ -484,7 +643,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
                   accessToken,
                   ir,
                   generatedProjectDir,
-                  fetchImpl: runtime.fetchImpl,
+                  fetchImpl: fetchWithCancellation,
                   timeoutMs: runtime.figmaTimeoutMs,
                   maxRetries: runtime.figmaMaxRetries,
                   onLog: (message) => {
@@ -547,6 +706,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             commandTimeoutMs: runtime.commandTimeoutMs,
             installPreferOffline: runtime.installPreferOffline,
             skipInstall: runtime.skipInstall,
+            abortSignal: jobAbortController.signal,
             onLog: (message) => {
               pushLog({
                 job,
@@ -633,6 +793,47 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message: `Job completed. Generated output at ${generatedProjectDir} (${generationSummary.generatedPaths.length} artifacts).`
       });
     } catch (error) {
+      if (isJobCancellationError(error)) {
+        job.status = "canceled";
+        job.finishedAt = nowIso();
+        job.currentStage = error.stage;
+        if (!job.cancellation) {
+          job.cancellation = {
+            requestedAt: nowIso(),
+            reason: error.message,
+            requestedBy: "api"
+          };
+        }
+        job.cancellation.completedAt = nowIso();
+        markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
+        try {
+          await writeFile(
+            stageTimingsFile,
+            `${JSON.stringify(
+              {
+                jobId: job.jobId,
+                status: job.status,
+                generatedAt: nowIso(),
+                stages: job.stages,
+                cancellation: job.cancellation
+              },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
+        } catch {
+          // Ignore stage-timing persistence failures during cancellation handling.
+        }
+        pushLog({
+          job,
+          level: "warn",
+          stage: error.stage,
+          message: `Job canceled: ${error.message}`
+        });
+        return;
+      }
+
       const typedError = isPipelineError(error)
         ? error
         : createPipelineError({
@@ -675,10 +876,47 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: typedError.stage,
         message: `Job failed: ${typedError.code} ${typedError.message}`
       });
+    } finally {
+      delete job.abortController;
     }
   };
 
+  const executeJob = ({ job, input }: { job: JobRecord; input: WorkspaceJobInput }): void => {
+    if (runningJobIds.has(job.jobId)) {
+      return;
+    }
+    runningJobIds.add(job.jobId);
+    refreshQueueSnapshots();
+    queueMicrotask(() => {
+      void runJob(job, input).finally(() => {
+        runningJobIds.delete(job.jobId);
+        refreshQueueSnapshots();
+        while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
+          const nextJobId = queuedJobIds.shift();
+          if (!nextJobId) {
+            break;
+          }
+          const nextJob = jobs.get(nextJobId);
+          const nextInput = queuedJobInputs.get(nextJobId);
+          if (!nextJob || !nextInput || nextJob.status !== "queued") {
+            queuedJobInputs.delete(nextJobId);
+            continue;
+          }
+          queuedJobInputs.delete(nextJobId);
+          executeJob({ job: nextJob, input: nextInput });
+        }
+        refreshQueueSnapshots();
+      });
+    });
+  };
+
   const submitJob = (input: WorkspaceJobInput) => {
+    if (runningJobIds.size >= runtime.maxConcurrentJobs && queuedJobIds.length >= runtime.maxQueuedJobs) {
+      throw new JobQueueBackpressureError({
+        queue: toQueueSnapshot()
+      });
+    }
+
     const jobId = randomUUID();
     const acceptedModes =
       input.figmaSourceMode === undefined ? toAcceptedModes() : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
@@ -722,16 +960,26 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       },
       preview: {
         enabled: runtime.previewEnabled
-      }
+      },
+      queue: toQueueSnapshot({ jobId })
     };
 
     jobs.set(jobId, job);
 
     pushLog({ job, level: "info", message: "Job accepted by workspace-dev runtime." });
 
-    queueMicrotask(() => {
-      void runJob(job, input);
-    });
+    if (runningJobIds.size < runtime.maxConcurrentJobs) {
+      executeJob({ job, input });
+    } else {
+      queuedJobIds.push(jobId);
+      queuedJobInputs.set(jobId, { ...input });
+      pushLog({
+        job,
+        level: "info",
+        message: `Job queued with position ${queuedJobIds.length}.`
+      });
+      refreshQueueSnapshots();
+    }
 
     return {
       jobId,
@@ -740,11 +988,76 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const cancelJob = ({
+    jobId,
+    reason
+  }: {
+    jobId: string;
+    reason?: string;
+  }): WorkspaceJobStatus | undefined => {
+    const job = jobs.get(jobId);
+    if (!job) {
+      return undefined;
+    }
+
+    if (job.status === "completed" || job.status === "failed" || job.status === "canceled") {
+      refreshQueueSnapshots();
+      return toPublicJob(job);
+    }
+
+    const cancellationReason =
+      typeof reason === "string" && reason.trim().length > 0
+        ? reason.trim().slice(0, 240)
+        : "Cancellation requested via API.";
+
+    if (!job.cancellation) {
+      job.cancellation = {
+        requestedAt: nowIso(),
+        reason: cancellationReason,
+        requestedBy: "api"
+      };
+    }
+
+    if (job.status === "queued") {
+      const queuedIndex = queuedJobIds.indexOf(jobId);
+      if (queuedIndex >= 0) {
+        queuedJobIds.splice(queuedIndex, 1);
+      }
+      queuedJobInputs.delete(jobId);
+      job.status = "canceled";
+      job.finishedAt = nowIso();
+      job.cancellation.completedAt = nowIso();
+      delete job.currentStage;
+      markQueuedStagesSkippedAfterCancellation({
+        job,
+        reason: cancellationReason
+      });
+      pushLog({
+        job,
+        level: "warn",
+        message: `Job canceled while queued: ${cancellationReason}`
+      });
+      refreshQueueSnapshots();
+      return toPublicJob(job);
+    }
+
+    pushLog({
+      job,
+      level: "warn",
+      ...(job.currentStage ? { stage: job.currentStage } : {}),
+      message: `Cancellation requested: ${cancellationReason}`
+    });
+    job.abortController?.abort(cancellationReason);
+    refreshQueueSnapshots();
+    return toPublicJob(job);
+  };
+
   const getJob = (jobId: string): WorkspaceJobStatus | undefined => {
     const job = jobs.get(jobId);
     if (!job) {
       return undefined;
     }
+    job.queue = toQueueSnapshot({ jobId });
     return toPublicJob(job);
   };
 
@@ -761,6 +1074,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       artifacts: { ...job.artifacts },
       preview: { ...job.preview }
     };
+    if (job.cancellation) {
+      result.cancellation = { ...job.cancellation };
+    }
     if (job.gitPr) {
       result.gitPr = { ...job.gitPr };
     }
@@ -814,6 +1130,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   return {
     submitJob,
+    cancelJob,
     getJob,
     getJobResult,
     resolvePreviewAsset
