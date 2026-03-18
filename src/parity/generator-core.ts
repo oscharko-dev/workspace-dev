@@ -1683,6 +1683,912 @@ const extractSharedSxConstantsFromScreenContent = (source: string): string => {
   return `${beforeExport}\n\n${constantsBlock}\n\n${fromExport}`;
 };
 
+const PATTERN_SIMILARITY_THRESHOLD = 0.8;
+const PATTERN_MIN_OCCURRENCES = 3;
+const PATTERN_MIN_SUBTREE_NODE_COUNT = 3;
+const EXTRACTION_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>([
+  "container",
+  "card",
+  "paper",
+  "stack",
+  "grid",
+  "list",
+  "table"
+]);
+const EXTRACTION_FORBIDDEN_TYPES = new Set<ScreenElementIR["type"]>([
+  "input",
+  "button",
+  "chip",
+  "switch",
+  "checkbox",
+  "radio",
+  "select",
+  "slider",
+  "rating",
+  "tab",
+  "dialog",
+  "stepper",
+  "navigation",
+  "appbar",
+  "breadcrumbs",
+  "drawer"
+]);
+
+const emptyPatternExtractionPlan = (): PatternExtractionPlan => ({
+  componentFiles: [],
+  componentImports: [],
+  invocationByRootNodeId: new Map<string, PatternExtractionInvocation>()
+});
+
+const toSortedChildrenForExtraction = ({
+  children,
+  layoutMode,
+  generationLocale
+}: {
+  children: ScreenElementIR[];
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  generationLocale: string;
+}): ScreenElementIR[] => {
+  return sortChildren(children, layoutMode, { generationLocale });
+};
+
+const collectPathNodeMapForExtraction = ({
+  root,
+  generationLocale
+}: {
+  root: ScreenElementIR;
+  generationLocale: string;
+}): Map<string, ScreenElementIR> => {
+  const byPath = new Map<string, ScreenElementIR>();
+  const visit = (node: ScreenElementIR, pathToken: string): void => {
+    byPath.set(pathToken, node);
+    const children = toSortedChildrenForExtraction({
+      children: node.children ?? [],
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    children.forEach((child, index) => {
+      const nextPath = pathToken.length > 0 ? `${pathToken}.${index}` : String(index);
+      visit(child, nextPath);
+    });
+  };
+  visit(root, "");
+  return byPath;
+};
+
+const collectSubtreeNodeIdsForExtraction = (
+  root: ScreenElementIR,
+  visited: Set<ScreenElementIR> = new Set()
+): Set<string> => {
+  if (visited.has(root)) {
+    return new Set<string>();
+  }
+  visited.add(root);
+  const nodeIds = new Set<string>([root.id]);
+  for (const child of root.children ?? []) {
+    const nested = collectSubtreeNodeIdsForExtraction(child, visited);
+    for (const nodeId of nested) {
+      nodeIds.add(nodeId);
+    }
+  }
+  return nodeIds;
+};
+
+const hasForbiddenExtractionSignals = (
+  node: ScreenElementIR,
+  visited: Set<ScreenElementIR> = new Set()
+): boolean => {
+  if (visited.has(node)) {
+    return false;
+  }
+  visited.add(node);
+  if (EXTRACTION_FORBIDDEN_TYPES.has(node.type) || Boolean(node.prototypeNavigation) || Boolean(node.variantMapping)) {
+    return true;
+  }
+  return (node.children ?? []).some((child) => hasForbiddenExtractionSignals(child, visited));
+};
+
+const hasTextOrImageDescendants = (node: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): boolean => {
+  if (visited.has(node)) {
+    return false;
+  }
+  visited.add(node);
+  if (node.type === "text" || node.type === "image") {
+    return true;
+  }
+  return (node.children ?? []).some((child) => hasTextOrImageDescendants(child, visited));
+};
+
+const computeStructuralSignature = ({
+  root,
+  generationLocale
+}: {
+  root: ScreenElementIR;
+  generationLocale: string;
+}): Set<string> => {
+  const signature = new Set<string>();
+  const visit = (node: ScreenElementIR, depth: number): void => {
+    const children = toSortedChildrenForExtraction({
+      children: node.children ?? [],
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    const bucketedChildrenCount = Math.min(6, children.length);
+    signature.add(`n:${depth}:${node.type}:${node.nodeType}:${bucketedChildrenCount}`);
+    if (node.layoutMode) {
+      signature.add(`layout:${depth}:${node.layoutMode}`);
+    }
+    if (node.type === "text") {
+      signature.add(`text:${depth}`);
+    }
+    if (node.type === "image") {
+      signature.add(`image:${depth}`);
+    }
+    children.forEach((child, index) => {
+      const bucketedIndex = Math.min(index, 4);
+      signature.add(`e:${depth}:${node.type}>${child.type}:${bucketedIndex}`);
+      visit(child, depth + 1);
+    });
+  };
+  visit(root, 0);
+  return signature;
+};
+
+const computeSubtreeSimilarity = (left: Set<string>, right: Set<string>): number => {
+  if (left.size === 0 && right.size === 0) {
+    return 1;
+  }
+  let intersectionCount = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      intersectionCount += 1;
+    }
+  }
+  const unionCount = left.size + right.size - intersectionCount;
+  if (unionCount <= 0) {
+    return 0;
+  }
+  return intersectionCount / unionCount;
+};
+
+const hasIntersectionWithSet = ({
+  values,
+  targets
+}: {
+  values: Set<string>;
+  targets: Set<string>;
+}): boolean => {
+  for (const value of values) {
+    if (targets.has(value)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const toExtractionPropName = ({
+  rawName,
+  fallback
+}: {
+  rawName: string;
+  fallback: string;
+}): string => {
+  const words = rawName
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0);
+  if (words.length === 0) {
+    return fallback;
+  }
+  const camelCased = words
+    .map((word, index) => {
+      const lowered = word.toLowerCase();
+      if (index === 0) {
+        return lowered;
+      }
+      return `${lowered.charAt(0).toUpperCase()}${lowered.slice(1)}`;
+    })
+    .join("");
+  if (!camelCased) {
+    return fallback;
+  }
+  if (/^\d/.test(camelCased)) {
+    return `${fallback}${camelCased}`;
+  }
+  return camelCased;
+};
+
+const toUniquePropName = ({
+  candidate,
+  used
+}: {
+  candidate: string;
+  used: Set<string>;
+}): string => {
+  let nextName = candidate;
+  let suffix = 2;
+  while (used.has(nextName)) {
+    nextName = `${candidate}${suffix}`;
+    suffix += 1;
+  }
+  used.add(nextName);
+  return nextName;
+};
+
+const toTextValueForExtraction = (node: ScreenElementIR | undefined): string | undefined => {
+  if (!node || node.type !== "text") {
+    return undefined;
+  }
+  const normalizedText = node.text?.trim();
+  if (normalizedText && normalizedText.length > 0) {
+    return normalizedText;
+  }
+  const normalizedName = node.name.trim();
+  return normalizedName.length > 0 ? normalizedName : undefined;
+};
+
+const toImageSourceForExtraction = ({
+  node,
+  imageAssetMap
+}: {
+  node: ScreenElementIR | undefined;
+  imageAssetMap: Record<string, string>;
+}): string | undefined => {
+  if (!node || node.type !== "image") {
+    return undefined;
+  }
+  const mappedSource = imageAssetMap[node.id];
+  if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
+    return mappedSource.trim();
+  }
+  const fallbackLabel = resolveElementA11yLabel({ element: node, fallback: "Image" });
+  return toDeterministicImagePlaceholderSrc({
+    element: node,
+    label: fallbackLabel
+  });
+};
+
+const inferDynamicPropsFromCluster = ({
+  members,
+  imageAssetMap
+}: {
+  members: ExtractionCandidate[];
+  imageAssetMap: Record<string, string>;
+}): DynamicPropBinding[] => {
+  const prototype = members[0];
+  if (!prototype) {
+    return [];
+  }
+  const usedPropNames = new Set<string>(["sx"]);
+  const bindings: DynamicPropBinding[] = [];
+  const sortedPrototypePaths = Array.from(prototype.pathNodeMap.keys()).sort((left, right) => left.localeCompare(right));
+
+  for (const pathToken of sortedPrototypePaths) {
+    const prototypeNode = prototype.pathNodeMap.get(pathToken);
+    if (!prototypeNode) {
+      continue;
+    }
+
+    if (prototypeNode.type === "text") {
+      const valuesByRootNodeId = new Map<string, string | undefined>();
+      const distinctValues = new Set<string>();
+      let optional = false;
+      for (const member of members) {
+        const memberNode = member.pathNodeMap.get(pathToken);
+        const value = toTextValueForExtraction(memberNode);
+        if (value === undefined) {
+          optional = true;
+        } else {
+          distinctValues.add(value);
+        }
+        valuesByRootNodeId.set(member.root.id, value);
+      }
+      if (distinctValues.size <= 1 && !optional) {
+        continue;
+      }
+      const propName = toUniquePropName({
+        candidate: toExtractionPropName({
+          rawName: `${prototypeNode.name} text`,
+          fallback: "textValue"
+        }),
+        used: usedPropNames
+      });
+      bindings.push({
+        kind: "text",
+        path: pathToken,
+        propName,
+        optional,
+        placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+        valuesByRootNodeId
+      });
+      continue;
+    }
+
+    if (prototypeNode.type === "image") {
+      const sourceValuesByRootNodeId = new Map<string, string | undefined>();
+      const sourceDistinctValues = new Set<string>();
+      let sourceOptional = false;
+      const altValuesByRootNodeId = new Map<string, string | undefined>();
+      const altDistinctValues = new Set<string>();
+      let altOptional = false;
+
+      for (const member of members) {
+        const memberNode = member.pathNodeMap.get(pathToken);
+        const sourceValue = toImageSourceForExtraction({
+          node: memberNode,
+          imageAssetMap
+        });
+        if (sourceValue === undefined) {
+          sourceOptional = true;
+        } else {
+          sourceDistinctValues.add(sourceValue);
+        }
+        sourceValuesByRootNodeId.set(member.root.id, sourceValue);
+
+        const altValue = memberNode
+          ? resolveElementA11yLabel({
+              element: memberNode,
+              fallback: "Image"
+            })
+          : undefined;
+        if (altValue === undefined) {
+          altOptional = true;
+        } else {
+          altDistinctValues.add(altValue);
+        }
+        altValuesByRootNodeId.set(member.root.id, altValue);
+      }
+
+      if (sourceDistinctValues.size > 1 || sourceOptional) {
+        const propName = toUniquePropName({
+          candidate: toExtractionPropName({
+            rawName: `${prototypeNode.name} src`,
+            fallback: "imageSrc"
+          }),
+          used: usedPropNames
+        });
+        bindings.push({
+          kind: "image_src",
+          path: pathToken,
+          propName,
+          optional: sourceOptional,
+          placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+          valuesByRootNodeId: sourceValuesByRootNodeId
+        });
+      }
+
+      if (altDistinctValues.size > 1 || altOptional) {
+        const propName = toUniquePropName({
+          candidate: toExtractionPropName({
+            rawName: `${prototypeNode.name} alt`,
+            fallback: "imageAlt"
+          }),
+          used: usedPropNames
+        });
+        bindings.push({
+          kind: "image_alt",
+          path: pathToken,
+          propName,
+          optional: altOptional,
+          placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+          valuesByRootNodeId: altValuesByRootNodeId
+        });
+      }
+    }
+  }
+
+  return bindings;
+};
+
+const cloneElementForExtraction = (element: ScreenElementIR): ScreenElementIR => {
+  return {
+    ...element,
+    ...(element.children ? { children: element.children.map((child) => cloneElementForExtraction(child)) } : {})
+  };
+};
+
+const injectRootSxPropForExtractedComponent = (renderedRoot: string): string | undefined => {
+  const sxStartIndex = renderedRoot.indexOf(SX_ATTRIBUTE_PREFIX);
+  if (sxStartIndex < 0) {
+    return undefined;
+  }
+  const bodyStartIndex = sxStartIndex + SX_ATTRIBUTE_PREFIX.length;
+  const bodyEndIndex = findSxBodyEndIndex({
+    source: renderedRoot,
+    startIndex: bodyStartIndex
+  });
+  if (bodyEndIndex === undefined) {
+    return undefined;
+  }
+  if (renderedRoot[bodyEndIndex + 1] !== "}") {
+    return undefined;
+  }
+  const body = renderedRoot.slice(bodyStartIndex, bodyEndIndex).trim();
+  const replacement = `sx={[{ ${body} }, sx]}`;
+  return `${renderedRoot.slice(0, sxStartIndex)}${replacement}${renderedRoot.slice(bodyEndIndex + 2)}`;
+};
+
+const buildExtractedComponentFile = ({
+  cluster,
+  screen,
+  generationLocale,
+  spacingBase,
+  tokens,
+  iconResolver,
+  imageAssetMap,
+  routePathByScreenId,
+  mappingByNodeId,
+  pageBackgroundColorNormalized,
+  responsiveTopLevelLayoutOverrides
+}: {
+  cluster: PatternCluster;
+  screen: ScreenIR;
+  generationLocale: string;
+  spacingBase: number;
+  tokens: DesignTokens | undefined;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+}): GeneratedFile | undefined => {
+  const prototypeRoot = cloneElementForExtraction(cluster.prototype.root);
+  const placeholderImageAssetMap: Record<string, string> = {
+    ...imageAssetMap
+  };
+  const pathNodeMap = collectPathNodeMapForExtraction({
+    root: prototypeRoot,
+    generationLocale
+  });
+
+  for (const binding of cluster.propBindings) {
+    const node = pathNodeMap.get(binding.path);
+    if (!node) {
+      continue;
+    }
+    if (binding.kind === "text" && node.type === "text") {
+      node.text = binding.placeholder;
+      continue;
+    }
+    if (binding.kind === "image_src" && node.type === "image") {
+      placeholderImageAssetMap[node.id] = binding.placeholder;
+      continue;
+    }
+    if (binding.kind === "image_alt" && node.type === "image") {
+      node.name = binding.placeholder;
+    }
+  }
+
+  const headingComponentByNodeId = inferHeadingComponentByNodeId([prototypeRoot]);
+  const typographyVariantByNodeId = resolveTypographyVariantByNodeId({
+    elements: [prototypeRoot],
+    tokens
+  });
+  const componentRenderContext: RenderContext = {
+    screenId: screen.id,
+    screenName: `${screen.name}:${cluster.componentName}`,
+    generationLocale,
+    fields: [],
+    accordions: [],
+    tabs: [],
+    dialogs: [],
+    buttons: [],
+    activeRenderElements: new Set<ScreenElementIR>(),
+    renderNodeVisitCount: 0,
+    interactiveDescendantCache: new Map<string, boolean>(),
+    meaningfulTextDescendantCache: new Map<string, boolean>(),
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    accessibilityWarnings: [],
+    muiImports: new Set<string>(),
+    iconImports: [],
+    iconResolver,
+    imageAssetMap: placeholderImageAssetMap,
+    routePathByScreenId,
+    usesRouterLink: false,
+    usesNavigateHandler: false,
+    prototypeNavigationRenderedCount: 0,
+    mappedImports: [],
+    spacingBase,
+    ...(tokens ? { tokens } : {}),
+    mappingByNodeId,
+    usedMappingNodeIds: new Set<string>(),
+    mappingWarnings: [],
+    emittedWarningKeys: new Set<string>(),
+    emittedAccessibilityWarningKeys: new Set<string>(),
+    pageBackgroundColorNormalized,
+    ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {}),
+    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
+  };
+
+  const renderedRoot = renderElement(prototypeRoot, 2, cluster.prototype.parent, componentRenderContext);
+  if (!renderedRoot || !renderedRoot.trim()) {
+    return undefined;
+  }
+  if (
+    componentRenderContext.fields.length > 0 ||
+    componentRenderContext.accordions.length > 0 ||
+    componentRenderContext.tabs.length > 0 ||
+    componentRenderContext.dialogs.length > 0 ||
+    componentRenderContext.usesNavigateHandler
+  ) {
+    return undefined;
+  }
+
+  let renderedComponentBody = renderedRoot;
+  for (const binding of cluster.propBindings) {
+    const placeholderLiteral = literal(binding.placeholder);
+    if (binding.kind === "text") {
+      renderedComponentBody = renderedComponentBody.split(`{${placeholderLiteral}}`).join(`{${binding.propName}}`);
+      continue;
+    }
+    if (binding.kind === "image_src") {
+      renderedComponentBody = renderedComponentBody
+        .split(`src={${placeholderLiteral}}`)
+        .join(`src={${binding.propName}}`);
+      continue;
+    }
+    if (binding.kind === "image_alt") {
+      renderedComponentBody = renderedComponentBody
+        .split(`alt={${placeholderLiteral}}`)
+        .join(`alt={${binding.propName}}`);
+    }
+  }
+
+  const renderedWithSx = injectRootSxPropForExtractedComponent(renderedComponentBody);
+  if (!renderedWithSx) {
+    return undefined;
+  }
+
+  const sortedMuiImports = [...componentRenderContext.muiImports].sort((left, right) => left.localeCompare(right));
+  if (sortedMuiImports.length === 0) {
+    return undefined;
+  }
+  const iconImports = normalizeIconImports(componentRenderContext.iconImports)
+    .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
+    .join("\n");
+  const mappedImports = componentRenderContext.mappedImports
+    .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
+    .join("\n");
+  const routerImports: string[] = [];
+  if (componentRenderContext.usesRouterLink) {
+    routerImports.push("Link as RouterLink");
+  }
+  if (componentRenderContext.usesNavigateHandler) {
+    routerImports.push("useNavigate");
+  }
+  const reactRouterImport = routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
+  const navigationHookBlock = componentRenderContext.usesNavigateHandler ? "const navigate = useNavigate();" : "";
+  const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
+  const propsInterfaceEntries = [
+    "  sx?: SxProps<Theme>;",
+    ...sortedBindings.map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)
+  ].join("\n");
+  const parameterEntries = ["sx", ...sortedBindings.map((binding) => binding.propName)];
+  const componentSource = `${reactRouterImport}import type { SxProps, Theme } from "@mui/material/styles";
+import { ${sortedMuiImports.join(", ")} } from "@mui/material";
+${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
+
+interface ${cluster.componentName}Props {
+${propsInterfaceEntries}
+}
+
+export function ${cluster.componentName}({ ${parameterEntries.join(", ")} }: ${cluster.componentName}Props) {
+${navigationHookBlock ? `${indentBlock(navigationHookBlock, 2)}\n` : ""}  return (
+${renderedWithSx}
+  );
+}
+`;
+  return {
+    path: path.posix.join("src", "components", ensureTsxName(cluster.componentName)),
+    content: extractSharedSxConstantsFromScreenContent(componentSource)
+  };
+};
+
+const buildInvocationMap = ({
+  clusters
+}: {
+  clusters: PatternCluster[];
+}): Map<string, PatternExtractionInvocation> => {
+  const byRootNodeId = new Map<string, PatternExtractionInvocation>();
+  for (const cluster of clusters) {
+    for (const member of cluster.members) {
+      const propValues = Object.fromEntries(
+        cluster.propBindings.map((binding) => [binding.propName, binding.valuesByRootNodeId.get(member.root.id)])
+      ) as Record<string, string | undefined>;
+      byRootNodeId.set(member.root.id, {
+        componentName: cluster.componentName,
+        propValues
+      });
+    }
+  }
+  return byRootNodeId;
+};
+
+const collectExtractionCandidates = ({
+  roots,
+  rootParent,
+  generationLocale
+}: {
+  roots: ScreenElementIR[];
+  rootParent: VirtualParent;
+  generationLocale: string;
+}): ExtractionCandidate[] => {
+  const candidates: ExtractionCandidate[] = [];
+  const sortedRoots = toSortedChildrenForExtraction({
+    children: roots,
+    layoutMode: rootParent.layoutMode ?? "NONE",
+    generationLocale
+  });
+
+  const visit = ({
+    node,
+    parent,
+    depth
+  }: {
+    node: ScreenElementIR;
+    parent: VirtualParent;
+    depth: number;
+  }): void => {
+    const subtreeNodeIds = collectSubtreeNodeIdsForExtraction(node);
+    const subtreeNodeCount = subtreeNodeIds.size;
+    const children = node.children ?? [];
+    if (
+      EXTRACTION_CANDIDATE_TYPES.has(node.type) &&
+      children.length >= 1 &&
+      subtreeNodeCount >= PATTERN_MIN_SUBTREE_NODE_COUNT &&
+      hasTextOrImageDescendants(node) &&
+      !hasForbiddenExtractionSignals(node)
+    ) {
+      candidates.push({
+        root: node,
+        parent,
+        depth,
+        signature: computeStructuralSignature({
+          root: node,
+          generationLocale
+        }),
+        pathNodeMap: collectPathNodeMapForExtraction({
+          root: node,
+          generationLocale
+        }),
+        subtreeNodeIds,
+        subtreeNodeCount
+      });
+    }
+
+    const nextParent: VirtualParent = {
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      name: node.name,
+      fillColor: node.fillColor,
+      fillGradient: node.fillGradient,
+      layoutMode: node.layoutMode ?? "NONE"
+    };
+    const sortedChildren = toSortedChildrenForExtraction({
+      children,
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    sortedChildren.forEach((child) => {
+      visit({
+        node: child,
+        parent: nextParent,
+        depth: depth + 1
+      });
+    });
+  };
+
+  sortedRoots.forEach((root) => {
+    visit({
+      node: root,
+      parent: rootParent,
+      depth: 3
+    });
+  });
+
+  return candidates;
+};
+
+const buildPatternClusters = ({
+  candidates,
+  screenComponentName,
+  imageAssetMap
+}: {
+  candidates: ExtractionCandidate[];
+  screenComponentName: string;
+  imageAssetMap: Record<string, string>;
+}): PatternCluster[] => {
+  const sortedCandidates = [...candidates].sort((left, right) => {
+    if (left.subtreeNodeCount !== right.subtreeNodeCount) {
+      return right.subtreeNodeCount - left.subtreeNodeCount;
+    }
+    return left.root.id.localeCompare(right.root.id);
+  });
+  const rawClusters: ExtractionCandidate[][] = [];
+  for (const candidate of sortedCandidates) {
+    const matchingCluster = rawClusters.find((cluster) => {
+      const prototype = cluster[0];
+      if (!prototype) {
+        return false;
+      }
+      return computeSubtreeSimilarity(prototype.signature, candidate.signature) >= PATTERN_SIMILARITY_THRESHOLD;
+    });
+    if (matchingCluster) {
+      matchingCluster.push(candidate);
+      continue;
+    }
+    rawClusters.push([candidate]);
+  }
+
+  const reservedSubtreeNodeIds = new Set<string>();
+  const reservedRootIds = new Set<string>();
+  const selectedClusters: PatternCluster[] = [];
+  const sortedRawClusters = rawClusters
+    .filter((cluster) => cluster.length >= PATTERN_MIN_OCCURRENCES)
+    .sort((left, right) => {
+      const leftSize = left[0]?.subtreeNodeCount ?? 0;
+      const rightSize = right[0]?.subtreeNodeCount ?? 0;
+      if (leftSize !== rightSize) {
+        return rightSize - leftSize;
+      }
+      return (left[0]?.root.id ?? "").localeCompare(right[0]?.root.id ?? "");
+    });
+
+  let clusterIndex = 1;
+  for (const cluster of sortedRawClusters) {
+    const localMembers: ExtractionCandidate[] = [];
+    const localRootIds = new Set<string>();
+    const localSubtreeIds = new Set<string>();
+    const memberCandidates = [...cluster].sort((left, right) => {
+      if (left.subtreeNodeCount !== right.subtreeNodeCount) {
+        return right.subtreeNodeCount - left.subtreeNodeCount;
+      }
+      return left.root.id.localeCompare(right.root.id);
+    });
+
+    for (const member of memberCandidates) {
+      const collidesWithGlobal =
+        reservedSubtreeNodeIds.has(member.root.id) ||
+        hasIntersectionWithSet({ values: member.subtreeNodeIds, targets: reservedRootIds });
+      if (collidesWithGlobal) {
+        continue;
+      }
+      const collidesWithLocal =
+        localSubtreeIds.has(member.root.id) || hasIntersectionWithSet({ values: member.subtreeNodeIds, targets: localRootIds });
+      if (collidesWithLocal) {
+        continue;
+      }
+      localMembers.push(member);
+      localRootIds.add(member.root.id);
+      for (const nodeId of member.subtreeNodeIds) {
+        localSubtreeIds.add(nodeId);
+      }
+    }
+
+    if (localMembers.length < PATTERN_MIN_OCCURRENCES) {
+      continue;
+    }
+    localMembers.sort((left, right) => left.root.id.localeCompare(right.root.id));
+    const propBindings = inferDynamicPropsFromCluster({
+      members: localMembers,
+      imageAssetMap
+    });
+    const componentName = `${screenComponentName}Pattern${clusterIndex}`;
+    selectedClusters.push({
+      componentName,
+      prototype: localMembers[0]!,
+      members: localMembers,
+      propBindings
+    });
+    clusterIndex += 1;
+    for (const nodeId of localSubtreeIds) {
+      reservedSubtreeNodeIds.add(nodeId);
+    }
+    for (const nodeId of localRootIds) {
+      reservedRootIds.add(nodeId);
+    }
+  }
+
+  return selectedClusters;
+};
+
+const buildPatternExtractionPlan = ({
+  enablePatternExtraction,
+  screen,
+  screenComponentName,
+  roots,
+  rootParent,
+  generationLocale,
+  spacingBase,
+  tokens,
+  iconResolver,
+  imageAssetMap,
+  routePathByScreenId,
+  mappingByNodeId,
+  pageBackgroundColorNormalized,
+  responsiveTopLevelLayoutOverrides
+}: {
+  enablePatternExtraction: boolean;
+  screen: ScreenIR;
+  screenComponentName: string;
+  roots: ScreenElementIR[];
+  rootParent: VirtualParent;
+  generationLocale: string;
+  spacingBase: number;
+  tokens: DesignTokens | undefined;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+}): PatternExtractionPlan => {
+  if (!enablePatternExtraction) {
+    return emptyPatternExtractionPlan();
+  }
+  const candidates = collectExtractionCandidates({
+    roots,
+    rootParent,
+    generationLocale
+  });
+  if (candidates.length < PATTERN_MIN_OCCURRENCES) {
+    return emptyPatternExtractionPlan();
+  }
+  const clusters = buildPatternClusters({
+    candidates,
+    screenComponentName,
+    imageAssetMap
+  });
+  if (clusters.length === 0) {
+    return emptyPatternExtractionPlan();
+  }
+
+  const componentFiles: GeneratedFile[] = [];
+  const componentImports: ExtractedComponentImportSpec[] = [];
+  const usableClusters: PatternCluster[] = [];
+  for (const cluster of clusters) {
+    const file = buildExtractedComponentFile({
+      cluster,
+      screen,
+      generationLocale,
+      spacingBase,
+      tokens,
+      iconResolver,
+      imageAssetMap,
+      routePathByScreenId,
+      mappingByNodeId,
+      pageBackgroundColorNormalized,
+      ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {})
+    });
+    if (!file) {
+      continue;
+    }
+    usableClusters.push(cluster);
+    componentFiles.push(file);
+    componentImports.push({
+      componentName: cluster.componentName,
+      importPath: `../components/${cluster.componentName}`
+    });
+  }
+  if (usableClusters.length === 0) {
+    return emptyPatternExtractionPlan();
+  }
+
+  const invocationByRootNodeId = buildInvocationMap({
+    clusters: usableClusters
+  });
+  return {
+    componentFiles,
+    componentImports: componentImports.sort((left, right) => left.componentName.localeCompare(right.componentName)),
+    invocationByRootNodeId
+  };
+};
+
 const toPaintSxEntries = ({
   fillColor,
   fillGradient,
@@ -2911,6 +3817,50 @@ interface MappedImportSpec {
   modulePath: string;
 }
 
+interface ExtractedComponentImportSpec {
+  componentName: string;
+  importPath: string;
+}
+
+interface PatternExtractionInvocation {
+  componentName: string;
+  propValues: Record<string, string | undefined>;
+}
+
+type DynamicPropBindingKind = "text" | "image_src" | "image_alt";
+
+interface DynamicPropBinding {
+  kind: DynamicPropBindingKind;
+  path: string;
+  propName: string;
+  optional: boolean;
+  placeholder: string;
+  valuesByRootNodeId: Map<string, string | undefined>;
+}
+
+interface ExtractionCandidate {
+  root: ScreenElementIR;
+  parent: VirtualParent;
+  depth: number;
+  signature: Set<string>;
+  pathNodeMap: Map<string, ScreenElementIR>;
+  subtreeNodeIds: Set<string>;
+  subtreeNodeCount: number;
+}
+
+interface PatternCluster {
+  componentName: string;
+  prototype: ExtractionCandidate;
+  members: ExtractionCandidate[];
+  propBindings: DynamicPropBinding[];
+}
+
+interface PatternExtractionPlan {
+  componentFiles: GeneratedFile[];
+  componentImports: ExtractedComponentImportSpec[];
+  invocationByRootNodeId: Map<string, PatternExtractionInvocation>;
+}
+
 interface RenderedButtonModel {
   key: string;
   preferredSubmit: boolean;
@@ -2955,6 +3905,7 @@ interface RenderContext {
   emittedAccessibilityWarningKeys: Set<string>;
   pageBackgroundColorNormalized: string | undefined;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+  extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {
@@ -7967,6 +8918,21 @@ const renderElement = (
   }
   context.activeRenderElements.add(element);
   try {
+    const extractionInvocation = context.extractionInvocationByNodeId.get(element.id);
+    if (extractionInvocation) {
+      const indent = "  ".repeat(depth);
+      const sx = toElementSx({
+        element,
+        parent,
+        context
+      });
+      const propEntries = Object.entries(extractionInvocation.propValues)
+        .filter(([, value]) => value !== undefined)
+        .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
+      const props = [`sx={{ ${sx} }}`, ...propEntries].join(" ");
+      return `${indent}<${extractionInvocation.componentName} ${props} />`;
+    }
+
     const mappedElement = renderMappedElement(element, depth, parent, context);
     if (mappedElement) {
       return mappedElement;
@@ -8154,6 +9120,7 @@ ${typographyEntries}
 
 interface FallbackScreenFileResult {
   file: GeneratedFile;
+  componentFiles: GeneratedFile[];
   prototypeNavigationRenderedCount: number;
   simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
@@ -8191,7 +9158,8 @@ const fallbackScreenFile = ({
   generationLocale,
   truncationMetric,
   componentNameOverride,
-  filePathOverride
+  filePathOverride,
+  enablePatternExtraction = true
 }: {
   screen: ScreenIR;
   mappingByNodeId: Map<string, ComponentMappingRule>;
@@ -8208,6 +9176,7 @@ const fallbackScreenFile = ({
   };
   componentNameOverride?: string;
   filePathOverride?: string;
+  enablePatternExtraction?: boolean;
 }): FallbackScreenFileResult => {
   const componentName = componentNameOverride ?? toComponentName(screen.name);
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
@@ -8231,6 +9200,34 @@ const fallbackScreenFile = ({
   });
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
   const minY = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.y ?? 0)) : 0;
+  const rootParent: VirtualParent = {
+    x: minX,
+    y: minY,
+    width: screen.width,
+    height: screen.height,
+    name: screen.name,
+    fillColor: screen.fillColor,
+    fillGradient: screen.fillGradient,
+    layoutMode: screen.layoutMode
+  };
+  const extractionPlan = buildPatternExtractionPlan({
+    enablePatternExtraction,
+    screen,
+    screenComponentName: componentName,
+    roots: simplifiedChildren,
+    rootParent,
+    generationLocale: resolvedGenerationLocale,
+    spacingBase: resolvedSpacingBase,
+    tokens,
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    mappingByNodeId,
+    pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    ...(screen.responsive?.topLevelLayoutOverrides
+      ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
+      : {})
+  });
   const renderContext: RenderContext = {
     screenId: screen.id,
     screenName: screen.name,
@@ -8264,6 +9261,7 @@ const fallbackScreenFile = ({
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
       : {})
@@ -8274,16 +9272,7 @@ const fallbackScreenFile = ({
       renderElement(
         element,
         3,
-        {
-          x: minX,
-          y: minY,
-          width: screen.width,
-          height: screen.height,
-          name: screen.name,
-          fillColor: screen.fillColor,
-          fillGradient: screen.fillGradient,
-          layoutMode: screen.layoutMode
-        },
+        rootParent,
         renderContext
       )
     )
@@ -8567,8 +9556,11 @@ const ${dialogCloseHandlerVar} = (): void => {
   const mappedImports = renderContext.mappedImports
     .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
     .join("\n");
+  const extractedComponentImports = extractionPlan.componentImports
+    .map((componentImport) => `import { ${componentImport.componentName} } from "${componentImport.importPath}";`)
+    .join("\n");
   const screenContent = `${truncationComment}${reactImport}${reactRouterImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
-${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
+${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}
 
 export default function ${componentName}Screen() {
 ${[navigationHookBlock, stateBlock]
@@ -8593,7 +9585,8 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     simplificationStats,
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
     mappingWarnings: renderContext.mappingWarnings,
-    accessibilityWarnings: renderContext.accessibilityWarnings
+    accessibilityWarnings: renderContext.accessibilityWarnings,
+    componentFiles: extractionPlan.componentFiles
   };
 };
 
@@ -8621,6 +9614,7 @@ export const createDeterministicScreenFile = (
     mappingByNodeId: new Map<string, ComponentMappingRule>(),
     spacingBase: DEFAULT_SPACING_BASE,
     routePathByScreenId,
+    enablePatternExtraction: false,
     ...(options?.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {})
   }).file;
 };
@@ -9077,13 +10071,14 @@ export const generateArtifacts = async ({
     accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
 
     return {
-      file: deterministicScreen.file
+      file: deterministicScreen.file,
+      componentFiles: deterministicScreen.componentFiles
     };
   });
   await Promise.all(
-    deterministicScreens.map(async (item) => {
-      await writeGeneratedFile(projectDir, item.file);
-      generatedPaths.add(item.file.path);
+    deterministicScreens.flatMap((item) => [item.file, ...item.componentFiles]).map(async (file) => {
+      await writeGeneratedFile(projectDir, file);
+      generatedPaths.add(file.path);
     })
   );
 

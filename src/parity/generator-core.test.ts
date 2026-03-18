@@ -1464,6 +1464,348 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(Array.isArray(metrics.truncatedScreens), true);
 });
 
+test("generateArtifacts extracts repeated screen-local card patterns into reusable component files", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-extract-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "offers-screen",
+      name: "Offers",
+      layoutMode: "VERTICAL" as const,
+      gap: 24,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "offer-card-a",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "offer-image-a",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "offer-title-a",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Starter Paket"
+            },
+            {
+              id: "offer-price-a",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €"
+            }
+          ]
+        },
+        {
+          id: "offer-card-b",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "offer-image-b",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "offer-title-b",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Family Paket"
+            },
+            {
+              id: "offer-price-b",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "19,99 €"
+            }
+          ]
+        },
+        {
+          id: "offer-card-c",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "offer-image-c",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "offer-title-c",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Premium Paket"
+            },
+            {
+              id: "offer-price-c",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "29,99 €"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    imageAssetMap: {
+      "offer-image-a": "/images/offer-a.png",
+      "offer-image-b": "/images/offer-b.png",
+      "offer-image-c": "/images/offer-c.png"
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/components/OffersPattern1.tsx"), true);
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offers")), "utf8");
+  assert.ok(screenContent.includes('import { OffersPattern1 } from "../components/OffersPattern1";'));
+  assert.equal(countOccurrences(screenContent, "<OffersPattern1"), 3);
+  assert.equal(screenContent.includes("<Card"), false);
+  assert.ok(screenContent.includes('offerTitleText={"Starter Paket"}'));
+  assert.ok(screenContent.includes('offerImageSrc={"/images/offer-a.png"}'));
+
+  const componentContent = await readFile(path.join(projectDir, "src", "components", "OffersPattern1.tsx"), "utf8");
+  assert.ok(componentContent.includes("interface OffersPattern1Props"));
+  assert.ok(componentContent.includes("sx?: SxProps<Theme>;"));
+  assert.ok(componentContent.includes("offerTitleText: string;"));
+  assert.ok(componentContent.includes("offerImageSrc: string;"));
+  assert.ok(componentContent.includes("sx={[{"));
+  assert.equal(componentContent.includes("/images/offer-a.png"), false);
+});
+
+test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-threshold-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "offer-pair-screen",
+      name: "Offer Pair",
+      layoutMode: "VERTICAL" as const,
+      gap: 24,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "offer-pair-card-a",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "offer-pair-image-a",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "offer-pair-title-a",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Starter Paket"
+            }
+          ]
+        },
+        {
+          id: "offer-pair-card-b",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "offer-pair-image-b",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "offer-pair-title-b",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Family Paket"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.some((entry) => /src\/components\/.*Pattern\d+\.tsx/.test(entry)), false);
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offer Pair")), "utf8");
+  assert.equal(screenContent.includes("Pattern"), false);
+  assert.ok(screenContent.includes("<Card"));
+});
+
+test("generateArtifacts skips extraction when structure similarity threshold is not met", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-similarity-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "similarity-screen",
+      name: "Similarity Screen",
+      layoutMode: "VERTICAL" as const,
+      gap: 24,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "sim-card-a",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          children: [
+            {
+              id: "sim-title-a",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "A"
+            },
+            {
+              id: "sim-image-a",
+              name: "Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 120,
+              height: 80
+            }
+          ]
+        },
+        {
+          id: "sim-card-b",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          children: [
+            {
+              id: "sim-title-b",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "B"
+            },
+            {
+              id: "sim-image-b",
+              name: "Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 120,
+              height: 80
+            }
+          ]
+        },
+        {
+          id: "sim-card-c",
+          name: "Different Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 220,
+          children: [
+            {
+              id: "sim-title-c",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "C"
+            },
+            {
+              id: "sim-subtitle-c",
+              name: "Subtitle",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Extra"
+            },
+            {
+              id: "sim-image-c",
+              name: "Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 120,
+              height: 80
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.some((entry) => /src\/components\/.*Pattern\d+\.tsx/.test(entry)), false);
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Similarity Screen")), "utf8");
+  assert.equal(screenContent.includes("Pattern"), false);
+});
+
 test("generateArtifacts injects exported image asset paths into image and CardMedia rendering", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-images-"));
   const imageScreen = {
