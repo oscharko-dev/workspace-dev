@@ -158,10 +158,12 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_GENERATION_LOCALE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ROUTER/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--icon-map-file/i);
   assert.match(result.stdout, /--export-images/i);
   assert.match(result.stdout, /--skip-install/i);
+  assert.match(result.stdout, /--lint-autofix/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--generation-locale/i);
@@ -238,6 +240,55 @@ test("cli contract: --skip-install is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Skip install: true/i);
     assert.match(output, /Skip install: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --lint-autofix is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--lint-autofix", "false"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Lint auto-fix enabled: false/i);
+    assert.match(output, /Lint auto-fix enabled: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --lint-autofix flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--lint-autofix", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX: "false"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Lint auto-fix enabled: true/i);
+    assert.match(output, /Lint auto-fix enabled: true/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

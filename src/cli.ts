@@ -31,6 +31,7 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
+const DEFAULT_ENABLE_LINT_AUTOFIX = true;
 
 interface CliOptions {
   command: string;
@@ -58,6 +59,7 @@ interface CliOptions {
   enableUiValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
+  enableLintAutofix: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
 }
@@ -238,6 +240,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     DEFAULT_INSTALL_PREFER_OFFLINE
   );
   let skipInstall = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL, DEFAULT_SKIP_INSTALL);
+  let enableLintAutofix = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX,
+    DEFAULT_ENABLE_LINT_AUTOFIX
+  );
   let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
   let enablePerfValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
@@ -467,6 +473,12 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--lint-autofix") {
+      enableLintAutofix = parseBooleanLike(args[index + 1], enableLintAutofix);
+      index += 1;
+      continue;
+    }
+
     if (arg === "--preview") {
       enablePreview = parseBooleanLike(args[index + 1], enablePreview);
       index += 1;
@@ -506,6 +518,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     enableUiValidation,
     installPreferOffline,
     skipInstall,
+    enableLintAutofix,
     enablePreview,
     enablePerfValidation
   };
@@ -558,6 +571,8 @@ Options:
                              Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
   --skip-install <true|false>
                              Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
+  --lint-autofix <true|false>
+                             Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: false)
@@ -588,6 +603,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
+  FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
   FIGMAPIPE_ENABLE_PERF_VALIDATION (legacy alias)
@@ -624,6 +640,7 @@ const main = async (): Promise<void> => {
 
   console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
   console.log("[workspace-dev] Mode lock: figmaSourceMode=rest|local_json, llmCodegenMode=deterministic");
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = options.enableLintAutofix ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
 
@@ -678,6 +695,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
+    console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
     console.log(
       `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
