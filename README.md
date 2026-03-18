@@ -147,6 +147,7 @@ workspace-dev start [options]
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
 - `--skip-install <true|false>` (default `false`; expert mode, requires pre-existing `generated-app/node_modules`)
+- `--lint-autofix <true|false>` (default `true`; runs `pnpm lint --fix` before final `pnpm lint`)
 - `--preview <true|false>` (default `true`)
 - `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)
 
@@ -176,11 +177,13 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
 - `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
 - `FIGMAPIPE_WORKSPACE_SKIP_INSTALL`
+- `FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION`
 - `FIGMAPIPE_ENABLE_PERF_VALIDATION` (legacy alias)
 
 When `skipInstall` is enabled and `generated-app/node_modules` is missing, `validate.project` fails fast with a deterministic error message.
+When lint auto-fix is enabled, `validate.project` runs `pnpm lint --fix` before final `pnpm lint` and logs changed lint-relevant files.
 
 ### Router mode
 
