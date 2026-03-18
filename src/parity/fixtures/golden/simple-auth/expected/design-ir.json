@@ -1,0 +1,266 @@
+{
+  "sourceName": "Simple Auth Board",
+  "screens": [
+    {
+      "id": "screen-login",
+      "name": "Login",
+      "layoutMode": "VERTICAL",
+      "gap": 12,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "login-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Welcome Back",
+          "x": 16,
+          "y": 16,
+          "width": 220,
+          "height": 40,
+          "fillColor": "#1c1f24",
+          "fontSize": 32,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 40,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "email-field",
+          "name": "MuiFormControlRoot",
+          "nodeType": "FRAME",
+          "type": "input",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "x": 16,
+          "y": 80,
+          "width": 358,
+          "height": 56,
+          "children": [
+            {
+              "id": "email-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "Email",
+              "x": 24,
+              "y": 96,
+              "width": 60,
+              "height": 20,
+              "fillColor": "#3d424d",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "submit-button",
+          "name": "Primary Button",
+          "nodeType": "FRAME",
+          "type": "paper",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "x": 16,
+          "y": 156,
+          "width": 220,
+          "height": 48,
+          "fillColor": "#ed001f",
+          "children": [
+            {
+              "id": "submit-button-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "Sign In",
+              "x": 84,
+              "y": 169,
+              "width": 90,
+              "height": 22,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "CENTER"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#fafafc"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#ed001f",
+      "secondary": "#1c1f24",
+      "background": "#fbfbfd",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#ed001f0a",
+        "selected": "#ed001f14",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#ed001f1f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 10,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 32,
+    "bodySize": 16,
+    "typography": {
+      "h1": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-login",
+        "screenName": "Login",
+        "elements": 5
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "degradedGeometryNodes": []
+  }
+}

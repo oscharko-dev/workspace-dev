@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { cleanFigmaForCodegen } from "../job-engine/figma-clean.js";
+import { generateArtifacts } from "./generator-core.js";
+import { figmaToDesignIrWithOptions } from "./ir.js";
+
+interface GoldenArtifactSpec {
+  name: string;
+  kind: "json" | "text";
+  actual: string;
+  expected: string;
+}
+
+interface GoldenFixtureSpec {
+  id: string;
+  figmaJson: string;
+  artifacts: GoldenArtifactSpec[];
+}
+
+interface GoldenFixtureManifest {
+  version: number;
+  fixtures: GoldenFixtureSpec[];
+}
+
+const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const GOLDEN_ROOT = path.resolve(MODULE_DIR, "fixtures", "golden");
+const MANIFEST_FILE = path.join(GOLDEN_ROOT, "manifest.json");
+
+const normalizeText = (value: string): string => {
+  return `${value.replace(/\r\n/g, "\n").trimEnd()}\n`;
+};
+
+const normalizeJson = (value: string): string => {
+  return `${JSON.stringify(JSON.parse(value), null, 2)}\n`;
+};
+
+const normalizeArtifactContent = ({ kind, value }: { kind: GoldenArtifactSpec["kind"]; value: string }): string => {
+  return kind === "json" ? normalizeJson(value) : normalizeText(value);
+};
+
+const shouldApproveGolden = (): boolean => {
+  const raw = process.env.FIGMAPIPE_GOLDEN_APPROVE?.trim().toLowerCase();
+  return raw === "1" || raw === "true";
+};
+
+const isCiRuntime = (): boolean => {
+  const raw = process.env.CI?.trim().toLowerCase();
+  if (!raw) {
+    return false;
+  }
+  return raw !== "0" && raw !== "false";
+};
+
+const loadManifest = async (): Promise<GoldenFixtureManifest> => {
+  const payload = JSON.parse(await readFile(MANIFEST_FILE, "utf8")) as Partial<GoldenFixtureManifest>;
+  assert.equal(payload.version, 1, "Unsupported golden fixture manifest version.");
+  assert.equal(Array.isArray(payload.fixtures), true, "Manifest must contain fixtures[].");
+  return payload as GoldenFixtureManifest;
+};
+
+const listFiles = async ({ root }: { root: string }): Promise<string[]> => {
+  const result: string[] = [];
+  const stack: string[] = [root];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      result.push(path.relative(root, entryPath).replace(/\\/g, "/"));
+    }
+  }
+
+  return result.sort((left, right) => left.localeCompare(right));
+};
+
+const assertActualFileExists = async ({
+  fixtureId,
+  artifact,
+  projectDir,
+  absolutePath
+}: {
+  fixtureId: string;
+  artifact: GoldenArtifactSpec;
+  projectDir: string;
+  absolutePath: string;
+}): Promise<void> => {
+  try {
+    await readFile(absolutePath, "utf8");
+  } catch {
+    const available = await listFiles({ root: projectDir });
+    assert.fail(
+      `Missing generated artifact for fixture '${fixtureId}': '${artifact.actual}'. Available files: ${available.join(", ") || "(none)"}`
+    );
+  }
+};
+
+test("golden fixtures: figma json to generated app artifacts", async (t) => {
+  const approveMode = shouldApproveGolden();
+  if (approveMode && isCiRuntime()) {
+    assert.fail("FIGMAPIPE_GOLDEN_APPROVE cannot be enabled in CI.");
+  }
+
+  const manifest = await loadManifest();
+
+  for (const fixture of manifest.fixtures) {
+    await t.test(`fixture ${fixture.id}`, async () => {
+      const figmaJsonPath = path.join(GOLDEN_ROOT, fixture.figmaJson);
+      const figmaPayload = JSON.parse(await readFile(figmaJsonPath, "utf8"));
+
+      const cleaned = cleanFigmaForCodegen({
+        file: figmaPayload
+      });
+
+      const ir = figmaToDesignIrWithOptions(cleaned.cleanedFile, {
+        brandTheme: "derived"
+      });
+
+      const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-${fixture.id}-`));
+      await generateArtifacts({
+        projectDir,
+        ir,
+        llmCodegenMode: "deterministic",
+        llmModelName: "deterministic",
+        onLog: () => {
+          // no-op
+        }
+      });
+
+      const actualDesignIrPath = path.join(projectDir, "design-ir.json");
+      await writeFile(actualDesignIrPath, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+
+      for (const artifact of fixture.artifacts) {
+        const actualPath = path.join(projectDir, artifact.actual);
+        await assertActualFileExists({
+          fixtureId: fixture.id,
+          artifact,
+          projectDir,
+          absolutePath: actualPath
+        });
+
+        const actualRaw = await readFile(actualPath, "utf8");
+        const normalizedActual = normalizeArtifactContent({
+          kind: artifact.kind,
+          value: actualRaw
+        });
+
+        const expectedPath = path.join(GOLDEN_ROOT, artifact.expected);
+
+        if (approveMode) {
+          await mkdir(path.dirname(expectedPath), { recursive: true });
+          await writeFile(expectedPath, normalizedActual, "utf8");
+          continue;
+        }
+
+        let expectedRaw: string;
+        try {
+          expectedRaw = await readFile(expectedPath, "utf8");
+        } catch {
+          assert.fail(
+            `Missing expected golden file '${artifact.expected}' for fixture '${fixture.id}'. ` +
+              "Run 'pnpm run test:golden:update' to approve snapshots."
+          );
+        }
+
+        const normalizedExpected = normalizeArtifactContent({
+          kind: artifact.kind,
+          value: expectedRaw
+        });
+
+        assert.equal(
+          normalizedActual,
+          normalizedExpected,
+          `Golden diff for fixture '${fixture.id}', artifact '${artifact.name}' (${artifact.actual}). ` +
+            "If intentional, run 'pnpm run test:golden:update'."
+        );
+      }
+    });
+  }
+});
