@@ -1594,21 +1594,36 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   });
 
   assert.equal(result.generatedPaths.includes("src/components/OffersPattern1.tsx"), true);
+  assert.equal(result.generatedPaths.includes("src/context/OffersPatternContext.tsx"), true);
 
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offers")), "utf8");
   assert.ok(screenContent.includes('import { OffersPattern1 } from "../components/OffersPattern1";'));
+  assert.ok(screenContent.includes('import { OffersPatternContextProvider, type OffersPatternContextState } from "../context/OffersPatternContext";'));
+  assert.ok(screenContent.includes("const patternContextInitialState: OffersPatternContextState = {"));
+  assert.ok(screenContent.includes("<OffersPatternContextProvider initialState={patternContextInitialState}>"));
   assert.equal(countOccurrences(screenContent, "<OffersPattern1"), 3);
   assert.equal(screenContent.includes("<Card"), false);
-  assert.ok(screenContent.includes('offerTitleText={"Starter Paket"}'));
-  assert.ok(screenContent.includes('offerImageSrc={"/images/offer-a.png"}'));
+  assert.ok(screenContent.includes('instanceId={"offer-card-a"}'));
+  assert.ok(screenContent.includes('"Starter Paket"'));
+  assert.equal(screenContent.includes('offerTitleText={"Starter Paket"}'), false);
+  assert.equal(screenContent.includes('offerImageSrc={"/images/offer-a.png"}'), false);
 
   const componentContent = await readFile(path.join(projectDir, "src", "components", "OffersPattern1.tsx"), "utf8");
   assert.ok(componentContent.includes("interface OffersPattern1Props"));
+  assert.ok(componentContent.includes("instanceId: string;"));
   assert.ok(componentContent.includes("sx?: SxProps<Theme>;"));
-  assert.ok(componentContent.includes("offerTitleText: string;"));
-  assert.ok(componentContent.includes("offerImageSrc: string;"));
+  assert.ok(componentContent.includes('import { useOffersPatternContext } from "../context/OffersPatternContext";'));
+  assert.ok(componentContent.includes("const patternContext = useOffersPatternContext();"));
+  assert.equal(componentContent.includes("offerTitleText: string;"), false);
+  assert.equal(componentContent.includes("offerImageSrc: string;"), false);
   assert.ok(componentContent.includes("sx={[{"));
   assert.equal(componentContent.includes("/images/offer-a.png"), false);
+
+  const patternContextContent = await readFile(path.join(projectDir, "src", "context", "OffersPatternContext.tsx"), "utf8");
+  assert.ok(patternContextContent.includes("export interface OffersPattern1State"));
+  assert.ok(patternContextContent.includes("offerTitleText: string;"));
+  assert.ok(patternContextContent.includes("offerImageSrc: string;"));
+  assert.ok(patternContextContent.includes("export function OffersPatternContextProvider"));
 });
 
 test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
@@ -1692,6 +1707,80 @@ test("generateArtifacts keeps inline rendering when repeated pattern count is be
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offer Pair")), "utf8");
   assert.equal(screenContent.includes("Pattern"), false);
   assert.ok(screenContent.includes("<Card"));
+});
+
+test("generateArtifacts skips pattern context when extracted clusters have no dynamic bindings", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-no-context-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "static-offers-screen",
+      name: "Static Offers",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 12, right: 12, bottom: 12, left: 12 },
+      children: [
+        {
+          id: "static-card-a",
+          name: "Static Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 280,
+          height: 120,
+          children: [
+            { id: "static-card-a-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
+            { id: "static-card-a-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
+          ]
+        },
+        {
+          id: "static-card-b",
+          name: "Static Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 280,
+          height: 120,
+          children: [
+            { id: "static-card-b-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
+            { id: "static-card-b-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
+          ]
+        },
+        {
+          id: "static-card-c",
+          name: "Static Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 280,
+          height: 120,
+          children: [
+            { id: "static-card-c-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
+            { id: "static-card-c-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/components/StaticOffersPattern1.tsx"), true);
+  assert.equal(result.generatedPaths.some((entry) => /src\/context\/.*PatternContext\.tsx$/.test(entry)), false);
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Static Offers")), "utf8");
+  assert.ok(screenContent.includes("<StaticOffersPattern1"));
+  assert.equal(screenContent.includes("instanceId={"), false);
+  assert.equal(screenContent.includes("PatternContextProvider"), false);
+
+  const componentContent = await readFile(path.join(projectDir, "src", "components", "StaticOffersPattern1.tsx"), "utf8");
+  assert.equal(componentContent.includes("instanceId: string;"), false);
+  assert.equal(componentContent.includes("PatternContext"), false);
 });
 
 test("generateArtifacts skips extraction when structure similarity threshold is not met", async () => {
@@ -1804,6 +1893,70 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
   assert.equal(result.generatedPaths.some((entry) => /src\/components\/.*Pattern\d+\.tsx/.test(entry)), false);
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Similarity Screen")), "utf8");
   assert.equal(screenContent.includes("Pattern"), false);
+});
+
+test("generateArtifacts emits per-screen form context and rewires screen form state through hook usage", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-form-context-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "loan-form-screen",
+      name: "Loan Form",
+      layoutMode: "VERTICAL" as const,
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        createSemanticInputNode({ id: "loan-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" }),
+        {
+          id: "loan-submit-button",
+          name: "Primary Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          width: 220,
+          height: 48,
+          fillColor: "#d4001a",
+          children: [
+            {
+              id: "loan-submit-button-label",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Continue",
+              fillColor: "#ffffff"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/context/LoanFormFormContext.tsx"), true);
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Form")), "utf8");
+  assert.ok(screenContent.includes('import { LoanFormFormContextProvider, useLoanFormFormContext } from "../context/LoanFormFormContext";'));
+  assert.ok(screenContent.includes("function LoanFormScreenContent() {"));
+  assert.ok(screenContent.includes("const { initialVisualErrors, formValues, fieldErrors, touchedFields, updateFieldValue, handleFieldBlur, handleSubmit } = useLoanFormFormContext();"));
+  assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
+  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit} noValidate'));
+  assert.equal(screenContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
+  assert.equal(screenContent.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"), false);
+  assert.equal(screenContent.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"), false);
+
+  const formContextContent = await readFile(path.join(projectDir, "src", "context", "LoanFormFormContext.tsx"), "utf8");
+  assert.ok(formContextContent.includes("createContext"));
+  assert.ok(formContextContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("));
+  assert.ok(formContextContent.includes("const handleSubmit = (event: { preventDefault: () => void }): void => {"));
+  assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
 });
 
 test("generateArtifacts injects exported image asset paths into image and CardMedia rendering", async () => {
@@ -2450,7 +2603,10 @@ test("generateArtifacts falls back to de-DE and logs warning for invalid generat
 
   const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Locale Fallback"));
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  assert.ok(generatedScreenContent.includes('"9,75 %"'));
+  const generatedFormContextPath = path.join(projectDir, "src", "context", "LocaleFallbackFormContext.tsx");
+  const generatedFormContextContent = await readFile(generatedFormContextPath, "utf8");
+  assert.ok(generatedScreenContent.includes("useLocaleFallbackFormContext"));
+  assert.ok(generatedFormContextContent.includes('"9,75 %"'));
   assert.equal(
     logs.some((entry) =>
       entry.includes("Invalid generationLocale 'invalid_locale' configured for deterministic generation")
