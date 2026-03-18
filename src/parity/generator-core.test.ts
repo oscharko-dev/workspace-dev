@@ -609,6 +609,328 @@ test("deterministic screen rendering uses a single root Container without unnece
   assert.ok(content.includes('sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)"'));
 });
 
+test("generateArtifacts simplify wrapper promotes deep GROUP multi-child containers and logs stats", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-deep-"));
+  const logs: string[] = [];
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "simplify-group-deep-screen",
+      name: "Simplify Group Deep",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "group-depth-root",
+          name: "Depth Root",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 0,
+          y: 0,
+          width: 360,
+          height: 280,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "group-depth-inner",
+              name: "Depth Inner",
+              nodeType: "FRAME",
+              type: "container" as const,
+              x: 16,
+              y: 16,
+              width: 320,
+              height: 220,
+              fillColor: "#f8fafc",
+              children: [
+                {
+                  id: "group-depth-target",
+                  name: "Promotable Group",
+                  nodeType: "GROUP",
+                  type: "container" as const,
+                  x: 24,
+                  y: 24,
+                  width: 280,
+                  height: 100,
+                  children: [
+                    {
+                      id: "group-depth-text-a",
+                      name: "Group Text A",
+                      nodeType: "TEXT",
+                      type: "text" as const,
+                      text: "Erster Eintrag",
+                      x: 24,
+                      y: 24
+                    },
+                    {
+                      id: "group-depth-text-b",
+                      name: "Group Text B",
+                      nodeType: "TEXT",
+                      type: "text" as const,
+                      text: "Zweiter Eintrag",
+                      x: 24,
+                      y: 56
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 1);
+  assert.equal(result.generationMetrics.simplification?.screens[0]?.promotedGroupMultiChild, 1);
+  assert.ok(logs.some((entry) => entry.includes("Simplify stats:")));
+
+  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metrics = JSON.parse(metricsContent) as {
+    simplification?: {
+      aggregate?: { promotedGroupMultiChild?: number };
+      screens?: Array<{ promotedGroupMultiChild?: number }>;
+    };
+  };
+  assert.equal(metrics.simplification?.aggregate?.promotedGroupMultiChild, 1);
+  assert.equal(metrics.simplification?.screens?.[0]?.promotedGroupMultiChild, 1);
+});
+
+test("generateArtifacts simplify wrapper does not promote shallow GROUP multi-child containers", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-shallow-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "simplify-group-shallow-screen",
+      name: "Simplify Group Shallow",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "group-shallow-target",
+          name: "Shallow Group",
+          nodeType: "GROUP",
+          type: "container" as const,
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 120,
+          children: [
+            {
+              id: "group-shallow-a",
+              name: "Shallow A",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "A"
+            },
+            {
+              id: "group-shallow-b",
+              name: "Shallow B",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "B"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 0);
+  assert.equal(result.generationMetrics.simplification?.screens[0]?.promotedGroupMultiChild, 0);
+});
+
+test("generateArtifacts simplify wrapper does not promote non-GROUP multi-child flex wrappers", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-frame-multi-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "simplify-frame-multi-screen",
+      name: "Simplify Frame Multi",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "frame-multi-target",
+          name: "Frame Multi Wrapper",
+          nodeType: "FRAME",
+          type: "container" as const,
+          layoutMode: "HORIZONTAL" as const,
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 80,
+          children: [
+            {
+              id: "frame-multi-a",
+              name: "Frame Multi A",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Element A"
+            },
+            {
+              id: "frame-multi-b",
+              name: "Frame Multi B",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Element B"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 0);
+  assert.equal(result.generationMetrics.simplification?.aggregate.promotedSingleChild, 0);
+});
+
+test("deterministic screen rendering simplify wrapper merges parent margin and padding into promoted single child", () => {
+  const screen = {
+    id: "single-child-spacing-merge-screen",
+    name: "Single Child Spacing Merge",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "single-child-spacing-wrapper",
+        name: "Spacing Wrapper",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 160,
+        margin: { top: 8, right: 16, bottom: 24, left: 32 },
+        padding: { top: 8, right: 8, bottom: 8, left: 8 },
+        children: [
+          {
+            id: "single-child-spacing-target",
+            name: "Promoted Target",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 0,
+            y: 0,
+            width: 280,
+            height: 120,
+            fillColor: "#ffffff",
+            margin: { top: 8, right: 8, bottom: 8, left: 8 },
+            children: [
+              {
+                id: "single-child-spacing-text",
+                name: "Spacing Text",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Spacing merged"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("mt: 3"));
+  assert.ok(content.includes("mr: 4"));
+  assert.ok(content.includes("mb: 5"));
+  assert.ok(content.includes("ml: 6"));
+});
+
+test("generateArtifacts simplify wrapper guardrails keep navigation and icon wrappers from promotion", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-guardrails-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "simplify-guardrails-screen",
+      name: "Simplify Guardrails",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "guardrail-nav-wrapper",
+          name: "Navigation Wrapper",
+          nodeType: "FRAME",
+          type: "container" as const,
+          prototypeNavigation: {
+            targetScreenId: "screen-1",
+            mode: "push" as const
+          },
+          children: [
+            {
+              id: "guardrail-nav-text",
+              name: "Navigation Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Open destination"
+            }
+          ]
+        },
+        {
+          id: "guardrail-icon-wrapper",
+          name: "icon/wrapper",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: [
+            {
+              id: "guardrail-icon-text",
+              name: "Icon Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Icon wrapper text"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generationMetrics.simplification?.aggregate.promotedSingleChild, 0);
+  assert.equal((result.generationMetrics.simplification?.aggregate.guardedSkips ?? 0) >= 2, true);
+});
+
 test("deterministic screen rendering omits redundant boxSizing and visible overflow defaults", () => {
   const screen = {
     id: "no-redundant-defaults-screen",

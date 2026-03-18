@@ -9,8 +9,10 @@ import type {
   GeneratedFile,
   LlmCodegenMode,
   ResponsiveBreakpoint,
+  ScreenSimplificationMetric,
   ScreenResponsiveLayoutOverride,
   ScreenResponsiveLayoutOverridesByBreakpoint,
+  SimplificationMetrics,
   ScreenElementIR,
   ScreenIR,
   VariantStateStyle
@@ -985,6 +987,100 @@ const hasVisualStyle = (element: ScreenElementIR): boolean => {
   );
 };
 
+const hasPromotionBlockingVisualStyle = (element: ScreenElementIR): boolean => {
+  return Boolean(
+    element.fillColor ||
+      element.fillGradient ||
+      normalizeOpacityForSx(element.opacity) !== undefined ||
+      element.insetShadow ||
+      (typeof element.elevation === "number" && element.elevation > 0) ||
+      element.strokeColor ||
+      (element.cornerRadius ?? 0) > 0
+  );
+};
+
+const GROUP_MULTI_CHILD_PROMOTION_MIN_DEPTH = 3;
+
+const createEmptySimplificationStats = (): SimplificationMetrics => {
+  return {
+    removedEmptyNodes: 0,
+    promotedSingleChild: 0,
+    promotedGroupMultiChild: 0,
+    spacingMerges: 0,
+    guardedSkips: 0
+  };
+};
+
+const accumulateSimplificationStats = ({
+  target,
+  source
+}: {
+  target: SimplificationMetrics;
+  source: SimplificationMetrics;
+}): void => {
+  target.removedEmptyNodes += source.removedEmptyNodes;
+  target.promotedSingleChild += source.promotedSingleChild;
+  target.promotedGroupMultiChild += source.promotedGroupMultiChild;
+  target.spacingMerges += source.spacingMerges;
+  target.guardedSkips += source.guardedSkips;
+};
+
+const normalizeSpacingValues = (
+  spacing: ScreenElementIR["margin"] | ScreenElementIR["padding"] | undefined
+): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} => {
+  return {
+    top: spacing?.top ?? 0,
+    right: spacing?.right ?? 0,
+    bottom: spacing?.bottom ?? 0,
+    left: spacing?.left ?? 0
+  };
+};
+
+const mergeSpacingIntoPromotedChild = ({
+  parent,
+  child,
+  stats
+}: {
+  parent: ScreenElementIR;
+  child: ScreenElementIR;
+  stats: SimplificationMetrics;
+}): ScreenElementIR => {
+  const parentMargin = normalizeSpacingValues(parent.margin);
+  const parentPadding = normalizeSpacingValues(parent.padding);
+  const additiveSpacing = {
+    top: parentMargin.top + parentPadding.top,
+    right: parentMargin.right + parentPadding.right,
+    bottom: parentMargin.bottom + parentPadding.bottom,
+    left: parentMargin.left + parentPadding.left
+  };
+  const hasSpacingContribution =
+    additiveSpacing.top !== 0 ||
+    additiveSpacing.right !== 0 ||
+    additiveSpacing.bottom !== 0 ||
+    additiveSpacing.left !== 0;
+  if (!hasSpacingContribution) {
+    return child;
+  }
+
+  const childMargin = normalizeSpacingValues(child.margin);
+  const mergedChild: ScreenElementIR = {
+    ...child,
+    margin: {
+      top: childMargin.top + additiveSpacing.top,
+      right: childMargin.right + additiveSpacing.right,
+      bottom: childMargin.bottom + additiveSpacing.bottom,
+      left: childMargin.left + additiveSpacing.left
+    }
+  };
+  stats.spacingMerges += 1;
+  return mergedChild;
+};
+
 const isIconLikeNode = (element: ScreenElementIR): boolean => {
   const loweredName = element.name.toLowerCase();
   return (
@@ -1003,43 +1099,68 @@ const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
   return loweredName.includes("buttonendicon") || loweredName.includes("expandiconwrapper");
 };
 
-const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
-  if (element.prototypeNavigation) {
-    return false;
-  }
-  if (isIconLikeNode(element) || isSemanticIconWrapper(element)) {
-    return false;
-  }
-
+const resolvePromotionMode = ({
+  element,
+  depth
+}: {
+  element: ScreenElementIR;
+  depth: number;
+}): {
+  mode: "none" | "single-child" | "group-multi-child";
+  guarded: boolean;
+} => {
   if (element.type !== "container") {
-    return false;
-  }
-  if (hasVisualStyle(element) || element.text?.trim()) {
-    return false;
+    return { mode: "none", guarded: false };
   }
 
   const children = element.children ?? [];
   if (children.length === 0) {
-    return false;
+    return { mode: "none", guarded: false };
   }
 
-  if (
-    children.some((child) => {
-      return isIconLikeNode(child) || isSemanticIconWrapper(child);
-    })
-  ) {
-    return false;
+  const blockedByGuardrails = Boolean(
+    element.prototypeNavigation ||
+      isIconLikeNode(element) ||
+      isSemanticIconWrapper(element) ||
+      hasPromotionBlockingVisualStyle(element) ||
+      element.text?.trim() ||
+      children.some((child) => {
+        return (
+          Boolean(child.prototypeNavigation) ||
+          isIconLikeNode(child) ||
+          isSemanticIconWrapper(child)
+        );
+      })
+  );
+  if (blockedByGuardrails) {
+    return { mode: "none", guarded: true };
   }
 
   if (children.length === 1) {
-    return true;
+    return { mode: "single-child", guarded: false };
   }
 
-  return false;
+  if (element.nodeType === "GROUP" && depth >= GROUP_MULTI_CHILD_PROMOTION_MIN_DEPTH) {
+    return { mode: "group-multi-child", guarded: false };
+  }
+
+  return { mode: "none", guarded: false };
 };
 
-const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
-  const simplifiedChildren = simplifyElements(element.children ?? []);
+const simplifyNode = ({
+  element,
+  depth,
+  stats
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  stats: SimplificationMetrics;
+}): ScreenElementIR | null => {
+  const simplifiedChildren = simplifyElements({
+    elements: element.children ?? [],
+    depth: depth + 1,
+    stats
+  });
   const isSvgIconRoot = isIconLikeNode(element);
   const hasVectorPayload = element.nodeType === "VECTOR" && (element.vectorPaths?.length ?? 0) > 0;
 
@@ -1069,22 +1190,61 @@ const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
     if (simplified.prototypeNavigation) {
       return simplified;
     }
+    stats.removedEmptyNodes += 1;
     return null;
   }
 
   return simplified;
 };
 
-const simplifyElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
+const simplifyElements = ({
+  elements,
+  depth,
+  stats
+}: {
+  elements: ScreenElementIR[];
+  depth: number;
+  stats: SimplificationMetrics;
+}): ScreenElementIR[] => {
   const result: ScreenElementIR[] = [];
 
   for (const element of elements) {
-    const simplified = simplifyNode(element);
+    const simplified = simplifyNode({
+      element,
+      depth,
+      stats
+    });
     if (!simplified) {
       continue;
     }
 
-    if (shouldPromoteChildren(simplified)) {
+    const promotionMode = resolvePromotionMode({
+      element: simplified,
+      depth
+    });
+    if (promotionMode.guarded) {
+      stats.guardedSkips += 1;
+    }
+
+    if (promotionMode.mode === "single-child") {
+      const [promotedChild] = simplified.children ?? [];
+      if (!promotedChild) {
+        result.push(simplified);
+        continue;
+      }
+      stats.promotedSingleChild += 1;
+      result.push(
+        mergeSpacingIntoPromotedChild({
+          parent: simplified,
+          child: promotedChild,
+          stats
+        })
+      );
+      continue;
+    }
+
+    if (promotionMode.mode === "group-multi-child") {
+      stats.promotedGroupMultiChild += 1;
       result.push(...(simplified.children ?? []));
       continue;
     }
@@ -7765,6 +7925,7 @@ ${typographyEntries}
 interface FallbackScreenFileResult {
   file: GeneratedFile;
   prototypeNavigationRenderedCount: number;
+  simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
     code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
@@ -7827,7 +7988,12 @@ const fallbackScreenFile = ({
     fallbackLocale: DEFAULT_GENERATION_LOCALE
   }).locale;
 
-  const simplifiedChildren = simplifyElements(screen.children);
+  const simplificationStats = createEmptySimplificationStats();
+  const simplifiedChildren = simplifyElements({
+    elements: screen.children,
+    depth: 1,
+    stats: simplificationStats
+  });
   const headingComponentByNodeId = inferHeadingComponentByNodeId(simplifiedChildren);
   const typographyVariantByNodeId = resolveTypographyVariantByNodeId({
     elements: simplifiedChildren,
@@ -8192,6 +8358,7 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
 `
     },
     prototypeNavigationRenderedCount: renderContext.prototypeNavigationRenderedCount,
+    simplificationStats,
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
     mappingWarnings: renderContext.mappingWarnings,
     accessibilityWarnings: renderContext.accessibilityWarnings
@@ -8513,6 +8680,8 @@ export const generateArtifacts = async ({
   );
   const usedMappingNodeIds = new Set<string>();
   const accessibilityWarnings: AccessibilityWarning[] = [];
+  const simplificationByScreen: ScreenSimplificationMetric[] = [];
+  const aggregatedSimplificationStats = createEmptySimplificationStats();
   let prototypeNavigationRenderedCount = 0;
   const deterministicScreens = ir.screens.map((screen) => {
     const identity = identitiesByScreenId.get(screen.id);
@@ -8534,6 +8703,15 @@ export const generateArtifacts = async ({
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
+    });
+    accumulateSimplificationStats({
+      target: aggregatedSimplificationStats,
+      source: deterministicScreen.simplificationStats
+    });
+    simplificationByScreen.push({
+      screenId: screen.id,
+      screenName: screen.name,
+      ...deterministicScreen.simplificationStats
     });
     prototypeNavigationRenderedCount += deterministicScreen.prototypeNavigationRenderedCount;
     for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
@@ -8604,6 +8782,10 @@ export const generateArtifacts = async ({
 
   const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
   generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;
+  generationMetrics.simplification = {
+    aggregate: aggregatedSimplificationStats,
+    screens: simplificationByScreen
+  };
   const generationMetricsPayload = {
     ...generationMetrics,
     accessibilityWarnings
@@ -8626,6 +8808,9 @@ export const generateArtifacts = async ({
       `Warning: ${generationMetrics.prototypeNavigationUnresolved} prototype navigation target(s) were unresolved and ignored.`
     );
   }
+  onLog(
+    `Simplify stats: removedEmptyNodes=${aggregatedSimplificationStats.removedEmptyNodes}, promotedSingleChild=${aggregatedSimplificationStats.promotedSingleChild}, promotedGroupMultiChild=${aggregatedSimplificationStats.promotedGroupMultiChild}, spacingMerges=${aggregatedSimplificationStats.spacingMerges}, guardedSkips=${aggregatedSimplificationStats.guardedSkips}`
+  );
   if (accessibilityWarnings.length > 0) {
     for (const warning of accessibilityWarnings) {
       onLog(`[a11y] ${warning.message}`);
