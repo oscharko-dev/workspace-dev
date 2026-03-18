@@ -8410,6 +8410,66 @@ export const createDeterministicAppFile = (
   };
 };
 
+const makeErrorBoundaryFile = (): GeneratedFile => {
+  return {
+    path: "src/components/ErrorBoundary.tsx",
+    content: `import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("ErrorBoundary caught:", error, info);
+  }
+
+  private handleRetry = (): void => {
+    this.setState({ hasError: false });
+  };
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      if (this.props.fallback !== undefined) {
+        return this.props.fallback;
+      }
+
+      return (
+        <Box role="alert" sx={{ display: "grid", minHeight: "50vh", placeItems: "center", px: 3 }}>
+          <Stack spacing={2} sx={{ width: "100%", maxWidth: 420 }}>
+            <Alert severity="error">Something went wrong while rendering this screen.</Alert>
+            <Typography variant="body2" color="text.secondary">
+              Try again or reload the page if the problem persists.
+            </Typography>
+            <Button onClick={this.handleRetry} variant="contained">
+              Try again
+            </Button>
+          </Stack>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default ErrorBoundary;
+`
+  };
+};
+
 const makeAppFile = ({
   screens,
   identitiesByScreenId = buildScreenArtifactIdentities(screens),
@@ -8471,7 +8531,7 @@ const browserBasename = resolveBrowserBasename();
       const componentName = identity?.componentName ?? toComponentName(screen.name);
       const routePath = identity?.routePath ?? `/${sanitizeFileName(screen.name).toLowerCase()}`;
       const routeComponent = index === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
-      return `          <Route path="${routePath}" element={<${routeComponent} />} />`;
+      return `          <Route path="${routePath}" element={<ErrorBoundary><${routeComponent} /></ErrorBoundary>} />`;
     })
     .join("\n");
 
@@ -8485,6 +8545,7 @@ import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import { Box, CircularProgress, IconButton, Tooltip } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 ${eagerImports}
 ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
 
@@ -8673,6 +8734,10 @@ export const generateArtifacts = async ({
   const deterministicTheme = fallbackThemeFile(ir);
   await writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
+
+  const deterministicErrorBoundary = makeErrorBoundaryFile();
+  await writeGeneratedFile(projectDir, deterministicErrorBoundary);
+  generatedPaths.add(deterministicErrorBoundary.path);
 
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
   const routePathByScreenId = new Map(
