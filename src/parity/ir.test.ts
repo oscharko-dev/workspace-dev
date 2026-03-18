@@ -3359,7 +3359,7 @@ test("deriveTokensForTesting keeps info distinct when primary is already blue", 
   assert.equal(tokens.palette.info !== tokens.palette.primary, true);
 });
 
-test("deriveTokensForTesting falls back to semantic defaults when boards have no semantic signals", () => {
+test("deriveTokensForTesting derives semantic palette from hue families without semantic style signals", () => {
   const tokens = deriveTokensForTesting({
     name: "No Semantic Signals Demo",
     document: {
@@ -3429,11 +3429,74 @@ test("deriveTokensForTesting falls back to semantic defaults when boards have no
     }
   });
 
+  assert.equal(tokens.palette.success, "#2e7d32");
+  assert.equal(tokens.palette.warning, "#ed6c02");
+  assert.equal(tokens.palette.error, "#d4001a");
+  assert.equal(tokens.palette.info, "#1976d2");
+  assert.equal(tokens.palette.info !== tokens.palette.primary, true);
+  assert.equal(tokens.palette.divider, "#2727271f");
+});
+
+test("deriveTokensForTesting falls back to semantic defaults when no semantic hue family is available", () => {
+  const tokens = deriveTokensForTesting({
+    name: "No Semantic Hues Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Neutral Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f6f6f6") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+              children: [
+                {
+                  id: "headline",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Kontenübersicht",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#2a2a2a") }],
+                  style: { fontSize: 28, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 320, height: 36 }
+                },
+                {
+                  id: "neutral-button",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#616161") }],
+                  absoluteBoundingBox: { x: 40, y: 760, width: 260, height: 56 }
+                },
+                {
+                  id: "neutral-a",
+                  type: "RECTANGLE",
+                  name: "Tile A",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#8a8a8a") }],
+                  absoluteBoundingBox: { x: 40, y: 140, width: 240, height: 120 }
+                },
+                {
+                  id: "neutral-b",
+                  type: "RECTANGLE",
+                  name: "Tile B",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#9c9c9c") }],
+                  absoluteBoundingBox: { x: 320, y: 140, width: 240, height: 120 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
   assert.equal(tokens.palette.success, "#16A34A");
   assert.equal(tokens.palette.warning, "#D97706");
   assert.equal(tokens.palette.error, "#DC2626");
   assert.equal(tokens.palette.info, "#0288D1");
-  assert.equal(tokens.palette.divider, "#2727271f");
 });
 
 test("deriveTokensForTesting stays stable with sparse token signals", () => {
