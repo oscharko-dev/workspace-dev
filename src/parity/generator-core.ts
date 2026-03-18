@@ -1716,8 +1716,10 @@ const EXTRACTION_FORBIDDEN_TYPES = new Set<ScreenElementIR["type"]>([
 
 const emptyPatternExtractionPlan = (): PatternExtractionPlan => ({
   componentFiles: [],
+  contextFiles: [],
   componentImports: [],
-  invocationByRootNodeId: new Map<string, PatternExtractionInvocation>()
+  invocationByRootNodeId: new Map<string, PatternExtractionInvocation>(),
+  patternStatePlan: {}
 });
 
 const toSortedChildrenForExtraction = ({
@@ -2109,8 +2111,140 @@ const injectRootSxPropForExtractedComponent = (renderedRoot: string): string | u
   return `${renderedRoot.slice(0, sxStartIndex)}${replacement}${renderedRoot.slice(bodyEndIndex + 2)}`;
 };
 
+const toPatternContextProviderName = (screenComponentName: string): string => {
+  return `${screenComponentName}PatternContextProvider`;
+};
+
+const toPatternContextHookName = (screenComponentName: string): string => {
+  return `use${screenComponentName}PatternContext`;
+};
+
+const toPatternContextStateTypeName = (screenComponentName: string): string => {
+  return `${screenComponentName}PatternContextState`;
+};
+
+const toPatternClusterStateTypeName = (componentName: string): string => {
+  return `${componentName}State`;
+};
+
+const toFormContextProviderName = (screenComponentName: string): string => {
+  return `${screenComponentName}FormContextProvider`;
+};
+
+const toFormContextHookName = (screenComponentName: string): string => {
+  return `use${screenComponentName}FormContext`;
+};
+
+const buildScreenPatternStatePlan = ({
+  screenComponentName,
+  clusters
+}: {
+  screenComponentName: string;
+  clusters: PatternCluster[];
+}): ScreenPatternStatePlan => {
+  const contextEnabledClusters = clusters
+    .filter((cluster) => cluster.propBindings.length > 0)
+    .sort((left, right) => left.componentName.localeCompare(right.componentName));
+  if (contextEnabledClusters.length === 0) {
+    return {};
+  }
+
+  const clusterSpecs: PatternContextClusterStateSpec[] = contextEnabledClusters.map((cluster) => {
+    const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
+    const sortedMembers = [...cluster.members].sort((left, right) => left.root.id.localeCompare(right.root.id));
+    const entries = sortedMembers.map((member) => {
+      const values = Object.fromEntries(
+        sortedBindings.map((binding) => [binding.propName, binding.valuesByRootNodeId.get(member.root.id)])
+      ) as Record<string, string | undefined>;
+      return {
+        instanceId: member.root.id,
+        values
+      };
+    });
+    return {
+      componentName: cluster.componentName,
+      stateTypeName: toPatternClusterStateTypeName(cluster.componentName),
+      propBindings: sortedBindings,
+      entries
+    };
+  });
+
+  const providerName = toPatternContextProviderName(screenComponentName);
+  const hookName = toPatternContextHookName(screenComponentName);
+  const stateTypeName = toPatternContextStateTypeName(screenComponentName);
+  const contextVarName = `${screenComponentName}PatternContext`;
+  const contextStateLiteral = JSON.stringify(
+    Object.fromEntries(
+      clusterSpecs.map((clusterSpec) => [
+        clusterSpec.componentName,
+        Object.fromEntries(clusterSpec.entries.map((entry) => [entry.instanceId, entry.values]))
+      ])
+    ),
+    null,
+    2
+  );
+  const emptyStateLiteral = JSON.stringify(
+    Object.fromEntries(clusterSpecs.map((clusterSpec) => [clusterSpec.componentName, {}])),
+    null,
+    2
+  );
+  const clusterInterfaces = clusterSpecs
+    .map((clusterSpec) => {
+      const entries = clusterSpec.propBindings
+        .map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)
+        .join("\n");
+      return `export interface ${clusterSpec.stateTypeName} {\n${entries}\n}`;
+    })
+    .join("\n\n");
+  const contextInterfaceEntries = clusterSpecs
+    .map((clusterSpec) => `  ${clusterSpec.componentName}: Record<string, ${clusterSpec.stateTypeName}>;`)
+    .join("\n");
+  const providerPropsName = `${providerName}Props`;
+  const contextSource = `import { createContext, useContext, type ReactNode } from "react";
+
+${clusterInterfaces}
+
+export interface ${stateTypeName} {
+${contextInterfaceEntries}
+}
+
+const emptyPatternState: ${stateTypeName} = ${emptyStateLiteral};
+
+const ${contextVarName} = createContext<${stateTypeName}>(emptyPatternState);
+
+interface ${providerPropsName} {
+  initialState: ${stateTypeName};
+  children: ReactNode;
+}
+
+export function ${providerName}({ initialState, children }: ${providerPropsName}) {
+  return <${contextVarName}.Provider value={initialState}>{children}</${contextVarName}.Provider>;
+}
+
+export const ${hookName} = (): ${stateTypeName} => {
+  return useContext(${contextVarName});
+};
+`;
+
+  return {
+    contextFileSpec: {
+      file: {
+        path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}PatternContext`)),
+        content: contextSource
+      },
+      providerName,
+      hookName,
+      stateTypeName,
+      importPath: `../context/${screenComponentName}PatternContext`,
+      initialStateLiteral: contextStateLiteral,
+      contextEnabledComponentNames: new Set(clusterSpecs.map((clusterSpec) => clusterSpec.componentName))
+    }
+  };
+};
+
 const buildExtractedComponentFile = ({
   cluster,
+  patternStatePlan,
   screen,
   generationLocale,
   spacingBase,
@@ -2123,6 +2257,7 @@ const buildExtractedComponentFile = ({
   responsiveTopLevelLayoutOverrides
 }: {
   cluster: PatternCluster;
+  patternStatePlan: ScreenPatternStatePlan;
   screen: ScreenIR;
   generationLocale: string;
   spacingBase: number;
@@ -2242,6 +2377,11 @@ const buildExtractedComponentFile = ({
     return undefined;
   }
 
+  const contextFileSpec = patternStatePlan.contextFileSpec;
+  const usesPatternContext =
+    contextFileSpec !== undefined &&
+    contextFileSpec.contextEnabledComponentNames.has(cluster.componentName) &&
+    cluster.propBindings.length > 0;
   const sortedMuiImports = [...componentRenderContext.muiImports].sort((left, right) => left.localeCompare(right));
   if (sortedMuiImports.length === 0) {
     return undefined;
@@ -2260,14 +2400,31 @@ const buildExtractedComponentFile = ({
     routerImports.push("useNavigate");
   }
   const reactRouterImport = routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
+  const patternContextImport =
+    usesPatternContext && contextFileSpec ? `import { ${contextFileSpec.hookName} } from "${contextFileSpec.importPath}";\n` : "";
   const navigationHookBlock = componentRenderContext.usesNavigateHandler ? "const navigate = useNavigate();" : "";
   const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
-  const propsInterfaceEntries = [
-    "  sx?: SxProps<Theme>;",
-    ...sortedBindings.map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)
-  ].join("\n");
-  const parameterEntries = ["sx", ...sortedBindings.map((binding) => binding.propName)];
-  const componentSource = `${reactRouterImport}import type { SxProps, Theme } from "@mui/material/styles";
+  const propsInterfaceEntries = usesPatternContext
+    ? ["  instanceId: string;", "  sx?: SxProps<Theme>;"].join("\n")
+    : ["  sx?: SxProps<Theme>;", ...sortedBindings.map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)].join(
+        "\n"
+      );
+  const parameterEntries = usesPatternContext ? ["instanceId", "sx"] : ["sx", ...sortedBindings.map((binding) => binding.propName)];
+  const patternContextBindingBlock =
+    usesPatternContext && contextFileSpec
+      ? [
+          `const patternContext = ${contextFileSpec.hookName}();`,
+          `const patternState = patternContext.${cluster.componentName}[instanceId];`,
+          ...sortedBindings.map((binding) => {
+            const fallbackSuffix = binding.kind === "image_src" ? "" : ' ?? ""';
+            return `const ${binding.propName} = patternState?.${binding.propName}${fallbackSuffix};`;
+          })
+        ].join("\n")
+      : "";
+  const componentSetupBlock = [patternContextBindingBlock, navigationHookBlock]
+    .filter((block) => block.length > 0)
+    .join("\n\n");
+  const componentSource = `${reactRouterImport}${patternContextImport}import type { SxProps, Theme } from "@mui/material/styles";
 import { ${sortedMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
 
@@ -2276,7 +2433,7 @@ ${propsInterfaceEntries}
 }
 
 export function ${cluster.componentName}({ ${parameterEntries.join(", ")} }: ${cluster.componentName}Props) {
-${navigationHookBlock ? `${indentBlock(navigationHookBlock, 2)}\n` : ""}  return (
+${componentSetupBlock ? `${indentBlock(componentSetupBlock, 2)}\n` : ""}  return (
 ${renderedWithSx}
   );
 }
@@ -2288,18 +2445,24 @@ ${renderedWithSx}
 };
 
 const buildInvocationMap = ({
+  patternStatePlan,
   clusters
 }: {
+  patternStatePlan: ScreenPatternStatePlan;
   clusters: PatternCluster[];
 }): Map<string, PatternExtractionInvocation> => {
   const byRootNodeId = new Map<string, PatternExtractionInvocation>();
+  const contextEnabledComponentNames = patternStatePlan.contextFileSpec?.contextEnabledComponentNames ?? new Set<string>();
   for (const cluster of clusters) {
+    const usesPatternContext = contextEnabledComponentNames.has(cluster.componentName);
     for (const member of cluster.members) {
       const propValues = Object.fromEntries(
         cluster.propBindings.map((binding) => [binding.propName, binding.valuesByRootNodeId.get(member.root.id)])
       ) as Record<string, string | undefined>;
       byRootNodeId.set(member.root.id, {
         componentName: cluster.componentName,
+        instanceId: member.root.id,
+        usesPatternContext,
         propValues
       });
     }
@@ -2548,12 +2711,17 @@ const buildPatternExtractionPlan = ({
     return emptyPatternExtractionPlan();
   }
 
+  const preliminaryPatternStatePlan = buildScreenPatternStatePlan({
+    screenComponentName,
+    clusters
+  });
   const componentFiles: GeneratedFile[] = [];
   const componentImports: ExtractedComponentImportSpec[] = [];
   const usableClusters: PatternCluster[] = [];
   for (const cluster of clusters) {
     const file = buildExtractedComponentFile({
       cluster,
+      patternStatePlan: preliminaryPatternStatePlan,
       screen,
       generationLocale,
       spacingBase,
@@ -2579,13 +2747,21 @@ const buildPatternExtractionPlan = ({
     return emptyPatternExtractionPlan();
   }
 
-  const invocationByRootNodeId = buildInvocationMap({
+  const patternStatePlan = buildScreenPatternStatePlan({
+    screenComponentName,
     clusters: usableClusters
   });
+  const invocationByRootNodeId = buildInvocationMap({
+    patternStatePlan,
+    clusters: usableClusters
+  });
+  const contextFiles = patternStatePlan.contextFileSpec ? [patternStatePlan.contextFileSpec.file] : [];
   return {
     componentFiles,
+    contextFiles,
     componentImports: componentImports.sort((left, right) => left.componentName.localeCompare(right.componentName)),
-    invocationByRootNodeId
+    invocationByRootNodeId,
+    patternStatePlan
   };
 };
 
@@ -3824,7 +4000,42 @@ interface ExtractedComponentImportSpec {
 
 interface PatternExtractionInvocation {
   componentName: string;
+  instanceId: string;
+  usesPatternContext: boolean;
   propValues: Record<string, string | undefined>;
+}
+
+interface PatternInvocationStateEntry {
+  instanceId: string;
+  values: Record<string, string | undefined>;
+}
+
+interface PatternContextClusterStateSpec {
+  componentName: string;
+  stateTypeName: string;
+  propBindings: DynamicPropBinding[];
+  entries: PatternInvocationStateEntry[];
+}
+
+interface PatternContextFileSpec {
+  file: GeneratedFile;
+  providerName: string;
+  hookName: string;
+  stateTypeName: string;
+  importPath: string;
+  initialStateLiteral: string;
+  contextEnabledComponentNames: Set<string>;
+}
+
+interface FormContextFileSpec {
+  file: GeneratedFile;
+  providerName: string;
+  hookName: string;
+  importPath: string;
+}
+
+interface ScreenPatternStatePlan {
+  contextFileSpec?: PatternContextFileSpec;
 }
 
 type DynamicPropBindingKind = "text" | "image_src" | "image_alt";
@@ -3857,8 +4068,10 @@ interface PatternCluster {
 
 interface PatternExtractionPlan {
   componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
   componentImports: ExtractedComponentImportSpec[];
   invocationByRootNodeId: Map<string, PatternExtractionInvocation>;
+  patternStatePlan: ScreenPatternStatePlan;
 }
 
 interface RenderedButtonModel {
@@ -8926,9 +9139,11 @@ const renderElement = (
         parent,
         context
       });
-      const propEntries = Object.entries(extractionInvocation.propValues)
-        .filter(([, value]) => value !== undefined)
-        .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
+      const propEntries = extractionInvocation.usesPatternContext
+        ? [`instanceId={${literal(extractionInvocation.instanceId)}}`]
+        : Object.entries(extractionInvocation.propValues)
+            .filter(([, value]) => value !== undefined)
+            .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
       const props = [`sx={{ ${sx} }}`, ...propEntries].join(" ");
       return `${indent}<${extractionInvocation.componentName} ${props} />`;
     }
@@ -9121,6 +9336,7 @@ ${typographyEntries}
 interface FallbackScreenFileResult {
   file: GeneratedFile;
   componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
   prototypeNavigationRenderedCount: number;
   simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
@@ -9145,6 +9361,352 @@ const toTruncationComment = (
     return "";
   }
   return `/* workspace-dev: Screen IR exceeded budget (${truncationMetric.originalElements} elements), truncated to ${truncationMetric.retainedElements} (budget ${truncationMetric.budget}). */\n`;
+};
+
+const buildInlineFormStateBlock = ({
+  hasSelectField,
+  selectOptionsMap,
+  initialVisualErrorsMap,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialValues
+}: {
+  hasSelectField: boolean;
+  selectOptionsMap: Record<string, string[]>;
+  initialVisualErrorsMap: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialValues: Record<string, string>;
+}): string => {
+  const selectOptionsDeclaration = hasSelectField
+    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
+    : "";
+  return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+
+const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const validateFieldValue = (fieldKey: string, value: string): string => {
+  const trimmed = value.trim();
+  if (requiredFields[fieldKey] && trimmed.length === 0) {
+    return "This field is required.";
+  }
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const validationType = fieldValidationTypes[fieldKey];
+  if (!validationType) {
+    return "";
+  }
+  const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+  switch (validationType) {
+    case "email":
+      return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+    case "tel": {
+      const compactTel = trimmed.replace(/\\s+/g, "");
+      const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+      return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
+    }
+    case "url": {
+      try {
+        const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+        const parsed = new URL(normalizedUrl);
+        return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
+      } catch {
+        return validationMessage;
+      }
+    }
+    case "number":
+      return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
+    case "date": {
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+        return validationMessage;
+      }
+      const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+      if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+        return validationMessage;
+      }
+      const date = new Date(Date.UTC(year, month - 1, day));
+      const isValidDate =
+        date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+      return isValidDate ? "" : validationMessage;
+    }
+    default:
+      return "";
+  }
+};
+
+const validateForm = (values: Record<string, string>): Record<string, string> => {
+  return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+    nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
+    return nextErrors;
+  }, {});
+};
+
+const updateFieldValue = (fieldKey: string, value: string): void => {
+  setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
+  if (!touchedFields[fieldKey]) {
+    return;
+  }
+  const nextError = validateFieldValue(fieldKey, value);
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleFieldBlur = (fieldKey: string): void => {
+  setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
+  const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleSubmit = (event: { preventDefault: () => void }): void => {
+  event.preventDefault();
+  const nextErrors = validateForm(formValues);
+  setFieldErrors(nextErrors);
+  setTouchedFields((previous) =>
+    Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
+      nextTouched[fieldKey] = true;
+      return nextTouched;
+    }, { ...previous })
+  );
+
+  const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
+  if (hasErrors) {
+    return;
+  }
+};`;
+};
+
+const buildFormContextFile = ({
+  screenComponentName,
+  initialValues,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialVisualErrorsMap,
+  selectOptionsMap
+}: {
+  screenComponentName: string;
+  initialValues: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialVisualErrorsMap: Record<string, string>;
+  selectOptionsMap: Record<string, string[]>;
+}): FormContextFileSpec => {
+  const providerName = toFormContextProviderName(screenComponentName);
+  const hookName = toFormContextHookName(screenComponentName);
+  const contextVarName = `${screenComponentName}FormContext`;
+  const contextValueTypeName = `${screenComponentName}FormContextValue`;
+  const providerPropsTypeName = `${providerName}Props`;
+  const contextSource = `import { createContext, useContext, useState, type ReactNode } from "react";
+
+interface ${contextValueTypeName} {
+  initialVisualErrors: Record<string, string>;
+  selectOptions: Record<string, string[]>;
+  formValues: Record<string, string>;
+  fieldErrors: Record<string, string>;
+  touchedFields: Record<string, boolean>;
+  updateFieldValue: (fieldKey: string, value: string) => void;
+  handleFieldBlur: (fieldKey: string) => void;
+  handleSubmit: (event: { preventDefault: () => void }) => void;
+}
+
+const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
+
+interface ${providerPropsTypeName} {
+  children: ReactNode;
+}
+
+export function ${providerName}({ children }: ${providerPropsTypeName}) {
+  const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+  const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+  const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+  const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  const parseLocalizedNumber = (rawValue: string): number | undefined => {
+    const compact = rawValue.replace(/\\s+/g, "");
+    if (!compact) {
+      return undefined;
+    }
+    const lastDot = compact.lastIndexOf(".");
+    const lastComma = compact.lastIndexOf(",");
+    const decimalIndex = Math.max(lastDot, lastComma);
+    let normalized = compact;
+    if (decimalIndex >= 0) {
+      const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+      const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+      normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+    } else {
+      normalized = compact.replace(/[.,]/g, "");
+    }
+    if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const validateFieldValue = (fieldKey: string, value: string): string => {
+    const trimmed = value.trim();
+    if (requiredFields[fieldKey] && trimmed.length === 0) {
+      return "This field is required.";
+    }
+    if (trimmed.length === 0) {
+      return "";
+    }
+
+    const validationType = fieldValidationTypes[fieldKey];
+    if (!validationType) {
+      return "";
+    }
+    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+    switch (validationType) {
+      case "email":
+        return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+      case "tel": {
+        const compactTel = trimmed.replace(/\\s+/g, "");
+        const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+        return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
+      }
+      case "url": {
+        try {
+          const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+          const parsed = new URL(normalizedUrl);
+          return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
+        } catch {
+          return validationMessage;
+        }
+      }
+      case "number":
+        return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
+      case "date": {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+          return validationMessage;
+        }
+        const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+        if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+          return validationMessage;
+        }
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValidDate =
+          date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+        return isValidDate ? "" : validationMessage;
+      }
+      default:
+        return "";
+    }
+  };
+
+  const validateForm = (values: Record<string, string>): Record<string, string> => {
+    return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+      nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
+      return nextErrors;
+    }, {});
+  };
+
+  const updateFieldValue = (fieldKey: string, value: string): void => {
+    setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
+    if (!touchedFields[fieldKey]) {
+      return;
+    }
+    const nextError = validateFieldValue(fieldKey, value);
+    setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+  };
+
+  const handleFieldBlur = (fieldKey: string): void => {
+    setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
+    const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
+    setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+  };
+
+  const handleSubmit = (event: { preventDefault: () => void }): void => {
+    event.preventDefault();
+    const nextErrors = validateForm(formValues);
+    setFieldErrors(nextErrors);
+    setTouchedFields((previous) =>
+      Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
+        nextTouched[fieldKey] = true;
+        return nextTouched;
+      }, { ...previous })
+    );
+
+    const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
+    if (hasErrors) {
+      return;
+    }
+  };
+
+  return (
+    <${contextVarName}.Provider
+      value={{
+        initialVisualErrors,
+        selectOptions,
+        formValues,
+        fieldErrors,
+        touchedFields,
+        updateFieldValue,
+        handleFieldBlur,
+        handleSubmit
+      }}
+    >
+      {children}
+    </${contextVarName}.Provider>
+  );
+}
+
+export const ${hookName} = (): ${contextValueTypeName} => {
+  const context = useContext(${contextVarName});
+  if (!context) {
+    throw new Error("${hookName} must be used within ${providerName}");
+  }
+  return context;
+};
+`;
+  return {
+    file: {
+      path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}FormContext`)),
+      content: contextSource
+    },
+    providerName,
+    hookName,
+    importPath: `../context/${screenComponentName}FormContext`
+  };
 };
 
 const fallbackScreenFile = ({
@@ -9361,136 +9923,45 @@ const fallbackScreenFile = ({
     ? (preferredSubmitButton?.key ?? fallbackSubmitButton?.key ?? "")
     : "";
 
-  const selectOptionsDeclaration = hasSelectField
-    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
-    : "";
   const submitButtonDeclaration =
     renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
-
-  const fieldStateBlock = hasInteractiveFields
-    ? `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
-const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
-
-const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
-const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
-const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
-
-const parseLocalizedNumber = (rawValue: string): number | undefined => {
-  const compact = rawValue.replace(/\\s+/g, "");
-  if (!compact) {
-    return undefined;
-  }
-  const lastDot = compact.lastIndexOf(".");
-  const lastComma = compact.lastIndexOf(",");
-  const decimalIndex = Math.max(lastDot, lastComma);
-  let normalized = compact;
-  if (decimalIndex >= 0) {
-    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
-    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
-    normalized = integerPart.length > 0 ? \`\${integerPart}.\${fractionPart}\` : \`0.\${fractionPart}\`;
-  } else {
-    normalized = compact.replace(/[.,]/g, "");
-  }
-  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
-    return undefined;
-  }
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const validateFieldValue = (fieldKey: string, value: string): string => {
-  const trimmed = value.trim();
-  if (requiredFields[fieldKey] && trimmed.length === 0) {
-    return "This field is required.";
-  }
-  if (trimmed.length === 0) {
-    return "";
-  }
-
-  const validationType = fieldValidationTypes[fieldKey];
-  if (!validationType) {
-    return "";
-  }
-  const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
-
-  switch (validationType) {
-    case "email":
-      return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
-    case "tel": {
-      const compactTel = trimmed.replace(/\\s+/g, "");
-      const digitCount = (compactTel.match(/\\d/g) ?? []).length;
-      return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
-    }
-    case "url": {
-      try {
-        const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : \`https://\${trimmed}\`;
-        const parsed = new URL(normalizedUrl);
-        return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
-      } catch {
-        return validationMessage;
-      }
-    }
-    case "number":
-      return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
-    case "date": {
-      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
-        return validationMessage;
-      }
-      const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
-      if (![year, month, day].every((segment) => Number.isFinite(segment))) {
-        return validationMessage;
-      }
-      const date = new Date(Date.UTC(year, month - 1, day));
-      const isValidDate =
-        date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
-      return isValidDate ? "" : validationMessage;
-    }
-    default:
-      return "";
-  }
-};
-
-const validateForm = (values: Record<string, string>): Record<string, string> => {
-  return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
-    nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
-    return nextErrors;
-  }, {});
-};
-
-const updateFieldValue = (fieldKey: string, value: string): void => {
-  setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
-  if (!touchedFields[fieldKey]) {
-    return;
-  }
-  const nextError = validateFieldValue(fieldKey, value);
-  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
-};
-
-const handleFieldBlur = (fieldKey: string): void => {
-  setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
-  const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
-  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
-};
-
-const handleSubmit = (event: { preventDefault: () => void }): void => {
-  event.preventDefault();
-  const nextErrors = validateForm(formValues);
-  setFieldErrors(nextErrors);
-  setTouchedFields((previous) =>
-    Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
-      nextTouched[fieldKey] = true;
-      return nextTouched;
-    }, { ...previous })
-  );
-
-  const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
-  if (hasErrors) {
-    return;
-  }
-};`
+  const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields;
+  const formContextFileSpec = shouldGenerateFormContext
+    ? buildFormContextFile({
+        screenComponentName: componentName,
+        initialValues,
+        requiredFieldMap,
+        validationTypeMap,
+        validationMessageMap,
+        initialVisualErrorsMap,
+        selectOptionsMap
+      })
+    : undefined;
+  const formContextHookFields = [
+    "initialVisualErrors",
+    ...(hasSelectField ? ["selectOptions"] : []),
+    "formValues",
+    "fieldErrors",
+    "touchedFields",
+    "updateFieldValue",
+    "handleFieldBlur",
+    "handleSubmit"
+  ];
+  const formContextHookBlock = formContextFileSpec
+    ? `const { ${formContextHookFields.join(", ")} } = ${formContextFileSpec.hookName}();`
     : "";
+  const inlineFieldStateBlock =
+    !formContextFileSpec && hasInteractiveFields
+      ? buildInlineFormStateBlock({
+          hasSelectField,
+          selectOptionsMap,
+          initialVisualErrorsMap,
+          requiredFieldMap,
+          validationTypeMap,
+          validationMessageMap,
+          initialValues
+        })
+      : "";
   const accordionStateBlock = hasInteractiveAccordions
     ? `const [accordionState, setAccordionState] = useState<Record<string, boolean>>(${JSON.stringify(initialAccordionState, null, 2)});
 
@@ -9528,14 +9999,24 @@ const ${dialogCloseHandlerVar} = (): void => {
           })
           .join("\n\n")
       : "";
-  const stateBlock = [submitButtonDeclaration, fieldStateBlock, accordionStateBlock, tabsStateBlock, dialogsStateBlock]
+  const stateBlock = [
+    submitButtonDeclaration,
+    formContextHookBlock,
+    inlineFieldStateBlock,
+    accordionStateBlock,
+    tabsStateBlock,
+    dialogsStateBlock
+  ]
     .filter((chunk) => chunk.length > 0)
     .join("\n\n");
-  const hasStatefulElements =
-    hasInteractiveFields || hasInteractiveAccordions || renderContext.tabs.length > 0 || renderContext.dialogs.length > 0;
+  const hasLocalStatefulElements =
+    (!formContextFileSpec && hasInteractiveFields) ||
+    hasInteractiveAccordions ||
+    renderContext.tabs.length > 0 ||
+    renderContext.dialogs.length > 0;
   const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
 
-  const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
+  const reactImport = hasLocalStatefulElements ? 'import { useState } from "react";\n' : "";
   const routerImports: string[] = [];
   if (renderContext.usesRouterLink) {
     routerImports.push("Link as RouterLink");
@@ -9559,22 +10040,66 @@ const ${dialogCloseHandlerVar} = (): void => {
   const extractedComponentImports = extractionPlan.componentImports
     .map((componentImport) => `import { ${componentImport.componentName} } from "${componentImport.importPath}";`)
     .join("\n");
-  const screenContent = `${truncationComment}${reactImport}${reactRouterImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
-${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}
-
-export default function ${componentName}Screen() {
+  const patternContextFileSpec = extractionPlan.patternStatePlan.contextFileSpec;
+  const patternContextImport = patternContextFileSpec
+    ? `import { ${patternContextFileSpec.providerName}, type ${patternContextFileSpec.stateTypeName} } from "${patternContextFileSpec.importPath}";`
+    : "";
+  const formContextImport = formContextFileSpec
+    ? `import { ${formContextFileSpec.providerName}, ${formContextFileSpec.hookName} } from "${formContextFileSpec.importPath}";`
+    : "";
+  const patternContextInitialStateDeclaration = patternContextFileSpec
+    ? `const patternContextInitialState: ${patternContextFileSpec.stateTypeName} = ${patternContextFileSpec.initialStateLiteral};\n\n`
+    : "";
+  const contentFunctionName = `${componentName}ScreenContent`;
+  const contentFunctionSource = `function ${contentFunctionName}() {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
-  .join("")}
-  return (
+  .join("")}  return (
     <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
     </Container>
   );
-}
+}`;
+  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec);
+  let wrappedScreenContent = `      <${contentFunctionName} />`;
+  if (formContextFileSpec) {
+    wrappedScreenContent = `      <${formContextFileSpec.providerName}>
+${wrappedScreenContent}
+      </${formContextFileSpec.providerName}>`;
+  }
+  if (patternContextFileSpec) {
+    wrappedScreenContent = `      <${patternContextFileSpec.providerName} initialState={patternContextInitialState}>
+${wrappedScreenContent}
+      </${patternContextFileSpec.providerName}>`;
+  }
+  const screenExportSource = hasContextProviders
+    ? `${contentFunctionSource}
+
+export default function ${componentName}Screen() {
+  return (
+${wrappedScreenContent}
+  );
+}`
+    : `export default function ${componentName}Screen() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
+${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+    </Container>
+  );
+}`;
+  const screenContent = `${truncationComment}${reactImport}${reactRouterImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
+${patternContextInitialStateDeclaration}${screenExportSource}
 `;
   const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
+  const contextFiles: GeneratedFile[] = [
+    ...extractionPlan.contextFiles,
+    ...(formContextFileSpec ? [formContextFileSpec.file] : [])
+  ];
 
   return {
     file: {
@@ -9586,7 +10111,8 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
     mappingWarnings: renderContext.mappingWarnings,
     accessibilityWarnings: renderContext.accessibilityWarnings,
-    componentFiles: extractionPlan.componentFiles
+    componentFiles: extractionPlan.componentFiles,
+    contextFiles
   };
 };
 
@@ -9996,6 +10522,7 @@ export const generateArtifacts = async ({
   }
 
   await mkdir(path.join(projectDir, "src", "screens"), { recursive: true });
+  await mkdir(path.join(projectDir, "src", "context"), { recursive: true });
   await mkdir(path.join(projectDir, "src", "theme"), { recursive: true });
 
   const iconResolver = await loadIconFallbackResolver({
@@ -10072,11 +10599,12 @@ export const generateArtifacts = async ({
 
     return {
       file: deterministicScreen.file,
-      componentFiles: deterministicScreen.componentFiles
+      componentFiles: deterministicScreen.componentFiles,
+      contextFiles: deterministicScreen.contextFiles
     };
   });
   await Promise.all(
-    deterministicScreens.flatMap((item) => [item.file, ...item.componentFiles]).map(async (file) => {
+    deterministicScreens.flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles]).map(async (file) => {
       await writeGeneratedFile(projectDir, file);
       generatedPaths.add(file.path);
     })
