@@ -11,7 +11,7 @@
     "noUnusedParameters": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "react", "react-dom"],
+    "types": ["vite/client", "react", "react-dom", "vitest/globals"],
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },

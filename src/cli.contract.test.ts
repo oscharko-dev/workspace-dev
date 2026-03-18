@@ -161,6 +161,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_GENERATION_LOCALE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ROUTER/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--icon-map-file/i);
@@ -172,6 +173,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--generation-locale/i);
   assert.match(result.stdout, /--router/i);
+  assert.match(result.stdout, /--unit-test-validation/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /--figma-screen-element-max-depth/i);
   assert.match(result.stdout, /--project-root/i);
@@ -349,6 +351,30 @@ test("cli contract: --skip-install is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Skip install: true/i);
     assert.match(output, /Skip install: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --unit-test-validation is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--unit-test-validation", "true"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Unit test validation enabled: true/i);
+    assert.match(output, /Unit test validation enabled: true/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

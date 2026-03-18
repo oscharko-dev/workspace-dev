@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.13.0] - 2026-03-18
+
+### Optional unit-test validation gate in runtime configuration
+
+Added:
+
+- `WorkspaceStartOptions.enableUnitTestValidation?: boolean` (default `false`)
+
 ## [2.12.0] - 2026-03-18
 
 ### Design system config file path for runtime code generation

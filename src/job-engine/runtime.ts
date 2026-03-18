@@ -18,6 +18,7 @@ const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 
@@ -64,6 +65,7 @@ export const resolveRuntimeSettings = ({
   routerMode,
   commandTimeoutMs,
   enableUiValidation,
+  enableUnitTestValidation,
   installPreferOffline,
   skipInstall,
   enablePreview,
@@ -89,6 +91,7 @@ export const resolveRuntimeSettings = ({
   routerMode?: string;
   commandTimeoutMs?: number;
   enableUiValidation?: boolean;
+  enableUnitTestValidation?: boolean;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   enablePreview?: boolean;
@@ -160,6 +163,10 @@ export const resolveRuntimeSettings = ({
         : DEFAULT_COMMAND_TIMEOUT_MS,
     enableUiValidation:
       typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
+    enableUnitTestValidation:
+      typeof enableUnitTestValidation === "boolean"
+        ? enableUnitTestValidation
+        : DEFAULT_ENABLE_UNIT_TEST_VALIDATION,
     installPreferOffline:
       typeof installPreferOffline === "boolean" ? installPreferOffline : DEFAULT_INSTALL_PREFER_OFFLINE,
     skipInstall: typeof skipInstall === "boolean" ? skipInstall : DEFAULT_SKIP_INSTALL,

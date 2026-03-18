@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 
@@ -55,6 +55,11 @@ const reactCompilerPlugins = enableReactCompiler
 export default defineConfig({
   plugins: [react(), ...reactCompilerPlugins],
   base: normalizedBasePath,
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts"
+  },
   server: {
     host: "0.0.0.0",
     allowedHosts: liveEditAllowedHosts,

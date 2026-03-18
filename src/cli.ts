@@ -35,6 +35,7 @@ const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
@@ -64,6 +65,7 @@ interface CliOptions {
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
+  enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
   enableLintAutofix: boolean;
@@ -246,6 +248,10 @@ const parseArgs = (argv: string[]): CliOptions => {
   let enableUiValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
     DEFAULT_ENABLE_UI_VALIDATION
+  );
+  let enableUnitTestValidation = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION,
+    DEFAULT_ENABLE_UNIT_TEST_VALIDATION
   );
   let installPreferOffline = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE,
@@ -479,6 +485,12 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--unit-test-validation") {
+      enableUnitTestValidation = parseBooleanLike(args[index + 1], enableUnitTestValidation);
+      index += 1;
+      continue;
+    }
+
     if (arg === "--install-prefer-offline") {
       installPreferOffline = parseBooleanLike(args[index + 1], installPreferOffline);
       index += 1;
@@ -568,6 +580,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     routerMode,
     commandTimeoutMs,
     enableUiValidation,
+    enableUnitTestValidation,
     installPreferOffline,
     skipInstall,
     enableLintAutofix,
@@ -627,6 +640,8 @@ Options:
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
+  --unit-test-validation <true|false>
+                             Run generated-project unit tests in validate.project (default: ${DEFAULT_ENABLE_UNIT_TEST_VALIDATION})
   --install-prefer-offline <true|false>
                              Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
   --skip-install <true|false>
@@ -667,6 +682,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_ROUTER
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
+  FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
   FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
@@ -740,6 +756,7 @@ const main = async (): Promise<void> => {
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = options.enableLintAutofix ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION = options.enableUnitTestValidation ? "true" : "false";
 
   try {
     const server = await createWorkspaceServer({
@@ -768,6 +785,7 @@ const main = async (): Promise<void> => {
       routerMode: options.routerMode,
       commandTimeoutMs: options.commandTimeoutMs,
       enableUiValidation: options.enableUiValidation,
+      enableUnitTestValidation: options.enableUnitTestValidation,
       installPreferOffline: options.installPreferOffline,
       skipInstall: options.skipInstall,
       enablePreview: options.enablePreview
@@ -791,6 +809,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
     console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
     console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
+    console.log(`[workspace-dev] Unit test validation enabled: ${options.enableUnitTestValidation}`);
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
     console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
