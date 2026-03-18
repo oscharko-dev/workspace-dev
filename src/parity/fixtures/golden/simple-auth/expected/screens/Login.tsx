@@ -20,10 +20,9 @@ function LoginScreenContent() {
         aria-describedby={"muiformcontrolroot_email_field-helper-text"}
         sx={{
           width: "91.8%", maxWidth: "358px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.8,
-          "& .MuiOutlinedInput-root": {  },
-          "& .MuiOutlinedInput-notchedOutline": {  },
           "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#3d424d" }
         }}
+
         slotProps={{
           htmlInput: { "aria-describedby": "muiformcontrolroot_email_field-helper-text" },
           formHelperText: { id: "muiformcontrolroot_email_field-helper-text" }
