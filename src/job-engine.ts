@@ -10,6 +10,7 @@ import type {
   WorkspaceJobStageName,
   WorkspaceJobStatus
 } from "./contracts/index.js";
+import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
 import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
@@ -286,11 +287,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               });
             }
 
-            if (typeof parsedLocalFile !== "object" || parsedLocalFile === null || Array.isArray(parsedLocalFile)) {
+            const parsedLocalPayload = safeParseFigmaPayload({ input: parsedLocalFile });
+            if (!parsedLocalPayload.success) {
               throw createPipelineError({
                 code: "E_FIGMA_PARSE",
                 stage: "figma.source",
-                message: `Local Figma JSON file '${localPath}' must contain a JSON object root.`
+                message:
+                  `Could not parse local Figma JSON file '${localPath}': invalid Figma payload ` +
+                  `(${summarizeFigmaPayloadValidationError({ error: parsedLocalPayload.error })}).`
               });
             }
 
@@ -302,7 +306,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             });
 
             return await writeAndClean({
-              sourceFile: parsedLocalFile as FigmaFileResponse,
+              sourceFile: parsedLocalPayload.data,
               diagnostics: {
                 sourceMode: "local-json",
                 fetchedNodes: 0,
