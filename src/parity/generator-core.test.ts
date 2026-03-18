@@ -6666,6 +6666,46 @@ test("deterministic screen rendering emits spacing units and rem typography with
   assert.equal(/\b(gap|p|px|py|p[trbl]|m|mx|my|m[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
 });
 
+test("deterministic screen rendering converts text letterSpacing from px to em with stable precision", () => {
+  const screen = {
+    id: "letter-spacing-screen",
+    name: "Letter Spacing Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "text-positive-letter-spacing",
+        name: "Positive Letter Spacing",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Positive",
+        fontSize: 12,
+        lineHeight: 18,
+        letterSpacing: 1
+      },
+      {
+        id: "text-negative-letter-spacing",
+        name: "Negative Letter Spacing",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Negative",
+        y: 28,
+        fontSize: 20,
+        lineHeight: 24,
+        letterSpacing: -0.5
+      }
+    ]
+  };
+
+  const first = createDeterministicScreenFile(screen).content;
+  const second = createDeterministicScreenFile(screen).content;
+
+  assert.equal(first, second);
+  assert.ok(first.includes('letterSpacing: "0.0833em"'));
+  assert.ok(first.includes('letterSpacing: "-0.025em"'));
+});
+
 test("deterministic screen rendering applies padding shorthand for equal and paired sides", () => {
   const screen = {
     id: "padding-shorthand-screen",
