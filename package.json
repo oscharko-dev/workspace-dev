@@ -58,6 +58,8 @@
     "build": "tsup --config tsup.config.ts && node scripts/create-cjs-types.mjs && pnpm run ui:build",
     "typecheck": "tsc --noEmit && pnpm run ui:typecheck",
     "test": "pnpm run test:smoke:compile && pnpm run ui:build && tsx --test \"src/**/*.test.ts\" \"integration/**/*.test.ts\" && pnpm run ui:test",
+    "test:golden": "pnpm exec tsx --test src/parity/golden-fixtures.test.ts",
+    "test:golden:update": "FIGMAPIPE_GOLDEN_APPROVE=true pnpm run test:golden",
     "test:smoke:compile": "node scripts/check-source-compile-smoke.mjs",
     "test:ci": "pnpm run test",
     "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
