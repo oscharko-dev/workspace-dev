@@ -184,6 +184,7 @@ workspace-dev start [options]
 
 When `skipInstall` is enabled and `generated-app/node_modules` is missing, `validate.project` fails fast with a deterministic error message.
 When lint auto-fix is enabled, `validate.project` runs `pnpm lint --fix` before final `pnpm lint` and logs changed lint-relevant files.
+When `lint`, `typecheck`, or `build` fail, `validate.project` applies conservative auto-corrections (TypeScript codefix + organize imports) and retries validation up to 3 attempts.
 
 ### Router mode
 

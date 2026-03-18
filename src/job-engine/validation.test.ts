@@ -151,8 +151,105 @@ test("runProjectValidationWithDeps continues when lint autofix fails", async () 
   );
 });
 
-test("runProjectValidationWithDeps throws on first failing required command", async () => {
-  let invocation = 0;
+test("runProjectValidationWithDeps retries lint/typecheck/build after successful feedback corrections", async () => {
+  const calls: string[] = [];
+  const feedbackStages: string[] = [];
+  let lintFailuresRemaining = 1;
+
+  await runProjectValidationWithDeps({
+    generatedProjectDir: "/tmp/generated-project",
+    onLog: () => {
+      // no-op
+    },
+    deps: {
+      runCommand: async ({ command, args }) => {
+        const invocation = `${command} ${args.join(" ")}`;
+        calls.push(invocation);
+        if (args[0] === "lint" && args.length === 1 && lintFailuresRemaining > 0) {
+          lintFailuresRemaining -= 1;
+          return {
+            success: false,
+            code: 1,
+            stdout: "",
+            stderr: "lint failed",
+            combined: "src/main.ts(1,1): error TS2304: Cannot find name 'Button'."
+          };
+        }
+        return {
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        };
+      },
+      runValidationFeedback: async ({ stage }) => {
+        feedbackStages.push(stage);
+        return {
+          diagnostics: [],
+          changedFiles: ["src/main.ts"],
+          correctionsApplied: 2,
+          fileCorrections: [{ filePath: "src/main.ts", editCount: 2, descriptions: ["Organized imports"] }],
+          summary: "[TS2304] src/main.ts:1:1 Cannot find name 'Button'."
+        };
+      }
+    }
+  });
+
+  assert.deepEqual(feedbackStages, ["lint"]);
+  assert.deepEqual(calls, [
+    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm lint --fix",
+    "pnpm lint",
+    "pnpm lint --fix",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm build"
+  ]);
+});
+
+test("runProjectValidationWithDeps aborts retry loop when feedback cannot apply corrections", async () => {
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "lint" && args.length === 1) {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "lint failed",
+                combined: "src/main.ts(1,1): error TS2304: Cannot find name 'Button'."
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => ({
+            diagnostics: [],
+            changedFiles: [],
+            correctionsApplied: 0,
+            fileCorrections: [],
+            summary: "[TS2304] src/main.ts:1:1 Cannot find name 'Button'."
+          })
+        }
+      }),
+    /no auto-corrections were applied/i
+  );
+});
+
+test("runProjectValidationWithDeps enforces max validation attempts", async () => {
+  let feedbackInvocations = 0;
 
   await assert.rejects(
     () =>
@@ -163,8 +260,7 @@ test("runProjectValidationWithDeps throws on first failing required command", as
         },
         deps: {
           runCommand: async ({ args }) => {
-            invocation += 1;
-            if (args[0] === "lint") {
+            if (args[0] === "lint" && args.length === 1) {
               return {
                 success: false,
                 code: 1,
@@ -180,13 +276,70 @@ test("runProjectValidationWithDeps throws on first failing required command", as
               stderr: "",
               combined: ""
             };
+          },
+          runValidationFeedback: async () => {
+            feedbackInvocations += 1;
+            return {
+              diagnostics: [],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Organized imports"] }],
+              summary: "lint failed"
+            };
           }
         }
       }),
-    /lint failed/
+    /after 3 attempts/i
   );
 
-  assert.ok(invocation >= 3);
+  assert.equal(feedbackInvocations, 2);
+});
+
+test("runProjectValidationWithDeps does not retry validate-ui failures", async () => {
+  let feedbackInvocations = 0;
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        enableUiValidation: true,
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "run" && args[1] === "validate:ui") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "ui validation failed",
+                combined: "ui validation failed"
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => {
+            feedbackInvocations += 1;
+            return {
+              diagnostics: [],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Organized imports"] }],
+              summary: "ui validation failed"
+            };
+          }
+        }
+      }),
+    /validate-ui failed/i
+  );
+
+  assert.equal(feedbackInvocations, 0);
 });
 
 test("runProjectValidationWithDeps logs changed files from lint autofix", async () => {

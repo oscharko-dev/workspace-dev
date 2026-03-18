@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { runCommand as runCommandImpl } from "./command-runner.js";
+import {
+  runValidationFeedback as runValidationFeedbackImpl,
+  type RetryableValidationStage,
+  type ValidationFeedbackResult
+} from "./validation-feedback.js";
 import type { CommandResult } from "./types.js";
 
 interface ValidationDeps {
@@ -13,6 +18,12 @@ interface ValidationDeps {
     redactions?: string[];
     timeoutMs?: number;
   }) => Promise<CommandResult>;
+  runValidationFeedback: (input: {
+    generatedProjectDir: string;
+    stage: RetryableValidationStage;
+    output: string;
+    onLog: (message: string) => void;
+  }) => Promise<ValidationFeedbackResult>;
 }
 
 const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<boolean> => {
@@ -27,6 +38,7 @@ const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjec
 
 const LINT_RELEVANT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]);
 const MAX_LOGGED_CHANGED_FILES = 20;
+const MAX_VALIDATION_ATTEMPTS = 3;
 
 const toPosixPath = (filePath: string): string => {
   return filePath.split(path.sep).join("/");
@@ -122,6 +134,7 @@ export const runProjectValidationWithDeps = async ({
   deps?: Partial<ValidationDeps>;
 }): Promise<void> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
+  const runValidationFeedback = deps?.runValidationFeedback ?? runValidationFeedbackImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
   const installArgs = ["install", "--frozen-lockfile", "--reporter", "append-only"];
@@ -139,25 +152,35 @@ export const runProjectValidationWithDeps = async ({
     onLog("Skipping install because skipInstall=true.");
   }
 
-  const commands: Array<{
+  const installCommand: {
+    name: string;
+    args: string[];
+    timeoutMs?: number;
+  } | undefined = !skipInstall
+    ? { name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) }
+    : undefined;
+
+  const attemptCommands: Array<{
     name: string;
     args: string[];
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
     ignoreFailure?: boolean;
   }> = [];
-  if (!skipInstall) {
-    commands.push({ name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) });
-  }
   if (enableLintAutofix) {
-    commands.push({ name: "lint-autofix", args: ["lint", "--fix"], timeoutMs: commandTimeoutMs, ignoreFailure: true });
+    attemptCommands.push({
+      name: "lint-autofix",
+      args: ["lint", "--fix"],
+      timeoutMs: commandTimeoutMs,
+      ignoreFailure: true
+    });
   }
-  commands.push({ name: "lint", args: ["lint"], timeoutMs: commandTimeoutMs });
-  commands.push({ name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs });
-  commands.push({ name: "build", args: ["build"], timeoutMs: commandTimeoutMs });
+  attemptCommands.push({ name: "lint", args: ["lint"], timeoutMs: commandTimeoutMs });
+  attemptCommands.push({ name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs });
+  attemptCommands.push({ name: "build", args: ["build"], timeoutMs: commandTimeoutMs });
 
   if (enableUiValidation) {
-    commands.push({
+    attemptCommands.push({
       name: "validate-ui",
       args: ["run", "validate:ui"],
       timeoutMs: commandTimeoutMs
@@ -165,7 +188,7 @@ export const runProjectValidationWithDeps = async ({
   }
 
   if (enablePerfValidation) {
-    commands.push({
+    attemptCommands.push({
       name: "perf-assert",
       args: ["run", "perf:assert"],
       timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000),
@@ -179,60 +202,119 @@ export const runProjectValidationWithDeps = async ({
     });
   }
 
-  for (const command of commands) {
-    onLog(`Running ${command.name}`);
+  const isRetryableStage = (value: string): value is RetryableValidationStage => {
+    return value === "lint" || value === "typecheck" || value === "build";
+  };
 
-    let beforeAutofix = new Map<string, string>();
-    let shouldDiffAutofixChanges = command.name === "lint-autofix";
-    if (command.name === "lint-autofix") {
-      try {
-        beforeAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
-      } catch (error) {
-        shouldDiffAutofixChanges = false;
-        const message = error instanceof Error ? error.message : String(error);
-        onLog(`Lint auto-fix file-diff pre-scan failed: ${message}`);
-      }
-    }
-
-    const result = await runCommand({
+  if (installCommand) {
+    onLog(`Running ${installCommand.name}`);
+    const installResult = await runCommand({
       cwd: generatedProjectDir,
       command: "pnpm",
-      args: command.args,
-      ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
-      ...(command.env ? { env: command.env } : {})
+      args: installCommand.args,
+      ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {})
     });
+    if (!installResult.success) {
+      const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
+      throw new Error(`${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`);
+    }
+  }
 
-    if (command.name === "lint-autofix") {
-      if (shouldDiffAutofixChanges) {
+  for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
+    onLog(`Validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS}`);
+    let shouldRetry = false;
+
+    for (const command of attemptCommands) {
+      onLog(`Running ${command.name}`);
+
+      let beforeAutofix = new Map<string, string>();
+      let shouldDiffAutofixChanges = command.name === "lint-autofix";
+      if (command.name === "lint-autofix") {
         try {
-          const afterAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
-          const changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
-          if (changedFiles.length === 0) {
-            onLog("Lint auto-fix changed 0 lint-relevant file(s).");
-          } else {
-            onLog(
-              `Lint auto-fix changed ${changedFiles.length} lint-relevant file(s): ${formatChangedFilesForLog({ changedFiles })}`
-            );
-          }
+          beforeAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
         } catch (error) {
+          shouldDiffAutofixChanges = false;
           const message = error instanceof Error ? error.message : String(error);
-          onLog(`Lint auto-fix file-diff post-scan failed: ${message}`);
+          onLog(`Lint auto-fix file-diff pre-scan failed: ${message}`);
         }
       }
 
-      if (!result.success) {
-        const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
-        const output = result.combined.slice(0, 600);
-        onLog(`Lint auto-fix failed${timeoutSuffix}; continuing with final lint check. Output: ${output}`);
-      }
-    }
+      const result = await runCommand({
+        cwd: generatedProjectDir,
+        command: "pnpm",
+        args: command.args,
+        ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
+        ...(command.env ? { env: command.env } : {})
+      });
 
-    if (!result.success) {
-      if (command.ignoreFailure) {
+      if (command.name === "lint-autofix") {
+        if (shouldDiffAutofixChanges) {
+          try {
+            const afterAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
+            const changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
+            if (changedFiles.length === 0) {
+              onLog("Lint auto-fix changed 0 lint-relevant file(s).");
+            } else {
+              onLog(
+                `Lint auto-fix changed ${changedFiles.length} lint-relevant file(s): ${formatChangedFilesForLog({ changedFiles })}`
+              );
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            onLog(`Lint auto-fix file-diff post-scan failed: ${message}`);
+          }
+        }
+
+        if (!result.success) {
+          const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
+          const output = result.combined.slice(0, 600);
+          onLog(`Lint auto-fix failed${timeoutSuffix}; continuing with final lint check. Output: ${output}`);
+        }
+      }
+
+      if (result.success || command.ignoreFailure) {
         continue;
       }
+
       const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
-      throw new Error(`${command.name} failed${timeoutSuffix}: ${result.combined.slice(0, 2000)}`);
+      const truncatedOutput = result.combined.slice(0, 2000);
+
+      if (!isRetryableStage(command.name)) {
+        throw new Error(`${command.name} failed${timeoutSuffix}: ${truncatedOutput}`);
+      }
+
+      if (attempt >= MAX_VALIDATION_ATTEMPTS) {
+        throw new Error(
+          `${command.name} failed${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts: ${truncatedOutput}`
+        );
+      }
+
+      const feedback = await runValidationFeedback({
+        generatedProjectDir,
+        stage: command.name,
+        output: result.combined,
+        onLog
+      });
+
+      onLog(
+        `Applied ${feedback.correctionsApplied} correction edit(s) across ${feedback.changedFiles.length} file(s) after ${command.name} failure.`
+      );
+
+      if (feedback.changedFiles.length === 0) {
+        throw new Error(
+          `${command.name} failed${timeoutSuffix}; no auto-corrections were applied. Diagnostics: ${feedback.summary}. Output: ${truncatedOutput}`
+        );
+      }
+
+      onLog(
+        `Retrying validation after ${command.name} corrections (${attempt + 1}/${MAX_VALIDATION_ATTEMPTS}).`
+      );
+      shouldRetry = true;
+      break;
+    }
+
+    if (!shouldRetry) {
+      return;
     }
   }
 };
