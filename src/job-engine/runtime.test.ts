@@ -25,6 +25,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.routerMode, "browser");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
   assert.equal(runtime.enableUiValidation, false);
+  assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
   assert.equal(runtime.previewEnabled, true);
@@ -50,6 +51,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     routerMode: "HASH",
     commandTimeoutMs: 10,
     enableUiValidation: false,
+    enableUnitTestValidation: true,
     installPreferOffline: false,
     skipInstall: true
   });
@@ -72,6 +74,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.routerMode, "hash");
   assert.equal(runtime.commandTimeoutMs, 5_000);
   assert.equal(runtime.enableUiValidation, false);
+  assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);
   assert.equal(runtime.skipInstall, true);
 });

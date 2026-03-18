@@ -407,6 +407,79 @@ test("runProjectValidationWithDeps runs ui validation when enabled", async () =>
   assert.equal(calls.includes("pnpm run validate:ui"), true);
 });
 
+test("runProjectValidationWithDeps runs unit tests when enabled", async () => {
+  const calls: string[] = [];
+
+  await runProjectValidationWithDeps({
+    generatedProjectDir: "/tmp/generated-project",
+    onLog: () => {
+      // no-op
+    },
+    enableUnitTestValidation: true,
+    deps: {
+      runCommand: async ({ command, args }) => {
+        calls.push(`${command} ${args.join(" ")}`);
+        return {
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        };
+      }
+    }
+  });
+
+  assert.equal(calls.includes("pnpm run test"), true);
+});
+
+test("runProjectValidationWithDeps does not retry test failures", async () => {
+  let feedbackInvocations = 0;
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        enableUnitTestValidation: true,
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "run" && args[1] === "test") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "test failed",
+                combined: "test failed"
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => {
+            feedbackInvocations += 1;
+            return {
+              diagnostics: [],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Organized imports"] }],
+              summary: "test failed"
+            };
+          }
+        }
+      }),
+    /test failed/i
+  );
+
+  assert.equal(feedbackInvocations, 0);
+});
+
 test("runProjectValidationWithDeps fails fast when skipInstall=true and node_modules is missing", async () => {
   let invocationCount = 0;
 

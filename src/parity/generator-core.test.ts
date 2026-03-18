@@ -65,6 +65,19 @@ const extractThemeHex = ({
 
 const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
 
+const readGeneratedStringArrayLiteral = ({
+  source,
+  variableName
+}: {
+  source: string;
+  variableName: string;
+}): string[] => {
+  const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`const ${escapedName}: string\\[] = (\\[[\\s\\S]*?\\]);`));
+  assert.ok(match?.[1], `Expected array literal declaration for '${variableName}'.`);
+  return JSON.parse(match?.[1] ?? "[]") as string[];
+};
+
 const createIr = () => ({
   sourceName: "Demo",
   tokens: {
@@ -1464,6 +1477,166 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(Array.isArray(metrics.truncatedScreens), true);
 });
 
+test("generateArtifacts caps representative screen test targets and keeps test output deterministic", async () => {
+  const createTargetRichIr = () => {
+    const ir = createIr();
+    ir.screens = [
+      {
+        id: "target-rich-screen",
+        name: "Target Rich Screen",
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 16, right: 16, bottom: 16, left: 16 },
+        children: [
+          ...Array.from({ length: 9 }, (_, index) => ({
+            id: `target-rich-text-${index + 1}`,
+            name: `Headline ${index + 1}`,
+            nodeType: "TEXT" as const,
+            type: "text" as const,
+            text: `Headline ${String(index + 1).padStart(2, "0")}`
+          })),
+          ...Array.from({ length: 7 }, (_, index) => ({
+            id: `target-rich-button-${index + 1}`,
+            name: `Action ${index + 1}`,
+            nodeType: "FRAME" as const,
+            type: "button" as const,
+            width: 220,
+            height: 48,
+            fillColor: "#d4001a",
+            children: [
+              {
+                id: `target-rich-button-${index + 1}-label`,
+                name: "Label",
+                nodeType: "TEXT" as const,
+                type: "text" as const,
+                text: `Action ${index + 1}`,
+                fillColor: "#ffffff"
+              }
+            ]
+          })),
+          ...Array.from({ length: 7 }, (_, index) =>
+            createSemanticInputNode({
+              id: `target-rich-input-${index + 1}`,
+              name: `Input Field ${index + 1}`,
+              label: `Input ${index + 1}`
+            })
+          ),
+          ...Array.from({ length: 7 }, (_, index) => ({
+            id: `target-rich-select-${index + 1}`,
+            name: `Select Field ${index + 1}`,
+            nodeType: "FRAME" as const,
+            type: "select" as const,
+            layoutMode: "VERTICAL" as const,
+            gap: 4,
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            width: 320,
+            height: 72,
+            children: [
+              {
+                id: `target-rich-select-${index + 1}-label`,
+                name: "Label",
+                nodeType: "TEXT" as const,
+                type: "text" as const,
+                text: `Select ${index + 1}`
+              }
+            ]
+          }))
+        ]
+      }
+    ];
+    return ir;
+  };
+
+  const firstRunDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-a-"));
+  const secondRunDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-b-"));
+  const firstResult = await generateArtifacts({
+    projectDir: firstRunDir,
+    ir: createTargetRichIr(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+  const secondResult = await generateArtifacts({
+    projectDir: secondRunDir,
+    ir: createTargetRichIr(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const firstTestPath = firstResult.generatedPaths.find(
+    (entry) => entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx")
+  );
+  const secondTestPath = secondResult.generatedPaths.find(
+    (entry) => entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx")
+  );
+  assert.ok(firstTestPath, "Expected test file path for first run.");
+  assert.ok(secondTestPath, "Expected test file path for second run.");
+
+  const firstContent = await readFile(path.join(firstRunDir, firstTestPath ?? ""), "utf8");
+  const secondContent = await readFile(path.join(secondRunDir, secondTestPath ?? ""), "utf8");
+  assert.equal(firstContent, secondContent);
+  assert.ok(firstContent.includes('import { render, screen } from "@testing-library/react";'));
+  assert.ok(firstContent.includes('import userEvent from "@testing-library/user-event";'));
+  assert.ok(firstContent.includes('import { axe } from "jest-axe";'));
+  assert.ok(firstContent.includes("<ThemeProvider theme={appTheme} defaultMode=\"system\" noSsr>"));
+  assert.ok(firstContent.includes("<MemoryRouter>"));
+  assert.ok(firstContent.includes('it("renders without crashing"'));
+  assert.ok(firstContent.includes('it("renders representative text content"'));
+  assert.ok(firstContent.includes('it("keeps representative controls interactive"'));
+  assert.ok(firstContent.includes('it("has no detectable accessibility violations"'));
+  assert.ok(firstContent.includes("const normalizeTextForAssertion = (value: string): string => {"));
+  assert.ok(firstContent.includes("const expectTextToBePresent = ({ container, expectedText }"));
+  assert.ok(firstContent.includes('const axeConfig = {'));
+  assert.ok(firstContent.includes('"heading-order": { enabled: false }'));
+  assert.ok(firstContent.includes('"landmark-banner-is-top-level": { enabled: false }'));
+  assert.ok(firstContent.includes("expectTextToBePresent({ container, expectedText });"));
+  assert.ok(firstContent.includes("const results = await axe(container, axeConfig);"));
+  assert.ok(firstContent.includes("expect(results).toHaveNoViolations();"));
+
+  const expectedTexts = readGeneratedStringArrayLiteral({
+    source: firstContent,
+    variableName: "expectedTexts"
+  });
+  const expectedButtonLabels = readGeneratedStringArrayLiteral({
+    source: firstContent,
+    variableName: "expectedButtonLabels"
+  });
+  const expectedInputLabels = readGeneratedStringArrayLiteral({
+    source: firstContent,
+    variableName: "expectedTextInputLabels"
+  });
+  const expectedSelectLabels = readGeneratedStringArrayLiteral({
+    source: firstContent,
+    variableName: "expectedSelectLabels"
+  });
+
+  assert.deepEqual(expectedTexts, [
+    "Headline 01",
+    "Headline 02",
+    "Headline 03",
+    "Headline 04",
+    "Headline 05",
+    "Headline 06",
+    "Headline 07",
+    "Headline 08"
+  ]);
+  assert.deepEqual(expectedButtonLabels, ["Action 1", "Action 2", "Action 3", "Action 4", "Action 5", "Action 6"]);
+  assert.deepEqual(expectedInputLabels, [
+    "Input Field 1",
+    "Input Field 2",
+    "Input Field 3",
+    "Input Field 4",
+    "Input Field 5",
+    "Input Field 6"
+  ]);
+  assert.deepEqual(expectedSelectLabels, ["Select 1", "Select 2", "Select 3", "Select 4", "Select 5", "Select 6"]);
+});
+
 test("generateArtifacts extracts repeated screen-local card patterns into reusable component files", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-extract-"));
   const ir = createIr();
@@ -2513,7 +2686,9 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
   });
 
   const generatedScreenDir = path.join(projectDir, "src", "screens");
-  const generatedScreenFiles = await readdir(generatedScreenDir);
+  const generatedScreenFiles = (await readdir(generatedScreenDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".tsx"))
+    .map((entry) => entry.name);
   const generatedScreenContents = await Promise.all(
     generatedScreenFiles.map(async (fileName) => readFile(path.join(generatedScreenDir, fileName), "utf8"))
   );

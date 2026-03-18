@@ -110,6 +110,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
+    ...(options.enableUnitTestValidation !== undefined
+      ? { enableUnitTestValidation: options.enableUnitTestValidation }
+      : {}),
     ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),
     ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),

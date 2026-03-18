@@ -81,6 +81,7 @@ export interface JobEngineRuntime {
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
   enableUiValidation: boolean;
+  enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
   previewEnabled: boolean;

@@ -539,6 +539,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             enableLintAutofix: isLintAutofixEnabled(),
             enablePerfValidation: isPerfValidationEnabled(),
             enableUiValidation: runtime.enableUiValidation,
+            enableUnitTestValidation: runtime.enableUnitTestValidation,
             commandTimeoutMs: runtime.commandTimeoutMs,
             installPreferOffline: runtime.installPreferOffline,
             skipInstall: runtime.skipInstall,
