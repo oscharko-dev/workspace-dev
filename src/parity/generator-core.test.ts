@@ -1626,6 +1626,331 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.ok(patternContextContent.includes("export function OffersPatternContextProvider"));
 });
 
+test("generateArtifacts applies design-system mappings to screen and extracted pattern component files", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-"));
+  const designSystemFilePath = path.join(projectDir, "design-system.json");
+  await writeFile(
+    designSystemFilePath,
+    `${JSON.stringify(
+      {
+        library: "@acme/ui",
+        mappings: {
+          Button: {
+            component: "PrimaryButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          },
+          Card: {
+            component: "ContentCard"
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "design-system-screen",
+      name: "Design System",
+      layoutMode: "VERTICAL" as const,
+      gap: 24,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "design-system-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Jetzt starten"
+        },
+        {
+          id: "design-card-a",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "design-image-a",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "design-title-a",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Starter Paket"
+            },
+            {
+              id: "design-price-a",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €"
+            }
+          ]
+        },
+        {
+          id: "design-card-b",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "design-image-b",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "design-title-b",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Family Paket"
+            },
+            {
+              id: "design-price-b",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "19,99 €"
+            }
+          ]
+        },
+        {
+          id: "design-card-c",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "design-image-c",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "design-title-c",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Premium Paket"
+            },
+            {
+              id: "design-price-c",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "29,99 €"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    imageAssetMap: {
+      "design-image-a": "/images/design-a.png",
+      "design-image-b": "/images/design-b.png",
+      "design-image-c": "/images/design-c.png"
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/components/DesignSystemPattern1.tsx"), true);
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Design System")), "utf8");
+  assert.ok(screenContent.includes('import { PrimaryButton } from "@acme/ui";'));
+  assert.ok(screenContent.includes("<PrimaryButton"));
+  assert.ok(screenContent.includes("appearance="));
+  assert.equal(screenContent.includes('import { Button } from "@mui/material";'), false);
+
+  const patternContent = await readFile(path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"), "utf8");
+  assert.ok(patternContent.includes('import { ContentCard } from "@acme/ui";'));
+  assert.ok(patternContent.includes("<ContentCard"));
+  assert.equal(/<Card(?=[\s>])/.test(patternContent), false);
+});
+
+test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "missing-design-system-screen",
+      name: "Missing Design System",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "missing-design-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Missing Design System")), "utf8");
+  assert.ok(screenContent.includes("<Button"));
+  assert.ok(screenContent.includes('import { Button, Container } from "@mui/material";'));
+  assert.equal(screenContent.includes("PrimaryButton"), false);
+});
+
+test("generateArtifacts logs warning and keeps MUI fallback when design-system config is invalid", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-invalid-"));
+  const designSystemFilePath = path.join(projectDir, "design-system.invalid.json");
+  const logs: string[] = [];
+  await writeFile(designSystemFilePath, `${JSON.stringify({ library: "", mappings: [] }, null, 2)}\n`, "utf8");
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "invalid-design-system-screen",
+      name: "Invalid Design System",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "invalid-design-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  assert.ok(logs.some((entry) => entry.includes("Design system config") && entry.includes("invalid")));
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Invalid Design System")), "utf8");
+  assert.ok(screenContent.includes("<Button"));
+  assert.equal(screenContent.includes("PrimaryButton"), false);
+});
+
+test("generateArtifacts keeps node-level componentMappings precedence over design-system mapping", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-priority-"));
+  const designSystemFilePath = path.join(projectDir, "design-system.json");
+  await writeFile(
+    designSystemFilePath,
+    `${JSON.stringify(
+      {
+        library: "@acme/ui",
+        mappings: {
+          Button: {
+            component: "PrimaryButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "priority-design-system-screen",
+      name: "Priority Design System",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "priority-design-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeId: "priority-design-button",
+        componentName: "CustomActionButton",
+        importPath: "@custom/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ],
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Priority Design System")), "utf8");
+  assert.ok(screenContent.includes('from "@custom/ui";'));
+  assert.ok(screenContent.includes("CustomActionButton"));
+  assert.ok(screenContent.includes("<CustomActionButton"));
+  assert.equal(screenContent.includes("PrimaryButton"), false);
+});
+
 test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-threshold-"));
   const ir = createIr();

@@ -23,6 +23,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.12.0] - 2026-03-18
+
+### Design system config file path for runtime code generation
+
+Added:
+
+- `WorkspaceStartOptions.designSystemFilePath?: string` (default `<outputRoot>/design-system.json`)
+
 ## [2.11.0] - 2026-03-17
 
 ### Local Figma JSON submit mode

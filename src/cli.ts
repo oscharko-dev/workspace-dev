@@ -7,8 +7,14 @@
  */
 
 import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "./contracts/index.js";
+import {
+  getDefaultDesignSystemConfigPath,
+  inferDesignSystemConfigFromProject,
+  writeDesignSystemConfigFile
+} from "./design-system.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "./generation-locale.js";
 import { createWorkspaceServer } from "./server.js";
+import path from "node:path";
 
 const DEFAULT_PORT = 1983;
 const DEFAULT_HOST = "127.0.0.1";
@@ -49,6 +55,7 @@ interface CliOptions {
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
   iconMapFilePath: string | undefined;
+  designSystemFilePath: string | undefined;
   exportImages: boolean;
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
@@ -62,6 +69,10 @@ interface CliOptions {
   enableLintAutofix: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
+  scanProjectRoot: string;
+  scanOutputPath: string | undefined;
+  scanLibrary: string | undefined;
+  scanForce: boolean;
 }
 
 const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean => {
@@ -197,6 +208,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     max: 24 * 60 * 60_000
   });
   let iconMapFilePath = process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
+  let designSystemFilePath = process.env.FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE?.trim() || undefined;
   let exportImages = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_EXPORT_IMAGES,
     DEFAULT_EXPORT_IMAGES
@@ -249,6 +261,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
     false
   );
+  let scanProjectRoot = process.cwd();
+  let scanOutputPath: string | undefined;
+  let scanLibrary: string | undefined;
+  let scanForce = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -384,6 +400,13 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--design-system-file") {
+      const nextValue = args[index + 1]?.trim();
+      designSystemFilePath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--export-images") {
       exportImages = parseBooleanLike(args[index + 1], exportImages);
       index += 1;
@@ -490,6 +513,34 @@ const parseArgs = (argv: string[]): CliOptions => {
       index += 1;
       continue;
     }
+
+    if (arg === "--project-root") {
+      const nextValue = args[index + 1]?.trim();
+      if (nextValue && nextValue.length > 0) {
+        scanProjectRoot = nextValue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--output") {
+      const nextValue = args[index + 1]?.trim();
+      scanOutputPath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--library") {
+      const nextValue = args[index + 1]?.trim();
+      scanLibrary = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--force") {
+      scanForce = true;
+      continue;
+    }
   }
 
   return {
@@ -508,6 +559,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaCacheEnabled,
     figmaCacheTtlMs,
     iconMapFilePath,
+    designSystemFilePath,
     exportImages,
     figmaScreenElementBudget,
     figmaScreenElementMaxDepth,
@@ -520,7 +572,11 @@ const parseArgs = (argv: string[]): CliOptions => {
     skipInstall,
     enableLintAutofix,
     enablePreview,
-    enablePerfValidation
+    enablePerfValidation,
+    scanProjectRoot,
+    scanOutputPath,
+    scanLibrary,
+    scanForce
   };
 };
 
@@ -530,9 +586,11 @@ workspace-dev - autonomous local workspace generator
 
 Usage:
   workspace-dev start [options]
+  workspace-dev scan-design-system [options]
   workspace-dev --help
 
 Options:
+  Start command:
   --port <port>              Port to listen on (default: ${DEFAULT_PORT})
   --host <host>              Host to bind to (default: ${DEFAULT_HOST})
   --output-root <path>       Output root for jobs/repros (default: ${DEFAULT_OUTPUT_ROOT})
@@ -553,6 +611,8 @@ Options:
   --no-cache                 Disable figma.source file-system cache
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
   --icon-map-file <path>     Override icon fallback mapping file path
+  --design-system-file <path>
+                             Override design-system mapping file path
   --export-images <true|false>
                              Export image assets from Figma into generated-app/public/images (default: ${DEFAULT_EXPORT_IMAGES})
   --figma-screen-element-budget <n>
@@ -576,6 +636,11 @@ Options:
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: false)
+  Scan command:
+  --project-root <path>      Project root to scan for imports (default: cwd)
+  --output <path>            Output file path (default: <project-root>/${DEFAULT_OUTPUT_ROOT}/design-system.json)
+  --library <pkg>            Override inferred UI package/library
+  --force                    Overwrite existing output file
   --help                     Show this help message
 
 Environment variables:
@@ -593,6 +658,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
   FIGMAPIPE_WORKSPACE_ICON_MAP_FILE
+  FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE
   FIGMAPIPE_WORKSPACE_EXPORT_IMAGES
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH
@@ -631,9 +697,40 @@ const main = async (): Promise<void> => {
     process.exit(0);
   }
 
+  if (options.command === "scan-design-system") {
+    const projectRoot = path.resolve(options.scanProjectRoot);
+    const defaultOutputPath = getDefaultDesignSystemConfigPath({
+      outputRoot: path.resolve(projectRoot, DEFAULT_OUTPUT_ROOT)
+    });
+    const outputPath = path.resolve(options.scanOutputPath ?? defaultOutputPath);
+
+    try {
+      const scanResult = await inferDesignSystemConfigFromProject({
+        projectRoot,
+        ...(options.scanLibrary ? { libraryOverride: options.scanLibrary } : {})
+      });
+      await writeDesignSystemConfigFile({
+        outputFilePath: outputPath,
+        config: scanResult.config,
+        force: options.scanForce
+      });
+      console.log(`[workspace-dev] Design system scan completed.`);
+      console.log(`[workspace-dev] Project root: ${projectRoot}`);
+      console.log(`[workspace-dev] Scanned files: ${scanResult.scannedFiles}`);
+      console.log(`[workspace-dev] Selected library: ${scanResult.selectedLibrary}`);
+      console.log(`[workspace-dev] Wrote config: ${outputPath}`);
+      process.exit(0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[workspace-dev] Design system scan failed: ${message}`);
+      process.exit(1);
+    }
+  }
+
   if (options.command !== "start") {
     console.error(`Unknown command: ${options.command}`);
     console.error('Use "workspace-dev start" to start the server.');
+    console.error('Use "workspace-dev scan-design-system" to generate a design-system config.');
     console.error('Use "workspace-dev --help" for usage information.');
     process.exit(1);
   }
@@ -662,6 +759,7 @@ const main = async (): Promise<void> => {
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       ...(options.iconMapFilePath !== undefined ? { iconMapFilePath: options.iconMapFilePath } : {}),
+      ...(options.designSystemFilePath !== undefined ? { designSystemFilePath: options.designSystemFilePath } : {}),
       exportImages: options.exportImages,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
@@ -699,6 +797,9 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
     console.log(
       `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
+    );
+    console.log(
+      `[workspace-dev] Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`
     );
     console.log(`[workspace-dev] Export images: ${options.exportImages}`);
     console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
