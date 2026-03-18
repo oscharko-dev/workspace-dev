@@ -63,6 +63,8 @@ const extractThemeHex = ({
   return match[1];
 };
 
+const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
+
 const createIr = () => ({
   sourceName: "Demo",
   tokens: {
@@ -4579,13 +4581,150 @@ test("deterministic screen rendering deduplicates duplicate sx keys for icon fal
   const iconLine = content.split("\n").find((line) => line.includes("<InfoOutlinedIcon"));
   assert.ok(iconLine);
 
-  const count = (source: string, token: string): number => source.split(token).length - 1;
-  assert.equal(count(iconLine, "width:"), 1);
-  assert.equal(count(iconLine, "height:"), 1);
-  assert.equal(count(iconLine, "display:"), 1);
-  assert.equal(count(iconLine, "alignItems:"), 1);
-  assert.equal(count(iconLine, "justifyContent:"), 1);
-  assert.equal(count(iconLine, "fontSize:"), 1);
+  assert.equal(countOccurrences(iconLine, "width:"), 1);
+  assert.equal(countOccurrences(iconLine, "height:"), 1);
+  assert.equal(countOccurrences(iconLine, "display:"), 1);
+  assert.equal(countOccurrences(iconLine, "alignItems:"), 1);
+  assert.equal(countOccurrences(iconLine, "justifyContent:"), 1);
+  assert.equal(countOccurrences(iconLine, "fontSize:"), 1);
+});
+
+test("deterministic screen rendering extracts repeated sx patterns into shared constants when occurrences reach threshold", () => {
+  const makeVariantButton = (id: string) => ({
+    id,
+    name: "Primary Action",
+    nodeType: "FRAME",
+    type: "button" as const,
+    x: 0,
+    y: 0,
+    width: 220,
+    height: 48,
+    fillColor: "#d4001a",
+    variantMapping: {
+      properties: {
+        state: "Disabled",
+        size: "Small",
+        variant: "Text"
+      },
+      muiProps: {
+        variant: "text" as const,
+        size: "small" as const,
+        disabled: true
+      },
+      state: "disabled" as const,
+      stateOverrides: {
+        hover: {
+          backgroundColor: "#c4001a"
+        },
+        active: {
+          backgroundColor: "#9f0015"
+        },
+        disabled: {
+          backgroundColor: "#d1d5db",
+          color: "#6b7280"
+        }
+      }
+    },
+    children: [
+      {
+        id: `${id}-text`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Weiter"
+      }
+    ]
+  });
+
+  const screen = {
+    id: "shared-sx-threshold-screen",
+    name: "Shared SX Threshold Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [makeVariantButton("variant-button-1"), makeVariantButton("variant-button-2"), makeVariantButton("variant-button-3")]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("const sharedSxStyle1 = {"));
+  assert.equal(countOccurrences(content, "sx={sharedSxStyle1}"), 3);
+  assert.equal(countOccurrences(content, '"&:hover": {'), 1);
+  assert.equal(countOccurrences(content, "sx={{ position: \"absolute\""), 0);
+
+  const muiImportIndex = content.indexOf('from "@mui/material";');
+  const sharedConstIndex = content.indexOf("const sharedSxStyle1 = {");
+  const exportIndex = content.indexOf("export default function");
+  assert.ok(muiImportIndex >= 0);
+  assert.ok(sharedConstIndex > muiImportIndex);
+  assert.ok(exportIndex > sharedConstIndex);
+});
+
+test("deterministic screen rendering keeps inline sx when repeated style count is below threshold", () => {
+  const makeIconNode = (id: string) => ({
+    id,
+    name: "ic_info_hint",
+    nodeType: "INSTANCE",
+    type: "container" as const,
+    x: 10,
+    y: 20,
+    width: 24,
+    height: 24,
+    children: []
+  });
+  const screen = {
+    id: "shared-sx-below-threshold-screen",
+    name: "Shared SX Below Threshold Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [makeIconNode("icon-one"), makeIconNode("icon-two")]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconLines = content.split("\n").filter((line) => line.includes("<InfoOutlinedIcon"));
+  assert.equal(content.includes("const sharedSxStyle1 = {"), false);
+  assert.equal(countOccurrences(content, "sx={sharedSxStyle"), 0);
+  assert.equal(iconLines.length, 2);
+  assert.equal(iconLines.every((line) => line.includes("sx={{")), true);
+});
+
+test("deterministic screen rendering assigns shared sx constants deterministically for multiple repeated style groups", () => {
+  const makeIconNode = ({ id, x, y, size }: { id: string; x: number; y: number; size: number }) => ({
+    id,
+    name: "ic_info_hint",
+    nodeType: "INSTANCE",
+    type: "container" as const,
+    x,
+    y,
+    width: size,
+    height: size,
+    children: []
+  });
+  const screen = {
+    id: "shared-sx-multi-group-screen",
+    name: "Shared SX Multi Group Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      makeIconNode({ id: "icon-a-1", x: 10, y: 20, size: 24 }),
+      makeIconNode({ id: "icon-a-2", x: 10, y: 20, size: 24 }),
+      makeIconNode({ id: "icon-a-3", x: 10, y: 20, size: 24 }),
+      makeIconNode({ id: "icon-b-1", x: 40, y: 50, size: 32 }),
+      makeIconNode({ id: "icon-b-2", x: 40, y: 50, size: 32 }),
+      makeIconNode({ id: "icon-b-3", x: 40, y: 50, size: 32 })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const styleOneIndex = content.indexOf("const sharedSxStyle1 = {");
+  const styleTwoIndex = content.indexOf("const sharedSxStyle2 = {");
+  assert.ok(styleOneIndex >= 0);
+  assert.ok(styleTwoIndex > styleOneIndex);
+  assert.match(content, /const sharedSxStyle1 = \{[^}]*left: "0px"[^}]*width: "24px"[^}]*height: "24px"[^}]*\};/);
+  assert.match(content, /const sharedSxStyle2 = \{[^}]*left: "30px"[^}]*width: "32px"[^}]*height: "32px"[^}]*\};/);
+  assert.equal(countOccurrences(content, "sx={sharedSxStyle1}"), 3);
+  assert.equal(countOccurrences(content, "sx={sharedSxStyle2}"), 3);
 });
 
 test("deterministic screen rendering keeps avatar text for icon-like containers", () => {
