@@ -1,11 +1,5 @@
 import type { FigmaFileResponse } from "./types.js";
-
-const PLACEHOLDER_TEXT_VALUES = new Set([
-  "swap component",
-  "instance swap",
-  "add description",
-  "alternativtext"
-]);
+import { isHelperItemNode, isNodeGeometryEmpty, isTechnicalPlaceholderNode } from "../figma-node-heuristics.js";
 
 const ALLOWED_FILE_KEYS = new Set(["name", "document"]);
 
@@ -106,44 +100,6 @@ const countSubtreeNodes = (value: unknown): number => {
     count += countSubtreeNodes(child);
   }
   return count;
-};
-
-const hasPlaceholderText = (node: Record<string, unknown>): boolean => {
-  if (node.type !== "TEXT") {
-    return false;
-  }
-  if (typeof node.characters !== "string") {
-    return false;
-  }
-  return PLACEHOLDER_TEXT_VALUES.has(node.characters.trim().toLowerCase());
-};
-
-const isGeometryEmpty = (node: Record<string, unknown>): boolean => {
-  if (!isRecord(node.absoluteBoundingBox)) {
-    return false;
-  }
-  const width = node.absoluteBoundingBox.width;
-  const height = node.absoluteBoundingBox.height;
-  if (!isFiniteNumber(width) || !isFiniteNumber(height)) {
-    return false;
-  }
-  return width <= 0 || height <= 0;
-};
-
-const isHelperItemNode = (node: Record<string, unknown>): boolean => {
-  if (typeof node.name !== "string") {
-    return false;
-  }
-  const normalized = node.name.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  return (
-    normalized === "_item" ||
-    normalized.startsWith("_item ") ||
-    normalized.startsWith("item_") ||
-    normalized.endsWith("_item")
-  );
 };
 
 const sanitizeColor = (value: unknown, metrics: FigmaCleaningAccumulator): Record<string, number> | undefined => {
@@ -677,12 +633,12 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
     return null;
   }
 
-  if (context.inInstanceContext && hasPlaceholderText(nodeCandidate)) {
+  if (context.inInstanceContext && isTechnicalPlaceholderNode({ node: nodeCandidate })) {
     metrics.removedPlaceholderNodes += 1;
     return null;
   }
 
-  if (isHelperItemNode(nodeCandidate) && isGeometryEmpty(nodeCandidate)) {
+  if (isHelperItemNode({ node: nodeCandidate }) && isNodeGeometryEmpty({ node: nodeCandidate })) {
     metrics.removedHelperNodes += countSubtreeNodes(nodeCandidate);
     return null;
   }
