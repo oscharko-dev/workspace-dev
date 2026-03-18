@@ -133,7 +133,8 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     stages: job.stages.map((stage) => ({ ...stage })),
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
-    preview: { ...job.preview }
+    preview: { ...job.preview },
+    queue: { ...job.queue }
   };
   if (job.currentStage) {
     status.currentStage = job.currentStage;
@@ -143,6 +144,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   }
   if (job.finishedAt) {
     status.finishedAt = job.finishedAt;
+  }
+  if (job.cancellation) {
+    status.cancellation = { ...job.cancellation };
   }
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
@@ -158,6 +162,10 @@ export const toJobSummary = (job: JobRecord): string => {
   if (job.status === "completed") {
     const count = job.stages.filter((stage) => stage.status === "completed").length;
     return `Job completed successfully. ${count}/${job.stages.length} stages completed.`;
+  }
+  if (job.status === "canceled") {
+    const reason = job.cancellation?.reason ?? "Cancellation requested.";
+    return `Job canceled. ${reason}`;
   }
   if (job.status === "failed") {
     const stage = job.error?.stage ?? job.currentStage ?? "unknown";

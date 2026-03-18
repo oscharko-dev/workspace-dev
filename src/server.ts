@@ -115,6 +115,8 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       : {}),
     ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),
     ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
+    ...(options.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.maxConcurrentJobs } : {}),
+    ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });

@@ -23,6 +23,19 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.14.0] - 2026-03-18
+
+### Job cancellation endpoint and queue backpressure controls
+
+Added:
+
+- `WorkspaceStartOptions.maxConcurrentJobs?: number` (default `1`)
+- `WorkspaceStartOptions.maxQueuedJobs?: number` (default `20`)
+- `WorkspaceJobRuntimeStatus` now also supports `"canceled"`.
+- `WorkspaceJobQueueState` and `WorkspaceJobStatus.queue`
+- `WorkspaceJobCancellation` and `WorkspaceJobStatus.cancellation`
+- `WorkspaceJobResult.cancellation`
+
 ## [2.13.0] - 2026-03-18
 
 ### Optional unit-test validation gate in runtime configuration

@@ -28,6 +28,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
+  assert.equal(runtime.maxConcurrentJobs, 1);
+  assert.equal(runtime.maxQueuedJobs, 20);
   assert.equal(runtime.previewEnabled, true);
 });
 
@@ -53,7 +55,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     enableUiValidation: false,
     enableUnitTestValidation: true,
     installPreferOffline: false,
-    skipInstall: true
+    skipInstall: true,
+    maxConcurrentJobs: 999,
+    maxQueuedJobs: -7
   });
 
   assert.equal(runtime.figmaBootstrapDepth, 10);
@@ -77,6 +81,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);
   assert.equal(runtime.skipInstall, true);
+  assert.equal(runtime.maxConcurrentJobs, 16);
+  assert.equal(runtime.maxQueuedJobs, 0);
 });
 
 test("resolveRuntimeSettings normalizes empty figma screen name pattern to undefined", () => {

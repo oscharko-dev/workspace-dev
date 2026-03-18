@@ -24,7 +24,13 @@ const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRec
     outputRoot: "/tmp",
     jobDir: "/tmp/job"
   },
-  preview: { enabled: true }
+  preview: { enabled: true },
+  queue: {
+    runningCount: 1,
+    queuedCount: 0,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 20
+  }
 });
 
 test("runGitPrFlowWithDeps validates repo configuration early", async () => {

@@ -21,6 +21,8 @@ const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
+const DEFAULT_MAX_CONCURRENT_JOBS = 1;
+const DEFAULT_MAX_QUEUED_JOBS = 20;
 
 const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
   if (!value) {
@@ -68,6 +70,8 @@ export const resolveRuntimeSettings = ({
   enableUnitTestValidation,
   installPreferOffline,
   skipInstall,
+  maxConcurrentJobs,
+  maxQueuedJobs,
   enablePreview,
   fetchImpl
 }: {
@@ -94,6 +98,8 @@ export const resolveRuntimeSettings = ({
   enableUnitTestValidation?: boolean;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  maxConcurrentJobs?: number;
+  maxQueuedJobs?: number;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
 }): JobEngineRuntime => {
@@ -170,6 +176,14 @@ export const resolveRuntimeSettings = ({
     installPreferOffline:
       typeof installPreferOffline === "boolean" ? installPreferOffline : DEFAULT_INSTALL_PREFER_OFFLINE,
     skipInstall: typeof skipInstall === "boolean" ? skipInstall : DEFAULT_SKIP_INSTALL,
+    maxConcurrentJobs:
+      typeof maxConcurrentJobs === "number" && Number.isFinite(maxConcurrentJobs)
+        ? Math.max(1, Math.min(16, Math.trunc(maxConcurrentJobs)))
+        : DEFAULT_MAX_CONCURRENT_JOBS,
+    maxQueuedJobs:
+      typeof maxQueuedJobs === "number" && Number.isFinite(maxQueuedJobs)
+        ? Math.max(0, Math.min(1000, Math.trunc(maxQueuedJobs)))
+        : DEFAULT_MAX_QUEUED_JOBS,
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch
   };

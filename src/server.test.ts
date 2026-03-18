@@ -66,6 +66,22 @@ const createFakeFigmaFetch = (): typeof fetch => {
   };
 };
 
+const createNeverEndingCancelableFetch = (): typeof fetch => {
+  return async (_input, init) =>
+    await new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal instanceof AbortSignal) {
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true }
+        );
+      }
+    });
+};
+
 const waitForJobTerminalState = async ({
   server,
   jobId,
@@ -86,7 +102,7 @@ const waitForJobTerminalState = async ({
     assert.equal(response.statusCode, 200);
     const body = response.json<Record<string, unknown>>();
 
-    if (body.status === "completed" || body.status === "failed") {
+    if (body.status === "completed" || body.status === "failed" || body.status === "canceled") {
       return body;
     }
 
@@ -732,6 +748,154 @@ test("workspace server returns JOB_NOT_FOUND for unknown job ids", async () => {
     assert.equal(response.statusCode, 404);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "JOB_NOT_FOUND");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server cancels queued jobs through POST /workspace/jobs/:id/cancel", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 2,
+    fetchImpl: createNeverEndingCancelableFetch()
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(firstSubmit.json<Record<string, unknown>>().jobId);
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(secondSubmit.statusCode, 202);
+    const secondJobId = String(secondSubmit.json<Record<string, unknown>>().jobId);
+
+    const cancelResponse = await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${secondJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "User canceled queued job."
+      }
+    });
+    assert.equal(cancelResponse.statusCode, 202);
+    const canceledBody = cancelResponse.json<Record<string, unknown>>();
+    assert.equal(canceledBody.status, "canceled");
+
+    const canceledStatus = await waitForJobTerminalState({ server, jobId: secondJobId, timeoutMs: 20_000 });
+    assert.equal(canceledStatus.status, "canceled");
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    const firstTerminal = await waitForJobTerminalState({ server, jobId: firstJobId, timeoutMs: 20_000 });
+    assert.equal(firstTerminal.status, "canceled");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server returns 429 backpressure when queue limit is reached", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 1,
+    fetchImpl: createNeverEndingCancelableFetch()
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(firstSubmit.json<Record<string, unknown>>().jobId);
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(secondSubmit.statusCode, 202);
+    const secondJobId = String(secondSubmit.json<Record<string, unknown>>().jobId);
+
+    const thirdSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-3",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(thirdSubmit.statusCode, 429);
+    const backpressureBody = thirdSubmit.json<Record<string, unknown>>();
+    assert.equal(backpressureBody.error, "QUEUE_BACKPRESSURE");
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${secondJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
