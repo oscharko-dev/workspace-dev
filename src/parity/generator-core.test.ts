@@ -526,6 +526,8 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(themeContent.includes('textTransform: "none"'));
   assert.ok(appContent.includes('import { useColorScheme } from "@mui/material/styles";'));
   assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
+  assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
+  assert.ok(appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
   assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
   assert.ok(appContent.includes("element={<ErrorBoundary><"));
   assert.ok(appContent.includes('window.matchMedia("(prefers-color-scheme: dark)")'));
@@ -1419,6 +1421,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.deepEqual(result.llmWarnings, []);
   assert.equal(result.generatedPaths.includes("src/App.tsx"), true);
   assert.equal(result.generatedPaths.includes("src/components/ErrorBoundary.tsx"), true);
+  assert.equal(result.generatedPaths.includes("src/components/ScreenSkeleton.tsx"), true);
   assert.equal(result.generatedPaths.includes("generation-metrics.json"), true);
   assert.equal(result.generationMetrics.fetchedNodes, 0);
   assert.equal(result.mappingCoverage?.usedMappings, 1);
@@ -1434,6 +1437,8 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(appContent.includes("HashRouter"), false);
   assert.ok(appContent.includes("Suspense"));
   assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
+  assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
+  assert.ok(appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
   assert.ok(appContent.includes("element={<ErrorBoundary><"));
 
   const errorBoundaryContent = await readFile(path.join(projectDir, "src", "components", "ErrorBoundary.tsx"), "utf8");
@@ -1441,6 +1446,11 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.ok(errorBoundaryContent.includes("static getDerivedStateFromError"));
   assert.ok(errorBoundaryContent.includes("handleRetry"));
   assert.ok(errorBoundaryContent.includes("Try again"));
+
+  const screenSkeletonContent = await readFile(path.join(projectDir, "src", "components", "ScreenSkeleton.tsx"), "utf8");
+  assert.ok(screenSkeletonContent.includes("function ScreenSkeleton"));
+  assert.ok(screenSkeletonContent.includes("LinearProgress"));
+  assert.ok(screenSkeletonContent.includes("Skeleton"));
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
   assert.ok(generatedScreenContent.includes('import MappedInput from "@acme/ui";'));
@@ -1933,6 +1943,8 @@ test("createDeterministicAppFile uses lazy route-level loading for non-initial s
 
   assert.ok(appFile.content.includes("Suspense"));
   assert.ok(appFile.content.includes("BrowserRouter"));
+  assert.ok(appFile.content.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
+  assert.ok(appFile.content.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
   assert.ok(appFile.content.includes("const LazySettingsScreen = lazy"));
   assert.ok(appFile.content.includes('element={<ErrorBoundary><LazySettingsScreen /></ErrorBoundary>}'));
   assert.equal((appFile.content.match(/element={<ErrorBoundary></g) ?? []).length, 2);
