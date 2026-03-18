@@ -923,6 +923,26 @@ test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
   );
 });
 
+test("figmaToDesignIr throws path-aware validation errors for malformed payload", () => {
+  assert.throws(
+    () =>
+      figmaToDesignIr({
+        name: "Malformed",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              type: "CANVAS",
+              children: []
+            }
+          ]
+        }
+      }),
+    /Invalid Figma payload: document\.children\[0\]\.id:/
+  );
+});
+
 test("figmaToDesignIr maps SECTION-contained screens and prunes hidden subtrees", () => {
   const ir = figmaToDesignIr(createSampleFigmaFile());
 
