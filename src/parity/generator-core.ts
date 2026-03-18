@@ -4082,6 +4082,7 @@ interface PatternExtractionPlan {
 
 interface RenderedButtonModel {
   key: string;
+  label: string;
   preferredSubmit: boolean;
   eligibleForSubmit: boolean;
 }
@@ -6091,6 +6092,7 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   });
   context.buttons.push({
     key: buttonKey,
+    label: (label ?? element.name ?? "Button").trim() || "Button",
     preferredSubmit: variant === "contained",
     eligibleForSubmit: !inferredDisabled
   });
@@ -9343,6 +9345,7 @@ interface FallbackScreenFileResult {
   file: GeneratedFile;
   componentFiles: GeneratedFile[];
   contextFiles: GeneratedFile[];
+  testFiles: GeneratedFile[];
   prototypeNavigationRenderedCount: number;
   simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
@@ -9352,6 +9355,18 @@ interface FallbackScreenFileResult {
     message: string;
   }>;
   accessibilityWarnings: AccessibilityWarning[];
+}
+
+interface ScreenTestButtonTarget {
+  label: string;
+  clickable: boolean;
+}
+
+interface ScreenTestTargetPlan {
+  textTargets: string[];
+  buttonTargets: ScreenTestButtonTarget[];
+  textInputTargets: string[];
+  selectTargets: string[];
 }
 
 const toTruncationComment = (
@@ -9367,6 +9382,334 @@ const toTruncationComment = (
     return "";
   }
   return `/* workspace-dev: Screen IR exceeded budget (${truncationMetric.originalElements} elements), truncated to ${truncationMetric.retainedElements} (budget ${truncationMetric.budget}). */\n`;
+};
+
+const MAX_SCREEN_TEST_TEXT_TARGETS = 8;
+const MAX_SCREEN_TEST_BUTTON_TARGETS = 6;
+const MAX_SCREEN_TEST_INPUT_TARGETS = 6;
+const MAX_SCREEN_TEST_SELECT_TARGETS = 6;
+const MAX_SCREEN_TEST_TARGET_TEXT_LENGTH = 120;
+const MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH = 3;
+
+const normalizeScreenTestTargetText = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized || normalized.length > MAX_SCREEN_TEST_TARGET_TEXT_LENGTH) {
+    return undefined;
+  }
+  if (/^[-–—•*]+$/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+};
+
+const collectRepresentativeScreenTextTargets = ({
+  roots,
+  maxCount = MAX_SCREEN_TEST_TEXT_TARGETS
+}: {
+  roots: ScreenElementIR[];
+  maxCount?: number;
+}): string[] => {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  const stack: ScreenElementIR[] = [...roots].reverse();
+
+  while (stack.length > 0 && targets.length < maxCount) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+
+    if (current.type === "text") {
+      const normalizedText = normalizeScreenTestTargetText(current.text);
+      if (normalizedText) {
+        if (normalizedText.length < MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH) {
+          continue;
+        }
+        const normalizedKey = normalizedText.toLowerCase();
+        if (!seen.has(normalizedKey)) {
+          seen.add(normalizedKey);
+          targets.push(normalizedText);
+          if (targets.length >= maxCount) {
+            break;
+          }
+        }
+      }
+    }
+
+    const children = current.children ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      if (child) {
+        stack.push(child);
+      }
+    }
+  }
+
+  return targets;
+};
+
+const normalizeRenderedScreenTextForSearch = (value: string): string => {
+  return value
+    .toLowerCase()
+    .replace(/\\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const filterTextTargetsByRenderedScreenOutput = ({
+  textTargets,
+  renderedOutput,
+  maxCount = MAX_SCREEN_TEST_TEXT_TARGETS
+}: {
+  textTargets: string[];
+  renderedOutput: string;
+  maxCount?: number;
+}): string[] => {
+  const normalizedRenderedOutput = normalizeRenderedScreenTextForSearch(renderedOutput);
+  if (!normalizedRenderedOutput) {
+    return textTargets.slice(0, maxCount);
+  }
+
+  const filteredTargets: string[] = [];
+  for (const target of textTargets) {
+    const normalizedTarget = normalizeRenderedScreenTextForSearch(target);
+    if (!normalizedTarget) {
+      continue;
+    }
+    if (normalizedTarget.length < MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH) {
+      continue;
+    }
+    if (!normalizedRenderedOutput.includes(normalizedTarget)) {
+      continue;
+    }
+    filteredTargets.push(target);
+    if (filteredTargets.length >= maxCount) {
+      break;
+    }
+  }
+
+  return filteredTargets;
+};
+
+const collectRepresentativeScreenButtonTargets = ({
+  buttons,
+  maxCount = MAX_SCREEN_TEST_BUTTON_TARGETS
+}: {
+  buttons: RenderedButtonModel[];
+  maxCount?: number;
+}): ScreenTestButtonTarget[] => {
+  const byLabel = new Map<string, ScreenTestButtonTarget>();
+  for (const button of buttons) {
+    const normalizedLabel = normalizeScreenTestTargetText(button.label);
+    if (!normalizedLabel) {
+      continue;
+    }
+    const key = normalizedLabel.toLowerCase();
+    const existing = byLabel.get(key);
+    if (!existing) {
+      byLabel.set(key, {
+        label: normalizedLabel,
+        clickable: button.eligibleForSubmit
+      });
+      if (byLabel.size >= maxCount) {
+        break;
+      }
+      continue;
+    }
+    if (button.eligibleForSubmit) {
+      existing.clickable = true;
+    }
+  }
+  return Array.from(byLabel.values());
+};
+
+const collectRepresentativeFieldTargets = ({
+  fields,
+  isSelect,
+  maxCount
+}: {
+  fields: InteractiveFieldModel[];
+  isSelect: boolean;
+  maxCount: number;
+}): string[] => {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const field of fields) {
+    if (field.isSelect !== isSelect) {
+      continue;
+    }
+    const normalizedLabel = normalizeScreenTestTargetText(field.label);
+    if (!normalizedLabel) {
+      continue;
+    }
+    const key = normalizedLabel.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    labels.push(normalizedLabel);
+    if (labels.length >= maxCount) {
+      break;
+    }
+  }
+  return labels;
+};
+
+const buildScreenTestTargetPlan = ({
+  roots,
+  renderedOutput,
+  buttons,
+  fields
+}: {
+  roots: ScreenElementIR[];
+  renderedOutput: string;
+  buttons: RenderedButtonModel[];
+  fields: InteractiveFieldModel[];
+}): ScreenTestTargetPlan => {
+  const collectedTextTargets = collectRepresentativeScreenTextTargets({
+    roots,
+    maxCount: MAX_SCREEN_TEST_TEXT_TARGETS
+  });
+
+  return {
+    textTargets: filterTextTargetsByRenderedScreenOutput({
+      textTargets: collectedTextTargets,
+      renderedOutput,
+      maxCount: MAX_SCREEN_TEST_TEXT_TARGETS
+    }),
+    buttonTargets: collectRepresentativeScreenButtonTargets({
+      buttons,
+      maxCount: MAX_SCREEN_TEST_BUTTON_TARGETS
+    }),
+    textInputTargets: collectRepresentativeFieldTargets({
+      fields,
+      isSelect: false,
+      maxCount: MAX_SCREEN_TEST_INPUT_TARGETS
+    }),
+    selectTargets: collectRepresentativeFieldTargets({
+      fields,
+      isSelect: true,
+      maxCount: MAX_SCREEN_TEST_SELECT_TARGETS
+    })
+  };
+};
+
+const buildScreenUnitTestFile = ({
+  componentName,
+  screenFilePath,
+  plan
+}: {
+  componentName: string;
+  screenFilePath: string;
+  plan: ScreenTestTargetPlan;
+}): GeneratedFile => {
+  const screenFileName = path.posix.basename(screenFilePath, ".tsx");
+  const testFilePath = path.posix.join("src", "screens", "__tests__", `${componentName}.test.tsx`);
+  const expectedButtonLabels = plan.buttonTargets.map((target) => target.label);
+  const clickableButtonLabels = plan.buttonTargets.filter((target) => target.clickable).map((target) => target.label);
+
+  const content = `import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ThemeProvider } from "@mui/material/styles";
+import { axe } from "jest-axe";
+import { MemoryRouter } from "react-router-dom";
+import { appTheme } from "../../theme/theme";
+import ${componentName}Screen from "../${screenFileName}";
+
+const expectedTexts: string[] = ${JSON.stringify(plan.textTargets, null, 2)};
+const expectedButtonLabels: string[] = ${JSON.stringify(expectedButtonLabels, null, 2)};
+const clickableButtonLabels: string[] = ${JSON.stringify(clickableButtonLabels, null, 2)};
+const expectedTextInputLabels: string[] = ${JSON.stringify(plan.textInputTargets, null, 2)};
+const expectedSelectLabels: string[] = ${JSON.stringify(plan.selectTargets, null, 2)};
+
+const normalizeTextForAssertion = (value: string): string => {
+  return value.replace(/\\s+/g, " ").trim();
+};
+
+const expectTextToBePresent = ({ container, expectedText }: { container: HTMLElement; expectedText: string }): void => {
+  const normalizedExpectedText = normalizeTextForAssertion(expectedText);
+  if (normalizedExpectedText.length === 0) {
+    return;
+  }
+  const normalizedContainerText = normalizeTextForAssertion(container.textContent ?? "");
+  expect(normalizedContainerText).toContain(normalizedExpectedText);
+};
+
+const axeConfig = {
+  rules: {
+    "heading-order": { enabled: false },
+    "landmark-banner-is-top-level": { enabled: false }
+  }
+} as const;
+
+const renderScreen = () => {
+  return render(
+    <ThemeProvider theme={appTheme} defaultMode="system" noSsr>
+      <MemoryRouter>
+        <${componentName}Screen />
+      </MemoryRouter>
+    </ThemeProvider>
+  );
+};
+
+describe("${componentName}Screen", () => {
+  it("renders without crashing", () => {
+    const { container } = renderScreen();
+    expect(container.firstChild).not.toBeNull();
+  });
+
+  it("renders representative text content", () => {
+    const { container } = renderScreen();
+    for (const expectedText of expectedTexts) {
+      expectTextToBePresent({ container, expectedText });
+    }
+  });
+
+  it("keeps representative controls interactive", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+
+    for (const buttonLabel of expectedButtonLabels) {
+      expect(screen.getAllByRole("button", { name: buttonLabel }).length).toBeGreaterThan(0);
+    }
+
+    for (const buttonLabel of clickableButtonLabels) {
+      const buttons = screen.getAllByRole("button", { name: buttonLabel });
+      expect(buttons.length).toBeGreaterThan(0);
+      await user.click(buttons[0]!);
+    }
+
+    for (const inputLabel of expectedTextInputLabels) {
+      const controls = screen.getAllByLabelText(inputLabel);
+      expect(controls.length).toBeGreaterThan(0);
+      const control = controls[0];
+      if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
+        await user.clear(control);
+        await user.type(control, "x");
+      }
+    }
+
+    for (const selectLabel of expectedSelectLabels) {
+      const selects = screen.getAllByRole("combobox", { name: selectLabel });
+      expect(selects.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has no detectable accessibility violations", async () => {
+    const { container } = renderScreen();
+    const results = await axe(container, axeConfig);
+    expect(results).toHaveNoViolations();
+  });
+});
+`;
+
+  return {
+    path: testFilePath,
+    content
+  };
 };
 
 const buildInlineFormStateBlock = ({
@@ -10122,6 +10465,19 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;
   const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
+  const screenTestPlan = buildScreenTestTargetPlan({
+    roots: simplifiedChildren,
+    renderedOutput: rendered,
+    buttons: renderContext.buttons,
+    fields: renderContext.fields
+  });
+  const testFiles: GeneratedFile[] = [
+    buildScreenUnitTestFile({
+      componentName,
+      screenFilePath: filePath,
+      plan: screenTestPlan
+    })
+  ];
   const contextFiles: GeneratedFile[] = [
     ...extractionPlan.contextFiles,
     ...(formContextFileSpec ? [formContextFileSpec.file] : [])
@@ -10138,7 +10494,8 @@ ${patternContextInitialStateDeclaration}${screenExportSource}
     mappingWarnings: renderContext.mappingWarnings,
     accessibilityWarnings: renderContext.accessibilityWarnings,
     componentFiles: extractionPlan.componentFiles,
-    contextFiles
+    contextFiles,
+    testFiles
   };
 };
 
@@ -10647,14 +11004,17 @@ export const generateArtifacts = async ({
     return {
       file: transformGeneratedFileWithDesignSystem(deterministicScreen.file),
       componentFiles: deterministicScreen.componentFiles.map((file) => transformGeneratedFileWithDesignSystem(file)),
-      contextFiles: deterministicScreen.contextFiles
+      contextFiles: deterministicScreen.contextFiles,
+      testFiles: deterministicScreen.testFiles
     };
   });
   await Promise.all(
-    deterministicScreens.flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles]).map(async (file) => {
-      await writeGeneratedFile(projectDir, file);
-      generatedPaths.add(file.path);
-    })
+    deterministicScreens
+      .flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles, ...item.testFiles])
+      .map(async (file) => {
+        await writeGeneratedFile(projectDir, file);
+        generatedPaths.add(file.path);
+      })
   );
 
   for (const [nodeId, mapping] of mappingByNodeId.entries()) {

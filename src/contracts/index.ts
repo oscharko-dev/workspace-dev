@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.11.0
+ * Contract version: 2.13.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -84,8 +84,10 @@ export interface WorkspaceStartOptions {
   routerMode?: WorkspaceRouterMode;
   /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
-  /** Run static UI validation in validate.project. Default: true */
+  /** Run static UI validation in validate.project. Default: false */
   enableUiValidation?: boolean;
+  /** Run generated-project unit tests in validate.project. Default: false */
+  enableUnitTestValidation?: boolean;
   /** Prefer offline package resolution during generated-project install. Default: true */
   installPreferOffline?: boolean;
   /** Skip package installation in validate.project; requires existing node_modules. Default: false */
@@ -241,4 +243,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.12.0" as const;
+export const CONTRACT_VERSION = "2.13.0" as const;

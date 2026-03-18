@@ -118,6 +118,7 @@ export const runProjectValidationWithDeps = async ({
   enableLintAutofix = true,
   enablePerfValidation = false,
   enableUiValidation = false,
+  enableUnitTestValidation = false,
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false,
@@ -128,6 +129,7 @@ export const runProjectValidationWithDeps = async ({
   enableLintAutofix?: boolean;
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
+  enableUnitTestValidation?: boolean;
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
@@ -178,6 +180,9 @@ export const runProjectValidationWithDeps = async ({
   attemptCommands.push({ name: "lint", args: ["lint"], timeoutMs: commandTimeoutMs });
   attemptCommands.push({ name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs });
   attemptCommands.push({ name: "build", args: ["build"], timeoutMs: commandTimeoutMs });
+  if (enableUnitTestValidation) {
+    attemptCommands.push({ name: "test", args: ["run", "test"], timeoutMs: commandTimeoutMs });
+  }
 
   if (enableUiValidation) {
     attemptCommands.push({
@@ -325,6 +330,7 @@ export const runProjectValidation = async ({
   enableLintAutofix = true,
   enablePerfValidation = false,
   enableUiValidation = false,
+  enableUnitTestValidation = false,
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false
@@ -334,6 +340,7 @@ export const runProjectValidation = async ({
   enableLintAutofix?: boolean;
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
+  enableUnitTestValidation?: boolean;
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
@@ -344,6 +351,7 @@ export const runProjectValidation = async ({
     enableLintAutofix,
     enablePerfValidation,
     enableUiValidation,
+    enableUnitTestValidation,
     commandTimeoutMs,
     installPreferOffline,
     skipInstall
