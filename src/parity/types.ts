@@ -55,6 +55,8 @@ export type {
   MappingPolicy
 } from "./types-mapping.js";
 
+export { validateDesignIR } from "./types-ir.js";
+
 export type {
   CounterAxisAlignItems,
   DepthTruncatedScreenMetric,
@@ -82,6 +84,9 @@ export type {
   ScreenSimplificationMetric,
   SimplificationMetrics,
   TruncatedScreenMetric,
+  ValidatedDesignIR,
+  IRValidationError,
+  IRValidationResult,
   ValidationFailure,
   VariantElementState,
   VariantMappingIR,

@@ -344,3 +344,112 @@ export interface ValidationFailure {
   command: string;
   output: string;
 }
+
+// ---------------------------------------------------------------------------
+// ValidatedDesignIR — typed wrapper guaranteeing IR completeness for generation
+// ---------------------------------------------------------------------------
+
+/**
+ * A validated Design IR that guarantees structural completeness for code generation.
+ * Use {@link validateDesignIR} to convert a raw `DesignIR` into this type.
+ *
+ * Invariants:
+ * - At least one screen with a non-empty `id` and `name`
+ * - All screens have a `children` array (may be empty)
+ * - Tokens contain a valid palette, typography scale, and spacing
+ * - `sourceName` is a non-empty string
+ */
+export interface ValidatedDesignIR {
+  readonly sourceName: string;
+  readonly screens: readonly ScreenIR[];
+  readonly tokens: DesignTokens;
+  readonly metrics: GenerationMetrics;
+}
+
+export interface IRValidationError {
+  readonly code: "IR_EMPTY_SCREENS" | "IR_INVALID_SCREEN" | "IR_MISSING_TOKENS" | "IR_MISSING_SOURCE_NAME";
+  readonly message: string;
+}
+
+export type IRValidationResult =
+  | { readonly valid: true; readonly ir: ValidatedDesignIR }
+  | { readonly valid: false; readonly errors: readonly IRValidationError[] };
+
+/**
+ * Validates a raw `DesignIR` and returns a `ValidatedDesignIR` on success.
+ * Checks:
+ * - `sourceName` is a non-empty string
+ * - `screens` is a non-empty array where every screen has `id`, `name`, and `children`
+ * - `tokens` has a valid palette with `primary` and `background` colours
+ * - `tokens.typography` is present and non-empty
+ */
+export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
+  const errors: IRValidationError[] = [];
+
+  if (!raw.sourceName || typeof raw.sourceName !== "string" || !raw.sourceName.trim()) {
+    errors.push({
+      code: "IR_MISSING_SOURCE_NAME",
+      message: "DesignIR.sourceName must be a non-empty string."
+    });
+  }
+
+  if (!Array.isArray(raw.screens) || raw.screens.length === 0) {
+    errors.push({
+      code: "IR_EMPTY_SCREENS",
+      message: "DesignIR.screens must be a non-empty array."
+    });
+  } else {
+    for (let i = 0; i < raw.screens.length; i++) {
+      const screen = raw.screens[i];
+      if (!screen || !screen.id || !screen.name || !Array.isArray(screen.children)) {
+        errors.push({
+          code: "IR_INVALID_SCREEN",
+          message: `DesignIR.screens[${i}] must have id, name, and children array.`
+        });
+      }
+    }
+  }
+
+  if (
+    !raw.tokens ||
+    typeof raw.tokens !== "object" ||
+    !raw.tokens.palette ||
+    !raw.tokens.palette.primary ||
+    !raw.tokens.palette.background ||
+    !raw.tokens.typography ||
+    typeof raw.tokens.typography !== "object" ||
+    Object.keys(raw.tokens.typography).length === 0
+  ) {
+    errors.push({
+      code: "IR_MISSING_TOKENS",
+      message: "DesignIR.tokens must include palette (with primary and background) and a non-empty typography scale."
+    });
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+
+  const metrics: GenerationMetrics = {
+    fetchedNodes: raw.metrics?.fetchedNodes ?? 0,
+    skippedHidden: raw.metrics?.skippedHidden ?? 0,
+    skippedPlaceholders: raw.metrics?.skippedPlaceholders ?? 0,
+    screenElementCounts: [...(raw.metrics?.screenElementCounts ?? [])],
+    truncatedScreens: [...(raw.metrics?.truncatedScreens ?? [])],
+    degradedGeometryNodes: [...(raw.metrics?.degradedGeometryNodes ?? [])],
+    prototypeNavigationDetected: raw.metrics?.prototypeNavigationDetected ?? 0,
+    prototypeNavigationResolved: raw.metrics?.prototypeNavigationResolved ?? 0,
+    prototypeNavigationUnresolved: raw.metrics?.prototypeNavigationUnresolved ?? 0,
+    prototypeNavigationRendered: 0
+  };
+
+  return {
+    valid: true,
+    ir: {
+      sourceName: raw.sourceName,
+      screens: raw.screens,
+      tokens: raw.tokens,
+      metrics
+    }
+  };
+};
