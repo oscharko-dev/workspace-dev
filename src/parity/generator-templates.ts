@@ -2840,10 +2840,11 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
           context,
           fallbackLabel: mediaLabel
         });
+        const mediaPerfAttrs = toImagePerformanceAttrs(mediaCandidate);
         if (isDecorativeImageElement(mediaCandidate)) {
-          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
+          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true"${mediaPerfAttrs} sx={{ ${mediaSx} }} />\n`;
         }
-        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
+        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}}${mediaPerfAttrs} sx={{ ${mediaSx} }} />\n`;
       })()
     : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
@@ -3930,6 +3931,27 @@ export const renderSkeleton = (element: ScreenElementIR, depth: number, parent: 
   return `${indent}<Skeleton aria-hidden="true" variant="${variant}" sx={{ ${sx} }} />`;
 };
 
+const ABOVE_THE_FOLD_Y_THRESHOLD = 600;
+
+export const isAboveTheFoldImage = (element: ScreenElementIR): boolean => {
+  if (typeof element.y !== "number") {
+    return true;
+  }
+  return element.y < ABOVE_THE_FOLD_Y_THRESHOLD;
+};
+
+const toImagePerformanceAttrs = (element: ScreenElementIR): string => {
+  const aboveFold = isAboveTheFoldImage(element);
+  const dimensionAttrs =
+    typeof element.width === "number" && typeof element.height === "number"
+      ? ` width={${Math.round(element.width)}} height={${Math.round(element.height)}}`
+      : "";
+  if (aboveFold) {
+    return ` decoding="async" fetchPriority="high"${dimensionAttrs}`;
+  }
+  return ` loading="lazy" decoding="async"${dimensionAttrs}`;
+};
+
 export const renderImageElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Box");
   const indent = "  ".repeat(depth);
@@ -3955,10 +3977,11 @@ export const renderImageElement = (element: ScreenElementIR, depth: number, pare
     context,
     fallbackLabel: ariaLabel
   });
+  const perfAttrs = toImagePerformanceAttrs(element);
   if (isDecorativeImageElement(element)) {
-    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true" sx={{ ${sx} }} />`;
+    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true"${perfAttrs} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
+  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}}${perfAttrs} sx={{ ${sx} }} />`;
 };
 
 export interface ElementRenderStrategyInput {
