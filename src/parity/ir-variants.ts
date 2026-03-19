@@ -88,13 +88,20 @@ export const normalizeVariantKey = (key: string): string | undefined => {
   if (normalized === "size" || normalized.includes(" size")) {
     return "size";
   }
-  if (normalized === "variant" || normalized.includes(" variant")) {
+  if (
+    normalized === "variant" ||
+    normalized.includes(" variant") ||
+    normalized === "type" ||
+    normalized === "style" ||
+    normalized === "button type" ||
+    normalized === "button style"
+  ) {
     return "variant";
   }
   if (normalized === "disabled") {
     return "disabled";
   }
-  if (normalized.includes("color")) {
+  if (normalized.includes("color") || normalized === "theme") {
     return "color";
   }
   return normalized;
@@ -233,6 +240,39 @@ export const toMuiSize = (value: string | undefined): VariantMuiProps["size"] =>
   return undefined;
 };
 
+export const toMuiColor = (value: string | undefined): VariantMuiProps["color"] => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, "")
+    .replace(/\s+/g, "");
+  if (normalized === "primary" || normalized === "default") {
+    return "primary";
+  }
+  if (normalized === "secondary") {
+    return "secondary";
+  }
+  if (normalized === "error" || normalized === "danger" || normalized === "destructive") {
+    return "error";
+  }
+  if (normalized === "info") {
+    return "info";
+  }
+  if (normalized === "success") {
+    return "success";
+  }
+  if (normalized === "warning") {
+    return "warning";
+  }
+  if (normalized === "inherit") {
+    return "inherit";
+  }
+  return undefined;
+};
+
 export const resolveMuiPropsFromVariantProperties = ({
   properties,
   state
@@ -248,6 +288,10 @@ export const resolveMuiPropsFromVariantProperties = ({
   const size = toMuiSize(properties.size);
   if (size) {
     muiProps.size = size;
+  }
+  const color = toMuiColor(properties.color);
+  if (color) {
+    muiProps.color = color;
   }
   if (state === "disabled") {
     muiProps.disabled = true;
