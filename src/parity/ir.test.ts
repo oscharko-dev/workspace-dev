@@ -2230,6 +2230,94 @@ const createResponsiveVariantFigmaFile = () => ({
   }
 });
 
+const createResponsiveBreakpointBoundaryFigmaFile = () => ({
+  name: "Responsive Breakpoint Boundary Demo",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "boundary-600-xs",
+            type: "FRAME",
+            name: "Boundary 600 - Mobile",
+            layoutMode: "VERTICAL",
+            itemSpacing: 8,
+            absoluteBoundingBox: { x: 0, y: 0, width: 599, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-600-sm",
+            type: "FRAME",
+            name: "Boundary 600 - Tablet",
+            layoutMode: "VERTICAL",
+            itemSpacing: 12,
+            absoluteBoundingBox: { x: 650, y: 0, width: 600, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-900-sm",
+            type: "FRAME",
+            name: "Boundary 900 - Tablet",
+            layoutMode: "VERTICAL",
+            itemSpacing: 12,
+            absoluteBoundingBox: { x: 1300, y: 0, width: 899, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-900-md",
+            type: "FRAME",
+            name: "Boundary 900 - Md",
+            layoutMode: "VERTICAL",
+            itemSpacing: 16,
+            absoluteBoundingBox: { x: 2250, y: 0, width: 900, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-1200-md",
+            type: "FRAME",
+            name: "Boundary 1200 - Md",
+            layoutMode: "VERTICAL",
+            itemSpacing: 16,
+            absoluteBoundingBox: { x: 3200, y: 0, width: 1199, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-1200-lg",
+            type: "FRAME",
+            name: "Boundary 1200 - Desktop",
+            layoutMode: "VERTICAL",
+            itemSpacing: 20,
+            absoluteBoundingBox: { x: 4450, y: 0, width: 1200, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-1536-lg",
+            type: "FRAME",
+            name: "Boundary 1536 - Desktop",
+            layoutMode: "VERTICAL",
+            itemSpacing: 20,
+            absoluteBoundingBox: { x: 5700, y: 0, width: 1535, height: 800 },
+            children: []
+          },
+          {
+            id: "boundary-1536-xl",
+            type: "FRAME",
+            name: "Boundary 1536 - Widescreen",
+            layoutMode: "VERTICAL",
+            itemSpacing: 24,
+            absoluteBoundingBox: { x: 7300, y: 0, width: 1536, height: 800 },
+            children: []
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const createGradientFillFigmaFile = () => ({
   name: "Gradient Fill Demo",
   document: {
@@ -2566,6 +2654,51 @@ test("figmaToDesignIrWithOptions derives responsive metadata deterministically",
 
   assert.deepEqual(first.screens, second.screens);
   assert.deepEqual(first.metrics?.screenElementCounts, second.metrics?.screenElementCounts);
+});
+
+test("figmaToDesignIrWithOptions maps breakpoint boundaries to MUI defaults", () => {
+  const ir = figmaToDesignIrWithOptions(createResponsiveBreakpointBoundaryFigmaFile());
+  const screenByGroupKey = new Map(
+    ir.screens
+      .filter((screen) => screen.responsive)
+      .map((screen) => [screen.responsive?.groupKey as string, screen] as const)
+  );
+
+  const boundary600 = screenByGroupKey.get("boundary-600");
+  const boundary900 = screenByGroupKey.get("boundary-900");
+  const boundary1200 = screenByGroupKey.get("boundary-1200");
+  const boundary1536 = screenByGroupKey.get("boundary-1536");
+
+  assert.ok(boundary600?.responsive);
+  assert.ok(boundary900?.responsive);
+  assert.ok(boundary1200?.responsive);
+  assert.ok(boundary1536?.responsive);
+
+  assert.deepEqual(
+    boundary600?.responsive?.variants.map((variant) => variant.breakpoint),
+    ["xs", "sm"]
+  );
+  assert.deepEqual(
+    boundary900?.responsive?.variants.map((variant) => variant.breakpoint),
+    ["sm", "md"]
+  );
+  assert.deepEqual(
+    boundary1200?.responsive?.variants.map((variant) => variant.breakpoint),
+    ["md", "lg"]
+  );
+  assert.deepEqual(
+    boundary1536?.responsive?.variants.map((variant) => variant.breakpoint),
+    ["lg", "xl"]
+  );
+
+  assert.equal(boundary600?.responsive?.variants.find((variant) => variant.breakpoint === "xs")?.width, 599);
+  assert.equal(boundary600?.responsive?.variants.find((variant) => variant.breakpoint === "sm")?.width, 600);
+  assert.equal(boundary900?.responsive?.variants.find((variant) => variant.breakpoint === "sm")?.width, 899);
+  assert.equal(boundary900?.responsive?.variants.find((variant) => variant.breakpoint === "md")?.width, 900);
+  assert.equal(boundary1200?.responsive?.variants.find((variant) => variant.breakpoint === "md")?.width, 1199);
+  assert.equal(boundary1200?.responsive?.variants.find((variant) => variant.breakpoint === "lg")?.width, 1200);
+  assert.equal(boundary1536?.responsive?.variants.find((variant) => variant.breakpoint === "lg")?.width, 1535);
+  assert.equal(boundary1536?.responsive?.variants.find((variant) => variant.breakpoint === "xl")?.width, 1536);
 });
 
 test("figmaToDesignIrWithOptions maps linear and radial gradient fills on screen and elements", () => {

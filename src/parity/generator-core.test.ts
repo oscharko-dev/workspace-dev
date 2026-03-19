@@ -566,6 +566,7 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(themeContent.includes('overline: { fontSize:'));
   assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
   assert.ok(themeContent.includes('textTransform: "none"'));
+  assert.equal(themeContent.includes("breakpoints: {"), false);
   assert.ok(appContent.includes('import { useColorScheme } from "@mui/material/styles";'));
   assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
   assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
@@ -6733,6 +6734,65 @@ test("deterministic screen rendering keeps custom contained backgrounds in butto
   assert.ok(buttonLine.includes('bgcolor: "#d4001a"'));
 });
 
+test("createDeterministicThemeFile emits custom breakpoints when responsive variants differ from MUI defaults", () => {
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "responsive-theme-screen",
+      name: "Responsive Theme Screen",
+      layoutMode: "VERTICAL" as const,
+      gap: 24,
+      width: 1336,
+      height: 900,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      responsive: {
+        groupKey: "login",
+        baseBreakpoint: "lg" as const,
+        variants: [
+          {
+            breakpoint: "xs" as const,
+            nodeId: "screen-login-mobile",
+            name: "Login - Mobile",
+            width: 390,
+            height: 844,
+            layoutMode: "VERTICAL" as const,
+            gap: 8,
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            isBase: false
+          },
+          {
+            breakpoint: "sm" as const,
+            nodeId: "screen-login-tablet",
+            name: "Login - Tablet",
+            width: 768,
+            height: 1024,
+            layoutMode: "VERTICAL" as const,
+            gap: 16,
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            isBase: false
+          },
+          {
+            breakpoint: "lg" as const,
+            nodeId: "screen-login-desktop",
+            name: "Login - Desktop",
+            width: 1336,
+            height: 900,
+            layoutMode: "VERTICAL" as const,
+            gap: 24,
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            isBase: true
+          }
+        ]
+      },
+      children: []
+    }
+  ];
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  assert.ok(themeContent.includes("breakpoints: {"));
+  assert.ok(themeContent.includes("values: { xs: 0, sm: 579, md: 834, lg: 1118, xl: 1436 }"));
+});
+
 test("deterministic screen rendering emits responsive maxWidth and layout overrides from ScreenIR metadata", () => {
   const screen = {
     id: "responsive-screen",
@@ -6847,15 +6907,13 @@ test("deterministic screen rendering emits responsive maxWidth and layout overri
   const content = createDeterministicScreenFile(screen).content;
   assert.equal(content.includes('<Box sx={{ minHeight: "100vh"'), false);
   assert.ok(content.includes("<Container maxWidth="));
-  assert.ok(content.includes('"@media (max-width: 428px)": { maxWidth: "390px", gap: 1 }'));
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { maxWidth: "768px", gap: 2 }'));
-  assert.ok(content.includes('"@media (min-width: 1025px) and (max-width: 1440px)": { maxWidth: "1336px" }'));
-  assert.ok(content.includes('width: "44.9%"'));
+  assert.equal(content.includes("@media ("), false);
+  assert.ok(content.includes('maxWidth: { xs: "390px", sm: "768px", md: "none", lg: "1336px", xl: "none" }'));
+  assert.ok(content.includes("gap: { xs: 1, sm: 2, md: 3 }"));
   assert.ok(content.includes('maxWidth: "600px"'));
-  assert.ok(
-    content.includes('"@media (max-width: 428px)": { display: "flex", flexDirection: "column", gap: 1, width: "100%", minHeight: "120px" }')
-  );
-  assert.ok(content.includes('"@media (min-width: 429px) and (max-width: 768px)": { gap: 1.5, width: "75%" }'));
+  assert.ok(content.includes('flexDirection: { xs: "column", sm: "row" }'));
+  assert.ok(content.includes('width: { xs: "100%", sm: "75%", md: "44.9%" }'));
+  assert.ok(content.includes('minHeight: { xs: "120px", sm: "56px" }'));
 });
 
 test("deterministic screen rendering keeps fallback behavior when responsive metadata is absent", () => {
