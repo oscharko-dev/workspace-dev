@@ -80,6 +80,7 @@ export {
   toMuiVariant,
   toSortedVariantProperties,
   toVariantState,
+  inferVariantSignalsFromNamePath,
   GENERIC_PLACEHOLDER_TEXT_PATTERNS
 } from "./ir-variants.js";
 export type {
