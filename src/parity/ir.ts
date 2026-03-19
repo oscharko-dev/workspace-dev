@@ -1126,6 +1126,7 @@ const countElements = (elements: ScreenElementIR[]): number => {
 
 interface TruncationCandidate {
   id: string;
+  elementType: ScreenElementIR["type"];
   ancestorIds: string[];
   depth: number;
   traversalIndex: number;
@@ -1259,6 +1260,7 @@ const collectTruncationCandidates = (elements: ScreenElementIR[]): TruncationCan
     const { score, mustKeep } = resolveTruncationPriority(element);
     candidates.push({
       id: element.id,
+      elementType: element.type,
       ancestorIds: [...ancestorIds],
       depth,
       traversalIndex,
@@ -1322,17 +1324,72 @@ const pruneElementToSelection = ({
   };
 };
 
+const INTERACTIVE_ELEMENT_TYPES: ReadonlySet<ScreenElementIR["type"]> = new Set([
+  "button", "input", "select", "switch", "checkbox", "radio", "slider", "rating",
+  "tab", "drawer", "breadcrumbs", "navigation", "stepper"
+]);
+
+const ADAPTIVE_BUDGET_MAX_SCALE = 1.5;
+const ADAPTIVE_BUDGET_INTERACTIVE_THRESHOLD = 0.15;
+
+const countInteractiveElements = (elements: ScreenElementIR[]): number => {
+  let count = 0;
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    if (INTERACTIVE_ELEMENT_TYPES.has(current.type)) {
+      count += 1;
+    }
+    if (current.children?.length) {
+      stack.push(...current.children);
+    }
+  }
+  return count;
+};
+
+const resolveAdaptiveBudget = ({
+  elements,
+  originalCount,
+  baseBudget
+}: {
+  elements: ScreenElementIR[];
+  originalCount: number;
+  baseBudget: number;
+}): number => {
+  if (originalCount <= baseBudget) {
+    return baseBudget;
+  }
+  if (baseBudget < DEFAULT_SCREEN_ELEMENT_BUDGET) {
+    return baseBudget;
+  }
+  const interactiveCount = countInteractiveElements(elements);
+  const interactiveRatio = originalCount > 0 ? interactiveCount / originalCount : 0;
+  if (interactiveRatio >= ADAPTIVE_BUDGET_INTERACTIVE_THRESHOLD) {
+    const scale = 1 + Math.min(interactiveRatio, 0.5);
+    return Math.trunc(Math.min(baseBudget * scale, baseBudget * ADAPTIVE_BUDGET_MAX_SCALE));
+  }
+  return baseBudget;
+};
+
+interface TruncationResult {
+  elements: ScreenElementIR[];
+  retainedCount: number;
+  droppedTypeCounts: Record<string, number>;
+}
+
 const truncateElementsToBudget = ({
   elements,
   budget
 }: {
   elements: ScreenElementIR[];
   budget: number;
-}): { elements: ScreenElementIR[]; retainedCount: number } => {
+}): TruncationResult => {
   if (budget <= 0 || elements.length === 0) {
     return {
       elements: [],
-      retainedCount: 0
+      retainedCount: 0,
+      droppedTypeCounts: {}
     };
   }
 
@@ -1340,7 +1397,8 @@ const truncateElementsToBudget = ({
   if (candidates.length <= budget) {
     return {
       elements,
-      retainedCount: candidates.length
+      retainedCount: candidates.length,
+      droppedTypeCounts: {}
     };
   }
 
@@ -1386,6 +1444,13 @@ const truncateElementsToBudget = ({
     }
   }
 
+  const droppedTypeCounts: Record<string, number> = {};
+  for (const candidate of candidates) {
+    if (!selectedIds.has(candidate.id)) {
+      droppedTypeCounts[candidate.elementType] = (droppedTypeCounts[candidate.elementType] ?? 0) + 1;
+    }
+  }
+
   const truncated: ScreenElementIR[] = [];
   for (const element of elements) {
     const pruned = pruneElementToSelection({ element, selectedIds });
@@ -1396,7 +1461,8 @@ const truncateElementsToBudget = ({
 
   return {
     elements: truncated,
-    retainedCount: countElements(truncated)
+    retainedCount: countElements(truncated),
+    droppedTypeCounts
   };
 };
 
@@ -1472,6 +1538,7 @@ interface MappedScreenCandidate {
   originalElements: number;
   retainedCount: number;
   truncatedByBudget: boolean;
+  droppedTypeCounts: Record<string, number>;
   depthTruncatedBranchCount: number;
   firstTruncatedDepth?: number;
 }
@@ -1719,10 +1786,15 @@ const mapScreenCandidate = ({
   }
 
   const originalElements = countElements(mappedChildren);
-  const { elements: budgetedChildren, retainedCount } =
-    originalElements > screenElementBudget
-      ? truncateElementsToBudget({ elements: mappedChildren, budget: screenElementBudget })
-      : { elements: mappedChildren, retainedCount: originalElements };
+  const adaptiveBudget = resolveAdaptiveBudget({
+    elements: mappedChildren,
+    originalCount: originalElements,
+    baseBudget: screenElementBudget
+  });
+  const { elements: budgetedChildren, retainedCount, droppedTypeCounts } =
+    originalElements > adaptiveBudget
+      ? truncateElementsToBudget({ elements: mappedChildren, budget: adaptiveBudget })
+      : { elements: mappedChildren, retainedCount: originalElements, droppedTypeCounts: {} as Record<string, number> };
 
   const width = sourceNode.absoluteBoundingBox?.width;
   const height = sourceNode.absoluteBoundingBox?.height;
@@ -1760,7 +1832,8 @@ const mapScreenCandidate = ({
     }),
     originalElements,
     retainedCount,
-    truncatedByBudget: originalElements > screenElementBudget,
+    truncatedByBudget: originalElements > adaptiveBudget,
+    droppedTypeCounts,
     depthTruncatedBranchCount: depthContext.truncatedBranchCount,
     ...(depthContext.firstTruncatedDepth !== undefined
       ? { firstTruncatedDepth: depthContext.firstTruncatedDepth }
@@ -2052,7 +2125,10 @@ const appendBaseCandidateMetrics = ({
       screenName: baseCandidate.name,
       originalElements: baseCandidate.originalElements,
       retainedElements: baseCandidate.retainedCount,
-      budget: screenElementBudget
+      budget: screenElementBudget,
+      ...(Object.keys(baseCandidate.droppedTypeCounts).length > 0
+        ? { droppedTypeCounts: baseCandidate.droppedTypeCounts }
+        : {})
     });
   }
   if (baseCandidate.depthTruncatedBranchCount > 0) {
