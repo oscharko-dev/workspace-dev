@@ -1062,6 +1062,58 @@ const createTypePrecedenceConflictFigmaFile = () => ({
   }
 });
 
+const createSemanticHintPrecedenceConflictFigmaFile = () => ({
+  name: "Semantic Hint Precedence Conflicts",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-semantic-hint-precedence",
+            type: "FRAME",
+            name: "Semantic Hint Precedence",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+            children: [
+              {
+                id: "hint-precedence-text-input",
+                type: "FRAME",
+                name: "Node Text Input",
+                absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 56 },
+                children: []
+              },
+              {
+                id: "hint-precedence-input-select",
+                type: "FRAME",
+                name: "Node Input Select",
+                absoluteBoundingBox: { x: 24, y: 104, width: 320, height: 56 },
+                children: []
+              },
+              {
+                id: "hint-precedence-navigation-dialog",
+                type: "FRAME",
+                name: "Node Navigation Dialog",
+                absoluteBoundingBox: { x: 24, y: 184, width: 320, height: 56 },
+                children: []
+              },
+              {
+                id: "hint-precedence-paper-stack",
+                type: "FRAME",
+                name: "Node Paper Stack",
+                absoluteBoundingBox: { x: 24, y: 264, width: 320, height: 56 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const toTypeMap = (ir: ReturnType<typeof figmaToDesignIrWithOptions>): Record<string, string> => {
   return Object.fromEntries((ir.screens[0]?.children ?? []).map((child) => [child.id, child.type]));
 };
@@ -1869,6 +1921,53 @@ test("figmaToDesignIrWithOptions keeps card classification precedence over paper
 
   assert.equal(firstTypes["precedence-card-paper-stack"], "card");
   assert.equal(secondTypes["precedence-card-paper-stack"], "card");
+  assert.deepEqual(firstTypes, secondTypes);
+});
+
+test("figmaToDesignIrWithOptions keeps semantic-hint classification precedence deterministic for MCP enrichment", () => {
+  const options = {
+    mcpEnrichment: {
+      sourceMode: "mcp" as const,
+      toolNames: ["figma-mcp"],
+      nodeHints: [
+        {
+          nodeId: "hint-precedence-text-input",
+          semanticName: "Headline Input",
+          semanticType: "textfield",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-precedence-input-select",
+          semanticName: "Input Select Field",
+          semanticType: "select dropdown",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-precedence-navigation-dialog",
+          semanticName: "Navigation Dialog",
+          semanticType: "modal",
+          sourceTools: ["figma-mcp"]
+        },
+        {
+          nodeId: "hint-precedence-paper-stack",
+          semanticName: "Surface Stack",
+          semanticType: "stack",
+          sourceTools: ["figma-mcp"]
+        }
+      ]
+    }
+  };
+
+  const first = figmaToDesignIrWithOptions(createSemanticHintPrecedenceConflictFigmaFile(), options);
+  const second = figmaToDesignIrWithOptions(createSemanticHintPrecedenceConflictFigmaFile(), options);
+
+  const firstTypes = toTypeMap(first);
+  const secondTypes = toTypeMap(second);
+
+  assert.equal(firstTypes["hint-precedence-text-input"], "text");
+  assert.equal(firstTypes["hint-precedence-input-select"], "input");
+  assert.equal(firstTypes["hint-precedence-navigation-dialog"], "navigation");
+  assert.equal(firstTypes["hint-precedence-paper-stack"], "stack");
   assert.deepEqual(firstTypes, secondTypes);
 });
 
