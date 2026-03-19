@@ -106,6 +106,28 @@ const assertActualFileExists = async ({
   }
 };
 
+const generateFixtureArtifacts = async ({
+  fixture,
+  ir
+}: {
+  fixture: GoldenFixtureSpec;
+  ir: ReturnType<typeof figmaToDesignIrWithOptions>;
+}): Promise<string> => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-${fixture.id}-`));
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+  const actualDesignIrPath = path.join(projectDir, "design-ir.json");
+  await writeFile(actualDesignIrPath, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  return projectDir;
+};
+
 test("golden fixtures: figma json to generated app artifacts", async (t) => {
   const approveMode = shouldApproveGolden();
   if (approveMode && isCiRuntime()) {
@@ -127,34 +149,47 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
         brandTheme: "derived"
       });
 
-      const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-${fixture.id}-`));
-      await generateArtifacts({
-        projectDir,
-        ir,
-        llmCodegenMode: "deterministic",
-        llmModelName: "deterministic",
-        onLog: () => {
-          // no-op
-        }
+      const firstProjectDir = await generateFixtureArtifacts({
+        fixture,
+        ir
+      });
+      const secondProjectDir = await generateFixtureArtifacts({
+        fixture,
+        ir
       });
 
-      const actualDesignIrPath = path.join(projectDir, "design-ir.json");
-      await writeFile(actualDesignIrPath, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
-
       for (const artifact of fixture.artifacts) {
-        const actualPath = path.join(projectDir, artifact.actual);
+        const actualPath = path.join(firstProjectDir, artifact.actual);
+        const secondActualPath = path.join(secondProjectDir, artifact.actual);
         await assertActualFileExists({
           fixtureId: fixture.id,
           artifact,
-          projectDir,
+          projectDir: firstProjectDir,
           absolutePath: actualPath
+        });
+        await assertActualFileExists({
+          fixtureId: fixture.id,
+          artifact,
+          projectDir: secondProjectDir,
+          absolutePath: secondActualPath
         });
 
         const actualRaw = await readFile(actualPath, "utf8");
+        const secondActualRaw = await readFile(secondActualPath, "utf8");
         const normalizedActual = normalizeArtifactContent({
           kind: artifact.kind,
           value: actualRaw
         });
+        const normalizedSecondActual = normalizeArtifactContent({
+          kind: artifact.kind,
+          value: secondActualRaw
+        });
+
+        assert.equal(
+          normalizedActual,
+          normalizedSecondActual,
+          `Deterministic rerun mismatch for fixture '${fixture.id}', artifact '${artifact.name}' (${artifact.actual}).`
+        );
 
         const expectedPath = path.join(GOLDEN_ROOT, artifact.expected);
 

@@ -916,6 +916,156 @@ const createDepthPressureFigmaFile = () => ({
   }
 });
 
+const createTypePrecedenceConflictFigmaFile = () => ({
+  name: "Type Precedence Conflicts",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-type-precedence",
+            type: "FRAME",
+            name: "Type Precedence",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 1200 },
+            children: [
+              {
+                id: "precedence-select-input",
+                type: "FRAME",
+                name: "MuiFormControlRoot MuiSelect Input Field Dropdown",
+                absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 56 },
+                children: []
+              },
+              {
+                id: "precedence-table-grid-list",
+                type: "FRAME",
+                name: "Data Table Grid List",
+                layoutMode: "NONE",
+                absoluteBoundingBox: { x: 24, y: 120, width: 480, height: 240 },
+                children: [
+                  {
+                    id: "precedence-table-row-1",
+                    type: "FRAME",
+                    name: "List Item Row 1",
+                    absoluteBoundingBox: { x: 24, y: 120, width: 220, height: 72 },
+                    children: [
+                      {
+                        id: "precedence-table-row-1-col-1",
+                        type: "TEXT",
+                        name: "Column 1",
+                        characters: "Name",
+                        absoluteBoundingBox: { x: 28, y: 130, width: 96, height: 20 }
+                      },
+                      {
+                        id: "precedence-table-row-1-col-2",
+                        type: "TEXT",
+                        name: "Column 2",
+                        characters: "Value",
+                        absoluteBoundingBox: { x: 140, y: 130, width: 96, height: 20 }
+                      }
+                    ]
+                  },
+                  {
+                    id: "precedence-table-row-2",
+                    type: "FRAME",
+                    name: "Grid Tile Row 2",
+                    absoluteBoundingBox: { x: 280, y: 120, width: 220, height: 72 },
+                    children: [
+                      {
+                        id: "precedence-table-row-2-col-1",
+                        type: "TEXT",
+                        name: "Column 1",
+                        characters: "Anna",
+                        absoluteBoundingBox: { x: 284, y: 130, width: 96, height: 20 }
+                      },
+                      {
+                        id: "precedence-table-row-2-col-2",
+                        type: "TEXT",
+                        name: "Column 2",
+                        characters: "42",
+                        absoluteBoundingBox: { x: 396, y: 130, width: 96, height: 20 }
+                      }
+                    ]
+                  },
+                  {
+                    id: "precedence-table-row-3",
+                    type: "FRAME",
+                    name: "List Item Row 3",
+                    absoluteBoundingBox: { x: 24, y: 220, width: 220, height: 72 },
+                    children: [
+                      {
+                        id: "precedence-table-row-3-col-1",
+                        type: "TEXT",
+                        name: "Column 1",
+                        characters: "Ben",
+                        absoluteBoundingBox: { x: 28, y: 230, width: 96, height: 20 }
+                      },
+                      {
+                        id: "precedence-table-row-3-col-2",
+                        type: "TEXT",
+                        name: "Column 2",
+                        characters: "7",
+                        absoluteBoundingBox: { x: 140, y: 230, width: 96, height: 20 }
+                      }
+                    ]
+                  },
+                  {
+                    id: "precedence-table-row-4",
+                    type: "FRAME",
+                    name: "Grid Tile Row 4",
+                    absoluteBoundingBox: { x: 280, y: 220, width: 220, height: 72 },
+                    children: [
+                      {
+                        id: "precedence-table-row-4-col-1",
+                        type: "TEXT",
+                        name: "Column 1",
+                        characters: "Cara",
+                        absoluteBoundingBox: { x: 284, y: 230, width: 96, height: 20 }
+                      },
+                      {
+                        id: "precedence-table-row-4-col-2",
+                        type: "TEXT",
+                        name: "Column 2",
+                        characters: "99",
+                        absoluteBoundingBox: { x: 396, y: 230, width: 96, height: 20 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                id: "precedence-card-paper-stack",
+                type: "FRAME",
+                name: "Paper Surface Stack Card",
+                layoutMode: "VERTICAL",
+                fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                cornerRadius: 12,
+                absoluteBoundingBox: { x: 24, y: 400, width: 360, height: 220 },
+                children: [
+                  {
+                    id: "precedence-card-title",
+                    type: "TEXT",
+                    name: "Card Title",
+                    characters: "Offer",
+                    absoluteBoundingBox: { x: 36, y: 416, width: 120, height: 24 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const toTypeMap = (ir: ReturnType<typeof figmaToDesignIrWithOptions>): Record<string, string> => {
+  return Object.fromEntries((ir.screens[0]?.children ?? []).map((child) => [child.id, child.type]));
+};
+
 test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
   assert.throws(
     () => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }),
@@ -1684,6 +1834,42 @@ test("figmaToDesignIrWithOptions classifies extended element types deterministic
   assert.equal(byId.get("node-button"), "button");
   assert.equal(byId.get("node-image"), "image");
   assert.equal(byId.get("node-container"), "container");
+});
+
+test("figmaToDesignIrWithOptions keeps select classification precedence over input when both semantic signals exist", () => {
+  const first = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+  const second = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+
+  const firstTypes = toTypeMap(first);
+  const secondTypes = toTypeMap(second);
+
+  assert.equal(firstTypes["precedence-select-input"], "select");
+  assert.equal(secondTypes["precedence-select-input"], "select");
+  assert.deepEqual(firstTypes, secondTypes);
+});
+
+test("figmaToDesignIrWithOptions keeps table classification precedence over grid and list signals", () => {
+  const first = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+  const second = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+
+  const firstTypes = toTypeMap(first);
+  const secondTypes = toTypeMap(second);
+
+  assert.equal(firstTypes["precedence-table-grid-list"], "table");
+  assert.equal(secondTypes["precedence-table-grid-list"], "table");
+  assert.deepEqual(firstTypes, secondTypes);
+});
+
+test("figmaToDesignIrWithOptions keeps card classification precedence over paper and stack signals", () => {
+  const first = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+  const second = figmaToDesignIrWithOptions(createTypePrecedenceConflictFigmaFile());
+
+  const firstTypes = toTypeMap(first);
+  const secondTypes = toTypeMap(second);
+
+  assert.equal(firstTypes["precedence-card-paper-stack"], "card");
+  assert.equal(secondTypes["precedence-card-paper-stack"], "card");
+  assert.deepEqual(firstTypes, secondTypes);
 });
 
 test("figmaToDesignIrWithOptions classifies visible IMAGE-paint nodes as image", () => {

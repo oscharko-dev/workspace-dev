@@ -10,3 +10,8 @@ openvex.json
 pnpm-debug.log*
 /.env
 .idea/
+/AGENTS.md
+/mcp.json
+/FIGMA_GUIDE.md
+/FIGMA_LEITFADEN.md
+/FIGMA_LEITFADEN_V2.md
