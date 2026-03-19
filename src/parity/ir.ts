@@ -2440,6 +2440,18 @@ interface MappedScreenCandidate {
   firstTruncatedDepth?: number;
 }
 
+interface PreparedScreenCandidate {
+  candidate: FigmaNode;
+  normalized: { node: FigmaNode; name: string };
+}
+
+interface ScreenGroupResolution {
+  groupKey: string;
+  winnersByBreakpoint: Map<ResponsiveBreakpoint, MappedScreenCandidate>;
+  baseBreakpoint: ResponsiveBreakpoint;
+  baseCandidate: MappedScreenCandidate;
+}
+
 const toAsciiLower = (value: string): string => {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 };
@@ -2825,19 +2837,13 @@ const toScreenFromCandidate = ({
   };
 };
 
-const extractScreens = ({
+const collectScreenCandidates = ({
   file,
-  metrics,
-  screenElementBudget,
-  screenElementMaxDepth,
-  placeholderMatcherConfig
+  metrics
 }: {
   file: FigmaFile;
   metrics: MetricsAccumulator;
-  screenElementBudget: number;
-  screenElementMaxDepth: number;
-  placeholderMatcherConfig: PlaceholderMatcherConfig;
-}): ScreenIR[] => {
+}): FigmaNode[] => {
   const root = file.document;
   if (!root?.children?.length) {
     return [];
@@ -2868,10 +2874,25 @@ const extractScreens = ({
     }
   }
 
-  const preparedScreenCandidates = screenCandidates.map((candidate) => ({
+  return screenCandidates;
+};
+
+const prepareScreenCandidates = ({
+  screenCandidates
+}: {
+  screenCandidates: FigmaNode[];
+}): PreparedScreenCandidate[] => {
+  return screenCandidates.map((candidate) => ({
     candidate,
     normalized: unwrapScreenRoot(candidate)
   }));
+};
+
+const buildScreenNavigationContext = ({
+  preparedScreenCandidates
+}: {
+  preparedScreenCandidates: PreparedScreenCandidate[];
+}): PrototypeNavigationResolutionContext => {
   const knownScreenIds = new Set(preparedScreenCandidates.map((entry) => entry.normalized.node.id));
   const nodeIdToScreenId = new Map<string, string>();
   for (const entry of preparedScreenCandidates) {
@@ -2886,7 +2907,25 @@ const extractScreens = ({
     knownScreenIds
   };
 
-  const mappedCandidates = preparedScreenCandidates.map((entry) =>
+  return navigationContext;
+};
+
+const mapPreparedScreenCandidates = ({
+  preparedScreenCandidates,
+  metrics,
+  screenElementBudget,
+  screenElementMaxDepth,
+  placeholderMatcherConfig,
+  navigationContext
+}: {
+  preparedScreenCandidates: PreparedScreenCandidate[];
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
+  navigationContext: PrototypeNavigationResolutionContext;
+}): MappedScreenCandidate[] => {
+  return preparedScreenCandidates.map((entry) =>
     mapScreenCandidate({
       candidate: entry.candidate,
       normalizedCandidate: entry.normalized,
@@ -2897,7 +2936,13 @@ const extractScreens = ({
       navigationContext
     })
   );
+};
 
+const groupMappedScreenCandidates = ({
+  mappedCandidates
+}: {
+  mappedCandidates: MappedScreenCandidate[];
+}): Map<string, MappedScreenCandidate[]> => {
   const groupedCandidates = new Map<string, MappedScreenCandidate[]>();
   for (const candidate of mappedCandidates) {
     const existing = groupedCandidates.get(candidate.groupKey) ?? [];
@@ -2905,67 +2950,164 @@ const extractScreens = ({
     groupedCandidates.set(candidate.groupKey, existing);
   }
 
-  const screens: ScreenIR[] = [];
-  for (const [groupKey, grouped] of groupedCandidates.entries()) {
-    const winnersByBreakpoint = new Map<ResponsiveBreakpoint, MappedScreenCandidate>();
+  return groupedCandidates;
+};
 
-    for (const candidate of grouped) {
-      const existing = winnersByBreakpoint.get(candidate.breakpoint);
-      if (!existing || compareResponsiveWinnerPriority(candidate, existing) < 0) {
-        winnersByBreakpoint.set(candidate.breakpoint, candidate);
-      }
+const selectResponsiveWinnersByBreakpoint = ({
+  candidates
+}: {
+  candidates: MappedScreenCandidate[];
+}): Map<ResponsiveBreakpoint, MappedScreenCandidate> => {
+  const winnersByBreakpoint = new Map<ResponsiveBreakpoint, MappedScreenCandidate>();
+  for (const candidate of candidates) {
+    const existing = winnersByBreakpoint.get(candidate.breakpoint);
+    if (!existing || compareResponsiveWinnerPriority(candidate, existing) < 0) {
+      winnersByBreakpoint.set(candidate.breakpoint, candidate);
     }
+  }
+  return winnersByBreakpoint;
+};
 
-    const baseBreakpoint =
-      RESPONSIVE_BASE_BREAKPOINT_PRIORITY.find((breakpoint) => winnersByBreakpoint.has(breakpoint)) ??
-      RESPONSIVE_BREAKPOINT_ORDER.find((breakpoint) => winnersByBreakpoint.has(breakpoint));
-    if (!baseBreakpoint) {
-      continue;
-    }
-    const baseCandidate = winnersByBreakpoint.get(baseBreakpoint);
-    if (!baseCandidate) {
-      continue;
-    }
+const resolveScreenGroupResolution = ({
+  groupKey,
+  groupedCandidates
+}: {
+  groupKey: string;
+  groupedCandidates: MappedScreenCandidate[];
+}): ScreenGroupResolution | undefined => {
+  const winnersByBreakpoint = selectResponsiveWinnersByBreakpoint({ candidates: groupedCandidates });
+  const baseBreakpoint =
+    RESPONSIVE_BASE_BREAKPOINT_PRIORITY.find((breakpoint) => winnersByBreakpoint.has(breakpoint)) ??
+    RESPONSIVE_BREAKPOINT_ORDER.find((breakpoint) => winnersByBreakpoint.has(breakpoint));
+  if (!baseBreakpoint) {
+    return undefined;
+  }
+  const baseCandidate = winnersByBreakpoint.get(baseBreakpoint);
+  if (!baseCandidate) {
+    return undefined;
+  }
+  return {
+    groupKey,
+    winnersByBreakpoint,
+    baseBreakpoint,
+    baseCandidate
+  };
+};
 
-    metrics.screenElementCounts.push({
+const appendBaseCandidateMetrics = ({
+  baseCandidate,
+  metrics,
+  screenElementBudget,
+  screenElementMaxDepth
+}: {
+  baseCandidate: MappedScreenCandidate;
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+}): void => {
+  metrics.screenElementCounts.push({
+    screenId: baseCandidate.sourceNode.id,
+    screenName: baseCandidate.name,
+    elements: baseCandidate.originalElements
+  });
+  if (baseCandidate.truncatedByBudget) {
+    metrics.truncatedScreens.push({
       screenId: baseCandidate.sourceNode.id,
       screenName: baseCandidate.name,
-      elements: baseCandidate.originalElements
+      originalElements: baseCandidate.originalElements,
+      retainedElements: baseCandidate.retainedCount,
+      budget: screenElementBudget
     });
-    if (baseCandidate.truncatedByBudget) {
-      metrics.truncatedScreens.push({
-        screenId: baseCandidate.sourceNode.id,
-        screenName: baseCandidate.name,
-        originalElements: baseCandidate.originalElements,
-        retainedElements: baseCandidate.retainedCount,
-        budget: screenElementBudget
-      });
-    }
-    if (baseCandidate.depthTruncatedBranchCount > 0) {
-      metrics.depthTruncatedScreens.push({
-        screenId: baseCandidate.sourceNode.id,
-        screenName: baseCandidate.name,
-        maxDepth: screenElementMaxDepth,
-        firstTruncatedDepth: baseCandidate.firstTruncatedDepth ?? screenElementMaxDepth + 1,
-        truncatedBranchCount: baseCandidate.depthTruncatedBranchCount
-      });
+  }
+  if (baseCandidate.depthTruncatedBranchCount > 0) {
+    metrics.depthTruncatedScreens.push({
+      screenId: baseCandidate.sourceNode.id,
+      screenName: baseCandidate.name,
+      maxDepth: screenElementMaxDepth,
+      firstTruncatedDepth: baseCandidate.firstTruncatedDepth ?? screenElementMaxDepth + 1,
+      truncatedBranchCount: baseCandidate.depthTruncatedBranchCount
+    });
+  }
+};
+
+const assembleScreensFromGroups = ({
+  groupedCandidates,
+  metrics,
+  screenElementBudget,
+  screenElementMaxDepth
+}: {
+  groupedCandidates: Map<string, MappedScreenCandidate[]>;
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+}): ScreenIR[] => {
+  const screens: ScreenIR[] = [];
+  for (const [groupKey, grouped] of groupedCandidates.entries()) {
+    const resolution = resolveScreenGroupResolution({
+      groupKey,
+      groupedCandidates: grouped
+    });
+    if (!resolution) {
+      continue;
     }
 
+    appendBaseCandidateMetrics({
+      baseCandidate: resolution.baseCandidate,
+      metrics,
+      screenElementBudget,
+      screenElementMaxDepth
+    });
     const responsive = buildResponsiveMetadata({
-      groupKey,
-      baseBreakpoint,
-      baseCandidate,
-      winnersByBreakpoint
+      groupKey: resolution.groupKey,
+      baseBreakpoint: resolution.baseBreakpoint,
+      baseCandidate: resolution.baseCandidate,
+      winnersByBreakpoint: resolution.winnersByBreakpoint
     });
     screens.push(
       toScreenFromCandidate({
-        candidate: baseCandidate,
+        candidate: resolution.baseCandidate,
         ...(responsive ? { responsive } : {})
       })
     );
   }
-
   return screens;
+};
+
+const extractScreens = ({
+  file,
+  metrics,
+  screenElementBudget,
+  screenElementMaxDepth,
+  placeholderMatcherConfig
+}: {
+  file: FigmaFile;
+  metrics: MetricsAccumulator;
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
+}): ScreenIR[] => {
+  const screenCandidates = collectScreenCandidates({ file, metrics });
+  if (screenCandidates.length === 0) {
+    return [];
+  }
+
+  const preparedScreenCandidates = prepareScreenCandidates({ screenCandidates });
+  const navigationContext = buildScreenNavigationContext({ preparedScreenCandidates });
+  const mappedCandidates = mapPreparedScreenCandidates({
+    preparedScreenCandidates,
+    metrics,
+    screenElementBudget,
+    screenElementMaxDepth,
+    placeholderMatcherConfig,
+    navigationContext
+  });
+  const groupedCandidates = groupMappedScreenCandidates({ mappedCandidates });
+  return assembleScreensFromGroups({
+    groupedCandidates,
+    metrics,
+    screenElementBudget,
+    screenElementMaxDepth
+  });
 };
 
 const TOKEN_DERIVATION_DEFAULTS: DesignTokens = {
