@@ -1,0 +1,191 @@
+{
+  "name": "Deep Nesting Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-nested",
+            "type": "FRAME",
+            "name": "Dashboard",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1024, "height": 768 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.95, "g": 0.96, "b": 0.97, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "header",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Dashboard",
+                "style": {
+                  "fontSize": 28,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 36,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 180, "height": 36 }
+              },
+              {
+                "id": "card-container",
+                "type": "FRAME",
+                "name": "Cards Grid",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 16,
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "absoluteBoundingBox": { "x": 16, "y": 68, "width": 992, "height": 300 },
+                "children": [
+                  {
+                    "id": "card-1",
+                    "type": "FRAME",
+                    "name": "MuiCardRoot",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "paddingTop": 16,
+                    "paddingRight": 16,
+                    "paddingBottom": 16,
+                    "paddingLeft": 16,
+                    "absoluteBoundingBox": { "x": 16, "y": 68, "width": 320, "height": 300 },
+                    "cornerRadius": 12,
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                    "effects": [
+                      {
+                        "type": "DROP_SHADOW",
+                        "visible": true,
+                        "color": { "r": 0, "g": 0, "b": 0, "a": 0.08 },
+                        "offset": { "x": 0, "y": 2 },
+                        "radius": 8
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "card-1-title",
+                        "type": "TEXT",
+                        "name": "Heading",
+                        "characters": "Revenue",
+                        "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 32, "y": 84, "width": 120, "height": 24 }
+                      },
+                      {
+                        "id": "card-1-inner",
+                        "type": "FRAME",
+                        "name": "Inner Container",
+                        "layoutMode": "VERTICAL",
+                        "itemSpacing": 4,
+                        "absoluteBoundingBox": { "x": 32, "y": 116, "width": 288, "height": 180 },
+                        "children": [
+                          {
+                            "id": "card-1-value",
+                            "type": "TEXT",
+                            "name": "Value",
+                            "characters": "$42,500",
+                            "style": { "fontSize": 32, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
+                            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                            "absoluteBoundingBox": { "x": 32, "y": 116, "width": 200, "height": 40 }
+                          },
+                          {
+                            "id": "card-1-detail-wrapper",
+                            "type": "FRAME",
+                            "name": "Detail Wrapper",
+                            "layoutMode": "VERTICAL",
+                            "itemSpacing": 4,
+                            "absoluteBoundingBox": { "x": 32, "y": 160, "width": 288, "height": 120 },
+                            "children": [
+                              {
+                                "id": "card-1-detail-row",
+                                "type": "FRAME",
+                                "name": "Detail Row",
+                                "layoutMode": "HORIZONTAL",
+                                "itemSpacing": 8,
+                                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                                "counterAxisAlignItems": "CENTER",
+                                "absoluteBoundingBox": { "x": 32, "y": 160, "width": 288, "height": 20 },
+                                "children": [
+                                  {
+                                    "id": "card-1-detail-label",
+                                    "type": "TEXT",
+                                    "name": "Detail Label",
+                                    "characters": "+12.5% from last month",
+                                    "style": { "fontSize": 13, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 18, "textAlignHorizontal": "LEFT" },
+                                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.15, "g": 0.5, "b": 0.15, "a": 1 } }],
+                                    "absoluteBoundingBox": { "x": 32, "y": 160, "width": 200, "height": 18 }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "card-2",
+                    "type": "FRAME",
+                    "name": "MuiCardRoot",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "paddingTop": 16,
+                    "paddingRight": 16,
+                    "paddingBottom": 16,
+                    "paddingLeft": 16,
+                    "absoluteBoundingBox": { "x": 352, "y": 68, "width": 320, "height": 300 },
+                    "cornerRadius": 12,
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                    "effects": [
+                      {
+                        "type": "DROP_SHADOW",
+                        "visible": true,
+                        "color": { "r": 0, "g": 0, "b": 0, "a": 0.08 },
+                        "offset": { "x": 0, "y": 2 },
+                        "radius": 8
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "card-2-title",
+                        "type": "TEXT",
+                        "name": "Heading",
+                        "characters": "Users",
+                        "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 368, "y": 84, "width": 80, "height": 24 }
+                      },
+                      {
+                        "id": "card-2-value",
+                        "type": "TEXT",
+                        "name": "Value",
+                        "characters": "1,250",
+                        "style": { "fontSize": 32, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 368, "y": 116, "width": 150, "height": 40 }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

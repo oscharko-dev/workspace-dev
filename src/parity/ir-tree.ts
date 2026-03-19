@@ -8,6 +8,10 @@
 import { hasAnySubstring } from "./ir-classification.js";
 import { isTechnicalPlaceholderText } from "../figma-node-heuristics.js";
 import type { ScreenElementIR } from "./types.js";
+import {
+  DEFAULT_SCREEN_ELEMENT_BUDGET as _DEFAULT_SCREEN_ELEMENT_BUDGET,
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH as _DEFAULT_SCREEN_ELEMENT_MAX_DEPTH
+} from "./constants.js";
 
 // ── Minimal FigmaNode shape needed by tree traversal ─────────────────────────
 // This duplicates a subset of the FigmaNode interface defined in ir.ts.
@@ -24,9 +28,9 @@ export interface TreeFigmaNode {
   };
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
-export const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
-export const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
+// ── Constants (re-exported from centralized constants module) ────────────────
+export const DEFAULT_SCREEN_ELEMENT_BUDGET: number = _DEFAULT_SCREEN_ELEMENT_BUDGET;
+export const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH: number = _DEFAULT_SCREEN_ELEMENT_MAX_DEPTH;
 
 // ── Depth-semantic classification helpers ────────────────────────────────────
 export const DEPTH_SEMANTIC_TYPES: Set<ScreenElementIR["type"]> = new Set<ScreenElementIR["type"]>([

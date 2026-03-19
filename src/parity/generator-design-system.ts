@@ -7,6 +7,10 @@ import type {
   ScreenElementIR,
   ScreenIR
 } from "./types.js";
+import {
+  THEME_SX_EXTRACTION_THRESHOLD,
+  THEME_SX_MIN_SAMPLES
+} from "./constants.js";
 import { DEFAULT_GENERATION_LOCALE } from "../generation-locale.js";
 import {
   normalizeHexColor,
@@ -76,8 +80,7 @@ export interface ThemeSxSample {
 
 export type ThemeSxSampleCollector = (sample: ThemeSxSample) => void;
 
-const THEME_SX_EXTRACTION_THRESHOLD = 0.7;
-const THEME_SX_MIN_SAMPLES = 3;
+// Theme sx extraction constants imported from ./constants.js
 const THEME_SX_VISUAL_KEYS = new Set(["borderRadius", "bgcolor", "background", "borderColor", "border", "boxShadow", "color", "textTransform"]);
 const THEME_SX_CANONICAL_VISUAL_KEYS = new Set([
   "borderRadius",

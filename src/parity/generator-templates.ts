@@ -11,6 +11,7 @@ import type {
   ScreenIR,
   VariantStateStyle
 } from "./types.js";
+import { WCAG_AA_NORMAL_TEXT_CONTRAST_MIN } from "./constants.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
@@ -510,7 +511,7 @@ export const BUTTON_NEUTRAL_CHANNEL_DELTA_MAX = 24;
 export const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
 export const FIELD_ERROR_RED_MIN_CHANNEL = 150;
 export const FIELD_ERROR_RED_DELTA_MIN = 32;
-export const WCAG_AA_NORMAL_TEXT_CONTRAST_MIN = 4.5;
+export { WCAG_AA_NORMAL_TEXT_CONTRAST_MIN } from "./constants.js";
 export const DARK_MODE_BACKGROUND_DEFAULT = "#121212";
 export const DARK_MODE_BACKGROUND_PAPER = "#1e1e1e";
 export const DARK_MODE_TEXT_PRIMARY = "#f5f7fb";
