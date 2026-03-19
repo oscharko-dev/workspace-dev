@@ -252,6 +252,7 @@ export interface TruncatedScreenMetric {
   originalElements: number;
   retainedElements: number;
   budget: number;
+  droppedTypeCounts?: Record<string, number>;
 }
 
 export interface DepthTruncatedScreenMetric {
