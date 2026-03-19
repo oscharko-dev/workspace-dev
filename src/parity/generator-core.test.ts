@@ -9,7 +9,9 @@ import {
   createDeterministicThemeFile,
   generateArtifacts,
   toDeterministicScreenPath,
-  detectFormGroups
+  detectFormGroups,
+  normalizeIconImports,
+  isDeepIconImport
 } from "./generator-core.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
@@ -7151,6 +7153,7 @@ test("deterministic screen rendering deduplicates repeated icon imports", () => 
   const content = createDeterministicScreenFile(screen).content;
   const iconImportLines = extractMuiIconImportLines(content);
 
+  assert.equal(hasMuiIconBarrelImport(content), false);
   assert.deepEqual(iconImportLines, ['import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";']);
 });
 
@@ -7190,6 +7193,7 @@ test("deterministic screen rendering orders icon imports deterministically", () 
   const content = createDeterministicScreenFile(screen).content;
   const iconImportLines = extractMuiIconImportLines(content);
 
+  assert.equal(hasMuiIconBarrelImport(content), false);
   assert.deepEqual(iconImportLines, [
     'import AddIcon from "@mui/icons-material/Add";',
     'import SearchIcon from "@mui/icons-material/Search";'
@@ -7531,6 +7535,7 @@ test("deterministic screen rendering applies synonym mapping for user and trash 
 
   const content = createDeterministicScreenFile(screen).content;
   const iconImportLines = extractMuiIconImportLines(content);
+  assert.equal(hasMuiIconBarrelImport(content), false);
   assert.deepEqual(iconImportLines, [
     'import DeleteIcon from "@mui/icons-material/Delete";',
     'import PersonIcon from "@mui/icons-material/Person";'
@@ -7589,6 +7594,45 @@ test("deterministic screen rendering falls back to InfoOutlinedIcon for unknown 
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes('import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";'));
   assert.ok(content.includes("<InfoOutlinedIcon"));
+});
+
+test("isDeepIconImport accepts valid deep import paths and rejects barrel imports", () => {
+  assert.equal(isDeepIconImport("@mui/icons-material/Search"), true);
+  assert.equal(isDeepIconImport("@mui/icons-material/BookmarkBorder"), true);
+  assert.equal(isDeepIconImport("@mui/icons-material/InfoOutlined"), true);
+  assert.equal(isDeepIconImport("@mui/icons-material/DarkModeRounded"), true);
+
+  assert.equal(isDeepIconImport("@mui/icons-material"), false);
+  assert.equal(isDeepIconImport("@mui/icons-material/"), false);
+  assert.equal(isDeepIconImport("@mui/icons-material/search"), false);
+  assert.equal(isDeepIconImport("@mui/material/SvgIcon"), false);
+});
+
+test("normalizeIconImports rejects barrel icon import paths at normalization time", () => {
+  assert.throws(
+    () =>
+      normalizeIconImports([
+        { localName: "SearchIcon", modulePath: "@mui/icons-material" }
+      ]),
+    {
+      message: /barrel import.*@mui\/icons-material.*tree-shaking/i
+    }
+  );
+});
+
+test("normalizeIconImports deduplicates, sorts, and preserves deep import paths", () => {
+  const result = normalizeIconImports([
+    { localName: "SearchIcon", modulePath: "@mui/icons-material/Search" },
+    { localName: "AddIcon", modulePath: "@mui/icons-material/Add" },
+    { localName: "SearchIcon", modulePath: "@mui/icons-material/Search" },
+    { localName: "DeleteIcon", modulePath: "@mui/icons-material/Delete" }
+  ]);
+
+  assert.deepEqual(result, [
+    { localName: "AddIcon", modulePath: "@mui/icons-material/Add" },
+    { localName: "DeleteIcon", modulePath: "@mui/icons-material/Delete" },
+    { localName: "SearchIcon", modulePath: "@mui/icons-material/Search" }
+  ]);
 });
 
 test("deterministic screen rendering maps variant metadata to MUI props and pseudo-state sx overrides", () => {

@@ -3142,11 +3142,24 @@ export const isLikelyAccordionContainer = (element: ScreenElementIR): boolean =>
   return hasAnySubtreeName(element, ACCORDION_NAME_HINTS) && hasSubtreeName(element, "collapsewrapper");
 };
 
+const ICON_DEEP_IMPORT_PATTERN = /^@mui\/icons-material\/[A-Z][A-Za-z0-9]+$/;
+
+export const isDeepIconImport = (modulePath: string): boolean => {
+  return ICON_DEEP_IMPORT_PATTERN.test(modulePath);
+};
+
 export const normalizeIconImports = (iconImports: IconImportSpec[]): IconImportSpec[] => {
   const seen = new Set<string>();
   const uniqueIconImports: IconImportSpec[] = [];
 
   for (const iconImport of iconImports) {
+    if (!isDeepIconImport(iconImport.modulePath)) {
+      throw new Error(
+        `Icon import must use a deep import path (e.g. "@mui/icons-material/Search"), ` +
+          `but received barrel import "${iconImport.modulePath}" for "${iconImport.localName}". ` +
+          `Barrel imports from "@mui/icons-material" defeat tree-shaking and must not be used.`
+      );
+    }
     const dedupeKey = `${iconImport.localName}:::${iconImport.modulePath}`;
     if (seen.has(dedupeKey)) {
       continue;
