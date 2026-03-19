@@ -10162,3 +10162,232 @@ test("deterministic extended renderer falls back to container for implausible mo
   assert.ok(content.includes('width: "120px"'));
   assert.ok(content.includes('height: "40px"'));
 });
+
+test("deterministic screen rendering infers IBAN validation type from field name", () => {
+  const screen = {
+    id: "iban-validation-screen",
+    name: "IBAN Validation Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "iban-field", name: "IBAN Input", label: "IBAN" }),
+      {
+        id: "iban-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "iban-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"iban"'), "Expected IBAN validation type in fieldValidationTypes");
+  assert.ok(content.includes("Please enter a valid IBAN."), "Expected IBAN validation message");
+  assert.ok(content.includes('case "iban"'), "Expected IBAN case in validateFieldValue switch");
+});
+
+test("deterministic screen rendering infers PLZ validation type from field label", () => {
+  const screen = {
+    id: "plz-validation-screen",
+    name: "PLZ Validation Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "plz-field", name: "PLZ Input", label: "PLZ" }),
+      {
+        id: "plz-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "plz-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"plz"'), "Expected PLZ validation type in fieldValidationTypes");
+  assert.ok(content.includes("Please enter a valid postal code."), "Expected PLZ validation message");
+  assert.ok(content.includes('case "plz"'), "Expected PLZ case in validateFieldValue switch");
+});
+
+test("deterministic screen rendering infers credit card validation type from field name", () => {
+  const screen = {
+    id: "cc-validation-screen",
+    name: "Credit Card Validation Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "cc-field", name: "Credit Card Input", label: "Credit Card" }),
+      {
+        id: "cc-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "cc-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"credit_card"'), "Expected credit_card validation type in fieldValidationTypes");
+  assert.ok(content.includes("Please enter a valid card number."), "Expected credit card validation message");
+  assert.ok(content.includes('case "credit_card"'), "Expected credit_card case in validateFieldValue switch");
+});
+
+test("deterministic screen rendering uses text input type for validation-only fields (IBAN, PLZ, credit card)", () => {
+  const screen = {
+    id: "validation-only-type-screen",
+    name: "Validation Only Type Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "iban-field", name: "IBAN Input", label: "IBAN" }),
+      createSemanticInputNode({ id: "plz-field", name: "PLZ Input", label: "Postleitzahl" }),
+      createSemanticInputNode({ id: "cc-field", name: "Kreditkarte Input", label: "Kreditkarte" })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const ibanBlock = findRenderedTextFieldBlock({ content, label: "IBAN" });
+  assert.equal(ibanBlock.includes('type={'), false, "IBAN field should not have explicit type (defaults to text)");
+
+  const plzBlock = findRenderedTextFieldBlock({ content, label: "Postleitzahl" });
+  assert.equal(plzBlock.includes('type={'), false, "PLZ field should not have explicit type (defaults to text)");
+
+  const ccBlock = findRenderedTextFieldBlock({ content, label: "Kreditkarte" });
+  assert.equal(ccBlock.includes('type={'), false, "Credit card field should not have explicit type (defaults to text)");
+});
+
+test("deterministic screen rendering emits IBAN validation in react-hook-form mode", () => {
+  const screen = {
+    id: "iban-rhf-screen",
+    name: "IBAN RHF Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "iban-field", name: "IBAN Input", label: "IBAN" }),
+      {
+        id: "iban-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "iban-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('"iban"'), "Expected IBAN validation type in RHF mode");
+  assert.ok(content.includes('case "iban"'), "Expected IBAN case in RHF createFieldSchema");
+  assert.ok(content.includes("Please enter a valid IBAN."), "Expected IBAN validation message in RHF mode");
+});
+
+test("deterministic screen rendering infers postal code validation from German Postleitzahl label", () => {
+  const screen = {
+    id: "postleitzahl-screen",
+    name: "Postleitzahl Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "postleitzahl-field", name: "Postleitzahl Input", label: "Postleitzahl" })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"plz"'), "Expected PLZ validation type for Postleitzahl label");
+});
+
+test("deterministic screen rendering infers postal code validation from zip code label", () => {
+  const screen = {
+    id: "zip-code-screen",
+    name: "ZIP Code Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "zip-field", name: "ZIP Code Input", label: "ZIP Code" })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"plz"'), "Expected PLZ validation type for ZIP Code label");
+});
+
+test("deterministic screen rendering infers credit card validation from Kartennummer label", () => {
+  const screen = {
+    id: "kartennummer-screen",
+    name: "Kartennummer Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "kn-field", name: "Kartennummer Input", label: "Kartennummer" })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('"credit_card"'), "Expected credit_card validation type for Kartennummer label");
+});
