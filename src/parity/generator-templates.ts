@@ -2154,6 +2154,8 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
     element,
     tokens: context.tokens
   });
+  const mappedColor = mappedMuiProps?.color;
+  const colorProp = mappedColor && mappedColor !== "primary" ? ` color="${mappedColor}"` : "";
   const sizeProp = size ? ` size="${size}"` : "";
   const fullWidthProp = fullWidth ? " fullWidth" : "";
   const disabledProp = inferredDisabled ? " disabled" : "";
@@ -2162,7 +2164,7 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
   const typeProp = navigation ? "" : ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
   const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
 
-  return `${indent}<Button variant="${variant}"${linkProps}${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
+  return `${indent}<Button variant="${variant}"${colorProp}${linkProps}${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
 };
 
 export const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
