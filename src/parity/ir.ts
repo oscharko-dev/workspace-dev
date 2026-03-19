@@ -26,8 +26,10 @@ import type {
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
 import {
   HEADING_TYPOGRAPHY_VARIANTS,
+  buildTypographyScaleFromFigmaStyles,
   completeTypographyScale
 } from "./typography-tokens.js";
+import type { FigmaTextStyleEntry } from "./typography-tokens.js";
 import {
   classifyElementTypeFromNode,
   classifyElementTypeFromSemanticHint,
@@ -2248,6 +2250,51 @@ const resolveNodeStyleNames = (node: FigmaNode, styleCatalog: Map<string, string
   return [...new Set(names)];
 };
 
+const collectFigmaTextStyleEntries = ({
+  nodes,
+  styleCatalog
+}: {
+  nodes: FigmaNode[];
+  styleCatalog: Map<string, string>;
+}): FigmaTextStyleEntry[] => {
+  const seenStyleIds = new Set<string>();
+  const entries: FigmaTextStyleEntry[] = [];
+
+  for (const node of nodes) {
+    if (node.type !== "TEXT" || node.visible === false) {
+      continue;
+    }
+    const textStyleId = node.textStyleId ?? node.styles?.["text"];
+    if (typeof textStyleId !== "string" || textStyleId.trim().length === 0) {
+      continue;
+    }
+    if (seenStyleIds.has(textStyleId)) {
+      continue;
+    }
+    const styleName = styleCatalog.get(textStyleId);
+    if (typeof styleName !== "string" || styleName.length === 0) {
+      continue;
+    }
+    const fontSize = node.style?.fontSize;
+    if (typeof fontSize !== "number" || !Number.isFinite(fontSize) || fontSize < 1) {
+      continue;
+    }
+    seenStyleIds.add(textStyleId);
+    entries.push({
+      styleName,
+      fontSizePx: fontSize,
+      fontWeight: node.style?.fontWeight ?? 400,
+      lineHeightPx: node.style?.lineHeightPx ?? Math.round(fontSize * 1.4),
+      ...(node.style?.fontFamily?.trim() ? { fontFamily: node.style.fontFamily.trim() } : {}),
+      ...(typeof node.style?.letterSpacing === "number" && Number.isFinite(node.style.letterSpacing)
+        ? { letterSpacingPx: node.style.letterSpacing }
+        : {})
+    });
+  }
+
+  return entries;
+};
+
 const deriveStyleSignals = ({
   styleNames,
   nodeName
@@ -3368,11 +3415,13 @@ const selectTypographyClustersForScale = ({
 
 const buildDerivedTypographyScale = ({
   clusters,
+  figmaTextStyleEntries,
   fontFamily,
   headingSize,
   bodySize
 }: {
   clusters: TypographyCluster[];
+  figmaTextStyleEntries?: readonly FigmaTextStyleEntry[];
   fontFamily: string;
   headingSize: number;
   bodySize: number;
@@ -3444,6 +3493,22 @@ const buildDerivedTypographyScale = ({
     fallbackFontFamily: fontFamily,
     letterSpacingEm: overlineCluster?.letterSpacingEm ?? 0.08
   });
+
+  const figmaStyleOverrides =
+    figmaTextStyleEntries && figmaTextStyleEntries.length > 0
+      ? buildTypographyScaleFromFigmaStyles(figmaTextStyleEntries)
+      : undefined;
+
+  if (figmaStyleOverrides) {
+    for (const [variantName, variant] of Object.entries(figmaStyleOverrides) as Array<
+      [DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>]
+    >) {
+      partialScale[variantName] = {
+        ...partialScale[variantName],
+        ...variant
+      };
+    }
+  }
 
   return completeTypographyScale({
     partialScale,
@@ -3562,9 +3627,11 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
   const resolvedFontFamily = normalizeFontStack(
     [dominantBodyFont, dominantHeadingFont].filter((value): value is string => typeof value === "string")
   );
+  const figmaTextStyleEntries = collectFigmaTextStyleEntries({ nodes, styleCatalog });
   const typographyClusters = clusterTypographySamples(fontSamples);
   const typography = buildDerivedTypographyScale({
     clusters: typographyClusters,
+    figmaTextStyleEntries,
     fontFamily: resolvedFontFamily,
     headingSize: resolvedHeadingSize,
     bodySize: resolvedBodySize
