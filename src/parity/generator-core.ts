@@ -10018,111 +10018,195 @@ const renderImageElement = (element: ScreenElementIR, depth: number, parent: Vir
   return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
 };
 
-const renderContainer = (
-  element: ScreenElementIR,
-  depth: number,
-  parent: VirtualParent,
-  context: RenderContext
-): string | null => {
+interface ElementRenderStrategyInput {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}
+
+interface ContainerRenderStrategyMatch {
+  matched: true;
+  rendered: string | null;
+}
+
+type ContainerRenderStrategy = (input: ElementRenderStrategyInput) => ContainerRenderStrategyMatch | undefined;
+type ElementRenderStrategy = (input: ElementRenderStrategyInput) => string | null;
+type PreDispatchRenderStrategy = (input: ElementRenderStrategyInput) => string | null | undefined;
+
+const asContainerStrategyMatch = (rendered: string | null): ContainerRenderStrategyMatch => {
+  return {
+    matched: true,
+    rendered
+  };
+};
+
+const renderContainerIconWrapper = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | undefined => {
+  if (!(isIconLikeNode(element) || isSemanticIconWrapper(element)) || hasMeaningfulTextDescendants({ element, context })) {
+    return undefined;
+  }
+  const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const iconExpression = renderFallbackIconExpression({
+    element,
+    parent,
+    context,
+    ariaHidden: true,
+    extraEntries: [
+      ...baseIconWrapperLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseIconWrapperLayoutEntries)
+      }),
+      ["display", literal("flex")],
+      ["alignItems", literal("center")],
+      ["justifyContent", literal("center")]
+    ]
+  });
   const indent = "  ".repeat(depth);
-  if (isLikelyAccordionContainer(element)) {
-    return renderSemanticAccordion(element, depth, parent, context);
-  }
+  return `${indent}${iconExpression}`;
+};
 
-  if (isLikelyInputContainer(element)) {
-    return renderSemanticInput(element, depth, parent, context);
+const tryRenderAccordionContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isLikelyAccordionContainer(element)) {
+    return undefined;
   }
+  return asContainerStrategyMatch(renderSemanticAccordion(element, depth, parent, context));
+};
 
-  if (isPillShapedOutlinedButton(element)) {
-    return renderButton(element, depth, parent, context);
+const tryRenderInputContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isLikelyInputContainer(element)) {
+    return undefined;
   }
+  return asContainerStrategyMatch(renderSemanticInput(element, depth, parent, context));
+};
 
-  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants({ element, context })) {
-    const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
-      includePaints: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    });
-    const iconExpression = renderFallbackIconExpression({
-      element,
-      parent,
-      context,
-      ariaHidden: true,
-      extraEntries: [
-        ...baseIconWrapperLayoutEntries,
-        ...toResponsiveLayoutMediaEntries({
-          baseLayoutMode: element.layoutMode ?? "NONE",
-          overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-          spacingBase: context.spacingBase,
-          baseValuesByKey: toSxValueMapFromEntries(baseIconWrapperLayoutEntries)
-        }),
-        ["display", literal("flex")],
-        ["alignItems", literal("center")],
-        ["justifyContent", literal("center")]
-      ]
-    });
-    return `${indent}${iconExpression}`;
+const tryRenderPillShapedButtonContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isPillShapedOutlinedButton(element)) {
+    return undefined;
   }
+  return asContainerStrategyMatch(renderButton(element, depth, parent, context));
+};
 
+const tryRenderIconLikeContainer: ContainerRenderStrategy = (input) => {
+  const renderedIconWrapper = renderContainerIconWrapper(input);
+  if (renderedIconWrapper === undefined) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderedIconWrapper);
+};
+
+const tryRenderGridLikeContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
   const detectedGridLayout = detectGridLikeContainerLayout(element);
-  if (detectedGridLayout) {
-    const renderedGrid = renderGridLayout({
-      element,
-      depth,
-      parent,
-      context,
-      includePaints: true,
-      equalColumns: detectedGridLayout.mode === "equal-row",
-      columnCountHint: detectedGridLayout.columnCount
-    });
-    if (renderedGrid) {
-      return renderedGrid;
-    }
+  if (!detectedGridLayout) {
+    return undefined;
   }
-
-  if (isElevatedSurfaceContainerForPaper({ element, context })) {
-    return renderPaper(element, depth, parent, context);
+  const renderedGrid = renderGridLayout({
+    element,
+    depth,
+    parent,
+    context,
+    includePaints: true,
+    equalColumns: detectedGridLayout.mode === "equal-row",
+    columnCountHint: detectedGridLayout.columnCount
+  });
+  if (!renderedGrid) {
+    return undefined;
   }
+  return asContainerStrategyMatch(renderedGrid);
+};
 
+const tryRenderPaperSurfaceContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isElevatedSurfaceContainerForPaper({ element, context })) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderPaper(element, depth, parent, context));
+};
+
+const tryRenderRepeatedListContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
   const detectedListPattern = detectRepeatedListPattern({
     element,
     generationLocale: context.generationLocale
   });
-  if (detectedListPattern) {
-    return renderListFromRows({
+  if (!detectedListPattern) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(
+    renderListFromRows({
       element,
       rows: detectedListPattern.rows,
       hasInterItemDivider: detectedListPattern.hasInterItemDivider,
       depth,
       parent,
       context
-    });
-  }
+    })
+  );
+};
 
-  if (isSimpleFlexContainerForStack({ element, context })) {
-    return renderSimpleFlexContainerAsStack({
+const tryRenderSimpleFlexContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isSimpleFlexContainerForStack({ element, context })) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(
+    renderSimpleFlexContainerAsStack({
       element,
       depth,
       parent,
       context
-    });
-  }
+    })
+  );
+};
 
+const CONTAINER_RENDER_STRATEGIES: readonly ContainerRenderStrategy[] = [
+  tryRenderAccordionContainer,
+  tryRenderInputContainer,
+  tryRenderPillShapedButtonContainer,
+  tryRenderIconLikeContainer,
+  tryRenderGridLikeContainer,
+  tryRenderPaperSurfaceContainer,
+  tryRenderRepeatedListContainer,
+  tryRenderSimpleFlexContainer
+];
+
+const renderContainerFallback = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | null => {
+  const indent = "  ".repeat(depth);
   const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
     generationLocale: context.generationLocale
   });
 
   const renderedChildren = children
-    .map((child) => renderElement(child, depth + 1, {
-      x: element.x,
-      y: element.y,
-      width: element.width,
-      height: element.height,
-      name: element.name,
-      fillColor: element.fillColor,
-      fillGradient: element.fillGradient,
-      layoutMode: element.layoutMode ?? "NONE"
-    }, context))
+    .map((child) =>
+      renderElement(
+        child,
+        depth + 1,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
 
@@ -10198,6 +10282,152 @@ ${renderedChildren}
 ${indent}</Box>`;
 };
 
+const renderContainer = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext
+): string | null => {
+  const strategyInput: ElementRenderStrategyInput = {
+    element,
+    depth,
+    parent,
+    context
+  };
+  for (const strategy of CONTAINER_RENDER_STRATEGIES) {
+    const result = strategy(strategyInput);
+    if (result?.matched) {
+      return result.rendered;
+    }
+  }
+  return renderContainerFallback(strategyInput);
+};
+
+const runElementPreDispatchStrategies = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | null | undefined => {
+  const preDispatchStrategies: readonly PreDispatchRenderStrategy[] = [
+    ({ element, depth, parent, context }) => {
+      const navigationBarPattern = detectNavigationBarPattern({
+        element,
+        depth,
+        parent,
+        context
+      });
+      if (navigationBarPattern === "appbar") {
+        return renderAppBar(element, depth, parent, context);
+      }
+      if (navigationBarPattern === "navigation") {
+        return renderNavigation(element, depth, parent, context);
+      }
+      return undefined;
+    },
+    ({ element, depth, parent, context }) => {
+      const tabInterfacePattern = detectTabInterfacePattern({
+        element,
+        depth,
+        context
+      });
+      if (!tabInterfacePattern) {
+        return undefined;
+      }
+      return renderTabs(element, depth, parent, context, tabInterfacePattern);
+    },
+    ({ element, depth, parent, context }) => {
+      const dialogOverlayPattern = detectDialogOverlayPattern({
+        element,
+        depth,
+        parent,
+        context
+      });
+      if (!dialogOverlayPattern) {
+        return undefined;
+      }
+      return renderDialog(element, depth, parent, context, dialogOverlayPattern);
+    }
+  ];
+  for (const strategy of preDispatchStrategies) {
+    const rendered = strategy({
+      element,
+      depth,
+      parent,
+      context
+    });
+    if (rendered !== undefined) {
+      return rendered;
+    }
+  }
+  return undefined;
+};
+
+const elementRenderStrategies: Partial<Record<ScreenElementIR["type"], ElementRenderStrategy>> = {
+  text: ({ element, depth, parent, context }) => renderText(element, depth, parent, context),
+  input: ({ element, depth, parent, context }) => renderSemanticInput(element, depth, parent, context),
+  select: ({ element, depth, parent, context }) => renderSelectElement(element, depth, parent, context),
+  button: ({ element, depth, parent, context }) => renderButton(element, depth, parent, context),
+  grid: ({ element, depth, parent, context }) => renderGrid(element, depth, parent, context),
+  stack: ({ element, depth, parent, context }) => renderStack(element, depth, parent, context),
+  paper: ({ element, depth, parent, context }) => renderPaper(element, depth, parent, context),
+  card: ({ element, depth, parent, context }) => renderCard(element, depth, parent, context),
+  chip: ({ element, depth, parent, context }) => renderChip(element, depth, parent, context),
+  switch: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Switch"
+    }),
+  checkbox: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Checkbox"
+    }),
+  radio: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Radio"
+    }),
+  slider: ({ element, depth, parent, context }) => renderSlider(element, depth, parent, context),
+  rating: ({ element, depth, parent, context }) => renderRatingElement(element, depth, parent, context),
+  list: ({ element, depth, parent, context }) => renderList(element, depth, parent, context),
+  table: ({ element, depth, parent, context }) => renderTable(element, depth, parent, context),
+  tooltip: ({ element, depth, parent, context }) => renderTooltipElement(element, depth, parent, context),
+  appbar: ({ element, depth, parent, context }) => renderAppBar(element, depth, parent, context),
+  drawer: ({ element, depth, parent, context }) => renderDrawer(element, depth, parent, context),
+  breadcrumbs: ({ element, depth, parent, context }) => renderBreadcrumbs(element, depth, parent, context),
+  tab: ({ element, depth, parent, context }) => renderTabs(element, depth, parent, context),
+  dialog: ({ element, depth, parent, context }) => renderDialog(element, depth, parent, context),
+  snackbar: ({ element, depth, parent, context }) => renderSnackbar(element, depth, parent, context),
+  stepper: ({ element, depth, parent, context }) => renderStepper(element, depth, parent, context),
+  progress: ({ element, depth, parent, context }) => renderProgress(element, depth, parent, context),
+  skeleton: ({ element, depth, parent, context }) => renderSkeleton(element, depth, parent, context),
+  avatar: ({ element, depth, parent, context }) => renderAvatar(element, depth, parent, context),
+  badge: ({ element, depth, parent, context }) => renderBadge(element, depth, parent, context),
+  divider: ({ element, depth, parent, context }) => renderDividerElement(element, depth, parent, context),
+  navigation: ({ element, depth, parent, context }) => renderNavigation(element, depth, parent, context),
+  image: ({ element, depth, parent, context }) => renderImageElement(element, depth, parent, context),
+  container: ({ element, depth, parent, context }) => renderContainer(element, depth, parent, context)
+};
+
+const resolveElementRenderStrategy = (type: ScreenElementIR["type"]): ElementRenderStrategy => {
+  return (
+    elementRenderStrategies[type] ??
+    (({ element, depth, parent, context }) => {
+      return renderContainer(element, depth, parent, context);
+    })
+  );
+};
+
 const renderElement = (
   element: ScreenElementIR,
   depth: number,
@@ -10239,123 +10469,21 @@ const renderElement = (
       return null;
     }
 
-    const navigationBarPattern = detectNavigationBarPattern({
+    const preDispatchRendered = runElementPreDispatchStrategies({
       element,
       depth,
       parent,
       context
     });
-    if (navigationBarPattern === "appbar") {
-      return renderAppBar(element, depth, parent, context);
+    if (preDispatchRendered !== undefined) {
+      return preDispatchRendered;
     }
-    if (navigationBarPattern === "navigation") {
-      return renderNavigation(element, depth, parent, context);
-    }
-
-    const tabInterfacePattern = detectTabInterfacePattern({
-      element,
-      depth,
-      context
-    });
-    if (tabInterfacePattern) {
-      return renderTabs(element, depth, parent, context, tabInterfacePattern);
-    }
-
-    const dialogOverlayPattern = detectDialogOverlayPattern({
+    return resolveElementRenderStrategy(element.type)({
       element,
       depth,
       parent,
       context
     });
-    if (dialogOverlayPattern) {
-      return renderDialog(element, depth, parent, context, dialogOverlayPattern);
-    }
-
-    switch (element.type) {
-      case "text":
-        return renderText(element, depth, parent, context);
-      case "input":
-        return renderSemanticInput(element, depth, parent, context);
-      case "select":
-        return renderSelectElement(element, depth, parent, context);
-      case "button":
-        return renderButton(element, depth, parent, context);
-      case "grid":
-        return renderGrid(element, depth, parent, context);
-      case "stack":
-        return renderStack(element, depth, parent, context);
-      case "paper":
-        return renderPaper(element, depth, parent, context);
-      case "card":
-        return renderCard(element, depth, parent, context);
-      case "chip":
-        return renderChip(element, depth, parent, context);
-      case "switch":
-        return renderSelectionControl({
-          element,
-          depth,
-          parent,
-          context,
-          componentName: "Switch"
-        });
-      case "checkbox":
-        return renderSelectionControl({
-          element,
-          depth,
-          parent,
-          context,
-          componentName: "Checkbox"
-        });
-      case "radio":
-        return renderSelectionControl({
-          element,
-          depth,
-          parent,
-          context,
-          componentName: "Radio"
-        });
-      case "slider":
-        return renderSlider(element, depth, parent, context);
-      case "rating":
-        return renderRatingElement(element, depth, parent, context);
-      case "list":
-        return renderList(element, depth, parent, context);
-      case "table":
-        return renderTable(element, depth, parent, context);
-      case "tooltip":
-        return renderTooltipElement(element, depth, parent, context);
-      case "appbar":
-        return renderAppBar(element, depth, parent, context);
-      case "drawer":
-        return renderDrawer(element, depth, parent, context);
-      case "breadcrumbs":
-        return renderBreadcrumbs(element, depth, parent, context);
-      case "tab":
-        return renderTabs(element, depth, parent, context);
-      case "dialog":
-        return renderDialog(element, depth, parent, context);
-      case "snackbar":
-        return renderSnackbar(element, depth, parent, context);
-      case "stepper":
-        return renderStepper(element, depth, parent, context);
-      case "progress":
-        return renderProgress(element, depth, parent, context);
-      case "skeleton":
-        return renderSkeleton(element, depth, parent, context);
-      case "avatar":
-        return renderAvatar(element, depth, parent, context);
-      case "badge":
-        return renderBadge(element, depth, parent, context);
-      case "divider":
-        return renderDividerElement(element, depth, parent, context);
-      case "navigation":
-        return renderNavigation(element, depth, parent, context);
-      case "image":
-        return renderImageElement(element, depth, parent, context);
-      case "container":
-      default:
-        return renderContainer(element, depth, parent, context);
-    }
   } finally {
     context.activeRenderElements.delete(element);
   }
