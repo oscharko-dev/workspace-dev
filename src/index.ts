@@ -9,6 +9,7 @@ export type {
   WorkspaceFigmaSourceMode,
   WorkspaceLlmCodegenMode,
   WorkspaceBrandTheme,
+  WorkspaceFormHandlingMode,
   WorkspaceRouterMode,
   WorkspaceStartOptions,
   WorkspaceStatus,

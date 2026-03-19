@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.14.0
+ * Contract version: 2.15.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -19,6 +19,9 @@ export type WorkspaceBrandTheme = "derived" | "sparkasse";
 
 /** Router mode for generated React application shells. */
 export type WorkspaceRouterMode = "browser" | "hash";
+
+/** Form handling mode for generated interactive forms. */
+export type WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state";
 
 /** Runtime status values for asynchronous workspace jobs. */
 export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed" | "canceled";
@@ -131,6 +134,7 @@ export interface WorkspaceJobInput {
   targetPath?: string;
   brandTheme?: WorkspaceBrandTheme;
   generationLocale?: string;
+  formHandlingMode?: WorkspaceFormHandlingMode;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -145,6 +149,7 @@ export interface WorkspaceJobRequestMetadata {
   targetPath?: string;
   brandTheme: WorkspaceBrandTheme;
   generationLocale: string;
+  formHandlingMode: WorkspaceFormHandlingMode;
 }
 
 /** Submit response for accepted jobs. */
@@ -267,4 +272,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.14.0" as const;
+export const CONTRACT_VERSION = "2.15.0" as const;

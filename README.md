@@ -99,6 +99,7 @@ Optional token branding input:
 
 - `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
 - `generationLocale` (optional BCP 47 locale string; defaults to server runtime setting, fallback `de-DE`)
+- `formHandlingMode` (optional: `react_hook_form` or `legacy_use_state`; defaults to `react_hook_form`)
 
 With `enableGitPr=false`, generation is local-only.
 
@@ -253,6 +254,7 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
     "figmaAccessToken":"figd_...",
     "brandTheme":"derived",
     "generationLocale":"en-US",
+    "formHandlingMode":"react_hook_form",
     "enableGitPr": false,
     "figmaSourceMode":"rest",
     "llmCodegenMode":"deterministic"

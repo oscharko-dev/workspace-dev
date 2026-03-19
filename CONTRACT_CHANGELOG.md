@@ -23,6 +23,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.15.0] - 2026-03-19
+
+### Form handling mode selection for generated forms
+
+Added:
+
+- `WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state"`
+- `WorkspaceJobInput.formHandlingMode?: WorkspaceFormHandlingMode`
+- `WorkspaceJobRequestMetadata.formHandlingMode: WorkspaceFormHandlingMode` (resolved effective mode)
+
 ## [2.14.0] - 2026-03-18
 
 ### Job cancellation endpoint and queue backpressure controls

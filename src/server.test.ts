@@ -480,6 +480,7 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(request.enableGitPr, false);
     assert.equal(request.brandTheme, "derived");
     assert.equal(request.generationLocale, "de-DE");
+    assert.equal(request.formHandlingMode, "react_hook_form");
     assert.equal(preview.enabled, true);
 
     const generatedProjectDir = path.join(outputRoot, "jobs", jobId, "generated-app");
@@ -563,6 +564,7 @@ test("workspace server accepts local_json submit and completes without Figma RES
     assert.equal(request.figmaSourceMode, "local_json");
     assert.equal(request.figmaJsonPath, localJsonPath);
     assert.equal(request.figmaFileKey, undefined);
+    assert.equal(request.formHandlingMode, "react_hook_form");
     assert.equal(fetchCalls, 0);
 
     const cleanedFigmaPath = path.join(outputRoot, "jobs", jobId, "figma.json");
@@ -635,6 +637,7 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
         figmaAccessToken: "figd_xxx",
         brandTheme: "derived",
         generationLocale: "en-US",
+        formHandlingMode: "legacy_use_state",
         figmaSourceMode: "rest",
         llmCodegenMode: "deterministic"
       }
@@ -649,6 +652,7 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
     assert.equal(finalStatus.status, "completed");
     assert.equal(request.brandTheme, "derived");
     assert.equal(request.generationLocale, "en-US");
+    assert.equal(request.formHandlingMode, "legacy_use_state");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

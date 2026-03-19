@@ -5,7 +5,13 @@
  * dependencies to keep the package air-gap compatible.
  */
 
-import type { WorkspaceBrandTheme, WorkspaceFigmaSourceMode, WorkspaceJobInput, WorkspaceStatus } from "./contracts/index.js";
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceFigmaSourceMode,
+  WorkspaceFormHandlingMode,
+  WorkspaceJobInput,
+  WorkspaceStatus
+} from "./contracts/index.js";
 
 type PathSegment = string | number;
 
@@ -103,7 +109,8 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "projectName",
     "targetPath",
     "brandTheme",
-    "generationLocale"
+    "generationLocale",
+    "formHandlingMode"
   ]);
 
   for (const key of Object.keys(input)) {
@@ -188,6 +195,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
+  const rawFormHandlingMode = parseStringField({
+    input,
+    key: "formHandlingMode",
+    required: false,
+    issues
+  });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
       return undefined;
@@ -197,6 +210,17 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
       return normalized as WorkspaceBrandTheme;
     }
     pushIssue(issues, ["brandTheme"], "brandTheme must be one of: derived, sparkasse");
+    return undefined;
+  })();
+  const formHandlingMode = (() => {
+    if (rawFormHandlingMode === undefined) {
+      return undefined;
+    }
+    const normalized = rawFormHandlingMode.trim().toLowerCase();
+    if (normalized === "react_hook_form" || normalized === "legacy_use_state") {
+      return normalized as WorkspaceFormHandlingMode;
+    }
+    pushIssue(issues, ["formHandlingMode"], "formHandlingMode must be one of: react_hook_form, legacy_use_state");
     return undefined;
   })();
 
@@ -285,6 +309,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (generationLocale !== undefined) {
     data.generationLocale = generationLocale;
+  }
+  if (formHandlingMode !== undefined) {
+    data.formHandlingMode = formHandlingMode;
   }
 
   return {
