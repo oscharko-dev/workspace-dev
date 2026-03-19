@@ -13264,6 +13264,79 @@ const writeGeneratedFile = async (rootDir: string, file: GeneratedFile): Promise
   await writeFile(absolutePath, file.content, "utf-8");
 };
 
+const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for(
+  "workspace-dev.parity.generateArtifacts.runtimeAdapters"
+);
+
+type LoadedDesignSystemConfig = Awaited<ReturnType<typeof loadDesignSystemConfigFile>>;
+type ApplyDesignSystemMappingsInput = Parameters<typeof applyDesignSystemMappingsToGeneratedTsx>[0];
+
+interface GenerateArtifactsRuntimeAdapters {
+  mkdirRecursive: (directory: string) => Promise<void>;
+  writeTextFile: ({ filePath, content }: { filePath: string; content: string }) => Promise<void>;
+  writeGeneratedFile: (rootDir: string, file: GeneratedFile) => Promise<void>;
+  loadDesignSystemConfig: ({
+    designSystemFilePath,
+    onLog
+  }: {
+    designSystemFilePath: string;
+    onLog: (message: string) => void;
+  }) => Promise<LoadedDesignSystemConfig>;
+  applyDesignSystemMappings: (input: ApplyDesignSystemMappingsInput) => string;
+  loadIconResolver: ({
+    iconMapFilePath,
+    onLog
+  }: {
+    iconMapFilePath: string;
+    onLog: (message: string) => void;
+  }) => Promise<IconFallbackResolver>;
+}
+
+const DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS: GenerateArtifactsRuntimeAdapters = {
+  mkdirRecursive: async (directory) => {
+    await mkdir(directory, { recursive: true });
+  },
+  writeTextFile: async ({ filePath, content }) => {
+    await writeFile(filePath, content, "utf-8");
+  },
+  writeGeneratedFile: async (rootDir, file) => {
+    await writeGeneratedFile(rootDir, file);
+  },
+  loadDesignSystemConfig: async ({ designSystemFilePath, onLog }) => {
+    return loadDesignSystemConfigFile({
+      designSystemFilePath,
+      onLog
+    });
+  },
+  applyDesignSystemMappings: (input) => {
+    return applyDesignSystemMappingsToGeneratedTsx(input);
+  },
+  loadIconResolver: async ({ iconMapFilePath, onLog }) => {
+    return loadIconFallbackResolver({
+      iconMapFilePath,
+      onLog
+    });
+  }
+};
+
+const resolveGenerateArtifactsRuntimeAdapters = (input: GenerateArtifactsInput): GenerateArtifactsRuntimeAdapters => {
+  const candidate = (input as unknown as Record<PropertyKey, unknown>)[GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL];
+  if (!candidate || typeof candidate !== "object") {
+    return DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS;
+  }
+  const partial = candidate as Partial<GenerateArtifactsRuntimeAdapters>;
+  return {
+    mkdirRecursive: partial.mkdirRecursive ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.mkdirRecursive,
+    writeTextFile: partial.writeTextFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeTextFile,
+    writeGeneratedFile: partial.writeGeneratedFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeGeneratedFile,
+    loadDesignSystemConfig:
+      partial.loadDesignSystemConfig ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadDesignSystemConfig,
+    applyDesignSystemMappings:
+      partial.applyDesignSystemMappings ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.applyDesignSystemMappings,
+    loadIconResolver: partial.loadIconResolver ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadIconResolver
+  };
+};
+
 const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   const all: ScreenElementIR[] = [];
   const stack = [...elements];
@@ -13285,20 +13358,30 @@ const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   return all;
 };
 
-export const generateArtifacts = async ({
-  projectDir,
-  ir,
-  componentMappings,
-  iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
-  designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
-  imageAssetMap = {},
+interface GenerateArtifactsResolvedPhase {
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+}
+
+const resolveGenerateArtifactsPhase = async ({
+  input,
   generationLocale,
-  routerMode,
   formHandlingMode,
   llmModelName,
   llmCodegenMode,
+  designSystemFilePath,
   onLog
-}: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+}: {
+  input: GenerateArtifactsInput;
+  generationLocale: string | undefined;
+  formHandlingMode: WorkspaceFormHandlingMode | undefined;
+  llmModelName: string;
+  llmCodegenMode: LlmCodegenMode;
+  designSystemFilePath: string;
+  onLog: (message: string) => void;
+}): Promise<GenerateArtifactsResolvedPhase> => {
   void llmModelName;
   if (llmCodegenMode !== "deterministic") {
     throw new WorkflowError({
@@ -13308,7 +13391,7 @@ export const generateArtifacts = async ({
       message: "Only deterministic code generation is supported in workspace-dev."
     });
   }
-
+  const runtimeAdapters = resolveGenerateArtifactsRuntimeAdapters(input);
   const resolvedGenerationLocale = resolveGenerationLocale({
     requestedLocale: generationLocale,
     fallbackLocale: DEFAULT_GENERATION_LOCALE
@@ -13322,7 +13405,7 @@ export const generateArtifacts = async ({
   const resolvedFormHandlingMode = resolveFormHandlingMode({
     requestedMode: formHandlingMode
   });
-  const designSystemConfig = await loadDesignSystemConfigFile({
+  const designSystemConfig = await runtimeAdapters.loadDesignSystemConfig({
     designSystemFilePath,
     onLog
   });
@@ -13330,7 +13413,7 @@ export const generateArtifacts = async ({
     if (!designSystemConfig) {
       return file;
     }
-    const transformedContent = applyDesignSystemMappingsToGeneratedTsx({
+    const transformedContent = runtimeAdapters.applyDesignSystemMappings({
       filePath: file.path,
       content: file.content,
       config: designSystemConfig
@@ -13342,7 +13425,39 @@ export const generateArtifacts = async ({
           content: transformedContent
         };
   };
+  return {
+    runtimeAdapters,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    transformGeneratedFileWithDesignSystem
+  };
+};
 
+interface GenerateArtifactsStatePhase {
+  generatedPaths: Set<string>;
+  generationMetrics: GenerationMetrics;
+  truncationByScreenId: Map<string, {
+    screenId: string;
+    screenName: string;
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  }>;
+  allIrNodeIds: Set<string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+}
+
+const initializeGenerateArtifactsStatePhase = ({
+  ir,
+  componentMappings
+}: {
+  ir: DesignIR;
+  componentMappings: ComponentMappingRule[] | undefined;
+}): GenerateArtifactsStatePhase => {
   const generatedPaths = new Set<string>();
   const generationMetrics: GenerationMetrics = {
     fetchedNodes: ir.metrics?.fetchedNodes ?? 0,
@@ -13359,7 +13474,6 @@ export const generateArtifacts = async ({
   const truncationByScreenId = new Map(
     generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)
   );
-
   const allIrNodeIds = new Set<string>(
     ir.screens.flatMap((screen) => flattenElements(screen.children).map((node) => node.id))
   );
@@ -13392,12 +13506,42 @@ export const generateArtifacts = async ({
       });
     }
   }
+  return {
+    generatedPaths,
+    generationMetrics,
+    truncationByScreenId,
+    allIrNodeIds,
+    mappingByNodeId,
+    mappingWarnings
+  };
+};
 
-  await mkdir(path.join(projectDir, "src", "screens"), { recursive: true });
-  await mkdir(path.join(projectDir, "src", "context"), { recursive: true });
-  await mkdir(path.join(projectDir, "src", "theme"), { recursive: true });
+interface GenerateArtifactsBasePhase {
+  iconResolver: IconFallbackResolver;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}
 
-  const iconResolver = await loadIconFallbackResolver({
+const runGenerateArtifactsBasePhase = async ({
+  projectDir,
+  ir,
+  iconMapFilePath,
+  resolvedGenerationLocale,
+  runtimeAdapters,
+  generatedPaths,
+  onLog
+}: {
+  projectDir: string;
+  ir: DesignIR;
+  iconMapFilePath: string;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  generatedPaths: Set<string>;
+  onLog: (message: string) => void;
+}): Promise<GenerateArtifactsBasePhase> => {
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "screens"));
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "context"));
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "theme"));
+  const iconResolver = await runtimeAdapters.loadIconResolver({
     iconMapFilePath,
     onLog
   });
@@ -13405,28 +13549,85 @@ export const generateArtifacts = async ({
     ir,
     generationLocale: resolvedGenerationLocale.locale
   });
-
-  const tokensPath = path.join(projectDir, "src", "theme", "tokens.json");
-  await writeFile(tokensPath, JSON.stringify(ir.tokens, null, 2), "utf-8");
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "src", "theme", "tokens.json"),
+    content: JSON.stringify(ir.tokens, null, 2)
+  });
   generatedPaths.add("src/theme/tokens.json");
-
   const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults);
-  await writeGeneratedFile(projectDir, deterministicTheme);
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
-
   const deterministicErrorBoundary = makeErrorBoundaryFile();
-  await writeGeneratedFile(projectDir, deterministicErrorBoundary);
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicErrorBoundary);
   generatedPaths.add(deterministicErrorBoundary.path);
-
   const deterministicScreenSkeleton = makeScreenSkeletonFile();
-  await writeGeneratedFile(projectDir, deterministicScreenSkeleton);
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicScreenSkeleton);
   generatedPaths.add(deterministicScreenSkeleton.path);
+  return {
+    iconResolver,
+    themeComponentDefaults
+  };
+};
 
+interface DeterministicScreenPersistedArtifact {
+  file: GeneratedFile;
+  componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
+  testFiles: GeneratedFile[];
+}
+
+interface GenerateArtifactsScreenPhase {
+  deterministicScreens: DeterministicScreenPersistedArtifact[];
+  identitiesByScreenId: Map<string, ScreenArtifactIdentity>;
+  usedMappingNodeIds: Set<string>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+  accessibilityWarnings: AccessibilityWarning[];
+  simplificationByScreen: ScreenSimplificationMetric[];
+  aggregatedSimplificationStats: SimplificationMetrics;
+  prototypeNavigationRenderedCount: number;
+}
+
+const runGenerateArtifactsScreenPhase = ({
+  ir,
+  mappingByNodeId,
+  truncationByScreenId,
+  imageAssetMap,
+  resolvedGenerationLocale,
+  resolvedFormHandlingMode,
+  iconResolver,
+  themeComponentDefaults,
+  transformGeneratedFileWithDesignSystem,
+  onLog
+}: {
+  ir: DesignIR;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  truncationByScreenId: Map<string, {
+    screenId: string;
+    screenName: string;
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  }>;
+  imageAssetMap: Record<string, string>;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  iconResolver: IconFallbackResolver;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+  transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+  onLog: (message: string) => void;
+}): GenerateArtifactsScreenPhase => {
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
   const routePathByScreenId = new Map(
     Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
   );
   const usedMappingNodeIds = new Set<string>();
+  const mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }> = [];
   const accessibilityWarnings: AccessibilityWarning[] = [];
   const simplificationByScreen: ScreenSimplificationMetric[] = [];
   const aggregatedSimplificationStats = createEmptySimplificationStats();
@@ -13474,7 +13675,6 @@ export const generateArtifacts = async ({
       });
     }
     accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
-
     return {
       file: transformGeneratedFileWithDesignSystem(deterministicScreen.file),
       componentFiles: deterministicScreen.componentFiles.map((file) => transformGeneratedFileWithDesignSystem(file)),
@@ -13482,15 +13682,53 @@ export const generateArtifacts = async ({
       testFiles: deterministicScreen.testFiles
     };
   });
+  return {
+    deterministicScreens,
+    identitiesByScreenId,
+    usedMappingNodeIds,
+    mappingWarnings,
+    accessibilityWarnings,
+    simplificationByScreen,
+    aggregatedSimplificationStats,
+    prototypeNavigationRenderedCount
+  };
+};
+
+const persistGenerateArtifactsScreenPhase = async ({
+  projectDir,
+  deterministicScreens,
+  runtimeAdapters,
+  generatedPaths
+}: {
+  projectDir: string;
+  deterministicScreens: DeterministicScreenPersistedArtifact[];
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  generatedPaths: Set<string>;
+}): Promise<void> => {
   await Promise.all(
     deterministicScreens
       .flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles, ...item.testFiles])
       .map(async (file) => {
-        await writeGeneratedFile(projectDir, file);
+        await runtimeAdapters.writeGeneratedFile(projectDir, file);
         generatedPaths.add(file.path);
       })
   );
+};
 
+const appendGenerateArtifactsMappingWarnings = ({
+  mappingByNodeId,
+  allIrNodeIds,
+  usedMappingNodeIds,
+  mappingWarnings
+}: {
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  allIrNodeIds: Set<string>;
+  usedMappingNodeIds: Set<string>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+}): void => {
   for (const [nodeId, mapping] of mappingByNodeId.entries()) {
     if (!allIrNodeIds.has(nodeId)) {
       continue;
@@ -13523,19 +13761,101 @@ export const generateArtifacts = async ({
       });
     }
   }
+};
 
-  await writeFile(
-    path.join(projectDir, "src", "App.tsx"),
-    makeAppFile({
+export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+  const {
+    projectDir,
+    ir,
+    componentMappings,
+    iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
+    designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
+    imageAssetMap = {},
+    generationLocale,
+    routerMode,
+    formHandlingMode,
+    llmModelName,
+    llmCodegenMode,
+    onLog
+  } = input;
+  const {
+    runtimeAdapters,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    transformGeneratedFileWithDesignSystem
+  } = await resolveGenerateArtifactsPhase({
+    input,
+    generationLocale,
+    formHandlingMode,
+    llmModelName,
+    llmCodegenMode,
+    designSystemFilePath,
+    onLog
+  });
+  const {
+    generatedPaths,
+    generationMetrics,
+    truncationByScreenId,
+    allIrNodeIds,
+    mappingByNodeId,
+    mappingWarnings
+  } = initializeGenerateArtifactsStatePhase({
+    ir,
+    componentMappings
+  });
+  const { iconResolver, themeComponentDefaults } = await runGenerateArtifactsBasePhase({
+    projectDir,
+    ir,
+    iconMapFilePath,
+    resolvedGenerationLocale,
+    runtimeAdapters,
+    generatedPaths,
+    onLog
+  });
+  const {
+    deterministicScreens,
+    identitiesByScreenId,
+    usedMappingNodeIds,
+    mappingWarnings: screenPhaseMappingWarnings,
+    accessibilityWarnings,
+    simplificationByScreen,
+    aggregatedSimplificationStats,
+    prototypeNavigationRenderedCount
+  } = runGenerateArtifactsScreenPhase({
+    ir,
+    mappingByNodeId,
+    truncationByScreenId,
+    imageAssetMap,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    iconResolver,
+    themeComponentDefaults,
+    transformGeneratedFileWithDesignSystem,
+    onLog
+  });
+  mappingWarnings.push(...screenPhaseMappingWarnings);
+  await persistGenerateArtifactsScreenPhase({
+    projectDir,
+    deterministicScreens,
+    runtimeAdapters,
+    generatedPaths
+  });
+  appendGenerateArtifactsMappingWarnings({
+    mappingByNodeId,
+    allIrNodeIds,
+    usedMappingNodeIds,
+    mappingWarnings
+  });
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "src", "App.tsx"),
+    content: makeAppFile({
       screens: ir.screens,
       identitiesByScreenId,
       ...(routerMode !== undefined ? { routerMode } : {})
-    }),
-    "utf-8"
-  );
+    })
+  });
   generatedPaths.add("src/App.tsx");
 
-  const generationMetricsPath = path.join(projectDir, "generation-metrics.json");
   generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;
   generationMetrics.simplification = {
     aggregate: aggregatedSimplificationStats,
@@ -13545,7 +13865,10 @@ export const generateArtifacts = async ({
     ...generationMetrics,
     accessibilityWarnings
   };
-  await writeFile(generationMetricsPath, `${JSON.stringify(generationMetricsPayload, null, 2)}\n`, "utf-8");
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "generation-metrics.json"),
+    content: `${JSON.stringify(generationMetricsPayload, null, 2)}\n`
+  });
   generatedPaths.add("generation-metrics.json");
 
   if (generationMetrics.degradedGeometryNodes.length > 0) {
