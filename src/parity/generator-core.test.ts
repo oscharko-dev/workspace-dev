@@ -145,6 +145,177 @@ const createIr = () => ({
   ]
 });
 
+const createMixedFallbackStageIr = () => {
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "mixed-stage-screen",
+      name: "Mixed Fallback Stage",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "mixed-stage-title",
+          name: "Header Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Dashboard"
+        },
+        {
+          id: "mixed-stage-nav",
+          name: "Open Details",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Open Details",
+          prototypeNavigation: {
+            targetScreenId: "mixed-stage-target-screen",
+            mode: "replace" as const
+          }
+        },
+        {
+          id: "mixed-stage-search-icon",
+          name: "ic_search",
+          nodeType: "INSTANCE",
+          type: "container" as const,
+          width: 24,
+          height: 24,
+          children: []
+        },
+        {
+          id: "mixed-stage-input",
+          name: "Kontonummer Input",
+          nodeType: "FRAME",
+          type: "input" as const,
+          text: "Kontonummer"
+        },
+        {
+          id: "mixed-offer-card-a",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "mixed-offer-image-a",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "mixed-offer-title-a",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Starter Paket"
+            },
+            {
+              id: "mixed-offer-price-a",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €"
+            }
+          ]
+        },
+        {
+          id: "mixed-offer-card-b",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "mixed-offer-image-b",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "mixed-offer-title-b",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Family Paket"
+            },
+            {
+              id: "mixed-offer-price-b",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "19,99 €"
+            }
+          ]
+        },
+        {
+          id: "mixed-offer-card-c",
+          name: "Offer Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          width: 320,
+          height: 180,
+          fillColor: "#ffffff",
+          children: [
+            {
+              id: "mixed-offer-image-c",
+              name: "Offer Image",
+              nodeType: "RECTANGLE",
+              type: "image" as const,
+              width: 320,
+              height: 96
+            },
+            {
+              id: "mixed-offer-title-c",
+              name: "Offer Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Premium Paket"
+            },
+            {
+              id: "mixed-offer-price-c",
+              name: "Offer Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "29,99 €"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "mixed-stage-target-screen",
+      name: "Mixed Stage Target",
+      layoutMode: "VERTICAL" as const,
+      gap: 12,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "mixed-stage-target-title",
+          name: "Target Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Destination"
+        }
+      ]
+    }
+  ];
+  return ir;
+};
+
+const mixedFallbackStageImageAssetMap = {
+  "mixed-offer-image-a": "/images/mixed-offer-a.png",
+  "mixed-offer-image-b": "/images/mixed-offer-b.png",
+  "mixed-offer-image-c": "/images/mixed-offer-c.png"
+};
+
 const createRegressionScreen = () => ({
   id: "reg-screen-1",
   name: "Material UI View Nachbauen",
@@ -2236,6 +2407,115 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.ok(patternContextContent.includes("offerTitleText: string;"));
   assert.ok(patternContextContent.includes("offerImageSrc: string;"));
   assert.ok(patternContextContent.includes("export function OffersPatternContextProvider"));
+});
+
+test("generateArtifacts keeps pattern and form provider wrapping order stable when both are present", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-provider-order-"));
+  const ir = createMixedFallbackStageIr();
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    imageAssetMap: mixedFallbackStageImageAssetMap,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")), "utf8");
+  const patternProviderMatch = screenContent.match(
+    /import \{ ([A-Za-z0-9_]+PatternContextProvider), type [^}]+ \} from "\.\.\/context\/[^"]+";/
+  );
+  const formProviderMatch = screenContent.match(
+    /import \{ ([A-Za-z0-9_]+FormContextProvider), [^}]+ \} from "\.\.\/context\/[^"]+";/
+  );
+  const screenContentComponentMatch = screenContent.match(/function ([A-Za-z0-9_]+ScreenContent)\(\)/);
+  assert.ok(patternProviderMatch?.[1], "Expected pattern context provider import.");
+  assert.ok(formProviderMatch?.[1], "Expected form context provider import.");
+  assert.ok(screenContentComponentMatch?.[1], "Expected screen content function.");
+
+  const patternProvider = patternProviderMatch?.[1] ?? "";
+  const formProvider = formProviderMatch?.[1] ?? "";
+  const screenContentComponent = screenContentComponentMatch?.[1] ?? "";
+  const patternStart = screenContent.indexOf(`<${patternProvider} initialState={patternContextInitialState}>`);
+  const formStart = screenContent.indexOf(`<${formProvider}>`);
+  const contentStart = screenContent.indexOf(`<${screenContentComponent} />`);
+  const formEnd = screenContent.indexOf(`</${formProvider}>`);
+  const patternEnd = screenContent.indexOf(`</${patternProvider}>`);
+
+  assert.ok(patternStart >= 0, "Expected pattern context wrapper.");
+  assert.ok(formStart >= 0, "Expected form context wrapper.");
+  assert.ok(contentStart >= 0, "Expected screen content wrapper.");
+  assert.ok(formEnd >= 0, "Expected closing form context wrapper.");
+  assert.ok(patternEnd >= 0, "Expected closing pattern context wrapper.");
+  assert.ok(patternStart < formStart);
+  assert.ok(formStart < contentStart);
+  assert.ok(contentStart < formEnd);
+  assert.ok(formEnd < patternEnd);
+  assert.ok(screenContent.includes("import { Link as RouterLink } from \"react-router-dom\";"));
+  assert.ok(screenContent.includes('import SearchIcon from "@mui/icons-material/Search";'));
+});
+
+test("generateArtifacts keeps mixed fallback files byte-stable across repeated generation runs", async () => {
+  const firstProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-byte-stable-first-"));
+  const secondProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-byte-stable-second-"));
+  const ir = createMixedFallbackStageIr();
+
+  const generateAndCollect = async (projectDir: string) => {
+    await generateArtifacts({
+      projectDir,
+      ir,
+      imageAssetMap: mixedFallbackStageImageAssetMap,
+      llmCodegenMode: "deterministic",
+      llmModelName: "deterministic",
+      onLog: () => {
+        // no-op
+      }
+    });
+    const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")), "utf8");
+    const componentImportMatches = Array.from(screenContent.matchAll(/from "\.\.\/components\/([^"]+)";/g));
+    const contextImportMatches = Array.from(screenContent.matchAll(/from "\.\.\/context\/([^"]+)";/g));
+
+    const componentContents = (
+      await Promise.all(
+        componentImportMatches.map(async (match) => {
+          const moduleName = match[1] ?? "";
+          const content = await readFile(path.join(projectDir, "src", "components", `${moduleName}.tsx`), "utf8");
+          return {
+            moduleName,
+            content
+          };
+        })
+      )
+    ).sort((left, right) => left.moduleName.localeCompare(right.moduleName));
+
+    const contextContents = (
+      await Promise.all(
+        contextImportMatches.map(async (match) => {
+          const moduleName = match[1] ?? "";
+          const content = await readFile(path.join(projectDir, "src", "context", `${moduleName}.tsx`), "utf8");
+          return {
+            moduleName,
+            content
+          };
+        })
+      )
+    ).sort((left, right) => left.moduleName.localeCompare(right.moduleName));
+
+    return {
+      screenContent,
+      componentContents,
+      contextContents
+    };
+  };
+
+  const first = await generateAndCollect(firstProjectDir);
+  const second = await generateAndCollect(secondProjectDir);
+  assert.equal(first.screenContent, second.screenContent);
+  assert.deepEqual(first.componentContents, second.componentContents);
+  assert.deepEqual(first.contextContents, second.contextContents);
 });
 
 test("generateArtifacts applies design-system mappings to screen and extracted pattern component files", async () => {
@@ -9307,6 +9587,16 @@ test("deterministic screen rendering keeps mixed dispatch output byte-stable acr
   assert.equal(first, second);
   assert.ok(first.includes("<Tabs "));
   assert.ok(first.includes("<TextField"));
+});
+
+test("createDeterministicScreenFile keeps repeated card patterns inline without extraction artifacts", () => {
+  const mixedScreen = createMixedFallbackStageIr().screens[0]!;
+  const content = createDeterministicScreenFile(mixedScreen).content;
+
+  assert.ok(content.includes("<Card"));
+  assert.equal(content.includes('from "../components/'), false);
+  assert.equal(content.includes("PatternContextProvider"), false);
+  assert.equal(content.includes("patternContextInitialState"), false);
 });
 
 test("deterministic screen rendering renders ListItemAvatar when repeating rows have avatars", () => {
