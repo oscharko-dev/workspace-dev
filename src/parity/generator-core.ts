@@ -14,6 +14,7 @@ import type {
   ScreenElementIR,
   ScreenIR
 } from "./types.js";
+import { validateDesignIR } from "./types.js";
 import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName } from "./path-utils.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
@@ -5875,6 +5876,13 @@ const appendGenerateArtifactsMappingWarnings = ({
 };
 
 export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+  const irValidation = validateDesignIR(input.ir);
+  if (!irValidation.valid) {
+    throw new WorkflowError({
+      code: "E_IR_VALIDATION",
+      message: `IR validation failed: ${irValidation.errors.map((e) => e.message).join("; ")}`
+    });
+  }
   const {
     projectDir,
     ir,
