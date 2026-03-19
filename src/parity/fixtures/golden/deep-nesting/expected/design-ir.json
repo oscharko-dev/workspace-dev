@@ -1,0 +1,428 @@
+{
+  "sourceName": "Deep Nesting Board",
+  "screens": [
+    {
+      "id": "screen-nested",
+      "name": "Dashboard",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "header",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Dashboard",
+          "x": 16,
+          "y": 16,
+          "width": 180,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "card-container",
+          "name": "Cards Grid",
+          "nodeType": "FRAME",
+          "type": "table",
+          "layoutMode": "HORIZONTAL",
+          "gap": 16,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "MIN",
+          "counterAxisAlignItems": "MIN",
+          "x": 16,
+          "y": 68,
+          "width": 992,
+          "height": 300,
+          "children": [
+            {
+              "id": "card-1",
+              "name": "MuiCardRoot",
+              "nodeType": "FRAME",
+              "type": "table",
+              "layoutMode": "VERTICAL",
+              "gap": 8,
+              "padding": {
+                "top": 16,
+                "right": 16,
+                "bottom": 16,
+                "left": 16
+              },
+              "x": 16,
+              "y": 68,
+              "width": 320,
+              "height": 300,
+              "fillColor": "#ffffff",
+              "elevation": 5,
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "card-1-title",
+                  "name": "Heading",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "Revenue",
+                  "x": 32,
+                  "y": 84,
+                  "width": 120,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "card-1-inner",
+                  "name": "Inner Container",
+                  "nodeType": "FRAME",
+                  "type": "stack",
+                  "layoutMode": "VERTICAL",
+                  "gap": 4,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "x": 32,
+                  "y": 116,
+                  "width": 288,
+                  "height": 180,
+                  "children": [
+                    {
+                      "id": "card-1-value",
+                      "name": "Value",
+                      "nodeType": "TEXT",
+                      "type": "text",
+                      "layoutMode": "NONE",
+                      "gap": 0,
+                      "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                      },
+                      "text": "$42,500",
+                      "x": 32,
+                      "y": 116,
+                      "width": 200,
+                      "height": 40,
+                      "fillColor": "#1c1f24",
+                      "fontSize": 32,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeight": 40,
+                      "textAlign": "LEFT"
+                    },
+                    {
+                      "id": "card-1-detail-wrapper",
+                      "name": "Detail Wrapper",
+                      "nodeType": "FRAME",
+                      "type": "stack",
+                      "layoutMode": "VERTICAL",
+                      "gap": 4,
+                      "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                      },
+                      "x": 32,
+                      "y": 160,
+                      "width": 288,
+                      "height": 120,
+                      "children": [
+                        {
+                          "id": "card-1-detail-row",
+                          "name": "Detail Row",
+                          "nodeType": "FRAME",
+                          "type": "stack",
+                          "layoutMode": "HORIZONTAL",
+                          "gap": 8,
+                          "padding": {
+                            "top": 0,
+                            "right": 0,
+                            "bottom": 0,
+                            "left": 0
+                          },
+                          "primaryAxisAlignItems": "SPACE_BETWEEN",
+                          "counterAxisAlignItems": "CENTER",
+                          "x": 32,
+                          "y": 160,
+                          "width": 288,
+                          "height": 20,
+                          "children": [
+                            {
+                              "id": "card-1-detail-label",
+                              "name": "Detail Label",
+                              "nodeType": "TEXT",
+                              "type": "text",
+                              "layoutMode": "NONE",
+                              "gap": 0,
+                              "padding": {
+                                "top": 0,
+                                "right": 0,
+                                "bottom": 0,
+                                "left": 0
+                              },
+                              "text": "+12.5% from last month",
+                              "x": 32,
+                              "y": 160,
+                              "width": 200,
+                              "height": 18,
+                              "fillColor": "#268026",
+                              "fontSize": 13,
+                              "fontWeight": 400,
+                              "fontFamily": "Inter",
+                              "lineHeight": 18,
+                              "textAlign": "LEFT"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "card-2",
+              "name": "MuiCardRoot",
+              "nodeType": "FRAME",
+              "type": "card",
+              "layoutMode": "VERTICAL",
+              "gap": 8,
+              "padding": {
+                "top": 16,
+                "right": 16,
+                "bottom": 16,
+                "left": 16
+              },
+              "x": 352,
+              "y": 68,
+              "width": 320,
+              "height": 300,
+              "fillColor": "#ffffff",
+              "elevation": 5,
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "card-2-title",
+                  "name": "Heading",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "Users",
+                  "x": 368,
+                  "y": 84,
+                  "width": 80,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "card-2-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "1,250",
+                  "x": 368,
+                  "y": 116,
+                  "width": 150,
+                  "height": 40,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 40,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1024,
+      "height": 768,
+      "fillColor": "#f2f5f7"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#f7f9fa",
+      "background": "#f7f9fa",
+      "text": "#1c1f24",
+      "success": "#268026",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 12,
+    "spacingBase": 8,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 32,
+    "bodySize": 18,
+    "typography": {
+      "h1": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 13,
+        "fontWeight": 400,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 13,
+        "fontWeight": 400,
+        "lineHeightPx": 18,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-nested",
+        "screenName": "Dashboard",
+        "elements": 12
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "degradedGeometryNodes": []
+  }
+}
