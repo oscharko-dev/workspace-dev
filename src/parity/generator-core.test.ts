@@ -3835,13 +3835,71 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
   });
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
-  assert.ok(generatedScreenContent.includes('component="img" src={"/images/hero.png"} alt={"Hero Image"}'));
+  assert.ok(generatedScreenContent.includes('component="img" src={"/images/hero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'));
   assert.ok(
     generatedScreenContent.includes(
-      '<CardMedia component="img" image={"/images/card-media.png"} alt={"Card Media"}'
+      '<CardMedia component="img" image={"/images/card-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
     )
   );
-  assert.ok(generatedScreenContent.includes('component="img" src={"/images/table-image.png"} alt={"Table Image"}'));
+  assert.ok(generatedScreenContent.includes('component="img" src={"/images/table-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'));
+});
+
+test("generateArtifacts applies lazy loading for below-fold images and fetchpriority for hero images", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-lazy-"));
+  const lazyScreen = {
+    id: "lazy-screen",
+    name: "Lazy Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "hero-img",
+        name: "Hero Banner",
+        nodeType: "RECTANGLE",
+        type: "image" as const,
+        y: 50,
+        width: 800,
+        height: 400
+      },
+      {
+        id: "below-fold-img",
+        name: "Gallery Photo",
+        nodeType: "RECTANGLE",
+        type: "image" as const,
+        y: 900,
+        width: 640,
+        height: 480
+      }
+    ]
+  };
+
+  await generateArtifacts({
+    projectDir,
+    ir: {
+      ...createIr(),
+      screens: [lazyScreen]
+    },
+    imageAssetMap: {
+      "hero-img": "/images/hero-banner.png",
+      "below-fold-img": "/images/gallery.png"
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Lazy Screen")), "utf8");
+
+  // Hero image (y=50): should have fetchPriority="high", decoding="async", no loading="lazy"
+  assert.ok(content.includes('src={"/images/hero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'));
+  assert.ok(!content.includes('/images/hero-banner.png") alt={"Hero Banner"} loading="lazy"'));
+
+  // Below-fold image (y=900): should have loading="lazy", decoding="async", no fetchpriority
+  assert.ok(content.includes('src={"/images/gallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'));
+  assert.ok(!content.includes('/images/gallery.png") alt={"Gallery Photo"} decoding="async" fetchpriority'));
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
