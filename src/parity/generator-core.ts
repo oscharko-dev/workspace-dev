@@ -3423,24 +3423,59 @@ const baseLayoutEntries = (
   return entries;
 };
 
-const RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT: Record<ResponsiveBreakpoint, string> = {
-  xs: "@media (max-width: 428px)",
-  sm: "@media (min-width: 429px) and (max-width: 768px)",
-  md: "@media (min-width: 769px) and (max-width: 1024px)",
-  lg: "@media (min-width: 1025px) and (max-width: 1440px)",
-  xl: "@media (min-width: 1441px)"
+const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
+const MUI_DEFAULT_BREAKPOINT_VALUES: Record<ResponsiveBreakpoint, number> = {
+  xs: 0,
+  sm: 600,
+  md: 900,
+  lg: 1200,
+  xl: 1536
 };
 
-const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
+const RESPONSIVE_FALLBACK_RESET_VALUE_BY_PROPERTY: Record<string, string> = {
+  maxWidth: literal("none"),
+  width: literal("auto"),
+  minHeight: literal("auto"),
+  display: literal("initial"),
+  flexDirection: literal("initial"),
+  justifyContent: literal("initial"),
+  alignItems: literal("initial"),
+  gap: literal("initial")
+};
+
+type ResponsiveSxValue = string | number | undefined;
+type ResponsiveSxEntry = [string, ResponsiveSxValue];
+
+const toResponsiveSxValueLiteral = (value: string | number): string => {
+  return typeof value === "number" ? `${value}` : value;
+};
+
+const hasSameResponsiveSxValue = (left: ResponsiveSxValue, right: ResponsiveSxValue): boolean => {
+  if (left === undefined && right === undefined) {
+    return true;
+  }
+  if (typeof left !== typeof right) {
+    return false;
+  }
+  return left === right;
+};
+
+const toSxValueMapFromEntries = (entries: ResponsiveSxEntry[]): Map<string, string | number> => {
+  const valueByKey = new Map<string, string | number>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    valueByKey.set(key, value);
+  }
+  return valueByKey;
+};
 
 const pushResponsiveStyleEntry = ({
   byBreakpoint,
   breakpoint,
   entry
 }: {
-  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>;
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
   breakpoint: ResponsiveBreakpoint;
-  entry: [string, string | number | undefined];
+  entry: ResponsiveSxEntry;
 }): void => {
   const current = byBreakpoint.get(breakpoint) ?? [];
   current.push(entry);
@@ -3454,7 +3489,7 @@ const appendLayoutOverrideEntriesForBreakpoint = ({
   override,
   spacingBase
 }: {
-  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>;
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
   breakpoint: ResponsiveBreakpoint;
   baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
   override: ScreenResponsiveLayoutOverride;
@@ -3535,20 +3570,78 @@ const appendLayoutOverrideEntriesForBreakpoint = ({
   }
 };
 
-const toResponsiveMediaEntries = (
-  byBreakpoint: Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>
-): Array<[string, string | number | undefined]> => {
-  const entries: Array<[string, string | number | undefined]> = [];
+const toResponsivePropertyValueByBreakpoint = (
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>
+): Map<string, Map<ResponsiveBreakpoint, string | number>> => {
+  const valuesByProperty = new Map<string, Map<ResponsiveBreakpoint, string | number>>();
   for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
     const styleEntries = byBreakpoint.get(breakpoint);
     if (!styleEntries || styleEntries.length === 0) {
       continue;
     }
-    const styleBody = sxString(styleEntries);
-    if (!styleBody) {
+    for (const [property, value] of dedupeSxEntries(styleEntries)) {
+      const byBreakpointValues = valuesByProperty.get(property) ?? new Map<ResponsiveBreakpoint, string | number>();
+      byBreakpointValues.set(breakpoint, value);
+      valuesByProperty.set(property, byBreakpointValues);
+    }
+  }
+  return valuesByProperty;
+};
+
+const toResponsiveObjectLiteralForProperty = ({
+  property,
+  overrideValuesByBreakpoint,
+  baseValue
+}: {
+  property: string;
+  overrideValuesByBreakpoint: Map<ResponsiveBreakpoint, string | number>;
+  baseValue: string | number | undefined;
+}): string | undefined => {
+  const stepEntries: string[] = [];
+  const resetValue = baseValue === undefined ? RESPONSIVE_FALLBACK_RESET_VALUE_BY_PROPERTY[property] : undefined;
+  let previousEffective: ResponsiveSxValue = baseValue;
+
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const overrideValue = overrideValuesByBreakpoint.get(breakpoint);
+    const effectiveValue = overrideValue !== undefined ? overrideValue : baseValue;
+    if (hasSameResponsiveSxValue(effectiveValue, previousEffective)) {
       continue;
     }
-    entries.push([literal(RESPONSIVE_MEDIA_QUERY_BY_BREAKPOINT[breakpoint]), `{ ${styleBody} }`]);
+    if (effectiveValue !== undefined) {
+      stepEntries.push(`${breakpoint}: ${toResponsiveSxValueLiteral(effectiveValue)}`);
+      previousEffective = effectiveValue;
+      continue;
+    }
+    if (resetValue !== undefined) {
+      stepEntries.push(`${breakpoint}: ${resetValue}`);
+    }
+    previousEffective = effectiveValue;
+  }
+
+  if (stepEntries.length === 0) {
+    return undefined;
+  }
+  return `{ ${stepEntries.join(", ")} }`;
+};
+
+const toResponsiveObjectEntries = ({
+  byBreakpoint,
+  baseValuesByKey
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
+  baseValuesByKey: Map<string, string | number>;
+}): ResponsiveSxEntry[] => {
+  const entries: ResponsiveSxEntry[] = [];
+  for (const [property, overrideValuesByBreakpoint] of toResponsivePropertyValueByBreakpoint(byBreakpoint).entries()) {
+    const responsiveObjectLiteral = toResponsiveObjectLiteralForProperty({
+      property,
+      overrideValuesByBreakpoint,
+      baseValue: baseValuesByKey.get(property)
+    });
+    if (!responsiveObjectLiteral) {
+      continue;
+    }
+    entries.push([property, responsiveObjectLiteral]);
   }
   return entries;
 };
@@ -3556,16 +3649,18 @@ const toResponsiveMediaEntries = (
 const toResponsiveLayoutMediaEntries = ({
   baseLayoutMode,
   overrides,
-  spacingBase
+  spacingBase,
+  baseValuesByKey = new Map<string, string | number>()
 }: {
   baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
   overrides: ScreenResponsiveLayoutOverridesByBreakpoint | undefined;
   spacingBase: number;
-}): Array<[string, string | number | undefined]> => {
+  baseValuesByKey?: Map<string, string | number>;
+}): ResponsiveSxEntry[] => {
   if (!overrides) {
     return [];
   }
-  const byBreakpoint = new Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>();
+  const byBreakpoint = new Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>();
   for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
     const override = overrides[breakpoint];
     if (!override) {
@@ -3579,7 +3674,10 @@ const toResponsiveLayoutMediaEntries = ({
       spacingBase
     });
   }
-  return toResponsiveMediaEntries(byBreakpoint);
+  return toResponsiveObjectEntries({
+    byBreakpoint,
+    baseValuesByKey
+  });
 };
 
 const toElementSx = ({
@@ -3595,20 +3693,54 @@ const toElementSx = ({
   includePaints?: boolean;
   preferInsetShadow?: boolean;
 }): string => {
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints,
+    preferInsetShadow,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const responsiveEntries = toResponsiveLayoutMediaEntries({
     baseLayoutMode: element.layoutMode ?? "NONE",
     overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-    spacingBase: context.spacingBase
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseEntries)
   });
   return sxString([
-    ...baseLayoutEntries(element, parent, {
-      includePaints,
-      preferInsetShadow,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseEntries,
     ...responsiveEntries
   ]);
+};
+
+const toResponsiveBaseLayoutValues = ({
+  layoutMode,
+  gap,
+  primaryAxisAlignItems,
+  counterAxisAlignItems,
+  spacingBase
+}: {
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  gap: number;
+  primaryAxisAlignItems?: ScreenResponsiveLayoutOverride["primaryAxisAlignItems"];
+  counterAxisAlignItems?: ScreenResponsiveLayoutOverride["counterAxisAlignItems"];
+  spacingBase: number;
+}): Map<string, string | number> => {
+  const entries: ResponsiveSxEntry[] = [];
+  if (layoutMode === "HORIZONTAL" || layoutMode === "VERTICAL") {
+    entries.push(["display", literal("flex")]);
+    entries.push(["flexDirection", literal(layoutMode === "HORIZONTAL" ? "row" : "column")]);
+    const justifyContent = mapPrimaryAxisAlignToJustifyContent(primaryAxisAlignItems);
+    if (justifyContent) {
+      entries.push(["justifyContent", literal(justifyContent)]);
+    }
+    const alignItems = mapCounterAxisAlignToAlignItems(counterAxisAlignItems, layoutMode);
+    if (alignItems) {
+      entries.push(["alignItems", literal(alignItems)]);
+    }
+  }
+  if (typeof gap === "number" && Number.isFinite(gap) && gap > 0) {
+    entries.push(["gap", toSpacingUnitValue({ value: gap, spacingBase })]);
+  }
+  return toSxValueMapFromEntries(entries);
 };
 
 const toScreenResponsiveRootMediaEntries = ({
@@ -3622,7 +3754,7 @@ const toScreenResponsiveRootMediaEntries = ({
     return [];
   }
 
-  const byBreakpoint = new Map<ResponsiveBreakpoint, Array<[string, string | number | undefined]>>();
+  const byBreakpoint = new Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>();
 
   for (const variant of screen.responsive.variants) {
     if (typeof variant.width !== "number" || !Number.isFinite(variant.width) || variant.width <= 0) {
@@ -3652,7 +3784,19 @@ const toScreenResponsiveRootMediaEntries = ({
     }
   }
 
-  return toResponsiveMediaEntries(byBreakpoint);
+  const baseValuesByKey = toResponsiveBaseLayoutValues({
+    layoutMode: screen.layoutMode,
+    gap: screen.gap,
+    primaryAxisAlignItems: screen.primaryAxisAlignItems,
+    counterAxisAlignItems: screen.counterAxisAlignItems,
+    spacingBase
+  });
+  baseValuesByKey.set("maxWidth", literal("none"));
+
+  return toResponsiveObjectEntries({
+    byBreakpoint,
+    baseValuesByKey
+  });
 };
 
 const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
@@ -3668,20 +3812,23 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
     letterSpacingPx: element.letterSpacing,
     fontSizePx: element.fontSize
   });
-  const textLayoutEntries = [
-    ...baseLayoutEntries(element, parent, {
-      includePaints: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
-    ...toResponsiveLayoutMediaEntries({
-      baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
-    })
-  ].filter(([key]) => {
-    return key !== "width" && key !== "height" && key !== "minHeight";
+  const baseTextLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
   });
+  const responsiveTextLayoutEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseTextLayoutEntries)
+  });
+  const textLayoutEntries = [
+    ...baseTextLayoutEntries.filter(([key]) => {
+      return key !== "width" && key !== "height" && key !== "minHeight";
+    }),
+    ...responsiveTextLayoutEntries
+  ];
 
   const isLinkLikeColor = element.fillColor && /^#0[0-4][0-9a-f]{4}$/i.test(element.fillColor);
   const omitFontSize = typographyVariant
@@ -6087,16 +6234,18 @@ const renderSemanticInput = (
     value: outlinedInputRadiusSource,
     target: textFieldDefaults?.outlinedInputBorderRadiusPx
   });
+  const baseFieldLayoutEntries = baseLayoutEntries(outlineContainer, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const fieldSxEntries: Array<[string, string | number | undefined]> = [
-    ...baseLayoutEntries(outlineContainer, parent, {
-      includePaints: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseFieldLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: outlineContainer.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseFieldLayoutEntries)
     }),
     ["bgcolor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })] as [string, string | number | undefined]
   ];
@@ -6376,15 +6525,17 @@ const renderSemanticAccordion = (
     })
   ]);
 
+  const baseAccordionLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const accordionSx = sxString([
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseAccordionLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAccordionLayoutEntries)
     }),
     ["boxShadow", literal("none")]
   ]);
@@ -6500,15 +6651,17 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
   if (iconNode && isIconOnlyButton) {
     registerMuiImports(context, "IconButton");
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
+    const baseIconButtonLayoutEntries = baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    });
     const iconButtonSxEntries: Array<[string, string | number | undefined]> = [
-      ...baseLayoutEntries(element, parent, {
-        spacingBase: context.spacingBase,
-        tokens: context.tokens
-      }),
+      ...baseIconButtonLayoutEntries,
       ...toResponsiveLayoutMediaEntries({
         baseLayoutMode: element.layoutMode ?? "NONE",
         overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-        spacingBase: context.spacingBase
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseIconButtonLayoutEntries)
       }),
       ["color", toThemeColorLiteral({ color: iconColor, tokens: context.tokens })] as [string, string | number | undefined]
     ];
@@ -6583,23 +6736,25 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     parent
   });
 
+  const baseButtonLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const sxEntries = filterButtonVariantEntries({
     entries: [
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
-    ...toResponsiveLayoutMediaEntries({
-      baseLayoutMode: element.layoutMode ?? "NONE",
-      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
-    }),
-    ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
-    ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
-    ["color", toThemeColorLiteral({ color: buttonTextColor, tokens: context.tokens })],
-    ["textTransform", literal("none")],
-    ["justifyContent", literal("center")]
+      ...baseButtonLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseButtonLayoutEntries)
+      }),
+      ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
+      ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
+      ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
+      ["color", toThemeColorLiteral({ color: buttonTextColor, tokens: context.tokens })],
+      ["textTransform", literal("none")],
+      ["justifyContent", literal("center")]
     ],
     variant,
     element,
@@ -8458,17 +8613,73 @@ const sanitizeSelectOptionValue = (value: string): string => {
   return trimmed.length > 0 ? trimmed : "Option";
 };
 
+const deriveResponsiveThemeBreakpointValues = (ir: DesignIR): Record<ResponsiveBreakpoint, number> | undefined => {
+  const widthsByBreakpoint: Record<ResponsiveBreakpoint, Array<number | undefined>> = {
+    xs: [],
+    sm: [],
+    md: [],
+    lg: [],
+    xl: []
+  };
+  for (const screen of ir.screens) {
+    if (!screen.responsive) {
+      continue;
+    }
+    for (const variant of screen.responsive.variants) {
+      widthsByBreakpoint[variant.breakpoint].push(variant.width);
+    }
+  }
+
+  const representativeWidthByBreakpoint: Partial<Record<ResponsiveBreakpoint, number>> = {};
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const representativeWidth = resolveDeterministicIntegerSample({
+      values: widthsByBreakpoint[breakpoint],
+      min: 1,
+      max: 20_000
+    });
+    if (representativeWidth !== undefined) {
+      representativeWidthByBreakpoint[breakpoint] = representativeWidth;
+    }
+  }
+
+  const values: Record<ResponsiveBreakpoint, number> = {
+    ...MUI_DEFAULT_BREAKPOINT_VALUES
+  };
+  for (let index = 1; index < RESPONSIVE_BREAKPOINT_ORDER.length; index += 1) {
+    const current = RESPONSIVE_BREAKPOINT_ORDER[index] as ResponsiveBreakpoint;
+    const previous = RESPONSIVE_BREAKPOINT_ORDER[index - 1] as ResponsiveBreakpoint;
+    const previousRepresentative = representativeWidthByBreakpoint[previous];
+    const currentRepresentative = representativeWidthByBreakpoint[current];
+    if (previousRepresentative === undefined && currentRepresentative === undefined) {
+      continue;
+    }
+    const lower = previousRepresentative ?? MUI_DEFAULT_BREAKPOINT_VALUES[previous];
+    const upper = currentRepresentative ?? MUI_DEFAULT_BREAKPOINT_VALUES[current];
+    const midpoint = Math.round((lower + upper) / 2);
+    values[current] = Math.max(values[previous] + 1, midpoint);
+  }
+
+  const hasCustomValue = RESPONSIVE_BREAKPOINT_ORDER.some((breakpoint) => {
+    return values[breakpoint] !== MUI_DEFAULT_BREAKPOINT_VALUES[breakpoint];
+  });
+  return hasCustomValue ? values : undefined;
+};
+
+const toResponsiveBreakpointValuesLiteral = (values: Record<ResponsiveBreakpoint, number>): string => {
+  return `{ ${RESPONSIVE_BREAKPOINT_ORDER.map((breakpoint) => `${breakpoint}: ${values[breakpoint]}`).join(", ")} }`;
+};
+
 const toMuiContainerMaxWidth = (contentWidth: number): "sm" | "md" | "lg" | "xl" => {
-  if (contentWidth <= 600) {
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.sm) {
     return "sm";
   }
-  if (contentWidth <= 900) {
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.md) {
     return "md";
   }
-  if (contentWidth <= 1200) {
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.lg) {
     return "lg";
   }
-  if (contentWidth <= 1536) {
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.xl) {
     return "xl";
   }
   return "xl";
@@ -8513,16 +8724,18 @@ const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualPare
   if (omitDefaultElevation) {
     omitSxKeys.add("boxShadow");
   }
+  const baseCardLayoutEntries = baseLayoutEntries(element, parent, {
+    preferInsetShadow: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const cardSxEntries = [
-    ...baseLayoutEntries(element, parent, {
-      preferInsetShadow: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseCardLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseCardLayoutEntries)
     })
   ];
   collectThemeSxSampleFromEntries({
@@ -8629,15 +8842,17 @@ const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualPare
   const indent = "  ".repeat(depth);
   const mappedMuiProps = element.variantMapping?.muiProps;
   const chipDefaults = context.themeComponentDefaults?.MuiChip;
+  const baseChipLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const chipLayoutEntries = [
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseChipLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseChipLayoutEntries)
     })
   ];
   collectThemeSxSampleFromEntries({
@@ -8865,15 +9080,17 @@ const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualPa
   const appBarBackgroundMatchesDefault =
     normalizeHexColor(element.fillColor) !== undefined &&
     normalizeHexColor(element.fillColor) === normalizeHexColor(appBarDefaults?.backgroundColor);
+  const baseAppBarLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const appBarSxEntries = [
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseAppBarLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAppBarLayoutEntries)
     })
   ];
   collectThemeSxSampleFromEntries({
@@ -9123,15 +9340,17 @@ const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualPa
   registerMuiImports(context, "Avatar");
   const indent = "  ".repeat(depth);
   const avatarDefaults = context.themeComponentDefaults?.MuiAvatar;
+  const baseAvatarLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const avatarSxEntries = [
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseAvatarLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAvatarLayoutEntries)
     })
   ];
   collectThemeSxSampleFromEntries({
@@ -9212,16 +9431,18 @@ const renderDividerElement = (element: ScreenElementIR, depth: number, parent: V
   const matchesDefaultBorderColor =
     normalizeHexColor(element.fillColor) !== undefined &&
     normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
+  const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const dividerSxEntries: Array<[string, string | number | undefined]> = [
-    ...baseLayoutEntries(element, parent, {
-      includePaints: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseDividerLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseDividerLayoutEntries)
     }),
     [
       "borderColor",
@@ -9329,15 +9550,17 @@ const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualPar
     typeof paperDefaults?.elevation === "number" &&
     paperDefaults.elevation === elevation;
   const variant = elevation && elevation > 0 ? undefined : element.strokeColor ? "outlined" : undefined;
+  const basePaperLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const paperSxEntries = [
-    ...baseLayoutEntries(element, parent, {
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...basePaperLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(basePaperLayoutEntries)
     })
   ];
   collectThemeSxSampleFromEntries({
@@ -9655,16 +9878,18 @@ const renderSkeleton = (element: ScreenElementIR, depth: number, parent: Virtual
 const renderImageElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Box");
   const indent = "  ".repeat(depth);
+  const baseImageLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const sx = sxString([
-    ...baseLayoutEntries(element, parent, {
-      includePaints: false,
-      spacingBase: context.spacingBase,
-      tokens: context.tokens
-    }),
+    ...baseImageLayoutEntries,
     ...toResponsiveLayoutMediaEntries({
       baseLayoutMode: element.layoutMode ?? "NONE",
       overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-      spacingBase: context.spacingBase
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseImageLayoutEntries)
     }),
     ["objectFit", literal("cover")],
     ["display", literal("block")]
@@ -9701,21 +9926,23 @@ const renderContainer = (
   }
 
   if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants({ element, context })) {
+    const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
+      includePaints: false,
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    });
     const iconExpression = renderFallbackIconExpression({
       element,
       parent,
       context,
       ariaHidden: true,
       extraEntries: [
-        ...baseLayoutEntries(element, parent, {
-          includePaints: false,
-          spacingBase: context.spacingBase,
-          tokens: context.tokens
-        }),
+        ...baseIconWrapperLayoutEntries,
         ...toResponsiveLayoutMediaEntries({
           baseLayoutMode: element.layoutMode ?? "NONE",
           overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-          spacingBase: context.spacingBase
+          spacingBase: context.spacingBase,
+          baseValuesByKey: toSxValueMapFromEntries(baseIconWrapperLayoutEntries)
         }),
         ["display", literal("flex")],
         ["alignItems", literal("center")],
@@ -9793,15 +10020,17 @@ const renderContainer = (
     const matchesDefaultBorderColor =
       normalizeHexColor(element.fillColor) !== undefined &&
       normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
+    const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    });
     const dividerSxEntries: Array<[string, string | number | undefined]> = [
-      ...baseLayoutEntries(element, parent, {
-        spacingBase: context.spacingBase,
-        tokens: context.tokens
-      }),
+      ...baseDividerLayoutEntries,
       ...toResponsiveLayoutMediaEntries({
         baseLayoutMode: element.layoutMode ?? "NONE",
         overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
-        spacingBase: context.spacingBase
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseDividerLayoutEntries)
       }),
       [
         "borderColor",
@@ -10622,6 +10851,7 @@ const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponent
   const tokens = ir.tokens;
   const lightPalette = toLightThemePalette(tokens);
   const darkPalette = toDarkThemePalette(tokens);
+  const responsiveThemeBreakpoints = deriveResponsiveThemeBreakpointValues(ir);
   const typographyEntries = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => {
     const variant = tokens.typography[variantName];
     const entries = [
@@ -10676,7 +10906,7 @@ export const appTheme = createTheme({
     borderRadius: ${Math.max(0, Math.round(tokens.borderRadius))}
   },
   spacing: ${Math.max(1, Math.round(tokens.spacingBase))},
-  typography: {
+${responsiveThemeBreakpoints ? `  breakpoints: {\n    values: ${toResponsiveBreakpointValuesLiteral(responsiveThemeBreakpoints)}\n  },\n` : ""}  typography: {
     fontFamily: "${tokens.fontFamily}",
 ${typographyEntries}
   },

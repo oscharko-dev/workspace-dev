@@ -2612,16 +2612,16 @@ const resolveResponsiveBreakpointFromWidth = (width: number | undefined): Respon
   if (typeof width !== "number" || !Number.isFinite(width) || width <= 0) {
     return "lg";
   }
-  if (width >= 1441) {
+  if (width >= 1536) {
     return "xl";
   }
-  if (width >= 1025) {
+  if (width >= 1200) {
     return "lg";
   }
-  if (width >= 769) {
+  if (width >= 900) {
     return "md";
   }
-  if (width >= 429) {
+  if (width >= 600) {
     return "sm";
   }
   return "xs";
