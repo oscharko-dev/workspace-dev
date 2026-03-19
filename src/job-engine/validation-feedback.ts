@@ -295,7 +295,7 @@ const loadProjectTypescript = ({ generatedProjectDir }: { generatedProjectDir: s
   try {
     const requireFromProject = createRequire(path.join(generatedProjectDir, "package.json"));
     const loaded = requireFromProject("typescript") as typeof TypeScript;
-    if (!loaded || typeof loaded.createLanguageService !== "function") {
+    if (typeof loaded.createLanguageService !== "function") {
       return undefined;
     }
     return loaded;
@@ -315,17 +315,42 @@ const toLanguageService = ({
   dispose: () => void;
   fileNames: string[];
 } | null => {
-  const configPath = ts.findConfigFile(generatedProjectDir, ts.sys.fileExists, "tsconfig.json");
+  const fileExists = (filePath: string): boolean => ts.sys.fileExists(filePath);
+  const readFile = (filePath: string): string | undefined => ts.sys.readFile(filePath);
+  const readDirectory = (
+    rootDir: string,
+    extensions: readonly string[] | undefined,
+    excludes: readonly string[] | undefined,
+    includes: readonly string[] | undefined,
+    depth?: number
+  ): string[] => ts.sys.readDirectory(rootDir, extensions, excludes, includes, depth);
+  const directoryExists = (directoryPath: string): boolean => ts.sys.directoryExists(directoryPath);
+  const getDirectories = (directoryPath: string): string[] => ts.sys.getDirectories(directoryPath);
+
+  const configPath = ts.findConfigFile(generatedProjectDir, fileExists, "tsconfig.json");
   if (!configPath) {
     return null;
   }
 
-  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+  const configFile = ts.readConfigFile(configPath, readFile);
   if (configFile.error) {
     return null;
   }
 
-  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath), undefined, configPath);
+  const parsed = ts.parseJsonConfigFileContent(
+    configFile.config,
+    {
+      ...ts.sys,
+      fileExists,
+      readFile,
+      readDirectory,
+      directoryExists,
+      getDirectories
+    },
+    path.dirname(configPath),
+    undefined,
+    configPath
+  );
   if (parsed.errors.length > 0) {
     return null;
   }
@@ -342,10 +367,10 @@ const toLanguageService = ({
     getScriptVersion: (fileName) => String(fileVersionByPath.get(path.normalize(fileName)) ?? 0),
     getScriptSnapshot: (fileName) => {
       const normalized = path.normalize(fileName);
-      if (!ts.sys.fileExists(normalized)) {
+      if (!fileExists(normalized)) {
         return undefined;
       }
-      const content = ts.sys.readFile(normalized);
+      const content = readFile(normalized);
       if (content === undefined) {
         return undefined;
       }
@@ -353,11 +378,11 @@ const toLanguageService = ({
     },
     getCurrentDirectory: () => generatedProjectDir,
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-    fileExists: ts.sys.fileExists,
-    readFile: ts.sys.readFile,
-    readDirectory: ts.sys.readDirectory,
-    directoryExists: ts.sys.directoryExists,
-    getDirectories: ts.sys.getDirectories
+    fileExists,
+    readFile,
+    readDirectory,
+    directoryExists,
+    getDirectories
   };
 
   const languageService = ts.createLanguageService(host, ts.createDocumentRegistry());

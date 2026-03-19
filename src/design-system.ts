@@ -259,7 +259,7 @@ export const loadDesignSystemConfigFile = async ({
 }): Promise<DesignSystemConfig | undefined> => {
   try {
     const raw = await readFile(designSystemFilePath, "utf8");
-    const parsedJson = JSON.parse(raw);
+    const parsedJson: unknown = JSON.parse(raw);
     const parsedConfig = parseDesignSystemConfig({ input: parsedJson });
     if (!parsedConfig) {
       onLog(`Design system config at '${designSystemFilePath}' is invalid; using MUI defaults.`);

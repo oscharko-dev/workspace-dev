@@ -1477,6 +1477,108 @@ test("figmaToDesignIrWithOptions applies placeholder allowlist and blocklist det
   assert.ok((blocklistedFirst.metrics?.skippedPlaceholders ?? 0) >= 1);
 });
 
+test("figmaToDesignIrWithOptions keeps hidden-subtree skip precedence deterministic", () => {
+  const file = {
+    name: "Hidden Skip Precedence",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-hidden-skip",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 400 },
+              children: [
+                {
+                  id: "hidden-instance",
+                  type: "INSTANCE",
+                  name: "Hidden Instance",
+                  visible: false,
+                  absoluteBoundingBox: { x: 16, y: 24, width: 320, height: 120 },
+                  children: [
+                    {
+                      id: "hidden-placeholder",
+                      type: "TEXT",
+                      name: "Placeholder",
+                      characters: "Swap Component",
+                      absoluteBoundingBox: { x: 24, y: 40, width: 180, height: 20 }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const first = figmaToDesignIrWithOptions(file);
+  const second = figmaToDesignIrWithOptions(file);
+  assert.deepEqual(first, second);
+
+  const ids = new Set(collectElementIds(first.screens[0].children as Array<{ id: string; children?: unknown[] }>));
+  assert.equal(ids.has("hidden-instance"), false);
+  assert.equal(ids.has("hidden-placeholder"), false);
+  assert.equal(first.metrics?.skippedHidden, 2);
+  assert.equal(first.metrics?.skippedPlaceholders, 0);
+});
+
+test("figmaToDesignIrWithOptions keeps helper-empty-geometry skip deterministic", () => {
+  const file = {
+    name: "Helper Empty Geometry",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-helper-skip",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 720, height: 480 },
+              children: [
+                {
+                  id: "helper-empty",
+                  type: "FRAME",
+                  name: "_Item",
+                  absoluteBoundingBox: { x: 20, y: 20, width: 0, height: 40 },
+                  children: [
+                    {
+                      id: "helper-text",
+                      type: "TEXT",
+                      name: "Helper Child",
+                      characters: "Visible Helper",
+                      absoluteBoundingBox: { x: 20, y: 20, width: 120, height: 20 }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const first = figmaToDesignIrWithOptions(file);
+  const second = figmaToDesignIrWithOptions(file);
+  assert.deepEqual(first, second);
+
+  const ids = new Set(collectElementIds(first.screens[0].children as Array<{ id: string; children?: unknown[] }>));
+  assert.equal(ids.has("helper-empty"), false);
+  assert.equal(ids.has("helper-text"), false);
+  assert.equal((first.metrics?.skippedPlaceholders ?? 0) >= 2, true);
+});
+
 test("figmaToDesignIrWithOptions maps variant metadata on INSTANCE nodes", () => {
   const ir = figmaToDesignIrWithOptions({
     name: "Instance Variants",
@@ -1672,6 +1774,169 @@ test("figmaToDesignIrWithOptions compacts COMPONENT_SET variants into default pl
   assert.equal(componentSetNode?.variantMapping?.stateOverrides?.active?.backgroundColor, "#8f0013");
   assert.equal(componentSetNode?.variantMapping?.stateOverrides?.disabled?.backgroundColor, "#d1d5db");
   assert.equal(componentSetNode?.variantMapping?.stateOverrides?.disabled?.color, "#6b7280");
+});
+
+test("figmaToDesignIrWithOptions preserves prototype navigation and variant mapping deterministically", () => {
+  const file = {
+    name: "Prototype and Variant",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-a",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+              children: [
+                {
+                  id: "instance-nav-variant",
+                  type: "INSTANCE",
+                  name: "Variant=Contained, Size=Small",
+                  componentProperties: {
+                    Variant: { type: "VARIANT", value: "Contained" },
+                    Size: { type: "VARIANT", value: "Small" }
+                  },
+                  interactions: [
+                    {
+                      trigger: { type: "ON_CLICK" },
+                      actions: [{ type: "NODE", destinationId: "screen-b", navigation: "NAVIGATE" }]
+                    }
+                  ],
+                  absoluteBoundingBox: { x: 16, y: 32, width: 220, height: 48 },
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "screen-b",
+              type: "FRAME",
+              name: "Screen B",
+              absoluteBoundingBox: { x: 420, y: 0, width: 390, height: 844 },
+              children: []
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const first = figmaToDesignIrWithOptions(file);
+  const second = figmaToDesignIrWithOptions(file);
+  assert.deepEqual(first, second);
+
+  const screenA = first.screens.find((screen) => screen.id === "screen-a");
+  const mapped = findElementById(screenA?.children ?? [], "instance-nav-variant") as
+    | {
+        prototypeNavigation?: unknown;
+        variantMapping?: { properties?: Record<string, string>; muiProps?: Record<string, unknown> };
+      }
+    | undefined;
+  assert.deepEqual(mapped?.prototypeNavigation, {
+    targetScreenId: "screen-b",
+    mode: "push"
+  });
+  assert.deepEqual(mapped?.variantMapping?.properties, {
+    size: "Small",
+    variant: "Contained"
+  });
+  assert.deepEqual(mapped?.variantMapping?.muiProps, {
+    variant: "contained",
+    size: "small"
+  });
+  assert.equal(first.metrics?.prototypeNavigationDetected, 1);
+  assert.equal(first.metrics?.prototypeNavigationResolved, 1);
+  assert.equal(first.metrics?.prototypeNavigationUnresolved, 0);
+});
+
+test("figmaToDesignIrWithOptions keeps component-set default-variant mapping deterministic with constrained depth settings", () => {
+  const file = {
+    name: "Component Set Depth Truncation",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-component-set-depth",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1024, height: 768 },
+              children: [
+                {
+                  id: "depth-wrapper",
+                  type: "FRAME",
+                  name: "Wrapper",
+                  absoluteBoundingBox: { x: 24, y: 48, width: 320, height: 220 },
+                  children: [
+                    {
+                      id: "component-set-depth",
+                      type: "COMPONENT_SET",
+                      name: "Variant Set",
+                      componentPropertyDefinitions: {
+                        State: {
+                          type: "VARIANT",
+                          defaultValue: "Default",
+                          variantOptions: ["Default", "Hover"]
+                        }
+                      },
+                      absoluteBoundingBox: { x: 40, y: 80, width: 260, height: 56 },
+                      children: [
+                        {
+                          id: "variant-default",
+                          type: "COMPONENT",
+                          name: "State=Default",
+                          componentProperties: {
+                            State: { type: "VARIANT", value: "Default" }
+                          },
+                          absoluteBoundingBox: { x: 40, y: 80, width: 260, height: 56 },
+                          children: []
+                        },
+                        {
+                          id: "variant-hover",
+                          type: "COMPONENT",
+                          name: "State=Hover",
+                          componentProperties: {
+                            State: { type: "VARIANT", value: "Hover" }
+                          },
+                          absoluteBoundingBox: { x: 40, y: 152, width: 260, height: 56 },
+                          children: []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const first = figmaToDesignIrWithOptions(file, {
+    screenElementBudget: 2,
+    screenElementMaxDepth: 1
+  });
+  const second = figmaToDesignIrWithOptions(file, {
+    screenElementBudget: 2,
+    screenElementMaxDepth: 1
+  });
+  assert.deepEqual(first, second);
+
+  const componentSetNode = findElementById(first.screens[0]?.children ?? [], "component-set-depth");
+  assert.ok(componentSetNode);
+  assert.equal(componentSetNode?.children?.length, 1);
+  assert.equal(componentSetNode?.children?.[0]?.id, "variant-default");
+  assert.equal(componentSetNode?.variantMapping?.defaultVariantNodeId, "variant-default");
+  assert.equal(componentSetNode?.variantMapping?.state, "default");
 });
 
 test("figmaToDesignIrWithOptions applies deterministic screen element budget truncation", () => {

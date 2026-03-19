@@ -73,7 +73,7 @@
     "ui:test": "pnpm exec vitest run --config ui-src/vite.config.ts",
     "ui:test:e2e": "pnpm exec playwright test --config ui-src/playwright.config.ts",
     "lint:boundaries": "node scripts/check-boundary.mjs",
-    "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\"",
+    "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\" --ignore-pattern \"src/parity/fixtures/golden/**\"",
     "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
     "lint:publint": "publint",
     "lint:types-publish": "attw --pack . --config-path .attw.json",
