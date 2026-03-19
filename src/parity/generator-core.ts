@@ -47,6 +47,16 @@ export type {
 } from "./generator-design-system.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
 import type { ThemeComponentDefaults, ThemeSxSampleCollector } from "./generator-design-system.js";
+export { createGeneratorContext } from "./generator-context.js";
+export type {
+  GeneratorContext,
+  GeneratorConfig,
+  GenerateArtifactsRuntimeAdapters as GeneratorRuntimeAdapters,
+  MetricsAccumulator,
+  WarningCollector,
+  CreateGeneratorContextInput
+} from "./generator-context.js";
+import type { GeneratorContext } from "./generator-context.js";
 export {
   resolveElementA11yLabel,
   resolveIconButtonAriaLabel,
@@ -112,6 +122,8 @@ interface GenerateArtifactsInput {
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   imageAssetMap?: Record<string, string>;
+  /** Optional pre-built GeneratorContext for dependency injection in tests. */
+  context?: GeneratorContext;
   generationLocale?: string;
   routerMode?: WorkspaceRouterMode;
   formHandlingMode?: WorkspaceFormHandlingMode;
@@ -3097,7 +3109,7 @@ export const resolveIconColor = (element: ScreenElementIR): string | undefined =
   return firstVectorColor(element) ?? firstTextColor(element) ?? element.fillColor;
 };
 
-const ICON_FALLBACK_FILE_NAME = "icon-fallback-map.json";
+export const ICON_FALLBACK_FILE_NAME = "icon-fallback-map.json";
 const ICON_FALLBACK_DEFAULT_IMPORT_SPEC: IconImportSpec = {
   localName: "InfoOutlinedIcon",
   modulePath: "@mui/icons-material/InfoOutlined"
@@ -3362,7 +3374,7 @@ const parseIconFallbackMapFile = ({ input }: { input: unknown }): IconFallbackMa
   };
 };
 
-const loadIconFallbackResolver = async ({
+export const loadIconFallbackResolver = async ({
   iconMapFilePath,
   onLog
 }: {
@@ -5416,6 +5428,9 @@ const DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS: GenerateArtifactsRuntimeAdapt
 };
 
 const resolveGenerateArtifactsRuntimeAdapters = (input: GenerateArtifactsInput): GenerateArtifactsRuntimeAdapters => {
+  if (input.context) {
+    return input.context.runtimeAdapters;
+  }
   const candidate = (input as unknown as Record<PropertyKey, unknown>)[GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL];
   if (!candidate || typeof candidate !== "object") {
     return DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS;
