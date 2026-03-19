@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -64,6 +64,48 @@ const extractThemeHex = ({
 };
 
 const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
+
+const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for("workspace-dev.parity.generateArtifacts.runtimeAdapters");
+
+const writeGeneratedFileFromRuntimeAdapter = async ({
+  rootDir,
+  relativePath,
+  content
+}: {
+  rootDir: string;
+  relativePath: string;
+  content: string;
+}): Promise<void> => {
+  const absolutePath = path.resolve(rootDir, relativePath);
+  const normalizedRootDir = path.resolve(rootDir);
+  if (!absolutePath.startsWith(`${normalizedRootDir}${path.sep}`)) {
+    throw new Error(`LLM attempted path traversal: ${relativePath}`);
+  }
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, content, "utf8");
+};
+
+const collectDeterministicSnapshot = async ({
+  projectDir,
+  screenName
+}: {
+  projectDir: string;
+  screenName: string;
+}): Promise<{
+  appContent: string;
+  screenContent: string;
+  themeContent: string;
+  tokensContent: string;
+  metricsContent: string;
+}> => {
+  return {
+    appContent: await readFile(path.join(projectDir, "src", "App.tsx"), "utf8"),
+    screenContent: await readFile(path.join(projectDir, toDeterministicScreenPath(screenName)), "utf8"),
+    themeContent: await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8"),
+    tokensContent: await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8"),
+    metricsContent: await readFile(path.join(projectDir, "generation-metrics.json"), "utf8")
+  };
+};
 
 const readGeneratedStringArrayLiteral = ({
   source,
@@ -2516,6 +2558,272 @@ test("generateArtifacts keeps mixed fallback files byte-stable across repeated g
   assert.equal(first.screenContent, second.screenContent);
   assert.deepEqual(first.componentContents, second.componentContents);
   assert.deepEqual(first.contextContents, second.contextContents);
+});
+
+test("generateArtifacts uses injected runtime adapters for filesystem, design-system and icon seams", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-runtime-adapters-seams-"));
+  const designSystemFilePath = path.join(projectDir, "runtime-design-system.json");
+  const iconMapFilePath = path.join(projectDir, "runtime-icon-map.json");
+  const writtenTextPaths: string[] = [];
+  const writtenGeneratedPaths: string[] = [];
+  let observedDesignSystemFilePath = "";
+  let observedIconMapFilePath = "";
+  const runtimeCallCounts = {
+    mkdirRecursive: 0,
+    writeTextFile: 0,
+    writeGeneratedFile: 0,
+    loadDesignSystemConfig: 0,
+    applyDesignSystemMappings: 0,
+    loadIconResolver: 0
+  };
+  const injectedRuntimeAdapters = {
+    mkdirRecursive: async (directory: string): Promise<void> => {
+      runtimeCallCounts.mkdirRecursive += 1;
+      await mkdir(directory, { recursive: true });
+    },
+    writeTextFile: async ({ filePath, content }: { filePath: string; content: string }): Promise<void> => {
+      runtimeCallCounts.writeTextFile += 1;
+      writtenTextPaths.push(path.relative(projectDir, filePath));
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, content, "utf8");
+    },
+    writeGeneratedFile: async (rootDir: string, file: { path: string; content: string }): Promise<void> => {
+      runtimeCallCounts.writeGeneratedFile += 1;
+      writtenGeneratedPaths.push(file.path);
+      await writeGeneratedFileFromRuntimeAdapter({
+        rootDir,
+        relativePath: file.path,
+        content: file.content
+      });
+    },
+    loadDesignSystemConfig: async ({
+      designSystemFilePath: runtimeDesignSystemFilePath,
+      onLog
+    }: {
+      designSystemFilePath: string;
+      onLog: (message: string) => void;
+    }): Promise<unknown> => {
+      runtimeCallCounts.loadDesignSystemConfig += 1;
+      observedDesignSystemFilePath = runtimeDesignSystemFilePath;
+      void onLog;
+      return {
+        library: "@runtime/ui",
+        mappings: {}
+      };
+    },
+    applyDesignSystemMappings: ({
+      content
+    }: {
+      filePath: string;
+      content: string;
+      config: unknown;
+    }): string => {
+      runtimeCallCounts.applyDesignSystemMappings += 1;
+      return content;
+    },
+    loadIconResolver: async ({
+      iconMapFilePath: runtimeIconMapFilePath,
+      onLog
+    }: {
+      iconMapFilePath: string;
+      onLog: (message: string) => void;
+    }): Promise<unknown> => {
+      runtimeCallCounts.loadIconResolver += 1;
+      observedIconMapFilePath = runtimeIconMapFilePath;
+      void onLog;
+      return {
+        entries: [],
+        byIconName: new Map(),
+        exactAliasMap: new Map(),
+        tokenIndex: new Map(),
+        synonymMap: new Map()
+      };
+    }
+  };
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "runtime-adapter-screen",
+      name: "Runtime Adapter Screen",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "runtime-adapter-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        },
+        {
+          id: "runtime-adapter-icon",
+          name: "icon/unknown",
+          nodeType: "INSTANCE",
+          type: "container" as const,
+          width: 24,
+          height: 24,
+          children: []
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    iconMapFilePath,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    },
+    [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: injectedRuntimeAdapters
+  } as Parameters<typeof generateArtifacts>[0]);
+
+  assert.equal(runtimeCallCounts.loadDesignSystemConfig, 1);
+  assert.equal(runtimeCallCounts.loadIconResolver, 1);
+  assert.ok(runtimeCallCounts.applyDesignSystemMappings > 0);
+  assert.ok(runtimeCallCounts.mkdirRecursive >= 3);
+  assert.ok(runtimeCallCounts.writeTextFile >= 3);
+  assert.ok(runtimeCallCounts.writeGeneratedFile >= 4);
+  assert.equal(observedDesignSystemFilePath, designSystemFilePath);
+  assert.equal(observedIconMapFilePath, iconMapFilePath);
+  assert.ok(writtenTextPaths.includes("src/App.tsx"));
+  assert.ok(writtenTextPaths.includes(path.join("src", "theme", "tokens.json")));
+  assert.ok(writtenTextPaths.includes("generation-metrics.json"));
+  assert.ok(writtenGeneratedPaths.includes(toDeterministicScreenPath("Runtime Adapter Screen")));
+  assert.ok(result.generatedPaths.includes(toDeterministicScreenPath("Runtime Adapter Screen")));
+});
+
+test("generateArtifacts keeps deterministic output stable with injected runtime adapters", async () => {
+  const screenName = "Übersicht";
+  const runDefault = async () => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-runtime-adapters-default-"));
+    const result = await generateArtifacts({
+      projectDir,
+      ir: createIr(),
+      llmCodegenMode: "deterministic",
+      llmModelName: "deterministic",
+      onLog: () => {
+        // no-op
+      }
+    });
+    return {
+      generatedPaths: [...result.generatedPaths].sort((left, right) => left.localeCompare(right)),
+      snapshot: await collectDeterministicSnapshot({
+        projectDir,
+        screenName
+      })
+    };
+  };
+  const createInjectedRuntimeAdapters = () => {
+    const runtimeCallCounts = {
+      mkdirRecursive: 0,
+      writeTextFile: 0,
+      writeGeneratedFile: 0,
+      loadDesignSystemConfig: 0,
+      loadIconResolver: 0
+    };
+    const runtimeAdapters = {
+      mkdirRecursive: async (directory: string): Promise<void> => {
+        runtimeCallCounts.mkdirRecursive += 1;
+        await mkdir(directory, { recursive: true });
+      },
+      writeTextFile: async ({ filePath, content }: { filePath: string; content: string }): Promise<void> => {
+        runtimeCallCounts.writeTextFile += 1;
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await writeFile(filePath, content, "utf8");
+      },
+      writeGeneratedFile: async (rootDir: string, file: { path: string; content: string }): Promise<void> => {
+        runtimeCallCounts.writeGeneratedFile += 1;
+        await writeGeneratedFileFromRuntimeAdapter({
+          rootDir,
+          relativePath: file.path,
+          content: file.content
+        });
+      },
+      loadDesignSystemConfig: async ({
+        onLog
+      }: {
+        designSystemFilePath: string;
+        onLog: (message: string) => void;
+      }): Promise<undefined> => {
+        runtimeCallCounts.loadDesignSystemConfig += 1;
+        void onLog;
+        return undefined;
+      },
+      applyDesignSystemMappings: ({
+        content
+      }: {
+        filePath: string;
+        content: string;
+        config: unknown;
+      }): string => content,
+      loadIconResolver: async ({
+        onLog
+      }: {
+        iconMapFilePath: string;
+        onLog: (message: string) => void;
+      }): Promise<unknown> => {
+        runtimeCallCounts.loadIconResolver += 1;
+        void onLog;
+        return {
+          entries: [],
+          byIconName: new Map(),
+          exactAliasMap: new Map(),
+          tokenIndex: new Map(),
+          synonymMap: new Map()
+        };
+      }
+    };
+    return {
+      runtimeAdapters,
+      runtimeCallCounts
+    };
+  };
+  const runInjected = async (suffix: string) => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-generator-runtime-adapters-injected-${suffix}-`));
+    const { runtimeAdapters, runtimeCallCounts } = createInjectedRuntimeAdapters();
+    const result = await generateArtifacts({
+      projectDir,
+      ir: createIr(),
+      llmCodegenMode: "deterministic",
+      llmModelName: "deterministic",
+      onLog: () => {
+        // no-op
+      },
+      [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: runtimeAdapters
+    } as Parameters<typeof generateArtifacts>[0]);
+    return {
+      generatedPaths: [...result.generatedPaths].sort((left, right) => left.localeCompare(right)),
+      snapshot: await collectDeterministicSnapshot({
+        projectDir,
+        screenName
+      }),
+      runtimeCallCounts
+    };
+  };
+
+  const defaultRun = await runDefault();
+  const injectedFirstRun = await runInjected("first");
+  const injectedSecondRun = await runInjected("second");
+
+  assert.deepEqual(injectedFirstRun.snapshot, defaultRun.snapshot);
+  assert.deepEqual(injectedSecondRun.snapshot, defaultRun.snapshot);
+  assert.deepEqual(injectedFirstRun.snapshot, injectedSecondRun.snapshot);
+  assert.deepEqual(injectedFirstRun.generatedPaths, defaultRun.generatedPaths);
+  assert.deepEqual(injectedSecondRun.generatedPaths, defaultRun.generatedPaths);
+  assert.deepEqual(injectedFirstRun.generatedPaths, injectedSecondRun.generatedPaths);
+  assert.equal(injectedFirstRun.runtimeCallCounts.loadDesignSystemConfig, 1);
+  assert.equal(injectedFirstRun.runtimeCallCounts.loadIconResolver, 1);
+  assert.ok(injectedFirstRun.runtimeCallCounts.writeTextFile >= 3);
+  assert.ok(injectedFirstRun.runtimeCallCounts.writeGeneratedFile >= 4);
+  assert.equal(injectedSecondRun.runtimeCallCounts.loadDesignSystemConfig, 1);
+  assert.equal(injectedSecondRun.runtimeCallCounts.loadIconResolver, 1);
+  assert.ok(injectedSecondRun.runtimeCallCounts.writeTextFile >= 3);
+  assert.ok(injectedSecondRun.runtimeCallCounts.writeGeneratedFile >= 4);
 });
 
 test("generateArtifacts applies design-system mappings to screen and extracted pattern component files", async () => {
