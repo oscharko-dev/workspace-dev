@@ -4,12 +4,14 @@ import {
   classifyPlaceholderNode,
   classifyPlaceholderText,
   extractFirstTextFillColor,
+  extractVariantDataFromNode,
   extractVariantStyleFromNode,
   normalizeVariantKey,
   normalizeVariantValue,
   resolveMuiPropsFromVariantProperties,
   resolvePlaceholderMatcherConfig,
   toComponentSetVariantMapping,
+  toMuiColor,
   toMuiSize,
   toMuiVariant,
   toSortedVariantProperties,
@@ -256,4 +258,121 @@ test("extractVariantStyleFromNode and extractFirstTextFillColor recurse into chi
   assert.equal(variantStyle.borderColor, "#111111");
   assert.equal(extractFirstTextFillColor({ id: "label", type: "TEXT", fills: [toSolidPaint("#333333")] }), "#333333");
   assert.equal(variantStyle.color, "#222222");
+});
+
+test("normalizeVariantKey maps Type and Style to variant", () => {
+  assert.equal(normalizeVariantKey("Type"), "variant");
+  assert.equal(normalizeVariantKey("Style"), "variant");
+  assert.equal(normalizeVariantKey("button type"), "variant");
+  assert.equal(normalizeVariantKey("button style"), "variant");
+  assert.equal(normalizeVariantKey("Button-Variant"), "variant");
+});
+
+test("normalizeVariantKey maps theme to color", () => {
+  assert.equal(normalizeVariantKey("theme"), "color");
+  assert.equal(normalizeVariantKey("color"), "color");
+  assert.equal(normalizeVariantKey("Color Tone"), "color");
+});
+
+test("toMuiColor maps Figma color property values to MUI color props", () => {
+  assert.equal(toMuiColor("Primary"), "primary");
+  assert.equal(toMuiColor("secondary"), "secondary");
+  assert.equal(toMuiColor("Error"), "error");
+  assert.equal(toMuiColor("danger"), "error");
+  assert.equal(toMuiColor("destructive"), "error");
+  assert.equal(toMuiColor("Info"), "info");
+  assert.equal(toMuiColor("Success"), "success");
+  assert.equal(toMuiColor("Warning"), "warning");
+  assert.equal(toMuiColor("inherit"), "inherit");
+  assert.equal(toMuiColor("default"), "primary");
+  assert.equal(toMuiColor("unknown-color"), undefined);
+  assert.equal(toMuiColor(undefined), undefined);
+});
+
+test("resolveMuiPropsFromVariantProperties resolves color property", () => {
+  assert.deepEqual(
+    resolveMuiPropsFromVariantProperties({
+      properties: { variant: "Contained", color: "Secondary" },
+      state: undefined
+    }),
+    { variant: "contained", color: "secondary" }
+  );
+  assert.deepEqual(
+    resolveMuiPropsFromVariantProperties({
+      properties: { variant: "Outlined", color: "Error", size: "Small" },
+      state: undefined
+    }),
+    { variant: "outlined", color: "error", size: "small" }
+  );
+});
+
+test("extractVariantDataFromNode maps Type property to variant", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-1",
+    type: "COMPONENT",
+    name: "Submit Button",
+    componentProperties: {
+      Type: { type: "VARIANT", value: "Outlined" },
+      Size: { type: "VARIANT", value: "Large" },
+      Color: { type: "VARIANT", value: "Secondary" }
+    }
+  });
+  assert.ok(result);
+  assert.equal(result.muiProps.variant, "outlined");
+  assert.equal(result.muiProps.size, "large");
+  assert.equal(result.muiProps.color, "secondary");
+});
+
+test("extractVariantDataFromNode maps Style property to variant", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-2",
+    type: "COMPONENT",
+    name: "Action Button",
+    componentProperties: {
+      Style: { type: "VARIANT", value: "Text" }
+    }
+  });
+  assert.ok(result);
+  assert.equal(result.muiProps.variant, "text");
+});
+
+test("toComponentSetVariantMapping resolves color from component properties", () => {
+  const mapping = toComponentSetVariantMapping({
+    id: "btn-set",
+    type: "COMPONENT_SET",
+    componentPropertyDefinitions: {
+      Variant: { type: "VARIANT", defaultValue: "Contained" },
+      Color: { type: "VARIANT", defaultValue: "Primary" }
+    },
+    children: [
+      {
+        id: "btn-primary",
+        type: "COMPONENT",
+        name: "Variant=Contained, Color=Primary",
+        componentProperties: {
+          Variant: { type: "VARIANT", value: "Contained" },
+          Color: { type: "VARIANT", value: "Primary" }
+        },
+        fills: [toSolidPaint("#1976d2")],
+        children: []
+      },
+      {
+        id: "btn-error",
+        type: "COMPONENT",
+        name: "Variant=Contained, Color=Error",
+        componentProperties: {
+          Variant: { type: "VARIANT", value: "Contained" },
+          Color: { type: "VARIANT", value: "Error" }
+        },
+        fills: [toSolidPaint("#d32f2f")],
+        children: []
+      }
+    ]
+  });
+
+  assert.ok(mapping);
+  assert.equal(mapping.muiProps.variant, "contained");
+  assert.equal(mapping.muiProps.color, "primary");
+  assert.equal(mapping.states?.length, 2);
+  assert.equal(mapping.states?.[1]?.muiProps.color, "error");
 });

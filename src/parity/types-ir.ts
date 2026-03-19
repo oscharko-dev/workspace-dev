@@ -65,6 +65,7 @@ export type ResponsiveBreakpoint = "xs" | "sm" | "md" | "lg" | "xl";
 export interface VariantMuiProps {
   variant?: "contained" | "outlined" | "text";
   size?: "small" | "medium" | "large";
+  color?: "primary" | "secondary" | "error" | "info" | "success" | "warning" | "inherit";
   disabled?: boolean;
 }
 
