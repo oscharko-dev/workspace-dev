@@ -12256,22 +12256,7 @@ export const ${hookName} = (): ${contextValueTypeName} => {
   };
 };
 
-const fallbackScreenFile = ({
-  screen,
-  mappingByNodeId,
-  spacingBase,
-  tokens,
-  iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
-  imageAssetMap = {},
-  routePathByScreenId = new Map<string, string>(),
-  generationLocale,
-  formHandlingMode,
-  truncationMetric,
-  themeComponentDefaults,
-  componentNameOverride,
-  filePathOverride,
-  enablePatternExtraction = true
-}: {
+interface FallbackScreenFileInput {
   screen: ScreenIR;
   mappingByNodeId: Map<string, ComponentMappingRule>;
   spacingBase?: number;
@@ -12290,7 +12275,81 @@ const fallbackScreenFile = ({
   componentNameOverride?: string;
   filePathOverride?: string;
   enablePatternExtraction?: boolean;
-}): FallbackScreenFileResult => {
+}
+
+interface PreparedFallbackScreenModel {
+  screen: ScreenIR;
+  componentName: string;
+  filePath: string;
+  truncationComment: string;
+  resolvedSpacingBase: number;
+  resolvedGenerationLocale: string;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  resolvedThemeComponentDefaults: ThemeComponentDefaults | undefined;
+  simplificationStats: SimplificationMetrics;
+  simplifiedChildren: ScreenElementIR[];
+  headingComponentByNodeId: Map<string, HeadingComponent>;
+  typographyVariantByNodeId: Map<string, DesignTokenTypographyVariantName>;
+  minX: number;
+  minY: number;
+  rootParent: VirtualParent;
+  extractionPlan: PatternExtractionPlan;
+  tokens?: DesignTokens;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  enablePatternExtraction: boolean;
+}
+
+interface FallbackRenderState {
+  renderContext: RenderContext;
+  rendered: string;
+  hasInteractiveFields: boolean;
+  hasInteractiveAccordions: boolean;
+  hasSelectField: boolean;
+  hasTextInputField: boolean;
+  containerMaxWidth: string;
+  screenContainerSx: string;
+}
+
+interface FallbackDependencyAssembly {
+  formContextFileSpec?: FormContextFileSpec;
+  patternContextFileSpec?: PatternContextFileSpec;
+  patternContextInitialStateDeclaration: string;
+  navigationHookBlock: string;
+  stateBlock: string;
+  containerFormProps: string;
+  reactImportBlock: string;
+  reactHookFormImport: string;
+  zodImportBlock: string;
+  reactRouterImport: string;
+  selectChangeEventTypeImport: string;
+  uniqueMuiImports: string[];
+  iconImports: string;
+  mappedImports: string;
+  extractedComponentImports: string;
+  patternContextImport: string;
+  formContextImport: string;
+}
+
+const prepareFallbackScreenModel = ({
+  screen,
+  mappingByNodeId,
+  spacingBase,
+  tokens,
+  iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
+  imageAssetMap = {},
+  routePathByScreenId = new Map<string, string>(),
+  generationLocale,
+  formHandlingMode,
+  truncationMetric,
+  themeComponentDefaults,
+  componentNameOverride,
+  filePathOverride,
+  enablePatternExtraction = true
+}: FallbackScreenFileInput): PreparedFallbackScreenModel => {
   const componentName = componentNameOverride ?? toComponentName(screen.name);
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
   const truncationComment = toTruncationComment(truncationMetric);
@@ -12303,6 +12362,7 @@ const fallbackScreenFile = ({
     requestedMode: formHandlingMode
   });
   const resolvedThemeComponentDefaults = themeComponentDefaults;
+  const pageBackgroundColorNormalized = normalizeHexColor(screen.fillColor ?? tokens?.palette.background);
 
   const simplificationStats = createEmptySimplificationStats();
   const simplifiedChildren = simplifyElements({
@@ -12340,17 +12400,63 @@ const fallbackScreenFile = ({
     imageAssetMap,
     routePathByScreenId,
     mappingByNodeId,
-    pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    pageBackgroundColorNormalized,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
       : {})
   });
+
+  return {
+    screen,
+    componentName,
+    filePath,
+    truncationComment,
+    resolvedSpacingBase,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    resolvedThemeComponentDefaults,
+    simplificationStats,
+    simplifiedChildren,
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    minX,
+    minY,
+    rootParent,
+    extractionPlan,
+    ...(tokens ? { tokens } : {}),
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    mappingByNodeId,
+    pageBackgroundColorNormalized,
+    enablePatternExtraction
+  };
+};
+
+const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallbackScreenModel }): FallbackRenderState => {
+  const {
+    screen,
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    resolvedThemeComponentDefaults,
+    simplifiedChildren,
+    rootParent,
+    minX,
+    minY,
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    tokens,
+    mappingByNodeId,
+    pageBackgroundColorNormalized,
+    extractionPlan
+  } = prepared;
   const renderContext: RenderContext = {
     screenId: screen.id,
     screenName: screen.name,
-    generationLocale: resolvedGenerationLocale,
-    formHandlingMode: resolvedFormHandlingMode,
+    generationLocale: prepared.resolvedGenerationLocale,
+    formHandlingMode: prepared.resolvedFormHandlingMode,
     fields: [],
     accordions: [],
     tabs: [],
@@ -12372,14 +12478,14 @@ const fallbackScreenFile = ({
     usesNavigateHandler: false,
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
-    spacingBase: resolvedSpacingBase,
+    spacingBase: prepared.resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
-    pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    pageBackgroundColorNormalized,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
     ...(screen.responsive?.topLevelLayoutOverrides
@@ -12450,6 +12556,35 @@ const fallbackScreenFile = ({
       spacingBase: renderContext.spacingBase
     })
   ]);
+
+  return {
+    renderContext,
+    rendered,
+    hasInteractiveFields,
+    hasInteractiveAccordions,
+    hasSelectField,
+    hasTextInputField,
+    containerMaxWidth,
+    screenContainerSx
+  };
+};
+
+const assembleFallbackDependencies = ({
+  prepared,
+  renderState
+}: {
+  prepared: PreparedFallbackScreenModel;
+  renderState: FallbackRenderState;
+}): FallbackDependencyAssembly => {
+  const { componentName, extractionPlan, resolvedFormHandlingMode, enablePatternExtraction } = prepared;
+  const {
+    renderContext,
+    rendered,
+    hasInteractiveFields,
+    hasInteractiveAccordions,
+    hasSelectField,
+    hasTextInputField
+  } = renderState;
 
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
   const requiredFieldMap = Object.fromEntries(
@@ -12667,6 +12802,59 @@ const ${dialogCloseHandlerVar} = (): void => {
   const patternContextInitialStateDeclaration = patternContextFileSpec
     ? `const patternContextInitialState: ${patternContextFileSpec.stateTypeName} = ${patternContextFileSpec.initialStateLiteral};\n\n`
     : "";
+
+  return {
+    ...(formContextFileSpec ? { formContextFileSpec } : {}),
+    ...(patternContextFileSpec ? { patternContextFileSpec } : {}),
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  };
+};
+
+const composeFallbackScreenModule = ({
+  prepared,
+  renderState,
+  dependencies
+}: {
+  prepared: PreparedFallbackScreenModel;
+  renderState: FallbackRenderState;
+  dependencies: FallbackDependencyAssembly;
+}): FallbackScreenFileResult => {
+  const { componentName, filePath, truncationComment, extractionPlan, simplifiedChildren, simplificationStats } = prepared;
+  const { renderContext, rendered, containerMaxWidth, screenContainerSx } = renderState;
+  const {
+    formContextFileSpec,
+    patternContextFileSpec,
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  } = dependencies;
+
   const contentFunctionName = `${componentName}ScreenContent`;
   const contentFunctionSource = `function ${contentFunctionName}() {
 ${[navigationHookBlock, stateBlock]
@@ -12745,6 +12933,20 @@ ${patternContextInitialStateDeclaration}${screenExportSource}
     contextFiles,
     testFiles
   };
+};
+
+const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScreenFileResult => {
+  const prepared = prepareFallbackScreenModel(input);
+  const renderState = buildFallbackRenderState({ prepared });
+  const dependencies = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  return composeFallbackScreenModule({
+    prepared,
+    renderState,
+    dependencies
+  });
 };
 
 export const toDeterministicScreenPath = (screenName: string): string => {
