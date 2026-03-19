@@ -3545,7 +3545,11 @@ const pickDistinctColor = ({
   references: Array<string | undefined>;
   minDistance: number;
 }): string => {
-  return candidates.find((candidate) => isDistinctFromColors({ color: candidate, references, minDistance })) ?? candidates[0]!;
+  const [fallbackCandidate] = candidates;
+  if (!fallbackCandidate) {
+    return TOKEN_DERIVATION_DEFAULTS.palette.info;
+  }
+  return candidates.find((candidate) => isDistinctFromColors({ color: candidate, references, minDistance })) ?? fallbackCandidate;
 };
 
 const resolveSemanticFallbackColor = ({

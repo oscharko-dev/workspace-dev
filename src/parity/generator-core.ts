@@ -3039,10 +3039,14 @@ const buildPatternClusters = ({
       members: localMembers,
       imageAssetMap
     });
+    const [prototype] = localMembers;
+    if (!prototype) {
+      continue;
+    }
     const componentName = `${screenComponentName}Pattern${clusterIndex}`;
     selectedClusters.push({
       componentName,
-      prototype: localMembers[0]!,
+      prototype,
       members: localMembers,
       propBindings
     });
@@ -5730,9 +5734,9 @@ const toBoundedLevenshteinDistance = ({
     current[0] = row;
     let rowMin = row;
     for (let col = 1; col <= right.length; col += 1) {
-      const deletion = previous[col]! + 1;
-      const insertion = current[col - 1]! + 1;
-      const substitution = previous[col - 1]! + (left[row - 1] === right[col - 1] ? 0 : 1);
+      const deletion = (previous[col] ?? maxDistance + 1) + 1;
+      const insertion = (current[col - 1] ?? maxDistance + 1) + 1;
+      const substitution = (previous[col - 1] ?? maxDistance + 1) + (left[row - 1] === right[col - 1] ? 0 : 1);
       const nextValue = Math.min(deletion, insertion, substitution);
       current[col] = nextValue;
       rowMin = Math.min(rowMin, nextValue);
@@ -5747,6 +5751,19 @@ const toBoundedLevenshteinDistance = ({
 
   const result = previous[right.length] ?? maxDistance + 1;
   return result <= maxDistance ? result : undefined;
+};
+
+const toSequentialDeltas = (values: number[]): number[] => {
+  const deltas: number[] = [];
+  for (let index = 1; index < values.length; index += 1) {
+    const current = values[index];
+    const previous = values[index - 1];
+    if (current === undefined || previous === undefined) {
+      continue;
+    }
+    deltas.push(current - previous);
+  }
+  return deltas;
 };
 
 const resolveFallbackIconByExactPhrase = ({
@@ -7468,7 +7485,7 @@ const detectRepeatedListPattern = ({
   if (rowYValues.length !== collectedRows.rowNodes.length) {
     return undefined;
   }
-  const yDeltas = rowYValues.slice(1).map((value, index) => value - rowYValues[index]!);
+  const yDeltas = toSequentialDeltas(rowYValues);
   if (yDeltas.some((delta) => delta < LIST_PATTERN_VERTICAL_DELTA_MIN_PX)) {
     return undefined;
   }
@@ -7762,7 +7779,7 @@ const hasUniformHorizontalSpacing = (nodes: ScreenElementIR[]): boolean => {
   if (centerXValues.length !== sortedNodes.length) {
     return false;
   }
-  const gaps = centerXValues.slice(1).map((centerX, index) => centerX - centerXValues[index]!);
+  const gaps = toSequentialDeltas(centerXValues);
   if (gaps.length === 0 || gaps.some((gap) => gap <= 0)) {
     return false;
   }
@@ -8505,8 +8522,12 @@ const toNearestClusterIndex = ({ value, clusters }: { value: number; clusters: n
   if (clusters.length <= 1) {
     return 0;
   }
+  const firstCluster = clusters[0];
+  if (firstCluster === undefined) {
+    return 0;
+  }
   let nearestIndex = 0;
-  let nearestDistance = Math.abs(value - clusters[0]!);
+  let nearestDistance = Math.abs(value - firstCluster);
   for (let index = 1; index < clusters.length; index += 1) {
     const candidate = clusters[index];
     if (candidate === undefined) {
