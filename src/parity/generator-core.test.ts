@@ -2563,6 +2563,188 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
   assert.equal(screenContent.includes("PrimaryButton"), false);
 });
 
+test("generateArtifacts keeps componentMappings precedence over pattern dispatch and remains byte-stable", async () => {
+  const createDispatchPrecedenceIr = () => {
+    const ir = createIr();
+    ir.screens = [
+      {
+        id: "dispatch-precedence-screen",
+        name: "Dispatch Precedence",
+        layoutMode: "NONE" as const,
+        gap: 0,
+        width: 360,
+        height: 640,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: [
+          {
+            id: "mapped-header-container",
+            name: "Primary Header",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            primaryAxisAlignItems: "SPACE_BETWEEN" as const,
+            counterAxisAlignItems: "CENTER" as const,
+            x: 0,
+            y: 0,
+            width: 360,
+            height: 72,
+            fillColor: "#ee0000",
+            children: [
+              {
+                id: "mapped-header-title",
+                name: "Header Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Dashboard",
+                x: 16,
+                y: 24,
+                fillColor: "#ffffff"
+              },
+              {
+                id: "mapped-header-action",
+                name: "Open Menu",
+                nodeType: "FRAME",
+                type: "button" as const,
+                x: 312,
+                y: 20,
+                width: 32,
+                height: 32,
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ];
+    return ir;
+  };
+
+  const componentMappings = [
+    {
+      boardKey: "board-1",
+      nodeId: "mapped-header-container",
+      componentName: "MappedHeader",
+      importPath: "@custom/ui",
+      priority: 0,
+      source: "local_override" as const,
+      enabled: true
+    }
+  ];
+
+  const generateScreenContent = async (suffix: string): Promise<string> => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-generator-dispatch-precedence-${suffix}-`));
+    await generateArtifacts({
+      projectDir,
+      ir: createDispatchPrecedenceIr(),
+      componentMappings,
+      llmCodegenMode: "deterministic",
+      llmModelName: "deterministic",
+      onLog: () => {
+        // no-op
+      }
+    });
+    return await readFile(path.join(projectDir, toDeterministicScreenPath("Dispatch Precedence")), "utf8");
+  };
+
+  const first = await generateScreenContent("a");
+  const second = await generateScreenContent("b");
+
+  assert.equal(first, second);
+  assert.ok(first.includes('from "@custom/ui";'));
+  assert.ok(first.includes("<MappedHeader"));
+  assert.equal(first.includes("<AppBar "), false);
+  assert.equal(first.includes("<Toolbar>"), false);
+});
+
+test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fallback behavior", async () => {
+  const createVectorIr = () => {
+    const ir = createIr();
+    ir.screens = [
+      {
+        id: "mapped-vector-screen",
+        name: "Mapped Vector Screen",
+        layoutMode: "NONE" as const,
+        gap: 0,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: [
+          {
+            id: "mapped-vector-node",
+            name: "Mapped Vector",
+            nodeType: "VECTOR",
+            type: "container" as const,
+            x: 0,
+            y: 0,
+            width: 24,
+            height: 24,
+            vectorPaths: ["M2 2 L22 22"]
+          },
+          {
+            id: "unmapped-vector-node",
+            name: "Unmapped Vector",
+            nodeType: "VECTOR",
+            type: "container" as const,
+            x: 40,
+            y: 0,
+            width: 24,
+            height: 24,
+            vectorPaths: ["M22 2 L2 22"]
+          },
+          {
+            id: "mapped-vector-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Vector diagnostics"
+          }
+        ]
+      }
+    ];
+    return ir;
+  };
+
+  const mappedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-vector-mapped-"));
+  await generateArtifacts({
+    projectDir: mappedProjectDir,
+    ir: createVectorIr(),
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeId: "mapped-vector-node",
+        componentName: "CustomVectorIcon",
+        importPath: "@custom/icons",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ],
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const mappedContent = await readFile(path.join(mappedProjectDir, toDeterministicScreenPath("Mapped Vector Screen")), "utf8");
+  assert.ok(mappedContent.includes('from "@custom/icons";'));
+  assert.ok(mappedContent.includes("<CustomVectorIcon"));
+  assert.ok(mappedContent.includes('data-figma-node-id={"mapped-vector-node"}'));
+  assert.equal(mappedContent.includes("unmapped-vector-node"), false);
+
+  const fallbackProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-vector-fallback-"));
+  await generateArtifacts({
+    projectDir: fallbackProjectDir,
+    ir: createVectorIr(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+  const fallbackContent = await readFile(path.join(fallbackProjectDir, toDeterministicScreenPath("Mapped Vector Screen")), "utf8");
+  assert.equal(fallbackContent.includes("CustomVectorIcon"), false);
+  assert.equal(fallbackContent.includes("mapped-vector-node"), false);
+});
+
 test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-threshold-"));
   const ir = createIr();
