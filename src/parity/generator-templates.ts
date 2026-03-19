@@ -5125,6 +5125,48 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
         date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
       return isValidDate ? "" : validationMessage;
     }
+    case "iban": {
+      const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
+      if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+        return validationMessage;
+      }
+      const rearranged = compact.slice(4) + compact.slice(0, 4);
+      const numericStr = Array.from(rearranged).map((ch) => {
+        const code = ch.charCodeAt(0);
+        return code >= 65 && code <= 90 ? String(code - 55) : ch;
+      }).join("");
+      let remainder = "";
+      for (const digit of numericStr) {
+        remainder = String(Number(remainder + digit) % 97);
+      }
+      return Number(remainder) === 1 ? "" : validationMessage;
+    }
+    case "plz": {
+      const compact = trimmed.replace(/\\s+/g, "");
+      return /^\\d{4,10}$/.test(compact) || /^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)
+        ? ""
+        : validationMessage;
+    }
+    case "credit_card": {
+      const digits = trimmed.replace(/[\\s-]+/g, "");
+      if (!/^\\d{13,19}$/.test(digits)) {
+        return validationMessage;
+      }
+      let sum = 0;
+      let shouldDouble = false;
+      for (let i = digits.length - 1; i >= 0; i--) {
+        let digit = Number(digits[i]);
+        if (shouldDouble) {
+          digit *= 2;
+          if (digit > 9) {
+            digit -= 9;
+          }
+        }
+        sum += digit;
+        shouldDouble = !shouldDouble;
+      }
+      return sum % 10 === 0 ? "" : validationMessage;
+    }
     default:
       return "";
   }
@@ -5291,6 +5333,48 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
         const isValidDate =
           date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
         return isValidDate ? "" : validationMessage;
+      }
+      case "iban": {
+        const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
+        if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+          return validationMessage;
+        }
+        const rearranged = compact.slice(4) + compact.slice(0, 4);
+        const numericStr = Array.from(rearranged).map((ch) => {
+          const code = ch.charCodeAt(0);
+          return code >= 65 && code <= 90 ? String(code - 55) : ch;
+        }).join("");
+        let remainder = "";
+        for (const digit of numericStr) {
+          remainder = String(Number(remainder + digit) % 97);
+        }
+        return Number(remainder) === 1 ? "" : validationMessage;
+      }
+      case "plz": {
+        const compact = trimmed.replace(/\\s+/g, "");
+        return /^\\d{4,10}$/.test(compact) || /^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)
+          ? ""
+          : validationMessage;
+      }
+      case "credit_card": {
+        const digits = trimmed.replace(/[\\s-]+/g, "");
+        if (!/^\\d{13,19}$/.test(digits)) {
+          return validationMessage;
+        }
+        let sum = 0;
+        let shouldDouble = false;
+        for (let i = digits.length - 1; i >= 0; i--) {
+          let digit = Number(digits[i]);
+          if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) {
+              digit -= 9;
+            }
+          }
+          sum += digit;
+          shouldDouble = !shouldDouble;
+        }
+        return sum % 10 === 0 ? "" : validationMessage;
       }
       default:
         return "";
@@ -5503,6 +5587,57 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
         }
         return;
       }
+      case "iban": {
+        const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
+        if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const rearranged = compact.slice(4) + compact.slice(0, 4);
+        const numericStr = Array.from(rearranged).map((ch) => {
+          const code = ch.charCodeAt(0);
+          return code >= 65 && code <= 90 ? String(code - 55) : ch;
+        }).join("");
+        let remainder = "";
+        for (const digit of numericStr) {
+          remainder = String(Number(remainder + digit) % 97);
+        }
+        if (Number(remainder) !== 1) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "plz": {
+        const compact = trimmed.replace(/\\s+/g, "");
+        if (!/^\\d{4,10}$/.test(compact) && !/^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "credit_card": {
+        const digits = trimmed.replace(/[\\s-]+/g, "");
+        if (!/^\\d{13,19}$/.test(digits)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        let sum = 0;
+        let shouldDouble = false;
+        for (let i = digits.length - 1; i >= 0; i--) {
+          let digit = Number(digits[i]);
+          if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) {
+              digit -= 9;
+            }
+          }
+          sum += digit;
+          shouldDouble = !shouldDouble;
+        }
+        if (sum % 10 !== 0) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
       default:
         return;
     }
@@ -5677,6 +5812,57 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
           const isValidDate =
             date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
           if (!isValidDate) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "iban": {
+          const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
+          if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          const rearranged = compact.slice(4) + compact.slice(0, 4);
+          const numericStr = Array.from(rearranged).map((ch) => {
+            const code = ch.charCodeAt(0);
+            return code >= 65 && code <= 90 ? String(code - 55) : ch;
+          }).join("");
+          let remainder = "";
+          for (const digit of numericStr) {
+            remainder = String(Number(remainder + digit) % 97);
+          }
+          if (Number(remainder) !== 1) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "plz": {
+          const compact = trimmed.replace(/\\s+/g, "");
+          if (!/^\\d{4,10}$/.test(compact) && !/^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "credit_card": {
+          const digits = trimmed.replace(/[\\s-]+/g, "");
+          if (!/^\\d{13,19}$/.test(digits)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          let sum = 0;
+          let shouldDouble = false;
+          for (let i = digits.length - 1; i >= 0; i--) {
+            let digit = Number(digits[i]);
+            if (shouldDouble) {
+              digit *= 2;
+              if (digit > 9) {
+                digit -= 9;
+              }
+            }
+            sum += digit;
+            shouldDouble = !shouldDouble;
+          }
+          if (sum % 10 !== 0) {
             issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
           }
           return;
