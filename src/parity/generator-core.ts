@@ -182,7 +182,17 @@ const getErrorMessage = (error: unknown): string => {
 
 export type ButtonVariant = "contained" | "outlined" | "text";
 export type ButtonSize = "small" | "medium" | "large";
-export type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+export type ValidationFieldType =
+  | "email"
+  | "password"
+  | "tel"
+  | "number"
+  | "date"
+  | "url"
+  | "search"
+  | "iban"
+  | "plz"
+  | "credit_card";
 export type ResolvedFormHandlingMode = WorkspaceFormHandlingMode;
 export type HeadingComponent = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 export type LandmarkRole = "navigation";
@@ -2878,6 +2888,33 @@ const TEXT_FIELD_TYPE_RULES: Array<{
   }
 ];
 
+const VALIDATION_ONLY_TYPE_RULES: Array<{
+  type: ValidationFieldType;
+  patterns: RegExp[];
+  placeholderPatterns?: RegExp[];
+}> = [
+  {
+    type: "iban",
+    patterns: [/\biban\b/],
+    placeholderPatterns: [/^[A-Z]{2}\d{2}\s/]
+  },
+  {
+    type: "plz",
+    patterns: [/\bplz\b/, /\bpostleitzahl\b/, /\bpostal\s*code\b/, /\bzip\s*code\b/, /\bzip\b/, /\bpostcode\b/]
+  },
+  {
+    type: "credit_card",
+    patterns: [
+      /\bcredit\s*card\b/,
+      /\bkreditkarte\b/,
+      /\bcard\s*number\b/,
+      /\bkartennummer\b/,
+      /\bcc\s*number\b/
+    ],
+    placeholderPatterns: [/^\d{4}\s\d{4}\s\d{4}\s\d{4}$/]
+  }
+];
+
 const INPUT_PLACEHOLDER_TECHNICAL_VALUES = new Set([
   "swap component",
   "instance swap",
@@ -2956,6 +2993,28 @@ const inferTextFieldType = (hints: string[]): TextFieldInputType | undefined => 
   return undefined;
 };
 
+const inferValidationOnlyType = ({
+  hints,
+  placeholder
+}: {
+  hints: string[];
+  placeholder: string | undefined;
+}): ValidationFieldType | undefined => {
+  for (const rule of VALIDATION_ONLY_TYPE_RULES) {
+    if (hints.some((hint) => rule.patterns.some((pattern) => pattern.test(hint)))) {
+      return rule.type;
+    }
+    if (
+      placeholder &&
+      rule.placeholderPatterns &&
+      rule.placeholderPatterns.some((pattern) => pattern.test(placeholder.trim()))
+    ) {
+      return rule.type;
+    }
+  }
+  return undefined;
+};
+
 const inferTextFieldAutoComplete = (inputType: TextFieldInputType | undefined): string | undefined => {
   switch (inputType) {
     case "email":
@@ -2991,6 +3050,12 @@ const inferTextFieldValidationMessage = (validationType: ValidationFieldType | u
       return "Please enter a valid number.";
     case "date":
       return "Please enter a valid date (YYYY-MM-DD).";
+    case "iban":
+      return "Please enter a valid IBAN.";
+    case "plz":
+      return "Please enter a valid postal code.";
+    case "credit_card":
+      return "Please enter a valid card number.";
     default:
       return undefined;
   }
@@ -3754,7 +3819,8 @@ export const registerInteractiveField = ({
   const semanticHints = isSelect ? [] : collectInputSemanticHints({ element, label, placeholder });
   const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
   const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
-  const validationType = isSelect ? undefined : inputType;
+  const validationOnlyType = isSelect ? undefined : inferValidationOnlyType({ hints: semanticHints, placeholder });
+  const validationType = isSelect ? undefined : (validationOnlyType ?? inputType);
   const validationMessage = inferTextFieldValidationMessage(validationType);
   const hasVisualErrorExample = inferVisualErrorFromOutline(element);
 
