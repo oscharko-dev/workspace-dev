@@ -4213,18 +4213,87 @@ const chooseHeadingTypographyClusters = ({
     .slice(0, HEADING_TYPOGRAPHY_VARIANTS.length);
 };
 
-const buildDerivedTypographyScale = ({
+type PartialTypographyScale = Partial<Record<DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>>>;
+
+interface DerivedTypographyClusterSelection {
+  body1Cluster: TypographyCluster | undefined;
+  body2Cluster: TypographyCluster | undefined;
+  subtitle2Cluster: TypographyCluster | undefined;
+  subtitle1Cluster: TypographyCluster | undefined;
+  captionCluster: TypographyCluster | undefined;
+  overlineCluster: TypographyCluster | undefined;
+  buttonCluster: TypographyCluster | undefined;
+  headingClusters: TypographyCluster[];
+}
+
+const resolveClusterFallback = (
+  ...clusters: Array<TypographyCluster | undefined>
+): TypographyCluster | undefined => {
+  return clusters.find((cluster): cluster is TypographyCluster => cluster !== undefined);
+};
+
+const assignTypographyVariant = ({
+  partialScale,
+  variantName,
+  cluster,
+  fallbackFontFamily,
+  textTransform,
+  letterSpacingEm
+}: {
+  partialScale: PartialTypographyScale;
+  variantName: DesignTokenTypographyVariantName;
+  cluster: TypographyCluster | undefined;
+  fallbackFontFamily: string;
+  textTransform?: DesignTokenTypographyVariant["textTransform"];
+  letterSpacingEm?: number;
+}): void => {
+  if (!cluster) {
+    return;
+  }
+  partialScale[variantName] = toTypographyVariantFromCluster({
+    cluster,
+    fallbackFontFamily,
+    ...(textTransform ? { textTransform } : {}),
+    ...(typeof letterSpacingEm === "number" ? { letterSpacingEm } : {})
+  });
+};
+
+const mapHeadingVariants = ({
+  partialScale,
+  headingClusters,
+  subtitle1Cluster,
+  body1Cluster,
+  fallbackFontFamily
+}: {
+  partialScale: PartialTypographyScale;
+  headingClusters: TypographyCluster[];
+  subtitle1Cluster: TypographyCluster | undefined;
+  body1Cluster: TypographyCluster | undefined;
+  fallbackFontFamily: string;
+}): void => {
+  let lastHeadingCluster = resolveClusterFallback(headingClusters[0], subtitle1Cluster, body1Cluster);
+  for (const [index, variantName] of HEADING_TYPOGRAPHY_VARIANTS.entries()) {
+    const cluster = resolveClusterFallback(headingClusters[index], lastHeadingCluster);
+    if (!cluster) {
+      continue;
+    }
+    assignTypographyVariant({
+      partialScale,
+      variantName,
+      cluster,
+      fallbackFontFamily
+    });
+    lastHeadingCluster = cluster;
+  }
+};
+
+const selectTypographyClustersForScale = ({
   clusters,
-  fontFamily,
-  headingSize,
   bodySize
 }: {
   clusters: TypographyCluster[];
-  fontFamily: string;
-  headingSize: number;
   bodySize: number;
-}): DesignTokenTypographyScale => {
-  const partialScale: Partial<Record<DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>>> = {};
+}): DerivedTypographyClusterSelection => {
   const body1Cluster = chooseBodyTypographyCluster(clusters);
   const body2Cluster = body1Cluster
     ? findNextSmallerTypographyCluster({ clusters, size: body1Cluster.normalizedSize }) ?? body1Cluster
@@ -4247,63 +4316,96 @@ const buildDerivedTypographyScale = ({
     bodySize: body1Cluster?.normalizedSize ?? bodySize
   });
 
-  let lastHeadingCluster = headingClusters[0] ?? subtitle1Cluster ?? body1Cluster;
-  for (const [index, variantName] of HEADING_TYPOGRAPHY_VARIANTS.entries()) {
-    const cluster = headingClusters[index] ?? lastHeadingCluster;
-    if (!cluster) {
-      continue;
-    }
-    partialScale[variantName] = toTypographyVariantFromCluster({
-      cluster,
-      fallbackFontFamily: fontFamily
-    });
-    lastHeadingCluster = cluster;
-  }
+  return {
+    body1Cluster,
+    body2Cluster,
+    subtitle2Cluster,
+    subtitle1Cluster,
+    captionCluster,
+    overlineCluster,
+    buttonCluster,
+    headingClusters
+  };
+};
 
-  if (subtitle1Cluster) {
-    partialScale.subtitle1 = toTypographyVariantFromCluster({
-      cluster: subtitle1Cluster,
-      fallbackFontFamily: fontFamily
-    });
-  }
-  if (subtitle2Cluster ?? subtitle1Cluster) {
-    partialScale.subtitle2 = toTypographyVariantFromCluster({
-      cluster: subtitle2Cluster ?? subtitle1Cluster ?? body1Cluster!,
-      fallbackFontFamily: fontFamily
-    });
-  }
-  if (body1Cluster) {
-    partialScale.body1 = toTypographyVariantFromCluster({
-      cluster: body1Cluster,
-      fallbackFontFamily: fontFamily
-    });
-  }
-  if (body2Cluster ?? body1Cluster) {
-    partialScale.body2 = toTypographyVariantFromCluster({
-      cluster: body2Cluster ?? body1Cluster!,
-      fallbackFontFamily: fontFamily
-    });
-  }
-  if (buttonCluster) {
-    partialScale.button = toTypographyVariantFromCluster({
-      cluster: buttonCluster,
-      fallbackFontFamily: fontFamily,
-      textTransform: "none"
-    });
-  }
-  if (captionCluster) {
-    partialScale.caption = toTypographyVariantFromCluster({
-      cluster: captionCluster,
-      fallbackFontFamily: fontFamily
-    });
-  }
-  if (overlineCluster ?? captionCluster) {
-    partialScale.overline = toTypographyVariantFromCluster({
-      cluster: overlineCluster ?? captionCluster!,
-      fallbackFontFamily: fontFamily,
-      letterSpacingEm: overlineCluster?.letterSpacingEm ?? 0.08
-    });
-  }
+const buildDerivedTypographyScale = ({
+  clusters,
+  fontFamily,
+  headingSize,
+  bodySize
+}: {
+  clusters: TypographyCluster[];
+  fontFamily: string;
+  headingSize: number;
+  bodySize: number;
+}): DesignTokenTypographyScale => {
+  const partialScale: PartialTypographyScale = {};
+  const {
+    body1Cluster,
+    body2Cluster,
+    subtitle2Cluster,
+    subtitle1Cluster,
+    captionCluster,
+    overlineCluster,
+    buttonCluster,
+    headingClusters
+  } = selectTypographyClustersForScale({
+    clusters,
+    bodySize
+  });
+
+  mapHeadingVariants({
+    partialScale,
+    headingClusters,
+    subtitle1Cluster,
+    body1Cluster,
+    fallbackFontFamily: fontFamily
+  });
+
+  assignTypographyVariant({
+    partialScale,
+    variantName: "subtitle1",
+    cluster: subtitle1Cluster,
+    fallbackFontFamily: fontFamily
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "subtitle2",
+    cluster: resolveClusterFallback(subtitle2Cluster, subtitle1Cluster, body1Cluster),
+    fallbackFontFamily: fontFamily
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "body1",
+    cluster: body1Cluster,
+    fallbackFontFamily: fontFamily
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "body2",
+    cluster: resolveClusterFallback(body2Cluster, body1Cluster),
+    fallbackFontFamily: fontFamily
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "button",
+    cluster: buttonCluster,
+    fallbackFontFamily: fontFamily,
+    textTransform: "none"
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "caption",
+    cluster: captionCluster,
+    fallbackFontFamily: fontFamily
+  });
+  assignTypographyVariant({
+    partialScale,
+    variantName: "overline",
+    cluster: resolveClusterFallback(overlineCluster, captionCluster),
+    fallbackFontFamily: fontFamily,
+    letterSpacingEm: overlineCluster?.letterSpacingEm ?? 0.08
+  });
 
   return completeTypographyScale({
     partialScale,
