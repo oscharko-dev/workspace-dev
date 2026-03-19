@@ -3765,6 +3765,108 @@ test("deriveTokensForTesting normalizes fractional typography sizes into stable 
   assert.equal(tokens.typography.caption.fontSizePx, 12);
 });
 
+test("deriveTokensForTesting keeps sparse single-cluster typography fallback deterministic", () => {
+  const sparseTypographyFile = {
+    name: "Sparse Typography Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 600 },
+              children: [
+                {
+                  id: "single-body",
+                  type: "TEXT",
+                  name: "Body Copy",
+                  characters: "Dies ist ein einzelner Text-Cluster.",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 24, y: 24, width: 420, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const firstRun = deriveTokensForTesting(sparseTypographyFile);
+  const secondRun = deriveTokensForTesting(sparseTypographyFile);
+
+  assert.deepEqual(firstRun.typography, secondRun.typography);
+  assert.equal(firstRun.typography.subtitle1.fontSizePx, 16);
+  assert.equal(firstRun.typography.subtitle2.fontSizePx, 16);
+  assert.equal(firstRun.typography.body1.fontSizePx, 16);
+  assert.equal(firstRun.typography.body2.fontSizePx, 16);
+  assert.equal(firstRun.typography.caption.fontSizePx, 16);
+  assert.equal(firstRun.typography.overline.letterSpacingEm, 0.08);
+});
+
+test("deriveTokensForTesting keeps typography precedence for body2 subtitle2 and overline", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Typography Fallback Chain Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 900, height: 700 },
+              children: [
+                {
+                  id: "body-large",
+                  type: "TEXT",
+                  name: "Body Copy",
+                  characters: "Monatliche Rate",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 24, y: 24, width: 260, height: 24 }
+                },
+                {
+                  id: "body-large-2",
+                  type: "TEXT",
+                  name: "Body Copy Secondary",
+                  characters: "Tilgungsrate",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 24 },
+                  absoluteBoundingBox: { x: 24, y: 44, width: 220, height: 24 }
+                },
+                {
+                  id: "caption-small",
+                  type: "TEXT",
+                  name: "Caption",
+                  characters: "Stand 03/2026",
+                  style: { fontSize: 12, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 18 },
+                  absoluteBoundingBox: { x: 24, y: 82, width: 180, height: 18 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.body1.fontSizePx, 12);
+  assert.equal(tokens.typography.body2.fontSizePx, 12);
+  assert.equal(tokens.typography.subtitle2.fontSizePx, 12);
+  assert.equal(tokens.typography.caption.fontSizePx, 12);
+  assert.equal(tokens.typography.overline.fontSizePx, 12);
+  assert.equal(tokens.typography.overline.letterSpacingEm, 0.08);
+});
+
 test("deriveTokensForTesting ignores technical and empty text placeholders for typography derivation", () => {
   const tokens = deriveTokensForTesting({
     name: "Placeholder Typography Demo",
