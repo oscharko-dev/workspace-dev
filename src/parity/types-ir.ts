@@ -56,6 +56,33 @@ export interface DesignTokens {
   typography: DesignTokenTypographyScale;
 }
 
+export interface DesignIrDarkPaletteHints {
+  primary?: string;
+  secondary?: string;
+  success?: string;
+  warning?: string;
+  error?: string;
+  info?: string;
+  background?: {
+    default?: string;
+    paper?: string;
+  };
+  text?: {
+    primary?: string;
+  };
+  divider?: string;
+}
+
+export interface DesignIrThemeAnalysis {
+  darkModeDetected: boolean;
+  signals: {
+    luminance: boolean;
+    naming: boolean;
+    lightDarkPair: boolean;
+  };
+  darkPaletteHints?: DesignIrDarkPaletteHints;
+}
+
 export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
 export type CounterAxisAlignItems = "MIN" | "CENTER" | "MAX" | "BASELINE";
 
@@ -299,6 +326,7 @@ export interface DesignIR {
   screens: ScreenIR[];
   tokens: DesignTokens;
   metrics?: GenerationMetrics;
+  themeAnalysis?: DesignIrThemeAnalysis;
 }
 
 export interface DesignNodeFingerprint {
@@ -366,6 +394,7 @@ export interface ValidatedDesignIR {
   readonly screens: readonly ScreenIR[];
   readonly tokens: DesignTokens;
   readonly metrics: GenerationMetrics;
+  readonly themeAnalysis?: DesignIrThemeAnalysis;
 }
 
 export interface IRValidationError {

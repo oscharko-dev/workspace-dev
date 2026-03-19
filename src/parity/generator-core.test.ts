@@ -10663,3 +10663,38 @@ test("deterministic screen rendering preserves single-form behavior for single f
   assert.ok(content.includes('component="form"'), "Single form should have form component prop");
   assert.ok(content.includes("validateFieldValue"), "Single form should have validation logic");
 });
+
+test("createDeterministicThemeFile omits dark color scheme when IR dark mode analysis is disabled", () => {
+  const ir = createIr();
+  ir.themeAnalysis = {
+    darkModeDetected: false,
+    signals: {
+      luminance: false,
+      naming: false,
+      lightDarkPair: false
+    }
+  };
+
+  const themeContent = createDeterministicThemeFile(ir).content;
+  assert.equal(themeContent.includes("colorSchemes: {"), true);
+  assert.equal(themeContent.includes("light: {"), true);
+  assert.equal(themeContent.includes("dark: {"), false);
+});
+
+test("createDeterministicAppFile can conditionally omit theme mode toggle", () => {
+  const ir = createIr();
+  const appWithoutToggle = createDeterministicAppFile(ir.screens, {
+    includeThemeModeToggle: false
+  }).content;
+  const appWithToggle = createDeterministicAppFile(ir.screens, {
+    includeThemeModeToggle: true
+  }).content;
+
+  assert.equal(appWithoutToggle.includes("function ThemeModeToggle()"), false);
+  assert.equal(appWithoutToggle.includes('data-testid="theme-mode-toggle"'), false);
+  assert.equal(appWithoutToggle.includes("useColorScheme"), false);
+
+  assert.equal(appWithToggle.includes("function ThemeModeToggle()"), true);
+  assert.equal(appWithToggle.includes('data-testid="theme-mode-toggle"'), true);
+  assert.equal(appWithToggle.includes("useColorScheme"), true);
+});

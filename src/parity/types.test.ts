@@ -21,6 +21,8 @@ const EXPECTED_TYPES_EXPORTS = [
   "DeploymentProfile",
   "DepthTruncatedScreenMetric",
   "DesignIR",
+  "DesignIrDarkPaletteHints",
+  "DesignIrThemeAnalysis",
   "DesignManifest",
   "DesignNodeFingerprint",
   "DesignScreenFingerprint",

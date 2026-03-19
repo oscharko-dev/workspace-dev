@@ -24,29 +24,8 @@ export const appTheme = createTheme({
         focus: "#1c1f241f"
       }
     }
-    },
-    dark: {
-      palette: {
-      mode: "dark",
-      primary: { main: "#898b8d" },
-      secondary: { main: "#f7f9fa" },
-      success: { main: "#499449" },
-      warning: { main: "#d97706" },
-      error: { main: "#e24949" },
-      info: { main: "#0288d1" },
-      background: { default: "#121212", paper: "#1e1e1e" },
-      text: { primary: "#f5f7fb" },
-      divider: "#f5f7fb1f",
-      action: {
-        active: "#f5f7fb8a",
-        hover: "#898b8d0a",
-        selected: "#898b8d14",
-        disabled: "#f5f7fb42",
-        disabledBackground: "#f5f7fb1f",
-        focus: "#898b8d1f"
-      }
     }
-    }
+
   },
   shape: {
     borderRadius: 12
