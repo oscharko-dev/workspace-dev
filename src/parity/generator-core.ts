@@ -15,7 +15,7 @@ import type {
   ScreenIR
 } from "./types.js";
 import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
-import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
+import { ensureTsxName } from "./path-utils.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
@@ -25,6 +25,10 @@ import {
   loadDesignSystemConfigFile
 } from "../design-system.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
+export { buildScreenArtifactIdentities, toComponentName, toDeterministicScreenPath } from "./generator-artifacts.js";
+export type { ScreenArtifactIdentity } from "./generator-artifacts.js";
+import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
+import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
 import {
   literal,
   normalizeOpacityForSx,
@@ -178,90 +182,8 @@ export interface AccessibilityWarning {
   contrastRatio: number;
 }
 
-export interface ScreenArtifactIdentity {
-  componentName: string;
-  filePath: string;
-  routePath: string;
-}
-
 const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
-};
-
-export const toComponentName = (rawName: string): string => {
-  const safe = sanitizeFileName(rawName);
-  const parts = safe.split(/[_-]+/).filter((part) => part.length > 0);
-  const pascal = parts
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join("");
-  return pascal.length > 0 ? pascal : "Screen";
-};
-
-const toScreenIdSuffix = (screenId: string): string => {
-  const compact = screenId.replace(/[^a-zA-Z0-9]+/g, "");
-  if (compact.length >= 6) {
-    return compact.slice(-6);
-  }
-  if (compact.length > 0) {
-    return compact;
-  }
-  return "v2";
-};
-
-const toUniqueScreenStem = ({
-  baseStem,
-  suffix
-}: {
-  baseStem: string;
-  suffix: string;
-}): string => {
-  return `${baseStem}_${suffix}`;
-};
-
-export const buildScreenArtifactIdentities = (screens: ScreenIR[]): Map<string, ScreenArtifactIdentity> => {
-  const byScreenId = new Map<string, ScreenArtifactIdentity>();
-  const usedComponentNames = new Set<string>();
-  const usedFilePaths = new Set<string>();
-  const usedRoutePaths = new Set<string>();
-
-  for (const screen of screens) {
-    const baseRoute = `/${sanitizeFileName(screen.name).toLowerCase() || "screen"}`;
-    const baseComponent = toComponentName(screen.name);
-    const baseStem = sanitizeFileName(screen.name) || "Screen";
-    const suffix = toScreenIdSuffix(screen.id);
-
-    let componentName = baseComponent;
-    let filePath = toDeterministicScreenPath(baseStem);
-    let routePath = baseRoute;
-    let attempt = 0;
-
-    while (
-      usedComponentNames.has(componentName.toLowerCase()) ||
-      usedFilePaths.has(filePath.toLowerCase()) ||
-      usedRoutePaths.has(routePath.toLowerCase())
-    ) {
-      attempt += 1;
-      const attemptSuffix = attempt === 1 ? suffix : `${suffix}${attempt + 1}`;
-      const nextStem = toUniqueScreenStem({
-        baseStem,
-        suffix: attemptSuffix
-      });
-      componentName = toComponentName(nextStem);
-      filePath = toDeterministicScreenPath(nextStem);
-      routePath = `${baseRoute}-${attemptSuffix.toLowerCase()}`;
-    }
-
-    usedComponentNames.add(componentName.toLowerCase());
-    usedFilePaths.add(filePath.toLowerCase());
-    usedRoutePaths.add(routePath.toLowerCase());
-    byScreenId.set(screen.id, {
-      componentName,
-      filePath,
-      routePath
-    });
-  }
-
-  return byScreenId;
 };
 
 export type ButtonVariant = "contained" | "outlined" | "text";
@@ -6340,10 +6262,6 @@ const deriveThemeComponentDefaultsFromIr = ({
     spacingBase: normalizeSpacingBase(ir.tokens.spacingBase),
     tokens: ir.tokens
   });
-};
-
-export const toDeterministicScreenPath = (screenName: string): string => {
-  return path.posix.join("src", "screens", ensureTsxName(screenName));
 };
 
 export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
