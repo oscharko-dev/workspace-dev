@@ -4319,3 +4319,187 @@ test("deriveTokensForTesting stays stable with sparse token signals", () => {
   assert.equal(tokens.typography.button.textTransform, "none");
   assert.equal(tokens.typography.overline.letterSpacingEm, 0.08);
 });
+
+test("deriveTokensForTesting uses Figma text styles to override cluster-derived typography", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Style-Based Typography",
+    styles: {
+      "style-h1": { name: "Heading/H1", styleType: "TEXT" },
+      "style-body1": { name: "Body/Regular", styleType: "TEXT" },
+      "style-caption": { name: "Caption", styleType: "TEXT" }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "frame-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 800 },
+              fills: [{ type: "SOLID", color: toFigmaColor("#FFFFFF") }],
+              children: [
+                {
+                  id: "text-h1",
+                  type: "TEXT",
+                  name: "Hero Title",
+                  characters: "Welcome to the App",
+                  textStyleId: "style-h1",
+                  style: { fontSize: 48, fontWeight: 900, fontFamily: "Playfair Display", lineHeightPx: 56 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111111") }],
+                  absoluteBoundingBox: { x: 24, y: 24, width: 500, height: 56 }
+                },
+                {
+                  id: "text-body",
+                  type: "TEXT",
+                  name: "Body Text",
+                  characters: "This is a paragraph of body text that describes the application features.",
+                  textStyleId: "style-body1",
+                  style: { fontSize: 18, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 28 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#333333") }],
+                  absoluteBoundingBox: { x: 24, y: 100, width: 600, height: 28 }
+                },
+                {
+                  id: "text-caption",
+                  type: "TEXT",
+                  name: "Caption Text",
+                  characters: "Last updated: March 2026",
+                  textStyleId: "style-caption",
+                  style: { fontSize: 11, fontWeight: 400, fontFamily: "Inter", lineHeightPx: 16 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#666666") }],
+                  absoluteBoundingBox: { x: 24, y: 200, width: 200, height: 16 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.h1.fontSizePx, 48);
+  assert.equal(tokens.typography.h1.fontWeight, 900);
+  assert.equal(tokens.typography.h1.fontFamily, "Playfair Display");
+  assert.equal(tokens.typography.body1.fontSizePx, 18);
+  assert.equal(tokens.typography.body1.fontFamily, "Inter");
+  assert.equal(tokens.typography.caption.fontSizePx, 11);
+  assert.equal(Object.keys(tokens.typography).length, 13);
+  assert.equal(tokens.typography.button.textTransform, "none");
+});
+
+test("deriveTokensForTesting falls back to cluster-based typography when no text styles exist", () => {
+  const tokens = deriveTokensForTesting({
+    name: "No Styles File",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "frame-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 800 },
+              fills: [{ type: "SOLID", color: toFigmaColor("#FFFFFF") }],
+              children: [
+                {
+                  id: "text-1",
+                  type: "TEXT",
+                  name: "Title",
+                  characters: "Page Title",
+                  style: { fontSize: 32, fontWeight: 700, fontFamily: "Roboto", lineHeightPx: 40 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111111") }],
+                  absoluteBoundingBox: { x: 24, y: 24, width: 400, height: 40 }
+                },
+                {
+                  id: "text-2",
+                  type: "TEXT",
+                  name: "Body",
+                  characters: "Body paragraph text here.",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Roboto", lineHeightPx: 24 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#333333") }],
+                  absoluteBoundingBox: { x: 24, y: 80, width: 500, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.h1.fontSizePx >= 18, true);
+  assert.equal(tokens.typography.body1.fontSizePx >= 10, true);
+  assert.equal(tokens.typography.h1.fontSizePx >= tokens.typography.body1.fontSizePx, true);
+  assert.equal(Object.keys(tokens.typography).length, 13);
+});
+
+test("deriveTokensForTesting uses styles map text reference for typography extraction", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Styles Map Text Reference",
+    styles: {
+      "style-btn": { name: "Button", styleType: "TEXT" }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "frame-1",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 800 },
+              fills: [{ type: "SOLID", color: toFigmaColor("#FFFFFF") }],
+              children: [
+                {
+                  id: "text-heading",
+                  type: "TEXT",
+                  name: "Title",
+                  characters: "Main Title",
+                  style: { fontSize: 30, fontWeight: 700, fontFamily: "Roboto", lineHeightPx: 38 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111111") }],
+                  absoluteBoundingBox: { x: 24, y: 24, width: 400, height: 38 }
+                },
+                {
+                  id: "text-btn",
+                  type: "TEXT",
+                  name: "Submit Button",
+                  characters: "Submit",
+                  styles: { text: "style-btn" },
+                  style: { fontSize: 15, fontWeight: 600, fontFamily: "Roboto", lineHeightPx: 22 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#FFFFFF") }],
+                  absoluteBoundingBox: { x: 24, y: 100, width: 100, height: 22 }
+                },
+                {
+                  id: "text-body",
+                  type: "TEXT",
+                  name: "Body",
+                  characters: "Some body text here.",
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Roboto", lineHeightPx: 24 },
+                  fills: [{ type: "SOLID", color: toFigmaColor("#333333") }],
+                  absoluteBoundingBox: { x: 24, y: 150, width: 400, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.typography.button.fontSizePx, 15);
+  assert.equal(tokens.typography.button.fontWeight, 600);
+  assert.equal(tokens.typography.button.textTransform, "none");
+  assert.equal(Object.keys(tokens.typography).length, 13);
+});
