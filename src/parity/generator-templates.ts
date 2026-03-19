@@ -4638,6 +4638,7 @@ export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeCo
     content: `import { createTheme } from "@mui/material/styles";
 
 export const appTheme = createTheme({
+  cssVariables: true,
   colorSchemes: {
     light: {
       palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}

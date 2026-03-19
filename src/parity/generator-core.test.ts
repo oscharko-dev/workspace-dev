@@ -763,6 +763,7 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.equal(createDeterministicThemeFile(ir).path, "src/theme/theme.ts");
   assert.equal(createDeterministicScreenFile(screen).path.startsWith("src/screens/"), true);
   assert.equal(createDeterministicAppFile(ir.screens).path, "src/App.tsx");
+  assert.ok(themeContent.includes("cssVariables: true"));
   assert.ok(themeContent.includes("colorSchemes: {"));
   assert.ok(themeContent.includes("light: {"));
   assert.ok(themeContent.includes("dark: {"));
@@ -9064,6 +9065,7 @@ test("generateArtifacts writes semantic palette fields to theme and tokens files
     };
   };
 
+  assert.ok(themeContent.includes("cssVariables: true"));
   assert.ok(themeContent.includes("colorSchemes: {"));
   assert.ok(themeContent.includes("light: {"));
   assert.ok(themeContent.includes("dark: {"));
