@@ -34,6 +34,11 @@ const FORBIDDEN_PATTERNS = [
   /require\s*\(\s*["']@figmapipe\/api/
 ];
 
+// ── IR boundary: generator modules must not import from ir.ts internals ─────
+// Generator modules should depend only on types-ir.ts / types.ts, never on ir.ts directly.
+const IR_BOUNDARY_PATTERN = /from\s+["']\.\/ir\.js["']/;
+const IR_BOUNDARY_SCOPE_PREFIX = "src/parity/generator-";
+
 // ── Package.json forbidden runtime dependencies ─────────────────────────────
 const FORBIDDEN_DEPENDENCIES = ["pg", "ioredis", "bullmq", "figmapipe-api", "@figmapipe/api", "sqlite3", "better-sqlite3", "fastify", "zod"];
 
@@ -60,17 +65,29 @@ const main = async () => {
   for (const filePath of files) {
     const content = await readFile(filePath, "utf-8");
     const lines = content.split("\n");
+    const relativePath = path.relative(process.cwd(), filePath);
+    const isGeneratorModule =
+      relativePath.startsWith(IR_BOUNDARY_SCOPE_PREFIX) &&
+      !relativePath.endsWith(".test.ts");
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       for (const pattern of FORBIDDEN_PATTERNS) {
         if (pattern.test(line)) {
           violations.push({
-            file: path.relative(process.cwd(), filePath),
+            file: relativePath,
             line: lineIndex + 1,
             content: line.trim(),
             type: "import"
           });
         }
+      }
+      if (isGeneratorModule && IR_BOUNDARY_PATTERN.test(line)) {
+        violations.push({
+          file: relativePath,
+          line: lineIndex + 1,
+          content: `IR boundary violation: generator module imports from ir.ts directly. Use types.js instead. [${line.trim()}]`,
+          type: "import"
+        });
       }
     }
   }
