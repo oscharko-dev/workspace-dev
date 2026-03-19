@@ -1,25 +1,44 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type * as ts from "typescript";
 import type {
   ComponentMappingRule,
+  DesignTokens,
   DesignIR,
+  DesignTokenTypographyVariantName,
+  GenerationMetrics,
   GeneratedFile,
   LlmCodegenMode,
+  ResponsiveBreakpoint,
+  ScreenSimplificationMetric,
+  ScreenResponsiveLayoutOverride,
+  ScreenResponsiveLayoutOverridesByBreakpoint,
+  SimplificationMetrics,
   ScreenElementIR,
-  ScreenIR
+  ScreenIR,
+  VariantStateStyle
 } from "./types.js";
-import { isLlmClientError, type LlmClient } from "./llm.js";
+import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon-fallback-catalog.js";
 import { ensureTsxName, sanitizeFileName } from "./path-utils.js";
+import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { WorkflowError } from "./workflow-error.js";
-
-type TypeScriptRuntime = typeof ts;
+import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
+import {
+  applyDesignSystemMappingsToGeneratedTsx,
+  getDefaultDesignSystemConfigPath,
+  loadDesignSystemConfigFile
+} from "../design-system.js";
+import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 
 interface GenerateArtifactsInput {
   projectDir: string;
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
-  llmClient?: LlmClient;
+  iconMapFilePath?: string;
+  designSystemFilePath?: string;
+  imageAssetMap?: Record<string, string>;
+  generationLocale?: string;
+  routerMode?: WorkspaceRouterMode;
+  formHandlingMode?: WorkspaceFormHandlingMode;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
   onLog: (message: string) => void;
@@ -32,6 +51,7 @@ interface RejectedScreenEnhancement {
 
 interface GenerateArtifactsResult {
   generatedPaths: string[];
+  generationMetrics: GenerationMetrics;
   themeApplied: boolean;
   screenApplied: number;
   screenTotal: number;
@@ -56,17 +76,87 @@ interface GenerateArtifactsResult {
   }>;
 }
 
+interface ThemeComponentDefaults {
+  MuiCard?: {
+    borderRadiusPx?: number;
+    elevation?: number;
+  };
+  MuiTextField?: {
+    outlinedInputBorderRadiusPx?: number;
+  };
+  MuiChip?: {
+    borderRadiusPx?: number;
+    size?: "small" | "medium";
+  };
+  MuiPaper?: {
+    elevation?: number;
+  };
+  MuiAppBar?: {
+    backgroundColor?: string;
+  };
+  MuiDivider?: {
+    borderColor?: string;
+  };
+  MuiAvatar?: {
+    widthPx?: number;
+    heightPx?: number;
+    borderRadiusPx?: number;
+  };
+  c1StyleOverrides?: ThemeSxComponentStyleOverrides;
+}
+
+type ThemeSxStyleValue = string | number;
+
+type ThemeSxComponentStyleOverrides = Record<string, Record<string, ThemeSxStyleValue>>;
+
+interface ThemeSxSample {
+  componentName: string;
+  styleValuesByKey: Map<string, ThemeSxStyleValue>;
+}
+
+type ThemeSxSampleCollector = (sample: ThemeSxSample) => void;
+
 interface VirtualParent {
   x?: number | undefined;
   y?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
   name?: string | undefined;
+  fillColor?: string | undefined;
+  fillGradient?: string | undefined;
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE" | undefined;
+}
+
+interface AccessibilityWarning {
+  code: "W_A11Y_LOW_CONTRAST";
+  screenId: string;
+  screenName: string;
+  nodeId: string;
+  nodeName: string;
+  message: string;
+  foreground: string;
+  background: string;
+  contrastRatio: number;
+}
+
+interface ScreenArtifactIdentity {
+  componentName: string;
+  filePath: string;
+  routePath: string;
 }
 
 const literal = (value: string): string => JSON.stringify(value);
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
+};
+
+const normalizeOpacityForSx = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = clamp(value, 0, 1);
+  return normalized < 1 ? normalized : undefined;
 };
 
 const normalizeFontFamily = (rawFamily: string | undefined): string | undefined => {
@@ -80,43 +170,8 @@ const normalizeFontFamily = (rawFamily: string | undefined): string | undefined 
   return `${normalized}, Roboto, Arial, sans-serif`;
 };
 
-const EGRESS_POLICY_DENY_MARKER = "egress policy denied";
-
-const isEgressPolicyDenyError = (error: unknown): boolean => {
-  const queue: unknown[] = [error];
-  const visited = new Set<unknown>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-
-    if (typeof current === "string") {
-      if (current.toLowerCase().includes(EGRESS_POLICY_DENY_MARKER)) {
-        return true;
-      }
-      continue;
-    }
-
-    if (typeof current !== "object") {
-      continue;
-    }
-
-    const typed = current as { code?: unknown; message?: unknown; cause?: unknown };
-    if (typed.code === "E_EGRESS_POLICY_DENY") {
-      return true;
-    }
-    if (typeof typed.message === "string" && typed.message.toLowerCase().includes(EGRESS_POLICY_DENY_MARKER)) {
-      return true;
-    }
-    if (typed.cause !== undefined) {
-      queue.push(typed.cause);
-    }
-  }
-
-  return false;
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
 };
 
 const toComponentName = (rawName: string): string => {
@@ -128,6 +183,73 @@ const toComponentName = (rawName: string): string => {
   return pascal.length > 0 ? pascal : "Screen";
 };
 
+const toScreenIdSuffix = (screenId: string): string => {
+  const compact = screenId.replace(/[^a-zA-Z0-9]+/g, "");
+  if (compact.length >= 6) {
+    return compact.slice(-6);
+  }
+  if (compact.length > 0) {
+    return compact;
+  }
+  return "v2";
+};
+
+const toUniqueScreenStem = ({
+  baseStem,
+  suffix
+}: {
+  baseStem: string;
+  suffix: string;
+}): string => {
+  return `${baseStem}_${suffix}`;
+};
+
+const buildScreenArtifactIdentities = (screens: ScreenIR[]): Map<string, ScreenArtifactIdentity> => {
+  const byScreenId = new Map<string, ScreenArtifactIdentity>();
+  const usedComponentNames = new Set<string>();
+  const usedFilePaths = new Set<string>();
+  const usedRoutePaths = new Set<string>();
+
+  for (const screen of screens) {
+    const baseRoute = `/${sanitizeFileName(screen.name).toLowerCase() || "screen"}`;
+    const baseComponent = toComponentName(screen.name);
+    const baseStem = sanitizeFileName(screen.name) || "Screen";
+    const suffix = toScreenIdSuffix(screen.id);
+
+    let componentName = baseComponent;
+    let filePath = toDeterministicScreenPath(baseStem);
+    let routePath = baseRoute;
+    let attempt = 0;
+
+    while (
+      usedComponentNames.has(componentName.toLowerCase()) ||
+      usedFilePaths.has(filePath.toLowerCase()) ||
+      usedRoutePaths.has(routePath.toLowerCase())
+    ) {
+      attempt += 1;
+      const attemptSuffix = attempt === 1 ? suffix : `${suffix}${attempt + 1}`;
+      const nextStem = toUniqueScreenStem({
+        baseStem,
+        suffix: attemptSuffix
+      });
+      componentName = toComponentName(nextStem);
+      filePath = toDeterministicScreenPath(nextStem);
+      routePath = `${baseRoute}-${attemptSuffix.toLowerCase()}`;
+    }
+
+    usedComponentNames.add(componentName.toLowerCase());
+    usedFilePaths.add(filePath.toLowerCase());
+    usedRoutePaths.add(routePath.toLowerCase());
+    byScreenId.set(screen.id, {
+      componentName,
+      filePath,
+      routePath
+    });
+  }
+
+  return byScreenId;
+};
+
 const toPxLiteral = (value: number | undefined): string | undefined => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return undefined;
@@ -135,64 +257,1061 @@ const toPxLiteral = (value: number | undefined): string | undefined => {
   return literal(`${Math.round(value)}px`);
 };
 
+const RESPONSIVE_WIDTH_RATIO_MIN = 0.001;
+const RESPONSIVE_WIDTH_RATIO_MAX = 1.2;
+const RESPONSIVE_FULL_WIDTH_EPSILON = 0.02;
+
+const normalizeResponsiveWidthRatio = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const normalized = clamp(value, RESPONSIVE_WIDTH_RATIO_MIN, RESPONSIVE_WIDTH_RATIO_MAX);
+  return Math.round(normalized * 1000) / 1000;
+};
+
+const toPercentLiteralFromRatio = (ratio: number | undefined): string | undefined => {
+  const normalized = normalizeResponsiveWidthRatio(ratio);
+  if (normalized === undefined) {
+    return undefined;
+  }
+  if (Math.abs(1 - normalized) <= RESPONSIVE_FULL_WIDTH_EPSILON) {
+    return literal("100%");
+  }
+  const percent = Math.round(normalized * 100000) / 1000;
+  const percentString = Number.isInteger(percent) ? String(percent) : percent.toString();
+  return literal(`${percentString}%`);
+};
+
+const DEFAULT_SPACING_BASE = 8;
+const REM_BASE = 16;
+const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
+
+const normalizeSpacingBase = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_SPACING_BASE;
+  }
+  return value;
+};
+
+const toSpacingUnitValue = ({
+  value,
+  spacingBase
+}: {
+  value: number | undefined;
+  spacingBase: number;
+}): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = Math.round((value / normalizeSpacingBase(spacingBase)) * 1000) / 1000;
+  if (normalized === 0 && value > 0) {
+    return 0.125;
+  }
+  return normalized;
+};
+
+const toSpacingEdgeUnit = ({
+  value,
+  spacingBase
+}: {
+  value: number | undefined;
+  spacingBase: number;
+}): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return toSpacingUnitValue({ value, spacingBase });
+};
+
+const toBoxSpacingSxEntries = ({
+  values,
+  spacingBase,
+  allKey,
+  xKey,
+  yKey,
+  topKey,
+  rightKey,
+  bottomKey,
+  leftKey
+}: {
+  values:
+    | {
+        top: number;
+        right: number;
+        bottom: number;
+        left: number;
+      }
+    | undefined;
+  spacingBase: number;
+  allKey: string;
+  xKey: string;
+  yKey: string;
+  topKey: string;
+  rightKey: string;
+  bottomKey: string;
+  leftKey: string;
+}): Array<[string, string | number | undefined]> => {
+  if (!values) {
+    return [];
+  }
+
+  const top = toSpacingEdgeUnit({ value: values.top, spacingBase });
+  const right = toSpacingEdgeUnit({ value: values.right, spacingBase });
+  const bottom = toSpacingEdgeUnit({ value: values.bottom, spacingBase });
+  const left = toSpacingEdgeUnit({ value: values.left, spacingBase });
+
+  if (top !== undefined && top === right && right === bottom && bottom === left) {
+    return [[allKey, top]];
+  }
+
+  if (top === bottom && right === left) {
+    return [
+      [yKey, top],
+      [xKey, right]
+    ];
+  }
+
+  return [
+    [topKey, top],
+    [rightKey, right],
+    [bottomKey, bottom],
+    [leftKey, left]
+  ];
+};
+
+const toThemeBorderRadiusValue = ({
+  radiusPx,
+  tokens
+}: {
+  radiusPx: number | undefined;
+  tokens: DesignTokens | undefined;
+}): string | number | undefined => {
+  if (typeof radiusPx !== "number" || !Number.isFinite(radiusPx) || radiusPx <= 0) {
+    return undefined;
+  }
+
+  const tokenBorderRadius = tokens?.borderRadius;
+  if (typeof tokenBorderRadius !== "number" || !Number.isFinite(tokenBorderRadius) || tokenBorderRadius <= 0) {
+    return toPxLiteral(radiusPx);
+  }
+
+  const normalized = Math.round((radiusPx / tokenBorderRadius) * 1000) / 1000;
+  if (normalized === 0) {
+    return 0.125;
+  }
+  return normalized;
+};
+
+const toRemLiteral = (value: number | undefined): string | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const rem = Math.round((value / REM_BASE) * 10000) / 10000;
+  const remString = Number.isInteger(rem) ? String(rem) : rem.toString();
+  return literal(`${remString}rem`);
+};
+
+const toEmLiteral = (value: number | undefined): string | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const em = Math.round(value * 10000) / 10000;
+  const emString = Number.isInteger(em) ? String(em) : em.toString();
+  return literal(`${emString}em`);
+};
+
+const toLetterSpacingEm = ({
+  letterSpacingPx,
+  fontSizePx
+}: {
+  letterSpacingPx: number | undefined;
+  fontSizePx: number | undefined;
+}): number | undefined => {
+  if (
+    typeof letterSpacingPx !== "number" ||
+    !Number.isFinite(letterSpacingPx) ||
+    typeof fontSizePx !== "number" ||
+    !Number.isFinite(fontSizePx) ||
+    fontSizePx <= 0
+  ) {
+    return undefined;
+  }
+  return Math.round((letterSpacingPx / fontSizePx) * 10000) / 10000;
+};
+
+const normalizeHexColor = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(trimmed);
+  if (!match) {
+    return undefined;
+  }
+  const payload = match[1]?.toLowerCase();
+  if (!payload) {
+    return undefined;
+  }
+  if (payload.length === 3) {
+    return `#${payload
+      .split("")
+      .map((chunk) => `${chunk}${chunk}`)
+      .join("")}`;
+  }
+  return `#${payload}`;
+};
+
+const toRoundedIntegerInRange = ({
+  value,
+  min,
+  max
+}: {
+  value: number | undefined;
+  min: number;
+  max: number;
+}): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const rounded = Math.round(value);
+  if (rounded < min || rounded > max) {
+    return undefined;
+  }
+  return rounded;
+};
+
+const resolveDeterministicIntegerSample = ({
+  values,
+  min,
+  max
+}: {
+  values: Array<number | undefined>;
+  min: number;
+  max: number;
+}): number | undefined => {
+  const normalized = values
+    .map((value) =>
+      toRoundedIntegerInRange({
+        value,
+        min,
+        max
+      })
+    )
+    .filter((value): value is number => typeof value === "number");
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const sorted = [...normalized].sort((left, right) => left - right);
+  const centerIndex = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0
+      ? Math.round(((sorted[centerIndex - 1] ?? sorted[0] ?? 0) + (sorted[centerIndex] ?? sorted[0] ?? 0)) / 2)
+      : (sorted[centerIndex] ?? sorted[0] ?? 0);
+  const counts = new Map<number, number>();
+  for (const value of sorted) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  const maxCount = Math.max(...counts.values());
+  const modeCandidates = Array.from(counts.entries())
+    .filter(([, count]) => count === maxCount)
+    .map(([value]) => value)
+    .sort((left, right) => Math.abs(left - median) - Math.abs(right - median) || left - right);
+  return modeCandidates[0];
+};
+
+const resolveDeterministicColorSample = (values: Array<string | undefined>): string | undefined => {
+  const normalized = values.map((value) => normalizeHexColor(value)).filter((value): value is string => typeof value === "string");
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const counts = new Map<string, number>();
+  for (const value of normalized) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  const maxCount = Math.max(...counts.values());
+  const candidates = Array.from(counts.entries())
+    .filter(([, count]) => count === maxCount)
+    .map(([value]) => value)
+    .sort((left, right) => left.localeCompare(right));
+  return candidates[0];
+};
+
+const withOmittedSxKeys = ({
+  entries,
+  keys
+}: {
+  entries: Array<[string, string | number | undefined]>;
+  keys: Set<string>;
+}): Array<[string, string | number | undefined]> => {
+  if (keys.size === 0) {
+    return entries;
+  }
+  return entries.map(([key, value]) => {
+    if (keys.has(key)) {
+      return [key, undefined] as [string, string | number | undefined];
+    }
+    return [key, value] as [string, string | number | undefined];
+  });
+};
+
+const toThemePaletteLiteral = ({
+  color,
+  tokens
+}: {
+  color: string | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
+  if (!tokens) {
+    return undefined;
+  }
+  const normalizedColor = normalizeHexColor(color);
+  if (!normalizedColor) {
+    return undefined;
+  }
+
+  const exactMatches: Array<[string, string | undefined]> = [
+    ["primary.main", tokens.palette.primary],
+    ["secondary.main", tokens.palette.secondary],
+    ["success.main", tokens.palette.success],
+    ["warning.main", tokens.palette.warning],
+    ["error.main", tokens.palette.error],
+    ["info.main", tokens.palette.info],
+    ["background.default", tokens.palette.background],
+    ["text.primary", tokens.palette.text],
+    ["divider", tokens.palette.divider]
+  ];
+
+  for (const [tokenPath, tokenColor] of exactMatches) {
+    if (normalizeHexColor(tokenColor) === normalizedColor) {
+      return tokenPath;
+    }
+  }
+  return undefined;
+};
+
+const toThemeColorLiteral = ({
+  color,
+  tokens
+}: {
+  color: string | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
+  if (!color) {
+    return undefined;
+  }
+  const trimmed = color.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const mapped = toThemePaletteLiteral({ color: trimmed, tokens });
+  return literal(mapped ?? trimmed);
+};
+
+type ButtonVariant = "contained" | "outlined" | "text";
+type ButtonSize = "small" | "medium" | "large";
+type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+type ResolvedFormHandlingMode = WorkspaceFormHandlingMode;
+type HeadingComponent = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+type LandmarkRole = "navigation";
+
+interface RgbaColor {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+const BUTTON_FULL_WIDTH_EPSILON = 0.02;
+const BUTTON_VISIBLE_ALPHA_THRESHOLD = 0.08;
+const BUTTON_DISABLED_OPACITY_THRESHOLD = 0.55;
+const BUTTON_NEUTRAL_CHANNEL_DELTA_MAX = 24;
+const BUTTON_NEAR_WHITE_MIN_CHANNEL = 245;
+const FIELD_ERROR_RED_MIN_CHANNEL = 150;
+const FIELD_ERROR_RED_DELTA_MIN = 32;
+const WCAG_AA_NORMAL_TEXT_CONTRAST_MIN = 4.5;
+const DARK_MODE_BACKGROUND_DEFAULT = "#121212";
+const DARK_MODE_BACKGROUND_PAPER = "#1e1e1e";
+const DARK_MODE_TEXT_PRIMARY = "#f5f7fb";
+const LIGHTEN_TO_WHITE_STEP = 0.08;
+const LIGHTEN_TO_WHITE_MAX_STEPS = 11;
+const DEFAULT_FORM_HANDLING_MODE: ResolvedFormHandlingMode = "react_hook_form";
+
+const resolveFormHandlingMode = ({
+  requestedMode
+}: {
+  requestedMode: WorkspaceFormHandlingMode | undefined;
+}): ResolvedFormHandlingMode => {
+  return requestedMode === "legacy_use_state" ? "legacy_use_state" : DEFAULT_FORM_HANDLING_MODE;
+};
+
+const hasVisibleGradient = (value: string | undefined): boolean => {
+  return typeof value === "string" && value.trim().length > 0;
+};
+
+const toRgbaColor = (value: string | undefined): RgbaColor | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const payload = normalized.slice(1);
+  if (payload.length !== 6 && payload.length !== 8) {
+    return undefined;
+  }
+  const r = Number.parseInt(payload.slice(0, 2), 16);
+  const g = Number.parseInt(payload.slice(2, 4), 16);
+  const b = Number.parseInt(payload.slice(4, 6), 16);
+  const alphaHex = payload.length === 8 ? payload.slice(6, 8) : "ff";
+  const alphaRaw = Number.parseInt(alphaHex, 16);
+  if ([r, g, b, alphaRaw].some((entry) => !Number.isFinite(entry))) {
+    return undefined;
+  }
+  return {
+    r,
+    g,
+    b,
+    a: Math.round((alphaRaw / 255) * 1000) / 1000
+  };
+};
+
+const isVisibleColor = (color: RgbaColor | undefined, minAlpha = BUTTON_VISIBLE_ALPHA_THRESHOLD): boolean => {
+  if (!color) {
+    return false;
+  }
+  return color.a >= minAlpha;
+};
+
+const isNearWhiteColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const channelDelta = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
+  return channelDelta <= BUTTON_NEUTRAL_CHANNEL_DELTA_MAX && color.r >= BUTTON_NEAR_WHITE_MIN_CHANNEL && color.g >= BUTTON_NEAR_WHITE_MIN_CHANNEL && color.b >= BUTTON_NEAR_WHITE_MIN_CHANNEL;
+};
+
+const isNeutralGrayColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color, 0.2)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const channelDelta = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
+  return channelDelta <= BUTTON_NEUTRAL_CHANNEL_DELTA_MAX;
+};
+
+const isLikelyErrorRedColor = (color: RgbaColor | undefined): boolean => {
+  if (!isVisibleColor(color, 0.2)) {
+    return false;
+  }
+  if (!color) {
+    return false;
+  }
+  const redOverGreen = color.r - color.g;
+  const redOverBlue = color.r - color.b;
+  return color.r >= FIELD_ERROR_RED_MIN_CHANNEL && redOverGreen >= FIELD_ERROR_RED_DELTA_MIN && redOverBlue >= FIELD_ERROR_RED_DELTA_MIN;
+};
+
+const toRelativeLuminance = (color: RgbaColor): number => {
+  const toLinear = (channel: number): number => {
+    const normalized = clamp(channel / 255, 0, 1);
+    if (normalized <= 0.03928) {
+      return normalized / 12.92;
+    }
+    return ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  const r = toLinear(color.r);
+  const g = toLinear(color.g);
+  const b = toLinear(color.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+const toContrastRatio = (foreground: RgbaColor, background: RgbaColor): number => {
+  const foregroundLuminance = toRelativeLuminance(foreground);
+  const backgroundLuminance = toRelativeLuminance(background);
+  const brighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (brighter + 0.05) / (darker + 0.05);
+};
+
+const toOpaqueHex = (value: string | undefined): string | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  return `#${normalized.slice(1, 7)}`;
+};
+
+const toHexChannel = (value: number): string => {
+  return clamp(Math.round(value), 0, 255)
+    .toString(16)
+    .padStart(2, "0");
+};
+
+const toRgbHex = (color: { r: number; g: number; b: number }): string => {
+  return `#${toHexChannel(color.r)}${toHexChannel(color.g)}${toHexChannel(color.b)}`;
+};
+
+const mixHexColors = ({
+  left,
+  right,
+  amount
+}: {
+  left: string;
+  right: string;
+  amount: number;
+}): string => {
+  const leftColor = toRgbaColor(toOpaqueHex(left));
+  const rightColor = toRgbaColor(toOpaqueHex(right));
+  if (!leftColor || !rightColor) {
+    return left;
+  }
+  const normalizedAmount = clamp(amount, 0, 1);
+  const mixChannel = (from: number, to: number): number => from + (to - from) * normalizedAmount;
+  return toRgbHex({
+    r: mixChannel(leftColor.r, rightColor.r),
+    g: mixChannel(leftColor.g, rightColor.g),
+    b: mixChannel(leftColor.b, rightColor.b)
+  });
+};
+
+const toHexWithAlpha = (hex: string, alpha: number): string => {
+  const normalized = toOpaqueHex(hex);
+  if (!normalized) {
+    return hex;
+  }
+  const alphaHex = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+    .toString(16)
+    .padStart(2, "0");
+  return `${normalized}${alphaHex}`;
+};
+
+const ensureContrastAgainstBackground = ({
+  color,
+  background,
+  minContrast = WCAG_AA_NORMAL_TEXT_CONTRAST_MIN
+}: {
+  color: string;
+  background: string;
+  minContrast?: number;
+}): string => {
+  const baseColor = toOpaqueHex(color);
+  const baseBackground = toOpaqueHex(background);
+  const backgroundRgba = toRgbaColor(baseBackground);
+  if (!baseColor || !baseBackground || !backgroundRgba) {
+    return color;
+  }
+
+  for (let step = 0; step <= LIGHTEN_TO_WHITE_MAX_STEPS; step += 1) {
+    const candidate =
+      step === 0 ? baseColor : mixHexColors({ left: baseColor, right: "#ffffff", amount: step * LIGHTEN_TO_WHITE_STEP });
+    const candidateRgba = toRgbaColor(candidate);
+    if (candidateRgba && toContrastRatio(candidateRgba, backgroundRgba) >= minContrast) {
+      return candidate;
+    }
+  }
+
+  return mixHexColors({ left: baseColor, right: "#ffffff", amount: LIGHTEN_TO_WHITE_MAX_STEPS * LIGHTEN_TO_WHITE_STEP });
+};
+
+const buildActionPalette = ({
+  primaryColor,
+  textColor
+}: {
+  primaryColor: string;
+  textColor: string;
+}): DesignTokens["palette"]["action"] => {
+  return {
+    active: toHexWithAlpha(textColor, 0.54),
+    hover: toHexWithAlpha(primaryColor, 0.04),
+    selected: toHexWithAlpha(primaryColor, 0.08),
+    disabled: toHexWithAlpha(textColor, 0.26),
+    disabledBackground: toHexWithAlpha(textColor, 0.12),
+    focus: toHexWithAlpha(primaryColor, 0.12)
+  };
+};
+
+interface ResolvedThemePalette {
+  primary: string;
+  secondary: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  background: {
+    default: string;
+    paper: string;
+  };
+  text: {
+    primary: string;
+  };
+  divider: string;
+  action: DesignTokens["palette"]["action"];
+}
+
+const toLightThemePalette = (tokens: DesignTokens): ResolvedThemePalette => {
+  return {
+    primary: tokens.palette.primary,
+    secondary: tokens.palette.secondary,
+    success: tokens.palette.success,
+    warning: tokens.palette.warning,
+    error: tokens.palette.error,
+    info: tokens.palette.info,
+    background: {
+      default: tokens.palette.background,
+      paper: tokens.palette.background
+    },
+    text: {
+      primary: tokens.palette.text
+    },
+    divider: tokens.palette.divider,
+    action: tokens.palette.action
+  };
+};
+
+const toDarkThemePalette = (tokens: DesignTokens): ResolvedThemePalette => {
+  const adjustedPrimary = ensureContrastAgainstBackground({
+    color: tokens.palette.primary,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedSecondary = ensureContrastAgainstBackground({
+    color: tokens.palette.secondary,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedSuccess = ensureContrastAgainstBackground({
+    color: tokens.palette.success,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedWarning = ensureContrastAgainstBackground({
+    color: tokens.palette.warning,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedError = ensureContrastAgainstBackground({
+    color: tokens.palette.error,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+  const adjustedInfo = ensureContrastAgainstBackground({
+    color: tokens.palette.info,
+    background: DARK_MODE_BACKGROUND_DEFAULT
+  });
+
+  return {
+    primary: adjustedPrimary,
+    secondary: adjustedSecondary,
+    success: adjustedSuccess,
+    warning: adjustedWarning,
+    error: adjustedError,
+    info: adjustedInfo,
+    background: {
+      default: DARK_MODE_BACKGROUND_DEFAULT,
+      paper: DARK_MODE_BACKGROUND_PAPER
+    },
+    text: {
+      primary: DARK_MODE_TEXT_PRIMARY
+    },
+    divider: toHexWithAlpha(DARK_MODE_TEXT_PRIMARY, 0.12),
+    action: buildActionPalette({
+      primaryColor: adjustedPrimary,
+      textColor: DARK_MODE_TEXT_PRIMARY
+    })
+  };
+};
+
+const toThemePaletteBlock = ({
+  mode,
+  palette
+}: {
+  mode: "light" | "dark";
+  palette: ResolvedThemePalette;
+}): string => {
+  return `{
+      mode: "${mode}",
+      primary: { main: "${palette.primary}" },
+      secondary: { main: "${palette.secondary}" },
+      success: { main: "${palette.success}" },
+      warning: { main: "${palette.warning}" },
+      error: { main: "${palette.error}" },
+      info: { main: "${palette.info}" },
+      background: { default: "${palette.background.default}", paper: "${palette.background.paper}" },
+      text: { primary: "${palette.text.primary}" },
+      divider: "${palette.divider}",
+      action: {
+        active: "${palette.action.active}",
+        hover: "${palette.action.hover}",
+        selected: "${palette.action.selected}",
+        disabled: "${palette.action.disabled}",
+        disabledBackground: "${palette.action.disabledBackground}",
+        focus: "${palette.action.focus}"
+      }
+    }`;
+};
+
+const inferButtonVariant = ({
+  element,
+  mappedVariant
+}: {
+  element: ScreenElementIR;
+  mappedVariant: ButtonVariant | undefined;
+}): ButtonVariant => {
+  if (mappedVariant) {
+    return mappedVariant;
+  }
+  const gradientFill = hasVisibleGradient(element.fillGradient);
+  const fillColor = toRgbaColor(element.fillColor);
+  const hasVisibleFill = gradientFill || isVisibleColor(fillColor);
+  const hasContainedFill = gradientFill || (isVisibleColor(fillColor) && !isNearWhiteColor(fillColor));
+  const strokeWidth = typeof element.strokeWidth === "number" && Number.isFinite(element.strokeWidth) ? element.strokeWidth : 1;
+  const strokeColor = toRgbaColor(element.strokeColor);
+  const hasVisibleBorder = strokeWidth > 0 && isVisibleColor(strokeColor);
+
+  if (hasContainedFill) {
+    return "contained";
+  }
+  if (hasVisibleBorder && !hasVisibleFill) {
+    return "outlined";
+  }
+  if (!hasVisibleBorder && !hasVisibleFill) {
+    return "text";
+  }
+  if (hasVisibleBorder) {
+    return "outlined";
+  }
+  return "contained";
+};
+
+const inferButtonSize = ({
+  element,
+  mappedSize
+}: {
+  element: ScreenElementIR;
+  mappedSize: ButtonSize | undefined;
+}): ButtonSize | undefined => {
+  if (mappedSize) {
+    return mappedSize;
+  }
+  const height = typeof element.height === "number" && Number.isFinite(element.height) ? element.height : undefined;
+  if (height === undefined) {
+    return undefined;
+  }
+  if (height <= 32) {
+    return "small";
+  }
+  if (height <= 40) {
+    return "medium";
+  }
+  return "large";
+};
+
+const inferButtonFullWidth = ({
+  element,
+  parent
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+}): boolean => {
+  const elementWidth = typeof element.width === "number" && Number.isFinite(element.width) && element.width > 0 ? element.width : undefined;
+  const parentWidth = typeof parent.width === "number" && Number.isFinite(parent.width) && parent.width > 0 ? parent.width : undefined;
+  if (elementWidth === undefined || parentWidth === undefined) {
+    return false;
+  }
+  return Math.abs(parentWidth - elementWidth) / parentWidth <= BUTTON_FULL_WIDTH_EPSILON;
+};
+
+const inferButtonDisabled = ({
+  element,
+  mappedDisabled,
+  buttonTextColor
+}: {
+  element: ScreenElementIR;
+  mappedDisabled: boolean | undefined;
+  buttonTextColor: string | undefined;
+}): boolean => {
+  if (mappedDisabled) {
+    return true;
+  }
+  if (typeof element.opacity === "number" && Number.isFinite(element.opacity) && element.opacity <= BUTTON_DISABLED_OPACITY_THRESHOLD) {
+    return true;
+  }
+
+  const fillColor = toRgbaColor(element.fillColor);
+  const textColor = toRgbaColor(buttonTextColor);
+  const hasNeutralFillAndText = isNeutralGrayColor(fillColor) && isNeutralGrayColor(textColor);
+  return hasNeutralFillAndText;
+};
+
+const filterButtonVariantEntries = ({
+  entries,
+  variant,
+  element,
+  fullWidth,
+  tokens
+}: {
+  entries: Array<[string, string | number | undefined]>;
+  variant: ButtonVariant;
+  element: ScreenElementIR;
+  fullWidth: boolean;
+  tokens: DesignTokens | undefined;
+}): Array<[string, string | number | undefined]> => {
+  const keysToDrop = new Set<string>();
+  if (fullWidth) {
+    keysToDrop.add("width");
+    keysToDrop.add("maxWidth");
+  }
+
+  if (variant === "contained") {
+    keysToDrop.add("border");
+    keysToDrop.add("borderColor");
+    if (hasVisibleGradient(element.fillGradient)) {
+      keysToDrop.add("bgcolor");
+    } else {
+      keysToDrop.add("background");
+      const normalizedFill = normalizeHexColor(element.fillColor);
+      const mappedFill = toThemePaletteLiteral({ color: element.fillColor, tokens });
+      if (!normalizedFill || mappedFill === "primary.main") {
+        keysToDrop.add("bgcolor");
+      }
+    }
+  } else {
+    keysToDrop.add("background");
+    keysToDrop.add("bgcolor");
+    keysToDrop.add("border");
+    keysToDrop.add("borderColor");
+  }
+
+  return entries.filter(([key]) => !keysToDrop.has(key));
+};
+
+const mapPrimaryAxisAlignToJustifyContent = (
+  value: ScreenElementIR["primaryAxisAlignItems"]
+): string | undefined => {
+  switch (value) {
+    case "MIN":
+      return "flex-start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "flex-end";
+    case "SPACE_BETWEEN":
+      return "space-between";
+    default:
+      return undefined;
+  }
+};
+
+const mapCounterAxisAlignToAlignItems = (
+  value: ScreenElementIR["counterAxisAlignItems"],
+  layoutMode: ScreenElementIR["layoutMode"]
+): string | undefined => {
+  switch (value) {
+    case "MIN":
+      return "flex-start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "flex-end";
+    case "BASELINE":
+      return "baseline";
+    default:
+      return layoutMode === "HORIZONTAL" ? "center" : undefined;
+  }
+};
+
 const hasVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
     element.fillColor ||
+      element.fillGradient ||
+      normalizeOpacityForSx(element.opacity) !== undefined ||
+      element.insetShadow ||
+      (typeof element.elevation === "number" && element.elevation > 0) ||
       element.strokeColor ||
       (element.cornerRadius ?? 0) > 0 ||
       (element.padding &&
         (element.padding.top > 0 ||
           element.padding.right > 0 ||
           element.padding.bottom > 0 ||
-          element.padding.left > 0))
+          element.padding.left > 0)) ||
+      (element.margin &&
+        (element.margin.top > 0 || element.margin.right > 0 || element.margin.bottom > 0 || element.margin.left > 0))
   );
 };
 
-const shouldPromoteChildren = (element: ScreenElementIR): boolean => {
-  const loweredName = element.name.toLowerCase();
-  if (
-    loweredName.includes("muisvgiconroot") ||
-    loweredName.includes("buttonendicon") ||
-    loweredName.includes("expandiconwrapper")
-  ) {
-    return false;
+const hasPromotionBlockingVisualStyle = (element: ScreenElementIR): boolean => {
+  return Boolean(
+    element.fillColor ||
+      element.fillGradient ||
+      normalizeOpacityForSx(element.opacity) !== undefined ||
+      element.insetShadow ||
+      (typeof element.elevation === "number" && element.elevation > 0) ||
+      element.strokeColor ||
+      (element.cornerRadius ?? 0) > 0
+  );
+};
+
+const GROUP_MULTI_CHILD_PROMOTION_MIN_DEPTH = 3;
+
+const createEmptySimplificationStats = (): SimplificationMetrics => {
+  return {
+    removedEmptyNodes: 0,
+    promotedSingleChild: 0,
+    promotedGroupMultiChild: 0,
+    spacingMerges: 0,
+    guardedSkips: 0
+  };
+};
+
+const accumulateSimplificationStats = ({
+  target,
+  source
+}: {
+  target: SimplificationMetrics;
+  source: SimplificationMetrics;
+}): void => {
+  target.removedEmptyNodes += source.removedEmptyNodes;
+  target.promotedSingleChild += source.promotedSingleChild;
+  target.promotedGroupMultiChild += source.promotedGroupMultiChild;
+  target.spacingMerges += source.spacingMerges;
+  target.guardedSkips += source.guardedSkips;
+};
+
+const normalizeSpacingValues = (
+  spacing: ScreenElementIR["margin"] | ScreenElementIR["padding"] | undefined
+): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} => {
+  return {
+    top: spacing?.top ?? 0,
+    right: spacing?.right ?? 0,
+    bottom: spacing?.bottom ?? 0,
+    left: spacing?.left ?? 0
+  };
+};
+
+const mergeSpacingIntoPromotedChild = ({
+  parent,
+  child,
+  stats
+}: {
+  parent: ScreenElementIR;
+  child: ScreenElementIR;
+  stats: SimplificationMetrics;
+}): ScreenElementIR => {
+  const parentMargin = normalizeSpacingValues(parent.margin);
+  const parentPadding = normalizeSpacingValues(parent.padding);
+  const additiveSpacing = {
+    top: parentMargin.top + parentPadding.top,
+    right: parentMargin.right + parentPadding.right,
+    bottom: parentMargin.bottom + parentPadding.bottom,
+    left: parentMargin.left + parentPadding.left
+  };
+  const hasSpacingContribution =
+    additiveSpacing.top !== 0 ||
+    additiveSpacing.right !== 0 ||
+    additiveSpacing.bottom !== 0 ||
+    additiveSpacing.left !== 0;
+  if (!hasSpacingContribution) {
+    return child;
   }
 
+  const childMargin = normalizeSpacingValues(child.margin);
+  const mergedChild: ScreenElementIR = {
+    ...child,
+    margin: {
+      top: childMargin.top + additiveSpacing.top,
+      right: childMargin.right + additiveSpacing.right,
+      bottom: childMargin.bottom + additiveSpacing.bottom,
+      left: childMargin.left + additiveSpacing.left
+    }
+  };
+  stats.spacingMerges += 1;
+  return mergedChild;
+};
+
+const isIconLikeNode = (element: ScreenElementIR): boolean => {
+  const loweredName = element.name.toLowerCase();
+  return (
+    loweredName.includes("muisvgiconroot") ||
+    loweredName.includes("iconcomponent") ||
+    loweredName.startsWith("ic_") ||
+    loweredName.startsWith("icon/") ||
+    loweredName.startsWith("icons/") ||
+    loweredName.startsWith("icon-") ||
+    loweredName.startsWith("icon_")
+  );
+};
+
+const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
+  const loweredName = element.name.toLowerCase();
+  return loweredName.includes("buttonendicon") || loweredName.includes("expandiconwrapper");
+};
+
+const resolvePromotionMode = ({
+  element,
+  depth
+}: {
+  element: ScreenElementIR;
+  depth: number;
+}): {
+  mode: "none" | "single-child" | "group-multi-child";
+  guarded: boolean;
+} => {
   if (element.type !== "container") {
-    return false;
-  }
-  if (hasVisualStyle(element) || element.text?.trim()) {
-    return false;
+    return { mode: "none", guarded: false };
   }
 
   const children = element.children ?? [];
   if (children.length === 0) {
-    return false;
+    return { mode: "none", guarded: false };
   }
 
-  if (
-    children.some((child) => {
-      const childName = child.name.toLowerCase();
-      return (
-        childName.includes("muisvgiconroot") ||
-        childName.includes("buttonendicon") ||
-        childName.includes("expandiconwrapper")
-      );
-    })
-  ) {
-    return false;
+  const blockedByGuardrails = Boolean(
+    element.prototypeNavigation ||
+      isIconLikeNode(element) ||
+      isSemanticIconWrapper(element) ||
+      hasPromotionBlockingVisualStyle(element) ||
+      element.text?.trim() ||
+      children.some((child) => {
+        return (
+          Boolean(child.prototypeNavigation) ||
+          isIconLikeNode(child) ||
+          isSemanticIconWrapper(child)
+        );
+      })
+  );
+  if (blockedByGuardrails) {
+    return { mode: "none", guarded: true };
   }
 
   if (children.length === 1) {
-    return true;
+    return { mode: "single-child", guarded: false };
   }
 
-  return false;
+  if (element.nodeType === "GROUP" && depth >= GROUP_MULTI_CHILD_PROMOTION_MIN_DEPTH) {
+    return { mode: "group-multi-child", guarded: false };
+  }
+
+  return { mode: "none", guarded: false };
 };
 
-const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
-  const simplifiedChildren = simplifyElements(element.children ?? []);
-  const isSvgIconRoot = element.name.toLowerCase().includes("muisvgiconroot");
+const simplifyNode = ({
+  element,
+  depth,
+  stats
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  stats: SimplificationMetrics;
+}): ScreenElementIR | null => {
+  const simplifiedChildren = simplifyElements({
+    elements: element.children ?? [],
+    depth: depth + 1,
+    stats
+  });
+  const isSvgIconRoot = isIconLikeNode(element);
   const hasVectorPayload = element.nodeType === "VECTOR" && (element.vectorPaths?.length ?? 0) > 0;
 
   const simplified: ScreenElementIR = {
@@ -204,32 +1323,78 @@ const simplifyNode = (element: ScreenElementIR): ScreenElementIR | null => {
     return simplified.text?.trim() ? simplified : null;
   }
 
+  if (simplified.type === "image") {
+    return simplified;
+  }
+
   if (hasVectorPayload) {
     return simplified;
   }
 
-  if (isSvgIconRoot) {
+  if (isSvgIconRoot || isSemanticIconWrapper(element)) {
     return simplified;
   }
 
   const hasChildren = simplifiedChildren.length > 0;
   if (!hasChildren && !hasVisualStyle(simplified) && !simplified.text?.trim()) {
+    if (simplified.prototypeNavigation) {
+      return simplified;
+    }
+    stats.removedEmptyNodes += 1;
     return null;
   }
 
   return simplified;
 };
 
-const simplifyElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
+const simplifyElements = ({
+  elements,
+  depth,
+  stats
+}: {
+  elements: ScreenElementIR[];
+  depth: number;
+  stats: SimplificationMetrics;
+}): ScreenElementIR[] => {
   const result: ScreenElementIR[] = [];
 
   for (const element of elements) {
-    const simplified = simplifyNode(element);
+    const simplified = simplifyNode({
+      element,
+      depth,
+      stats
+    });
     if (!simplified) {
       continue;
     }
 
-    if (shouldPromoteChildren(simplified)) {
+    const promotionMode = resolvePromotionMode({
+      element: simplified,
+      depth
+    });
+    if (promotionMode.guarded) {
+      stats.guardedSkips += 1;
+    }
+
+    if (promotionMode.mode === "single-child") {
+      const [promotedChild] = simplified.children ?? [];
+      if (!promotedChild) {
+        result.push(simplified);
+        continue;
+      }
+      stats.promotedSingleChild += 1;
+      result.push(
+        mergeSpacingIntoPromotedChild({
+          parent: simplified,
+          child: promotedChild,
+          stats
+        })
+      );
+      continue;
+    }
+
+    if (promotionMode.mode === "group-multi-child") {
+      stats.promotedGroupMultiChild += 1;
       result.push(...(simplified.children ?? []));
       continue;
     }
@@ -240,19 +1405,1908 @@ const simplifyElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   return result;
 };
 
-const sortChildren = (children: ScreenElementIR[], layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE"): ScreenElementIR[] => {
-  const copied = [...children];
-  if (layoutMode === "HORIZONTAL") {
-    copied.sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
-  } else {
-    copied.sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+const RTL_LANGUAGE_CODES = new Set(["ar", "he", "fa", "ur"]);
+const VISUAL_SORT_ROW_TOLERANCE_PX = 18;
+
+interface SortChildrenOptions {
+  generationLocale?: string;
+}
+
+interface SortableChild {
+  child: ScreenElementIR;
+  sourceIndex: number;
+  rowIndex: number;
+  semanticBucket: number;
+}
+
+const toLocaleLanguageCode = (locale: string | undefined): string | undefined => {
+  if (typeof locale !== "string") {
+    return undefined;
   }
-  return copied;
+  const trimmed = locale.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const canonical = Intl.getCanonicalLocales(trimmed)[0];
+    if (!canonical) {
+      return undefined;
+    }
+    const [language] = canonical.toLowerCase().split("-");
+    return language;
+  } catch {
+    const [fallback] = trimmed.toLowerCase().split(/[_-]+/);
+    return fallback || undefined;
+  }
+};
+
+const isRtlLocale = (locale: string | undefined): boolean => {
+  const languageCode = toLocaleLanguageCode(locale);
+  if (!languageCode) {
+    return false;
+  }
+  return RTL_LANGUAGE_CODES.has(languageCode);
+};
+
+const toSortSemanticBucket = (element: ScreenElementIR): number => {
+  const normalizedName = normalizeInputSemanticText(element.name || "");
+  const normalizedText = normalizeInputSemanticText(element.text?.trim() || "");
+  const combinedSemanticText = `${normalizedName} ${normalizedText}`.trim();
+  const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => combinedSemanticText.includes(hint));
+  const fontSize = typeof element.fontSize === "number" && Number.isFinite(element.fontSize) ? element.fontSize : 0;
+  const fontWeight = typeof element.fontWeight === "number" && Number.isFinite(element.fontWeight) ? element.fontWeight : 0;
+  const isLargeHeadingText = element.type === "text" && (fontSize >= 24 || (fontSize >= 20 && fontWeight >= 600));
+  if (hasHeadingHint || isLargeHeadingText) {
+    return 0;
+  }
+
+  const hasNavigationHint = A11Y_NAVIGATION_HINTS.some((hint) => normalizedName.includes(hint));
+  if (element.type === "navigation" || hasNavigationHint) {
+    return 1;
+  }
+
+  const hasReadableText = Boolean(firstText(element)?.trim() || element.text?.trim());
+  const isDecorativeImage =
+    element.type === "image" &&
+    A11Y_IMAGE_DECORATIVE_HINTS.some((hint) => normalizedName.includes(hint));
+  const isIconOnlyDecorative = (isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasReadableText;
+  const isDecorative = element.type === "divider" || element.type === "skeleton" || isDecorativeImage || isIconOnlyDecorative;
+  if (isDecorative) {
+    return 3;
+  }
+
+  return 2;
+};
+
+const hasOverlap = (left: ScreenElementIR, right: ScreenElementIR): boolean => {
+  const leftX = left.x;
+  const leftY = left.y;
+  const leftWidth = left.width;
+  const leftHeight = left.height;
+  const rightX = right.x;
+  const rightY = right.y;
+  const rightWidth = right.width;
+  const rightHeight = right.height;
+  if (
+    typeof leftX !== "number" ||
+    typeof leftY !== "number" ||
+    typeof leftWidth !== "number" ||
+    typeof leftHeight !== "number" ||
+    typeof rightX !== "number" ||
+    typeof rightY !== "number" ||
+    typeof rightWidth !== "number" ||
+    typeof rightHeight !== "number" ||
+    !Number.isFinite(leftX) ||
+    !Number.isFinite(leftY) ||
+    !Number.isFinite(leftWidth) ||
+    !Number.isFinite(leftHeight) ||
+    !Number.isFinite(rightX) ||
+    !Number.isFinite(rightY) ||
+    !Number.isFinite(rightWidth) ||
+    !Number.isFinite(rightHeight) ||
+    leftWidth <= 0 ||
+    leftHeight <= 0 ||
+    rightWidth <= 0 ||
+    rightHeight <= 0
+  ) {
+    return false;
+  }
+  const leftMaxX = leftX + leftWidth;
+  const leftMaxY = leftY + leftHeight;
+  const rightMaxX = rightX + rightWidth;
+  const rightMaxY = rightY + rightHeight;
+  return leftX < rightMaxX && leftMaxX > rightX && leftY < rightMaxY && leftMaxY > rightY;
+};
+
+const sortChildren = (
+  children: ScreenElementIR[],
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE",
+  options?: SortChildrenOptions
+): ScreenElementIR[] => {
+  const copied = [...children];
+  if (copied.length <= 1) {
+    return copied;
+  }
+
+  if (layoutMode === "HORIZONTAL") {
+    copied.sort((left, right) => (left.x ?? 0) - (right.x ?? 0));
+    return copied;
+  }
+
+  if (layoutMode === "VERTICAL") {
+    copied.sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+    return copied;
+  }
+
+  const rowClusters = clusterAxisValues({
+    values: copied.map((child) => child.y ?? 0),
+    tolerance: VISUAL_SORT_ROW_TOLERANCE_PX
+  });
+  const rtl = isRtlLocale(options?.generationLocale);
+  const sortableChildren: SortableChild[] = copied.map((child, sourceIndex) => {
+    const rowIndex = toNearestClusterIndex({
+      value: child.y ?? 0,
+      clusters: rowClusters
+    });
+    return {
+      child,
+      sourceIndex,
+      rowIndex,
+      semanticBucket: toSortSemanticBucket(child)
+    };
+  });
+
+  sortableChildren.sort((left, right) => {
+    if (left.rowIndex !== right.rowIndex) {
+      return left.rowIndex - right.rowIndex;
+    }
+
+    if (hasOverlap(left.child, right.child)) {
+      return left.sourceIndex - right.sourceIndex;
+    }
+
+    if (left.semanticBucket !== right.semanticBucket) {
+      return left.semanticBucket - right.semanticBucket;
+    }
+
+    const yDelta = (left.child.y ?? 0) - (right.child.y ?? 0);
+    if (yDelta !== 0) {
+      return yDelta;
+    }
+
+    const xDelta = rtl ? (right.child.x ?? 0) - (left.child.x ?? 0) : (left.child.x ?? 0) - (right.child.x ?? 0);
+    if (xDelta !== 0) {
+      return xDelta;
+    }
+
+    return left.sourceIndex - right.sourceIndex;
+  });
+
+  return sortableChildren.map((entry) => entry.child);
+};
+
+const dedupeSxEntries = (entries: Array<[string, string | number | undefined]>): Array<[string, string | number]> => {
+  const deduped: Array<[string, string | number]> = [];
+  const seen = new Set<string>();
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    const [key, value] = entry;
+    if (value === undefined || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.unshift([key, value]);
+  }
+  return deduped;
 };
 
 const sxString = (entries: Array<[string, string | number | undefined]>): string => {
-  const filtered = entries.filter((entry): entry is [string, string | number] => entry[1] !== undefined);
-  return filtered.map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
+  return dedupeSxEntries(entries).map(([key, value]) => `${key}: ${typeof value === "number" ? value : value}`).join(", ");
+};
+
+const SHARED_SX_MIN_OCCURRENCES = 3;
+const SHARED_SX_IDENTIFIER_PREFIX = "sharedSxStyle";
+const SX_ATTRIBUTE_PREFIX = "sx={{";
+const THEME_SX_EXTRACTION_THRESHOLD = 0.7;
+const THEME_SX_MIN_SAMPLES = 3;
+const THEME_SX_VISUAL_KEYS = new Set(["borderRadius", "bgcolor", "background", "borderColor", "border", "boxShadow", "color", "textTransform"]);
+const THEME_SX_CANONICAL_VISUAL_KEYS = new Set([
+  "borderRadius",
+  "backgroundColor",
+  "borderColor",
+  "border",
+  "boxShadow",
+  "color",
+  "textTransform"
+]);
+const THEME_SX_COLOR_KEYS = new Set(["backgroundColor", "borderColor", "color"]);
+const THEME_SX_CANONICAL_KEY_ALIAS: Record<string, string> = {
+  bgcolor: "backgroundColor",
+  background: "backgroundColor"
+};
+const THEME_SX_TEXT_TRANSFORM_VALUES = new Set(["none", "capitalize", "uppercase", "lowercase"]);
+const THEME_COMPONENT_ORDER = ["MuiButton", "MuiCard", "MuiTextField", "MuiChip", "MuiPaper", "MuiAppBar", "MuiDivider", "MuiAvatar"];
+
+const parseSxLiteralStringValue = (value: string): string | undefined => {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmedValue) as unknown;
+    return typeof parsed === "string" ? parsed : undefined;
+  } catch {
+    return trimmedValue;
+  }
+};
+
+const roundStableSxNumericValue = (value: number): number => {
+  return Math.round(value * 1000) / 1000;
+};
+
+const toThemeSxCanonicalKey = (value: string): string => {
+  return THEME_SX_CANONICAL_KEY_ALIAS[value] ?? value;
+};
+
+const normalizeThemeSxValueForKey = ({
+  key,
+  value
+}: {
+  key: string;
+  value: string | number | undefined;
+}): ThemeSxStyleValue | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const canonicalKey = toThemeSxCanonicalKey(key);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return undefined;
+    }
+    return roundStableSxNumericValue(value);
+  }
+
+  const literalValue = parseSxLiteralStringValue(value);
+  if (literalValue === undefined) {
+    return undefined;
+  }
+  const trimmedLiteralValue = literalValue.trim();
+  if (!trimmedLiteralValue) {
+    return undefined;
+  }
+
+  if (THEME_SX_COLOR_KEYS.has(canonicalKey)) {
+    return normalizeHexColor(trimmedLiteralValue);
+  }
+  if (canonicalKey === "textTransform") {
+    return THEME_SX_TEXT_TRANSFORM_VALUES.has(trimmedLiteralValue) ? trimmedLiteralValue : undefined;
+  }
+  if (canonicalKey === "borderRadius") {
+    if (/^-?\d+(\.\d+)?(px|rem|em|%)$/i.test(trimmedLiteralValue)) {
+      return trimmedLiteralValue;
+    }
+    return undefined;
+  }
+  if (canonicalKey === "border") {
+    return /(solid|dashed|dotted|double)/i.test(trimmedLiteralValue) ? trimmedLiteralValue : undefined;
+  }
+  if (canonicalKey === "boxShadow") {
+    return trimmedLiteralValue;
+  }
+  return undefined;
+};
+
+const toThemeSxValueKey = (value: ThemeSxStyleValue): string => {
+  return typeof value === "number" ? `n:${value}` : `s:${value}`;
+};
+
+const collectThemeSxSampleFromEntries = ({
+  context,
+  componentName,
+  entries
+}: {
+  context: RenderContext;
+  componentName: string;
+  entries: Array<[string, string | number | undefined]>;
+}): void => {
+  if (!context.themeSxSampleCollector) {
+    return;
+  }
+  const styleValuesByKey = new Map<string, ThemeSxStyleValue>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    if (!THEME_SX_VISUAL_KEYS.has(key)) {
+      continue;
+    }
+    const canonicalKey = toThemeSxCanonicalKey(key);
+    const normalizedValue = normalizeThemeSxValueForKey({
+      key: canonicalKey,
+      value
+    });
+    if (normalizedValue === undefined) {
+      continue;
+    }
+    styleValuesByKey.set(canonicalKey, normalizedValue);
+  }
+  if (styleValuesByKey.size === 0) {
+    return;
+  }
+  context.themeSxSampleCollector({
+    componentName,
+    styleValuesByKey
+  });
+};
+
+const resolveThemeDefaultStyleValue = ({
+  themeComponentDefaults,
+  componentName,
+  key
+}: {
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+  componentName: string;
+  key: string;
+}): ThemeSxStyleValue | undefined => {
+  if (key === "textTransform" && componentName === "MuiButton") {
+    return "none";
+  }
+  switch (componentName) {
+    case "MuiCard":
+      if (key === "borderRadius" && themeComponentDefaults?.MuiCard?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiCard.borderRadiusPx}px`;
+      }
+      break;
+    case "MuiChip":
+      if (key === "borderRadius" && themeComponentDefaults?.MuiChip?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiChip.borderRadiusPx}px`;
+      }
+      break;
+    case "MuiAppBar":
+      if (key === "backgroundColor" && themeComponentDefaults?.MuiAppBar?.backgroundColor) {
+        return themeComponentDefaults.MuiAppBar.backgroundColor;
+      }
+      break;
+    case "MuiDivider":
+      if (key === "borderColor" && themeComponentDefaults?.MuiDivider?.borderColor) {
+        return themeComponentDefaults.MuiDivider.borderColor;
+      }
+      break;
+    case "MuiAvatar":
+      if (key === "width" && themeComponentDefaults?.MuiAvatar?.widthPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.widthPx}px`;
+      }
+      if (key === "height" && themeComponentDefaults?.MuiAvatar?.heightPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.heightPx}px`;
+      }
+      if (key === "borderRadius" && themeComponentDefaults?.MuiAvatar?.borderRadiusPx !== undefined) {
+        return `${themeComponentDefaults.MuiAvatar.borderRadiusPx}px`;
+      }
+      break;
+    default:
+      break;
+  }
+  return themeComponentDefaults?.c1StyleOverrides?.[componentName]?.[key];
+};
+
+const matchesThemeDefaultSxValue = ({
+  componentName,
+  key,
+  value,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  key: string;
+  value: string | number | undefined;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): boolean => {
+  const canonicalKey = toThemeSxCanonicalKey(key);
+  const normalizedValue = normalizeThemeSxValueForKey({
+    key: canonicalKey,
+    value
+  });
+  if (normalizedValue === undefined) {
+    return false;
+  }
+  const defaultValue = resolveThemeDefaultStyleValue({
+    themeComponentDefaults,
+    componentName,
+    key: canonicalKey
+  });
+  if (defaultValue === undefined) {
+    return false;
+  }
+  const normalizedDefaultValue = normalizeThemeSxValueForKey({
+    key: canonicalKey,
+    value: defaultValue
+  });
+  if (normalizedDefaultValue === undefined) {
+    return false;
+  }
+  return normalizedDefaultValue === normalizedValue;
+};
+
+const collectThemeDefaultMatchedSxKeys = ({
+  context,
+  componentName,
+  entries
+}: {
+  context: RenderContext;
+  componentName: string;
+  entries: Array<[string, string | number | undefined]>;
+}): Set<string> => {
+  const matchedKeys = new Set<string>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    if (!THEME_SX_VISUAL_KEYS.has(key)) {
+      continue;
+    }
+    if (
+      matchesThemeDefaultSxValue({
+        componentName,
+        key,
+        value,
+        themeComponentDefaults: context.themeComponentDefaults
+      })
+    ) {
+      matchedKeys.add(key);
+    }
+  }
+  return matchedKeys;
+};
+
+interface SxAttributeOccurrence {
+  startIndex: number;
+  endIndexExclusive: number;
+  body: string;
+  normalizedBody: string;
+}
+
+const findSxBodyEndIndex = ({
+  source,
+  startIndex
+}: {
+  source: string;
+  startIndex: number;
+}): number | undefined => {
+  let depth = 1;
+  let activeQuote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+
+  for (let index = startIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+
+    if (activeQuote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === activeQuote) {
+        activeQuote = undefined;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      activeQuote = char;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const collectSxAttributeOccurrences = (source: string): SxAttributeOccurrence[] => {
+  const occurrences: SxAttributeOccurrence[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < source.length) {
+    const startIndex = source.indexOf(SX_ATTRIBUTE_PREFIX, searchFrom);
+    if (startIndex < 0) {
+      break;
+    }
+
+    const bodyStartIndex = startIndex + SX_ATTRIBUTE_PREFIX.length;
+    const bodyEndIndex = findSxBodyEndIndex({
+      source,
+      startIndex: bodyStartIndex
+    });
+    if (bodyEndIndex === undefined) {
+      searchFrom = bodyStartIndex;
+      continue;
+    }
+
+    let expressionEndIndex = bodyEndIndex + 1;
+    while (expressionEndIndex < source.length && /\s/.test(source[expressionEndIndex] ?? "")) {
+      expressionEndIndex += 1;
+    }
+    if (source[expressionEndIndex] !== "}") {
+      searchFrom = bodyStartIndex;
+      continue;
+    }
+
+    const endIndexExclusive = expressionEndIndex + 1;
+    const body = source.slice(bodyStartIndex, bodyEndIndex);
+    const normalizedBody = body.trim();
+    if (normalizedBody.length > 0) {
+      occurrences.push({
+        startIndex,
+        endIndexExclusive,
+        body,
+        normalizedBody
+      });
+    }
+
+    searchFrom = endIndexExclusive;
+  }
+
+  return occurrences;
+};
+
+const collectIdentifiersFromSource = (source: string): Set<string> => {
+  const identifiers = new Set<string>();
+  for (const match of source.matchAll(/\b[A-Za-z_$][A-Za-z0-9_$]*\b/g)) {
+    const identifier = match[0];
+    if (identifier) {
+      identifiers.add(identifier);
+    }
+  }
+  return identifiers;
+};
+
+const allocateSharedSxConstantName = ({
+  preferredNumber,
+  reservedNames,
+  knownIdentifiers
+}: {
+  preferredNumber: number;
+  reservedNames: Set<string>;
+  knownIdentifiers: Set<string>;
+}): {
+  name: string;
+  nextPreferredNumber: number;
+} => {
+  let suffix = preferredNumber;
+  for (;;) {
+    const candidate = `${SHARED_SX_IDENTIFIER_PREFIX}${suffix}`;
+    if (!reservedNames.has(candidate) && !knownIdentifiers.has(candidate)) {
+      reservedNames.add(candidate);
+      return {
+        name: candidate,
+        nextPreferredNumber: suffix + 1
+      };
+    }
+    suffix += 1;
+  }
+};
+
+const extractSharedSxConstantsFromScreenContent = (source: string): string => {
+  const occurrences = collectSxAttributeOccurrences(source);
+  if (occurrences.length < SHARED_SX_MIN_OCCURRENCES) {
+    return source;
+  }
+
+  const patternStats = new Map<
+    string,
+    {
+      count: number;
+      firstStartIndex: number;
+      normalizedBody: string;
+    }
+  >();
+  for (const occurrence of occurrences) {
+    const existing = patternStats.get(occurrence.normalizedBody);
+    if (!existing) {
+      patternStats.set(occurrence.normalizedBody, {
+        count: 1,
+        firstStartIndex: occurrence.startIndex,
+        normalizedBody: occurrence.normalizedBody
+      });
+      continue;
+    }
+    existing.count += 1;
+  }
+
+  const selectedPatterns = Array.from(patternStats.values())
+    .filter((pattern) => pattern.count >= SHARED_SX_MIN_OCCURRENCES)
+    .sort((left, right) => left.firstStartIndex - right.firstStartIndex);
+
+  if (selectedPatterns.length === 0) {
+    return source;
+  }
+
+  const knownIdentifiers = collectIdentifiersFromSource(source);
+  const reservedNames = new Set<string>();
+  let preferredNumber = 1;
+  const constantNameByBody = new Map<string, string>();
+  const constantDefinitions: Array<{ name: string; normalizedBody: string }> = [];
+  for (const pattern of selectedPatterns) {
+    const { name, nextPreferredNumber } = allocateSharedSxConstantName({
+      preferredNumber,
+      reservedNames,
+      knownIdentifiers
+    });
+    preferredNumber = nextPreferredNumber;
+    constantNameByBody.set(pattern.normalizedBody, name);
+    constantDefinitions.push({
+      name,
+      normalizedBody: pattern.normalizedBody
+    });
+  }
+
+  let rewrittenContent = "";
+  let cursor = 0;
+  for (const occurrence of occurrences) {
+    rewrittenContent += source.slice(cursor, occurrence.startIndex);
+    const constantName = constantNameByBody.get(occurrence.normalizedBody);
+    if (constantName) {
+      rewrittenContent += `sx={${constantName}}`;
+    } else {
+      rewrittenContent += source.slice(occurrence.startIndex, occurrence.endIndexExclusive);
+    }
+    cursor = occurrence.endIndexExclusive;
+  }
+  rewrittenContent += source.slice(cursor);
+
+  const exportIndex = rewrittenContent.indexOf("export default function ");
+  if (exportIndex < 0) {
+    return rewrittenContent;
+  }
+
+  const constantsBlock = constantDefinitions
+    .map((definition) => `const ${definition.name} = { ${definition.normalizedBody} };`)
+    .join("\n");
+  const beforeExport = rewrittenContent.slice(0, exportIndex).trimEnd();
+  const fromExport = rewrittenContent.slice(exportIndex);
+
+  return `${beforeExport}\n\n${constantsBlock}\n\n${fromExport}`;
+};
+
+const PATTERN_SIMILARITY_THRESHOLD = 0.8;
+const PATTERN_MIN_OCCURRENCES = 3;
+const PATTERN_MIN_SUBTREE_NODE_COUNT = 3;
+const EXTRACTION_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>([
+  "container",
+  "card",
+  "paper",
+  "stack",
+  "grid",
+  "list",
+  "table"
+]);
+const EXTRACTION_FORBIDDEN_TYPES = new Set<ScreenElementIR["type"]>([
+  "input",
+  "button",
+  "chip",
+  "switch",
+  "checkbox",
+  "radio",
+  "select",
+  "slider",
+  "rating",
+  "tab",
+  "dialog",
+  "stepper",
+  "navigation",
+  "appbar",
+  "breadcrumbs",
+  "drawer"
+]);
+
+const emptyPatternExtractionPlan = (): PatternExtractionPlan => ({
+  componentFiles: [],
+  contextFiles: [],
+  componentImports: [],
+  invocationByRootNodeId: new Map<string, PatternExtractionInvocation>(),
+  patternStatePlan: {}
+});
+
+const toSortedChildrenForExtraction = ({
+  children,
+  layoutMode,
+  generationLocale
+}: {
+  children: ScreenElementIR[];
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  generationLocale: string;
+}): ScreenElementIR[] => {
+  return sortChildren(children, layoutMode, { generationLocale });
+};
+
+const collectPathNodeMapForExtraction = ({
+  root,
+  generationLocale
+}: {
+  root: ScreenElementIR;
+  generationLocale: string;
+}): Map<string, ScreenElementIR> => {
+  const byPath = new Map<string, ScreenElementIR>();
+  const visit = (node: ScreenElementIR, pathToken: string): void => {
+    byPath.set(pathToken, node);
+    const children = toSortedChildrenForExtraction({
+      children: node.children ?? [],
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    children.forEach((child, index) => {
+      const nextPath = pathToken.length > 0 ? `${pathToken}.${index}` : String(index);
+      visit(child, nextPath);
+    });
+  };
+  visit(root, "");
+  return byPath;
+};
+
+const collectSubtreeNodeIdsForExtraction = (
+  root: ScreenElementIR,
+  visited: Set<ScreenElementIR> = new Set()
+): Set<string> => {
+  if (visited.has(root)) {
+    return new Set<string>();
+  }
+  visited.add(root);
+  const nodeIds = new Set<string>([root.id]);
+  for (const child of root.children ?? []) {
+    const nested = collectSubtreeNodeIdsForExtraction(child, visited);
+    for (const nodeId of nested) {
+      nodeIds.add(nodeId);
+    }
+  }
+  return nodeIds;
+};
+
+const hasForbiddenExtractionSignals = (
+  node: ScreenElementIR,
+  visited: Set<ScreenElementIR> = new Set()
+): boolean => {
+  if (visited.has(node)) {
+    return false;
+  }
+  visited.add(node);
+  if (EXTRACTION_FORBIDDEN_TYPES.has(node.type) || Boolean(node.prototypeNavigation) || Boolean(node.variantMapping)) {
+    return true;
+  }
+  return (node.children ?? []).some((child) => hasForbiddenExtractionSignals(child, visited));
+};
+
+const hasTextOrImageDescendants = (node: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): boolean => {
+  if (visited.has(node)) {
+    return false;
+  }
+  visited.add(node);
+  if (node.type === "text" || node.type === "image") {
+    return true;
+  }
+  return (node.children ?? []).some((child) => hasTextOrImageDescendants(child, visited));
+};
+
+const computeStructuralSignature = ({
+  root,
+  generationLocale
+}: {
+  root: ScreenElementIR;
+  generationLocale: string;
+}): Set<string> => {
+  const signature = new Set<string>();
+  const visit = (node: ScreenElementIR, depth: number): void => {
+    const children = toSortedChildrenForExtraction({
+      children: node.children ?? [],
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    const bucketedChildrenCount = Math.min(6, children.length);
+    signature.add(`n:${depth}:${node.type}:${node.nodeType}:${bucketedChildrenCount}`);
+    if (node.layoutMode) {
+      signature.add(`layout:${depth}:${node.layoutMode}`);
+    }
+    if (node.type === "text") {
+      signature.add(`text:${depth}`);
+    }
+    if (node.type === "image") {
+      signature.add(`image:${depth}`);
+    }
+    children.forEach((child, index) => {
+      const bucketedIndex = Math.min(index, 4);
+      signature.add(`e:${depth}:${node.type}>${child.type}:${bucketedIndex}`);
+      visit(child, depth + 1);
+    });
+  };
+  visit(root, 0);
+  return signature;
+};
+
+const computeSubtreeSimilarity = (left: Set<string>, right: Set<string>): number => {
+  if (left.size === 0 && right.size === 0) {
+    return 1;
+  }
+  let intersectionCount = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      intersectionCount += 1;
+    }
+  }
+  const unionCount = left.size + right.size - intersectionCount;
+  if (unionCount <= 0) {
+    return 0;
+  }
+  return intersectionCount / unionCount;
+};
+
+const hasIntersectionWithSet = ({
+  values,
+  targets
+}: {
+  values: Set<string>;
+  targets: Set<string>;
+}): boolean => {
+  for (const value of values) {
+    if (targets.has(value)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const toExtractionPropName = ({
+  rawName,
+  fallback
+}: {
+  rawName: string;
+  fallback: string;
+}): string => {
+  const words = rawName
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0);
+  if (words.length === 0) {
+    return fallback;
+  }
+  const camelCased = words
+    .map((word, index) => {
+      const lowered = word.toLowerCase();
+      if (index === 0) {
+        return lowered;
+      }
+      return `${lowered.charAt(0).toUpperCase()}${lowered.slice(1)}`;
+    })
+    .join("");
+  if (!camelCased) {
+    return fallback;
+  }
+  if (/^\d/.test(camelCased)) {
+    return `${fallback}${camelCased}`;
+  }
+  return camelCased;
+};
+
+const toUniquePropName = ({
+  candidate,
+  used
+}: {
+  candidate: string;
+  used: Set<string>;
+}): string => {
+  let nextName = candidate;
+  let suffix = 2;
+  while (used.has(nextName)) {
+    nextName = `${candidate}${suffix}`;
+    suffix += 1;
+  }
+  used.add(nextName);
+  return nextName;
+};
+
+const toTextValueForExtraction = (node: ScreenElementIR | undefined): string | undefined => {
+  if (!node || node.type !== "text") {
+    return undefined;
+  }
+  const normalizedText = node.text?.trim();
+  if (normalizedText && normalizedText.length > 0) {
+    return normalizedText;
+  }
+  const normalizedName = node.name.trim();
+  return normalizedName.length > 0 ? normalizedName : undefined;
+};
+
+const toImageSourceForExtraction = ({
+  node,
+  imageAssetMap
+}: {
+  node: ScreenElementIR | undefined;
+  imageAssetMap: Record<string, string>;
+}): string | undefined => {
+  if (!node || node.type !== "image") {
+    return undefined;
+  }
+  const mappedSource = imageAssetMap[node.id];
+  if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
+    return mappedSource.trim();
+  }
+  const fallbackLabel = resolveElementA11yLabel({ element: node, fallback: "Image" });
+  return toDeterministicImagePlaceholderSrc({
+    element: node,
+    label: fallbackLabel
+  });
+};
+
+const inferDynamicPropsFromCluster = ({
+  members,
+  imageAssetMap
+}: {
+  members: ExtractionCandidate[];
+  imageAssetMap: Record<string, string>;
+}): DynamicPropBinding[] => {
+  const prototype = members[0];
+  if (!prototype) {
+    return [];
+  }
+  const usedPropNames = new Set<string>(["sx"]);
+  const bindings: DynamicPropBinding[] = [];
+  const sortedPrototypePaths = Array.from(prototype.pathNodeMap.keys()).sort((left, right) => left.localeCompare(right));
+
+  for (const pathToken of sortedPrototypePaths) {
+    const prototypeNode = prototype.pathNodeMap.get(pathToken);
+    if (!prototypeNode) {
+      continue;
+    }
+
+    if (prototypeNode.type === "text") {
+      const valuesByRootNodeId = new Map<string, string | undefined>();
+      const distinctValues = new Set<string>();
+      let optional = false;
+      for (const member of members) {
+        const memberNode = member.pathNodeMap.get(pathToken);
+        const value = toTextValueForExtraction(memberNode);
+        if (value === undefined) {
+          optional = true;
+        } else {
+          distinctValues.add(value);
+        }
+        valuesByRootNodeId.set(member.root.id, value);
+      }
+      if (distinctValues.size <= 1 && !optional) {
+        continue;
+      }
+      const propName = toUniquePropName({
+        candidate: toExtractionPropName({
+          rawName: `${prototypeNode.name} text`,
+          fallback: "textValue"
+        }),
+        used: usedPropNames
+      });
+      bindings.push({
+        kind: "text",
+        path: pathToken,
+        propName,
+        optional,
+        placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+        valuesByRootNodeId
+      });
+      continue;
+    }
+
+    if (prototypeNode.type === "image") {
+      const sourceValuesByRootNodeId = new Map<string, string | undefined>();
+      const sourceDistinctValues = new Set<string>();
+      let sourceOptional = false;
+      const altValuesByRootNodeId = new Map<string, string | undefined>();
+      const altDistinctValues = new Set<string>();
+      let altOptional = false;
+
+      for (const member of members) {
+        const memberNode = member.pathNodeMap.get(pathToken);
+        const sourceValue = toImageSourceForExtraction({
+          node: memberNode,
+          imageAssetMap
+        });
+        if (sourceValue === undefined) {
+          sourceOptional = true;
+        } else {
+          sourceDistinctValues.add(sourceValue);
+        }
+        sourceValuesByRootNodeId.set(member.root.id, sourceValue);
+
+        const altValue = memberNode
+          ? resolveElementA11yLabel({
+              element: memberNode,
+              fallback: "Image"
+            })
+          : undefined;
+        if (altValue === undefined) {
+          altOptional = true;
+        } else {
+          altDistinctValues.add(altValue);
+        }
+        altValuesByRootNodeId.set(member.root.id, altValue);
+      }
+
+      if (sourceDistinctValues.size > 1 || sourceOptional) {
+        const propName = toUniquePropName({
+          candidate: toExtractionPropName({
+            rawName: `${prototypeNode.name} src`,
+            fallback: "imageSrc"
+          }),
+          used: usedPropNames
+        });
+        bindings.push({
+          kind: "image_src",
+          path: pathToken,
+          propName,
+          optional: sourceOptional,
+          placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+          valuesByRootNodeId: sourceValuesByRootNodeId
+        });
+      }
+
+      if (altDistinctValues.size > 1 || altOptional) {
+        const propName = toUniquePropName({
+          candidate: toExtractionPropName({
+            rawName: `${prototypeNode.name} alt`,
+            fallback: "imageAlt"
+          }),
+          used: usedPropNames
+        });
+        bindings.push({
+          kind: "image_alt",
+          path: pathToken,
+          propName,
+          optional: altOptional,
+          placeholder: `__PATTERN_PROP_${propName.toUpperCase()}__`,
+          valuesByRootNodeId: altValuesByRootNodeId
+        });
+      }
+    }
+  }
+
+  return bindings;
+};
+
+const cloneElementForExtraction = (element: ScreenElementIR): ScreenElementIR => {
+  return {
+    ...element,
+    ...(element.children ? { children: element.children.map((child) => cloneElementForExtraction(child)) } : {})
+  };
+};
+
+const injectRootSxPropForExtractedComponent = (renderedRoot: string): string | undefined => {
+  const sxStartIndex = renderedRoot.indexOf(SX_ATTRIBUTE_PREFIX);
+  if (sxStartIndex < 0) {
+    return undefined;
+  }
+  const bodyStartIndex = sxStartIndex + SX_ATTRIBUTE_PREFIX.length;
+  const bodyEndIndex = findSxBodyEndIndex({
+    source: renderedRoot,
+    startIndex: bodyStartIndex
+  });
+  if (bodyEndIndex === undefined) {
+    return undefined;
+  }
+  if (renderedRoot[bodyEndIndex + 1] !== "}") {
+    return undefined;
+  }
+  const body = renderedRoot.slice(bodyStartIndex, bodyEndIndex).trim();
+  const replacement = `sx={[{ ${body} }, sx]}`;
+  return `${renderedRoot.slice(0, sxStartIndex)}${replacement}${renderedRoot.slice(bodyEndIndex + 2)}`;
+};
+
+const toPatternContextProviderName = (screenComponentName: string): string => {
+  return `${screenComponentName}PatternContextProvider`;
+};
+
+const toPatternContextHookName = (screenComponentName: string): string => {
+  return `use${screenComponentName}PatternContext`;
+};
+
+const toPatternContextStateTypeName = (screenComponentName: string): string => {
+  return `${screenComponentName}PatternContextState`;
+};
+
+const toPatternClusterStateTypeName = (componentName: string): string => {
+  return `${componentName}State`;
+};
+
+const toFormContextProviderName = (screenComponentName: string): string => {
+  return `${screenComponentName}FormContextProvider`;
+};
+
+const toFormContextHookName = (screenComponentName: string): string => {
+  return `use${screenComponentName}FormContext`;
+};
+
+const buildScreenPatternStatePlan = ({
+  screenComponentName,
+  clusters
+}: {
+  screenComponentName: string;
+  clusters: PatternCluster[];
+}): ScreenPatternStatePlan => {
+  const contextEnabledClusters = clusters
+    .filter((cluster) => cluster.propBindings.length > 0)
+    .sort((left, right) => left.componentName.localeCompare(right.componentName));
+  if (contextEnabledClusters.length === 0) {
+    return {};
+  }
+
+  const clusterSpecs: PatternContextClusterStateSpec[] = contextEnabledClusters.map((cluster) => {
+    const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
+    const sortedMembers = [...cluster.members].sort((left, right) => left.root.id.localeCompare(right.root.id));
+    const entries = sortedMembers.map((member) => {
+      const values = Object.fromEntries(
+        sortedBindings.map((binding) => [binding.propName, binding.valuesByRootNodeId.get(member.root.id)])
+      ) as Record<string, string | undefined>;
+      return {
+        instanceId: member.root.id,
+        values
+      };
+    });
+    return {
+      componentName: cluster.componentName,
+      stateTypeName: toPatternClusterStateTypeName(cluster.componentName),
+      propBindings: sortedBindings,
+      entries
+    };
+  });
+
+  const providerName = toPatternContextProviderName(screenComponentName);
+  const hookName = toPatternContextHookName(screenComponentName);
+  const stateTypeName = toPatternContextStateTypeName(screenComponentName);
+  const contextVarName = `${screenComponentName}PatternContext`;
+  const contextStateLiteral = JSON.stringify(
+    Object.fromEntries(
+      clusterSpecs.map((clusterSpec) => [
+        clusterSpec.componentName,
+        Object.fromEntries(clusterSpec.entries.map((entry) => [entry.instanceId, entry.values]))
+      ])
+    ),
+    null,
+    2
+  );
+  const emptyStateLiteral = JSON.stringify(
+    Object.fromEntries(clusterSpecs.map((clusterSpec) => [clusterSpec.componentName, {}])),
+    null,
+    2
+  );
+  const clusterInterfaces = clusterSpecs
+    .map((clusterSpec) => {
+      const entries = clusterSpec.propBindings
+        .map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)
+        .join("\n");
+      return `export interface ${clusterSpec.stateTypeName} {\n${entries}\n}`;
+    })
+    .join("\n\n");
+  const contextInterfaceEntries = clusterSpecs
+    .map((clusterSpec) => `  ${clusterSpec.componentName}: Record<string, ${clusterSpec.stateTypeName}>;`)
+    .join("\n");
+  const providerPropsName = `${providerName}Props`;
+  const contextSource = `/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, type ReactNode } from "react";
+
+${clusterInterfaces}
+
+export interface ${stateTypeName} {
+${contextInterfaceEntries}
+}
+
+const emptyPatternState: ${stateTypeName} = ${emptyStateLiteral};
+
+const ${contextVarName} = createContext<${stateTypeName}>(emptyPatternState);
+
+interface ${providerPropsName} {
+  initialState: ${stateTypeName};
+  children: ReactNode;
+}
+
+export function ${providerName}({ initialState, children }: ${providerPropsName}) {
+  return <${contextVarName}.Provider value={initialState}>{children}</${contextVarName}.Provider>;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const ${hookName} = (): ${stateTypeName} => {
+  return useContext(${contextVarName});
+};
+`;
+
+  return {
+    contextFileSpec: {
+      file: {
+        path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}PatternContext`)),
+        content: contextSource
+      },
+      providerName,
+      hookName,
+      stateTypeName,
+      importPath: `../context/${screenComponentName}PatternContext`,
+      initialStateLiteral: contextStateLiteral,
+      contextEnabledComponentNames: new Set(clusterSpecs.map((clusterSpec) => clusterSpec.componentName))
+    }
+  };
+};
+
+const buildExtractedComponentFile = ({
+  cluster,
+  patternStatePlan,
+  screen,
+  generationLocale,
+  spacingBase,
+  tokens,
+  iconResolver,
+  imageAssetMap,
+  routePathByScreenId,
+  mappingByNodeId,
+  pageBackgroundColorNormalized,
+  themeComponentDefaults,
+  responsiveTopLevelLayoutOverrides
+}: {
+  cluster: PatternCluster;
+  patternStatePlan: ScreenPatternStatePlan;
+  screen: ScreenIR;
+  generationLocale: string;
+  spacingBase: number;
+  tokens: DesignTokens | undefined;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  themeComponentDefaults?: ThemeComponentDefaults;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+}): GeneratedFile | undefined => {
+  const prototypeRoot = cloneElementForExtraction(cluster.prototype.root);
+  const placeholderImageAssetMap: Record<string, string> = {
+    ...imageAssetMap
+  };
+  const pathNodeMap = collectPathNodeMapForExtraction({
+    root: prototypeRoot,
+    generationLocale
+  });
+
+  for (const binding of cluster.propBindings) {
+    const node = pathNodeMap.get(binding.path);
+    if (!node) {
+      continue;
+    }
+    if (binding.kind === "text" && node.type === "text") {
+      node.text = binding.placeholder;
+      continue;
+    }
+    if (binding.kind === "image_src" && node.type === "image") {
+      placeholderImageAssetMap[node.id] = binding.placeholder;
+      continue;
+    }
+    if (binding.kind === "image_alt" && node.type === "image") {
+      node.name = binding.placeholder;
+    }
+  }
+
+  const headingComponentByNodeId = inferHeadingComponentByNodeId([prototypeRoot]);
+  const typographyVariantByNodeId = resolveTypographyVariantByNodeId({
+    elements: [prototypeRoot],
+    tokens
+  });
+  const componentRenderContext: RenderContext = {
+    screenId: screen.id,
+    screenName: `${screen.name}:${cluster.componentName}`,
+    generationLocale,
+    formHandlingMode: "legacy_use_state",
+    fields: [],
+    accordions: [],
+    tabs: [],
+    dialogs: [],
+    buttons: [],
+    activeRenderElements: new Set<ScreenElementIR>(),
+    renderNodeVisitCount: 0,
+    interactiveDescendantCache: new Map<string, boolean>(),
+    meaningfulTextDescendantCache: new Map<string, boolean>(),
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    accessibilityWarnings: [],
+    muiImports: new Set<string>(),
+    iconImports: [],
+    iconResolver,
+    imageAssetMap: placeholderImageAssetMap,
+    routePathByScreenId,
+    usesRouterLink: false,
+    usesNavigateHandler: false,
+    prototypeNavigationRenderedCount: 0,
+    mappedImports: [],
+    spacingBase,
+    ...(tokens ? { tokens } : {}),
+    mappingByNodeId,
+    usedMappingNodeIds: new Set<string>(),
+    mappingWarnings: [],
+    emittedWarningKeys: new Set<string>(),
+    emittedAccessibilityWarningKeys: new Set<string>(),
+    pageBackgroundColorNormalized,
+    ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+    ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {}),
+    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
+  };
+
+  const renderedRoot = renderElement(prototypeRoot, 2, cluster.prototype.parent, componentRenderContext);
+  if (!renderedRoot || !renderedRoot.trim()) {
+    return undefined;
+  }
+  if (
+    componentRenderContext.fields.length > 0 ||
+    componentRenderContext.accordions.length > 0 ||
+    componentRenderContext.tabs.length > 0 ||
+    componentRenderContext.dialogs.length > 0 ||
+    componentRenderContext.usesNavigateHandler
+  ) {
+    return undefined;
+  }
+
+  let renderedComponentBody = renderedRoot;
+  for (const binding of cluster.propBindings) {
+    const placeholderLiteral = literal(binding.placeholder);
+    if (binding.kind === "text") {
+      renderedComponentBody = renderedComponentBody.split(`{${placeholderLiteral}}`).join(`{${binding.propName}}`);
+      continue;
+    }
+    if (binding.kind === "image_src") {
+      renderedComponentBody = renderedComponentBody
+        .split(`src={${placeholderLiteral}}`)
+        .join(`src={${binding.propName}}`);
+      continue;
+    }
+    renderedComponentBody = renderedComponentBody
+      .split(`alt={${placeholderLiteral}}`)
+      .join(`alt={${binding.propName}}`);
+  }
+
+  const renderedWithSx = injectRootSxPropForExtractedComponent(renderedComponentBody);
+  if (!renderedWithSx) {
+    return undefined;
+  }
+
+  const contextFileSpec = patternStatePlan.contextFileSpec;
+  const patternContextSpec =
+    contextFileSpec &&
+    contextFileSpec.contextEnabledComponentNames.has(cluster.componentName) &&
+    cluster.propBindings.length > 0
+      ? contextFileSpec
+      : undefined;
+  const usesPatternContext = patternContextSpec !== undefined;
+  const sortedMuiImports = [...componentRenderContext.muiImports].sort((left, right) => left.localeCompare(right));
+  if (sortedMuiImports.length === 0) {
+    return undefined;
+  }
+  const iconImports = normalizeIconImports(componentRenderContext.iconImports)
+    .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
+    .join("\n");
+  const mappedImports = componentRenderContext.mappedImports
+    .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
+    .join("\n");
+  const routerImports: string[] = componentRenderContext.usesRouterLink ? ["Link as RouterLink"] : [];
+  const reactRouterImport = routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
+  const patternContextImport = patternContextSpec
+    ? `import { ${patternContextSpec.hookName} } from "${patternContextSpec.importPath}";\n`
+    : "";
+  const navigationHookBlock = "";
+  const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
+  const propsInterfaceEntries = usesPatternContext
+    ? ["  instanceId: string;", "  sx?: SxProps<Theme>;"].join("\n")
+    : ["  sx?: SxProps<Theme>;", ...sortedBindings.map((binding) => `  ${binding.propName}${binding.optional ? "?" : ""}: string;`)].join(
+        "\n"
+      );
+  const parameterEntries = usesPatternContext ? ["instanceId", "sx"] : ["sx", ...sortedBindings.map((binding) => binding.propName)];
+  const patternContextBindingBlock = patternContextSpec
+    ? [
+        `const patternContext = ${patternContextSpec.hookName}();`,
+        `const patternState = patternContext.${cluster.componentName}[instanceId];`,
+        ...sortedBindings.map((binding) => {
+          const fallbackSuffix = binding.kind === "image_src" ? "" : ' ?? ""';
+          return `const ${binding.propName} = patternState?.${binding.propName}${fallbackSuffix};`;
+        })
+      ].join("\n")
+    : "";
+  const componentSetupBlock = [patternContextBindingBlock, navigationHookBlock]
+    .filter((block) => block.length > 0)
+    .join("\n\n");
+  const componentSource = `${reactRouterImport}${patternContextImport}import type { SxProps, Theme } from "@mui/material/styles";
+import { ${sortedMuiImports.join(", ")} } from "@mui/material";
+${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
+
+interface ${cluster.componentName}Props {
+${propsInterfaceEntries}
+}
+
+export function ${cluster.componentName}({ ${parameterEntries.join(", ")} }: ${cluster.componentName}Props) {
+${componentSetupBlock ? `${indentBlock(componentSetupBlock, 2)}\n` : ""}  return (
+${renderedWithSx}
+  );
+}
+`;
+  return {
+    path: path.posix.join("src", "components", ensureTsxName(cluster.componentName)),
+    content: extractSharedSxConstantsFromScreenContent(componentSource)
+  };
+};
+
+const buildInvocationMap = ({
+  patternStatePlan,
+  clusters
+}: {
+  patternStatePlan: ScreenPatternStatePlan;
+  clusters: PatternCluster[];
+}): Map<string, PatternExtractionInvocation> => {
+  const byRootNodeId = new Map<string, PatternExtractionInvocation>();
+  const contextEnabledComponentNames = patternStatePlan.contextFileSpec?.contextEnabledComponentNames ?? new Set<string>();
+  for (const cluster of clusters) {
+    const usesPatternContext = contextEnabledComponentNames.has(cluster.componentName);
+    for (const member of cluster.members) {
+      const propValues = Object.fromEntries(
+        cluster.propBindings.map((binding) => [binding.propName, binding.valuesByRootNodeId.get(member.root.id)])
+      ) as Record<string, string | undefined>;
+      byRootNodeId.set(member.root.id, {
+        componentName: cluster.componentName,
+        instanceId: member.root.id,
+        usesPatternContext,
+        propValues
+      });
+    }
+  }
+  return byRootNodeId;
+};
+
+const collectExtractionCandidates = ({
+  roots,
+  rootParent,
+  generationLocale
+}: {
+  roots: ScreenElementIR[];
+  rootParent: VirtualParent;
+  generationLocale: string;
+}): ExtractionCandidate[] => {
+  const candidates: ExtractionCandidate[] = [];
+  const sortedRoots = toSortedChildrenForExtraction({
+    children: roots,
+    layoutMode: rootParent.layoutMode ?? "NONE",
+    generationLocale
+  });
+
+  const visit = ({
+    node,
+    parent,
+    depth
+  }: {
+    node: ScreenElementIR;
+    parent: VirtualParent;
+    depth: number;
+  }): void => {
+    const subtreeNodeIds = collectSubtreeNodeIdsForExtraction(node);
+    const subtreeNodeCount = subtreeNodeIds.size;
+    const children = node.children ?? [];
+    if (
+      EXTRACTION_CANDIDATE_TYPES.has(node.type) &&
+      children.length >= 1 &&
+      subtreeNodeCount >= PATTERN_MIN_SUBTREE_NODE_COUNT &&
+      hasTextOrImageDescendants(node) &&
+      !hasForbiddenExtractionSignals(node)
+    ) {
+      candidates.push({
+        root: node,
+        parent,
+        depth,
+        signature: computeStructuralSignature({
+          root: node,
+          generationLocale
+        }),
+        pathNodeMap: collectPathNodeMapForExtraction({
+          root: node,
+          generationLocale
+        }),
+        subtreeNodeIds,
+        subtreeNodeCount
+      });
+    }
+
+    const nextParent: VirtualParent = {
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      name: node.name,
+      fillColor: node.fillColor,
+      fillGradient: node.fillGradient,
+      layoutMode: node.layoutMode ?? "NONE"
+    };
+    const sortedChildren = toSortedChildrenForExtraction({
+      children,
+      layoutMode: node.layoutMode ?? "NONE",
+      generationLocale
+    });
+    sortedChildren.forEach((child) => {
+      visit({
+        node: child,
+        parent: nextParent,
+        depth: depth + 1
+      });
+    });
+  };
+
+  sortedRoots.forEach((root) => {
+    visit({
+      node: root,
+      parent: rootParent,
+      depth: 3
+    });
+  });
+
+  return candidates;
+};
+
+const buildPatternClusters = ({
+  candidates,
+  screenComponentName,
+  imageAssetMap
+}: {
+  candidates: ExtractionCandidate[];
+  screenComponentName: string;
+  imageAssetMap: Record<string, string>;
+}): PatternCluster[] => {
+  const sortedCandidates = [...candidates].sort((left, right) => {
+    if (left.subtreeNodeCount !== right.subtreeNodeCount) {
+      return right.subtreeNodeCount - left.subtreeNodeCount;
+    }
+    return left.root.id.localeCompare(right.root.id);
+  });
+  const rawClusters: ExtractionCandidate[][] = [];
+  for (const candidate of sortedCandidates) {
+    const matchingCluster = rawClusters.find((cluster) => {
+      const prototype = cluster[0];
+      if (!prototype) {
+        return false;
+      }
+      return computeSubtreeSimilarity(prototype.signature, candidate.signature) >= PATTERN_SIMILARITY_THRESHOLD;
+    });
+    if (matchingCluster) {
+      matchingCluster.push(candidate);
+      continue;
+    }
+    rawClusters.push([candidate]);
+  }
+
+  const reservedSubtreeNodeIds = new Set<string>();
+  const reservedRootIds = new Set<string>();
+  const selectedClusters: PatternCluster[] = [];
+  const sortedRawClusters = rawClusters
+    .filter((cluster) => cluster.length >= PATTERN_MIN_OCCURRENCES)
+    .sort((left, right) => {
+      const leftSize = left[0]?.subtreeNodeCount ?? 0;
+      const rightSize = right[0]?.subtreeNodeCount ?? 0;
+      if (leftSize !== rightSize) {
+        return rightSize - leftSize;
+      }
+      return (left[0]?.root.id ?? "").localeCompare(right[0]?.root.id ?? "");
+    });
+
+  let clusterIndex = 1;
+  for (const cluster of sortedRawClusters) {
+    const localMembers: ExtractionCandidate[] = [];
+    const localRootIds = new Set<string>();
+    const localSubtreeIds = new Set<string>();
+    const memberCandidates = [...cluster].sort((left, right) => {
+      if (left.subtreeNodeCount !== right.subtreeNodeCount) {
+        return right.subtreeNodeCount - left.subtreeNodeCount;
+      }
+      return left.root.id.localeCompare(right.root.id);
+    });
+
+    for (const member of memberCandidates) {
+      const collidesWithGlobal =
+        reservedSubtreeNodeIds.has(member.root.id) ||
+        hasIntersectionWithSet({ values: member.subtreeNodeIds, targets: reservedRootIds });
+      if (collidesWithGlobal) {
+        continue;
+      }
+      const collidesWithLocal =
+        localSubtreeIds.has(member.root.id) || hasIntersectionWithSet({ values: member.subtreeNodeIds, targets: localRootIds });
+      if (collidesWithLocal) {
+        continue;
+      }
+      localMembers.push(member);
+      localRootIds.add(member.root.id);
+      for (const nodeId of member.subtreeNodeIds) {
+        localSubtreeIds.add(nodeId);
+      }
+    }
+
+    if (localMembers.length < PATTERN_MIN_OCCURRENCES) {
+      continue;
+    }
+    localMembers.sort((left, right) => left.root.id.localeCompare(right.root.id));
+    const propBindings = inferDynamicPropsFromCluster({
+      members: localMembers,
+      imageAssetMap
+    });
+    const [prototype] = localMembers;
+    if (!prototype) {
+      continue;
+    }
+    const componentName = `${screenComponentName}Pattern${clusterIndex}`;
+    selectedClusters.push({
+      componentName,
+      prototype,
+      members: localMembers,
+      propBindings
+    });
+    clusterIndex += 1;
+    for (const nodeId of localSubtreeIds) {
+      reservedSubtreeNodeIds.add(nodeId);
+    }
+    for (const nodeId of localRootIds) {
+      reservedRootIds.add(nodeId);
+    }
+  }
+
+  return selectedClusters;
+};
+
+const buildPatternExtractionPlan = ({
+  enablePatternExtraction,
+  screen,
+  screenComponentName,
+  roots,
+  rootParent,
+  generationLocale,
+  spacingBase,
+  tokens,
+  iconResolver,
+  imageAssetMap,
+  routePathByScreenId,
+  mappingByNodeId,
+  pageBackgroundColorNormalized,
+  themeComponentDefaults,
+  responsiveTopLevelLayoutOverrides
+}: {
+  enablePatternExtraction: boolean;
+  screen: ScreenIR;
+  screenComponentName: string;
+  roots: ScreenElementIR[];
+  rootParent: VirtualParent;
+  generationLocale: string;
+  spacingBase: number;
+  tokens: DesignTokens | undefined;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  themeComponentDefaults?: ThemeComponentDefaults;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+}): PatternExtractionPlan => {
+  if (!enablePatternExtraction) {
+    return emptyPatternExtractionPlan();
+  }
+  const candidates = collectExtractionCandidates({
+    roots,
+    rootParent,
+    generationLocale
+  });
+  if (candidates.length < PATTERN_MIN_OCCURRENCES) {
+    return emptyPatternExtractionPlan();
+  }
+  const clusters = buildPatternClusters({
+    candidates,
+    screenComponentName,
+    imageAssetMap
+  });
+  if (clusters.length === 0) {
+    return emptyPatternExtractionPlan();
+  }
+
+  const preliminaryPatternStatePlan = buildScreenPatternStatePlan({
+    screenComponentName,
+    clusters
+  });
+  const componentFiles: GeneratedFile[] = [];
+  const componentImports: ExtractedComponentImportSpec[] = [];
+  const usableClusters: PatternCluster[] = [];
+  for (const cluster of clusters) {
+    const file = buildExtractedComponentFile({
+      cluster,
+      patternStatePlan: preliminaryPatternStatePlan,
+      screen,
+      generationLocale,
+      spacingBase,
+      tokens,
+      iconResolver,
+      imageAssetMap,
+      routePathByScreenId,
+      mappingByNodeId,
+      pageBackgroundColorNormalized,
+      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {})
+    });
+    if (!file) {
+      continue;
+    }
+    usableClusters.push(cluster);
+    componentFiles.push(file);
+    componentImports.push({
+      componentName: cluster.componentName,
+      importPath: `../components/${cluster.componentName}`
+    });
+  }
+  if (usableClusters.length === 0) {
+    return emptyPatternExtractionPlan();
+  }
+
+  const patternStatePlan = buildScreenPatternStatePlan({
+    screenComponentName,
+    clusters: usableClusters
+  });
+  const invocationByRootNodeId = buildInvocationMap({
+    patternStatePlan,
+    clusters: usableClusters
+  });
+  const contextFiles = patternStatePlan.contextFileSpec ? [patternStatePlan.contextFileSpec.file] : [];
+  return {
+    componentFiles,
+    contextFiles,
+    componentImports: componentImports.sort((left, right) => left.componentName.localeCompare(right.componentName)),
+    invocationByRootNodeId,
+    patternStatePlan
+  };
+};
+
+const toPaintSxEntries = ({
+  fillColor,
+  fillGradient,
+  includePaints,
+  tokens
+}: {
+  fillColor: ScreenElementIR["fillColor"];
+  fillGradient: ScreenElementIR["fillGradient"];
+  includePaints: boolean;
+  tokens: DesignTokens | undefined;
+}): Array<[string, string | number | undefined]> => {
+  if (!includePaints) {
+    return [];
+  }
+  return [
+    ["background", fillGradient ? literal(fillGradient) : undefined],
+    ["bgcolor", !fillGradient ? toThemeColorLiteral({ color: fillColor, tokens }) : undefined]
+  ];
+};
+
+const normalizeElevationForSx = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return clamp(Math.round(value), 0, 24);
+};
+
+const matchesRoundedInteger = ({
+  value,
+  target
+}: {
+  value: number | undefined;
+  target: number | undefined;
+}): boolean => {
+  if (typeof target !== "number" || !Number.isFinite(target)) {
+    return false;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return false;
+  }
+  return Math.round(value) === target;
+};
+
+const toShadowSxEntry = ({
+  elevation,
+  insetShadow,
+  preferInsetShadow
+}: {
+  elevation: number | undefined;
+  insetShadow: string | undefined;
+  preferInsetShadow: boolean;
+}): string | number | undefined => {
+  const normalizedInset = typeof insetShadow === "string" && insetShadow.trim().length > 0 ? literal(insetShadow.trim()) : undefined;
+  const normalizedElevation = normalizeElevationForSx(elevation);
+
+  if (preferInsetShadow) {
+    return normalizedInset ?? normalizedElevation;
+  }
+  return normalizedElevation !== undefined ? normalizedElevation : normalizedInset;
+};
+
+const toVariantStateSxObject = ({
+  style,
+  tokens
+}: {
+  style: VariantStateStyle | undefined;
+  tokens: DesignTokens | undefined;
+}): string | undefined => {
+  if (!style) {
+    return undefined;
+  }
+  const stateSx = sxString([
+    ["bgcolor", toThemeColorLiteral({ color: style.backgroundColor, tokens })],
+    ["borderColor", toThemeColorLiteral({ color: style.borderColor, tokens })],
+    ["color", toThemeColorLiteral({ color: style.color, tokens })]
+  ]);
+  if (!stateSx.trim()) {
+    return undefined;
+  }
+  return `{ ${stateSx} }`;
+};
+
+const appendVariantStateOverridesToSx = ({
+  sx,
+  element,
+  tokens
+}: {
+  sx: string;
+  element: ScreenElementIR;
+  tokens: DesignTokens | undefined;
+}): string => {
+  const stateOverrides = element.variantMapping?.stateOverrides;
+  if (!stateOverrides) {
+    return sx;
+  }
+  const selectors = [
+    ["\"&:hover\"", toVariantStateSxObject({ style: stateOverrides.hover, tokens })],
+    ["\"&:active\"", toVariantStateSxObject({ style: stateOverrides.active, tokens })],
+    ["\"&.Mui-disabled\"", toVariantStateSxObject({ style: stateOverrides.disabled, tokens })]
+  ]
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([selector, style]) => `${selector}: ${style}`);
+  if (selectors.length === 0) {
+    return sx;
+  }
+  const normalizedBase = sx.trim();
+  if (!normalizedBase) {
+    return selectors.join(", ");
+  }
+  return `${normalizedBase}, ${selectors.join(", ")}`;
+};
+
+const toChipVariant = (value: "contained" | "outlined" | "text" | undefined): "filled" | "outlined" | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  if (value === "outlined") {
+    return "outlined";
+  }
+  return "filled";
+};
+
+const toChipSize = (value: "small" | "medium" | "large" | undefined): "small" | "medium" | undefined => {
+  if (value === "small") {
+    return "small";
+  }
+  if (value === "medium" || value === "large") {
+    return "medium";
+  }
+  return undefined;
+};
+
+const inferChipSizeFromHeight = (height: number | undefined): "small" | "medium" | undefined => {
+  if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
+    return undefined;
+  }
+  return height <= 28 ? "small" : "medium";
 };
 
 const indentBlock = (value: string, spaces: number): string => {
@@ -266,10 +3320,22 @@ const indentBlock = (value: string, spaces: number): string => {
 const baseLayoutEntries = (
   element: ScreenElementIR,
   parent: VirtualParent,
-  options?: { includePaints?: boolean }
+  options?: {
+    includePaints?: boolean;
+    preferInsetShadow?: boolean;
+    spacingBase?: number;
+    tokens?: DesignTokens | undefined;
+  }
 ): Array<[string, string | number | undefined]> => {
   const includePaints = options?.includePaints ?? true;
+  const preferInsetShadow = options?.preferInsetShadow ?? true;
+  const spacingBase = normalizeSpacingBase(options?.spacingBase);
+  const tokens = options?.tokens;
   const parentLayout = parent.layoutMode ?? "NONE";
+  const parentWidth =
+    typeof parent.width === "number" && Number.isFinite(parent.width) && parent.width > 0 ? parent.width : undefined;
+  const elementWidth =
+    typeof element.width === "number" && Number.isFinite(element.width) && element.width > 0 ? element.width : undefined;
   const isAbsoluteChild =
     parentLayout === "NONE" &&
     typeof element.x === "number" &&
@@ -280,53 +3346,543 @@ const baseLayoutEntries = (
   const layoutMode = element.layoutMode ?? "NONE";
   const hasChildren = (element.children?.length ?? 0) > 0;
   const isFlex = layoutMode === "VERTICAL" || layoutMode === "HORIZONTAL";
+  const isFlowContainer = hasChildren && !isAbsoluteChild && (layoutMode !== "NONE" || parentLayout !== "NONE");
   const resolvedPosition = isAbsoluteChild ? "absolute" : layoutMode === "NONE" && hasChildren ? "relative" : undefined;
+  const responsiveWidth = isFlowContainer
+    ? parentWidth && elementWidth
+      ? toPercentLiteralFromRatio(elementWidth / parentWidth) ?? literal("100%")
+      : literal("100%")
+    : undefined;
 
   const entries: Array<[string, string | number | undefined]> = [
     ["position", resolvedPosition ? literal(resolvedPosition) : undefined],
     ["left", isAbsoluteChild ? toPxLiteral((element.x ?? 0) - (parent.x ?? 0)) : undefined],
     ["top", isAbsoluteChild ? toPxLiteral((element.y ?? 0) - (parent.y ?? 0)) : undefined],
-    ["width", toPxLiteral(element.width)],
+    ["width", isFlowContainer ? responsiveWidth : toPxLiteral(element.width)],
+    ["maxWidth", isFlowContainer ? toPxLiteral(element.width) : undefined],
     ["height", !hasChildren ? toPxLiteral(element.height) : undefined],
     ["minHeight", hasChildren ? toPxLiteral(element.height) : undefined],
     ["display", isFlex ? literal("flex") : undefined],
     ["flexDirection", layoutMode === "VERTICAL" ? literal("column") : layoutMode === "HORIZONTAL" ? literal("row") : undefined],
-    ["gap", element.gap && element.gap > 0 ? toPxLiteral(element.gap) : undefined],
-    ["pt", element.padding && element.padding.top > 0 ? toPxLiteral(element.padding.top) : undefined],
-    ["pr", element.padding && element.padding.right > 0 ? toPxLiteral(element.padding.right) : undefined],
-    ["pb", element.padding && element.padding.bottom > 0 ? toPxLiteral(element.padding.bottom) : undefined],
-    ["pl", element.padding && element.padding.left > 0 ? toPxLiteral(element.padding.left) : undefined],
-    ["bgcolor", includePaints && element.fillColor ? literal(element.fillColor) : undefined],
+    [
+      "alignItems",
+      isFlex
+        ? (() => {
+            const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
+            return alignItems ? literal(alignItems) : undefined;
+          })()
+        : undefined
+    ],
+    [
+      "justifyContent",
+      isFlex
+        ? (() => {
+            const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+            return justifyContent ? literal(justifyContent) : undefined;
+          })()
+        : undefined
+    ],
+    [
+      "gap",
+      element.gap && element.gap > 0 ? toSpacingUnitValue({ value: element.gap, spacingBase }) : undefined
+    ],
+    ...toBoxSpacingSxEntries({
+      values: element.padding,
+      spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    }),
+    ...toBoxSpacingSxEntries({
+      values: element.margin,
+      spacingBase,
+      allKey: "m",
+      xKey: "mx",
+      yKey: "my",
+      topKey: "mt",
+      rightKey: "mr",
+      bottomKey: "mb",
+      leftKey: "ml"
+    }),
+    ["opacity", normalizeOpacityForSx(element.opacity)],
+    ...toPaintSxEntries({
+      fillColor: element.fillColor,
+      fillGradient: element.fillGradient,
+      includePaints,
+      tokens
+    }),
     [
       "border",
       includePaints && element.strokeColor
         ? literal(`${Math.max(1, Math.round(element.strokeWidth ?? 1))}px solid`)
         : undefined
     ],
-    ["borderColor", includePaints && element.strokeColor ? literal(element.strokeColor) : undefined],
-    ["borderRadius", element.cornerRadius ? toPxLiteral(element.cornerRadius) : undefined],
-    ["boxSizing", literal("border-box")],
-    ["overflow", literal("visible")]
+    ["borderColor", includePaints ? toThemeColorLiteral({ color: element.strokeColor, tokens }) : undefined],
+    ["borderRadius", toThemeBorderRadiusValue({ radiusPx: element.cornerRadius, tokens })],
+    [
+      "boxShadow",
+      toShadowSxEntry({
+        elevation: element.elevation,
+        insetShadow: element.insetShadow,
+        preferInsetShadow
+      })
+    ]
   ];
 
   return entries;
 };
 
-const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent): string => {
+const RESPONSIVE_BREAKPOINT_ORDER: ResponsiveBreakpoint[] = ["xs", "sm", "md", "lg", "xl"];
+const MUI_DEFAULT_BREAKPOINT_VALUES: Record<ResponsiveBreakpoint, number> = {
+  xs: 0,
+  sm: 600,
+  md: 900,
+  lg: 1200,
+  xl: 1536
+};
+
+const RESPONSIVE_FALLBACK_RESET_VALUE_BY_PROPERTY: Record<string, string> = {
+  maxWidth: literal("none"),
+  width: literal("auto"),
+  minHeight: literal("auto"),
+  display: literal("initial"),
+  flexDirection: literal("initial"),
+  justifyContent: literal("initial"),
+  alignItems: literal("initial"),
+  gap: literal("initial")
+};
+
+type ResponsiveSxValue = string | number | undefined;
+type ResponsiveSxEntry = [string, ResponsiveSxValue];
+
+const toResponsiveSxValueLiteral = (value: string | number): string => {
+  return typeof value === "number" ? `${value}` : value;
+};
+
+const hasSameResponsiveSxValue = (left: ResponsiveSxValue, right: ResponsiveSxValue): boolean => {
+  if (left === undefined && right === undefined) {
+    return true;
+  }
+  if (typeof left !== typeof right) {
+    return false;
+  }
+  return left === right;
+};
+
+const toSxValueMapFromEntries = (entries: ResponsiveSxEntry[]): Map<string, string | number> => {
+  const valueByKey = new Map<string, string | number>();
+  for (const [key, value] of dedupeSxEntries(entries)) {
+    valueByKey.set(key, value);
+  }
+  return valueByKey;
+};
+
+const pushResponsiveStyleEntry = ({
+  byBreakpoint,
+  breakpoint,
+  entry
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
+  breakpoint: ResponsiveBreakpoint;
+  entry: ResponsiveSxEntry;
+}): void => {
+  const current = byBreakpoint.get(breakpoint) ?? [];
+  current.push(entry);
+  byBreakpoint.set(breakpoint, current);
+};
+
+const appendLayoutOverrideEntriesForBreakpoint = ({
+  byBreakpoint,
+  breakpoint,
+  baseLayoutMode,
+  override,
+  spacingBase
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
+  breakpoint: ResponsiveBreakpoint;
+  baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  override: ScreenResponsiveLayoutOverride;
+  spacingBase: number;
+}): void => {
+  const effectiveLayoutMode = override.layoutMode ?? baseLayoutMode;
+  if (override.layoutMode) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["display", literal(effectiveLayoutMode === "NONE" ? "block" : "flex")]
+    });
+    if (effectiveLayoutMode !== "NONE") {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["flexDirection", literal(effectiveLayoutMode === "HORIZONTAL" ? "row" : "column")]
+      });
+    }
+  }
+
+  if (override.primaryAxisAlignItems) {
+    const justifyContent = mapPrimaryAxisAlignToJustifyContent(override.primaryAxisAlignItems);
+    if (justifyContent) {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["justifyContent", literal(justifyContent)]
+      });
+    }
+  } else if (override.layoutMode === "NONE") {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["justifyContent", literal("initial")]
+    });
+  }
+
+  if (override.counterAxisAlignItems) {
+    const alignItems = mapCounterAxisAlignToAlignItems(override.counterAxisAlignItems, effectiveLayoutMode);
+    if (alignItems) {
+      pushResponsiveStyleEntry({
+        byBreakpoint,
+        breakpoint,
+        entry: ["alignItems", literal(alignItems)]
+      });
+    }
+  } else if (override.layoutMode === "NONE") {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["alignItems", literal("initial")]
+    });
+  }
+
+  if (typeof override.gap === "number" && Number.isFinite(override.gap)) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["gap", toSpacingUnitValue({ value: override.gap, spacingBase })]
+    });
+  }
+
+  if (typeof override.widthRatio === "number" && Number.isFinite(override.widthRatio) && override.widthRatio > 0) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["width", toPercentLiteralFromRatio(override.widthRatio)]
+    });
+  }
+
+  if (typeof override.minHeight === "number" && Number.isFinite(override.minHeight) && override.minHeight > 0) {
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint,
+      entry: ["minHeight", toPxLiteral(override.minHeight)]
+    });
+  }
+};
+
+const toResponsivePropertyValueByBreakpoint = (
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>
+): Map<string, Map<ResponsiveBreakpoint, string | number>> => {
+  const valuesByProperty = new Map<string, Map<ResponsiveBreakpoint, string | number>>();
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const styleEntries = byBreakpoint.get(breakpoint);
+    if (!styleEntries || styleEntries.length === 0) {
+      continue;
+    }
+    for (const [property, value] of dedupeSxEntries(styleEntries)) {
+      const byBreakpointValues = valuesByProperty.get(property) ?? new Map<ResponsiveBreakpoint, string | number>();
+      byBreakpointValues.set(breakpoint, value);
+      valuesByProperty.set(property, byBreakpointValues);
+    }
+  }
+  return valuesByProperty;
+};
+
+const toResponsiveObjectLiteralForProperty = ({
+  property,
+  overrideValuesByBreakpoint,
+  baseValue
+}: {
+  property: string;
+  overrideValuesByBreakpoint: Map<ResponsiveBreakpoint, string | number>;
+  baseValue: string | number | undefined;
+}): string | undefined => {
+  const stepEntries: string[] = [];
+  const resetValue = baseValue === undefined ? RESPONSIVE_FALLBACK_RESET_VALUE_BY_PROPERTY[property] : undefined;
+  let previousEffective: ResponsiveSxValue = baseValue;
+
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const overrideValue = overrideValuesByBreakpoint.get(breakpoint);
+    const effectiveValue = overrideValue !== undefined ? overrideValue : baseValue;
+    if (hasSameResponsiveSxValue(effectiveValue, previousEffective)) {
+      continue;
+    }
+    if (effectiveValue !== undefined) {
+      stepEntries.push(`${breakpoint}: ${toResponsiveSxValueLiteral(effectiveValue)}`);
+      previousEffective = effectiveValue;
+      continue;
+    }
+    if (resetValue !== undefined) {
+      stepEntries.push(`${breakpoint}: ${resetValue}`);
+    }
+    previousEffective = effectiveValue;
+  }
+
+  if (stepEntries.length === 0) {
+    return undefined;
+  }
+  return `{ ${stepEntries.join(", ")} }`;
+};
+
+const toResponsiveObjectEntries = ({
+  byBreakpoint,
+  baseValuesByKey
+}: {
+  byBreakpoint: Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>;
+  baseValuesByKey: Map<string, string | number>;
+}): ResponsiveSxEntry[] => {
+  const entries: ResponsiveSxEntry[] = [];
+  for (const [property, overrideValuesByBreakpoint] of toResponsivePropertyValueByBreakpoint(byBreakpoint).entries()) {
+    const responsiveObjectLiteral = toResponsiveObjectLiteralForProperty({
+      property,
+      overrideValuesByBreakpoint,
+      baseValue: baseValuesByKey.get(property)
+    });
+    if (!responsiveObjectLiteral) {
+      continue;
+    }
+    entries.push([property, responsiveObjectLiteral]);
+  }
+  return entries;
+};
+
+const toResponsiveLayoutMediaEntries = ({
+  baseLayoutMode,
+  overrides,
+  spacingBase,
+  baseValuesByKey = new Map<string, string | number>()
+}: {
+  baseLayoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  overrides: ScreenResponsiveLayoutOverridesByBreakpoint | undefined;
+  spacingBase: number;
+  baseValuesByKey?: Map<string, string | number>;
+}): ResponsiveSxEntry[] => {
+  if (!overrides) {
+    return [];
+  }
+  const byBreakpoint = new Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>();
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const override = overrides[breakpoint];
+    if (!override) {
+      continue;
+    }
+    appendLayoutOverrideEntriesForBreakpoint({
+      byBreakpoint,
+      breakpoint,
+      baseLayoutMode,
+      override,
+      spacingBase
+    });
+  }
+  return toResponsiveObjectEntries({
+    byBreakpoint,
+    baseValuesByKey
+  });
+};
+
+const toElementSx = ({
+  element,
+  parent,
+  context,
+  includePaints = true,
+  preferInsetShadow = true
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+  context: RenderContext;
+  includePaints?: boolean;
+  preferInsetShadow?: boolean;
+}): string => {
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints,
+    preferInsetShadow,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const responsiveEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseEntries)
+  });
+  return sxString([
+    ...baseEntries,
+    ...responsiveEntries
+  ]);
+};
+
+const toResponsiveBaseLayoutValues = ({
+  layoutMode,
+  gap,
+  primaryAxisAlignItems,
+  counterAxisAlignItems,
+  spacingBase
+}: {
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  gap: number;
+  primaryAxisAlignItems?: ScreenResponsiveLayoutOverride["primaryAxisAlignItems"];
+  counterAxisAlignItems?: ScreenResponsiveLayoutOverride["counterAxisAlignItems"];
+  spacingBase: number;
+}): Map<string, string | number> => {
+  const entries: ResponsiveSxEntry[] = [];
+  if (layoutMode === "HORIZONTAL" || layoutMode === "VERTICAL") {
+    entries.push(["display", literal("flex")]);
+    entries.push(["flexDirection", literal(layoutMode === "HORIZONTAL" ? "row" : "column")]);
+    const justifyContent = mapPrimaryAxisAlignToJustifyContent(primaryAxisAlignItems);
+    if (justifyContent) {
+      entries.push(["justifyContent", literal(justifyContent)]);
+    }
+    const alignItems = mapCounterAxisAlignToAlignItems(counterAxisAlignItems, layoutMode);
+    if (alignItems) {
+      entries.push(["alignItems", literal(alignItems)]);
+    }
+  }
+  if (typeof gap === "number" && Number.isFinite(gap) && gap > 0) {
+    entries.push(["gap", toSpacingUnitValue({ value: gap, spacingBase })]);
+  }
+  return toSxValueMapFromEntries(entries);
+};
+
+const toScreenResponsiveRootMediaEntries = ({
+  screen,
+  spacingBase
+}: {
+  screen: ScreenIR;
+  spacingBase: number;
+}): Array<[string, string | number | undefined]> => {
+  if (!screen.responsive) {
+    return [];
+  }
+
+  const byBreakpoint = new Map<ResponsiveBreakpoint, ResponsiveSxEntry[]>();
+
+  for (const variant of screen.responsive.variants) {
+    if (typeof variant.width !== "number" || !Number.isFinite(variant.width) || variant.width <= 0) {
+      continue;
+    }
+    pushResponsiveStyleEntry({
+      byBreakpoint,
+      breakpoint: variant.breakpoint,
+      entry: ["maxWidth", literal(`${Math.round(variant.width)}px`)]
+    });
+  }
+
+  const rootOverrides = screen.responsive.rootLayoutOverrides;
+  if (rootOverrides) {
+    for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+      const override = rootOverrides[breakpoint];
+      if (!override) {
+        continue;
+      }
+      appendLayoutOverrideEntriesForBreakpoint({
+        byBreakpoint,
+        breakpoint,
+        baseLayoutMode: screen.layoutMode,
+        override,
+        spacingBase
+      });
+    }
+  }
+
+  const baseValuesByKey = toResponsiveBaseLayoutValues({
+    layoutMode: screen.layoutMode,
+    gap: screen.gap,
+    primaryAxisAlignItems: screen.primaryAxisAlignItems,
+    counterAxisAlignItems: screen.counterAxisAlignItems,
+    spacingBase
+  });
+  baseValuesByKey.set("maxWidth", literal("none"));
+
+  return toResponsiveObjectEntries({
+    byBreakpoint,
+    baseValuesByKey
+  });
+};
+
+const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text?.trim() || element.name);
+  const headingComponent = context.headingComponentByNodeId.get(element.id);
+  const typographyVariantName = context.typographyVariantByNodeId.get(element.id);
+  const typographyVariant = typographyVariantName && context.tokens ? context.tokens.typography[typographyVariantName] : undefined;
   const normalizedFont = normalizeFontFamily(element.fontFamily);
-  const textLayoutEntries = baseLayoutEntries(element, parent, { includePaints: false }).filter(([key]) => {
-    return key !== "width" && key !== "height" && key !== "minHeight";
+  const normalizedVariantFont = normalizeFontFamily(typographyVariant?.fontFamily ?? context.tokens?.fontFamily);
+  const letterSpacingEm = toLetterSpacingEm({
+    letterSpacingPx: element.letterSpacing,
+    fontSizePx: element.fontSize
   });
+  const baseTextLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const responsiveTextLayoutEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseTextLayoutEntries)
+  });
+  const textLayoutEntries = [
+    ...baseTextLayoutEntries.filter(([key]) => {
+      return key !== "width" && key !== "height" && key !== "minHeight";
+    }),
+    ...responsiveTextLayoutEntries
+  ];
 
+  const isLinkLikeColor = element.fillColor && /^#0[0-4][0-9a-f]{4}$/i.test(element.fillColor);
+  const omitFontSize = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.fontSize,
+        right: typographyVariant.fontSizePx,
+        tolerance: 2
+      })
+    : false;
+  const omitFontWeight = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.fontWeight,
+        right: typographyVariant.fontWeight,
+        tolerance: 75
+      })
+    : false;
+  const omitLineHeight = typographyVariant
+    ? approximatelyEqualNumber({
+        left: element.lineHeight,
+        right: typographyVariant.lineHeightPx,
+        tolerance: 3
+      })
+    : false;
+  const omitFontFamily = typographyVariant
+    ? (!normalizedFont && !normalizedVariantFont) || normalizedFont === normalizedVariantFont
+    : false;
+  const omitLetterSpacing = typographyVariant
+    ? approximatelyEqualNumber({
+        left: letterSpacingEm,
+        right: typographyVariant.letterSpacingEm,
+        tolerance: 0.02
+      })
+    : false;
   const sx = sxString([
     ...textLayoutEntries,
-    ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
-    ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toPxLiteral(element.lineHeight) : undefined],
-    ["fontFamily", normalizedFont ? literal(normalizedFont) : undefined],
-    ["color", element.fillColor ? literal(element.fillColor) : undefined],
+    ["fontSize", omitFontSize ? undefined : element.fontSize ? toRemLiteral(element.fontSize) : undefined],
+    ["fontWeight", omitFontWeight ? undefined : element.fontWeight ? Math.round(element.fontWeight) : undefined],
+    ["lineHeight", omitLineHeight ? undefined : element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
+    ["fontFamily", omitFontFamily ? undefined : normalizedFont ? literal(normalizedFont) : undefined],
+    ["letterSpacing", omitLetterSpacing ? undefined : toEmLiteral(letterSpacingEm)],
+    ["color", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })],
     [
       "textAlign",
       element.textAlign === "LEFT"
@@ -337,18 +3893,45 @@ const renderText = (element: ScreenElementIR, depth: number, parent: VirtualPare
             ? literal("right")
             : undefined
     ],
+    ["textDecoration", isLinkLikeColor ? literal("underline") : undefined],
+    ["cursor", isLinkLikeColor ? literal("pointer") : undefined],
     ["whiteSpace", literal("pre-wrap")]
   ]);
 
-  return `${indent}<Typography sx={{ ${sx} }}>{${text}}</Typography>`;
+  const foregroundHex = normalizeHexColor(element.fillColor);
+  const backgroundHex = resolveBackgroundHexForText({ parent, context });
+  if (foregroundHex && backgroundHex) {
+    const foregroundRgba = toRgbaColor(foregroundHex);
+    const backgroundRgba = toRgbaColor(backgroundHex);
+    if (foregroundRgba && backgroundRgba) {
+      const contrastRatio = toContrastRatio(foregroundRgba, backgroundRgba);
+      if (contrastRatio < WCAG_AA_NORMAL_TEXT_CONTRAST_MIN) {
+        pushLowContrastWarning({
+          context,
+          element,
+          foreground: foregroundHex,
+          background: backgroundHex,
+          contrastRatio
+        });
+      }
+    }
+  }
+
+  const variantProp = typographyVariantName ? ` variant="${typographyVariantName}"` : "";
+  const headingProp = headingComponent ? ` component="${headingComponent}"` : "";
+  return `${indent}<Typography${variantProp}${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
 };
 
-const firstText = (element: ScreenElementIR): string | undefined => {
+const firstText = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
   if (element.type === "text" && element.text?.trim()) {
     return element.text.trim();
   }
   for (const child of element.children ?? []) {
-    const match = firstText(child);
+    const match = firstText(child, visited);
     if (match) {
       return match;
     }
@@ -356,12 +3939,16 @@ const firstText = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const firstTextColor = (element: ScreenElementIR): string | undefined => {
+const firstTextColor = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
   if (element.type === "text" && element.fillColor) {
     return element.fillColor;
   }
   for (const child of element.children ?? []) {
-    const match = firstTextColor(child);
+    const match = firstTextColor(child, visited);
     if (match) {
       return match;
     }
@@ -369,18 +3956,28 @@ const firstTextColor = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const collectVectorPaths = (element: ScreenElementIR): string[] => {
-  const localPaths = element.nodeType === "VECTOR" ? (element.vectorPaths ?? []) : [];
-  const nestedPaths = (element.children ?? []).flatMap((child) => collectVectorPaths(child));
+const collectVectorPaths = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  const localPaths = Array.isArray(element.vectorPaths)
+    ? element.vectorPaths.filter((path): path is string => typeof path === "string" && path.length > 0)
+    : [];
+  const nestedPaths = (element.children ?? []).flatMap((child) => collectVectorPaths(child, visited));
   return [...new Set([...localPaths, ...nestedPaths])];
 };
 
-const firstVectorColor = (element: ScreenElementIR): string | undefined => {
-  if (element.nodeType === "VECTOR" && element.fillColor) {
+const firstVectorColor = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string | undefined => {
+  if (visited.has(element)) {
+    return undefined;
+  }
+  visited.add(element);
+  if (Array.isArray(element.vectorPaths) && element.vectorPaths.length > 0 && element.fillColor) {
     return element.fillColor;
   }
   for (const child of element.children ?? []) {
-    const match = firstVectorColor(child);
+    const match = firstVectorColor(child, visited);
     if (match) {
       return match;
     }
@@ -388,16 +3985,477 @@ const firstVectorColor = (element: ScreenElementIR): string | undefined => {
   return undefined;
 };
 
-const collectTextNodes = (element: ScreenElementIR): ScreenElementIR[] => {
+const collectTextNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
   const local = element.type === "text" && element.text?.trim() ? [element] : [];
-  const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child));
+  const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child, visited));
   return [...local, ...nested];
 };
 
-const collectIconNodes = (element: ScreenElementIR): ScreenElementIR[] => {
-  const local = element.name.toLowerCase().includes("muisvgiconroot") ? [element] : [];
-  const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child));
+const approximatelyEqualNumber = ({
+  left,
+  right,
+  tolerance
+}: {
+  left: number | undefined;
+  right: number | undefined;
+  tolerance: number;
+}): boolean => {
+  if (typeof left !== "number" || !Number.isFinite(left) || typeof right !== "number" || !Number.isFinite(right)) {
+    return false;
+  }
+  return Math.abs(left - right) <= tolerance;
+};
+
+const isHeadingTypographyVariant = (variantName: DesignTokenTypographyVariantName): boolean => {
+  return /^h[1-6]$/.test(variantName);
+};
+
+const isHeadingLikeTextNode = (node: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(node.name);
+  return (
+    HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint)) ||
+    (typeof node.fontSize === "number" && node.fontSize >= 20) ||
+    (typeof node.fontWeight === "number" && node.fontWeight >= 650)
+  );
+};
+
+const resolveTypographyVariantByNodeId = ({
+  elements,
+  tokens
+}: {
+  elements: ScreenElementIR[];
+  tokens: DesignTokens | undefined;
+}): Map<string, DesignTokenTypographyVariantName> => {
+  const byNodeId = new Map<string, DesignTokenTypographyVariantName>();
+  if (!tokens) {
+    return byNodeId;
+  }
+
+  const variants = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => ({
+    variantName,
+    variant: tokens.typography[variantName]
+  }));
+
+  for (const node of elements.flatMap((element) => collectTextNodes(element))) {
+    if (
+      typeof node.fontSize !== "number" &&
+      typeof node.fontWeight !== "number" &&
+      typeof node.lineHeight !== "number" &&
+      !node.fontFamily
+    ) {
+      continue;
+    }
+    const elementLetterSpacingEm = toLetterSpacingEm({
+      letterSpacingPx: node.letterSpacing,
+      fontSizePx: node.fontSize
+    });
+    const elementFontFamily = normalizeFontFamily(node.fontFamily);
+    const headingLike = isHeadingLikeTextNode(node);
+
+    const ranked = variants
+      .map(({ variantName, variant }) => {
+        const sizeDiff = Math.abs((node.fontSize ?? variant.fontSizePx) - variant.fontSizePx);
+        const weightDiff = Math.abs((node.fontWeight ?? variant.fontWeight) - variant.fontWeight);
+        const lineDiff = Math.abs((node.lineHeight ?? variant.lineHeightPx) - variant.lineHeightPx);
+        const letterSpacingDiff = Math.abs((elementLetterSpacingEm ?? 0) - (variant.letterSpacingEm ?? 0));
+        const tokenFontFamily = normalizeFontFamily(variant.fontFamily ?? tokens.fontFamily);
+        const familyMismatch = elementFontFamily && tokenFontFamily && elementFontFamily !== tokenFontFamily ? 1.25 : 0;
+        const headingPenalty = headingLike === isHeadingTypographyVariant(variantName) ? 0 : 0.75;
+        return {
+          variantName,
+          score: sizeDiff * 3 + weightDiff / 200 + lineDiff / 4 + letterSpacingDiff * 8 + familyMismatch + headingPenalty,
+          sizeDiff,
+          weightDiff,
+          lineDiff
+        };
+      })
+      .sort((left, right) => left.score - right.score || left.sizeDiff - right.sizeDiff);
+
+    const bestMatch = ranked[0];
+    if (!bestMatch) {
+      continue;
+    }
+    if (bestMatch.sizeDiff > 2 || bestMatch.weightDiff > 350 || bestMatch.lineDiff > 6 || bestMatch.score > 9) {
+      continue;
+    }
+    byNodeId.set(node.id, bestMatch.variantName);
+  }
+
+  return byNodeId;
+};
+
+const hasMeaningfulTextDescendants = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  const cached = context.meaningfulTextDescendantCache.get(element.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = collectTextNodes(element).some((node) => {
+    const text = node.text?.trim() ?? "";
+    if (!text) {
+      return false;
+    }
+    return /[a-z0-9]/i.test(text);
+  });
+  context.meaningfulTextDescendantCache.set(element.id, resolved);
+  return resolved;
+};
+
+const collectIconNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  const local = isIconLikeNode(element) ? [element] : [];
+  const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child, visited));
   return [...local, ...nested];
+};
+
+const collectSubtreeNames = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element.name, ...(element.children ?? []).flatMap((child) => collectSubtreeNames(child, visited))];
+};
+
+const A11Y_GENERIC_LABEL_PATTERNS = [
+  /^frame\s*\d*$/i,
+  /^group\s*\d*$/i,
+  /^rectangle\s*\d*$/i,
+  /^vector\s*\d*$/i,
+  /^instance\s*\d*$/i,
+  /^node\s*\d*$/i,
+  /^component\s*\d*$/i,
+  /^styled\(div\)$/i,
+  /^mui[a-z0-9_-]+$/i
+];
+const A11Y_IMAGE_DECORATIVE_HINTS = ["decorative", "background", "placeholder", "pattern", "shape"];
+const A11Y_NAVIGATION_HINTS = ["navigation", "navbar", "nav bar", "menu", "sidebar", "tabbar", "drawer"];
+const A11Y_INTERACTIVE_TYPES = new Set<ScreenElementIR["type"]>([
+  "button",
+  "input",
+  "select",
+  "switch",
+  "checkbox",
+  "radio",
+  "slider",
+  "rating",
+  "tab",
+  "navigation",
+  "breadcrumbs",
+  "drawer"
+]);
+const HEADING_NAME_HINTS = ["heading", "headline", "title", "h1", "h2", "h3", "ueberschrift", "überschrift", "titel"];
+
+const toA11yHumanizedLabel = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .replace(/[_./:-]+/g, " ")
+    .replace(/\b(ic|icon|root|wrapper|container|component)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (A11Y_GENERIC_LABEL_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return undefined;
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const resolveElementA11yLabel = ({
+  element,
+  fallback
+}: {
+  element: ScreenElementIR;
+  fallback: string;
+}): string => {
+  const textLabel = toA11yHumanizedLabel(firstText(element)?.trim());
+  if (textLabel) {
+    return textLabel;
+  }
+  const nameLabel = toA11yHumanizedLabel(element.name);
+  if (nameLabel) {
+    return nameLabel;
+  }
+  return fallback;
+};
+
+const escapeXmlText = (value: string): string => {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+};
+
+const toDeterministicImagePlaceholderSrc = ({
+  element,
+  label
+}: {
+  element: ScreenElementIR;
+  label: string;
+}): string => {
+  const width = Math.max(1, Math.round(element.width ?? 320));
+  const height = Math.max(1, Math.round(element.height ?? 180));
+  const safeLabel = escapeXmlText(label.trim() || "Image");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#f3f4f6"/><stop offset="100%" stop-color="#e5e7eb"/></linearGradient></defs><rect width="${width}" height="${height}" fill="url(#g)"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Roboto, Arial, sans-serif" font-size="14" fill="#6b7280">${safeLabel}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+const resolveImageSource = ({
+  element,
+  context,
+  fallbackLabel
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+  fallbackLabel: string;
+}): string => {
+  const mappedSource = context.imageAssetMap[element.id];
+  if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
+    return mappedSource.trim();
+  }
+  return toDeterministicImagePlaceholderSrc({
+    element,
+    label: fallbackLabel
+  });
+};
+
+const resolveIconButtonAriaLabel = ({
+  element,
+  iconNode
+}: {
+  element: ScreenElementIR;
+  iconNode: ScreenElementIR | undefined;
+}): string => {
+  const elementLabel = toA11yHumanizedLabel(element.name);
+  if (elementLabel) {
+    return elementLabel;
+  }
+  const iconLabel = toA11yHumanizedLabel(iconNode?.name);
+  if (iconLabel) {
+    return iconLabel;
+  }
+  return "Button";
+};
+
+const hasInteractiveDescendants = ({
+  element,
+  context,
+  visited = new Set<ScreenElementIR>()
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+  visited?: Set<ScreenElementIR>;
+}): boolean => {
+  if (visited.has(element)) {
+    return false;
+  }
+  const cached = context.interactiveDescendantCache.get(element.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  visited.add(element);
+  const resolved =
+    A11Y_INTERACTIVE_TYPES.has(element.type) ||
+    (element.children ?? []).some((child) => hasInteractiveDescendants({ element: child, context, visited }));
+  visited.delete(element);
+  context.interactiveDescendantCache.set(element.id, resolved);
+  return resolved;
+};
+
+const inferLandmarkRole = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): LandmarkRole | undefined => {
+  if (element.type === "navigation") {
+    return "navigation";
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  if (!normalizedName) {
+    return undefined;
+  }
+  const hasHint = A11Y_NAVIGATION_HINTS.some((hint) => normalizedName.includes(hint));
+  if (!hasHint) {
+    return undefined;
+  }
+  if (element.type === "input" || element.type === "select") {
+    return undefined;
+  }
+  return hasInteractiveDescendants({ element, context }) ? "navigation" : undefined;
+};
+
+const isDecorativeImageElement = (element: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(element.name);
+  if (!normalizedName) {
+    return false;
+  }
+  const hasDecorativeHint = A11Y_IMAGE_DECORATIVE_HINTS.some((hint) => normalizedName.includes(hint));
+  if (hasDecorativeHint) {
+    return true;
+  }
+  return !toA11yHumanizedLabel(element.name);
+};
+
+const isDecorativeElement = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type === "divider" || element.type === "skeleton") {
+    return true;
+  }
+  if (element.type === "image") {
+    return isDecorativeImageElement(element);
+  }
+  if ((isIconLikeNode(element) || isSemanticIconWrapper(element)) && !hasMeaningfulTextDescendants({ element, context })) {
+    return true;
+  }
+  if (A11Y_INTERACTIVE_TYPES.has(element.type)) {
+    return false;
+  }
+  return !hasMeaningfulTextDescendants({ element, context }) && !hasInteractiveDescendants({ element, context });
+};
+
+const inferHeadingComponentByNodeId = (elements: ScreenElementIR[]): Map<string, HeadingComponent> => {
+  const headingCandidates = elements
+    .flatMap((element) => collectTextNodes(element))
+    .filter((node) => {
+      const normalizedName = normalizeInputSemanticText(node.name);
+      const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+      const fontSize = typeof node.fontSize === "number" ? node.fontSize : 0;
+      const fontWeight = typeof node.fontWeight === "number" ? node.fontWeight : 0;
+      return hasHeadingHint || fontSize >= 20 || fontWeight >= 650;
+    })
+    .sort((left, right) => {
+      const leftFontSize = typeof left.fontSize === "number" ? left.fontSize : 0;
+      const rightFontSize = typeof right.fontSize === "number" ? right.fontSize : 0;
+      if (leftFontSize !== rightFontSize) {
+        return rightFontSize - leftFontSize;
+      }
+      const leftWeight = typeof left.fontWeight === "number" ? left.fontWeight : 0;
+      const rightWeight = typeof right.fontWeight === "number" ? right.fontWeight : 0;
+      if (leftWeight !== rightWeight) {
+        return rightWeight - leftWeight;
+      }
+      return (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0) || left.id.localeCompare(right.id);
+    });
+
+  const byNodeId = new Map<string, HeadingComponent>();
+  const levelByIndex: HeadingComponent[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
+  for (const candidate of headingCandidates) {
+    if (byNodeId.has(candidate.id)) {
+      continue;
+    }
+    const nextLevel = levelByIndex[byNodeId.size];
+    if (!nextLevel) {
+      break;
+    }
+    byNodeId.set(candidate.id, nextLevel);
+  }
+  return byNodeId;
+};
+
+const resolveBackgroundHexForText = ({
+  parent,
+  context
+}: {
+  parent: VirtualParent;
+  context: RenderContext;
+}): string | undefined => {
+  const normalizedParentColor = normalizeHexColor(parent.fillColor);
+  if (normalizedParentColor) {
+    return normalizedParentColor;
+  }
+  return (
+    context.pageBackgroundColorNormalized ??
+    normalizeHexColor(context.tokens?.palette.background)
+  );
+};
+
+const pushLowContrastWarning = ({
+  context,
+  element,
+  foreground,
+  background,
+  contrastRatio
+}: {
+  context: RenderContext;
+  element: ScreenElementIR;
+  foreground: string;
+  background: string;
+  contrastRatio: number;
+}): void => {
+  const warningKey = `${element.id}:${foreground}:${background}`;
+  if (context.emittedAccessibilityWarningKeys.has(warningKey)) {
+    return;
+  }
+  context.emittedAccessibilityWarningKeys.add(warningKey);
+  const ratioLiteral = `${Math.round(contrastRatio * 100) / 100}:1`;
+  context.accessibilityWarnings.push({
+    code: "W_A11Y_LOW_CONTRAST",
+    screenId: context.screenId,
+    screenName: context.screenName,
+    nodeId: element.id,
+    nodeName: element.name,
+    message: `Low contrast (${ratioLiteral}) for text node '${element.name}' on screen '${context.screenName}'`,
+    foreground,
+    background,
+    contrastRatio: Math.round(contrastRatio * 1000) / 1000
+  });
+};
+
+const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | undefined => {
+  const candidates = collectIconNodes(element);
+  const sorted = [...candidates].sort((left, right) => {
+    const score = (candidate: ScreenElementIR): number => {
+      const lowered = candidate.name.toLowerCase();
+      let total = 0;
+      if (lowered.startsWith("ic_")) {
+        total += 6;
+      }
+      if (lowered.startsWith("icon/") || lowered.startsWith("icons/") || lowered.startsWith("icon-") || lowered.startsWith("icon_")) {
+        total += 5;
+      }
+      if (lowered.includes("muisvgiconroot")) {
+        total += 4;
+      }
+      if (lowered.includes("iconcomponent")) {
+        total += 2;
+      }
+      if (collectVectorPaths(candidate).length > 0) {
+        total += 8;
+      }
+      total -= Math.min(4, candidate.children?.length ?? 0);
+      return total;
+    };
+
+    return (
+      score(right) - score(left) ||
+      ((left.width ?? 0) * (left.height ?? 0)) - ((right.width ?? 0) * (right.height ?? 0)) ||
+      left.name.localeCompare(right.name)
+    );
+  });
+  return sorted[0];
 };
 
 const hasSubtreeName = (element: ScreenElementIR, pattern: string): boolean => {
@@ -427,9 +4485,12 @@ interface SemanticIconModel {
   height?: number | undefined;
 }
 
+type TextFieldInputType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+
 interface SemanticInputModel {
   labelNode?: ScreenElementIR | undefined;
   valueNode?: ScreenElementIR | undefined;
+  placeholderNode?: ScreenElementIR | undefined;
   labelIcon?: SemanticIconModel | undefined;
   suffixText?: string | undefined;
   suffixIcon?: SemanticIconModel | undefined;
@@ -440,8 +4501,15 @@ interface InteractiveFieldModel {
   key: string;
   label: string;
   defaultValue: string;
+  placeholder?: string;
   isSelect: boolean;
   options: string[];
+  inputType?: TextFieldInputType | undefined;
+  autoComplete?: string | undefined;
+  required?: boolean | undefined;
+  validationType?: ValidationFieldType | undefined;
+  validationMessage?: string | undefined;
+  hasVisualErrorExample?: boolean | undefined;
   suffixText?: string | undefined;
   labelFontFamily?: string | undefined;
   labelColor?: string | undefined;
@@ -454,9 +4522,45 @@ interface InteractiveAccordionModel {
   defaultExpanded: boolean;
 }
 
+interface InteractiveTabsModel {
+  elementId: string;
+  stateId: number;
+}
+
+interface InteractiveDialogModel {
+  elementId: string;
+  stateId: number;
+}
+
 interface IconImportSpec {
   localName: string;
   modulePath: string;
+}
+
+interface IconFallbackMapEntry {
+  iconName: string;
+  aliases?: string[] | undefined;
+}
+
+interface IconFallbackMap {
+  version: number;
+  entries: IconFallbackMapEntry[];
+  synonyms?: Record<string, string> | undefined;
+}
+
+interface CompiledIconFallbackEntry {
+  iconName: string;
+  aliases: string[];
+  importSpec: IconImportSpec;
+  priority: number;
+}
+
+interface IconFallbackResolver {
+  entries: CompiledIconFallbackEntry[];
+  byIconName: Map<string, CompiledIconFallbackEntry>;
+  exactAliasMap: Map<string, CompiledIconFallbackEntry>;
+  tokenIndex: Map<string, CompiledIconFallbackEntry[]>;
+  synonymMap: Map<string, CompiledIconFallbackEntry>;
 }
 
 interface MappedImportSpec {
@@ -464,11 +4568,122 @@ interface MappedImportSpec {
   modulePath: string;
 }
 
+interface ExtractedComponentImportSpec {
+  componentName: string;
+  importPath: string;
+}
+
+interface PatternExtractionInvocation {
+  componentName: string;
+  instanceId: string;
+  usesPatternContext: boolean;
+  propValues: Record<string, string | undefined>;
+}
+
+interface PatternInvocationStateEntry {
+  instanceId: string;
+  values: Record<string, string | undefined>;
+}
+
+interface PatternContextClusterStateSpec {
+  componentName: string;
+  stateTypeName: string;
+  propBindings: DynamicPropBinding[];
+  entries: PatternInvocationStateEntry[];
+}
+
+interface PatternContextFileSpec {
+  file: GeneratedFile;
+  providerName: string;
+  hookName: string;
+  stateTypeName: string;
+  importPath: string;
+  initialStateLiteral: string;
+  contextEnabledComponentNames: Set<string>;
+}
+
+interface FormContextFileSpec {
+  file: GeneratedFile;
+  providerName: string;
+  hookName: string;
+  importPath: string;
+}
+
+interface ScreenPatternStatePlan {
+  contextFileSpec?: PatternContextFileSpec;
+}
+
+type DynamicPropBindingKind = "text" | "image_src" | "image_alt";
+
+interface DynamicPropBinding {
+  kind: DynamicPropBindingKind;
+  path: string;
+  propName: string;
+  optional: boolean;
+  placeholder: string;
+  valuesByRootNodeId: Map<string, string | undefined>;
+}
+
+interface ExtractionCandidate {
+  root: ScreenElementIR;
+  parent: VirtualParent;
+  depth: number;
+  signature: Set<string>;
+  pathNodeMap: Map<string, ScreenElementIR>;
+  subtreeNodeIds: Set<string>;
+  subtreeNodeCount: number;
+}
+
+interface PatternCluster {
+  componentName: string;
+  prototype: ExtractionCandidate;
+  members: ExtractionCandidate[];
+  propBindings: DynamicPropBinding[];
+}
+
+interface PatternExtractionPlan {
+  componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
+  componentImports: ExtractedComponentImportSpec[];
+  invocationByRootNodeId: Map<string, PatternExtractionInvocation>;
+  patternStatePlan: ScreenPatternStatePlan;
+}
+
+interface RenderedButtonModel {
+  key: string;
+  label: string;
+  preferredSubmit: boolean;
+  eligibleForSubmit: boolean;
+}
+
 interface RenderContext {
+  screenId: string;
+  screenName: string;
+  generationLocale: string;
+  formHandlingMode: ResolvedFormHandlingMode;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
+  tabs: InteractiveTabsModel[];
+  dialogs: InteractiveDialogModel[];
+  buttons: RenderedButtonModel[];
+  activeRenderElements: Set<ScreenElementIR>;
+  renderNodeVisitCount: number;
+  interactiveDescendantCache: Map<string, boolean>;
+  meaningfulTextDescendantCache: Map<string, boolean>;
+  headingComponentByNodeId: Map<string, HeadingComponent>;
+  typographyVariantByNodeId: Map<string, DesignTokenTypographyVariantName>;
+  accessibilityWarnings: AccessibilityWarning[];
+  muiImports: Set<string>;
   iconImports: IconImportSpec[];
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  usesRouterLink: boolean;
+  usesNavigateHandler: boolean;
+  prototypeNavigationRenderedCount: number;
   mappedImports: MappedImportSpec[];
+  spacingBase: number;
+  tokens?: DesignTokens | undefined;
   mappingByNodeId: Map<string, ComponentMappingRule>;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
@@ -477,10 +4692,25 @@ interface RenderContext {
     message: string;
   }>;
   emittedWarningKeys: Set<string>;
+  emittedAccessibilityWarningKeys: Set<string>;
+  pageBackgroundColorNormalized: string | undefined;
+  themeComponentDefaults?: ThemeComponentDefaults;
+  themeSxSampleCollector?: ThemeSxSampleCollector;
+  responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+  extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {
   return /^[A-Za-z_$][\w$]*$/.test(value);
+};
+
+const registerMuiImports = (context: RenderContext, ...imports: string[]): void => {
+  for (const item of imports) {
+    if (!item.trim()) {
+      continue;
+    }
+    context.muiImports.add(item);
+  }
 };
 
 const toIdentifier = (rawValue: string, fallback = "MappedComponent"): string => {
@@ -583,17 +4813,7 @@ const registerMappedImport = ({ context, mapping }: { context: RenderContext; ma
   }
 
   const knownNames = new Set<string>([
-    "Box",
-    "Button",
-    "Divider",
-    "Typography",
-    "SvgIcon",
-    "TextField",
-    "Accordion",
-    "AccordionSummary",
-    "AccordionDetails",
-    "MenuItem",
-    "InputAdornment",
+    ...context.muiImports,
     ...context.iconImports.map((item) => item.localName),
     ...context.mappedImports.map((item) => item.localName)
   ]);
@@ -661,7 +4881,11 @@ const renderMappedElement = (
   const componentName = registerMappedImport({ context, mapping });
   context.usedMappingNodeIds.add(element.id);
   const indent = "  ".repeat(depth);
-  const sx = sxString(baseLayoutEntries(element, parent));
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
   const resolvedContract = mapping.propContract ?? {};
   const childrenValue = resolveContractValue(resolvedContract.children, element);
   const propEntries = Object.entries(resolvedContract)
@@ -687,25 +4911,167 @@ const toStateKey = (element: ScreenElementIR): string => {
   return normalized.length > 0 ? normalized : "field";
 };
 
-const parseLocalizedNumber = (value: string): number | undefined => {
-  const normalized = value
-    .replace(/\s+/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.-]/g, "");
+const ensureTabsStateModel = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): InteractiveTabsModel => {
+  const existing = context.tabs.find((candidate) => candidate.elementId === element.id);
+  if (existing) {
+    return existing;
+  }
+  const created: InteractiveTabsModel = {
+    elementId: element.id,
+    stateId: context.tabs.length + 1
+  };
+  context.tabs.push(created);
+  return created;
+};
+
+const ensureDialogStateModel = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): InteractiveDialogModel => {
+  const existing = context.dialogs.find((candidate) => candidate.elementId === element.id);
+  if (existing) {
+    return existing;
+  }
+  const created: InteractiveDialogModel = {
+    elementId: element.id,
+    stateId: context.dialogs.length + 1
+  };
+  context.dialogs.push(created);
+  return created;
+};
+
+const escapeRegExpToken = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+interface LocaleNumberFormatSpec {
+  decimalSymbol: string;
+  separatorSymbols: Set<string>;
+  separatorPattern: RegExp;
+}
+
+const localeNumberFormatSpecCache = new Map<string, LocaleNumberFormatSpec>();
+
+const isLikelyGroupingPattern = ({
+  value,
+  separator
+}: {
+  value: string;
+  separator: string;
+}): boolean => {
+  if (separator.length !== 1) {
+    return false;
+  }
+  const segments = value.split(separator);
+  if (segments.length <= 1 || segments.some((segment) => segment.length === 0)) {
+    return false;
+  }
+  const [first, ...rest] = segments;
+  if (!first || first.length < 1 || first.length > 3) {
+    return false;
+  }
+  return rest.every((segment) => segment.length === 3);
+};
+
+const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
+  const cached = localeNumberFormatSpecCache.get(locale);
+  if (cached) {
+    return cached;
+  }
+
+  const parts = new Intl.NumberFormat(locale).formatToParts(1_234_567.89);
+  const decimalSymbol = parts.find((part) => part.type === "decimal")?.value ?? ".";
+  const separators = new Set<string>([".", ",", "'", "’", " ", "\u00A0", "\u202F", decimalSymbol]);
+  for (const part of parts) {
+    if (part.type === "group" && part.value.length > 0) {
+      separators.add(part.value);
+    }
+  }
+  const separatorPattern = new RegExp([...separators].map((symbol) => escapeRegExpToken(symbol)).join("|"), "g");
+  const spec: LocaleNumberFormatSpec = {
+    decimalSymbol,
+    separatorSymbols: separators,
+    separatorPattern
+  };
+  localeNumberFormatSpecCache.set(locale, spec);
+  return spec;
+};
+
+const parseLocalizedNumber = (value: string, locale: string): number | undefined => {
+  const { decimalSymbol, separatorPattern, separatorSymbols } = getLocaleNumberFormatSpec(locale);
+  const compactRaw = value.replace(/[\s\u00A0\u202F]/g, "").replace(/[−﹣－]/g, "-");
+  const compact = [...compactRaw]
+    .filter((character) => /\d/.test(character) || character === "+" || character === "-" || separatorSymbols.has(character))
+    .join("");
+  if (!compact || !/\d/.test(compact)) {
+    return undefined;
+  }
+
+  const sign = compact.startsWith("-") ? "-" : compact.startsWith("+") ? "+" : "";
+  const unsigned = compact.slice(sign.length).replace(/[+-]/g, "");
+  if (!/\d/.test(unsigned)) {
+    return undefined;
+  }
+
+  let decimalIndex = -1;
+  if (decimalSymbol.length === 1 && unsigned.includes(decimalSymbol)) {
+    decimalIndex = unsigned.lastIndexOf(decimalSymbol);
+  } else {
+    const fallbackSeparators = [".", ","].filter((symbol) => symbol !== decimalSymbol && unsigned.includes(symbol));
+    if (fallbackSeparators.length === 1) {
+      const separator = fallbackSeparators[0];
+      decimalIndex = separator
+        ? isLikelyGroupingPattern({ value: unsigned, separator })
+          ? -1
+          : unsigned.lastIndexOf(separator)
+        : -1;
+    } else if (fallbackSeparators.length > 1) {
+      decimalIndex = Math.max(...fallbackSeparators.map((symbol) => unsigned.lastIndexOf(symbol)));
+    }
+  }
+
+  const normalized =
+    decimalIndex >= 0
+      ? (() => {
+          const integerPart = unsigned.slice(0, decimalIndex).replace(separatorPattern, "");
+          const fractionPart = unsigned.slice(decimalIndex + 1).replace(separatorPattern, "");
+          if (integerPart.length === 0 && fractionPart.length === 0) {
+            return "";
+          }
+          return `${sign}${integerPart.length > 0 ? integerPart : "0"}${fractionPart.length > 0 ? `.${fractionPart}` : ""}`;
+        })()
+      : (() => {
+          const integerPart = unsigned.replace(separatorPattern, "");
+          if (integerPart.length === 0) {
+            return "";
+          }
+          return `${sign}${integerPart}`;
+        })();
+
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const formatLocalizedNumber = (value: number, fractionDigits = 2): string => {
+const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string): string => {
   const safe = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("de-DE", {
+  return new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits
   }).format(safe);
 };
 
-const deriveSelectOptions = (defaultValue: string): string[] => {
+const deriveSelectOptions = (defaultValue: string, generationLocale: string): string[] => {
   const trimmed = defaultValue.trim();
   if (!trimmed) {
     return ["Option 1", "Option 2", "Option 3"];
@@ -720,21 +5086,23 @@ const deriveSelectOptions = (defaultValue: string): string[] => {
   }
 
   if (trimmed.includes("%")) {
-    const parsed = parseLocalizedNumber(trimmed);
+    const parsed = parseLocalizedNumber(trimmed, generationLocale);
     if (typeof parsed === "number") {
       const deltas = [-0.25, 0, 0.25];
-      return [...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta))} %`))];
+      return [
+        ...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta), 2, generationLocale)} %`))
+      ];
     }
   }
 
-  const parsed = parseLocalizedNumber(trimmed);
+  const parsed = parseLocalizedNumber(trimmed, generationLocale);
   if (typeof parsed === "number") {
     const deltas = [-0.1, 0, 0.1];
     return [
       ...new Set(
         deltas.map((delta) => {
           const value = parsed * (1 + delta);
-          return formatLocalizedNumber(Math.max(0, value));
+          return formatLocalizedNumber(Math.max(0, value), 2, generationLocale);
         })
       )
     ];
@@ -752,15 +5120,58 @@ const INPUT_NAME_HINTS = [
   "muiselectselect",
   "textfield"
 ];
+const TEXT_FIELD_TYPE_RULES: Array<{
+  type: TextFieldInputType;
+  patterns: RegExp[];
+}> = [
+  {
+    type: "password",
+    patterns: [/\bpassword\b/, /\bpasswort\b/, /\bkennwort\b/]
+  },
+  {
+    type: "email",
+    patterns: [/\be\s*mail\b/, /\bemail\b/, /\bmail\b/]
+  },
+  {
+    type: "tel",
+    patterns: [/\bphone\b/, /\btelefon\b/, /\btel\b/]
+  },
+  {
+    type: "url",
+    patterns: [/\burl\b/, /\bwebsite\b/, /\blink\b/]
+  },
+  {
+    type: "number",
+    patterns: [/\bnumber\b/, /\bamount\b/, /\bbetrag\b/, /\banzahl\b/]
+  },
+  {
+    type: "date",
+    patterns: [/\bdate\b/, /\bdatum\b/, /\bbirthday\b/, /\bgeburtstag\b/]
+  },
+  {
+    type: "search",
+    patterns: [/\bsearch\b/, /\bsuche\b/]
+  }
+];
+
+const INPUT_PLACEHOLDER_TECHNICAL_VALUES = new Set([
+  "swap component",
+  "instance swap",
+  "add description",
+  "alternativtext"
+]);
+const INPUT_PLACEHOLDER_GENERIC_PATTERNS = [
+  /^(type|enter|your)(?:\s+text)?(?:\s+here)?$/i,
+  /^(label|title|subtitle|heading)$/i,
+  /^(xx(?:[./:-]xx)+)$/i,
+  /^\$?\s*0(?:[.,]0{2})?$/i,
+  /^\d{3}-\d{3}-\d{4}$/i,
+  /^[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}$/i,
+  /^(john|jane)\s+doe$/i,
+  /^[x•—–-]$/i
+];
 
 const ACCORDION_NAME_HINTS = ["accordion", "accordionsummarycontent", "collapsewrapper"];
-const PLACEHOLDER_TEXT_PATTERNS = [
-  /\beingabe\s*\d+\b/i,
-  /\boption\s*\d+\b/i,
-  /\blorem\b/i,
-  /\bplaceholder\b/i,
-  /\bfield\s*\d+\b/i
-];
 
 const hasAnySubtreeName = (element: ScreenElementIR, patterns: string[]): boolean => {
   return patterns.some((pattern) => hasSubtreeName(element, pattern));
@@ -772,6 +5183,114 @@ const isValueLikeText = (value: string): boolean => {
     return false;
   }
   return /\d/.test(trimmed) || trimmed.includes("%") || trimmed.includes("€") || /jahr/i.test(trimmed);
+};
+
+const normalizeInputPlaceholderText = (value: string): string => {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const normalizeInputSemanticText = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_./:-]+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const collectInputSemanticHints = ({
+  element,
+  label,
+  placeholder
+}: {
+  element: ScreenElementIR;
+  label: string;
+  placeholder: string | undefined;
+}): string[] => {
+  const uniqueHints = new Set<string>();
+  const rawHints = [label, placeholder, ...collectSubtreeNames(element)];
+  for (const value of rawHints) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const normalized = normalizeInputSemanticText(value);
+    if (!normalized) {
+      continue;
+    }
+    uniqueHints.add(normalized);
+  }
+  return Array.from(uniqueHints);
+};
+
+const inferTextFieldType = (hints: string[]): TextFieldInputType | undefined => {
+  for (const rule of TEXT_FIELD_TYPE_RULES) {
+    if (hints.some((hint) => rule.patterns.some((pattern) => pattern.test(hint)))) {
+      return rule.type;
+    }
+  }
+  return undefined;
+};
+
+const inferTextFieldAutoComplete = (inputType: TextFieldInputType | undefined): string | undefined => {
+  switch (inputType) {
+    case "email":
+      return "email";
+    case "password":
+      return "current-password";
+    case "tel":
+      return "tel";
+    case "url":
+      return "url";
+    default:
+      return undefined;
+  }
+};
+
+const inferRequiredFromLabel = (label: string): boolean => {
+  return /(?:^|\s)\*(?:\s|$)|\*\s*$/.test(label);
+};
+
+const sanitizeRequiredLabel = (label: string): string => {
+  return label.replace(/\s*\*\s*/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const inferTextFieldValidationMessage = (validationType: ValidationFieldType | undefined): string | undefined => {
+  switch (validationType) {
+    case "email":
+      return "Please enter a valid email address.";
+    case "tel":
+      return "Please enter a valid phone number.";
+    case "url":
+      return "Please enter a valid URL.";
+    case "number":
+      return "Please enter a valid number.";
+    case "date":
+      return "Please enter a valid date (YYYY-MM-DD).";
+    default:
+      return undefined;
+  }
+};
+
+const inferVisualErrorFromOutline = (element: ScreenElementIR): boolean => {
+  const outlineContainer = findFirstByName(element, "muioutlinedinputroot") ?? element;
+  const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
+  const outlineColor = toRgbaColor(outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor ?? element.strokeColor);
+  return isLikelyErrorRedColor(outlineColor);
+};
+
+const isLikelyInputPlaceholderText = (value: string | undefined): boolean => {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = normalizeInputPlaceholderText(value);
+  if (!normalized) {
+    return false;
+  }
+  if (INPUT_PLACEHOLDER_TECHNICAL_VALUES.has(normalized)) {
+    return true;
+  }
+  return INPUT_PLACEHOLDER_GENERIC_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
 const splitTextRows = (texts: ScreenElementIR[]): { topRow: ScreenElementIR[]; bottomRow: ScreenElementIR[] } => {
@@ -804,7 +5323,9 @@ const isLikelyInputContainer = (element: ScreenElementIR): boolean => {
     return false;
   }
 
-  const hasDirectVisualContainer = Boolean(element.strokeColor || element.fillColor || (element.cornerRadius ?? 0) > 0);
+  const hasDirectVisualContainer = Boolean(
+    element.strokeColor || element.fillColor || element.fillGradient || (element.cornerRadius ?? 0) > 0
+  );
   const width = element.width ?? 0;
   const height = element.height ?? 0;
   const sizeLooksLikeField = width >= 120 && height >= 36 && height <= 120;
@@ -829,12 +5350,700 @@ const isLikelyAccordionContainer = (element: ScreenElementIR): boolean => {
   return hasAnySubtreeName(element, ACCORDION_NAME_HINTS) && hasSubtreeName(element, "collapsewrapper");
 };
 
+const normalizeIconImports = (iconImports: IconImportSpec[]): IconImportSpec[] => {
+  const seen = new Set<string>();
+  const uniqueIconImports: IconImportSpec[] = [];
+
+  for (const iconImport of iconImports) {
+    const dedupeKey = `${iconImport.localName}:::${iconImport.modulePath}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    uniqueIconImports.push(iconImport);
+  }
+
+  return uniqueIconImports.sort((left, right) => {
+    const modulePathComparison = left.modulePath.localeCompare(right.modulePath);
+    if (modulePathComparison !== 0) {
+      return modulePathComparison;
+    }
+    return left.localName.localeCompare(right.localName);
+  });
+};
+
 const registerIconImport = (context: RenderContext, spec: IconImportSpec): string => {
-  const exists = context.iconImports.some((icon) => icon.localName === spec.localName);
+  const exists = context.iconImports.some(
+    (icon) => icon.localName === spec.localName && icon.modulePath === spec.modulePath
+  );
   if (!exists) {
     context.iconImports.push(spec);
   }
   return spec.localName;
+};
+
+const resolveIconColor = (element: ScreenElementIR): string | undefined => {
+  return firstVectorColor(element) ?? firstTextColor(element) ?? element.fillColor;
+};
+
+const ICON_FALLBACK_FILE_NAME = "icon-fallback-map.json";
+const ICON_FALLBACK_DEFAULT_IMPORT_SPEC: IconImportSpec = {
+  localName: "InfoOutlinedIcon",
+  modulePath: "@mui/icons-material/InfoOutlined"
+};
+const ICON_FALLBACK_STYLE_TOKENS = new Set(["outlined", "rounded", "sharp", "twotone", "two", "tone", "filled"]);
+const ICON_FALLBACK_MAX_PHRASE_LENGTH = 3;
+const ICON_FALLBACK_FUZZY_STOPWORDS = new Set(["icon", "icons", "name", "real"]);
+
+const normalizeIconLookupText = (value: string): string => {
+  return normalizeInputSemanticText(value);
+};
+
+const toIconNameTokens = (iconName: string): string[] => {
+  return iconName
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token.length > 0);
+};
+
+const toIconImportSpec = (iconName: string): IconImportSpec => {
+  return {
+    localName: `${iconName}Icon`,
+    modulePath: `@mui/icons-material/${iconName}`
+  };
+};
+
+const isValidIconName = (value: string): boolean => {
+  return /^[A-Za-z][A-Za-z0-9]*$/.test(value);
+};
+
+const toGeneratedAliasesForIconName = (iconName: string): string[] => {
+  const rawTokens = toIconNameTokens(iconName);
+  if (rawTokens.length === 0) {
+    return [];
+  }
+  const baseTokens = rawTokens.filter((token) => !ICON_FALLBACK_STYLE_TOKENS.has(token));
+  const aliases = new Set<string>();
+  const pushAlias = (candidate: string): void => {
+    const normalized = normalizeIconLookupText(candidate);
+    if (normalized.length > 0) {
+      aliases.add(normalized);
+    }
+  };
+  pushAlias(rawTokens.join(" "));
+  if (baseTokens.length > 0) {
+    pushAlias(baseTokens.join(" "));
+  }
+  if (baseTokens.length === 1) {
+    pushAlias(baseTokens[0] ?? "");
+  }
+  return Array.from(aliases).sort((left, right) => left.localeCompare(right));
+};
+
+const buildIconFallbackMapFilePayload = (map: IconFallbackMap): IconFallbackMap => {
+  return {
+    version: ICON_FALLBACK_MAP_VERSION,
+    entries: map.entries.map((entry) => ({
+      iconName: entry.iconName,
+      aliases: Array.from(
+        new Set([
+          ...toGeneratedAliasesForIconName(entry.iconName),
+          ...(entry.aliases ?? []).map((alias) => normalizeIconLookupText(alias))
+        ])
+      ).filter((alias) => alias.length > 0)
+    })),
+    ...(map.synonyms ? { synonyms: map.synonyms } : {})
+  };
+};
+
+const toUniqueAliasList = ({
+  iconName,
+  aliases
+}: {
+  iconName: string;
+  aliases?: string[] | undefined;
+}): string[] => {
+  const unique = new Set<string>();
+  for (const alias of [...toGeneratedAliasesForIconName(iconName), ...(aliases ?? [])]) {
+    const normalized = normalizeIconLookupText(alias);
+    if (normalized.length > 0) {
+      unique.add(normalized);
+    }
+  }
+  return Array.from(unique).sort((left, right) => left.localeCompare(right));
+};
+
+const compileIconFallbackResolver = ({ map }: { map: IconFallbackMap }): IconFallbackResolver => {
+  const entries: CompiledIconFallbackEntry[] = [];
+  const byIconName = new Map<string, CompiledIconFallbackEntry>();
+
+  for (const [index, entry] of map.entries.entries()) {
+    if (!isValidIconName(entry.iconName)) {
+      continue;
+    }
+    const aliases = toUniqueAliasList({
+      iconName: entry.iconName,
+      ...(entry.aliases ? { aliases: entry.aliases } : {})
+    });
+    if (aliases.length === 0) {
+      continue;
+    }
+    const compiled: CompiledIconFallbackEntry = {
+      iconName: entry.iconName,
+      aliases,
+      importSpec: toIconImportSpec(entry.iconName),
+      priority: index
+    };
+    entries.push(compiled);
+    if (!byIconName.has(compiled.iconName)) {
+      byIconName.set(compiled.iconName, compiled);
+    }
+  }
+
+  const exactAliasMap = new Map<string, CompiledIconFallbackEntry>();
+  const tokenIndex = new Map<string, CompiledIconFallbackEntry[]>();
+
+  for (const entry of entries) {
+    for (const alias of entry.aliases) {
+      const existing = exactAliasMap.get(alias);
+      if (
+        !existing ||
+        entry.priority < existing.priority ||
+        (entry.priority === existing.priority && entry.iconName.localeCompare(existing.iconName) < 0)
+      ) {
+        exactAliasMap.set(alias, entry);
+      }
+      for (const token of alias.split(" ")) {
+        if (!token) {
+          continue;
+        }
+        const bucket = tokenIndex.get(token);
+        if (!bucket) {
+          tokenIndex.set(token, [entry]);
+          continue;
+        }
+        if (!bucket.some((candidate) => candidate.iconName === entry.iconName)) {
+          bucket.push(entry);
+        }
+      }
+    }
+  }
+
+  const synonymMap = new Map<string, CompiledIconFallbackEntry>();
+  const synonyms = map.synonyms ?? {};
+  const orderedSynonymEntries = Object.entries(synonyms).sort(([left], [right]) => left.localeCompare(right));
+  for (const [rawSynonym, iconName] of orderedSynonymEntries) {
+    const normalizedSynonym = normalizeIconLookupText(rawSynonym);
+    if (!normalizedSynonym) {
+      continue;
+    }
+    const entry = byIconName.get(iconName);
+    if (!entry) {
+      continue;
+    }
+    if (!synonymMap.has(normalizedSynonym)) {
+      synonymMap.set(normalizedSynonym, entry);
+    }
+  }
+
+  for (const bucket of tokenIndex.values()) {
+    bucket.sort((left, right) => left.priority - right.priority || left.iconName.localeCompare(right.iconName));
+  }
+
+  return {
+    entries,
+    byIconName,
+    exactAliasMap,
+    tokenIndex,
+    synonymMap
+  };
+};
+
+const ICON_FALLBACK_ALIAS_OVERRIDES: Record<string, string[]> = {
+  BookmarkBorder: ["bookmark outline", "bookmark_outline", "bookmark outlined", "merken"],
+  HelpOutline: ["questionmark", "hilfe"],
+  HomeOutlined: ["homepage", "startseite"],
+  PersonSearch: ["personensuche", "person_search", "search_person", "search person", "person search"],
+  Forum: ["messenger", "speechbubble", "speech_bubble", "speech bubble"],
+  Folder: ["document", "two documents", "two_documents"],
+  EditOutlined: ["pencil"],
+  Delete: ["trash"],
+  Mail: ["postbox"],
+  Add: ["plus"],
+  Search: ["magnifier"],
+  InfoOutlined: ["hint", "info hint", "info_hint"]
+};
+
+const ICON_FALLBACK_BUILTIN_MAP: IconFallbackMap = {
+  version: ICON_FALLBACK_MAP_VERSION,
+  entries: BUILTIN_ICON_FALLBACK_CATALOG.entries.map((entry) => ({
+    iconName: entry.iconName,
+    ...(ICON_FALLBACK_ALIAS_OVERRIDES[entry.iconName] ? { aliases: ICON_FALLBACK_ALIAS_OVERRIDES[entry.iconName] } : {})
+  })),
+  synonyms: BUILTIN_ICON_FALLBACK_CATALOG.synonyms
+};
+
+const ICON_FALLBACK_BUILTIN_RESOLVER = compileIconFallbackResolver({
+  map: ICON_FALLBACK_BUILTIN_MAP
+});
+
+const parseIconFallbackMapFile = ({ input }: { input: unknown }): IconFallbackMap | undefined => {
+  if (!isPlainRecord(input)) {
+    return undefined;
+  }
+
+  const version = input.version;
+  if (version !== ICON_FALLBACK_MAP_VERSION) {
+    return undefined;
+  }
+
+  const rawEntries = input.entries;
+  if (!Array.isArray(rawEntries) || rawEntries.length === 0) {
+    return undefined;
+  }
+
+  const entries: IconFallbackMapEntry[] = [];
+  for (const rawEntry of rawEntries) {
+    if (!isPlainRecord(rawEntry)) {
+      continue;
+    }
+    const iconName = typeof rawEntry.iconName === "string" ? rawEntry.iconName.trim() : "";
+    if (!isValidIconName(iconName)) {
+      continue;
+    }
+    const aliases =
+      Array.isArray(rawEntry.aliases) && rawEntry.aliases.every((alias) => typeof alias === "string")
+        ? rawEntry.aliases.map((alias) => alias.trim()).filter((alias) => alias.length > 0)
+        : undefined;
+    entries.push({
+      iconName,
+      ...(aliases ? { aliases } : {})
+    });
+  }
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  let synonyms: Record<string, string> | undefined;
+  if (isPlainRecord(input.synonyms)) {
+    const normalizedSynonyms: Record<string, string> = {};
+    for (const [rawSynonym, rawIconName] of Object.entries(input.synonyms)) {
+      if (typeof rawIconName !== "string") {
+        continue;
+      }
+      const synonym = rawSynonym.trim();
+      const iconName = rawIconName.trim();
+      if (!synonym || !isValidIconName(iconName)) {
+        continue;
+      }
+      normalizedSynonyms[synonym] = iconName;
+    }
+    if (Object.keys(normalizedSynonyms).length > 0) {
+      synonyms = normalizedSynonyms;
+    }
+  }
+
+  return {
+    version: ICON_FALLBACK_MAP_VERSION,
+    entries,
+    ...(synonyms ? { synonyms } : {})
+  };
+};
+
+const loadIconFallbackResolver = async ({
+  iconMapFilePath,
+  onLog
+}: {
+  iconMapFilePath: string;
+  onLog: (message: string) => void;
+}): Promise<IconFallbackResolver> => {
+  try {
+    const rawContent = await readFile(iconMapFilePath, "utf8");
+    const parsed = parseIconFallbackMapFile({
+      input: JSON.parse(rawContent)
+    });
+    if (!parsed) {
+      onLog(`Icon fallback map at '${iconMapFilePath}' is invalid; using built-in deterministic catalog.`);
+      return ICON_FALLBACK_BUILTIN_RESOLVER;
+    }
+    return compileIconFallbackResolver({
+      map: parsed
+    });
+  } catch (error) {
+    const typedError = error as NodeJS.ErrnoException;
+    if (typedError.code !== "ENOENT") {
+      onLog(`Failed to load icon fallback map at '${iconMapFilePath}': ${getErrorMessage(error)}; using built-in catalog.`);
+      return ICON_FALLBACK_BUILTIN_RESOLVER;
+    }
+
+    const bootstrapPayload = buildIconFallbackMapFilePayload(ICON_FALLBACK_BUILTIN_MAP);
+    try {
+      await mkdir(path.dirname(iconMapFilePath), { recursive: true });
+      await writeFile(iconMapFilePath, `${JSON.stringify(bootstrapPayload, null, 2)}\n`, "utf8");
+      onLog(`Bootstrapped icon fallback map at '${iconMapFilePath}'.`);
+    } catch (bootstrapError) {
+      onLog(
+        `Failed to bootstrap icon fallback map at '${iconMapFilePath}': ${getErrorMessage(bootstrapError)}; using built-in catalog.`
+      );
+    }
+    return ICON_FALLBACK_BUILTIN_RESOLVER;
+  }
+};
+
+const toIconInputTokens = (normalizedInput: string): string[] => {
+  return normalizedInput.split(" ").filter((token) => token.length > 0);
+};
+
+const containsBoundaryAlias = ({ text, alias }: { text: string; alias: string }): boolean => {
+  return text === alias || text.startsWith(`${alias} `) || text.endsWith(` ${alias}`) || text.includes(` ${alias} `);
+};
+
+const collectInputPhrases = ({ tokens }: { tokens: string[] }): string[] => {
+  const phrases: string[] = [];
+  for (let length = ICON_FALLBACK_MAX_PHRASE_LENGTH; length >= 1; length -= 1) {
+    if (tokens.length < length) {
+      continue;
+    }
+    for (let index = 0; index <= tokens.length - length; index += 1) {
+      const phrase = tokens.slice(index, index + length).join(" ");
+      if (!phrases.includes(phrase)) {
+        phrases.push(phrase);
+      }
+    }
+  }
+  return phrases;
+};
+
+const toBoundedLevenshteinDistance = ({
+  left,
+  right,
+  maxDistance
+}: {
+  left: string;
+  right: string;
+  maxDistance: number;
+}): number | undefined => {
+  if (Math.abs(left.length - right.length) > maxDistance) {
+    return undefined;
+  }
+  const previous = new Array<number>(right.length + 1).fill(0).map((_, index) => index);
+  const current = new Array<number>(right.length + 1).fill(0);
+
+  for (let row = 1; row <= left.length; row += 1) {
+    current[0] = row;
+    let rowMin = row;
+    for (let col = 1; col <= right.length; col += 1) {
+      const deletion = (previous[col] ?? maxDistance + 1) + 1;
+      const insertion = (current[col - 1] ?? maxDistance + 1) + 1;
+      const substitution = (previous[col - 1] ?? maxDistance + 1) + (left[row - 1] === right[col - 1] ? 0 : 1);
+      const nextValue = Math.min(deletion, insertion, substitution);
+      current[col] = nextValue;
+      rowMin = Math.min(rowMin, nextValue);
+    }
+    if (rowMin > maxDistance) {
+      return undefined;
+    }
+    for (let col = 0; col <= right.length; col += 1) {
+      previous[col] = current[col] ?? maxDistance + 1;
+    }
+  }
+
+  const result = previous[right.length] ?? maxDistance + 1;
+  return result <= maxDistance ? result : undefined;
+};
+
+const toSequentialDeltas = (values: number[]): number[] => {
+  const deltas: number[] = [];
+  for (let index = 1; index < values.length; index += 1) {
+    const current = values[index];
+    const previous = values[index - 1];
+    if (current === undefined || previous === undefined) {
+      continue;
+    }
+    deltas.push(current - previous);
+  }
+  return deltas;
+};
+
+const resolveFallbackIconByExactPhrase = ({
+  normalizedInput,
+  resolver
+}: {
+  normalizedInput: string;
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  return resolver.exactAliasMap.get(normalizedInput);
+};
+
+const resolveFallbackIconByTokenBoundary = ({
+  normalizedInput,
+  tokens,
+  resolver
+}: {
+  normalizedInput: string;
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  const candidateEntries = new Map<string, CompiledIconFallbackEntry>();
+  for (const token of tokens) {
+    for (const entry of resolver.tokenIndex.get(token) ?? []) {
+      candidateEntries.set(entry.iconName, entry);
+    }
+  }
+  const rankedCandidates: Array<{ entry: CompiledIconFallbackEntry; score: number }> = [];
+  for (const entry of candidateEntries.values()) {
+    let bestScore = 0;
+    for (const alias of entry.aliases) {
+      if (!containsBoundaryAlias({ text: normalizedInput, alias })) {
+        continue;
+      }
+      const tokenScore = alias.split(" ").length;
+      bestScore = Math.max(bestScore, tokenScore * 100 + alias.length);
+    }
+    if (bestScore > 0) {
+      rankedCandidates.push({ entry, score: bestScore });
+    }
+  }
+  if (rankedCandidates.length === 0) {
+    return undefined;
+  }
+  rankedCandidates.sort((left, right) => {
+    return (
+      right.score - left.score ||
+      left.entry.priority - right.entry.priority ||
+      left.entry.iconName.localeCompare(right.entry.iconName)
+    );
+  });
+  return rankedCandidates[0]?.entry;
+};
+
+const resolveFallbackIconBySynonym = ({
+  tokens,
+  resolver
+}: {
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  for (const phrase of collectInputPhrases({ tokens })) {
+    const match = resolver.synonymMap.get(phrase);
+    if (match) {
+      return match;
+    }
+  }
+  return undefined;
+};
+
+const resolveFallbackIconByFuzzyDistance = ({
+  normalizedInput,
+  tokens,
+  resolver
+}: {
+  normalizedInput: string;
+  tokens: string[];
+  resolver: IconFallbackResolver;
+}): CompiledIconFallbackEntry | undefined => {
+  const phraseTerms = normalizedInput.includes(" ") ? [] : [normalizedInput];
+  const terms = [...new Set([...phraseTerms, ...tokens])]
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 4 && !ICON_FALLBACK_FUZZY_STOPWORDS.has(term));
+  const candidates: Array<{ entry: CompiledIconFallbackEntry; distance: number; tokenScore: number }> = [];
+  for (const entry of resolver.entries) {
+    let bestDistance: number | undefined;
+    let bestTokenScore = 0;
+    for (const alias of entry.aliases) {
+      for (const term of terms) {
+        if (!term || Math.abs(alias.length - term.length) > 3) {
+          continue;
+        }
+        const maxDistance = Math.max(1, Math.min(3, Math.floor(Math.min(alias.length, term.length) / 4)));
+        const distance = toBoundedLevenshteinDistance({
+          left: alias,
+          right: term,
+          maxDistance
+        });
+        if (distance === undefined) {
+          continue;
+        }
+        const tokenScore = alias.split(" ").length;
+        if (
+          bestDistance === undefined ||
+          distance < bestDistance ||
+          (distance === bestDistance && tokenScore > bestTokenScore)
+        ) {
+          bestDistance = distance;
+          bestTokenScore = tokenScore;
+        }
+      }
+    }
+    if (bestDistance !== undefined) {
+      candidates.push({
+        entry,
+        distance: bestDistance,
+        tokenScore: bestTokenScore
+      });
+    }
+  }
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  candidates.sort((left, right) => {
+    return (
+      left.distance - right.distance ||
+      right.tokenScore - left.tokenScore ||
+      left.entry.priority - right.entry.priority ||
+      left.entry.iconName.localeCompare(right.entry.iconName)
+    );
+  });
+  return candidates[0]?.entry;
+};
+
+const resolveIconImportSpecFromCatalog = ({
+  rawInput,
+  resolver
+}: {
+  rawInput: string;
+  resolver: IconFallbackResolver;
+}): IconImportSpec => {
+  const normalizedInput = normalizeIconLookupText(rawInput);
+  if (!normalizedInput) {
+    return ICON_FALLBACK_DEFAULT_IMPORT_SPEC;
+  }
+
+  const tokens = toIconInputTokens(normalizedInput);
+  const exact = resolveFallbackIconByExactPhrase({
+    normalizedInput,
+    resolver
+  });
+  if (exact) {
+    return exact.importSpec;
+  }
+
+  const tokenBoundary = resolveFallbackIconByTokenBoundary({
+    normalizedInput,
+    tokens,
+    resolver
+  });
+  if (tokenBoundary) {
+    return tokenBoundary.importSpec;
+  }
+
+  const synonym = resolveFallbackIconBySynonym({
+    tokens,
+    resolver
+  });
+  if (synonym) {
+    return synonym.importSpec;
+  }
+
+  const fuzzy = resolveFallbackIconByFuzzyDistance({
+    normalizedInput,
+    tokens,
+    resolver
+  });
+  if (fuzzy) {
+    return fuzzy.importSpec;
+  }
+
+  return ICON_FALLBACK_DEFAULT_IMPORT_SPEC;
+};
+
+const hasDownIndicatorHint = (subtreeNameBlob: string): boolean => {
+  const normalized = normalizeIconLookupText(subtreeNameBlob);
+  return (
+    normalized.includes("expand more") ||
+    normalized.includes("chevron down") ||
+    normalized.includes("arrow drop down") ||
+    normalized.includes("keyboard arrow down") ||
+    normalized.includes("caret down") ||
+    normalized.includes("ic down") ||
+    /\bdown\b/.test(normalized)
+  );
+};
+
+const resolveFallbackIconComponent = ({
+  element,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  parent: Pick<VirtualParent, "name">;
+  context: RenderContext;
+}): string => {
+  const parentName = parent.name?.toLowerCase() ?? "";
+  const subtreeNameBlob = collectSubtreeNames(element).join(" ");
+  const normalizedSubtreeName = normalizeIconLookupText(subtreeNameBlob);
+
+  const spec =
+    parentName.includes("buttonendicon") ||
+    normalizedSubtreeName.includes("chevron right") ||
+    normalizedSubtreeName.includes("arrow right")
+      ? {
+          localName: "ChevronRightIcon",
+          modulePath: "@mui/icons-material/ChevronRight"
+        }
+      : parentName.includes("expandiconwrapper") ||
+          parentName.includes("outlinedinputroot") ||
+          parentName.includes("formcontrolroot") ||
+          parentName.includes("select") ||
+          hasDownIndicatorHint(normalizedSubtreeName)
+        ? {
+            localName: "ExpandMoreIcon",
+            modulePath: "@mui/icons-material/ExpandMore"
+          }
+        : parentName.includes("accordionsummarycontent")
+          ? {
+              localName: "TuneIcon",
+              modulePath: "@mui/icons-material/Tune"
+            }
+          : resolveIconImportSpecFromCatalog({
+              rawInput: subtreeNameBlob,
+              resolver: context.iconResolver
+            });
+
+  return registerIconImport(context, spec);
+};
+
+const renderFallbackIconExpression = ({
+  element,
+  parent,
+  context,
+  ariaHidden = false,
+  extraEntries = []
+}: {
+  element: ScreenElementIR;
+  parent: Pick<VirtualParent, "name">;
+  context: RenderContext;
+  ariaHidden?: boolean;
+  extraEntries?: Array<[string, string | number | undefined]>;
+}): string => {
+  const vectorPaths = collectVectorPaths(element);
+  if (vectorPaths.length > 0) {
+    return renderInlineSvgIcon({
+      icon: {
+        paths: vectorPaths,
+        color: resolveIconColor(element),
+        width: element.width,
+        height: element.height
+      },
+      context,
+      ariaHidden,
+      extraEntries
+    });
+  }
+
+  const iconComponent = resolveFallbackIconComponent({ element, parent, context });
+  const color = resolveIconColor(element);
+  const sx = sxString([
+    ["width", toPxLiteral(element.width)],
+    ["height", toPxLiteral(element.height)],
+    ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
+    ["lineHeight", literal("1")],
+    ["color", toThemeColorLiteral({ color, tokens: context.tokens })],
+    ...extraEntries
+  ]);
+  const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
+  return `<${iconComponent}${ariaHiddenProp} sx={{ ${sx} }} fontSize="inherit" />`;
 };
 
 const registerInteractiveField = ({
@@ -852,17 +6061,34 @@ const registerInteractiveField = ({
     return existing;
   }
 
-  const label = model.labelNode?.text?.trim() ?? element.name;
+  const rawLabel = model.labelNode?.text?.trim() ?? element.name;
+  const required = inferRequiredFromLabel(rawLabel);
+  const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
+  const label = sanitizedLabel.length > 0 ? sanitizedLabel : rawLabel;
+  const placeholder = model.placeholderNode?.text?.trim();
   const defaultValue = model.valueNode?.text?.trim() ?? "";
   const isSelect = model.isSelect;
-  const options = isSelect ? deriveSelectOptions(defaultValue) : [];
+  const options = isSelect ? deriveSelectOptions(defaultValue, context.generationLocale) : [];
+  const semanticHints = isSelect ? [] : collectInputSemanticHints({ element, label, placeholder });
+  const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
+  const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
+  const validationType = isSelect ? undefined : inputType;
+  const validationMessage = inferTextFieldValidationMessage(validationType);
+  const hasVisualErrorExample = inferVisualErrorFromOutline(element);
 
   const created: InteractiveFieldModel = {
     key,
     label,
     defaultValue,
+    ...(placeholder && !isSelect ? { placeholder } : {}),
     isSelect,
     options,
+    ...(inputType ? { inputType } : {}),
+    ...(autoComplete ? { autoComplete } : {}),
+    ...(required ? { required } : {}),
+    ...(validationType ? { validationType } : {}),
+    ...(validationMessage ? { validationMessage } : {}),
+    ...(hasVisualErrorExample ? { hasVisualErrorExample } : {}),
     suffixText: isSelect ? undefined : model.suffixText,
     labelFontFamily: normalizeFontFamily(model.labelNode?.fontFamily),
     labelColor: model.labelNode?.fillColor,
@@ -908,26 +6134,34 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
     const trimmed = value.trim();
     return trimmed === "€" || trimmed === "%" || trimmed === "$";
   };
+  const isPlaceholderNode = (node: ScreenElementIR): boolean => {
+    if (node.textRole === "placeholder") {
+      return true;
+    }
+    return isLikelyInputPlaceholderText(node.text);
+  };
 
   const { topRow, bottomRow } = splitTextRows(texts);
+  const placeholderNode =
+    bottomRow.find((node) => isPlaceholderNode(node)) ?? texts.find((node) => isPlaceholderNode(node));
   const labelNode =
     topRow.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
   const valueNode =
     bottomRow.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && !isSuffixText(text);
+      return text.length > 0 && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
       const text = node.text?.trim() ?? "";
-      return text.length > 0 && isValueLikeText(text) && !isSuffixText(text);
+      return text.length > 0 && isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
   const labelIconNode =
@@ -962,6 +6196,7 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
   return {
     labelNode,
     valueNode,
+    placeholderNode,
     labelIcon: labelIconNode
       ? {
           paths: labelIconNode.paths,
@@ -983,17 +6218,29 @@ const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel =
   };
 };
 
-const renderInlineSvgIcon = (icon: SemanticIconModel, extraEntries: Array<[string, string | number | undefined]> = []): string => {
+const renderInlineSvgIcon = ({
+  icon,
+  context,
+  ariaHidden = false,
+  extraEntries = []
+}: {
+  icon: SemanticIconModel;
+  context: RenderContext;
+  ariaHidden?: boolean;
+  extraEntries?: Array<[string, string | number | undefined]>;
+}): string => {
+  registerMuiImports(context, "SvgIcon");
   const sx = sxString([
     ["width", toPxLiteral(icon.width)],
     ["height", toPxLiteral(icon.height)],
-    ["color", icon.color ? literal(icon.color) : undefined],
+    ["color", toThemeColorLiteral({ color: icon.color, tokens: context.tokens })],
     ...extraEntries
   ]);
   const width = Math.max(1, Math.round(icon.width ?? 24));
   const height = Math.max(1, Math.round(icon.height ?? 24));
   const paths = icon.paths.map((pathData) => `<path d={${literal(pathData)}} />`).join("");
-  return `<SvgIcon sx={{ ${sx} }} viewBox={${literal(`0 0 ${width} ${height}`)}}>${paths}</SvgIcon>`;
+  const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
+  return `<SvgIcon${ariaHiddenProp} sx={{ ${sx} }} viewBox={${literal(`0 0 ${width} ${height}`)}}>${paths}</SvgIcon>`;
 };
 
 const renderSemanticInput = (
@@ -1008,56 +6255,228 @@ const renderSemanticInput = (
   const outlineContainer = findFirstByName(element, "muioutlinedinputroot") ?? element;
   const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
   const outlineStrokeColor = outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor;
-  const fieldSx = sxString([
-    ...baseLayoutEntries(outlineContainer, parent, { includePaints: false }),
-    ["bgcolor", element.fillColor ? literal(element.fillColor) : undefined]
-  ]);
+  const textFieldDefaults = context.themeComponentDefaults?.MuiTextField;
+  const outlinedInputRadiusSource = outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius;
+  const omitOutlinedInputBorderRadius = matchesRoundedInteger({
+    value: outlinedInputRadiusSource,
+    target: textFieldDefaults?.outlinedInputBorderRadiusPx
+  });
+  const baseFieldLayoutEntries = baseLayoutEntries(outlineContainer, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const fieldSxEntries: Array<[string, string | number | undefined]> = [
+    ...baseFieldLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: outlineContainer.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[outlineContainer.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseFieldLayoutEntries)
+    }),
+    ["bgcolor", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })] as [string, string | number | undefined]
+  ];
 
   const inputRootStyle = sxString([
-    ["borderRadius", toPxLiteral(outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius)],
+    [
+      "borderRadius",
+      !omitOutlinedInputBorderRadius
+        ? toThemeBorderRadiusValue({
+            radiusPx: outlinedInputRadiusSource,
+            tokens: context.tokens
+          })
+        : undefined
+    ],
     ["fontFamily", field.valueFontFamily ? literal(field.valueFontFamily) : undefined],
-    ["color", field.valueColor ? literal(field.valueColor) : undefined]
+    ["color", toThemeColorLiteral({ color: field.valueColor, tokens: context.tokens })]
   ]);
   const inputLabelStyle = sxString([
     ["fontFamily", field.labelFontFamily ? literal(field.labelFontFamily) : undefined],
-    ["color", field.labelColor ? literal(field.labelColor) : undefined]
+    ["color", toThemeColorLiteral({ color: field.labelColor, tokens: context.tokens })]
   ]);
-  const outlineStyle = sxString([["borderColor", outlineStrokeColor ? literal(outlineStrokeColor) : undefined]]);
+  const outlineStyle = sxString([["borderColor", toThemeColorLiteral({ color: outlineStrokeColor, tokens: context.tokens })]]);
   const endAdornment =
     !field.isSelect && field.suffixText
       ? `endAdornment: <InputAdornment position="end">{${literal(field.suffixText)}}</InputAdornment>`
       : "";
+  const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
+  const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
+  const helperTextId = `${field.key}-helper-text`;
+  const requiredProp = field.required ? `${indent}    required\n` : "";
+  const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
+  const usesReactHookForm = context.formHandlingMode === "react_hook_form";
 
   if (field.isSelect) {
-    return `${indent}<TextField
-${indent}  select
-${indent}  label={${literal(field.label)}}
-${indent}  value={formValues[${literal(field.key)}] ?? ""}
-${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
-${indent}  sx={{
-${indent}    ${fieldSx},
-${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
-${indent}    "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} },
-${indent}    "& .MuiInputLabel-root": { ${inputLabelStyle} }
+    registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiFormControl",
+      entries: fieldSxEntries
+    });
+    const fieldSx = sxString(
+      withOmittedSxKeys({
+        entries: fieldSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiFormControl",
+          entries: fieldSxEntries
+        })
+      })
+    );
+    const selectLabelId = `${field.key}-label`;
+    const selectSxEntries = [
+      inputRootStyle,
+      outlineStyle ? `"& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} }` : undefined
+    ].filter((entry): entry is string => Boolean(entry && entry.trim().length > 0));
+    const selectSxProp =
+      selectSxEntries.length > 0
+        ? `${indent}    sx={{
+${selectSxEntries.map((entry) => `${indent}      ${entry}`).join(",\n")}
+${indent}    }}\n`
+        : "";
+    if (usesReactHookForm) {
+      return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <FormControl
+${field.required ? `${indent}        required\n` : ""}${indent}        error={Boolean(helperText)}
+${indent}        sx={{ ${fieldSx} }}
+${indent}      >
+${indent}        <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
+${indent}        <Select
+${indent}          labelId={${literal(selectLabelId)}}
+${indent}          label={${literal(field.label)}}
+${indent}          value={controllerField.value ?? ""}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-describedby={${literal(helperTextId)}}
+${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
+${selectSxProp}
+${indent}        >
+${indent}          {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}            <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}          ))}
+${indent}        </Select>
+${indent}        <FormHelperText id={${literal(helperTextId)}}>{helperText}</FormHelperText>
+${indent}      </FormControl>
+${indent}    );
 ${indent}  }}
-${indent}>
-${indent}  {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
-${indent}    <MenuItem key={option} value={option}>{option}</MenuItem>
-${indent}  ))}
-${indent}</TextField>`;
+${indent}/>`;
+    }
+    return `${indent}<FormControl
+${requiredProp}${indent}    error={${fieldErrorExpression}}
+${indent}    sx={{ ${fieldSx} }}
+${indent}  >
+${indent}  <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
+${indent}  <Select
+${indent}    labelId={${literal(selectLabelId)}}
+${indent}    label={${literal(field.label)}}
+${indent}    value={formValues[${literal(field.key)}] ?? ""}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-describedby={${literal(helperTextId)}}
+${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
+${selectSxProp}
+${indent}  >
+${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}    ))}
+${indent}  </Select>
+${indent}  <FormHelperText id={${literal(helperTextId)}}>{${fieldHelperTextExpression}}</FormHelperText>
+${indent}</FormControl>`;
   }
 
+  registerMuiImports(context, "TextField");
+  if (field.suffixText) {
+    registerMuiImports(context, "InputAdornment");
+  }
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiTextField",
+    entries: fieldSxEntries
+  });
+  const fieldSx = sxString(
+    withOmittedSxKeys({
+      entries: fieldSxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiTextField",
+        entries: fieldSxEntries
+      })
+    })
+  );
+  const placeholderProp = field.placeholder ? `${indent}  placeholder={${literal(field.placeholder)}}\n` : "";
+  const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
+  const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
+  const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
+  const slotPropsEntries = [
+    endAdornment ? `input: { ${endAdornment} }` : "",
+    `htmlInput: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`,
+    `formHelperText: { id: ${literal(helperTextId)} }`
+  ]
+    .filter((entry) => entry.length > 0)
+    .join(`,\n${indent}    `);
+  const textFieldSxEntries = [
+    fieldSx,
+    inputRootStyle ? `"& .MuiOutlinedInput-root": { ${inputRootStyle} }` : undefined,
+    outlineStyle ? `"& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} }` : undefined,
+    inputLabelStyle ? `"& .MuiInputLabel-root": { ${inputLabelStyle} }` : undefined
+  ].filter((entry): entry is string => Boolean(entry && entry.trim().length > 0));
+  const textFieldSxProp =
+    textFieldSxEntries.length > 0
+      ? `${indent}  sx={{
+${textFieldSxEntries.map((entry) => `${indent}    ${entry}`).join(",\n")}
+${indent}  }}\n`
+      : "";
+  if (usesReactHookForm) {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <TextField
+${indent}        label={${literal(field.label)}}
+${field.placeholder ? `${indent}        placeholder={${literal(field.placeholder)}}\n` : ""}${field.inputType ? `${indent}        type={${literal(field.inputType)}}\n` : ""}${field.autoComplete ? `${indent}        autoComplete={${literal(field.autoComplete)}}\n` : ""}${field.required ? `${indent}        required\n` : ""}${indent}        value={controllerField.value ?? ""}
+${indent}        onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
+${indent}        onBlur={controllerField.onBlur}
+${indent}        error={Boolean(helperText)}
+${indent}        helperText={helperText}
+${indent}        aria-label={${literal(field.label)}}
+${indent}        aria-describedby={${literal(helperTextId)}}
+${textFieldSxProp}
+${indent}        slotProps={{
+${indent}          ${slotPropsEntries}
+${indent}        }}
+${indent}      />
+${indent}    );
+${indent}  }}
+${indent}/>`;
+  }
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
-${indent}  value={formValues[${literal(field.key)}] ?? ""}
-${indent}  onChange={(event) => updateFieldValue(${literal(field.key)}, event.target.value)}
-${indent}  sx={{
-${indent}    ${fieldSx},
-${indent}    "& .MuiOutlinedInput-root": { ${inputRootStyle} },
-${indent}    "& .MuiOutlinedInput-notchedOutline": { ${outlineStyle} },
-${indent}    "& .MuiInputLabel-root": { ${inputLabelStyle} }
+${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
+${indent}  onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)}
+${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}  error={${fieldErrorExpression}}
+${indent}  helperText={${fieldHelperTextExpression}}
+${indent}  aria-label={${literal(field.label)}}
+${indent}  aria-describedby={${literal(helperTextId)}}
+${textFieldSxProp}
+${indent}  slotProps={{
+${indent}    ${slotPropsEntries}
 ${indent}  }}
-${indent}  InputProps={{ ${endAdornment} }}
 ${indent}/>`;
 };
 
@@ -1078,7 +6497,9 @@ const renderSemanticAccordion = (
   const detailsRoot = findFirstByName(element, "collapsewrapper") ?? element.children?.[1] ?? element;
   const detailsContainer = detailsRoot.children?.length === 1 ? (detailsRoot.children[0] ?? detailsRoot) : detailsRoot;
 
-  const summaryChildren = sortChildren(summaryContent.children ?? [], summaryContent.layoutMode ?? "NONE");
+  const summaryChildren = sortChildren(summaryContent.children ?? [], summaryContent.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   const renderedSummary = summaryChildren
     .map((child) =>
       renderElement(
@@ -1087,6 +6508,8 @@ const renderSemanticAccordion = (
         {
           x: summaryContent.x,
           y: summaryContent.y,
+          width: summaryContent.width,
+          height: summaryContent.height,
           name: summaryContent.name,
           layoutMode: summaryContent.layoutMode ?? "NONE"
         },
@@ -1096,7 +6519,9 @@ const renderSemanticAccordion = (
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
 
-  const detailChildren = sortChildren(detailsContainer.children ?? [], detailsContainer.layoutMode ?? "NONE");
+  const detailChildren = sortChildren(detailsContainer.children ?? [], detailsContainer.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
   const renderedDetails = detailChildren
     .map((child) =>
       renderElement(
@@ -1105,6 +6530,8 @@ const renderSemanticAccordion = (
         {
           x: detailsContainer.x,
           y: detailsContainer.y,
+          width: detailsContainer.width,
+          height: detailsContainer.height,
           name: detailsContainer.name,
           layoutMode: detailsContainer.layoutMode ?? "NONE"
         },
@@ -1120,15 +6547,16 @@ const renderSemanticAccordion = (
 
   let expandIconExpression: string;
   if (expandIconPaths.length > 0) {
-    expandIconExpression = renderInlineSvgIcon(
-      {
+    expandIconExpression = renderInlineSvgIcon({
+      icon: {
         paths: expandIconPaths,
         color: expandIconNode ? firstVectorColor(expandIconNode) : undefined,
         width: expandIconNode?.width,
         height: expandIconNode?.height
       },
-      [["fontSize", literal("inherit")]]
-    );
+      context,
+      extraEntries: [["fontSize", literal("inherit")]]
+    });
   } else {
     const expandMoreIcon = registerIconImport(context, {
       localName: "ExpandMoreIcon",
@@ -1136,30 +6564,72 @@ const renderSemanticAccordion = (
     });
     expandIconExpression = `<${expandMoreIcon} fontSize="small" />`;
   }
+  registerMuiImports(context, "Accordion", "AccordionSummary", "AccordionDetails", "Box", "Typography");
+
+  const detailsWidthRatio =
+    typeof detailsContainer.width === "number" &&
+    Number.isFinite(detailsContainer.width) &&
+    detailsContainer.width > 0 &&
+    typeof element.width === "number" &&
+    Number.isFinite(element.width) &&
+    element.width > 0
+      ? detailsContainer.width / element.width
+      : undefined;
+  const detailsResponsiveWidth = toPercentLiteralFromRatio(detailsWidthRatio) ?? literal("100%");
 
   const detailsSx = sxString([
     ["position", literal("relative")],
-    ["width", toPxLiteral(detailsContainer.width)],
+    ["width", detailsResponsiveWidth],
+    ["maxWidth", toPxLiteral(detailsContainer.width)],
     ["minHeight", toPxLiteral(detailsContainer.height)],
     ["display", detailsContainer.layoutMode === "NONE" ? literal("block") : literal("flex")],
     ["flexDirection", detailsContainer.layoutMode === "HORIZONTAL" ? literal("row") : literal("column")],
-    ["gap", detailsContainer.gap && detailsContainer.gap > 0 ? toPxLiteral(detailsContainer.gap) : undefined],
-    ["pt", detailsContainer.padding && detailsContainer.padding.top > 0 ? toPxLiteral(detailsContainer.padding.top) : undefined],
-    ["pr", detailsContainer.padding && detailsContainer.padding.right > 0 ? toPxLiteral(detailsContainer.padding.right) : undefined],
-    ["pb", detailsContainer.padding && detailsContainer.padding.bottom > 0 ? toPxLiteral(detailsContainer.padding.bottom) : undefined],
-    ["pl", detailsContainer.padding && detailsContainer.padding.left > 0 ? toPxLiteral(detailsContainer.padding.left) : undefined]
+    [
+      "gap",
+      detailsContainer.gap && detailsContainer.gap > 0
+        ? toSpacingUnitValue({ value: detailsContainer.gap, spacingBase: context.spacingBase })
+        : undefined
+    ],
+    ...toBoxSpacingSxEntries({
+      values: detailsContainer.padding,
+      spacingBase: context.spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    })
   ]);
 
   const summarySx = sxString([
     ["minHeight", toPxLiteral(summaryRoot.height)],
-    ["pt", summaryRoot.padding && summaryRoot.padding.top > 0 ? toPxLiteral(summaryRoot.padding.top) : undefined],
-    ["pr", summaryRoot.padding && summaryRoot.padding.right > 0 ? toPxLiteral(summaryRoot.padding.right) : undefined],
-    ["pb", summaryRoot.padding && summaryRoot.padding.bottom > 0 ? toPxLiteral(summaryRoot.padding.bottom) : undefined],
-    ["pl", summaryRoot.padding && summaryRoot.padding.left > 0 ? toPxLiteral(summaryRoot.padding.left) : undefined]
+    ...toBoxSpacingSxEntries({
+      values: summaryRoot.padding,
+      spacingBase: context.spacingBase,
+      allKey: "p",
+      xKey: "px",
+      yKey: "py",
+      topKey: "pt",
+      rightKey: "pr",
+      bottomKey: "pb",
+      leftKey: "pl"
+    })
   ]);
 
+  const baseAccordionLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const accordionSx = sxString([
-    ...baseLayoutEntries(element, parent),
+    ...baseAccordionLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAccordionLayoutEntries)
+    }),
     ["boxShadow", literal("none")]
   ]);
 
@@ -1176,7 +6646,7 @@ ${indent}    <Box sx={{ width: "100%", position: "relative", minHeight: ${litera
 ${renderedSummary || `${indent}      <Typography>{${literal(summaryFallbackLabel)}}</Typography>`}
 ${indent}    </Box>
 ${indent}  </AccordionSummary>
-${indent}  <AccordionDetails sx={{ p: "0px" }}>
+${indent}  <AccordionDetails sx={{ p: 0 }}>
 ${indent}    <Box sx={{ ${detailsSx} }}>
 ${renderedDetails || `${indent}      <Box />`}
 ${indent}    </Box>
@@ -1184,24 +6654,3653 @@ ${indent}  </AccordionDetails>
 ${indent}</Accordion>`;
 };
 
-const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent): string => {
+interface ResolvedPrototypeNavigation {
+  routePath: string;
+  replace: boolean;
+}
+
+const resolvePrototypeNavigationBinding = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): ResolvedPrototypeNavigation | undefined => {
+  const targetScreenId = element.prototypeNavigation?.targetScreenId;
+  if (!targetScreenId) {
+    return undefined;
+  }
+  const routePath = context.routePathByScreenId.get(targetScreenId);
+  if (!routePath) {
+    return undefined;
+  }
+  return {
+    routePath,
+    replace: element.prototypeNavigation?.mode === "replace"
+  };
+};
+
+const toRouterLinkProps = ({
+  navigation,
+  context
+}: {
+  navigation: ResolvedPrototypeNavigation;
+  context: RenderContext;
+}): string => {
+  context.usesRouterLink = true;
+  context.prototypeNavigationRenderedCount += 1;
+  const replaceProp = navigation.replace ? " replace" : "";
+  return ` component={RouterLink} to={${literal(navigation.routePath)}}${replaceProp}`;
+};
+
+const toNavigateHandlerProps = ({
+  navigation,
+  context
+}: {
+  navigation: ResolvedPrototypeNavigation;
+  context: RenderContext;
+}): {
+  onClickProp: string;
+  onKeyDownProp: string;
+  roleProp: string;
+  tabIndexProp: string;
+} => {
+  context.usesNavigateHandler = true;
+  context.prototypeNavigationRenderedCount += 1;
+  const navigateCall = navigation.replace
+    ? `navigate(${literal(navigation.routePath)}, { replace: true })`
+    : `navigate(${literal(navigation.routePath)})`;
+  return {
+    onClickProp: ` onClick={() => ${navigateCall}}`,
+    onKeyDownProp:
+      ' onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); ' +
+      `${navigateCall}; } }}`,
+    roleProp: ' role="button"',
+    tabIndexProp: " tabIndex={0}"
+  };
+};
+
+const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
-  const label = firstText(element) ?? element.name;
+  const buttonKey = toStateKey(element);
+  const mappedMuiProps = element.variantMapping?.muiProps;
+  const textNodes = collectTextNodes(element)
+    .filter((node) => Boolean(node.text?.trim()))
+    .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+  const labelNode = textNodes[0];
+  const label = labelNode?.text?.trim();
   const buttonTextColor = firstTextColor(element);
+  const endIconRoot = findFirstByName(element, "buttonendicon");
+  const iconNode = pickBestIconNode(element) ?? endIconRoot;
+  const isIconOnlyButton = !label && Boolean(iconNode);
+  const inferredDisabled = inferButtonDisabled({
+    element,
+    mappedDisabled: mappedMuiProps?.disabled,
+    buttonTextColor
+  });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
 
+  if (iconNode && isIconOnlyButton) {
+    registerMuiImports(context, "IconButton");
+    const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
+    const baseIconButtonLayoutEntries = baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    });
+    const iconButtonSxEntries: Array<[string, string | number | undefined]> = [
+      ...baseIconButtonLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseIconButtonLayoutEntries)
+      }),
+      ["color", toThemeColorLiteral({ color: iconColor, tokens: context.tokens })] as [string, string | number | undefined]
+    ];
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiIconButton",
+      entries: iconButtonSxEntries
+    });
+    const iconButtonSx = sxString(
+      withOmittedSxKeys({
+        entries: iconButtonSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiIconButton",
+          entries: iconButtonSxEntries
+        })
+      })
+    );
+    const iconButtonSxWithState = appendVariantStateOverridesToSx({
+      sx: iconButtonSx,
+      element,
+      tokens: context.tokens
+    });
+    const iconExpression = renderFallbackIconExpression({
+      element: iconNode,
+      parent: { name: endIconRoot?.name ?? element.name },
+      context,
+      ariaHidden: true,
+      extraEntries: [["fontSize", literal("inherit")]]
+    });
+    const disabledProp = inferredDisabled ? " disabled" : "";
+    const ariaLabel = resolveIconButtonAriaLabel({ element, iconNode });
+    const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
+    return `${indent}<IconButton aria-label=${literal(ariaLabel)}${linkProps}${disabledProp} sx={{ ${iconButtonSxWithState} }}>${iconExpression}</IconButton>`;
+  }
+
+  const iconExpression = iconNode
+    ? renderFallbackIconExpression({
+        element: iconNode,
+        parent: { name: endIconRoot?.name ?? element.name },
+        context,
+        ariaHidden: true,
+        extraEntries: [["fontSize", literal("inherit")]]
+      })
+    : undefined;
+  const iconBelongsAtEnd =
+    Boolean(iconNode && endIconRoot) ||
+    Boolean(
+      iconNode &&
+        labelNode &&
+        typeof iconNode.x === "number" &&
+        typeof labelNode.x === "number" &&
+        iconNode.x > labelNode.x
+    );
+
+  const variant = inferButtonVariant({
+    element,
+    mappedVariant: mappedMuiProps?.variant
+  });
+  const buttonLabel = (label ?? element.name).trim() || "Button";
+  context.buttons.push({
+    key: buttonKey,
+    label: buttonLabel,
+    preferredSubmit: variant === "contained",
+    eligibleForSubmit: !inferredDisabled
+  });
+  const size = inferButtonSize({
+    element,
+    mappedSize: mappedMuiProps?.size
+  });
+  const fullWidth = inferButtonFullWidth({
+    element,
+    parent
+  });
+
+  const baseButtonLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const sxEntries = filterButtonVariantEntries({
+    entries: [
+      ...baseButtonLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseButtonLayoutEntries)
+      }),
+      ["fontSize", element.fontSize ? toRemLiteral(element.fontSize) : undefined],
+      ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
+      ["lineHeight", element.lineHeight ? toRemLiteral(element.lineHeight) : undefined],
+      ["color", toThemeColorLiteral({ color: buttonTextColor, tokens: context.tokens })],
+      ["textTransform", literal("none")],
+      ["justifyContent", literal("center")]
+    ],
+    variant,
+    element,
+    fullWidth,
+    tokens: context.tokens
+  });
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiButton",
+    entries: sxEntries
+  });
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: sxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiButton",
+        entries: sxEntries
+      })
+    })
+  );
+
+  const sxWithVariantStates = appendVariantStateOverridesToSx({
+    sx,
+    element,
+    tokens: context.tokens
+  });
+  const sizeProp = size ? ` size="${size}"` : "";
+  const fullWidthProp = fullWidth ? " fullWidth" : "";
+  const disabledProp = inferredDisabled ? " disabled" : "";
+  const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
+  const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
+  const typeProp = navigation ? "" : ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
+  const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
+
+  return `${indent}<Button variant="${variant}"${linkProps}${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
+};
+
+const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  const hasStroke = Boolean(element.strokeColor);
+  const isPill = (element.cornerRadius ?? 0) >= 32;
+  const texts = collectTextNodes(element);
+  const hasSingleText = texts.length >= 1 && Boolean(texts[0]?.text?.trim());
+  const noFill =
+    (!element.fillColor || element.fillColor === "#ffffff" || element.fillColor === "#FFFFFF") && !element.fillGradient;
+  return hasStroke && isPill && hasSingleText && noFill;
+};
+
+const renderChildrenIntoParent = ({
+  element,
+  depth,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+}): string => {
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  return children
+    .map((child) =>
+      renderElement(
+        child,
+        depth,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
+    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+    .join("\n");
+};
+
+const renderNodesIntoParent = ({
+  nodes,
+  parent,
+  depth,
+  context,
+  layoutMode = "NONE"
+}: {
+  nodes: ScreenElementIR[];
+  parent: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+}): string => {
+  const sortedNodes = sortChildren(nodes, layoutMode, {
+    generationLocale: context.generationLocale
+  });
+  return sortedNodes
+    .map((node) =>
+      renderElement(
+        node,
+        depth,
+        {
+          x: parent.x,
+          y: parent.y,
+          width: parent.width,
+          height: parent.height,
+          name: parent.name,
+          fillColor: parent.fillColor,
+          fillGradient: parent.fillGradient,
+          layoutMode: parent.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
+    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+    .join("\n");
+};
+
+const SIMPLE_STACK_GEOMETRY_SX_KEYS = new Set([
+  "position",
+  "left",
+  "top",
+  "width",
+  "maxWidth",
+  "height",
+  "minHeight"
+]);
+
+const hasResponsiveTopLevelLayoutOverrides = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  return Boolean(context.responsiveTopLevelLayoutOverrides?.[element.id]);
+};
+
+const hasVisibleBorderSignal = (element: ScreenElementIR): boolean => {
+  if (!element.strokeColor) {
+    return false;
+  }
+  if (element.strokeWidth === undefined) {
+    return true;
+  }
+  return Number.isFinite(element.strokeWidth) && element.strokeWidth > 0;
+};
+
+const hasDistinctSurfaceFill = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  const normalizedFill = normalizeHexColor(element.fillColor);
+  const normalizedPageBackground = context.pageBackgroundColorNormalized;
+  if (!normalizedFill || !normalizedPageBackground) {
+    return false;
+  }
+  return normalizedFill !== normalizedPageBackground;
+};
+
+const isElevatedSurfaceContainerForPaper = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  if ((element.children?.length ?? 0) === 0) {
+    return false;
+  }
+  if (!hasMeaningfulTextDescendants({ element, context })) {
+    return false;
+  }
+  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
+    return false;
+  }
+
+  const hasRoundedSurface = typeof element.cornerRadius === "number" && Number.isFinite(element.cornerRadius) && element.cornerRadius > 0;
+  if (!hasRoundedSurface) {
+    return false;
+  }
+
+  const normalizedElevation = normalizeElevationForSx(element.elevation);
+  const hasElevation = typeof normalizedElevation === "number" && normalizedElevation > 0;
+  const hasInsetShadow = typeof element.insetShadow === "string" && element.insetShadow.trim().length > 0;
+  const hasInsetShadowOnly = hasInsetShadow && !hasElevation;
+
+  const elevatedSurfaceMatch = hasDistinctSurfaceFill({ element, context }) && hasElevation && !hasInsetShadowOnly;
+  const outlinedSurfaceMatch = hasVisibleBorderSignal(element) && !hasElevation && !hasInsetShadow;
+  return elevatedSurfaceMatch || outlinedSurfaceMatch;
+};
+
+const isSimpleFlexContainerForStack = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (element.type !== "container") {
+    return false;
+  }
+  const layoutMode = element.layoutMode ?? "NONE";
+  if (layoutMode !== "VERTICAL" && layoutMode !== "HORIZONTAL") {
+    return false;
+  }
+  if ((element.children?.length ?? 0) === 0) {
+    return false;
+  }
+  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
+    return false;
+  }
+
+  const hasVisualStylingSignals = Boolean(
+    hasVisualStyle(element) ||
+      (typeof element.strokeWidth === "number" && Number.isFinite(element.strokeWidth) && element.strokeWidth > 0) ||
+      (typeof element.opacity === "number" && Number.isFinite(element.opacity) && element.opacity !== 1)
+  );
+  return !hasVisualStylingSignals;
+};
+
+const toSimpleStackContainerSx = ({
+  element,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  }).filter(([key]) => SIMPLE_STACK_GEOMETRY_SX_KEYS.has(key));
+  return sxString(baseEntries);
+};
+
+const renderSimpleFlexContainerAsStack = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  registerMuiImports(context, "Stack");
+  const indent = "  ".repeat(depth);
+  const layoutMode = element.layoutMode === "HORIZONTAL" ? "HORIZONTAL" : "VERTICAL";
+  const direction = layoutMode === "HORIZONTAL" ? "row" : "column";
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
+      : 0;
+  const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
+  const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+  const sx = toSimpleStackContainerSx({
+    element,
+    parent,
+    context
+  });
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? `role="${landmarkRole}"` : undefined;
+  const ariaHiddenProp = isDecorative ? 'aria-hidden="true"' : undefined;
+  const props = [
+    `direction=${literal(direction)}`,
+    `spacing={${spacing}}`,
+    alignItems ? `alignItems=${literal(alignItems)}` : undefined,
+    justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
+    roleProp,
+    ariaHiddenProp,
+    sx ? `sx={{ ${sx} }}` : undefined
+  ]
+    .filter((entry): entry is string => Boolean(entry))
+    .join(" ");
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  if (!renderedChildren.trim()) {
+    return `${indent}<Stack ${props} />`;
+  }
+  return `${indent}<Stack ${props}>
+${renderedChildren}
+${indent}</Stack>`;
+};
+
+interface RenderedItem {
+  id: string;
+  label: string;
+  node: ScreenElementIR;
+}
+
+interface DetectedTabInterfacePattern {
+  tabStripNode: ScreenElementIR;
+  tabItems: RenderedItem[];
+  panelNodes: ScreenElementIR[];
+}
+
+interface DialogActionModel {
+  id: string;
+  label: string;
+  isPrimary: boolean;
+}
+
+interface DetectedDialogOverlayPattern {
+  panelNode: ScreenElementIR;
+  title: string | undefined;
+  contentNodes: ScreenElementIR[];
+  actionModels: DialogActionModel[];
+}
+
+const NAVIGATION_BAR_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>(["container", "stack", "table"]);
+const NAVIGATION_BAR_TOP_LEVEL_DEPTH = 3;
+const NAVIGATION_BAR_MIN_HEIGHT_PX = 40;
+const NAVIGATION_BAR_MAX_HEIGHT_PX = 180;
+const NAVIGATION_BAR_MIN_WIDTH_RATIO = 0.9;
+const NAVIGATION_BAR_EDGE_PROXIMITY_PX = 56;
+const NAVIGATION_BAR_MIN_RENDERABLE_BOTTOM_ACTIONS = 2;
+const NAVIGATION_BAR_DATA_TABLE_MIN_ROWS = 2;
+const NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS = 2;
+const NAVIGATION_BAR_DATA_TABLE_TEXT_CELL_RATIO_MIN = 0.75;
+const TAB_PATTERN_MIN_ACTIONS = 2;
+const TAB_PATTERN_MAX_ACTIONS = 8;
+const TAB_PATTERN_ROW_CENTER_TOLERANCE_PX = 16;
+const TAB_PATTERN_GAP_TOLERANCE_RATIO = 0.65;
+const TAB_PATTERN_GAP_TOLERANCE_PX = 24;
+const TAB_PATTERN_PANEL_MIN_CONTENT_HEIGHT_PX = 24;
+const TAB_PATTERN_STRIP_NAME_HINTS = ["tab", "tabs", "tab bar", "tabbar"];
+const DIALOG_PATTERN_MIN_WIDTH_RATIO = 0.85;
+const DIALOG_PATTERN_MIN_HEIGHT_RATIO = 0.55;
+const DIALOG_PATTERN_PANEL_MIN_WIDTH_RATIO = 0.3;
+const DIALOG_PATTERN_PANEL_MAX_WIDTH_RATIO = 0.95;
+const DIALOG_PATTERN_PANEL_MIN_HEIGHT_RATIO = 0.2;
+const DIALOG_PATTERN_PANEL_MAX_HEIGHT_RATIO = 0.95;
+const DIALOG_PATTERN_CENTER_TOLERANCE_RATIO = 0.2;
+const DIALOG_PATTERN_CENTER_TOLERANCE_PX = 80;
+const DIALOG_ACTION_HINTS = ["ok", "confirm", "save", "cancel", "discard", "apply", "close", "bestätigen", "speichern", "abbrechen"];
+const DIALOG_CLOSE_HINTS = ["close", "dismiss", "cancel", "x", "schließen", "abbrechen"];
+
+interface ListRowAnalysis {
+  node: ScreenElementIR;
+  primaryText: string;
+  secondaryText?: string;
+  leadingAvatarNode?: ScreenElementIR;
+  leadingIconNode?: ScreenElementIR;
+  trailingActionNode?: ScreenElementIR;
+  hasLeadingVisual: boolean;
+  hasTrailingAction: boolean;
+  structureSignature: string;
+}
+
+interface ListRowCollection {
+  rowNodes: ScreenElementIR[];
+  hasInterItemDivider: boolean;
+}
+
+interface DetectedListPattern {
+  rows: ListRowAnalysis[];
+  hasInterItemDivider: boolean;
+}
+
+const LIST_PATTERN_MIN_ROWS = 3;
+const LIST_PATTERN_VERTICAL_DELTA_MIN_PX = 8;
+const LIST_PATTERN_VERTICAL_DELTA_RATIO_TOLERANCE = 0.35;
+const LIST_PATTERN_VERTICAL_DELTA_ABSOLUTE_TOLERANCE_PX = 12;
+const LIST_ACTION_RIGHT_REGION_RATIO = 0.62;
+const LIST_ACTION_NAME_HINTS = [
+  "action",
+  "more",
+  "menu",
+  "next",
+  "arrow",
+  "edit",
+  "delete",
+  "remove",
+  "open",
+  "close",
+  "chevron"
+];
+
+const isDividerLikeListSeparator = (element: ScreenElementIR): boolean => {
+  if (element.type === "divider") {
+    return true;
+  }
+  if ((element.children?.length ?? 0) > 0) {
+    return false;
+  }
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const hasVisualSignal = Boolean(element.fillColor || element.strokeColor);
+  if (!hasVisualSignal) {
+    return false;
+  }
+  const horizontalLine = width >= 16 && height > 0 && height <= 2;
+  const verticalLine = height >= 16 && width > 0 && width <= 2;
+  return horizontalLine || verticalLine;
+};
+
+const isAvatarLikeListNode = (element: ScreenElementIR): boolean => {
+  if (element.type === "avatar") {
+    return true;
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return normalizedName.includes("avatar");
+};
+
+const isListActionLikeNode = (element: ScreenElementIR): boolean => {
+  if (element.prototypeNavigation) {
+    return true;
+  }
+  if (element.type === "button" || element.type === "switch" || element.type === "checkbox" || element.type === "radio") {
+    return true;
+  }
+  if (isIconLikeNode(element) || isSemanticIconWrapper(element)) {
+    return true;
+  }
+  if (pickBestIconNode(element)) {
+    return true;
+  }
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return LIST_ACTION_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+};
+
+const toListNodeStartX = (node: ScreenElementIR): number | undefined => {
+  if (typeof node.x !== "number" || !Number.isFinite(node.x)) {
+    return undefined;
+  }
+  return node.x;
+};
+
+const toListNodeEndX = (node: ScreenElementIR): number | undefined => {
+  if (typeof node.x !== "number" || !Number.isFinite(node.x)) {
+    return undefined;
+  }
+  if (typeof node.width === "number" && Number.isFinite(node.width) && node.width > 0) {
+    return node.x + node.width;
+  }
+  return node.x;
+};
+
+const toListRowHorizontalBounds = ({
+  children
+}: {
+  children: ScreenElementIR[];
+}): { minX: number; maxX: number } | undefined => {
+  const startValues = children.map(toListNodeStartX).filter((value): value is number => typeof value === "number");
+  const endValues = children.map(toListNodeEndX).filter((value): value is number => typeof value === "number");
+  if (startValues.length === 0 || endValues.length === 0) {
+    return undefined;
+  }
+  const minX = Math.min(...startValues);
+  const maxX = Math.max(...endValues);
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || maxX <= minX) {
+    return undefined;
+  }
+  return { minX, maxX };
+};
+
+const isRightAlignedListActionCandidate = ({
+  node,
+  bounds
+}: {
+  node: ScreenElementIR;
+  bounds: { minX: number; maxX: number } | undefined;
+}): boolean => {
+  if (!bounds) {
+    return false;
+  }
+  const nodeStartX = toListNodeStartX(node);
+  if (typeof nodeStartX !== "number") {
+    return false;
+  }
+  const width = Math.max(1, bounds.maxX - bounds.minX);
+  const threshold = bounds.minX + width * LIST_ACTION_RIGHT_REGION_RATIO;
+  return nodeStartX >= threshold;
+};
+
+const collectSubtreeNodeIds = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element.id, ...(element.children ?? []).flatMap((child) => collectSubtreeNodeIds(child, visited))];
+};
+
+const analyzeListRow = ({
+  row,
+  generationLocale
+}: {
+  row: ScreenElementIR;
+  generationLocale: string | undefined;
+}): ListRowAnalysis => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  const sortedChildren = sortChildren(row.children ?? [], row.layoutMode ?? "NONE", sortOptions).filter(
+    (child) => !isDividerLikeListSeparator(child)
+  );
+  const bounds = toListRowHorizontalBounds({ children: sortedChildren });
+
+  let trailingActionNode: ScreenElementIR | undefined;
+  for (const child of [...sortedChildren].reverse()) {
+    if (!isListActionLikeNode(child)) {
+      continue;
+    }
+    if (!isRightAlignedListActionCandidate({ node: child, bounds })) {
+      continue;
+    }
+    trailingActionNode = child;
+    break;
+  }
+
+  const leadingAvatarNode = sortedChildren.find((child) => child.id !== trailingActionNode?.id && isAvatarLikeListNode(child));
+  const leadingIconNode = leadingAvatarNode
+    ? undefined
+    : sortedChildren.find((child) => {
+        if (child.id === trailingActionNode?.id) {
+          return false;
+        }
+        if (isIconLikeNode(child) || isSemanticIconWrapper(child)) {
+          return true;
+        }
+        if (child.type === "container") {
+          return Boolean(pickBestIconNode(child));
+        }
+        return false;
+      });
+
+  const excludedTextNodeIds = new Set<string>();
+  if (trailingActionNode) {
+    for (const nodeId of collectSubtreeNodeIds(trailingActionNode)) {
+      excludedTextNodeIds.add(nodeId);
+    }
+  }
+  if (leadingAvatarNode) {
+    for (const nodeId of collectSubtreeNodeIds(leadingAvatarNode)) {
+      excludedTextNodeIds.add(nodeId);
+    }
+  }
+
+  const textNodes = collectTextNodes(row)
+    .filter((node) => !excludedTextNodeIds.has(node.id))
+    .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
+  const textValues = textNodes.map((node) => node.text?.trim() ?? "").filter((value) => value.length > 0);
+  const fallbackLabel = firstText(row)?.trim() || row.name || "Item";
+  const primaryText = textValues[0] ?? fallbackLabel;
+  const secondaryText = textValues[1] && textValues[1] !== primaryText ? textValues[1] : undefined;
+  const hasLeadingVisual = Boolean(leadingAvatarNode || leadingIconNode);
+  const hasTrailingAction = Boolean(trailingActionNode);
+  const leadingSignature = leadingAvatarNode ? "avatar" : leadingIconNode ? "icon" : "none";
+  const textSignature = textValues.length >= 2 ? "text2" : textValues.length === 1 ? "text1" : "text0";
+  const actionSignature = hasTrailingAction ? "action" : "none";
+
+  return {
+    node: row,
+    primaryText,
+    ...(secondaryText ? { secondaryText } : {}),
+    ...(leadingAvatarNode ? { leadingAvatarNode } : {}),
+    ...(leadingIconNode ? { leadingIconNode } : {}),
+    ...(trailingActionNode ? { trailingActionNode } : {}),
+    hasLeadingVisual,
+    hasTrailingAction,
+    structureSignature: `${leadingSignature}|${textSignature}|${actionSignature}`
+  };
+};
+
+const collectListRows = (element: ScreenElementIR, generationLocale?: string): ListRowCollection => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", sortOptions);
+  const rowNodes: ScreenElementIR[] = [];
+  let hasInterItemDivider = false;
+  let seenRow = false;
+  for (const child of sortedChildren) {
+    if (isDividerLikeListSeparator(child)) {
+      if (seenRow) {
+        hasInterItemDivider = true;
+      }
+      continue;
+    }
+    rowNodes.push(child);
+    seenRow = true;
+  }
+  return {
+    rowNodes,
+    hasInterItemDivider
+  };
+};
+
+const detectRepeatedListPattern = ({
+  element,
+  generationLocale
+}: {
+  element: ScreenElementIR;
+  generationLocale: string;
+}): DetectedListPattern | undefined => {
+  if (element.type !== "container") {
+    return undefined;
+  }
+  const collectedRows = collectListRows(element, generationLocale);
+  if (collectedRows.rowNodes.length < LIST_PATTERN_MIN_ROWS) {
+    return undefined;
+  }
+
+  const rowAnalyses = collectedRows.rowNodes.map((row) => analyzeListRow({ row, generationLocale }));
+  const baselineSignature = rowAnalyses[0]?.structureSignature;
+  if (!baselineSignature || rowAnalyses.some((analysis) => analysis.structureSignature !== baselineSignature)) {
+    return undefined;
+  }
+  if (!rowAnalyses[0]?.hasLeadingVisual && !rowAnalyses[0]?.hasTrailingAction) {
+    return undefined;
+  }
+  if (rowAnalyses.some((analysis) => analysis.primaryText.trim().length === 0)) {
+    return undefined;
+  }
+
+  const rowYValues = collectedRows.rowNodes
+    .map((row) => row.y)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (rowYValues.length !== collectedRows.rowNodes.length) {
+    return undefined;
+  }
+  const yDeltas = toSequentialDeltas(rowYValues);
+  if (yDeltas.some((delta) => delta < LIST_PATTERN_VERTICAL_DELTA_MIN_PX)) {
+    return undefined;
+  }
+  const averageDelta = yDeltas.reduce((total, delta) => total + delta, 0) / yDeltas.length;
+  const tolerance = Math.max(
+    LIST_PATTERN_VERTICAL_DELTA_ABSOLUTE_TOLERANCE_PX,
+    averageDelta * LIST_PATTERN_VERTICAL_DELTA_RATIO_TOLERANCE
+  );
+  if (yDeltas.some((delta) => Math.abs(delta - averageDelta) > tolerance)) {
+    return undefined;
+  }
+
+  return {
+    rows: rowAnalyses,
+    hasInterItemDivider: collectedRows.hasInterItemDivider
+  };
+};
+
+const toListSecondaryActionExpression = ({
+  actionNode,
+  context
+}: {
+  actionNode: ScreenElementIR | undefined;
+  context: RenderContext;
+}): string | undefined => {
+  if (!actionNode) {
+    return undefined;
+  }
+  const actionIconNode = pickBestIconNode(actionNode) ?? (isIconLikeNode(actionNode) ? actionNode : undefined);
+  if (!actionIconNode) {
+    return undefined;
+  }
+  registerMuiImports(context, "IconButton");
+  const ariaLabel = resolveIconButtonAriaLabel({ element: actionNode, iconNode: actionIconNode });
+  const navigation = resolvePrototypeNavigationBinding({ element: actionNode, context });
+  const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+  const iconExpression = renderFallbackIconExpression({
+    element: actionIconNode,
+    parent: { name: actionNode.name },
+    context,
+    ariaHidden: true,
+    extraEntries: [["fontSize", literal("inherit")]]
+  });
+  return `<IconButton edge="end" aria-label=${literal(ariaLabel)}${linkProps}>${iconExpression}</IconButton>`;
+};
+
+const renderListFromRows = ({
+  element,
+  rows,
+  hasInterItemDivider,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  rows: ListRowAnalysis[];
+  hasInterItemDivider: boolean;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): string => {
+  registerMuiImports(context, "List", "ListItem", "ListItemText");
+  if (rows.some((row) => Boolean(row.leadingIconNode))) {
+    registerMuiImports(context, "ListItemIcon");
+  }
+  if (rows.some((row) => Boolean(row.leadingAvatarNode))) {
+    registerMuiImports(context, "ListItemAvatar", "Avatar");
+  }
+  if (hasInterItemDivider) {
+    registerMuiImports(context, "Divider");
+  }
+
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedItems = rows
+    .map((row, index) => {
+      const listNavigation = resolvePrototypeNavigationBinding({ element: row.node, context });
+      const secondaryActionExpression = toListSecondaryActionExpression({
+        actionNode: row.trailingActionNode,
+        context
+      });
+      const secondaryActionProp = secondaryActionExpression ? ` secondaryAction={${secondaryActionExpression}}` : "";
+      const avatarBlock = row.leadingAvatarNode
+        ? `<ListItemAvatar><Avatar>${(() => {
+            const avatarText = firstText(row.leadingAvatarNode)?.trim();
+            return avatarText ? `{${literal(avatarText)}}` : "";
+          })()}</Avatar></ListItemAvatar>`
+        : "";
+      const iconBlock = row.leadingIconNode
+        ? `<ListItemIcon>${renderFallbackIconExpression({
+            element: row.leadingIconNode,
+            parent: { name: row.node.name },
+            context,
+            ariaHidden: true
+          })}</ListItemIcon>`
+        : "";
+      const textProps = row.secondaryText
+        ? ` primary={${literal(row.primaryText)}} secondary={${literal(row.secondaryText)}}`
+        : ` primary={${literal(row.primaryText)}}`;
+      const textBlock = `<ListItemText${textProps} />`;
+      const content = `${avatarBlock}${iconBlock}${textBlock}`;
+      if (listNavigation) {
+        registerMuiImports(context, "ListItemButton");
+      }
+      const linkProps = listNavigation ? toRouterLinkProps({ navigation: listNavigation, context }) : "";
+      const itemBody = listNavigation ? `<ListItemButton${linkProps}>${content}</ListItemButton>` : content;
+      const dividerBlock = hasInterItemDivider && index < rows.length - 1 ? `\n${indent}  <Divider component="li" />` : "";
+      return `${indent}  <ListItem key={${literal(row.node.id)}} disablePadding${secondaryActionProp}>${itemBody}</ListItem>${dividerBlock}`;
+    })
+    .join("\n");
+  return `${indent}<List sx={{ ${sx} }}>
+${renderedItems}
+${indent}</List>`;
+};
+
+const collectRenderedItems = (element: ScreenElementIR, generationLocale?: string): RenderedItem[] => {
+  const sortOptions = generationLocale ? { generationLocale } : undefined;
+  return sortChildren(element.children ?? [], element.layoutMode ?? "NONE", sortOptions)
+    .map((child, index) => ({
+      id: child.id || `${element.id}-item-${index + 1}`,
+      label: firstText(child)?.trim() || child.name || `Item ${index + 1}`,
+      node: child
+    }))
+    .filter((entry) => entry.label.trim().length > 0);
+};
+
+const collectRenderedItemLabels = (element: ScreenElementIR, generationLocale?: string): Array<{ id: string; label: string }> => {
+  return collectRenderedItems(element, generationLocale).map((item) => ({
+    id: item.id,
+    label: item.label
+  }));
+};
+
+const hasNavigationNameHintInSubtree = (element: ScreenElementIR): boolean => {
+  const semanticCandidates = [element.name, element.text ?? "", ...collectSubtreeNames(element)];
+  return semanticCandidates.some((candidate) => {
+    const normalized = normalizeInputSemanticText(candidate);
+    if (!normalized) {
+      return false;
+    }
+    return A11Y_NAVIGATION_HINTS.some((hint) => normalized.includes(hint));
+  });
+};
+
+const hasPrototypeNavigationInSubtree = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): boolean => {
+  if (visited.has(element)) {
+    return false;
+  }
+  visited.add(element);
+  if (element.prototypeNavigation) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => hasPrototypeNavigationInSubtree(child, visited));
+};
+
+const toFiniteNumber = (value: number | undefined): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+};
+
+const isLikelyStructuredDataTable = ({
+  element,
+  generationLocale
+}: {
+  element: ScreenElementIR;
+  generationLocale: string;
+}): boolean => {
+  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL", {
+    generationLocale
+  })
+    .map((row) => {
+      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL", {
+        generationLocale
+      });
+      return rowChildren.length > 0 ? rowChildren : [row];
+    })
+    .filter((row) => row.length > 0);
+
+  if (rows.length < NAVIGATION_BAR_DATA_TABLE_MIN_ROWS) {
+    return false;
+  }
+
+  const columnCounts = rows.map((row) => row.length);
+  const minColumns = Math.min(...columnCounts);
+  const maxColumns = Math.max(...columnCounts);
+  if (minColumns < NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS || maxColumns - minColumns > 1) {
+    return false;
+  }
+
+  const flattenedCells = rows.flat();
+  if (flattenedCells.length < NAVIGATION_BAR_DATA_TABLE_MIN_ROWS * NAVIGATION_BAR_DATA_TABLE_MIN_COLUMNS) {
+    return false;
+  }
+  const textCellCount = flattenedCells.filter((cell) => Boolean(firstText(cell)?.trim() || cell.type === "text")).length;
+  return textCellCount / flattenedCells.length >= NAVIGATION_BAR_DATA_TABLE_TEXT_CELL_RATIO_MIN;
+};
+
+const isRenderableBottomNavigationAction = ({
+  action,
+  context
+}: {
+  action: RenderedItem;
+  context: RenderContext;
+}): boolean => {
+  if (action.label.trim().length === 0) {
+    return false;
+  }
+  if (action.node.type === "button" || action.node.type === "navigation" || action.node.type === "tab") {
+    return true;
+  }
+  if (action.node.prototypeNavigation) {
+    return true;
+  }
+  if (isIconLikeNode(action.node) || isSemanticIconWrapper(action.node) || Boolean(pickBestIconNode(action.node))) {
+    return true;
+  }
+  if (hasInteractiveDescendants({ element: action.node, context })) {
+    return true;
+  }
+  return hasMeaningfulTextDescendants({ element: action.node, context });
+};
+
+const isRenderableTabAction = ({
+  action,
+  context
+}: {
+  action: RenderedItem;
+  context: RenderContext;
+}): boolean => {
+  if (action.label.trim().length === 0) {
+    return false;
+  }
+  if (action.node.type === "text" || action.node.type === "tab" || action.node.type === "button") {
+    return true;
+  }
+  if (action.node.prototypeNavigation) {
+    return true;
+  }
+  return hasMeaningfulTextDescendants({ element: action.node, context });
+};
+
+const hasHorizontalRowAlignment = ({
+  nodes,
+  layoutMode
+}: {
+  nodes: ScreenElementIR[];
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+}): boolean => {
+  if (nodes.length < TAB_PATTERN_MIN_ACTIONS) {
+    return false;
+  }
+  if (layoutMode === "HORIZONTAL") {
+    return true;
+  }
+  const centerYValues = nodes
+    .map((node) => {
+      const y = toFiniteNumber(node.y);
+      const height = toFiniteNumber(node.height);
+      if (y === undefined) {
+        return undefined;
+      }
+      return y + (height ?? 0) / 2;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (centerYValues.length !== nodes.length) {
+    return false;
+  }
+  const minCenterY = Math.min(...centerYValues);
+  const maxCenterY = Math.max(...centerYValues);
+  return maxCenterY - minCenterY <= TAB_PATTERN_ROW_CENTER_TOLERANCE_PX;
+};
+
+const hasUniformHorizontalSpacing = (nodes: ScreenElementIR[]): boolean => {
+  const sortedNodes = [...nodes].sort((left, right) => (left.x ?? 0) - (right.x ?? 0));
+  const centerXValues = sortedNodes
+    .map((node) => {
+      const x = toFiniteNumber(node.x);
+      const width = toFiniteNumber(node.width);
+      if (x === undefined) {
+        return undefined;
+      }
+      return x + (width ?? 0) / 2;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (centerXValues.length !== sortedNodes.length) {
+    return false;
+  }
+  const gaps = toSequentialDeltas(centerXValues);
+  if (gaps.length === 0 || gaps.some((gap) => gap <= 0)) {
+    return false;
+  }
+  if (gaps.length === 1) {
+    return true;
+  }
+  const averageGap = gaps.reduce((sum, value) => sum + value, 0) / gaps.length;
+  const maxDelta = Math.max(...gaps.map((gap) => Math.abs(gap - averageGap)));
+  return maxDelta <= Math.max(TAB_PATTERN_GAP_TOLERANCE_PX, averageGap * TAB_PATTERN_GAP_TOLERANCE_RATIO);
+};
+
+const hasTabNameHint = (element: ScreenElementIR): boolean => {
+  const normalizedName = normalizeInputSemanticText(element.name);
+  return TAB_PATTERN_STRIP_NAME_HINTS.some((hint) => normalizedName.includes(hint));
+};
+
+const hasUnderlineIndicatorInTabStrip = ({
+  tabStripNode,
+  tabActionNodeIds
+}: {
+  tabStripNode: ScreenElementIR;
+  tabActionNodeIds: Set<string>;
+}): boolean => {
+  const stripY = toFiniteNumber(tabStripNode.y);
+  const stripHeight = toFiniteNumber(tabStripNode.height);
+  const stripWidth = toFiniteNumber(tabStripNode.width);
+  const stripBottom = stripY !== undefined && stripHeight !== undefined ? stripY + stripHeight : undefined;
+  return (tabStripNode.children ?? []).some((candidate) => {
+    if (tabActionNodeIds.has(candidate.id)) {
+      return false;
+    }
+    const normalizedName = normalizeInputSemanticText(candidate.name);
+    if (normalizedName.includes("indicator") || normalizedName.includes("underline")) {
+      return true;
+    }
+    if (isDividerLikeListSeparator(candidate)) {
+      const candidateHeight = toFiniteNumber(candidate.height);
+      const candidateWidth = toFiniteNumber(candidate.width);
+      const candidateY = toFiniteNumber(candidate.y);
+      if (
+        stripBottom === undefined ||
+        candidateHeight === undefined ||
+        candidateWidth === undefined ||
+        candidateY === undefined
+      ) {
+        return false;
+      }
+      if (stripWidth !== undefined && candidateWidth >= stripWidth * 0.9) {
+        return false;
+      }
+      return Math.abs(stripBottom - (candidateY + candidateHeight)) <= 12;
+    }
+    const candidateHeight = toFiniteNumber(candidate.height);
+    const candidateWidth = toFiniteNumber(candidate.width);
+    const candidateY = toFiniteNumber(candidate.y);
+    if (
+      candidateHeight === undefined ||
+      candidateWidth === undefined ||
+      candidateY === undefined ||
+      !candidate.fillColor ||
+      candidateHeight > 4
+    ) {
+      return false;
+    }
+    if (stripWidth !== undefined && candidateWidth >= stripWidth * 0.9) {
+      return false;
+    }
+    if (stripBottom === undefined) {
+      return false;
+    }
+    return Math.abs(stripBottom - (candidateY + candidateHeight)) <= 12;
+  });
+};
+
+const hasTabActiveVisualSignal = ({
+  tabStripNode,
+  tabItems
+}: {
+  tabStripNode: ScreenElementIR;
+  tabItems: RenderedItem[];
+}): boolean => {
+  const colorSignals = new Set<string>();
+  const fontWeights: number[] = [];
+  for (const tabItem of tabItems) {
+    const textNode = collectTextNodes(tabItem.node)[0];
+    const color = normalizeHexColor(firstTextColor(tabItem.node) ?? tabItem.node.fillColor);
+    if (color) {
+      colorSignals.add(color);
+    }
+    const fontWeight = toFiniteNumber(textNode?.fontWeight ?? tabItem.node.fontWeight);
+    if (fontWeight !== undefined) {
+      fontWeights.push(fontWeight);
+    }
+  }
+  const hasColorDelta = colorSignals.size >= 2;
+  const hasWeightDelta = fontWeights.length >= 2 && Math.max(...fontWeights) - Math.min(...fontWeights) >= 120;
+  const hasUnderlineSignal = hasUnderlineIndicatorInTabStrip({
+    tabStripNode,
+    tabActionNodeIds: new Set(tabItems.map((tabItem) => tabItem.node.id))
+  });
+  return hasColorDelta || hasWeightDelta || hasUnderlineSignal;
+};
+
+const toTabStripPatternCandidate = ({
+  tabStripNode,
+  context
+}: {
+  tabStripNode: ScreenElementIR;
+  context: RenderContext;
+}): { tabItems: RenderedItem[] } | undefined => {
+  const tabItems = collectRenderedItems(tabStripNode, context.generationLocale).filter((action) =>
+    isRenderableTabAction({
+      action,
+      context
+    })
+  );
+  if (tabItems.length < TAB_PATTERN_MIN_ACTIONS || tabItems.length > TAB_PATTERN_MAX_ACTIONS) {
+    return undefined;
+  }
+  const tabActionNodes = tabItems.map((tabItem) => tabItem.node);
+  if (
+    !hasHorizontalRowAlignment({
+      nodes: tabActionNodes,
+      layoutMode: tabStripNode.layoutMode ?? "NONE"
+    })
+  ) {
+    return undefined;
+  }
+  if (!hasUniformHorizontalSpacing(tabActionNodes)) {
+    return undefined;
+  }
+  const tabActionNodeIds = new Set(tabItems.map((tabItem) => tabItem.node.id));
+  const hasUnderlineSignal = hasUnderlineIndicatorInTabStrip({
+    tabStripNode,
+    tabActionNodeIds
+  });
+  const hasTabHintSignal = hasTabNameHint(tabStripNode) || tabItems.some((tabItem) => hasTabNameHint(tabItem.node));
+  const hasInteractiveTabSignal = tabItems.some((tabItem) => {
+    if (tabItem.node.type === "button" || tabItem.node.prototypeNavigation) {
+      return true;
+    }
+    return hasInteractiveDescendants({
+      element: tabItem.node,
+      context
+    });
+  });
+  if (!hasTabHintSignal && !hasInteractiveTabSignal && !hasUnderlineSignal) {
+    return undefined;
+  }
+  if (
+    !hasTabActiveVisualSignal({
+      tabStripNode,
+      tabItems
+    })
+  ) {
+    return undefined;
+  }
+  return { tabItems };
+};
+
+const resolveTabPanelNodes = ({
+  hostElement,
+  tabStripNode,
+  tabCount,
+  context
+}: {
+  hostElement: ScreenElementIR;
+  tabStripNode: ScreenElementIR;
+  tabCount: number;
+  context: RenderContext;
+}): ScreenElementIR[] => {
+  if (hostElement.id === tabStripNode.id) {
+    return [];
+  }
+  const siblings = sortChildren(hostElement.children ?? [], hostElement.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  }).filter((child) => child.id !== tabStripNode.id && !isDividerLikeListSeparator(child));
+  if (siblings.length !== tabCount) {
+    return [];
+  }
+
+  const stripY = toFiniteNumber(tabStripNode.y);
+  const stripHeight = toFiniteNumber(tabStripNode.height);
+  const stripBottom = stripY !== undefined && stripHeight !== undefined ? stripY + stripHeight : undefined;
+  const hasInvalidPanels = siblings.some((candidate) => {
+    const hasMeaningfulContent =
+      hasMeaningfulTextDescendants({
+        element: candidate,
+        context
+      }) || (candidate.children?.length ?? 0) > 0;
+    if (!hasMeaningfulContent) {
+      return true;
+    }
+    const candidateHeight = toFiniteNumber(candidate.height);
+    if (candidateHeight !== undefined && candidateHeight < TAB_PATTERN_PANEL_MIN_CONTENT_HEIGHT_PX) {
+      return true;
+    }
+    if (stripBottom === undefined) {
+      return false;
+    }
+    const candidateY = toFiniteNumber(candidate.y);
+    return candidateY !== undefined && candidateY < stripBottom - 8;
+  });
+  if (hasInvalidPanels) {
+    return [];
+  }
+  return siblings;
+};
+
+const detectTabInterfacePattern = ({
+  element,
+  depth,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+}): DetectedTabInterfacePattern | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const dataTableLike = isLikelyStructuredDataTable({
+    element,
+    generationLocale: context.generationLocale
+  });
+
+  const directTabStripCandidate = toTabStripPatternCandidate({
+    tabStripNode: element,
+    context
+  });
+  if (directTabStripCandidate) {
+    const hasPrimarySignal =
+      hasTabNameHint(element) ||
+      hasNavigationNameHintInSubtree(element) ||
+      directTabStripCandidate.tabItems.some((tabItem) => tabItem.node.prototypeNavigation);
+    if (dataTableLike && !hasPrimarySignal) {
+      return undefined;
+    }
+    return {
+      tabStripNode: element,
+      tabItems: directTabStripCandidate.tabItems,
+      panelNodes: []
+    };
+  }
+
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  for (const child of sortedChildren) {
+    const stripCandidate = toTabStripPatternCandidate({
+      tabStripNode: child,
+      context
+    });
+    if (!stripCandidate) {
+      continue;
+    }
+
+    const hasPrimarySignal =
+      hasTabNameHint(element) ||
+      hasTabNameHint(child) ||
+      stripCandidate.tabItems.some((tabItem) => tabItem.node.prototypeNavigation) ||
+      hasNavigationNameHintInSubtree(child);
+    if (dataTableLike && !hasPrimarySignal) {
+      continue;
+    }
+
+    const panelNodes = resolveTabPanelNodes({
+      hostElement: element,
+      tabStripNode: child,
+      tabCount: stripCandidate.tabItems.length,
+      context
+    });
+    return {
+      tabStripNode: child,
+      tabItems: stripCandidate.tabItems,
+      panelNodes
+    };
+  }
+
+  return undefined;
+};
+
+const toHexColorAlpha = (value: string | undefined): number | undefined => {
+  const normalized = normalizeHexColor(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const payload = normalized.slice(1);
+  if (payload.length !== 8) {
+    return undefined;
+  }
+  const alpha = Number.parseInt(payload.slice(6, 8), 16);
+  if (!Number.isFinite(alpha)) {
+    return undefined;
+  }
+  return alpha / 255;
+};
+
+const hasSemiTransparentOverlaySignal = (element: ScreenElementIR): boolean => {
+  const opacity = toFiniteNumber(element.opacity);
+  if (opacity !== undefined && opacity < 0.96) {
+    return true;
+  }
+  const fillAlpha = toHexColorAlpha(element.fillColor);
+  return fillAlpha !== undefined && fillAlpha < 0.96;
+};
+
+const collectSubtreeElements = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+  if (visited.has(element)) {
+    return [];
+  }
+  visited.add(element);
+  return [element, ...(element.children ?? []).flatMap((child) => collectSubtreeElements(child, visited))];
+};
+
+const toElementBounds = (
+  element: ScreenElementIR
+):
+  | {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      centerX: number;
+      centerY: number;
+    }
+  | undefined => {
+  const x = toFiniteNumber(element.x);
+  const y = toFiniteNumber(element.y);
+  const width = toFiniteNumber(element.width);
+  const height = toFiniteNumber(element.height);
+  if (x === undefined || y === undefined || width === undefined || height === undefined || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return {
+    x,
+    y,
+    width,
+    height,
+    centerX: x + width / 2,
+    centerY: y + height / 2
+  };
+};
+
+const hasDialogHint = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  const normalized = normalizeInputSemanticText(value);
+  return normalized.includes("dialog") || normalized.includes("modal") || normalized.includes("overlay");
+};
+
+const isDialogActionLikeNode = ({
+  node,
+  context
+}: {
+  node: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (node.type === "button") {
+    return true;
+  }
+  if (node.prototypeNavigation) {
+    return true;
+  }
+  const semanticSignals = [node.name, firstText(node) ?? node.text ?? ""]
+    .map((value) => normalizeInputSemanticText(value))
+    .filter((value) => value.length > 0);
+  if (semanticSignals.some((signal) => DIALOG_ACTION_HINTS.some((hint) => signal.includes(hint)))) {
+    return true;
+  }
+  return hasInteractiveDescendants({ element: node, context });
+};
+
+const isDialogCloseControlNode = ({
+  node,
+  panelNode
+}: {
+  node: ScreenElementIR;
+  panelNode: ScreenElementIR;
+}): boolean => {
+  const semanticSignals = [node.name, firstText(node) ?? node.text ?? ""]
+    .map((value) => normalizeInputSemanticText(value))
+    .filter((value) => value.length > 0);
+  const hasCloseHint = semanticSignals.some((signal) => DIALOG_CLOSE_HINTS.some((hint) => signal.includes(hint)));
+  const isControlLike =
+    node.type === "button" || isIconLikeNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node));
+  if (!hasCloseHint && !isControlLike) {
+    return false;
+  }
+
+  const panelBounds = toElementBounds(panelNode);
+  const nodeBounds = toElementBounds(node);
+  if (!panelBounds || !nodeBounds) {
+    return hasCloseHint;
+  }
+  const isTopRight =
+    nodeBounds.centerX >= panelBounds.x + panelBounds.width * 0.58 &&
+    nodeBounds.centerY <= panelBounds.y + panelBounds.height * 0.35;
+  return hasCloseHint || (isControlLike && isTopRight);
+};
+
+const resolveDialogActionModels = ({
+  panelNode,
+  context
+}: {
+  panelNode: ScreenElementIR;
+  context: RenderContext;
+}): {
+  actionModels: DialogActionModel[];
+  actionHostNodeId?: string;
+} => {
+  const panelChildren = sortChildren(panelNode.children ?? [], panelNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  const bottomToTopChildren = [...panelChildren].reverse();
+  for (const child of bottomToTopChildren) {
+    if (child.layoutMode !== "HORIZONTAL") {
+      continue;
+    }
+    const actionItems = collectRenderedItems(child, context.generationLocale).filter((item) =>
+      isDialogActionLikeNode({
+        node: item.node,
+        context
+      })
+    );
+    if (actionItems.length < TAB_PATTERN_MIN_ACTIONS) {
+      continue;
+    }
+    return {
+      actionHostNodeId: child.id,
+      actionModels: actionItems.map((item, index) => ({
+        id: item.id,
+        label: item.label,
+        isPrimary: index === actionItems.length - 1
+      }))
+    };
+  }
+
+  const directActionNodes = panelChildren.filter((child) =>
+    isDialogActionLikeNode({
+      node: child,
+      context
+    })
+  );
+  if (directActionNodes.length === 0) {
+    return { actionModels: [] };
+  }
+  return {
+    actionModels: directActionNodes.map((node, index) => ({
+      id: node.id,
+      label: firstText(node)?.trim() || node.name || `Action ${index + 1}`,
+      isPrimary: index === directActionNodes.length - 1
+    }))
+  };
+};
+
+const resolveCenteredDialogPanelNode = ({
+  overlayNode,
+  context
+}: {
+  overlayNode: ScreenElementIR;
+  context: RenderContext;
+}): ScreenElementIR | undefined => {
+  const overlayBounds = toElementBounds(overlayNode);
+  if (!overlayBounds) {
+    return undefined;
+  }
+  const sortedChildren = sortChildren(overlayNode.children ?? [], overlayNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  let bestMatch: {
+    node: ScreenElementIR;
+    score: number;
+  } | undefined;
+  for (const child of sortedChildren) {
+    const childBounds = toElementBounds(child);
+    if (!childBounds) {
+      continue;
+    }
+    const widthRatio = childBounds.width / overlayBounds.width;
+    const heightRatio = childBounds.height / overlayBounds.height;
+    if (
+      widthRatio < DIALOG_PATTERN_PANEL_MIN_WIDTH_RATIO ||
+      widthRatio > DIALOG_PATTERN_PANEL_MAX_WIDTH_RATIO ||
+      heightRatio < DIALOG_PATTERN_PANEL_MIN_HEIGHT_RATIO ||
+      heightRatio > DIALOG_PATTERN_PANEL_MAX_HEIGHT_RATIO
+    ) {
+      continue;
+    }
+
+    const centerDeltaX = Math.abs(childBounds.centerX - overlayBounds.centerX);
+    const centerDeltaY = Math.abs(childBounds.centerY - overlayBounds.centerY);
+    const maxCenterDeltaX = Math.max(DIALOG_PATTERN_CENTER_TOLERANCE_PX, overlayBounds.width * DIALOG_PATTERN_CENTER_TOLERANCE_RATIO);
+    const maxCenterDeltaY = Math.max(DIALOG_PATTERN_CENTER_TOLERANCE_PX, overlayBounds.height * DIALOG_PATTERN_CENTER_TOLERANCE_RATIO);
+    if (centerDeltaX > maxCenterDeltaX || centerDeltaY > maxCenterDeltaY) {
+      continue;
+    }
+
+    const hasVisualSignal = hasVisualStyle(child) || Boolean(child.fillColor || child.strokeColor || child.elevation);
+    if (!hasVisualSignal) {
+      continue;
+    }
+    const hasContentSignal =
+      hasMeaningfulTextDescendants({
+        element: child,
+        context
+      }) || (child.children?.length ?? 0) > 0;
+    if (!hasContentSignal) {
+      continue;
+    }
+    const score =
+      centerDeltaX + centerDeltaY - Math.min(childBounds.width / overlayBounds.width, childBounds.height / overlayBounds.height);
+    if (!bestMatch || score < bestMatch.score) {
+      bestMatch = {
+        node: child,
+        score
+      };
+    }
+  }
+  return bestMatch?.node;
+};
+
+const detectDialogOverlayPattern = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): DetectedDialogOverlayPattern | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const elementWidth = toFiniteNumber(element.width);
+  const elementHeight = toFiniteNumber(element.height);
+  const parentWidth = toFiniteNumber(parent.width);
+  const parentHeight = toFiniteNumber(parent.height);
+  if (
+    elementWidth === undefined ||
+    elementHeight === undefined ||
+    parentWidth === undefined ||
+    parentHeight === undefined ||
+    parentWidth <= 0 ||
+    parentHeight <= 0
+  ) {
+    return undefined;
+  }
+  if (elementWidth / parentWidth < DIALOG_PATTERN_MIN_WIDTH_RATIO || elementHeight / parentHeight < DIALOG_PATTERN_MIN_HEIGHT_RATIO) {
+    return undefined;
+  }
+  const hasOverlaySignal = hasSemiTransparentOverlaySignal(element);
+  if (!hasOverlaySignal) {
+    return undefined;
+  }
+
+  const panelNode = resolveCenteredDialogPanelNode({
+    overlayNode: element,
+    context
+  });
+  if (!panelNode) {
+    return undefined;
+  }
+
+  const extraction = resolveDialogActionModels({
+    panelNode,
+    context
+  });
+  const closeControls = collectSubtreeElements(panelNode).filter((candidate) =>
+    isDialogCloseControlNode({
+      node: candidate,
+      panelNode
+    })
+  );
+  const hasCloseControl = closeControls.length > 0;
+  const hasDialogSemanticHint = hasDialogHint(element.name) || hasDialogHint(panelNode.name);
+  if (!hasDialogSemanticHint && !hasCloseControl && extraction.actionModels.length < TAB_PATTERN_MIN_ACTIONS) {
+    return undefined;
+  }
+
+  const contentNodes = sortChildren(panelNode.children ?? [], panelNode.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  }).filter((child) => child.id !== extraction.actionHostNodeId && !closeControls.some((closeNode) => closeNode.id === child.id));
+  const hasContentSignal =
+    contentNodes.some((node) =>
+      hasMeaningfulTextDescendants({
+        element: node,
+        context
+      })
+    ) || hasMeaningfulTextDescendants({ element: panelNode, context });
+  if (!hasContentSignal) {
+    return undefined;
+  }
+  const title = firstText(contentNodes[0] ?? panelNode)?.trim();
+  return {
+    panelNode,
+    title,
+    contentNodes,
+    actionModels: extraction.actionModels
+  };
+};
+
+const detectNavigationBarPattern = ({
+  element,
+  depth,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}): "appbar" | "navigation" | undefined => {
+  if (depth !== NAVIGATION_BAR_TOP_LEVEL_DEPTH) {
+    return undefined;
+  }
+  if (!NAVIGATION_BAR_CANDIDATE_TYPES.has(element.type)) {
+    return undefined;
+  }
+
+  const elementWidth = toFiniteNumber(element.width);
+  const elementHeight = toFiniteNumber(element.height);
+  const parentWidth = toFiniteNumber(parent.width);
+  const parentHeight = toFiniteNumber(parent.height);
+  const elementY = toFiniteNumber(element.y);
+  const parentY = toFiniteNumber(parent.y);
+
+  if (
+    elementWidth === undefined ||
+    elementHeight === undefined ||
+    parentWidth === undefined ||
+    parentHeight === undefined ||
+    elementY === undefined ||
+    parentY === undefined ||
+    parentWidth <= 0 ||
+    parentHeight <= 0
+  ) {
+    return undefined;
+  }
+
+  if (elementHeight < NAVIGATION_BAR_MIN_HEIGHT_PX || elementHeight > NAVIGATION_BAR_MAX_HEIGHT_PX) {
+    return undefined;
+  }
+
+  const widthRatio = elementWidth / parentWidth;
+  if (widthRatio < NAVIGATION_BAR_MIN_WIDTH_RATIO) {
+    return undefined;
+  }
+
+  const topDistance = Math.abs(elementY - parentY);
+  const bottomDistance = Math.abs(parentY + parentHeight - (elementY + elementHeight));
+  const isNearTop = topDistance <= NAVIGATION_BAR_EDGE_PROXIMITY_PX;
+  const isNearBottom = bottomDistance <= NAVIGATION_BAR_EDGE_PROXIMITY_PX;
+  if (!isNearTop && !isNearBottom) {
+    return undefined;
+  }
+
+  const hasTitleSignal = Boolean(firstText(element)?.trim());
+  const hasIconSignal = collectIconNodes(element).length > 0 || Boolean(pickBestIconNode(element));
+  const hasInteractiveSignal =
+    hasInteractiveDescendants({ element, context }) || hasPrototypeNavigationInSubtree(element);
+  const hasNavigationHintSignal = hasNavigationNameHintInSubtree(element);
+  const hasPrimaryNavSignal = hasIconSignal || hasInteractiveSignal || hasNavigationHintSignal;
+
+  if (
+    isLikelyStructuredDataTable({
+      element,
+      generationLocale: context.generationLocale
+    }) &&
+    !hasPrimaryNavSignal
+  ) {
+    return undefined;
+  }
+
+  if (isNearBottom) {
+    const renderableActionCount = collectRenderedItems(element, context.generationLocale).filter((action) =>
+      isRenderableBottomNavigationAction({
+        action,
+        context
+      })
+    ).length;
+    if (renderableActionCount >= NAVIGATION_BAR_MIN_RENDERABLE_BOTTOM_ACTIONS && hasPrimaryNavSignal) {
+      return "navigation";
+    }
+  }
+
+  if (isNearTop && hasTitleSignal && hasPrimaryNavSignal) {
+    return "appbar";
+  }
+  return undefined;
+};
+
+const GRID_CLUSTER_TOLERANCE_PX = 18;
+const GRID_MATRIX_MIN_CHILDREN = 4;
+const GRID_EQUAL_ROW_MIN_CHILDREN = 3;
+const GRID_EQUAL_WIDTH_CV_THRESHOLD = 0.14;
+const GRID_EQUAL_WIDTH_DELTA_THRESHOLD_PX = 24;
+const GRID_MATRIX_MIN_OCCUPANCY = 0.55;
+
+interface GridLayoutDetection {
+  mode: "matrix" | "equal-row";
+  columnCount: number;
+}
+
+const isFiniteNumber = (value: number | undefined): value is number => {
+  return typeof value === "number" && Number.isFinite(value);
+};
+
+const clusterAxisValues = ({ values, tolerance }: { values: number[]; tolerance: number }): number[] => {
+  if (values.length === 0) {
+    return [];
+  }
+  const sortedValues = [...values].sort((left, right) => left - right);
+  const clusters: Array<{ center: number; count: number }> = [];
+  for (const value of sortedValues) {
+    const current = clusters.at(-1);
+    if (!current || Math.abs(value - current.center) > tolerance) {
+      clusters.push({ center: value, count: 1 });
+      continue;
+    }
+    const nextCount = current.count + 1;
+    current.center = (current.center * current.count + value) / nextCount;
+    current.count = nextCount;
+  }
+  return clusters.map((cluster) => cluster.center);
+};
+
+const toNearestClusterIndex = ({ value, clusters }: { value: number; clusters: number[] }): number => {
+  if (clusters.length <= 1) {
+    return 0;
+  }
+  const firstCluster = clusters[0];
+  if (firstCluster === undefined) {
+    return 0;
+  }
+  let nearestIndex = 0;
+  let nearestDistance = Math.abs(value - firstCluster);
+  for (let index = 1; index < clusters.length; index += 1) {
+    const candidate = clusters[index];
+    if (candidate === undefined) {
+      continue;
+    }
+    const distance = Math.abs(value - candidate);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex;
+};
+
+const detectGridLikeContainerLayout = (element: ScreenElementIR): GridLayoutDetection | null => {
+  if (element.type !== "container") {
+    return null;
+  }
+  if ((element.layoutMode ?? "NONE") !== "NONE") {
+    return null;
+  }
+
+  const children = sortChildren(element.children ?? [], "NONE");
+  if (children.length < GRID_EQUAL_ROW_MIN_CHILDREN) {
+    return null;
+  }
+
+  const positionedChildren = children.filter((child) => isFiniteNumber(child.x) && isFiniteNumber(child.y));
+  if (positionedChildren.length !== children.length) {
+    return null;
+  }
+
+  const rowClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.y ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+  const columnClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.x ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+
+  if (children.length >= GRID_MATRIX_MIN_CHILDREN && rowClusters.length >= 2 && columnClusters.length >= 2) {
+    const rowCounts = new Array<number>(rowClusters.length).fill(0);
+    const columnCounts = new Array<number>(columnClusters.length).fill(0);
+    for (const child of positionedChildren) {
+      const rowIndex = toNearestClusterIndex({
+        value: child.y ?? 0,
+        clusters: rowClusters
+      });
+      const columnIndex = toNearestClusterIndex({
+        value: child.x ?? 0,
+        clusters: columnClusters
+      });
+      rowCounts[rowIndex] = (rowCounts[rowIndex] ?? 0) + 1;
+      columnCounts[columnIndex] = (columnCounts[columnIndex] ?? 0) + 1;
+    }
+    const minRowItems = Math.min(...rowCounts);
+    const minColumnItems = Math.min(...columnCounts);
+    const occupancy = positionedChildren.length / Math.max(1, rowClusters.length * columnClusters.length);
+    if (minRowItems >= 2 && minColumnItems >= 2 && occupancy >= GRID_MATRIX_MIN_OCCUPANCY) {
+      return {
+        mode: "matrix",
+        columnCount: columnClusters.length
+      };
+    }
+  }
+
+  if (children.length < GRID_EQUAL_ROW_MIN_CHILDREN || rowClusters.length !== 1 || columnClusters.length < GRID_EQUAL_ROW_MIN_CHILDREN) {
+    return null;
+  }
+  const childWidths = positionedChildren
+    .map((child) => child.width)
+    .filter((width): width is number => isFiniteNumber(width) && width > 0);
+  if (childWidths.length !== positionedChildren.length) {
+    return null;
+  }
+
+  const minWidth = Math.min(...childWidths);
+  const maxWidth = Math.max(...childWidths);
+  const averageWidth = childWidths.reduce((total, width) => total + width, 0) / childWidths.length;
+  const widthVariance = childWidths.reduce((total, width) => total + (width - averageWidth) ** 2, 0) / childWidths.length;
+  const widthCv = averageWidth > 0 ? Math.sqrt(widthVariance) / averageWidth : Number.POSITIVE_INFINITY;
+  const hasEqualWidths =
+    widthCv <= GRID_EQUAL_WIDTH_CV_THRESHOLD || maxWidth - minWidth <= GRID_EQUAL_WIDTH_DELTA_THRESHOLD_PX;
+
+  if (!hasEqualWidths) {
+    return null;
+  }
+
+  return {
+    mode: "equal-row",
+    columnCount: columnClusters.length
+  };
+};
+
+const renderGridLayout = ({
+  element,
+  depth,
+  parent,
+  context,
+  includePaints,
+  equalColumns = false,
+  columnCountHint
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  includePaints: boolean;
+  equalColumns?: boolean;
+  columnCountHint?: number;
+}): string | null => {
+  const items = collectRenderedItems(element, context.generationLocale);
+  if (items.length < 2) {
+    return null;
+  }
+
+  registerMuiImports(context, "Grid");
+  const indent = "  ".repeat(depth);
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 2
+      : 2;
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints
+  });
+
+  const normalizedChildWidths = items.map((item) => Math.max(1, item.node.width ?? 0));
+  const totalChildWidth = normalizedChildWidths.reduce((total, width) => total + width, 0);
+  const normalizedColumnHint =
+    typeof columnCountHint === "number" && Number.isFinite(columnCountHint) && columnCountHint > 0
+      ? Math.min(Math.max(1, Math.round(columnCountHint)), items.length)
+      : items.length;
+  const referenceRowWidth =
+    normalizedColumnHint > 1 && items.length > normalizedColumnHint
+      ? Math.max(1, totalChildWidth / Math.max(1, Math.ceil(items.length / normalizedColumnHint)))
+      : Math.max(1, totalChildWidth);
+
+  const renderedItems = items
+    .map((item, index) => {
+      const fallbackWidth = normalizedChildWidths[index] ?? 1;
+      const mdSize = equalColumns
+        ? clamp(Math.round(12 / normalizedColumnHint), 1, 12)
+        : clamp(Math.round((fallbackWidth / referenceRowWidth) * 12), 1, 12);
+      const smSize = normalizedColumnHint <= 2 ? mdSize : Math.max(6, mdSize);
+      const childContent = renderElement(
+        item.node,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      );
+      const resolvedChildContent = childContent ?? (() => {
+        registerMuiImports(context, "Box");
+        return `${indent}    <Box />`;
+      })();
+      return `${indent}  <Grid key={${literal(item.id)}} size={{ xs: 12, sm: ${smSize}, md: ${mdSize} }}>
+${resolvedChildContent}
+${indent}  </Grid>`;
+    })
+    .join("\n");
+
+  return `${indent}<Grid container spacing={${spacing}} sx={{ ${sx} }}>
+${renderedItems}
+${indent}</Grid>`;
+};
+
+const sanitizeSelectOptionValue = (value: string): string => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "Option";
+};
+
+const deriveResponsiveThemeBreakpointValues = (ir: DesignIR): Record<ResponsiveBreakpoint, number> | undefined => {
+  const widthsByBreakpoint: Record<ResponsiveBreakpoint, Array<number | undefined>> = {
+    xs: [],
+    sm: [],
+    md: [],
+    lg: [],
+    xl: []
+  };
+  for (const screen of ir.screens) {
+    if (!screen.responsive) {
+      continue;
+    }
+    for (const variant of screen.responsive.variants) {
+      widthsByBreakpoint[variant.breakpoint].push(variant.width);
+    }
+  }
+
+  const representativeWidthByBreakpoint: Partial<Record<ResponsiveBreakpoint, number>> = {};
+  for (const breakpoint of RESPONSIVE_BREAKPOINT_ORDER) {
+    const representativeWidth = resolveDeterministicIntegerSample({
+      values: widthsByBreakpoint[breakpoint],
+      min: 1,
+      max: 20_000
+    });
+    if (representativeWidth !== undefined) {
+      representativeWidthByBreakpoint[breakpoint] = representativeWidth;
+    }
+  }
+
+  const values: Record<ResponsiveBreakpoint, number> = {
+    ...MUI_DEFAULT_BREAKPOINT_VALUES
+  };
+  for (let index = 1; index < RESPONSIVE_BREAKPOINT_ORDER.length; index += 1) {
+    const current = RESPONSIVE_BREAKPOINT_ORDER[index] as ResponsiveBreakpoint;
+    const previous = RESPONSIVE_BREAKPOINT_ORDER[index - 1] as ResponsiveBreakpoint;
+    const previousRepresentative = representativeWidthByBreakpoint[previous];
+    const currentRepresentative = representativeWidthByBreakpoint[current];
+    if (previousRepresentative === undefined && currentRepresentative === undefined) {
+      continue;
+    }
+    const lower = previousRepresentative ?? MUI_DEFAULT_BREAKPOINT_VALUES[previous];
+    const upper = currentRepresentative ?? MUI_DEFAULT_BREAKPOINT_VALUES[current];
+    const midpoint = Math.round((lower + upper) / 2);
+    values[current] = Math.max(values[previous] + 1, midpoint);
+  }
+
+  const hasCustomValue = RESPONSIVE_BREAKPOINT_ORDER.some((breakpoint) => {
+    return values[breakpoint] !== MUI_DEFAULT_BREAKPOINT_VALUES[breakpoint];
+  });
+  return hasCustomValue ? values : undefined;
+};
+
+const toResponsiveBreakpointValuesLiteral = (values: Record<ResponsiveBreakpoint, number>): string => {
+  return `{ ${RESPONSIVE_BREAKPOINT_ORDER.map((breakpoint) => `${breakpoint}: ${values[breakpoint]}`).join(", ")} }`;
+};
+
+const toMuiContainerMaxWidth = (contentWidth: number): "sm" | "md" | "lg" | "xl" => {
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.sm) {
+    return "sm";
+  }
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.md) {
+    return "md";
+  }
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.lg) {
+    return "lg";
+  }
+  if (contentWidth <= MUI_DEFAULT_BREAKPOINT_VALUES.xl) {
+    return "xl";
+  }
+  return "xl";
+};
+
+const toAlertSeverityFromName = (name: string): "error" | "warning" | "info" | "success" => {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("error")) {
+    return "error";
+  }
+  if (normalized.includes("warn")) {
+    return "warning";
+  }
+  if (normalized.includes("success")) {
+    return "success";
+  }
+  return "info";
+};
+
+const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  if ((element.children?.length ?? 0) === 0 && !hasVisualStyle(element)) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Card", "CardContent");
+  const indent = "  ".repeat(depth);
+  const cardElevation = normalizeElevationForSx(element.elevation);
+  const cardDefaults = context.themeComponentDefaults?.MuiCard;
+  const omitSxKeys = new Set<string>();
+  if (
+    matchesRoundedInteger({
+      value: element.cornerRadius,
+      target: cardDefaults?.borderRadiusPx
+    })
+  ) {
+    omitSxKeys.add("borderRadius");
+  }
+  const omitDefaultElevation =
+    typeof cardElevation === "number" &&
+    cardElevation > 0 &&
+    typeof cardDefaults?.elevation === "number" &&
+    cardDefaults.elevation === cardElevation;
+  if (omitDefaultElevation) {
+    omitSxKeys.add("boxShadow");
+  }
+  const baseCardLayoutEntries = baseLayoutEntries(element, parent, {
+    preferInsetShadow: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const cardSxEntries = [
+    ...baseCardLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseCardLayoutEntries)
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiCard",
+    entries: cardSxEntries
+  });
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiCard",
+    entries: cardSxEntries
+  })) {
+    omitSxKeys.add(key);
+  }
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: cardSxEntries,
+      keys: omitSxKeys
+    })
+  );
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
+  const elevationProp = typeof cardElevation === "number" && cardElevation > 0 && !omitDefaultElevation ? ` elevation={${cardElevation}}` : "";
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  const mediaCandidate = sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
+  const actionCandidates = sortedChildren.filter((child) => {
+    if (child.type === "button") {
+      return true;
+    }
+    const loweredName = child.name.toLowerCase();
+    return loweredName.includes("action") || loweredName.includes("cta");
+  });
+  const bodyChildren = sortedChildren.filter((child) => {
+    if (child.id === mediaCandidate?.id) {
+      return false;
+    }
+    return !actionCandidates.some((candidate) => candidate.id === child.id);
+  });
+
+  const contentElement: ScreenElementIR = {
+    ...element,
+    children: bodyChildren
+  };
+  const actionsElement: ScreenElementIR = {
+    ...element,
+    children: actionCandidates
+  };
+  const mediaSx = mediaCandidate
+    ? sxString([
+        ["height", toPxLiteral(mediaCandidate.height ?? 140)],
+        ["objectFit", literal("cover")],
+        ["display", literal("block")]
+      ])
+    : undefined;
+  if (mediaCandidate) {
+    registerMuiImports(context, "CardMedia");
+  }
+  if (actionCandidates.length > 0) {
+    registerMuiImports(context, "CardActions");
+  }
+
+  const renderedChildren = renderChildrenIntoParent({
+    element: contentElement,
+    depth: depth + 2,
+    context
+  });
+  const renderedActions = renderChildrenIntoParent({
+    element: actionsElement,
+    depth: depth + 2,
+    context
+  });
+  const contentBlock = renderedChildren.trim()
+    ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
+    : `${indent}  <CardContent />`;
+  const mediaBlock = mediaCandidate
+    ? (() => {
+        const mediaLabel = resolveElementA11yLabel({ element: mediaCandidate, fallback: "Image" });
+        const mediaSource = resolveImageSource({
+          element: mediaCandidate,
+          context,
+          fallbackLabel: mediaLabel
+        });
+        if (isDecorativeImageElement(mediaCandidate)) {
+          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true" sx={{ ${mediaSx} }} />\n`;
+        }
+        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}} sx={{ ${mediaSx} }} />\n`;
+      })()
+    : "";
+  const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
+  const roleProp = navigationProps?.roleProp ?? "";
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  return `${indent}<Card${elevationProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${sxProp}>
+${mediaBlock}${contentBlock}${actionsBlock}
+${indent}</Card>`;
+};
+
+const renderChip = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Chip");
+  const indent = "  ".repeat(depth);
+  const mappedMuiProps = element.variantMapping?.muiProps;
+  const chipDefaults = context.themeComponentDefaults?.MuiChip;
+  const baseChipLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const chipLayoutEntries = [
+    ...baseChipLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseChipLayoutEntries)
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiChip",
+    entries: chipLayoutEntries
+  });
+  const chipMatchedDefaultKeys = collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiChip",
+    entries: chipLayoutEntries
+  });
+  const chipSxEntries = withOmittedSxKeys({
+    entries: chipLayoutEntries,
+    keys: new Set<string>([
+      ...chipMatchedDefaultKeys,
+      ...(matchesRoundedInteger({
+        value: element.cornerRadius,
+        target: chipDefaults?.borderRadiusPx
+      })
+        ? ["borderRadius"]
+        : [])
+    ])
+  });
+  const sx = appendVariantStateOverridesToSx({
+    sx: sxString(chipSxEntries),
+    element,
+    tokens: context.tokens
+  });
+  const label = firstText(element)?.trim() || element.name;
+  const chipVariant = toChipVariant(mappedMuiProps?.variant);
+  const chipSize = toChipSize(mappedMuiProps?.size);
+  const isThemeDefaultChipSize = chipSize && chipDefaults?.size ? chipSize === chipDefaults.size : false;
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const variantProp = chipVariant ? ` variant="${chipVariant}"` : "";
+  const sizeProp = chipSize && !isThemeDefaultChipSize ? ` size="${chipSize}"` : "";
+  const disabledProp = mappedMuiProps?.disabled ? " disabled" : "";
+  const linkProps = navigation && !mappedMuiProps?.disabled ? toRouterLinkProps({ navigation, context }) : "";
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  return `${indent}<Chip label={${literal(label)}}${linkProps}${variantProp}${sizeProp}${disabledProp}${sxProp} />`;
+};
+
+const renderSelectionControl = ({
+  element,
+  depth,
+  parent,
+  context,
+  componentName
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  componentName: "Switch" | "Checkbox" | "Radio";
+}): string | null => {
+  const nonTextChildCount = (element.children ?? []).filter((child) => child.type !== "text").length;
+  if (nonTextChildCount > 1) {
+    return renderContainer(element, depth, parent, context);
+  }
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  if (componentName === "Radio") {
+    const options = collectRenderedItems(element, context.generationLocale);
+    if (options.length > 1) {
+      registerMuiImports(context, "RadioGroup", "FormControlLabel", "Radio");
+      const renderedOptions = options
+        .map(
+          (option, index) =>
+            `${indent}  <FormControlLabel value=${literal(option.id)} control={<Radio />} label={${literal(option.label)}} />${
+              index === options.length - 1 ? "" : ""
+            }`
+        )
+        .join("\n");
+      return `${indent}<RadioGroup defaultValue=${literal(options[0]?.id ?? "")} sx={{ ${sx} }}>
+${renderedOptions}
+${indent}</RadioGroup>`;
+    }
+  }
+  const label = firstText(element)?.trim();
+  registerMuiImports(context, componentName);
+  if (label) {
+    registerMuiImports(context, "FormControlLabel");
+    return `${indent}<FormControlLabel sx={{ ${sx} }} control={<${componentName} />} label={${literal(label)}} />`;
+  }
+  return `${indent}<${componentName} sx={{ ${sx} }} />`;
+};
+
+const renderList = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const collectedRows = collectListRows(element, context.generationLocale);
+  if (collectedRows.rowNodes.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  const rows = collectedRows.rowNodes.map((row) =>
+    analyzeListRow({
+      row,
+      generationLocale: context.generationLocale
+    })
+  );
+  return renderListFromRows({
+    element,
+    rows,
+    hasInterItemDivider: collectedRows.hasInterItemDivider,
+    depth,
+    parent,
+    context
+  });
+};
+
+const isLikelyAppBarToolbarActionNode = ({
+  node,
+  context
+}: {
+  node: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  if (node.type === "button" || node.type === "navigation" || node.type === "tab") {
+    return true;
+  }
+  if (node.prototypeNavigation) {
+    return true;
+  }
+  if (isIconLikeNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node))) {
+    return true;
+  }
+  return hasInteractiveDescendants({ element: node, context });
+};
+
+interface AppBarToolbarActionModel {
+  node: ScreenElementIR;
+  iconNode: ScreenElementIR;
+  ariaLabel: string;
+}
+
+const renderStructuredAppBarToolbarChildren = ({
+  element,
+  depth,
+  context,
+  fallbackTitle
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  context: RenderContext;
+  fallbackTitle: string;
+}): string | undefined => {
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  if (children.length === 0) {
+    return undefined;
+  }
+
+  const titleNode =
+    children.find((child) => child.type === "text" && Boolean(child.text?.trim())) ??
+    children.find((child) => {
+      if (isLikelyAppBarToolbarActionNode({ node: child, context })) {
+        return false;
+      }
+      return hasMeaningfulTextDescendants({ element: child, context });
+    });
+  const title = titleNode ? firstText(titleNode)?.trim() : fallbackTitle;
+  if (!title) {
+    return undefined;
+  }
+
+  const toolbarActions = children
+    .filter((child) => child.id !== titleNode?.id)
+    .map((child) => {
+      if (!isLikelyAppBarToolbarActionNode({ node: child, context })) {
+        return undefined;
+      }
+      const iconNode = isIconLikeNode(child) || isSemanticIconWrapper(child) ? child : pickBestIconNode(child);
+      if (!iconNode) {
+        return undefined;
+      }
+      return {
+        node: child,
+        iconNode,
+        ariaLabel: resolveIconButtonAriaLabel({
+          element: child,
+          iconNode
+        })
+      } satisfies AppBarToolbarActionModel;
+    })
+    .filter((action): action is AppBarToolbarActionModel => Boolean(action));
+
+  if (toolbarActions.length === 0) {
+    return undefined;
+  }
+
+  const unstructuredChildren = children.filter(
+    (child) => child.id !== titleNode?.id && !toolbarActions.some((action) => action.node.id === child.id)
+  );
+  if (unstructuredChildren.length > 0) {
+    return undefined;
+  }
+
+  registerMuiImports(context, "IconButton");
+  const indent = "  ".repeat(depth);
+  const renderedActions = toolbarActions
+    .map((action) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: action.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      const iconExpression = renderFallbackIconExpression({
+        element: action.iconNode,
+        parent: { name: action.node.name },
+        context,
+        ariaHidden: true,
+        extraEntries: [["fontSize", literal("inherit")]]
+      });
+      return `${indent}    <IconButton edge="end" aria-label={${literal(action.ariaLabel)}}${linkProps}>${iconExpression}</IconButton>`;
+    })
+    .join("\n");
+  return `${indent}    <Typography variant="h6" sx={{ flexGrow: 1 }}>{${literal(title)}}</Typography>\n${renderedActions}`;
+};
+
+const renderAppBar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "AppBar", "Toolbar", "Typography");
+  const indent = "  ".repeat(depth);
+  const appBarDefaults = context.themeComponentDefaults?.MuiAppBar;
+  const appBarBackgroundMatchesDefault =
+    normalizeHexColor(element.fillColor) !== undefined &&
+    normalizeHexColor(element.fillColor) === normalizeHexColor(appBarDefaults?.backgroundColor);
+  const baseAppBarLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const appBarSxEntries = [
+    ...baseAppBarLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAppBarLayoutEntries)
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiAppBar",
+    entries: appBarSxEntries
+  });
+  const appBarMatchedDefaultKeys = collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiAppBar",
+    entries: appBarSxEntries
+  });
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: appBarSxEntries,
+      keys: new Set<string>([
+        ...appBarMatchedDefaultKeys,
+        ...(appBarBackgroundMatchesDefault ? ["bgcolor"] : [])
+      ])
+    })
+  );
+  const fallbackTitle = firstText(element)?.trim() || element.name || "App";
+  const structuredToolbarChildren = renderStructuredAppBarToolbarChildren({
+    element,
+    depth,
+    context,
+    fallbackTitle
+  });
+  const renderedChildren =
+    structuredToolbarChildren ??
+    renderChildrenIntoParent({
+      element,
+      depth: depth + 2,
+      context
+    });
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  return `${indent}<AppBar role="banner" position="static"${sxProp}>
+${indent}  <Toolbar>
+${renderedChildren || `${indent}    <Typography variant="h6">{${literal(fallbackTitle)}}</Typography>`}
+${indent}  </Toolbar>
+${indent}</AppBar>`;
+};
+
+const renderTabs = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext,
+  detectedPattern?: DetectedTabInterfacePattern
+): string | null => {
+  const resolvedPattern = detectedPattern;
+  const tabItems =
+    resolvedPattern?.tabItems ??
+    collectRenderedItems(element, context.generationLocale).filter((action) =>
+      isRenderableTabAction({
+        action,
+        context
+      })
+    );
+  if (tabItems.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+
+  const tabsStateModel = ensureTabsStateModel({
+    element,
+    context
+  });
+  const tabValueVar = `tabValue${tabsStateModel.stateId}`;
+  const tabChangeHandlerVar = `handleTabChange${tabsStateModel.stateId}`;
+  const tabStripNode = resolvedPattern?.tabStripNode ?? element;
+  const panelNodes = resolvedPattern?.panelNodes ?? [];
+
+  registerMuiImports(context, "Tabs", "Tab");
+  if (panelNodes.length === tabItems.length && panelNodes.length > 0) {
+    registerMuiImports(context, "Box");
+  }
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element: tabStripNode,
+    parent,
+    context
+  });
+  const renderedTabs = tabItems
+    .map((tab, index) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: tab.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}}${linkProps} />`;
+    })
+    .join("\n");
+  const renderedPanels =
+    panelNodes.length === tabItems.length && panelNodes.length > 0
+      ? panelNodes
+          .map((panelNode, index) => {
+            const panelContent =
+              renderElement(
+                panelNode,
+                depth + 2,
+                {
+                  x: element.x,
+                  y: element.y,
+                  width: element.width,
+                  height: element.height,
+                  name: element.name,
+                  fillColor: element.fillColor,
+                  fillGradient: element.fillGradient,
+                  layoutMode: element.layoutMode ?? "NONE"
+                },
+                context
+              ) ?? `${indent}    <Box />`;
+            return `${indent}  <Box key={${literal(panelNode.id)}} role="tabpanel" hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
+${panelContent}
+${indent}  </Box>`;
+          })
+          .join("\n")
+      : "";
+  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} sx={{ ${sx} }}>
+${renderedTabs}
+${indent}</Tabs>${renderedPanels ? `\n${renderedPanels}` : ""}`;
+};
+
+const renderDialog = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext,
+  detectedPattern?: DetectedDialogOverlayPattern
+): string | null => {
+  const dialogStateModel = ensureDialogStateModel({
+    element,
+    context
+  });
+  const dialogOpenVar = `isDialogOpen${dialogStateModel.stateId}`;
+  const dialogCloseHandlerVar = `handleDialogClose${dialogStateModel.stateId}`;
+  const indent = "  ".repeat(depth);
+
+  if (detectedPattern) {
+    registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
+    if (detectedPattern.actionModels.length > 0) {
+      registerMuiImports(context, "DialogActions", "Button");
+    }
+    const sx = toElementSx({
+      element: detectedPattern.panelNode,
+      parent: {
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        name: element.name,
+        fillColor: element.fillColor,
+        fillGradient: element.fillGradient,
+        layoutMode: element.layoutMode ?? "NONE"
+      },
+      context
+    });
+    const renderedContent = renderNodesIntoParent({
+      nodes: detectedPattern.contentNodes,
+      parent: detectedPattern.panelNode,
+      depth: depth + 2,
+      context,
+      layoutMode: detectedPattern.panelNode.layoutMode ?? "NONE"
+    });
+    const contentBlock = renderedContent.trim()
+      ? `${indent}  <DialogContent>\n${renderedContent}\n${indent}  </DialogContent>`
+      : `${indent}  <DialogContent />`;
+    const renderedActions =
+      detectedPattern.actionModels.length > 0
+        ? detectedPattern.actionModels
+            .map((actionModel) => {
+              const variantProp = actionModel.isPrimary ? ' variant="contained"' : "";
+              return `${indent}    <Button key={${literal(actionModel.id)}} onClick={${dialogCloseHandlerVar}}${variantProp}>{${literal(actionModel.label)}}</Button>`;
+            })
+            .join("\n")
+        : "";
+    const actionsBlock = renderedActions ? `\n${indent}  <DialogActions>\n${renderedActions}\n${indent}  </DialogActions>` : "";
+    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${detectedPattern.title ? `${indent}  <DialogTitle>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
+${indent}</Dialog>`;
+  }
+
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  const title = firstText(element)?.trim();
+  if (!renderedChildren.trim() && !title) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Dialog", "DialogTitle", "DialogContent");
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const contentBlock = renderedChildren.trim()
+    ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
+    : `${indent}  <DialogContent />`;
+  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${title ? `${indent}  <DialogTitle>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
+${indent}</Dialog>`;
+};
+
+const renderStepper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const steps = collectRenderedItemLabels(element, context.generationLocale);
+  if (steps.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Stepper", "Step", "StepLabel");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedSteps = steps
+    .map((step, index) => `${indent}  <Step key={${literal(step.id)}} completed={${index < 1 ? "true" : "false"}}><StepLabel>{${literal(step.label)}}</StepLabel></Step>`)
+    .join("\n");
+  return `${indent}<Stepper activeStep={0} sx={{ ${sx} }}>
+${renderedSteps}
+${indent}</Stepper>`;
+};
+
+const renderProgress = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const isLinear = width >= Math.max(48, height * 2);
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  if (isLinear) {
+    registerMuiImports(context, "LinearProgress");
+    return `${indent}<LinearProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+  }
+  registerMuiImports(context, "CircularProgress");
+  return `${indent}<CircularProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+};
+
+const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const content = firstText(element)?.trim();
+  if (!content && !hasVisualStyle(element) && (element.children?.length ?? 0) === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Avatar");
+  const indent = "  ".repeat(depth);
+  const avatarDefaults = context.themeComponentDefaults?.MuiAvatar;
+  const baseAvatarLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const avatarSxEntries = [
+    ...baseAvatarLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseAvatarLayoutEntries)
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiAvatar",
+    entries: avatarSxEntries
+  });
+  const hasRelativeWidthLogic = avatarSxEntries.some(([key, value]) => key === "maxWidth" && value !== undefined);
+  const omitSxKeys = new Set<string>();
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiAvatar",
+    entries: avatarSxEntries
+  })) {
+    omitSxKeys.add(key);
+  }
+  if (
+    matchesRoundedInteger({
+      value: element.cornerRadius,
+      target: avatarDefaults?.borderRadiusPx
+    })
+  ) {
+    omitSxKeys.add("borderRadius");
+  }
+  if (
+    !hasRelativeWidthLogic &&
+    matchesRoundedInteger({
+      value: element.width,
+      target: avatarDefaults?.widthPx
+    })
+  ) {
+    omitSxKeys.add("width");
+  }
+  if (
+    !hasRelativeWidthLogic &&
+    matchesRoundedInteger({
+      value: element.height,
+      target: avatarDefaults?.heightPx
+    })
+  ) {
+    omitSxKeys.add("height");
+    omitSxKeys.add("minHeight");
+  }
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: avatarSxEntries,
+      keys: omitSxKeys
+    })
+  );
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  return `${indent}<Avatar${sxProp}>${content ? `{${literal(content)}}` : ""}</Avatar>`;
+};
+
+const renderBadge = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Badge", "Box");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const badgeContent = firstText(element)?.trim() || " ";
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  return `${indent}<Badge badgeContent={${literal(badgeContent)}} color="primary" sx={{ ${sx} }}>
+${renderedChildren || `${indent}  <Box sx={{ width: "20px", height: "20px" }} />`}
+${indent}</Badge>`;
+};
+
+const renderDividerElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Divider");
+  const indent = "  ".repeat(depth);
+  const dividerDefaultColor = context.themeComponentDefaults?.MuiDivider?.borderColor;
+  const matchesDefaultBorderColor =
+    normalizeHexColor(element.fillColor) !== undefined &&
+    normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
+  const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const dividerSxEntries: Array<[string, string | number | undefined]> = [
+    ...baseDividerLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseDividerLayoutEntries)
+    }),
+    [
+      "borderColor",
+      !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined
+    ] as [string, string | number | undefined]
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiDivider",
+    entries: dividerSxEntries
+  });
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: dividerSxEntries,
+      keys: collectThemeDefaultMatchedSxKeys({
+        context,
+        componentName: "MuiDivider",
+        entries: dividerSxEntries
+      })
+    })
+  );
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  return `${indent}<Divider aria-hidden="true"${sxProp} />`;
+};
+
+const renderNavigation = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const actions = collectRenderedItems(element, context.generationLocale);
+  if (actions.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "BottomNavigation", "BottomNavigationAction");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedActions = actions
+    .map((action, index) => {
+      const navigation = resolvePrototypeNavigationBinding({ element: action.node, context });
+      const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
+      return `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}}${linkProps} />`;
+    })
+    .join("\n");
+  return `${indent}<BottomNavigation role="navigation" showLabels value={0} sx={{ ${sx} }}>
+${renderedActions}
+${indent}</BottomNavigation>`;
+};
+
+const renderGrid = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const rendered = renderGridLayout({
+    element,
+    depth,
+    parent,
+    context,
+    includePaints: false
+  });
+  if (rendered) {
+    return rendered;
+  }
+  return renderContainer(element, depth, parent, context);
+};
+
+const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  if ((element.children?.length ?? 0) === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Stack");
+  const indent = "  ".repeat(depth);
+  const direction = element.layoutMode === "HORIZONTAL" ? "row" : "column";
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
+      : 0;
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
+  const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  if (!renderedChildren.trim()) {
+    return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+  }
+  return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
+${renderedChildren}
+${indent}</Stack>`;
+};
+
+const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Paper");
+  const indent = "  ".repeat(depth);
+  const elevation = normalizeElevationForSx(element.elevation);
+  const paperDefaults = context.themeComponentDefaults?.MuiPaper;
+  const omitDefaultElevation =
+    typeof elevation === "number" &&
+    elevation > 0 &&
+    typeof paperDefaults?.elevation === "number" &&
+    paperDefaults.elevation === elevation;
+  const variant = elevation && elevation > 0 ? undefined : element.strokeColor ? "outlined" : undefined;
+  const basePaperLayoutEntries = baseLayoutEntries(element, parent, {
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const paperSxEntries = [
+    ...basePaperLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(basePaperLayoutEntries)
+    })
+  ];
+  collectThemeSxSampleFromEntries({
+    context,
+    componentName: "MuiPaper",
+    entries: paperSxEntries
+  });
+  const omitPaperKeys = new Set<string>();
+  for (const key of collectThemeDefaultMatchedSxKeys({
+    context,
+    componentName: "MuiPaper",
+    entries: paperSxEntries
+  })) {
+    omitPaperKeys.add(key);
+  }
+  if (omitDefaultElevation) {
+    omitPaperKeys.add("boxShadow");
+  }
+  const sx = sxString(
+    withOmittedSxKeys({
+      entries: paperSxEntries,
+      keys: omitPaperKeys
+    })
+  );
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 1,
+    context
+  });
+  const elevationProp = typeof elevation === "number" && elevation > 0 && !omitDefaultElevation ? ` elevation={${elevation}}` : "";
+  const variantProp = variant ? ` variant="${variant}"` : "";
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
+  const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  if (!renderedChildren.trim()) {
+    return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp} />`;
+  }
+  return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp}>
+${renderedChildren}
+${indent}</Paper>`;
+};
+
+const subtreeContainsElementType = (element: ScreenElementIR, targetType: ScreenElementIR["type"]): boolean => {
+  if (element.type === targetType) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => subtreeContainsElementType(child, targetType));
+};
+
+const renderTable = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const rows = sortChildren(element.children ?? [], element.layoutMode ?? "VERTICAL", {
+    generationLocale: context.generationLocale
+  })
+    .map((row) => {
+      const rowChildren = sortChildren(row.children ?? [], row.layoutMode ?? "HORIZONTAL", {
+        generationLocale: context.generationLocale
+      });
+      if (rowChildren.length === 0) {
+        return [row];
+      }
+      return rowChildren;
+    })
+    .filter((row) => row.length > 0);
+  if (rows.length < 2 || rows.some((row) => row.length < 2)) {
+    return renderContainer(element, depth, parent, context);
+  }
+  const containsImageCell = rows.some((row) => row.some((cell) => subtreeContainsElementType(cell, "image")));
+  if (containsImageCell) {
+    // Keep rich cell content (for example exported image assets) instead of flattening cells to plain strings.
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Table", "TableHead", "TableBody", "TableRow", "TableCell");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const headerCells = rows[0] ?? [];
+  const bodyRows = rows.slice(1);
+  const renderedHead = headerCells
+    .map((cell) => `${indent}      <TableCell>{${literal(firstText(cell)?.trim() || cell.name)}}</TableCell>`)
+    .join("\n");
+  const renderedBody = bodyRows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((cell) => `${indent}      <TableCell>{${literal(firstText(cell)?.trim() || cell.name || `Row ${rowIndex + 1}`)}}</TableCell>`)
+        .join("\n");
+      return `${indent}    <TableRow>\n${cells}\n${indent}    </TableRow>`;
+    })
+    .join("\n");
+  return `${indent}<Table size="small" sx={{ ${sx} }}>
+${indent}  <TableHead>
+${indent}    <TableRow>
+${renderedHead}
+${indent}    </TableRow>
+${indent}  </TableHead>
+${indent}  <TableBody>
+${renderedBody}
+${indent}  </TableBody>
+${indent}</Table>`;
+};
+
+const renderTooltipElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Tooltip", "Box");
+  const indent = "  ".repeat(depth);
+  const title = firstText(element)?.trim() || element.name || "Info";
+  const anchorNode = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  })[0];
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const anchorContent = anchorNode
+    ? renderElement(
+        anchorNode,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    : `${indent}    <Box sx={{ width: "24px", height: "24px" }} />`;
+  return `${indent}<Tooltip title={${literal(title)}}>
+${indent}  <Box sx={{ ${sx} }}>
+${anchorContent}
+${indent}  </Box>
+${indent}</Tooltip>`;
+};
+
+const renderDrawer = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Drawer", "Box");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const renderedChildren = renderChildrenIntoParent({
+    element,
+    depth: depth + 2,
+    context
+  });
+  return `${indent}<Drawer open variant="persistent" PaperProps={{ role: "navigation" }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+${indent}  <Box sx={{ width: "100%" }}>
+${renderedChildren || `${indent}    <Box />`}
+${indent}  </Box>
+${indent}</Drawer>`;
+};
+
+const renderBreadcrumbs = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const crumbs = collectRenderedItemLabels(element, context.generationLocale);
+  if (crumbs.length === 0) {
+    return renderContainer(element, depth, parent, context);
+  }
+  registerMuiImports(context, "Breadcrumbs", "Typography");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const renderedCrumbs = crumbs
+    .map((crumb, index) => {
+      const color = index === crumbs.length - 1 ? "text.primary" : "text.secondary";
+      return `${indent}  <Typography key={${literal(crumb.id)}} color=${literal(color)}>{${literal(crumb.label)}}</Typography>`;
+    })
+    .join("\n");
+  return `${indent}<Breadcrumbs sx={{ ${sx} }}>
+${renderedCrumbs}
+${indent}</Breadcrumbs>`;
+};
+
+const renderSlider = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Slider");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Slider defaultValue={65} valueLabelDisplay="auto" sx={{ ${sx} }} />`;
+};
+
+const renderSelectElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  const key = toStateKey(element);
+  const existing = context.fields.find((field) => field.key === key);
+  const optionsFromChildren = collectRenderedItems(element, context.generationLocale)
+    .map((item) => sanitizeSelectOptionValue(item.label))
+    .filter((value) => value.length > 0);
+  const fallbackDefault = sanitizeSelectOptionValue(element.text?.trim() || firstText(element)?.trim() || "Option 1");
+  const options =
+    optionsFromChildren.length > 0
+      ? [...new Set(optionsFromChildren)]
+      : deriveSelectOptions(fallbackDefault, context.generationLocale);
+  const rawLabel = firstText(element)?.trim() || element.name;
+  const required = inferRequiredFromLabel(rawLabel);
+  const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
+  const label = sanitizedLabel.length > 0 ? sanitizedLabel : rawLabel;
+  const hasVisualErrorExample = inferVisualErrorFromOutline(element);
+  const field: InteractiveFieldModel =
+    existing ??
+    (() => {
+      const created: InteractiveFieldModel = {
+        key,
+        label,
+        defaultValue: options[0] ?? fallbackDefault,
+        isSelect: true,
+        options,
+        ...(required ? { required } : {}),
+        ...(hasVisualErrorExample ? { hasVisualErrorExample } : {})
+      };
+      context.fields.push(created);
+      return created;
+    })();
+  registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const labelId = `${field.key}-label`;
+  const helperTextId = `${field.key}-helper-text`;
+  const fieldErrorExpression = `(Boolean((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? ""))`;
+  const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
+  const requiredProp = field.required ? `${indent}  required\n` : "";
+  const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
+  if (context.formHandlingMode === "react_hook_form") {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <FormControl
+${field.required ? `${indent}        required\n` : ""}${indent}        error={Boolean(helperText)}
+${indent}        sx={{ ${sx} }}
+${indent}      >
+${indent}        <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
+${indent}        <Select
+${indent}          labelId={${literal(labelId)}}
+${indent}          label={${literal(field.label)}}
+${indent}          value={controllerField.value ?? ""}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-describedby={${literal(helperTextId)}}
+${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
+${indent}        >
+${indent}          {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}            <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}          ))}
+${indent}        </Select>
+${indent}        <FormHelperText id={${literal(helperTextId)}}>{helperText}</FormHelperText>
+${indent}      </FormControl>
+${indent}    );
+${indent}  }}
+${indent}/>`;
+  }
+  return `${indent}<FormControl
+${requiredProp}${indent}  error={${fieldErrorExpression}}
+${indent}  sx={{ ${sx} }}
+${indent}>
+${indent}  <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
+${indent}  <Select
+${indent}    labelId={${literal(labelId)}}
+${indent}    label={${literal(field.label)}}
+${indent}    value={formValues[${literal(field.key)}] ?? ""}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-describedby={${literal(helperTextId)}}
+${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
+${indent}  >
+${indent}    {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}      <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}    ))}
+${indent}  </Select>
+${indent}  <FormHelperText id={${literal(helperTextId)}}>{${fieldHelperTextExpression}}</FormHelperText>
+${indent}</FormControl>`;
+};
+
+const renderRatingElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Rating");
+  const indent = "  ".repeat(depth);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Rating defaultValue={4} precision={0.5} sx={{ ${sx} }} />`;
+};
+
+const renderSnackbar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Snackbar", "Alert");
+  const indent = "  ".repeat(depth);
+  const message = firstText(element)?.trim() || element.name || "Hinweis";
+  const severity = toAlertSeverityFromName(element.name);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+${indent}  <Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>
+${indent}</Snackbar>`;
+};
+
+const renderSkeleton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Skeleton");
+  const indent = "  ".repeat(depth);
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const variant = height <= 24 ? "text" : width >= Math.max(24, height * 1.8) ? "rectangular" : "circular";
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Skeleton aria-hidden="true" variant="${variant}" sx={{ ${sx} }} />`;
+};
+
+const renderImageElement = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  registerMuiImports(context, "Box");
+  const indent = "  ".repeat(depth);
+  const baseImageLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
   const sx = sxString([
-    ...baseLayoutEntries(element, parent),
-    ["fontSize", element.fontSize ? toPxLiteral(element.fontSize) : undefined],
-    ["fontWeight", element.fontWeight ? Math.round(element.fontWeight) : undefined],
-    ["lineHeight", element.lineHeight ? toPxLiteral(element.lineHeight) : undefined],
-    ["color", buttonTextColor ? literal(buttonTextColor) : undefined],
-    ["textTransform", literal("none")],
-    ["justifyContent", literal("center")]
+    ...baseImageLayoutEntries,
+    ...toResponsiveLayoutMediaEntries({
+      baseLayoutMode: element.layoutMode ?? "NONE",
+      overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+      spacingBase: context.spacingBase,
+      baseValuesByKey: toSxValueMapFromEntries(baseImageLayoutEntries)
+    }),
+    ["objectFit", literal("cover")],
+    ["display", literal("block")]
   ]);
+  const ariaLabel = resolveElementA11yLabel({ element, fallback: "Image" });
+  const src = resolveImageSource({
+    element,
+    context,
+    fallbackLabel: ariaLabel
+  });
+  if (isDecorativeImageElement(element)) {
+    return `${indent}<Box component="img" src={${literal(src)}} alt="" aria-hidden="true" sx={{ ${sx} }} />`;
+  }
+  return `${indent}<Box component="img" src={${literal(src)}} alt={${literal(ariaLabel)}} sx={{ ${sx} }} />`;
+};
 
-  const variant = element.fillColor ? "contained" : "text";
+interface ElementRenderStrategyInput {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+}
 
-  return `${indent}<Button variant="${variant}" disableElevation sx={{ ${sx} }}>{${literal(label)}}</Button>`;
+interface ContainerRenderStrategyMatch {
+  matched: true;
+  rendered: string | null;
+}
+
+type ContainerRenderStrategy = (input: ElementRenderStrategyInput) => ContainerRenderStrategyMatch | undefined;
+type ElementRenderStrategy = (input: ElementRenderStrategyInput) => string | null;
+type PreDispatchRenderStrategy = (input: ElementRenderStrategyInput) => string | null | undefined;
+
+const asContainerStrategyMatch = (rendered: string | null): ContainerRenderStrategyMatch => {
+  return {
+    matched: true,
+    rendered
+  };
+};
+
+const renderContainerIconWrapper = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | undefined => {
+  if (!(isIconLikeNode(element) || isSemanticIconWrapper(element)) || hasMeaningfulTextDescendants({ element, context })) {
+    return undefined;
+  }
+  const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens
+  });
+  const iconExpression = renderFallbackIconExpression({
+    element,
+    parent,
+    context,
+    ariaHidden: true,
+    extraEntries: [
+      ...baseIconWrapperLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseIconWrapperLayoutEntries)
+      }),
+      ["display", literal("flex")],
+      ["alignItems", literal("center")],
+      ["justifyContent", literal("center")]
+    ]
+  });
+  const indent = "  ".repeat(depth);
+  return `${indent}${iconExpression}`;
+};
+
+const tryRenderAccordionContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isLikelyAccordionContainer(element)) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderSemanticAccordion(element, depth, parent, context));
+};
+
+const tryRenderInputContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isLikelyInputContainer(element)) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderSemanticInput(element, depth, parent, context));
+};
+
+const tryRenderPillShapedButtonContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isPillShapedOutlinedButton(element)) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderButton(element, depth, parent, context));
+};
+
+const tryRenderIconLikeContainer: ContainerRenderStrategy = (input) => {
+  const renderedIconWrapper = renderContainerIconWrapper(input);
+  if (renderedIconWrapper === undefined) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderedIconWrapper);
+};
+
+const tryRenderGridLikeContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  const detectedGridLayout = detectGridLikeContainerLayout(element);
+  if (!detectedGridLayout) {
+    return undefined;
+  }
+  const renderedGrid = renderGridLayout({
+    element,
+    depth,
+    parent,
+    context,
+    includePaints: true,
+    equalColumns: detectedGridLayout.mode === "equal-row",
+    columnCountHint: detectedGridLayout.columnCount
+  });
+  if (!renderedGrid) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderedGrid);
+};
+
+const tryRenderPaperSurfaceContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isElevatedSurfaceContainerForPaper({ element, context })) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderPaper(element, depth, parent, context));
+};
+
+const tryRenderRepeatedListContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  const detectedListPattern = detectRepeatedListPattern({
+    element,
+    generationLocale: context.generationLocale
+  });
+  if (!detectedListPattern) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(
+    renderListFromRows({
+      element,
+      rows: detectedListPattern.rows,
+      hasInterItemDivider: detectedListPattern.hasInterItemDivider,
+      depth,
+      parent,
+      context
+    })
+  );
+};
+
+const tryRenderSimpleFlexContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isSimpleFlexContainerForStack({ element, context })) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(
+    renderSimpleFlexContainerAsStack({
+      element,
+      depth,
+      parent,
+      context
+    })
+  );
+};
+
+const CONTAINER_RENDER_STRATEGIES: readonly ContainerRenderStrategy[] = [
+  tryRenderAccordionContainer,
+  tryRenderInputContainer,
+  tryRenderPillShapedButtonContainer,
+  tryRenderIconLikeContainer,
+  tryRenderGridLikeContainer,
+  tryRenderPaperSurfaceContainer,
+  tryRenderRepeatedListContainer,
+  tryRenderSimpleFlexContainer
+];
+
+const renderContainerFallback = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | null => {
+  const indent = "  ".repeat(depth);
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+
+  const renderedChildren = children
+    .map((child) =>
+      renderElement(
+        child,
+        depth + 1,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      )
+    )
+    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+    .join("\n");
+
+  const isDivider = (element.height ?? 0) <= 2 && Boolean(element.fillColor) && !children.length;
+  if (isDivider) {
+    const dividerDefaultColor = context.themeComponentDefaults?.MuiDivider?.borderColor;
+    const matchesDefaultBorderColor =
+      normalizeHexColor(element.fillColor) !== undefined &&
+      normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
+    const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
+      spacingBase: context.spacingBase,
+      tokens: context.tokens
+    });
+    const dividerSxEntries: Array<[string, string | number | undefined]> = [
+      ...baseDividerLayoutEntries,
+      ...toResponsiveLayoutMediaEntries({
+        baseLayoutMode: element.layoutMode ?? "NONE",
+        overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+        spacingBase: context.spacingBase,
+        baseValuesByKey: toSxValueMapFromEntries(baseDividerLayoutEntries)
+      }),
+      [
+        "borderColor",
+        !matchesDefaultBorderColor ? toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens }) : undefined
+      ] as [string, string | number | undefined]
+    ];
+    collectThemeSxSampleFromEntries({
+      context,
+      componentName: "MuiDivider",
+      entries: dividerSxEntries
+    });
+    const sx = sxString(
+      withOmittedSxKeys({
+        entries: dividerSxEntries,
+        keys: collectThemeDefaultMatchedSxKeys({
+          context,
+          componentName: "MuiDivider",
+          entries: dividerSxEntries
+        })
+      })
+    );
+    registerMuiImports(context, "Divider");
+    const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+    return `${indent}<Divider aria-hidden="true"${sxProp} />`;
+  }
+
+  const sx = toElementSx({
+    element,
+    parent,
+    context
+  });
+  const navigation = resolvePrototypeNavigationBinding({ element, context });
+  const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
+  const landmarkRole = inferLandmarkRole({ element, context });
+  const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const tabIndexProp = navigationProps?.tabIndexProp ?? "";
+  const onClickProp = navigationProps?.onClickProp ?? "";
+  const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
+
+  if (!renderedChildren.trim()) {
+    if (!hasVisualStyle(element) && !navigation) {
+      return null;
+    }
+    registerMuiImports(context, "Box");
+    return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+  }
+
+  registerMuiImports(context, "Box");
+  return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }}>
+${renderedChildren}
+${indent}</Box>`;
 };
 
 const renderContainer = (
@@ -1210,99 +10309,144 @@ const renderContainer = (
   parent: VirtualParent,
   context: RenderContext
 ): string | null => {
-  const indent = "  ".repeat(depth);
-  if (isLikelyAccordionContainer(element)) {
-    return renderSemanticAccordion(element, depth, parent, context);
-  }
-
-  if (isLikelyInputContainer(element)) {
-    return renderSemanticInput(element, depth, parent, context);
-  }
-
-  const iconNode = element.name.toLowerCase().includes("muisvgiconroot");
-  if (iconNode) {
-    const vectorPaths = collectVectorPaths(element);
-    if (vectorPaths.length > 0) {
-      const vectorColor = firstVectorColor(element);
-      const iconSx = sxString([
-        ...baseLayoutEntries(element, parent, { includePaints: false }),
-        ["color", vectorColor ? literal(vectorColor) : undefined]
-      ]);
-      const iconPaths = vectorPaths
-        .map((pathData) => `${indent}  <path d={${literal(pathData)}} />`)
-        .join("\n");
-      return `${indent}<SvgIcon sx={{ ${iconSx} }} viewBox={${literal(`0 0 ${Math.max(1, Math.round(element.width ?? 24))} ${Math.max(1, Math.round(element.height ?? 24))}`)}}>\n${iconPaths}\n${indent}</SvgIcon>`;
+  const strategyInput: ElementRenderStrategyInput = {
+    element,
+    depth,
+    parent,
+    context
+  };
+  for (const strategy of CONTAINER_RENDER_STRATEGIES) {
+    const result = strategy(strategyInput);
+    if (result?.matched) {
+      return result.rendered;
     }
-
-    const parentName = parent.name?.toLowerCase() ?? "";
-    const iconComponent = parentName.includes("buttonendicon")
-      ? registerIconImport(context, {
-          localName: "ChevronRightIcon",
-          modulePath: "@mui/icons-material/ChevronRight"
-        })
-      : parentName.includes("expandiconwrapper") ||
-          parentName.includes("outlinedinputroot") ||
-          parentName.includes("formcontrolroot") ||
-          parentName.includes("select")
-        ? registerIconImport(context, {
-            localName: "ExpandMoreIcon",
-            modulePath: "@mui/icons-material/ExpandMore"
-          })
-        : parentName.includes("accordionsummarycontent")
-          ? registerIconImport(context, {
-              localName: "TuneIcon",
-              modulePath: "@mui/icons-material/Tune"
-            })
-          : registerIconImport(context, {
-              localName: "InfoOutlinedIcon",
-              modulePath: "@mui/icons-material/InfoOutlined"
-            });
-
-    const iconSx = sxString([
-      ...baseLayoutEntries(element, parent, { includePaints: false }),
-      ["display", literal("flex")],
-      ["alignItems", literal("center")],
-      ["justifyContent", literal("center")],
-      ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
-      ["lineHeight", literal("1")],
-      ["color", element.fillColor ? literal(element.fillColor) : undefined]
-    ]);
-    return `${indent}<${iconComponent} sx={{ ${iconSx} }} fontSize="inherit" />`;
   }
+  return renderContainerFallback(strategyInput);
+};
 
-  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
-
-  const renderedChildren = children
-    .map((child) => renderElement(child, depth + 1, {
-      x: element.x,
-      y: element.y,
-      name: element.name,
-      layoutMode: element.layoutMode ?? "NONE"
-    }, context))
-    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
-    .join("\n");
-
-  const isDivider = (element.height ?? 0) <= 2 && Boolean(element.fillColor) && !children.length;
-  if (isDivider) {
-    const sx = sxString([
-      ...baseLayoutEntries(element, parent),
-      ["borderColor", element.fillColor ? literal(element.fillColor) : undefined]
-    ]);
-    return `${indent}<Divider sx={{ ${sx} }} />`;
-  }
-
-  const sx = sxString(baseLayoutEntries(element, parent));
-
-  if (!renderedChildren.trim()) {
-    if (!hasVisualStyle(element)) {
-      return null;
+const runElementPreDispatchStrategies = ({
+  element,
+  depth,
+  parent,
+  context
+}: ElementRenderStrategyInput): string | null | undefined => {
+  const preDispatchStrategies: readonly PreDispatchRenderStrategy[] = [
+    ({ element, depth, parent, context }) => {
+      const navigationBarPattern = detectNavigationBarPattern({
+        element,
+        depth,
+        parent,
+        context
+      });
+      if (navigationBarPattern === "appbar") {
+        return renderAppBar(element, depth, parent, context);
+      }
+      if (navigationBarPattern === "navigation") {
+        return renderNavigation(element, depth, parent, context);
+      }
+      return undefined;
+    },
+    ({ element, depth, parent, context }) => {
+      const tabInterfacePattern = detectTabInterfacePattern({
+        element,
+        depth,
+        context
+      });
+      if (!tabInterfacePattern) {
+        return undefined;
+      }
+      return renderTabs(element, depth, parent, context, tabInterfacePattern);
+    },
+    ({ element, depth, parent, context }) => {
+      const dialogOverlayPattern = detectDialogOverlayPattern({
+        element,
+        depth,
+        parent,
+        context
+      });
+      if (!dialogOverlayPattern) {
+        return undefined;
+      }
+      return renderDialog(element, depth, parent, context, dialogOverlayPattern);
     }
-    return `${indent}<Box sx={{ ${sx} }} />`;
+  ];
+  for (const strategy of preDispatchStrategies) {
+    const rendered = strategy({
+      element,
+      depth,
+      parent,
+      context
+    });
+    if (rendered !== undefined) {
+      return rendered;
+    }
   }
+  return undefined;
+};
 
-  return `${indent}<Box sx={{ ${sx} }}>
-${renderedChildren}
-${indent}</Box>`;
+const elementRenderStrategies: Partial<Record<ScreenElementIR["type"], ElementRenderStrategy>> = {
+  text: ({ element, depth, parent, context }) => renderText(element, depth, parent, context),
+  input: ({ element, depth, parent, context }) => renderSemanticInput(element, depth, parent, context),
+  select: ({ element, depth, parent, context }) => renderSelectElement(element, depth, parent, context),
+  button: ({ element, depth, parent, context }) => renderButton(element, depth, parent, context),
+  grid: ({ element, depth, parent, context }) => renderGrid(element, depth, parent, context),
+  stack: ({ element, depth, parent, context }) => renderStack(element, depth, parent, context),
+  paper: ({ element, depth, parent, context }) => renderPaper(element, depth, parent, context),
+  card: ({ element, depth, parent, context }) => renderCard(element, depth, parent, context),
+  chip: ({ element, depth, parent, context }) => renderChip(element, depth, parent, context),
+  switch: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Switch"
+    }),
+  checkbox: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Checkbox"
+    }),
+  radio: ({ element, depth, parent, context }) =>
+    renderSelectionControl({
+      element,
+      depth,
+      parent,
+      context,
+      componentName: "Radio"
+    }),
+  slider: ({ element, depth, parent, context }) => renderSlider(element, depth, parent, context),
+  rating: ({ element, depth, parent, context }) => renderRatingElement(element, depth, parent, context),
+  list: ({ element, depth, parent, context }) => renderList(element, depth, parent, context),
+  table: ({ element, depth, parent, context }) => renderTable(element, depth, parent, context),
+  tooltip: ({ element, depth, parent, context }) => renderTooltipElement(element, depth, parent, context),
+  appbar: ({ element, depth, parent, context }) => renderAppBar(element, depth, parent, context),
+  drawer: ({ element, depth, parent, context }) => renderDrawer(element, depth, parent, context),
+  breadcrumbs: ({ element, depth, parent, context }) => renderBreadcrumbs(element, depth, parent, context),
+  tab: ({ element, depth, parent, context }) => renderTabs(element, depth, parent, context),
+  dialog: ({ element, depth, parent, context }) => renderDialog(element, depth, parent, context),
+  snackbar: ({ element, depth, parent, context }) => renderSnackbar(element, depth, parent, context),
+  stepper: ({ element, depth, parent, context }) => renderStepper(element, depth, parent, context),
+  progress: ({ element, depth, parent, context }) => renderProgress(element, depth, parent, context),
+  skeleton: ({ element, depth, parent, context }) => renderSkeleton(element, depth, parent, context),
+  avatar: ({ element, depth, parent, context }) => renderAvatar(element, depth, parent, context),
+  badge: ({ element, depth, parent, context }) => renderBadge(element, depth, parent, context),
+  divider: ({ element, depth, parent, context }) => renderDividerElement(element, depth, parent, context),
+  navigation: ({ element, depth, parent, context }) => renderNavigation(element, depth, parent, context),
+  image: ({ element, depth, parent, context }) => renderImageElement(element, depth, parent, context),
+  container: ({ element, depth, parent, context }) => renderContainer(element, depth, parent, context)
+};
+
+const resolveElementRenderStrategy = (type: ScreenElementIR["type"]): ElementRenderStrategy => {
+  return (
+    elementRenderStrategies[type] ??
+    (({ element, depth, parent, context }) => {
+      return renderContainer(element, depth, parent, context);
+    })
+  );
 };
 
 const renderElement = (
@@ -1311,57 +10455,725 @@ const renderElement = (
   parent: VirtualParent,
   context: RenderContext
 ): string | null => {
-  const mappedElement = renderMappedElement(element, depth, parent, context);
-  if (mappedElement) {
-    return mappedElement;
+  context.renderNodeVisitCount += 1;
+  if (context.renderNodeVisitCount > 200_000) {
+    throw new Error(`Render traversal exceeded safety limit for screen '${context.screenName}'`);
   }
-
-  if (element.nodeType === "VECTOR") {
+  if (context.activeRenderElements.has(element)) {
     return null;
   }
+  context.activeRenderElements.add(element);
+  try {
+    const extractionInvocation = context.extractionInvocationByNodeId.get(element.id);
+    if (extractionInvocation) {
+      const indent = "  ".repeat(depth);
+      const sx = toElementSx({
+        element,
+        parent,
+        context
+      });
+      const propEntries = extractionInvocation.usesPatternContext
+        ? [`instanceId={${literal(extractionInvocation.instanceId)}}`]
+        : Object.entries(extractionInvocation.propValues)
+            .filter(([, value]) => value !== undefined)
+            .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
+      const props = [`sx={{ ${sx} }}`, ...propEntries].join(" ");
+      return `${indent}<${extractionInvocation.componentName} ${props} />`;
+    }
 
-  if (element.type === "text") {
-    return renderText(element, depth, parent);
+    const mappedElement = renderMappedElement(element, depth, parent, context);
+    if (mappedElement) {
+      return mappedElement;
+    }
+
+    if (element.nodeType === "VECTOR" && element.type !== "image") {
+      return null;
+    }
+
+    const preDispatchRendered = runElementPreDispatchStrategies({
+      element,
+      depth,
+      parent,
+      context
+    });
+    if (preDispatchRendered !== undefined) {
+      return preDispatchRendered;
+    }
+    return resolveElementRenderStrategy(element.type)({
+      element,
+      depth,
+      parent,
+      context
+    });
+  } finally {
+    context.activeRenderElements.delete(element);
   }
-
-  if (element.type === "button") {
-    return renderButton(element, depth, parent);
-  }
-
-  return renderContainer(element, depth, parent, context);
 };
 
-const fallbackThemeFile = (ir: DesignIR): GeneratedFile => {
+const createThemeDerivationRenderContext = ({
+  screen,
+  generationLocale,
+  spacingBase,
+  tokens,
+  themeComponentDefaults,
+  themeSxSampleCollector
+}: {
+  screen: ScreenIR;
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+  themeComponentDefaults?: ThemeComponentDefaults;
+  themeSxSampleCollector?: ThemeSxSampleCollector;
+}): RenderContext => {
+  const baseContext: RenderContext = {
+    screenId: `${screen.id}:theme-defaults`,
+    screenName: `${screen.name}:theme-defaults`,
+    generationLocale,
+    formHandlingMode: "legacy_use_state",
+    fields: [],
+    accordions: [],
+    tabs: [],
+    dialogs: [],
+    buttons: [],
+    activeRenderElements: new Set<ScreenElementIR>(),
+    renderNodeVisitCount: 0,
+    interactiveDescendantCache: new Map<string, boolean>(),
+    meaningfulTextDescendantCache: new Map<string, boolean>(),
+    headingComponentByNodeId: new Map<string, HeadingComponent>(),
+    typographyVariantByNodeId: new Map<string, DesignTokenTypographyVariantName>(),
+    accessibilityWarnings: [],
+    muiImports: new Set<string>(),
+    iconImports: [],
+    iconResolver: ICON_FALLBACK_BUILTIN_RESOLVER,
+    imageAssetMap: {},
+    routePathByScreenId: new Map<string, string>(),
+    usesRouterLink: false,
+    usesNavigateHandler: false,
+    prototypeNavigationRenderedCount: 0,
+    mappedImports: [],
+    spacingBase,
+    mappingByNodeId: new Map<string, ComponentMappingRule>(),
+    usedMappingNodeIds: new Set<string>(),
+    mappingWarnings: [],
+    emittedWarningKeys: new Set<string>(),
+    emittedAccessibilityWarningKeys: new Set<string>(),
+    pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+    ...(themeSxSampleCollector ? { themeSxSampleCollector } : {}),
+    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
+  };
+  if (tokens) {
+    baseContext.tokens = tokens;
+  }
+  return baseContext;
+};
+
+const collectAppBarDefaultsCandidates = ({
+  screen,
+  generationLocale,
+  spacingBase,
+  tokens
+}: {
+  screen: ScreenIR;
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+}): ScreenElementIR[] => {
+  const flattened = flattenElements(screen.children);
+  const explicitAppBarCandidates = flattened.filter((element) => element.type === "appbar");
+  const context = createThemeDerivationRenderContext({
+    screen,
+    generationLocale,
+    spacingBase,
+    ...(tokens ? { tokens } : {})
+  });
+  const rootParent: VirtualParent = {
+    x: 0,
+    y: 0,
+    width: screen.width,
+    height: screen.height,
+    name: screen.name,
+    fillColor: screen.fillColor,
+    fillGradient: screen.fillGradient,
+    layoutMode: screen.layoutMode
+  };
+  const topLevel = sortChildren(screen.children, screen.layoutMode, {
+    generationLocale
+  });
+  const patternCandidates = topLevel.filter((element) => {
+    return (
+      detectNavigationBarPattern({
+        element,
+        depth: NAVIGATION_BAR_TOP_LEVEL_DEPTH,
+        parent: rootParent,
+        context
+      }) === "appbar"
+    );
+  });
+  const byId = new Map<string, ScreenElementIR>();
+  for (const candidate of [...explicitAppBarCandidates, ...patternCandidates]) {
+    byId.set(candidate.id, candidate);
+  }
+  return Array.from(byId.values());
+};
+
+const collectThemeSxSamplesFromScreens = ({
+  screens,
+  generationLocale,
+  spacingBase,
+  tokens,
+  themeComponentDefaults
+}: {
+  screens: ScreenIR[];
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+  themeComponentDefaults?: ThemeComponentDefaults;
+}): ThemeSxSample[] => {
+  const samples: ThemeSxSample[] = [];
+  for (const screen of screens) {
+    const context = createThemeDerivationRenderContext({
+      screen,
+      generationLocale,
+      spacingBase,
+      ...(tokens ? { tokens } : {}),
+      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      themeSxSampleCollector: (sample) => {
+        samples.push(sample);
+      }
+    });
+    const rootParent: ScreenElementIR = {
+      id: `${screen.id}:theme-c1-root`,
+      nodeType: "FRAME",
+      type: "container",
+      x: 0,
+      y: 0,
+      name: screen.name,
+      layoutMode: screen.layoutMode,
+      ...(typeof screen.width === "number" ? { width: screen.width } : {}),
+      ...(typeof screen.height === "number" ? { height: screen.height } : {}),
+      ...(screen.fillColor ? { fillColor: screen.fillColor } : {}),
+      ...(screen.fillGradient ? { fillGradient: screen.fillGradient } : {}),
+      children: screen.children
+    };
+    renderNodesIntoParent({
+      nodes: screen.children,
+      parent: rootParent,
+      depth: 3,
+      context,
+      layoutMode: screen.layoutMode
+    });
+  }
+  return samples;
+};
+
+const deriveThemeSxComponentStyleOverridesFromSamples = ({
+  samples
+}: {
+  samples: ThemeSxSample[];
+}): ThemeSxComponentStyleOverrides | undefined => {
+  const componentStats = new Map<
+    string,
+    {
+      sampleCount: number;
+      valuesByKey: Map<
+        string,
+        Map<
+          string,
+          {
+            value: ThemeSxStyleValue;
+            count: number;
+          }
+        >
+      >;
+    }
+  >();
+
+  for (const sample of samples) {
+    const componentName = sample.componentName.trim();
+    if (!componentName) {
+      continue;
+    }
+    let stats = componentStats.get(componentName);
+    if (!stats) {
+      stats = {
+        sampleCount: 0,
+        valuesByKey: new Map()
+      };
+      componentStats.set(componentName, stats);
+    }
+    stats.sampleCount += 1;
+
+    for (const [key, value] of sample.styleValuesByKey.entries()) {
+      if (!THEME_SX_CANONICAL_VISUAL_KEYS.has(key)) {
+        continue;
+      }
+      let valuesByNormalizedValueKey = stats.valuesByKey.get(key);
+      if (!valuesByNormalizedValueKey) {
+        valuesByNormalizedValueKey = new Map();
+        stats.valuesByKey.set(key, valuesByNormalizedValueKey);
+      }
+      const normalizedValueKey = toThemeSxValueKey(value);
+      const existing = valuesByNormalizedValueKey.get(normalizedValueKey);
+      if (!existing) {
+        valuesByNormalizedValueKey.set(normalizedValueKey, {
+          value,
+          count: 1
+        });
+        continue;
+      }
+      existing.count += 1;
+    }
+  }
+
+  const overrides: ThemeSxComponentStyleOverrides = {};
+  const orderedComponentNames = Array.from(componentStats.keys()).sort((left, right) => left.localeCompare(right));
+  for (const componentName of orderedComponentNames) {
+    const stats = componentStats.get(componentName);
+    if (!stats || stats.sampleCount < THEME_SX_MIN_SAMPLES) {
+      continue;
+    }
+
+    const resolvedEntries: Array<[string, ThemeSxStyleValue]> = [];
+    const orderedKeys = Array.from(stats.valuesByKey.keys()).sort((left, right) => left.localeCompare(right));
+    for (const key of orderedKeys) {
+      const valueCandidates = Array.from(stats.valuesByKey.get(key)?.values() ?? []).sort((left, right) => {
+        return right.count - left.count || toThemeSxValueKey(left.value).localeCompare(toThemeSxValueKey(right.value));
+      });
+      const winner = valueCandidates[0];
+      if (!winner) {
+        continue;
+      }
+      if (winner.count / stats.sampleCount < THEME_SX_EXTRACTION_THRESHOLD) {
+        continue;
+      }
+      resolvedEntries.push([key, winner.value]);
+    }
+
+    if (resolvedEntries.length > 0) {
+      overrides[componentName] = Object.fromEntries(resolvedEntries);
+    }
+  }
+
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+};
+
+const deriveThemeComponentDefaultsFromScreens = ({
+  screens,
+  generationLocale,
+  spacingBase,
+  tokens
+}: {
+  screens: ScreenIR[];
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+}): ThemeComponentDefaults | undefined => {
+  if (screens.length === 0) {
+    return undefined;
+  }
+  const allElements = screens.flatMap((screen) => flattenElements(screen.children));
+
+  const cardNodes = allElements.filter((element) => element.type === "card");
+  const cardBorderRadius = resolveDeterministicIntegerSample({
+    values: cardNodes.map((node) => node.cornerRadius),
+    min: 1,
+    max: 128
+  });
+  const cardElevation = resolveDeterministicIntegerSample({
+    values: cardNodes.map((node) => {
+      const elevation = normalizeElevationForSx(node.elevation);
+      return typeof elevation === "number" && elevation > 0 ? elevation : undefined;
+    }),
+    min: 1,
+    max: 24
+  });
+
+  const textFieldBorderRadius = resolveDeterministicIntegerSample({
+    values: allElements
+      .filter((element) => element.type === "input")
+      .map((element) => {
+        const outlineContainer = findFirstByName(element, "muioutlinedinputroot") ?? element;
+        const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
+        return outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius;
+      }),
+    min: 1,
+    max: 128
+  });
+
+  const chipNodes = allElements.filter((element) => element.type === "chip");
+  const chipBorderRadius = resolveDeterministicIntegerSample({
+    values: chipNodes.map((node) => node.cornerRadius),
+    min: 1,
+    max: 128
+  });
+  const chipSizeCounts = new Map<"small" | "medium", number>();
+  for (const chipNode of chipNodes) {
+    const mappedSize = toChipSize(chipNode.variantMapping?.muiProps.size);
+    const inferredSize = mappedSize ?? inferChipSizeFromHeight(chipNode.height);
+    if (!inferredSize) {
+      continue;
+    }
+    chipSizeCounts.set(inferredSize, (chipSizeCounts.get(inferredSize) ?? 0) + 1);
+  }
+  const chipSize = Array.from(chipSizeCounts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([value]) => value)[0];
+
+  const paperNodes = allElements.filter((element) => element.type === "paper");
+  const paperElevation = resolveDeterministicIntegerSample({
+    values: paperNodes.map((node) => {
+      const elevation = normalizeElevationForSx(node.elevation);
+      return typeof elevation === "number" && elevation > 0 ? elevation : undefined;
+    }),
+    min: 1,
+    max: 24
+  });
+
+  const appBarBackgroundColor = resolveDeterministicColorSample(
+    screens
+      .flatMap((screen) =>
+        collectAppBarDefaultsCandidates({
+          screen,
+          generationLocale,
+          spacingBase,
+          ...(tokens ? { tokens } : {})
+        })
+      )
+      .map((node) => node.fillColor)
+  );
+
+  const dividerColor = resolveDeterministicColorSample(
+    allElements
+      .filter((element) => {
+        if (element.type === "divider") {
+          return true;
+        }
+        if ((element.children?.length ?? 0) > 0) {
+          return false;
+        }
+        const roundedHeight = toRoundedIntegerInRange({
+          value: element.height,
+          min: 1,
+          max: 2
+        });
+        return roundedHeight !== undefined && Boolean(element.fillColor);
+      })
+      .map((node) => node.fillColor ?? node.strokeColor)
+  );
+
+  const avatarNodes = allElements.filter((element) => element.type === "avatar");
+  const avatarWidth = resolveDeterministicIntegerSample({
+    values: avatarNodes.map((node) => node.width),
+    min: 12,
+    max: 256
+  });
+  const avatarHeight = resolveDeterministicIntegerSample({
+    values: avatarNodes.map((node) => node.height),
+    min: 12,
+    max: 256
+  });
+  const avatarBorderRadius = resolveDeterministicIntegerSample({
+    values: avatarNodes.map((node) => node.cornerRadius),
+    min: 1,
+    max: 256
+  });
+
+  const defaults: ThemeComponentDefaults = {};
+  if (cardBorderRadius !== undefined || cardElevation !== undefined) {
+    defaults.MuiCard = {
+      ...(cardBorderRadius !== undefined ? { borderRadiusPx: cardBorderRadius } : {}),
+      ...(cardElevation !== undefined ? { elevation: cardElevation } : {})
+    };
+  }
+  if (textFieldBorderRadius !== undefined) {
+    defaults.MuiTextField = {
+      outlinedInputBorderRadiusPx: textFieldBorderRadius
+    };
+  }
+  if (chipBorderRadius !== undefined || chipSize !== undefined) {
+    defaults.MuiChip = {
+      ...(chipBorderRadius !== undefined ? { borderRadiusPx: chipBorderRadius } : {}),
+      ...(chipSize !== undefined ? { size: chipSize } : {})
+    };
+  }
+  if (paperElevation !== undefined) {
+    defaults.MuiPaper = {
+      elevation: paperElevation
+    };
+  }
+  if (appBarBackgroundColor) {
+    defaults.MuiAppBar = {
+      backgroundColor: appBarBackgroundColor
+    };
+  }
+  if (dividerColor) {
+    defaults.MuiDivider = {
+      borderColor: dividerColor
+    };
+  }
+  if (avatarWidth !== undefined || avatarHeight !== undefined || avatarBorderRadius !== undefined) {
+    defaults.MuiAvatar = {
+      ...(avatarWidth !== undefined ? { widthPx: avatarWidth } : {}),
+      ...(avatarHeight !== undefined ? { heightPx: avatarHeight } : {}),
+      ...(avatarBorderRadius !== undefined ? { borderRadiusPx: avatarBorderRadius } : {})
+    };
+  }
+
+  const c1StyleOverrides = deriveThemeSxComponentStyleOverridesFromSamples({
+    samples: collectThemeSxSamplesFromScreens({
+      screens,
+      generationLocale,
+      spacingBase,
+      ...(tokens ? { tokens } : {}),
+      ...(Object.keys(defaults).length > 0 ? { themeComponentDefaults: defaults } : {})
+    })
+  });
+  if (c1StyleOverrides) {
+    defaults.c1StyleOverrides = c1StyleOverrides;
+  }
+
+  return Object.keys(defaults).length > 0 ? defaults : undefined;
+};
+
+const deriveThemeComponentDefaultsFromIr = ({
+  ir,
+  generationLocale = DEFAULT_GENERATION_LOCALE
+}: {
+  ir: DesignIR;
+  generationLocale?: string;
+}): ThemeComponentDefaults | undefined => {
+  return deriveThemeComponentDefaultsFromScreens({
+    screens: ir.screens,
+    generationLocale,
+    spacingBase: normalizeSpacingBase(ir.tokens.spacingBase),
+    tokens: ir.tokens
+  });
+};
+
+interface ThemeComponentBlockDraft {
+  defaultPropsEntries: Array<[string, string | number]>;
+  rootStyleEntries: Array<[string, ThemeSxStyleValue]>;
+  nestedRootStyleEntries: Array<{
+    selector: string;
+    entries: Array<[string, ThemeSxStyleValue]>;
+  }>;
+}
+
+const toThemeSxStyleValueLiteral = (value: ThemeSxStyleValue): string => {
+  if (typeof value === "number") {
+    return String(roundStableSxNumericValue(value));
+  }
+  return literal(value);
+};
+
+const createThemeComponentBlockDraft = ({
+  componentName,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): ThemeComponentBlockDraft => {
+  const draft: ThemeComponentBlockDraft = {
+    defaultPropsEntries: [],
+    rootStyleEntries: [],
+    nestedRootStyleEntries: []
+  };
+
+  if (componentName === "MuiButton") {
+    draft.rootStyleEntries.push(["textTransform", "none"]);
+    return draft;
+  }
+  if (componentName === "MuiCard") {
+    if (themeComponentDefaults?.MuiCard?.elevation !== undefined) {
+      draft.defaultPropsEntries.push(["elevation", themeComponentDefaults.MuiCard.elevation]);
+    }
+    if (themeComponentDefaults?.MuiCard?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiCard.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiTextField") {
+    if (themeComponentDefaults?.MuiTextField?.outlinedInputBorderRadiusPx !== undefined) {
+      draft.nestedRootStyleEntries.push({
+        selector: "& .MuiOutlinedInput-root",
+        entries: [["borderRadius", `${themeComponentDefaults.MuiTextField.outlinedInputBorderRadiusPx}px`]]
+      });
+    }
+    return draft;
+  }
+  if (componentName === "MuiChip") {
+    if (themeComponentDefaults?.MuiChip?.size) {
+      draft.defaultPropsEntries.push(["size", themeComponentDefaults.MuiChip.size]);
+    }
+    if (themeComponentDefaults?.MuiChip?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiChip.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiPaper") {
+    if (themeComponentDefaults?.MuiPaper?.elevation !== undefined) {
+      draft.defaultPropsEntries.push(["elevation", themeComponentDefaults.MuiPaper.elevation]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiAppBar") {
+    if (themeComponentDefaults?.MuiAppBar?.backgroundColor) {
+      draft.rootStyleEntries.push(["backgroundColor", themeComponentDefaults.MuiAppBar.backgroundColor]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiDivider") {
+    if (themeComponentDefaults?.MuiDivider?.borderColor) {
+      draft.rootStyleEntries.push(["borderColor", themeComponentDefaults.MuiDivider.borderColor]);
+    }
+    return draft;
+  }
+  if (componentName === "MuiAvatar") {
+    if (themeComponentDefaults?.MuiAvatar?.widthPx !== undefined) {
+      draft.rootStyleEntries.push(["width", `${themeComponentDefaults.MuiAvatar.widthPx}px`]);
+    }
+    if (themeComponentDefaults?.MuiAvatar?.heightPx !== undefined) {
+      draft.rootStyleEntries.push(["height", `${themeComponentDefaults.MuiAvatar.heightPx}px`]);
+    }
+    if (themeComponentDefaults?.MuiAvatar?.borderRadiusPx !== undefined) {
+      draft.rootStyleEntries.push(["borderRadius", `${themeComponentDefaults.MuiAvatar.borderRadiusPx}px`]);
+    }
+    return draft;
+  }
+  return draft;
+};
+
+const appendC1ThemeStyleEntriesToDraft = ({
+  componentName,
+  draft,
+  themeComponentDefaults
+}: {
+  componentName: string;
+  draft: ThemeComponentBlockDraft;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}): void => {
+  const c1Entries = themeComponentDefaults?.c1StyleOverrides?.[componentName];
+  if (!c1Entries) {
+    return;
+  }
+  const existingRootKeys = new Set(draft.rootStyleEntries.map(([key]) => key));
+  const orderedC1Keys = Object.keys(c1Entries).sort((left, right) => left.localeCompare(right));
+  for (const key of orderedC1Keys) {
+    if (existingRootKeys.has(key)) {
+      continue;
+    }
+    const value = c1Entries[key];
+    const normalizedValue = normalizeThemeSxValueForKey({
+      key,
+      value
+    });
+    if (normalizedValue === undefined) {
+      continue;
+    }
+    draft.rootStyleEntries.push([key, normalizedValue]);
+    existingRootKeys.add(key);
+  }
+};
+
+const renderThemeComponentBlock = ({
+  componentName,
+  draft
+}: {
+  componentName: string;
+  draft: ThemeComponentBlockDraft;
+}): string | undefined => {
+  const componentEntries: string[] = [];
+  if (draft.defaultPropsEntries.length > 0) {
+    componentEntries.push(
+      `      defaultProps: { ${draft.defaultPropsEntries
+        .map(([key, value]) => `${key}: ${typeof value === "number" ? value : literal(value)}`)
+        .join(", ")} }`
+    );
+  }
+  if (draft.rootStyleEntries.length > 0 || draft.nestedRootStyleEntries.length > 0) {
+    const rootEntries = draft.rootStyleEntries.map(
+      ([key, value]) => `          ${key}: ${toThemeSxStyleValueLiteral(value)}`
+    );
+    for (const nestedEntry of draft.nestedRootStyleEntries) {
+      const nestedLines = nestedEntry.entries.map(
+        ([key, value]) => `            ${key}: ${toThemeSxStyleValueLiteral(value)}`
+      );
+      rootEntries.push(`          ${literal(nestedEntry.selector)}: {\n${nestedLines.join(",\n")}\n          }`);
+    }
+    componentEntries.push(`      styleOverrides: {\n        root: {\n${rootEntries.join(",\n")}\n        }\n      }`);
+  }
+  if (componentEntries.length === 0) {
+    return undefined;
+  }
+  return `    ${componentName}: {\n${componentEntries.join(",\n")}\n    }`;
+};
+
+const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults): GeneratedFile => {
   const tokens = ir.tokens;
+  const lightPalette = toLightThemePalette(tokens);
+  const darkPalette = toDarkThemePalette(tokens);
+  const responsiveThemeBreakpoints = deriveResponsiveThemeBreakpointValues(ir);
+  const typographyEntries = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => {
+    const variant = tokens.typography[variantName];
+    const entries = [
+      ["fontSize", toRemLiteral(variant.fontSizePx)],
+      ["fontWeight", Math.round(variant.fontWeight)],
+      ["lineHeight", toRemLiteral(variant.lineHeightPx)],
+      ["fontFamily", variant.fontFamily ? literal(variant.fontFamily) : undefined],
+      ["letterSpacing", typeof variant.letterSpacingEm === "number" ? toEmLiteral(variant.letterSpacingEm) : undefined],
+      ["textTransform", variant.textTransform ? literal(variant.textTransform) : undefined]
+    ]
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+    return `    ${variantName}: { ${entries} }`;
+  }).join(",\n");
+  const c1ComponentNames = Object.keys(themeComponentDefaults?.c1StyleOverrides ?? {})
+    .filter((componentName) => !THEME_COMPONENT_ORDER.includes(componentName))
+    .sort((left, right) => left.localeCompare(right));
+  const componentOrder = [...THEME_COMPONENT_ORDER, ...c1ComponentNames];
+  const componentBlocks = componentOrder
+    .map((componentName) => {
+      const draft = createThemeComponentBlockDraft({
+        componentName,
+        themeComponentDefaults
+      });
+      appendC1ThemeStyleEntriesToDraft({
+        componentName,
+        draft,
+        themeComponentDefaults
+      });
+      return renderThemeComponentBlock({
+        componentName,
+        draft
+      });
+    })
+    .filter((block): block is string => Boolean(block));
+
   return {
     path: "src/theme/theme.ts",
     content: `import { createTheme } from "@mui/material/styles";
 
 export const appTheme = createTheme({
-  palette: {
-    mode: "light",
-    primary: { main: "${tokens.palette.primary}" },
-    secondary: { main: "${tokens.palette.secondary}" },
-    background: { default: "${tokens.palette.background}", paper: "${tokens.palette.background}" },
-    text: { primary: "${tokens.palette.text}" }
+  colorSchemes: {
+    light: {
+      palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}
+    },
+    dark: {
+      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}
+    }
   },
   shape: {
     borderRadius: ${Math.max(0, Math.round(tokens.borderRadius))}
   },
   spacing: ${Math.max(1, Math.round(tokens.spacingBase))},
-  typography: {
+${responsiveThemeBreakpoints ? `  breakpoints: {\n    values: ${toResponsiveBreakpointValuesLiteral(responsiveThemeBreakpoints)}\n  },\n` : ""}  typography: {
     fontFamily: "${tokens.fontFamily}",
-    h1: { fontSize: ${Math.max(1, Math.round(tokens.headingSize))} },
-    body1: { fontSize: ${Math.max(1, Math.round(tokens.bodySize))} }
+${typographyEntries}
   },
   components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: "none"
-        }
-      }
-    }
+${componentBlocks.join(",\n")}
   }
 });
 `
@@ -1370,43 +11182,1353 @@ export const appTheme = createTheme({
 
 interface FallbackScreenFileResult {
   file: GeneratedFile;
+  componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
+  testFiles: GeneratedFile[];
+  prototypeNavigationRenderedCount: number;
+  simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
     code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
     nodeId: string;
     message: string;
   }>;
+  accessibilityWarnings: AccessibilityWarning[];
 }
 
-const fallbackScreenFile = (screen: ScreenIR, mappingByNodeId: Map<string, ComponentMappingRule>): FallbackScreenFileResult => {
-  const componentName = toComponentName(screen.name);
-  const filePath = toDeterministicScreenPath(screen.name);
+interface ScreenTestButtonTarget {
+  label: string;
+  clickable: boolean;
+}
 
-  const simplifiedChildren = simplifyElements(screen.children);
+interface ScreenTestTargetPlan {
+  textTargets: string[];
+  buttonTargets: ScreenTestButtonTarget[];
+  textInputTargets: string[];
+  selectTargets: string[];
+}
+
+const toTruncationComment = (
+  truncationMetric:
+    | {
+        originalElements: number;
+        retainedElements: number;
+        budget: number;
+      }
+    | undefined
+): string => {
+  if (!truncationMetric) {
+    return "";
+  }
+  return `/* workspace-dev: Screen IR exceeded budget (${truncationMetric.originalElements} elements), truncated to ${truncationMetric.retainedElements} (budget ${truncationMetric.budget}). */\n`;
+};
+
+const MAX_SCREEN_TEST_TEXT_TARGETS = 8;
+const MAX_SCREEN_TEST_BUTTON_TARGETS = 6;
+const MAX_SCREEN_TEST_INPUT_TARGETS = 6;
+const MAX_SCREEN_TEST_SELECT_TARGETS = 6;
+const MAX_SCREEN_TEST_TARGET_TEXT_LENGTH = 120;
+const MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH = 3;
+
+const normalizeScreenTestTargetText = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized || normalized.length > MAX_SCREEN_TEST_TARGET_TEXT_LENGTH) {
+    return undefined;
+  }
+  if (/^[-–—•*]+$/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+};
+
+const collectRepresentativeScreenTextTargets = ({
+  roots,
+  maxCount = MAX_SCREEN_TEST_TEXT_TARGETS
+}: {
+  roots: ScreenElementIR[];
+  maxCount?: number;
+}): string[] => {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  const stack: ScreenElementIR[] = [...roots].reverse();
+
+  while (stack.length > 0 && targets.length < maxCount) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+
+    if (current.type === "text") {
+      const normalizedText = normalizeScreenTestTargetText(current.text);
+      if (normalizedText) {
+        if (normalizedText.length < MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH) {
+          continue;
+        }
+        const normalizedKey = normalizedText.toLowerCase();
+        if (!seen.has(normalizedKey)) {
+          seen.add(normalizedKey);
+          targets.push(normalizedText);
+          if (targets.length >= maxCount) {
+            break;
+          }
+        }
+      }
+    }
+
+    const children = current.children ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      if (child) {
+        stack.push(child);
+      }
+    }
+  }
+
+  return targets;
+};
+
+const normalizeRenderedScreenTextForSearch = (value: string): string => {
+  return value
+    .toLowerCase()
+    .replace(/\\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const filterTextTargetsByRenderedScreenOutput = ({
+  textTargets,
+  renderedOutput,
+  maxCount = MAX_SCREEN_TEST_TEXT_TARGETS
+}: {
+  textTargets: string[];
+  renderedOutput: string;
+  maxCount?: number;
+}): string[] => {
+  const normalizedRenderedOutput = normalizeRenderedScreenTextForSearch(renderedOutput);
+  if (!normalizedRenderedOutput) {
+    return textTargets.slice(0, maxCount);
+  }
+
+  const filteredTargets: string[] = [];
+  for (const target of textTargets) {
+    const normalizedTarget = normalizeRenderedScreenTextForSearch(target);
+    if (!normalizedTarget) {
+      continue;
+    }
+    if (normalizedTarget.length < MIN_SCREEN_TEST_TEXT_ASSERTION_LENGTH) {
+      continue;
+    }
+    if (!normalizedRenderedOutput.includes(normalizedTarget)) {
+      continue;
+    }
+    filteredTargets.push(target);
+    if (filteredTargets.length >= maxCount) {
+      break;
+    }
+  }
+
+  return filteredTargets;
+};
+
+const collectRepresentativeScreenButtonTargets = ({
+  buttons,
+  maxCount = MAX_SCREEN_TEST_BUTTON_TARGETS
+}: {
+  buttons: RenderedButtonModel[];
+  maxCount?: number;
+}): ScreenTestButtonTarget[] => {
+  const byLabel = new Map<string, ScreenTestButtonTarget>();
+  for (const button of buttons) {
+    const normalizedLabel = normalizeScreenTestTargetText(button.label);
+    if (!normalizedLabel) {
+      continue;
+    }
+    const key = normalizedLabel.toLowerCase();
+    const existing = byLabel.get(key);
+    if (!existing) {
+      byLabel.set(key, {
+        label: normalizedLabel,
+        clickable: button.eligibleForSubmit
+      });
+      if (byLabel.size >= maxCount) {
+        break;
+      }
+      continue;
+    }
+    if (button.eligibleForSubmit) {
+      existing.clickable = true;
+    }
+  }
+  return Array.from(byLabel.values());
+};
+
+const collectRepresentativeFieldTargets = ({
+  fields,
+  isSelect,
+  maxCount
+}: {
+  fields: InteractiveFieldModel[];
+  isSelect: boolean;
+  maxCount: number;
+}): string[] => {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const field of fields) {
+    if (field.isSelect !== isSelect) {
+      continue;
+    }
+    const normalizedLabel = normalizeScreenTestTargetText(field.label);
+    if (!normalizedLabel) {
+      continue;
+    }
+    const key = normalizedLabel.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    labels.push(normalizedLabel);
+    if (labels.length >= maxCount) {
+      break;
+    }
+  }
+  return labels;
+};
+
+const buildScreenTestTargetPlan = ({
+  roots,
+  renderedOutput,
+  buttons,
+  fields
+}: {
+  roots: ScreenElementIR[];
+  renderedOutput: string;
+  buttons: RenderedButtonModel[];
+  fields: InteractiveFieldModel[];
+}): ScreenTestTargetPlan => {
+  const collectedTextTargets = collectRepresentativeScreenTextTargets({
+    roots,
+    maxCount: MAX_SCREEN_TEST_TEXT_TARGETS
+  });
+
+  return {
+    textTargets: filterTextTargetsByRenderedScreenOutput({
+      textTargets: collectedTextTargets,
+      renderedOutput,
+      maxCount: MAX_SCREEN_TEST_TEXT_TARGETS
+    }),
+    buttonTargets: collectRepresentativeScreenButtonTargets({
+      buttons,
+      maxCount: MAX_SCREEN_TEST_BUTTON_TARGETS
+    }),
+    textInputTargets: collectRepresentativeFieldTargets({
+      fields,
+      isSelect: false,
+      maxCount: MAX_SCREEN_TEST_INPUT_TARGETS
+    }),
+    selectTargets: collectRepresentativeFieldTargets({
+      fields,
+      isSelect: true,
+      maxCount: MAX_SCREEN_TEST_SELECT_TARGETS
+    })
+  };
+};
+
+const buildScreenUnitTestFile = ({
+  componentName,
+  screenFilePath,
+  plan
+}: {
+  componentName: string;
+  screenFilePath: string;
+  plan: ScreenTestTargetPlan;
+}): GeneratedFile => {
+  const screenFileName = path.posix.basename(screenFilePath, ".tsx");
+  const testFilePath = path.posix.join("src", "screens", "__tests__", `${componentName}.test.tsx`);
+  const expectedButtonLabels = plan.buttonTargets.map((target) => target.label);
+  const clickableButtonLabels = plan.buttonTargets.filter((target) => target.clickable).map((target) => target.label);
+
+  const content = `import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ThemeProvider } from "@mui/material/styles";
+import { axe } from "jest-axe";
+import { MemoryRouter } from "react-router-dom";
+import { appTheme } from "../../theme/theme";
+import ${componentName}Screen from "../${screenFileName}";
+
+const expectedTexts: string[] = ${JSON.stringify(plan.textTargets, null, 2)};
+const expectedButtonLabels: string[] = ${JSON.stringify(expectedButtonLabels, null, 2)};
+const clickableButtonLabels: string[] = ${JSON.stringify(clickableButtonLabels, null, 2)};
+const expectedTextInputLabels: string[] = ${JSON.stringify(plan.textInputTargets, null, 2)};
+const expectedSelectLabels: string[] = ${JSON.stringify(plan.selectTargets, null, 2)};
+
+const normalizeTextForAssertion = (value: string): string => {
+  return value.replace(/\\s+/g, " ").trim();
+};
+
+const expectTextToBePresent = ({ container, expectedText }: { container: HTMLElement; expectedText: string }): void => {
+  const normalizedExpectedText = normalizeTextForAssertion(expectedText);
+  if (normalizedExpectedText.length === 0) {
+    return;
+  }
+  const normalizedContainerText = normalizeTextForAssertion(container.textContent ?? "");
+  expect(normalizedContainerText).toContain(normalizedExpectedText);
+};
+
+const axeConfig = {
+  rules: {
+    "heading-order": { enabled: false },
+    "landmark-banner-is-top-level": { enabled: false }
+  }
+} as const;
+
+const renderScreen = () => {
+  return render(
+    <ThemeProvider theme={appTheme} defaultMode="system" noSsr>
+      <MemoryRouter>
+        <${componentName}Screen />
+      </MemoryRouter>
+    </ThemeProvider>
+  );
+};
+
+describe("${componentName}Screen", () => {
+  it("renders without crashing", () => {
+    const { container } = renderScreen();
+    expect(container.firstChild).not.toBeNull();
+  });
+
+  it("renders representative text content", () => {
+    const { container } = renderScreen();
+    for (const expectedText of expectedTexts) {
+      expectTextToBePresent({ container, expectedText });
+    }
+  });
+
+  it("keeps representative controls interactive", async () => {
+    renderScreen();
+    const user = userEvent.setup();
+
+    for (const buttonLabel of expectedButtonLabels) {
+      expect(screen.getAllByRole("button", { name: buttonLabel }).length).toBeGreaterThan(0);
+    }
+
+    for (const buttonLabel of clickableButtonLabels) {
+      const buttons = screen.getAllByRole("button", { name: buttonLabel });
+      expect(buttons.length).toBeGreaterThan(0);
+      await user.click(buttons[0]!);
+    }
+
+    for (const inputLabel of expectedTextInputLabels) {
+      const controls = screen.getAllByLabelText(inputLabel);
+      expect(controls.length).toBeGreaterThan(0);
+      const control = controls[0];
+      if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
+        await user.clear(control);
+        await user.type(control, "x");
+      }
+    }
+
+    for (const selectLabel of expectedSelectLabels) {
+      const selects = screen.getAllByRole("combobox", { name: selectLabel });
+      expect(selects.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has no detectable accessibility violations", async () => {
+    const { container } = renderScreen();
+    const results = await axe(container, axeConfig);
+    expect(results).toHaveNoViolations();
+  });
+});
+`;
+
+  return {
+    path: testFilePath,
+    content
+  };
+};
+
+const buildInlineLegacyFormStateBlock = ({
+  hasSelectField,
+  selectOptionsMap,
+  initialVisualErrorsMap,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialValues
+}: {
+  hasSelectField: boolean;
+  selectOptionsMap: Record<string, string[]>;
+  initialVisualErrorsMap: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialValues: Record<string, string>;
+}): string => {
+  const selectOptionsDeclaration = hasSelectField
+    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
+    : "";
+  return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+
+const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const validateFieldValue = (fieldKey: string, value: string): string => {
+  const trimmed = value.trim();
+  if (requiredFields[fieldKey] && trimmed.length === 0) {
+    return "This field is required.";
+  }
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const validationType = fieldValidationTypes[fieldKey];
+  if (!validationType) {
+    return "";
+  }
+  const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+  switch (validationType) {
+    case "email":
+      return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+    case "tel": {
+      const compactTel = trimmed.replace(/\\s+/g, "");
+      const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+      return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
+    }
+    case "url": {
+      try {
+        const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+        const parsed = new URL(normalizedUrl);
+        return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
+      } catch {
+        return validationMessage;
+      }
+    }
+    case "number":
+      return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
+    case "date": {
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+        return validationMessage;
+      }
+      const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+      if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+        return validationMessage;
+      }
+      const date = new Date(Date.UTC(year, month - 1, day));
+      const isValidDate =
+        date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+      return isValidDate ? "" : validationMessage;
+    }
+    default:
+      return "";
+  }
+};
+
+const validateForm = (values: Record<string, string>): Record<string, string> => {
+  return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+    nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
+    return nextErrors;
+  }, {});
+};
+
+const updateFieldValue = (fieldKey: string, value: string): void => {
+  setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
+  if (!touchedFields[fieldKey]) {
+    return;
+  }
+  const nextError = validateFieldValue(fieldKey, value);
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleFieldBlur = (fieldKey: string): void => {
+  setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
+  const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
+  setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+};
+
+const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+  event.preventDefault();
+  const nextErrors = validateForm(formValues);
+  setFieldErrors(nextErrors);
+  setTouchedFields((previous) =>
+    Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
+      nextTouched[fieldKey] = true;
+      return nextTouched;
+    }, { ...previous })
+  );
+
+  const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
+  if (hasErrors) {
+    return;
+  }
+};`;
+};
+
+const buildLegacyFormContextFile = ({
+  screenComponentName,
+  initialValues,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialVisualErrorsMap,
+  selectOptionsMap
+}: {
+  screenComponentName: string;
+  initialValues: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialVisualErrorsMap: Record<string, string>;
+  selectOptionsMap: Record<string, string[]>;
+}): FormContextFileSpec => {
+  const providerName = toFormContextProviderName(screenComponentName);
+  const hookName = toFormContextHookName(screenComponentName);
+  const contextVarName = `${screenComponentName}FormContext`;
+  const contextValueTypeName = `${screenComponentName}FormContextValue`;
+  const providerPropsTypeName = `${providerName}Props`;
+  const contextSource = `/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";
+
+interface ${contextValueTypeName} {
+  initialVisualErrors: Record<string, string>;
+  selectOptions: Record<string, string[]>;
+  formValues: Record<string, string>;
+  fieldErrors: Record<string, string>;
+  touchedFields: Record<string, boolean>;
+  updateFieldValue: (fieldKey: string, value: string) => void;
+  handleFieldBlur: (fieldKey: string) => void;
+  handleSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
+
+interface ${providerPropsTypeName} {
+  children: ReactNode;
+}
+
+export function ${providerName}({ children }: ${providerPropsTypeName}) {
+  const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+  const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+  const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+  const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  const parseLocalizedNumber = (rawValue: string): number | undefined => {
+    const compact = rawValue.replace(/\\s+/g, "");
+    if (!compact) {
+      return undefined;
+    }
+    const lastDot = compact.lastIndexOf(".");
+    const lastComma = compact.lastIndexOf(",");
+    const decimalIndex = Math.max(lastDot, lastComma);
+    let normalized = compact;
+    if (decimalIndex >= 0) {
+      const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+      const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+      normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+    } else {
+      normalized = compact.replace(/[.,]/g, "");
+    }
+    if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const validateFieldValue = (fieldKey: string, value: string): string => {
+    const trimmed = value.trim();
+    if (requiredFields[fieldKey] && trimmed.length === 0) {
+      return "This field is required.";
+    }
+    if (trimmed.length === 0) {
+      return "";
+    }
+
+    const validationType = fieldValidationTypes[fieldKey];
+    if (!validationType) {
+      return "";
+    }
+    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+    switch (validationType) {
+      case "email":
+        return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+      case "tel": {
+        const compactTel = trimmed.replace(/\\s+/g, "");
+        const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+        return /^\\+?[0-9().-]{6,24}$/.test(compactTel) && digitCount >= 6 ? "" : validationMessage;
+      }
+      case "url": {
+        try {
+          const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+          const parsed = new URL(normalizedUrl);
+          return parsed.hostname && parsed.hostname.includes(".") ? "" : validationMessage;
+        } catch {
+          return validationMessage;
+        }
+      }
+      case "number":
+        return parseLocalizedNumber(trimmed) !== undefined ? "" : validationMessage;
+      case "date": {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+          return validationMessage;
+        }
+        const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+        if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+          return validationMessage;
+        }
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValidDate =
+          date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+        return isValidDate ? "" : validationMessage;
+      }
+      default:
+        return "";
+    }
+  };
+
+  const validateForm = (values: Record<string, string>): Record<string, string> => {
+    return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+      nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
+      return nextErrors;
+    }, {});
+  };
+
+  const updateFieldValue = (fieldKey: string, value: string): void => {
+    setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
+    if (!touchedFields[fieldKey]) {
+      return;
+    }
+    const nextError = validateFieldValue(fieldKey, value);
+    setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+  };
+
+  const handleFieldBlur = (fieldKey: string): void => {
+    setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }));
+    const nextError = validateFieldValue(fieldKey, formValues[fieldKey] ?? "");
+    setFieldErrors((previous) => ({ ...previous, [fieldKey]: nextError }));
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    const nextErrors = validateForm(formValues);
+    setFieldErrors(nextErrors);
+    setTouchedFields((previous) =>
+      Object.keys(formValues).reduce<Record<string, boolean>>((nextTouched, fieldKey) => {
+        nextTouched[fieldKey] = true;
+        return nextTouched;
+      }, { ...previous })
+    );
+
+    const hasErrors = Object.values(nextErrors).some((message) => message.length > 0);
+    if (hasErrors) {
+      return;
+    }
+  };
+
+  return (
+    <${contextVarName}.Provider
+      value={{
+        initialVisualErrors,
+        selectOptions,
+        formValues,
+        fieldErrors,
+        touchedFields,
+        updateFieldValue,
+        handleFieldBlur,
+        handleSubmit
+      }}
+    >
+      {children}
+    </${contextVarName}.Provider>
+  );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const ${hookName} = (): ${contextValueTypeName} => {
+  const context = useContext(${contextVarName});
+  if (!context) {
+    throw new Error("${hookName} must be used within ${providerName}");
+  }
+  return context;
+};
+`;
+  return {
+    file: {
+      path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}FormContext`)),
+      content: contextSource
+    },
+    providerName,
+    hookName,
+    importPath: `../context/${screenComponentName}FormContext`
+  };
+};
+
+const toReactHookFormSchemaEntries = ({
+  initialValues,
+  indent
+}: {
+  initialValues: Record<string, string>;
+  indent: string;
+}): string => {
+  const fieldKeys = Object.keys(initialValues).sort((left, right) => left.localeCompare(right));
+  return fieldKeys.map((fieldKey) => `${indent}${literal(fieldKey)}: createFieldSchema({ fieldKey: ${literal(fieldKey)} })`).join(",\n");
+};
+
+const buildInlineReactHookFormStateBlock = ({
+  hasSelectField,
+  selectOptionsMap,
+  initialVisualErrorsMap,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialValues
+}: {
+  hasSelectField: boolean;
+  selectOptionsMap: Record<string, string[]>;
+  initialVisualErrorsMap: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialValues: Record<string, string>;
+}): string => {
+  const selectOptionsDeclaration = hasSelectField
+    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
+    : "";
+  const schemaEntries = toReactHookFormSchemaEntries({
+    initialValues,
+    indent: "  "
+  });
+  return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+  return z.string().superRefine((rawValue, issueContext) => {
+    const trimmed = rawValue.trim();
+    if (requiredFields[fieldKey] && trimmed.length === 0) {
+      issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
+      return;
+    }
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const validationType = fieldValidationTypes[fieldKey];
+    if (!validationType) {
+      return;
+    }
+    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+    switch (validationType) {
+      case "email":
+        if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "tel": {
+        const compactTel = trimmed.replace(/\\s+/g, "");
+        const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+        if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "url": {
+        try {
+          const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+          const parsed = new URL(normalizedUrl);
+          if (!(parsed.hostname && parsed.hostname.includes("."))) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+        } catch {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "number":
+        if (parseLocalizedNumber(trimmed) === undefined) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "date": {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+        if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValidDate =
+          date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+        if (!isValidDate) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  });
+};
+
+const formSchema = z.object({
+${schemaEntries}
+});
+
+const { control, handleSubmit } = useForm({
+  resolver: zodResolver(formSchema),
+  defaultValues: ${JSON.stringify(initialValues, null, 2)}
+});
+
+const onSubmit = (values: Record<string, string>): void => {
+  void values;
+  // Intentionally no-op in deterministic fallback output.
+};
+
+const resolveFieldErrorMessage = ({
+  fieldKey,
+  isTouched,
+  fieldError
+}: {
+  fieldKey: string;
+  isTouched: boolean;
+  fieldError: string | undefined;
+}): string => {
+  if (!isTouched) {
+    return initialVisualErrors[fieldKey] ?? "";
+  }
+  return fieldError ?? "";
+};`;
+};
+
+const buildReactHookFormContextFile = ({
+  screenComponentName,
+  initialValues,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialVisualErrorsMap,
+  selectOptionsMap
+}: {
+  screenComponentName: string;
+  initialValues: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialVisualErrorsMap: Record<string, string>;
+  selectOptionsMap: Record<string, string[]>;
+}): FormContextFileSpec => {
+  const providerName = toFormContextProviderName(screenComponentName);
+  const hookName = toFormContextHookName(screenComponentName);
+  const contextVarName = `${screenComponentName}FormContext`;
+  const contextValueTypeName = `${screenComponentName}FormContextValue`;
+  const providerPropsTypeName = `${providerName}Props`;
+  const schemaEntries = toReactHookFormSchemaEntries({
+    initialValues,
+    indent: "    "
+  });
+  const contextSource = `import { createContext, useContext, type ReactNode } from "react";
+import { useForm, type UseFormReturn } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+interface ${contextValueTypeName} {
+  initialVisualErrors: Record<string, string>;
+  selectOptions: Record<string, string[]>;
+  control: UseFormReturn<Record<string, string>>["control"];
+  handleSubmit: UseFormReturn<Record<string, string>>["handleSubmit"];
+  onSubmit: (values: Record<string, string>) => void;
+  resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
+}
+
+const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
+
+interface ${providerPropsTypeName} {
+  children: ReactNode;
+}
+
+export function ${providerName}({ children }: ${providerPropsTypeName}) {
+  const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+  const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+  const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+
+  const parseLocalizedNumber = (rawValue: string): number | undefined => {
+    const compact = rawValue.replace(/\\s+/g, "");
+    if (!compact) {
+      return undefined;
+    }
+    const lastDot = compact.lastIndexOf(".");
+    const lastComma = compact.lastIndexOf(",");
+    const decimalIndex = Math.max(lastDot, lastComma);
+    let normalized = compact;
+    if (decimalIndex >= 0) {
+      const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+      const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+      normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+    } else {
+      normalized = compact.replace(/[.,]/g, "");
+    }
+    if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+    return z.string().superRefine((rawValue, issueContext) => {
+      const trimmed = rawValue.trim();
+      if (requiredFields[fieldKey] && trimmed.length === 0) {
+        issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
+        return;
+      }
+      if (trimmed.length === 0) {
+        return;
+      }
+
+      const validationType = fieldValidationTypes[fieldKey];
+      if (!validationType) {
+        return;
+      }
+      const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+      switch (validationType) {
+        case "email":
+          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        case "tel": {
+          const compactTel = trimmed.replace(/\\s+/g, "");
+          const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+          if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "url": {
+          try {
+            const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+            const parsed = new URL(normalizedUrl);
+            if (!(parsed.hostname && parsed.hostname.includes("."))) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            }
+          } catch {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "number":
+          if (parseLocalizedNumber(trimmed) === undefined) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        case "date": {
+          if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+          if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          const date = new Date(Date.UTC(year, month - 1, day));
+          const isValidDate =
+            date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+          if (!isValidDate) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        default:
+          return;
+      }
+    });
+  };
+
+  const formSchema = z.object({
+${schemaEntries}
+  });
+
+  const { control, handleSubmit } = useForm({
+    resolver: zodResolver(formSchema),
+    defaultValues: ${JSON.stringify(initialValues, null, 2)}
+  });
+
+  const onSubmit = (values: Record<string, string>): void => {
+    void values;
+    // Intentionally no-op in deterministic fallback output.
+  };
+
+  const resolveFieldErrorMessage = ({
+    fieldKey,
+    isTouched,
+    fieldError
+  }: {
+    fieldKey: string;
+    isTouched: boolean;
+    fieldError: string | undefined;
+  }): string => {
+    if (!isTouched) {
+      return initialVisualErrors[fieldKey] ?? "";
+    }
+    return fieldError ?? "";
+  };
+
+  return (
+    <${contextVarName}.Provider
+      value={{
+        initialVisualErrors,
+        selectOptions,
+        control: control as unknown as UseFormReturn<Record<string, string>>["control"],
+        handleSubmit: handleSubmit as unknown as UseFormReturn<Record<string, string>>["handleSubmit"],
+        onSubmit,
+        resolveFieldErrorMessage
+      }}
+    >
+      {children}
+    </${contextVarName}.Provider>
+  );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const ${hookName} = (): ${contextValueTypeName} => {
+  const context = useContext(${contextVarName});
+  if (!context) {
+    throw new Error("${hookName} must be used within ${providerName}");
+  }
+  return context;
+};
+`;
+  return {
+    file: {
+      path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}FormContext`)),
+      content: contextSource
+    },
+    providerName,
+    hookName,
+    importPath: `../context/${screenComponentName}FormContext`
+  };
+};
+
+interface FallbackScreenFileInput {
+  screen: ScreenIR;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  spacingBase?: number;
+  tokens?: DesignTokens | undefined;
+  iconResolver?: IconFallbackResolver;
+  imageAssetMap?: Record<string, string>;
+  routePathByScreenId?: Map<string, string>;
+  generationLocale?: string;
+  formHandlingMode?: WorkspaceFormHandlingMode;
+  truncationMetric?: {
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  };
+  themeComponentDefaults?: ThemeComponentDefaults;
+  componentNameOverride?: string;
+  filePathOverride?: string;
+  enablePatternExtraction?: boolean;
+}
+
+interface PreparedFallbackScreenModel {
+  screen: ScreenIR;
+  componentName: string;
+  filePath: string;
+  truncationComment: string;
+  resolvedSpacingBase: number;
+  resolvedGenerationLocale: string;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  resolvedThemeComponentDefaults: ThemeComponentDefaults | undefined;
+  simplificationStats: SimplificationMetrics;
+  simplifiedChildren: ScreenElementIR[];
+  headingComponentByNodeId: Map<string, HeadingComponent>;
+  typographyVariantByNodeId: Map<string, DesignTokenTypographyVariantName>;
+  minX: number;
+  minY: number;
+  rootParent: VirtualParent;
+  extractionPlan: PatternExtractionPlan;
+  tokens?: DesignTokens;
+  iconResolver: IconFallbackResolver;
+  imageAssetMap: Record<string, string>;
+  routePathByScreenId: Map<string, string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  pageBackgroundColorNormalized: string | undefined;
+  enablePatternExtraction: boolean;
+}
+
+interface FallbackRenderState {
+  renderContext: RenderContext;
+  rendered: string;
+  hasInteractiveFields: boolean;
+  hasInteractiveAccordions: boolean;
+  hasSelectField: boolean;
+  hasTextInputField: boolean;
+  containerMaxWidth: string;
+  screenContainerSx: string;
+}
+
+interface FallbackDependencyAssembly {
+  formContextFileSpec?: FormContextFileSpec;
+  patternContextFileSpec?: PatternContextFileSpec;
+  patternContextInitialStateDeclaration: string;
+  navigationHookBlock: string;
+  stateBlock: string;
+  containerFormProps: string;
+  reactImportBlock: string;
+  reactHookFormImport: string;
+  zodImportBlock: string;
+  reactRouterImport: string;
+  selectChangeEventTypeImport: string;
+  uniqueMuiImports: string[];
+  iconImports: string;
+  mappedImports: string;
+  extractedComponentImports: string;
+  patternContextImport: string;
+  formContextImport: string;
+}
+
+const prepareFallbackScreenModel = ({
+  screen,
+  mappingByNodeId,
+  spacingBase,
+  tokens,
+  iconResolver = ICON_FALLBACK_BUILTIN_RESOLVER,
+  imageAssetMap = {},
+  routePathByScreenId = new Map<string, string>(),
+  generationLocale,
+  formHandlingMode,
+  truncationMetric,
+  themeComponentDefaults,
+  componentNameOverride,
+  filePathOverride,
+  enablePatternExtraction = true
+}: FallbackScreenFileInput): PreparedFallbackScreenModel => {
+  const componentName = componentNameOverride ?? toComponentName(screen.name);
+  const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
+  const truncationComment = toTruncationComment(truncationMetric);
+  const resolvedSpacingBase = normalizeSpacingBase(spacingBase);
+  const resolvedGenerationLocale = resolveGenerationLocale({
+    requestedLocale: generationLocale,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  }).locale;
+  const resolvedFormHandlingMode = resolveFormHandlingMode({
+    requestedMode: formHandlingMode
+  });
+  const resolvedThemeComponentDefaults = themeComponentDefaults;
+  const pageBackgroundColorNormalized = normalizeHexColor(screen.fillColor ?? tokens?.palette.background);
+
+  const simplificationStats = createEmptySimplificationStats();
+  const simplifiedChildren = simplifyElements({
+    elements: screen.children,
+    depth: 1,
+    stats: simplificationStats
+  });
+  const headingComponentByNodeId = inferHeadingComponentByNodeId(simplifiedChildren);
+  const typographyVariantByNodeId = resolveTypographyVariantByNodeId({
+    elements: simplifiedChildren,
+    tokens
+  });
   const minX = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.x ?? 0)) : 0;
   const minY = simplifiedChildren.length > 0 ? Math.min(...simplifiedChildren.map((element) => element.y ?? 0)) : 0;
+  const rootParent: VirtualParent = {
+    x: minX,
+    y: minY,
+    width: screen.width,
+    height: screen.height,
+    name: screen.name,
+    fillColor: screen.fillColor,
+    fillGradient: screen.fillGradient,
+    layoutMode: screen.layoutMode
+  };
+  const extractionPlan = buildPatternExtractionPlan({
+    enablePatternExtraction,
+    screen,
+    screenComponentName: componentName,
+    roots: simplifiedChildren,
+    rootParent,
+    generationLocale: resolvedGenerationLocale,
+    spacingBase: resolvedSpacingBase,
+    tokens,
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    mappingByNodeId,
+    pageBackgroundColorNormalized,
+    ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
+    ...(screen.responsive?.topLevelLayoutOverrides
+      ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
+      : {})
+  });
+
+  return {
+    screen,
+    componentName,
+    filePath,
+    truncationComment,
+    resolvedSpacingBase,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    resolvedThemeComponentDefaults,
+    simplificationStats,
+    simplifiedChildren,
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    minX,
+    minY,
+    rootParent,
+    extractionPlan,
+    ...(tokens ? { tokens } : {}),
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    mappingByNodeId,
+    pageBackgroundColorNormalized,
+    enablePatternExtraction
+  };
+};
+
+const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallbackScreenModel }): FallbackRenderState => {
+  const {
+    screen,
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    resolvedThemeComponentDefaults,
+    simplifiedChildren,
+    rootParent,
+    minX,
+    minY,
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    tokens,
+    mappingByNodeId,
+    pageBackgroundColorNormalized,
+    extractionPlan
+  } = prepared;
   const renderContext: RenderContext = {
+    screenId: screen.id,
+    screenName: screen.name,
+    generationLocale: prepared.resolvedGenerationLocale,
+    formHandlingMode: prepared.resolvedFormHandlingMode,
     fields: [],
     accordions: [],
+    tabs: [],
+    dialogs: [],
+    buttons: [],
+    activeRenderElements: new Set<ScreenElementIR>(),
+    renderNodeVisitCount: 0,
+    interactiveDescendantCache: new Map<string, boolean>(),
+    meaningfulTextDescendantCache: new Map<string, boolean>(),
+    headingComponentByNodeId,
+    typographyVariantByNodeId,
+    accessibilityWarnings: [],
+    muiImports: new Set<string>(["Container"]),
     iconImports: [],
+    iconResolver,
+    imageAssetMap,
+    routePathByScreenId,
+    usesRouterLink: false,
+    usesNavigateHandler: false,
+    prototypeNavigationRenderedCount: 0,
     mappedImports: [],
+    spacingBase: prepared.resolvedSpacingBase,
+    ...(tokens ? { tokens } : {}),
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
-    emittedWarningKeys: new Set<string>()
+    emittedWarningKeys: new Set<string>(),
+    emittedAccessibilityWarningKeys: new Set<string>(),
+    pageBackgroundColorNormalized,
+    ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
+    extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
+    ...(screen.responsive?.topLevelLayoutOverrides
+      ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
+      : {})
   };
 
   const rendered = simplifiedChildren
     .map((element) =>
-      renderElement(element, 3, { x: minX, y: minY, name: screen.name, layoutMode: screen.layoutMode }, renderContext)
+      renderElement(
+        element,
+        3,
+        rootParent,
+        renderContext
+      )
     )
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
-  const hasSvgIcon = rendered.includes("<SvgIcon");
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
-  const hasAdornmentField = renderContext.fields.some((field) => !field.isSelect && Boolean(field.suffixText));
+  const hasTextInputField = renderContext.fields.some((field) => !field.isSelect);
 
   const contentWidth = clamp(
     Math.round(
@@ -1435,27 +12557,155 @@ const fallbackScreenFile = (screen: ScreenIR, mappingByNodeId: Map<string, Compo
       }, 0)
     )
   );
+  const containerMaxWidth = toMuiContainerMaxWidth(contentWidth);
+  const containerPadding = toSpacingUnitValue({ value: 16, spacingBase: renderContext.spacingBase }) ?? 2;
+  const screenContainerSx = sxString([
+    ["position", literal("relative")],
+    ["width", literal("100%")],
+    ["minHeight", literal(`max(100vh, ${contentHeight}px)`)],
+    ["background", screen.fillGradient ? literal(screen.fillGradient) : undefined],
+    [
+      "bgcolor",
+      !screen.fillGradient
+        ? toThemeColorLiteral({ color: screen.fillColor ?? "background.default", tokens: renderContext.tokens })
+        : undefined
+    ],
+    ["px", containerPadding],
+    ["py", containerPadding],
+    ...toScreenResponsiveRootMediaEntries({
+      screen,
+      spacingBase: renderContext.spacingBase
+    })
+  ]);
 
-  const responsiveScaleExpression = `min(1, calc((100vw - 32px) / ${contentWidth}))`;
-  const responsiveHeightExpression = `calc(${contentHeight}px * ${responsiveScaleExpression})`;
+  return {
+    renderContext,
+    rendered,
+    hasInteractiveFields,
+    hasInteractiveAccordions,
+    hasSelectField,
+    hasTextInputField,
+    containerMaxWidth,
+    screenContainerSx
+  };
+};
+
+const assembleFallbackDependencies = ({
+  prepared,
+  renderState
+}: {
+  prepared: PreparedFallbackScreenModel;
+  renderState: FallbackRenderState;
+}): FallbackDependencyAssembly => {
+  const { componentName, extractionPlan, resolvedFormHandlingMode, enablePatternExtraction } = prepared;
+  const {
+    renderContext,
+    rendered,
+    hasInteractiveFields,
+    hasInteractiveAccordions,
+    hasSelectField,
+    hasTextInputField
+  } = renderState;
+
   const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
+  const requiredFieldMap = Object.fromEntries(
+    renderContext.fields.filter((field) => field.required).map((field) => [field.key, true])
+  );
+  const validationTypeMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.validationType)
+      .map((field) => [field.key, field.validationType as ValidationFieldType])
+  );
+  const validationMessageMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.validationMessage)
+      .map((field) => [field.key, field.validationMessage as string])
+  );
+  const initialVisualErrorsMap = Object.fromEntries(
+    renderContext.fields
+      .filter((field) => field.hasVisualErrorExample)
+      .map((field) => [field.key, field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.")])
+  );
   const selectOptionsMap = Object.fromEntries(
     renderContext.fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
   );
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
   );
-  const selectOptionsDeclaration = hasSelectField
-    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
+  const preferredSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
+  const fallbackSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit);
+  const primarySubmitButtonKey = hasInteractiveFields
+    ? (preferredSubmitButton?.key ?? fallbackSubmitButton?.key ?? "")
     : "";
 
-  const fieldStateBlock = hasInteractiveFields
-    ? `const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
-
-${selectOptionsDeclaration}const updateFieldValue = (fieldKey: string, value: string): void => {
-  setFormValues((previous) => ({ ...previous, [fieldKey]: value }));
-};`
+  const submitButtonDeclaration =
+    renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
+  const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields;
+  const usesReactHookForm = hasInteractiveFields && resolvedFormHandlingMode === "react_hook_form";
+  const formContextFileSpec = shouldGenerateFormContext
+    ? usesReactHookForm
+      ? buildReactHookFormContextFile({
+          screenComponentName: componentName,
+          initialValues,
+          requiredFieldMap,
+          validationTypeMap,
+          validationMessageMap,
+          initialVisualErrorsMap,
+          selectOptionsMap
+        })
+      : buildLegacyFormContextFile({
+          screenComponentName: componentName,
+          initialValues,
+          requiredFieldMap,
+          validationTypeMap,
+          validationMessageMap,
+          initialVisualErrorsMap,
+          selectOptionsMap
+        })
+    : undefined;
+  const formContextHookFields = usesReactHookForm
+    ? [
+        ...(hasSelectField ? ["selectOptions"] : []),
+        "control",
+        "handleSubmit",
+        "onSubmit",
+        "resolveFieldErrorMessage"
+      ]
+    : [
+        "initialVisualErrors",
+        ...(hasSelectField ? ["selectOptions"] : []),
+        "formValues",
+        "fieldErrors",
+        "touchedFields",
+        "updateFieldValue",
+        "handleFieldBlur",
+        "handleSubmit"
+      ];
+  const formContextHookBlock = formContextFileSpec
+    ? `const { ${formContextHookFields.join(", ")} } = ${formContextFileSpec.hookName}();`
     : "";
+  const inlineFieldStateBlock =
+    !formContextFileSpec && hasInteractiveFields
+      ? usesReactHookForm
+        ? buildInlineReactHookFormStateBlock({
+            hasSelectField,
+            selectOptionsMap,
+            initialVisualErrorsMap,
+            requiredFieldMap,
+            validationTypeMap,
+            validationMessageMap,
+            initialValues
+          })
+        : buildInlineLegacyFormStateBlock({
+            hasSelectField,
+            selectOptionsMap,
+            initialVisualErrorsMap,
+            requiredFieldMap,
+            validationTypeMap,
+            validationMessageMap,
+            initialValues
+          })
+      : "";
   const accordionStateBlock = hasInteractiveAccordions
     ? `const [accordionState, setAccordionState] = useState<Record<string, boolean>>(${JSON.stringify(initialAccordionState, null, 2)});
 
@@ -1463,69 +12713,261 @@ const updateAccordionState = (accordionKey: string, expanded: boolean): void => 
   setAccordionState((previous) => ({ ...previous, [accordionKey]: expanded }));
 };`
     : "";
-  const stateBlock = [fieldStateBlock, accordionStateBlock].filter((chunk) => chunk.length > 0).join("\n\n");
-  const hasStatefulElements = hasInteractiveFields || hasInteractiveAccordions;
+  const tabsStateBlock =
+    renderContext.tabs.length > 0
+      ? renderContext.tabs
+          .map((tabModel) => {
+            const tabValueVar = `tabValue${tabModel.stateId}`;
+            const tabSetterVar = `setTabValue${tabModel.stateId}`;
+            const tabChangeHandlerVar = `handleTabChange${tabModel.stateId}`;
+            return `const [${tabValueVar}, ${tabSetterVar}] = useState<number>(0);
 
-  const reactImport = hasStatefulElements ? 'import { useState } from "react";\n' : "";
-  const usesButton = rendered.includes("<Button ");
-  const usesDivider = rendered.includes("<Divider ");
-  const usesTypography = rendered.includes("<Typography ") || rendered.length === 0;
-  const muiImports = ["Box"];
-  if (usesButton) {
-    muiImports.push("Button");
+const ${tabChangeHandlerVar} = (_event: SyntheticEvent, newValue: number): void => {
+  ${tabSetterVar}(newValue);
+};`;
+          })
+          .join("\n\n")
+      : "";
+  const dialogsStateBlock =
+    renderContext.dialogs.length > 0
+      ? renderContext.dialogs
+          .map((dialogModel) => {
+            const dialogOpenVar = `isDialogOpen${dialogModel.stateId}`;
+            const dialogSetterVar = `setIsDialogOpen${dialogModel.stateId}`;
+            const dialogCloseHandlerVar = `handleDialogClose${dialogModel.stateId}`;
+            return `const [${dialogOpenVar}, ${dialogSetterVar}] = useState<boolean>(true);
+
+const ${dialogCloseHandlerVar} = (): void => {
+  ${dialogSetterVar}(false);
+};`;
+          })
+          .join("\n\n")
+      : "";
+  const stateBlock = [
+    submitButtonDeclaration,
+    formContextHookBlock,
+    inlineFieldStateBlock,
+    accordionStateBlock,
+    tabsStateBlock,
+    dialogsStateBlock
+  ]
+    .filter((chunk) => chunk.length > 0)
+    .join("\n\n");
+  const usesInlineLegacyFormState = !formContextFileSpec && hasInteractiveFields && !usesReactHookForm;
+  const usesInlineReactHookForm = !formContextFileSpec && hasInteractiveFields && usesReactHookForm;
+  const hasLocalStatefulElements =
+    usesInlineLegacyFormState ||
+    hasInteractiveAccordions ||
+    renderContext.tabs.length > 0 ||
+    renderContext.dialogs.length > 0;
+  const formSubmitExpression =
+    hasInteractiveFields && usesReactHookForm ? "handleSubmit(onSubmit)" : "handleSubmit";
+  const containerFormProps = hasInteractiveFields ? ` component="form" onSubmit={${formSubmitExpression}} noValidate` : "";
+
+  const reactValueImports = hasLocalStatefulElements ? ["useState"] : [];
+  const reactTypeImports: string[] = [];
+  if (usesInlineLegacyFormState) {
+    reactTypeImports.push("FormEvent");
   }
-  if (usesDivider) {
-    muiImports.push("Divider");
+  if (hasTextInputField) {
+    reactTypeImports.push("ChangeEvent");
   }
-  if (usesTypography) {
-    muiImports.push("Typography");
+  if (renderContext.usesNavigateHandler) {
+    reactTypeImports.push("KeyboardEvent as ReactKeyboardEvent");
   }
-  if (hasSvgIcon) {
-    muiImports.push("SvgIcon");
+  if (renderContext.tabs.length > 0) {
+    reactTypeImports.push("SyntheticEvent");
   }
-  if (hasInteractiveFields) {
-    muiImports.push("TextField");
+  const reactImportLines = [
+    ...(reactValueImports.length > 0 ? [`import { ${reactValueImports.join(", ")} } from "react";`] : []),
+    ...(reactTypeImports.length > 0 ? [`import type { ${reactTypeImports.join(", ")} } from "react";`] : [])
+  ];
+  const reactImportBlock = reactImportLines.length > 0 ? `${reactImportLines.join("\n")}\n` : "";
+  const reactHookFormImport = usesReactHookForm
+    ? `import { ${usesInlineReactHookForm ? "Controller, useForm" : "Controller"} } from "react-hook-form";\n`
+    : "";
+  const zodImportBlock = usesInlineReactHookForm
+    ? 'import { zodResolver } from "@hookform/resolvers/zod";\nimport { z } from "zod";\n'
+    : "";
+  const selectChangeEventTypeImport = hasSelectField ? 'import type { SelectChangeEvent } from "@mui/material/Select";\n' : "";
+  const routerImports: string[] = [];
+  if (renderContext.usesRouterLink) {
+    routerImports.push("Link as RouterLink");
   }
-  if (hasInteractiveAccordions) {
-    muiImports.push("Accordion", "AccordionSummary", "AccordionDetails");
+  if (renderContext.usesNavigateHandler) {
+    routerImports.push("useNavigate");
   }
-  if (hasSelectField) {
-    muiImports.push("MenuItem");
+  const reactRouterImport =
+    routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
+  const navigationHookBlock = renderContext.usesNavigateHandler ? "const navigate = useNavigate();" : "";
+  if (rendered.length === 0) {
+    registerMuiImports(renderContext, "Typography");
   }
-  if (hasAdornmentField) {
-    muiImports.push("InputAdornment");
-  }
-  const uniqueMuiImports = [...new Set(muiImports)];
-  const iconImports = renderContext.iconImports
+  const uniqueMuiImports = [...renderContext.muiImports].sort((left, right) => left.localeCompare(right));
+  const iconImports = normalizeIconImports(renderContext.iconImports)
     .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
     .join("\n");
   const mappedImports = renderContext.mappedImports
     .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
     .join("\n");
+  const extractedComponentImports = extractionPlan.componentImports
+    .map((componentImport) => `import { ${componentImport.componentName} } from "${componentImport.importPath}";`)
+    .join("\n");
+  const patternContextFileSpec = extractionPlan.patternStatePlan.contextFileSpec;
+  const patternContextImport = patternContextFileSpec
+    ? `import { ${patternContextFileSpec.providerName}, type ${patternContextFileSpec.stateTypeName} } from "${patternContextFileSpec.importPath}";`
+    : "";
+  const formContextImport = formContextFileSpec
+    ? `import { ${formContextFileSpec.providerName}, ${formContextFileSpec.hookName} } from "${formContextFileSpec.importPath}";`
+    : "";
+  const patternContextInitialStateDeclaration = patternContextFileSpec
+    ? `const patternContextInitialState: ${patternContextFileSpec.stateTypeName} = ${patternContextFileSpec.initialStateLiteral};\n\n`
+    : "";
+
+  return {
+    ...(formContextFileSpec ? { formContextFileSpec } : {}),
+    ...(patternContextFileSpec ? { patternContextFileSpec } : {}),
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  };
+};
+
+const composeFallbackScreenModule = ({
+  prepared,
+  renderState,
+  dependencies
+}: {
+  prepared: PreparedFallbackScreenModel;
+  renderState: FallbackRenderState;
+  dependencies: FallbackDependencyAssembly;
+}): FallbackScreenFileResult => {
+  const { componentName, filePath, truncationComment, extractionPlan, simplifiedChildren, simplificationStats } = prepared;
+  const { renderContext, rendered, containerMaxWidth, screenContainerSx } = renderState;
+  const {
+    formContextFileSpec,
+    patternContextFileSpec,
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  } = dependencies;
+
+  const contentFunctionName = `${componentName}ScreenContent`;
+  const contentFunctionSource = `function ${contentFunctionName}() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
+${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+    </Container>
+  );
+}`;
+  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec);
+  let wrappedScreenContent = `      <${contentFunctionName} />`;
+  if (formContextFileSpec) {
+    wrappedScreenContent = `      <${formContextFileSpec.providerName}>
+${wrappedScreenContent}
+      </${formContextFileSpec.providerName}>`;
+  }
+  if (patternContextFileSpec) {
+    wrappedScreenContent = `      <${patternContextFileSpec.providerName} initialState={patternContextInitialState}>
+${wrappedScreenContent}
+      </${patternContextFileSpec.providerName}>`;
+  }
+  const screenExportSource = hasContextProviders
+    ? `${contentFunctionSource}
+
+export default function ${componentName}Screen() {
+  return (
+${wrappedScreenContent}
+  );
+}`
+    : `export default function ${componentName}Screen() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
+${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+    </Container>
+  );
+}`;
+  const screenContent = `${truncationComment}${reactImportBlock}${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
+${patternContextInitialStateDeclaration}${screenExportSource}
+`;
+  const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
+  const screenTestPlan = buildScreenTestTargetPlan({
+    roots: simplifiedChildren,
+    renderedOutput: rendered,
+    buttons: renderContext.buttons,
+    fields: renderContext.fields
+  });
+  const testFiles: GeneratedFile[] = [
+    buildScreenUnitTestFile({
+      componentName,
+      screenFilePath: filePath,
+      plan: screenTestPlan
+    })
+  ];
+  const contextFiles: GeneratedFile[] = [
+    ...extractionPlan.contextFiles,
+    ...(formContextFileSpec ? [formContextFileSpec.file] : [])
+  ];
 
   return {
     file: {
       path: filePath,
-      content: `${reactImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
-${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
-
-export default function ${componentName}Screen(): JSX.Element {
-${stateBlock ? `${indentBlock(stateBlock, 2)}\n` : ""}
-  return (
-    <Box sx={{ minHeight: "100vh", bgcolor: ${literal(screen.fillColor ?? "background.default")}, display: "flex", justifyContent: "center", px: "0px", py: "0px" }}>
-      <Box sx={{ width: "100%", display: "flex", justifyContent: "center", px: "16px", boxSizing: "border-box", minHeight: ${literal(responsiveHeightExpression)} }}>
-        <Box sx={{ position: "relative", width: ${literal(`${contentWidth}px`)}, minHeight: ${literal(`${contentHeight}px`)}, transform: ${literal(`scale(${responsiveScaleExpression})`)}, transformOrigin: "top center" }}>
-${rendered || '        <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
-        </Box>
-      </Box>
-    </Box>
-  );
-}
-`
+      content: sharedSxOptimizedScreenContent
     },
+    prototypeNavigationRenderedCount: renderContext.prototypeNavigationRenderedCount,
+    simplificationStats,
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
-    mappingWarnings: renderContext.mappingWarnings
+    mappingWarnings: renderContext.mappingWarnings,
+    accessibilityWarnings: renderContext.accessibilityWarnings,
+    componentFiles: extractionPlan.componentFiles,
+    contextFiles,
+    testFiles
   };
+};
+
+const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScreenFileResult => {
+  const prepared = prepareFallbackScreenModel(input);
+  const renderState = buildFallbackRenderState({ prepared });
+  const dependencies = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  return composeFallbackScreenModule({
+    prepared,
+    renderState,
+    dependencies
+  });
 };
 
 export const toDeterministicScreenPath = (screenName: string): string => {
@@ -1533,69 +12975,294 @@ export const toDeterministicScreenPath = (screenName: string): string => {
 };
 
 export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
-  return fallbackThemeFile(ir);
+  return fallbackThemeFile(
+    ir,
+    deriveThemeComponentDefaultsFromIr({
+      ir
+    })
+  );
 };
 
-export const createDeterministicScreenFile = (screen: ScreenIR): GeneratedFile => {
-  return fallbackScreenFile(screen, new Map<string, ComponentMappingRule>()).file;
+export const createDeterministicScreenFile = (
+  screen: ScreenIR,
+  options?: {
+    routePathByScreenId?: Map<string, string> | Record<string, string>;
+    generationLocale?: string;
+    formHandlingMode?: WorkspaceFormHandlingMode;
+    themeComponentDefaults?: ThemeComponentDefaults;
+  }
+): GeneratedFile => {
+  const routePathByScreenId =
+    options?.routePathByScreenId instanceof Map
+      ? options.routePathByScreenId
+      : new Map(Object.entries(options?.routePathByScreenId ?? {}));
+  return fallbackScreenFile({
+    screen,
+    mappingByNodeId: new Map<string, ComponentMappingRule>(),
+    spacingBase: DEFAULT_SPACING_BASE,
+    routePathByScreenId,
+    enablePatternExtraction: false,
+    ...(options?.themeComponentDefaults ? { themeComponentDefaults: options.themeComponentDefaults } : {}),
+    ...(options?.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
+    ...(options?.formHandlingMode !== undefined ? { formHandlingMode: options.formHandlingMode } : {})
+  }).file;
 };
 
-export const createDeterministicAppFile = (screens: ScreenIR[]): GeneratedFile => {
+export const createDeterministicAppFile = (
+  screens: ScreenIR[],
+  options?: {
+    routerMode?: WorkspaceRouterMode;
+  }
+): GeneratedFile => {
+  const identitiesByScreenId = buildScreenArtifactIdentities(screens);
   return {
     path: "src/App.tsx",
-    content: makeAppFile(screens)
+    content: makeAppFile({
+      screens,
+      identitiesByScreenId,
+      ...(options?.routerMode !== undefined ? { routerMode: options.routerMode } : {})
+    })
   };
 };
 
-const makeAppFile = (screens: ScreenIR[]): string => {
+const makeErrorBoundaryFile = (): GeneratedFile => {
+  return {
+    path: "src/components/ErrorBoundary.tsx",
+    content: `import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("ErrorBoundary caught:", error, info);
+  }
+
+  private handleRetry = (): void => {
+    this.setState({ hasError: false });
+  };
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      if (this.props.fallback !== undefined) {
+        return this.props.fallback;
+      }
+
+      return (
+        <Box role="alert" sx={{ display: "grid", minHeight: "50vh", placeItems: "center", px: 3 }}>
+          <Stack spacing={2} sx={{ width: "100%", maxWidth: 420 }}>
+            <Alert severity="error">Something went wrong while rendering this screen.</Alert>
+            <Typography variant="body2" color="text.secondary">
+              Try again or reload the page if the problem persists.
+            </Typography>
+            <Button onClick={this.handleRetry} variant="contained">
+              Try again
+            </Button>
+          </Stack>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default ErrorBoundary;
+`
+  };
+};
+
+const makeScreenSkeletonFile = (): GeneratedFile => {
+  return {
+    path: "src/components/ScreenSkeleton.tsx",
+    content: `import { Box, Container, LinearProgress, Skeleton, Stack } from "@mui/material";
+
+export default function ScreenSkeleton() {
+  return (
+    <Box
+      component="section"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading screen content"
+      aria-busy="true"
+      sx={{
+        minHeight: "100vh",
+        bgcolor: "background.default",
+        pt: 7,
+        pb: 6
+      }}
+    >
+      <LinearProgress
+        aria-hidden
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1302
+        }}
+      />
+      <Container maxWidth="lg">
+        <Stack spacing={3}>
+          <Skeleton variant="text" width="42%" height={52} />
+          <Stack spacing={1.5}>
+            <Skeleton variant="text" width="90%" />
+            <Skeleton variant="text" width="74%" />
+            <Skeleton variant="text" width="68%" />
+          </Stack>
+          <Skeleton variant="rounded" height={220} />
+          <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
+            <Skeleton variant="rounded" height={170} sx={{ flex: 1 }} />
+            <Skeleton variant="rounded" height={170} sx={{ flex: 1 }} />
+          </Stack>
+          <Skeleton variant="rounded" height={120} />
+        </Stack>
+      </Container>
+    </Box>
+  );
+}
+`
+  };
+};
+
+const makeAppFile = ({
+  screens,
+  identitiesByScreenId = buildScreenArtifactIdentities(screens),
+  routerMode = DEFAULT_ROUTER_MODE
+}: {
+  screens: ScreenIR[];
+  identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
+  routerMode?: WorkspaceRouterMode;
+}): string => {
   const lazyScreens = screens.slice(1);
   const hasLazyRoutes = lazyScreens.length > 0;
   const reactImport = hasLazyRoutes ? 'import { Suspense, lazy } from "react";' : 'import { Suspense } from "react";';
+  const resolvedRouterMode: WorkspaceRouterMode = routerMode === "hash" ? "hash" : "browser";
+  const routerComponentName = resolvedRouterMode === "hash" ? "HashRouter" : "BrowserRouter";
+  const routerOpenTag = resolvedRouterMode === "hash" ? "<HashRouter>" : "<BrowserRouter basename={browserBasename}>";
+  const routerCloseTag = resolvedRouterMode === "hash" ? "</HashRouter>" : "</BrowserRouter>";
+  const browserBasenameBlock =
+    resolvedRouterMode === "browser"
+      ? `
+const resolveBrowserBasename = (): string | undefined => {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const reproMatch = window.location.pathname.match(/^\\/workspace\\/repros\\/[^/]+/);
+  return reproMatch?.[0];
+};
+
+const browserBasename = resolveBrowserBasename();
+`
+      : "";
 
   const eagerImports = screens
     .slice(0, 1)
     .map((screen) => {
-      const componentName = toComponentName(screen.name);
-      const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const fileName = (identity?.filePath ?? toDeterministicScreenPath(screen.name))
+        .replace(/^src\/screens\//, "")
+        .replace(/\.tsx$/i, "");
       return `import ${componentName}Screen from "./screens/${fileName}";`;
     })
     .join("\n");
 
   const lazyImports = lazyScreens
     .map((screen) => {
-      const componentName = toComponentName(screen.name);
-      const fileName = ensureTsxName(screen.name).replace(/\.tsx$/i, "");
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const fileName = (identity?.filePath ?? toDeterministicScreenPath(screen.name))
+        .replace(/^src\/screens\//, "")
+        .replace(/\.tsx$/i, "");
       return `const Lazy${componentName}Screen = lazy(async () => await import("./screens/${fileName}"));`;
     })
     .join("\n");
 
   const routes = screens
     .map((screen, index) => {
-      const componentName = toComponentName(screen.name);
-      const routePath = `/${sanitizeFileName(screen.name).toLowerCase()}`;
+      const identity = identitiesByScreenId.get(screen.id);
+      const componentName = identity?.componentName ?? toComponentName(screen.name);
+      const routePath = identity?.routePath ?? `/${sanitizeFileName(screen.name).toLowerCase()}`;
       const routeComponent = index === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
-      return `          <Route path="${routePath}" element={<${routeComponent} />} />`;
+      return `          <Route path="${routePath}" element={<ErrorBoundary><${routeComponent} /></ErrorBoundary>} />`;
     })
     .join("\n");
 
   const firstScreen = screens.at(0);
-  const firstRoute = firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/";
+  const firstIdentity = firstScreen ? identitiesByScreenId.get(firstScreen.id) : undefined;
+  const firstRoute = firstIdentity?.routePath ?? (firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/");
 
   return `${reactImport}
-import { Box, CircularProgress } from "@mui/material";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
+import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
+import { Box, IconButton, Tooltip } from "@mui/material";
+import { useColorScheme } from "@mui/material/styles";
+import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
+import ScreenSkeleton from "./components/ScreenSkeleton";
 ${eagerImports}
 ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
 
-const routeLoadingFallback = (
-  <Box sx={{ display: "grid", minHeight: "50vh", placeItems: "center" }}>
-    <CircularProgress size={32} />
-  </Box>
-);
+const routeLoadingFallback = <ScreenSkeleton />;
+${browserBasenameBlock}
 
-export default function App(): JSX.Element {
+function ThemeModeToggle() {
+  const { mode, setMode, systemMode } = useColorScheme();
+  const prefersDarkMode =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false;
+  const resolvedMode =
+    mode === "dark" || (mode !== "light" && (systemMode === "dark" || (systemMode === undefined && prefersDarkMode)))
+      ? "dark"
+      : "light";
+  const nextMode = resolvedMode === "dark" ? "light" : "dark";
+  const label = resolvedMode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+
   return (
-    <HashRouter>
+    <Box sx={{ position: "fixed", top: 16, right: 16, zIndex: 1301 }}>
+      <Tooltip title={label}>
+        <IconButton
+          aria-label={label}
+          data-testid="theme-mode-toggle"
+          onClick={() => setMode(nextMode)}
+          sx={{
+            bgcolor: "background.paper",
+            color: "text.primary",
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: 3,
+            "&:hover": {
+              bgcolor: "action.hover"
+            }
+          }}
+        >
+          {resolvedMode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+}
+
+export default function App() {
+  return (
+    ${routerOpenTag}
+      <ThemeModeToggle />
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
 ${routes}
@@ -1603,7 +13270,7 @@ ${routes}
           <Route path="*" element={<Navigate to="${firstRoute}" replace />} />
         </Routes>
       </Suspense>
-    </HashRouter>
+    ${routerCloseTag}
   );
 }
 `;
@@ -1618,20 +13285,92 @@ const writeGeneratedFile = async (rootDir: string, file: GeneratedFile): Promise
   await writeFile(absolutePath, file.content, "utf-8");
 };
 
-interface ScreenInteractivityExpectation {
-  inputCount: number;
-  selectCount: number;
-  accordionCount: number;
+const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for(
+  "workspace-dev.parity.generateArtifacts.runtimeAdapters"
+);
+
+type LoadedDesignSystemConfig = Awaited<ReturnType<typeof loadDesignSystemConfigFile>>;
+type ApplyDesignSystemMappingsInput = Parameters<typeof applyDesignSystemMappingsToGeneratedTsx>[0];
+
+interface GenerateArtifactsRuntimeAdapters {
+  mkdirRecursive: (directory: string) => Promise<void>;
+  writeTextFile: ({ filePath, content }: { filePath: string; content: string }) => Promise<void>;
+  writeGeneratedFile: (rootDir: string, file: GeneratedFile) => Promise<void>;
+  loadDesignSystemConfig: ({
+    designSystemFilePath,
+    onLog
+  }: {
+    designSystemFilePath: string;
+    onLog: (message: string) => void;
+  }) => Promise<LoadedDesignSystemConfig>;
+  applyDesignSystemMappings: (input: ApplyDesignSystemMappingsInput) => string;
+  loadIconResolver: ({
+    iconMapFilePath,
+    onLog
+  }: {
+    iconMapFilePath: string;
+    onLog: (message: string) => void;
+  }) => Promise<IconFallbackResolver>;
 }
+
+const DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS: GenerateArtifactsRuntimeAdapters = {
+  mkdirRecursive: async (directory) => {
+    await mkdir(directory, { recursive: true });
+  },
+  writeTextFile: async ({ filePath, content }) => {
+    await writeFile(filePath, content, "utf-8");
+  },
+  writeGeneratedFile: async (rootDir, file) => {
+    await writeGeneratedFile(rootDir, file);
+  },
+  loadDesignSystemConfig: async ({ designSystemFilePath, onLog }) => {
+    return loadDesignSystemConfigFile({
+      designSystemFilePath,
+      onLog
+    });
+  },
+  applyDesignSystemMappings: (input) => {
+    return applyDesignSystemMappingsToGeneratedTsx(input);
+  },
+  loadIconResolver: async ({ iconMapFilePath, onLog }) => {
+    return loadIconFallbackResolver({
+      iconMapFilePath,
+      onLog
+    });
+  }
+};
+
+const resolveGenerateArtifactsRuntimeAdapters = (input: GenerateArtifactsInput): GenerateArtifactsRuntimeAdapters => {
+  const candidate = (input as unknown as Record<PropertyKey, unknown>)[GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL];
+  if (!candidate || typeof candidate !== "object") {
+    return DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS;
+  }
+  const partial = candidate as Partial<GenerateArtifactsRuntimeAdapters>;
+  return {
+    mkdirRecursive: partial.mkdirRecursive ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.mkdirRecursive,
+    writeTextFile: partial.writeTextFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeTextFile,
+    writeGeneratedFile: partial.writeGeneratedFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeGeneratedFile,
+    loadDesignSystemConfig:
+      partial.loadDesignSystemConfig ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadDesignSystemConfig,
+    applyDesignSystemMappings:
+      partial.applyDesignSystemMappings ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.applyDesignSystemMappings,
+    loadIconResolver: partial.loadIconResolver ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadIconResolver
+  };
+};
 
 const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   const all: ScreenElementIR[] = [];
   const stack = [...elements];
+  const visited = new Set<ScreenElementIR>();
   while (stack.length > 0) {
     const current = stack.pop();
     if (!current) {
       continue;
     }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
     all.push(current);
     for (const child of current.children ?? []) {
       stack.push(child);
@@ -1640,530 +13379,31 @@ const flattenElements = (elements: ScreenElementIR[]): ScreenElementIR[] => {
   return all;
 };
 
-const normalizeSemanticText = (rawValue: string): string => {
-  return rawValue
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9äöüß€%]+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-};
+interface GenerateArtifactsResolvedPhase {
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+}
 
-const isLikelySemanticLabel = (text: string): boolean => {
-  const trimmed = text.trim();
-  if (trimmed.length < 2 || trimmed.length > 56) {
-    return false;
-  }
-  if (!/[A-Za-zÄÖÜäöüß]/.test(trimmed)) {
-    return false;
-  }
-  if (/^\d+(?:[.,]\d+)*(?:\s?(?:€|%|p\.a\.))?$/i.test(trimmed)) {
-    return false;
-  }
-  if (trimmed.split(/\s+/).length > 7) {
-    return false;
-  }
-  return true;
-};
-
-const collectSemanticLabelCandidates = (screen: ScreenIR): string[] => {
-  const orderedTextNodes = flattenElements(screen.children)
-    .filter((node) => node.type === "text" && typeof node.text === "string" && isLikelySemanticLabel(node.text))
-    .map((node) => ({
-      label: normalizeSemanticText(node.text ?? ""),
-      y: node.y ?? Number.MAX_SAFE_INTEGER,
-      x: node.x ?? Number.MAX_SAFE_INTEGER
-    }))
-    .filter((entry) => entry.label.length > 0)
-    .sort((left, right) => {
-      if (left.y !== right.y) {
-        return left.y - right.y;
-      }
-      return left.x - right.x;
-    });
-
-  const uniqueLabels: string[] = [];
-  for (const entry of orderedTextNodes) {
-    if (uniqueLabels.includes(entry.label)) {
-      continue;
-    }
-    uniqueLabels.push(entry.label);
-    if (uniqueLabels.length >= 24) {
-      break;
-    }
-  }
-
-  return uniqueLabels;
-};
-
-const collectLiteralLabelCandidates = (screen: ScreenIR): string[] => {
-  const orderedTextNodes = flattenElements(screen.children)
-    .filter((node) => node.type === "text" && typeof node.text === "string" && isLikelySemanticLabel(node.text))
-    .map((node) => ({
-      label: node.text?.trim() ?? "",
-      y: node.y ?? Number.MAX_SAFE_INTEGER,
-      x: node.x ?? Number.MAX_SAFE_INTEGER
-    }))
-    .filter((entry) => entry.label.length > 0)
-    .sort((left, right) => {
-      if (left.y !== right.y) {
-        return left.y - right.y;
-      }
-      return left.x - right.x;
-    });
-
-  const uniqueLabels: string[] = [];
-  for (const entry of orderedTextNodes) {
-    if (uniqueLabels.includes(entry.label)) {
-      continue;
-    }
-    uniqueLabels.push(entry.label);
-    if (uniqueLabels.length >= 24) {
-      break;
-    }
-  }
-
-  return uniqueLabels;
-};
-
-const collectPlaceholderMatches = (content: string): string[] => {
-  const uniqueMatches = new Set<string>();
-  for (const pattern of PLACEHOLDER_TEXT_PATTERNS) {
-    const globalPattern = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
-    let match: RegExpExecArray | null;
-    match = globalPattern.exec(content);
-    while (match) {
-      const normalized = normalizeSemanticText(match[0]);
-      if (normalized.length > 0) {
-        uniqueMatches.add(normalized);
-      }
-      match = globalPattern.exec(content);
-    }
-  }
-  return Array.from(uniqueMatches);
-};
-
-const resolveLabelCoverageThreshold = (expectedCount: number): number => {
-  if (expectedCount <= 4) {
-    return 0.85;
-  }
-  if (expectedCount <= 8) {
-    return 0.75;
-  }
-  if (expectedCount <= 16) {
-    return 0.65;
-  }
-  return 0.55;
-};
-
-const collectSelectOptionLiterals = (source: string): string[] => {
-  const unique = new Set<string>();
-  const selectOptionsMatch = source.match(/const\s+selectOptions\s*:\s*Record<string,\s*string\[]>\s*=\s*({[\s\S]*?});/);
-  if (selectOptionsMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(selectOptionsMatch[1]) as Record<string, unknown>;
-      for (const value of Object.values(parsed)) {
-        if (!Array.isArray(value)) {
-          continue;
-        }
-        for (const entry of value) {
-          if (typeof entry !== "string") {
-            continue;
-          }
-          const trimmed = entry.trim();
-          if (trimmed.length > 0) {
-            unique.add(trimmed);
-          }
-        }
-      }
-    } catch {
-      // Ignore parse failures and continue with fallback extraction.
-    }
-  }
-
-  const menuItemRegex = /<MenuItem[^>]*>\s*([^<\n][^<]*?)\s*<\/MenuItem>/g;
-  let menuItemMatch = menuItemRegex.exec(source);
-  while (menuItemMatch) {
-    const capturedValue = menuItemMatch[1];
-    if (!capturedValue) {
-      menuItemMatch = menuItemRegex.exec(source);
-      continue;
-    }
-    const value = capturedValue.trim();
-    if (value.length > 0 && !value.includes("{")) {
-      unique.add(value);
-    }
-    menuItemMatch = menuItemRegex.exec(source);
-  }
-
-  return Array.from(unique).slice(0, 24);
-};
-
-const validateSemanticFidelity = ({
-  screen,
-  generatedContent,
-  baselineContent,
-  requiredLabelSet
-}: {
-  screen: ScreenIR;
-  generatedContent: string;
-  baselineContent: string;
-  requiredLabelSet?: string[];
-}): { isValid: boolean; reason?: string } => {
-  const expectedLabels = collectSemanticLabelCandidates(screen);
-  const requiredLabels = (requiredLabelSet ?? [])
-    .map((value) => normalizeSemanticText(value))
-    .filter((value) => value.length > 0 && !expectedLabels.includes(value));
-  const requiredFirstLabels = [...requiredLabels, ...expectedLabels];
-  const uniqueExpectedLabels = requiredFirstLabels.filter((value, index) => requiredFirstLabels.indexOf(value) === index);
-  if (uniqueExpectedLabels.length === 0) {
-    return { isValid: true };
-  }
-
-  const normalizedGeneratedContent = normalizeSemanticText(generatedContent);
-  const matchedLabels = uniqueExpectedLabels.filter((label) => normalizedGeneratedContent.includes(label));
-  const coverage = matchedLabels.length / uniqueExpectedLabels.length;
-  const coverageThreshold = resolveLabelCoverageThreshold(uniqueExpectedLabels.length);
-
-  if (coverage < coverageThreshold) {
-    const missingLabels = uniqueExpectedLabels.filter((label) => !matchedLabels.includes(label)).slice(0, 6);
-    return {
-      isValid: false,
-      reason: `label fidelity too low (${Math.round(coverage * 100)}% < ${Math.round(
-        coverageThreshold * 100
-      )}%), missing: ${missingLabels.join(", ")}`
-    };
-  }
-
-  const baselinePlaceholders = new Set(collectPlaceholderMatches(baselineContent));
-  const candidatePlaceholders = collectPlaceholderMatches(generatedContent);
-  const introducedPlaceholders = candidatePlaceholders.filter((value) => !baselinePlaceholders.has(value));
-  if (introducedPlaceholders.length > 0) {
-    return {
-      isValid: false,
-      reason: `generic placeholders introduced (${introducedPlaceholders.slice(0, 3).join(", ")}) although semantic labels are available`
-    };
-  }
-
-  return { isValid: true };
-};
-
-const validateSelectLiteralFidelity = ({
-  generatedContent,
-  baselineContent,
-  expectation
-}: {
-  generatedContent: string;
-  baselineContent: string;
-  expectation: ScreenInteractivityExpectation;
-}): { isValid: boolean; reason?: string } => {
-  if (expectation.selectCount <= 0) {
-    return { isValid: true };
-  }
-
-  const baselineSelectLiterals = collectSelectOptionLiterals(baselineContent);
-  if (baselineSelectLiterals.length === 0) {
-    return { isValid: true };
-  }
-
-  const normalizedGeneratedContent = normalizeSemanticText(generatedContent);
-  const normalizedBaselineLiterals = baselineSelectLiterals.map((value) => normalizeSemanticText(value)).filter((value) => value.length > 0);
-  if (normalizedBaselineLiterals.length === 0) {
-    return { isValid: true };
-  }
-
-  const matchedCount = normalizedBaselineLiterals.filter((value) => normalizedGeneratedContent.includes(value)).length;
-  const minMatchCount =
-    normalizedBaselineLiterals.length <= 3
-      ? normalizedBaselineLiterals.length
-      : Math.max(2, Math.ceil(normalizedBaselineLiterals.length * 0.66));
-  if (matchedCount < minMatchCount) {
-    const missingPreview = baselineSelectLiterals
-      .filter((value) => {
-        const normalized = normalizeSemanticText(value);
-        return normalized.length > 0 && !normalizedGeneratedContent.includes(normalized);
-      })
-      .slice(0, 4);
-    return {
-      isValid: false,
-      reason: `missing select options from deterministic baseline: ${missingPreview.join(", ")}`
-    };
-  }
-
-  return { isValid: true };
-};
-
-const inferScreenInteractivityExpectation = (screen: ScreenIR): ScreenInteractivityExpectation => {
-  const nodes = flattenElements(screen.children);
-  const names = nodes.map((node) => node.name.toLowerCase());
-
-  const selectCount = names.filter((name) => name.includes("muiselectselect")).length;
-  const inputCount = names.filter((name) => INPUT_NAME_HINTS.some((pattern) => name.includes(pattern))).length;
-  const accordionCount = names.filter((name) => name.includes("accordionsummarycontent") || name.includes("collapsewrapper"))
-    .length;
-
-  return {
-    inputCount,
-    selectCount,
-    accordionCount
-  };
-};
-
-const validateLlmScreenByExpectation = (
-  file: GeneratedFile,
-  expectedPath: string,
-  expectation: ScreenInteractivityExpectation,
-  screen: ScreenIR,
-  baselineContent: string,
-  typeScriptRuntime: TypeScriptRuntime,
-  requiredLabelSet?: string[]
-): { isValid: boolean; reason?: string } => {
-  const normalizedExpectedPath = path.posix.normalize(expectedPath.replace(/\\/g, "/"));
-
-  if (normalizedExpectedPath.startsWith("/") || normalizedExpectedPath.includes("..")) {
-    return { isValid: false, reason: `unsafe screen path '${expectedPath}'` };
-  }
-
-  const content = file.content;
-  if (!content.includes("export default") || !content.includes("@mui")) {
-    return { isValid: false, reason: "missing export/@mui imports" };
-  }
-  if (!/@mui\/material/.test(content)) {
-    return { isValid: false, reason: "missing @mui/material import usage" };
-  }
-
-  const screenDiagnostics = typeScriptRuntime.transpileModule(content, {
-    compilerOptions: {
-      module: typeScriptRuntime.ModuleKind.ESNext,
-      target: typeScriptRuntime.ScriptTarget.ES2022,
-      jsx: typeScriptRuntime.JsxEmit.ReactJSX
-    },
-    fileName: file.path,
-    reportDiagnostics: true
-  }).diagnostics;
-  if (screenDiagnostics && screenDiagnostics.length > 0) {
-    const firstDiagnostic = screenDiagnostics[0];
-    return {
-      isValid: false,
-      reason: firstDiagnostic
-        ? typeScriptRuntime.flattenDiagnosticMessageText(firstDiagnostic.messageText, "\n")
-        : "TypeScript diagnostics reported an unknown issue"
-    };
-  }
-
-  const hasInputLikeControl =
-    /\b(TextField|InputBase|OutlinedInput|FilledInput|Input|TextareaAutosize|Checkbox|Switch|RadioGroup|Radio|Slider|Autocomplete|Select|NativeSelect)\b/.test(
-      content
-    );
-  const hasSelectControl =
-    /\b(Select|NativeSelect)\b/.test(content) || /<TextField[\s\S]{0,220}?\bselect\b/.test(content);
-  const hasAccordion = /\bAccordionSummary\b/.test(content) || /\bAccordionDetails\b/.test(content);
-  const hasHandlerBinding = /\b(onChange|onInput|onClick|onBlur)\s*=\s*\{/.test(content);
-  const hasDefaultBinding = /\bdefault(Value|Checked|Open)\s*=/.test(content);
-  const hasControlledBinding = /\b(value|checked|open)\s*=\s*\{[^}]+\}/.test(content);
-  const hasReadOnlyPattern = hasControlledBinding && !hasHandlerBinding && !hasDefaultBinding;
-
-  if (expectation.inputCount > 0 && !hasInputLikeControl) {
-    return { isValid: false, reason: "missing MUI form controls for detected input nodes" };
-  }
-  if (expectation.inputCount > 0 && hasReadOnlyPattern) {
-    return { isValid: false, reason: "read-only value/checked/open bindings detected for form controls" };
-  }
-  if (expectation.selectCount > 0 && !hasSelectControl) {
-    return { isValid: false, reason: "missing select-like MUI control for detected select nodes" };
-  }
-  if (expectation.accordionCount > 0 && !hasAccordion) {
-    return { isValid: false, reason: "missing Accordion primitives for detected accordion nodes" };
-  }
-
-  const selectLiteralValidation = validateSelectLiteralFidelity({
-    generatedContent: content,
-    baselineContent,
-    expectation
-  });
-  if (!selectLiteralValidation.isValid) {
-    return selectLiteralValidation;
-  }
-
-  const fidelityValidation = validateSemanticFidelity({
-    screen,
-    generatedContent: content,
-    baselineContent,
-    ...(requiredLabelSet ? { requiredLabelSet } : {})
-  });
-  if (!fidelityValidation.isValid) {
-    return fidelityValidation;
-  }
-
-  return { isValid: true };
-};
-
-const isWeakLlmForCodegen = (modelName: string): boolean => {
-  const normalized = modelName.toLowerCase();
-  return normalized.includes("qwen2.5-0.5b-instruct-4bit");
-};
-
-const getObjectPropertyName = ({
-  propertyName,
-  typeScriptRuntime
-}: {
-  propertyName: ts.PropertyName;
-  typeScriptRuntime: TypeScriptRuntime;
-}): string | undefined => {
-  if (
-    typeScriptRuntime.isIdentifier(propertyName) ||
-    typeScriptRuntime.isStringLiteral(propertyName) ||
-    typeScriptRuntime.isNumericLiteral(propertyName)
-  ) {
-    return propertyName.text;
-  }
-  return undefined;
-};
-
-const hasTopLevelBorderRadiusInCreateTheme = ({
-  source,
-  typeScriptRuntime
-}: {
-  source: ts.SourceFile;
-  typeScriptRuntime: TypeScriptRuntime;
-}): boolean => {
-  let detected = false;
-
-  const visit = (node: ts.Node): void => {
-    if (detected) {
-      return;
-    }
-
-    if (
-      typeScriptRuntime.isCallExpression(node) &&
-      typeScriptRuntime.isIdentifier(node.expression) &&
-      node.expression.text === "createTheme"
-    ) {
-      const firstArgument = node.arguments[0];
-      if (firstArgument && typeScriptRuntime.isObjectLiteralExpression(firstArgument)) {
-        for (const property of firstArgument.properties) {
-          if (!typeScriptRuntime.isPropertyAssignment(property) && !typeScriptRuntime.isShorthandPropertyAssignment(property)) {
-            continue;
-          }
-          const propertyName = getObjectPropertyName({
-            propertyName: property.name,
-            typeScriptRuntime
-          });
-          if (propertyName === "borderRadius") {
-            detected = true;
-            return;
-          }
-        }
-      }
-    }
-
-    typeScriptRuntime.forEachChild(node, visit);
-  };
-
-  visit(source);
-  return detected;
-};
-
-const normalizeThemeCandidateContent = (content: string): string => {
-  if (/export\s+const\s+appTheme\b/.test(content)) {
-    return content;
-  }
-
-  let normalized = content;
-
-  normalized = normalized.replace(
-    /export\s+default\s+createTheme\s*\(/,
-    "export const appTheme = createTheme("
-  );
-  if (/export\s+const\s+appTheme\b/.test(normalized)) {
-    return normalized;
-  }
-
-  const themedVarMatch = normalized.match(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*createTheme\s*\(/);
-  if (themedVarMatch?.[1]) {
-    const varName = themedVarMatch[1];
-    const defaultVarExportPattern = new RegExp(`export\\s+default\\s+${varName}\\s*;?`);
-    if (defaultVarExportPattern.test(normalized)) {
-      normalized = normalized.replace(defaultVarExportPattern, `export const appTheme = ${varName};`);
-    }
-  }
-
-  return normalized;
-};
-
-const validateLlmThemeCandidate = ({
-  file,
-  expectedPath,
-  typeScriptRuntime
-}: {
-  file: GeneratedFile;
-  expectedPath: string;
-  typeScriptRuntime: TypeScriptRuntime;
-}): { isValid: boolean; reason?: string } => {
-  const normalizedExpectedPath = path.posix.normalize(expectedPath.replace(/\\/g, "/"));
-
-  if (normalizedExpectedPath.startsWith("/") || normalizedExpectedPath.includes("..")) {
-    return { isValid: false, reason: `unsafe theme path '${expectedPath}'` };
-  }
-
-  const content = file.content;
-  const hasNamedThemeExport = /export\s+const\s+appTheme\b/.test(content);
-  if (!hasNamedThemeExport) {
-    return { isValid: false, reason: "missing named export 'appTheme'" };
-  }
-  if (!/\bcreateTheme\s*\(/.test(content)) {
-    return { isValid: false, reason: "missing createTheme() call" };
-  }
-  if (!/from\s+["']@mui\/material\/styles["']/.test(content)) {
-    return { isValid: false, reason: "missing createTheme import from @mui/material/styles" };
-  }
-  if (/from\s+["']\.\.?\//.test(content)) {
-    return { isValid: false, reason: "relative imports are not allowed in theme.ts" };
-  }
-
-  const syntaxDiagnostics = typeScriptRuntime.transpileModule(content, {
-    compilerOptions: {
-      module: typeScriptRuntime.ModuleKind.ESNext,
-      target: typeScriptRuntime.ScriptTarget.ES2022
-    },
-    fileName: file.path,
-    reportDiagnostics: true
-  }).diagnostics;
-  if (syntaxDiagnostics && syntaxDiagnostics.length > 0) {
-    const firstDiagnostic = syntaxDiagnostics[0];
-    return {
-      isValid: false,
-      reason: firstDiagnostic
-        ? typeScriptRuntime.flattenDiagnosticMessageText(firstDiagnostic.messageText, "\n")
-        : "TypeScript diagnostics reported an unknown issue"
-    };
-  }
-  const source = typeScriptRuntime.createSourceFile(
-    file.path,
-    content,
-    typeScriptRuntime.ScriptTarget.ESNext,
-    true,
-    typeScriptRuntime.ScriptKind.TS
-  );
-
-  if (hasTopLevelBorderRadiusInCreateTheme({ source, typeScriptRuntime })) {
-    return { isValid: false, reason: "top-level borderRadius is invalid; use shape.borderRadius" };
-  }
-
-  return { isValid: true };
-};
-
-export const generateArtifacts = async ({
-  projectDir,
-  ir,
-  componentMappings,
-  llmClient,
+const resolveGenerateArtifactsPhase = async ({
+  input,
+  generationLocale,
+  formHandlingMode,
   llmModelName,
   llmCodegenMode,
+  designSystemFilePath,
   onLog
-}: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
-  const requestedMode = String(llmCodegenMode);
+}: {
+  input: GenerateArtifactsInput;
+  generationLocale: string | undefined;
+  formHandlingMode: WorkspaceFormHandlingMode | undefined;
+  llmModelName: string;
+  llmCodegenMode: LlmCodegenMode;
+  designSystemFilePath: string;
+  onLog: (message: string) => void;
+}): Promise<GenerateArtifactsResolvedPhase> => {
+  void llmModelName;
   if (llmCodegenMode !== "deterministic") {
     throw new WorkflowError({
       code: "E_LLM_RUNTIME_UNAVAILABLE",
@@ -2172,8 +13412,89 @@ export const generateArtifacts = async ({
       message: "Only deterministic code generation is supported in workspace-dev."
     });
   }
+  const runtimeAdapters = resolveGenerateArtifactsRuntimeAdapters(input);
+  const resolvedGenerationLocale = resolveGenerationLocale({
+    requestedLocale: generationLocale,
+    fallbackLocale: DEFAULT_GENERATION_LOCALE
+  });
+  if (resolvedGenerationLocale.usedFallback && typeof generationLocale === "string") {
+    onLog(
+      `Warning: Invalid generationLocale '${generationLocale}' configured for deterministic generation. ` +
+        `Falling back to '${resolvedGenerationLocale.locale}'.`
+    );
+  }
+  const resolvedFormHandlingMode = resolveFormHandlingMode({
+    requestedMode: formHandlingMode
+  });
+  const designSystemConfig = await runtimeAdapters.loadDesignSystemConfig({
+    designSystemFilePath,
+    onLog
+  });
+  const transformGeneratedFileWithDesignSystem = (file: GeneratedFile): GeneratedFile => {
+    if (!designSystemConfig) {
+      return file;
+    }
+    const transformedContent = runtimeAdapters.applyDesignSystemMappings({
+      filePath: file.path,
+      content: file.content,
+      config: designSystemConfig
+    });
+    return transformedContent === file.content
+      ? file
+      : {
+          ...file,
+          content: transformedContent
+        };
+  };
+  return {
+    runtimeAdapters,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    transformGeneratedFileWithDesignSystem
+  };
+};
 
+interface GenerateArtifactsStatePhase {
+  generatedPaths: Set<string>;
+  generationMetrics: GenerationMetrics;
+  truncationByScreenId: Map<string, {
+    screenId: string;
+    screenName: string;
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  }>;
+  allIrNodeIds: Set<string>;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+}
+
+const initializeGenerateArtifactsStatePhase = ({
+  ir,
+  componentMappings
+}: {
+  ir: DesignIR;
+  componentMappings: ComponentMappingRule[] | undefined;
+}): GenerateArtifactsStatePhase => {
   const generatedPaths = new Set<string>();
+  const generationMetrics: GenerationMetrics = {
+    fetchedNodes: ir.metrics?.fetchedNodes ?? 0,
+    skippedHidden: ir.metrics?.skippedHidden ?? 0,
+    skippedPlaceholders: ir.metrics?.skippedPlaceholders ?? 0,
+    screenElementCounts: [...(ir.metrics?.screenElementCounts ?? [])],
+    truncatedScreens: [...(ir.metrics?.truncatedScreens ?? [])],
+    degradedGeometryNodes: [...(ir.metrics?.degradedGeometryNodes ?? [])],
+    prototypeNavigationDetected: ir.metrics?.prototypeNavigationDetected ?? 0,
+    prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
+    prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
+    prototypeNavigationRendered: 0
+  };
+  const truncationByScreenId = new Map(
+    generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)
+  );
   const allIrNodeIds = new Set<string>(
     ir.screens.flatMap((screen) => flattenElements(screen.children).map((node) => node.id))
   );
@@ -2206,21 +13527,165 @@ export const generateArtifacts = async ({
       });
     }
   }
+  return {
+    generatedPaths,
+    generationMetrics,
+    truncationByScreenId,
+    allIrNodeIds,
+    mappingByNodeId,
+    mappingWarnings
+  };
+};
 
-  await mkdir(path.join(projectDir, "src", "screens"), { recursive: true });
-  await mkdir(path.join(projectDir, "src", "theme"), { recursive: true });
+interface GenerateArtifactsBasePhase {
+  iconResolver: IconFallbackResolver;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+}
 
-  const tokensPath = path.join(projectDir, "src", "theme", "tokens.json");
-  await writeFile(tokensPath, JSON.stringify(ir.tokens, null, 2), "utf-8");
+const runGenerateArtifactsBasePhase = async ({
+  projectDir,
+  ir,
+  iconMapFilePath,
+  resolvedGenerationLocale,
+  runtimeAdapters,
+  generatedPaths,
+  onLog
+}: {
+  projectDir: string;
+  ir: DesignIR;
+  iconMapFilePath: string;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  generatedPaths: Set<string>;
+  onLog: (message: string) => void;
+}): Promise<GenerateArtifactsBasePhase> => {
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "screens"));
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "context"));
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "theme"));
+  const iconResolver = await runtimeAdapters.loadIconResolver({
+    iconMapFilePath,
+    onLog
+  });
+  const themeComponentDefaults = deriveThemeComponentDefaultsFromIr({
+    ir,
+    generationLocale: resolvedGenerationLocale.locale
+  });
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "src", "theme", "tokens.json"),
+    content: JSON.stringify(ir.tokens, null, 2)
+  });
   generatedPaths.add("src/theme/tokens.json");
-
-  const deterministicTheme = fallbackThemeFile(ir);
-  await writeGeneratedFile(projectDir, deterministicTheme);
+  const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults);
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
+  const deterministicErrorBoundary = makeErrorBoundaryFile();
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicErrorBoundary);
+  generatedPaths.add(deterministicErrorBoundary.path);
+  const deterministicScreenSkeleton = makeScreenSkeletonFile();
+  await runtimeAdapters.writeGeneratedFile(projectDir, deterministicScreenSkeleton);
+  generatedPaths.add(deterministicScreenSkeleton.path);
+  return {
+    iconResolver,
+    themeComponentDefaults
+  };
+};
 
+interface DeterministicScreenPersistedArtifact {
+  file: GeneratedFile;
+  componentFiles: GeneratedFile[];
+  contextFiles: GeneratedFile[];
+  testFiles: GeneratedFile[];
+}
+
+interface GenerateArtifactsScreenPhase {
+  deterministicScreens: DeterministicScreenPersistedArtifact[];
+  identitiesByScreenId: Map<string, ScreenArtifactIdentity>;
+  usedMappingNodeIds: Set<string>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+  accessibilityWarnings: AccessibilityWarning[];
+  simplificationByScreen: ScreenSimplificationMetric[];
+  aggregatedSimplificationStats: SimplificationMetrics;
+  prototypeNavigationRenderedCount: number;
+}
+
+const runGenerateArtifactsScreenPhase = ({
+  ir,
+  mappingByNodeId,
+  truncationByScreenId,
+  imageAssetMap,
+  resolvedGenerationLocale,
+  resolvedFormHandlingMode,
+  iconResolver,
+  themeComponentDefaults,
+  transformGeneratedFileWithDesignSystem,
+  onLog
+}: {
+  ir: DesignIR;
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  truncationByScreenId: Map<string, {
+    screenId: string;
+    screenName: string;
+    originalElements: number;
+    retainedElements: number;
+    budget: number;
+  }>;
+  imageAssetMap: Record<string, string>;
+  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
+  resolvedFormHandlingMode: ResolvedFormHandlingMode;
+  iconResolver: IconFallbackResolver;
+  themeComponentDefaults: ThemeComponentDefaults | undefined;
+  transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+  onLog: (message: string) => void;
+}): GenerateArtifactsScreenPhase => {
+  const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
+  const routePathByScreenId = new Map(
+    Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
+  );
   const usedMappingNodeIds = new Set<string>();
+  const mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }> = [];
+  const accessibilityWarnings: AccessibilityWarning[] = [];
+  const simplificationByScreen: ScreenSimplificationMetric[] = [];
+  const aggregatedSimplificationStats = createEmptySimplificationStats();
+  let prototypeNavigationRenderedCount = 0;
   const deterministicScreens = ir.screens.map((screen) => {
-    const deterministicScreen = fallbackScreenFile(screen, mappingByNodeId);
+    const identity = identitiesByScreenId.get(screen.id);
+    const truncationMetric = truncationByScreenId.get(screen.id);
+    if (truncationMetric) {
+      onLog(
+        `Screen '${screen.name}' truncated from ${truncationMetric.originalElements} to ${truncationMetric.retainedElements} elements (budget=${truncationMetric.budget}).`
+      );
+    }
+    const deterministicScreen = fallbackScreenFile({
+      screen,
+      mappingByNodeId,
+      spacingBase: ir.tokens.spacingBase,
+      tokens: ir.tokens,
+      iconResolver,
+      imageAssetMap,
+      routePathByScreenId,
+      generationLocale: resolvedGenerationLocale.locale,
+      formHandlingMode: resolvedFormHandlingMode,
+      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
+      ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
+      ...(truncationMetric ? { truncationMetric } : {})
+    });
+    accumulateSimplificationStats({
+      target: aggregatedSimplificationStats,
+      source: deterministicScreen.simplificationStats
+    });
+    simplificationByScreen.push({
+      screenId: screen.id,
+      screenName: screen.name,
+      ...deterministicScreen.simplificationStats
+    });
+    prototypeNavigationRenderedCount += deterministicScreen.prototypeNavigationRenderedCount;
     for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
       usedMappingNodeIds.add(nodeId);
     }
@@ -2230,22 +13695,61 @@ export const generateArtifacts = async ({
         message: warning.message
       });
     }
-
-    const file = deterministicScreen.file;
+    accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
     return {
-      screen,
-      file,
-      requiredLiteralTexts: [
-        ...collectLiteralLabelCandidates(screen),
-        ...collectSelectOptionLiterals(file.content)
-      ].filter((value, index, values) => value.trim().length > 0 && values.indexOf(value) === index)
+      file: transformGeneratedFileWithDesignSystem(deterministicScreen.file),
+      componentFiles: deterministicScreen.componentFiles.map((file) => transformGeneratedFileWithDesignSystem(file)),
+      contextFiles: deterministicScreen.contextFiles,
+      testFiles: deterministicScreen.testFiles
     };
   });
-  for (const item of deterministicScreens) {
-    await writeGeneratedFile(projectDir, item.file);
-    generatedPaths.add(item.file.path);
-  }
+  return {
+    deterministicScreens,
+    identitiesByScreenId,
+    usedMappingNodeIds,
+    mappingWarnings,
+    accessibilityWarnings,
+    simplificationByScreen,
+    aggregatedSimplificationStats,
+    prototypeNavigationRenderedCount
+  };
+};
 
+const persistGenerateArtifactsScreenPhase = async ({
+  projectDir,
+  deterministicScreens,
+  runtimeAdapters,
+  generatedPaths
+}: {
+  projectDir: string;
+  deterministicScreens: DeterministicScreenPersistedArtifact[];
+  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
+  generatedPaths: Set<string>;
+}): Promise<void> => {
+  await Promise.all(
+    deterministicScreens
+      .flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles, ...item.testFiles])
+      .map(async (file) => {
+        await runtimeAdapters.writeGeneratedFile(projectDir, file);
+        generatedPaths.add(file.path);
+      })
+  );
+};
+
+const appendGenerateArtifactsMappingWarnings = ({
+  mappingByNodeId,
+  allIrNodeIds,
+  usedMappingNodeIds,
+  mappingWarnings
+}: {
+  mappingByNodeId: Map<string, ComponentMappingRule>;
+  allIrNodeIds: Set<string>;
+  usedMappingNodeIds: Set<string>;
+  mappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }>;
+}): void => {
   for (const [nodeId, mapping] of mappingByNodeId.entries()) {
     if (!allIrNodeIds.has(nodeId)) {
       continue;
@@ -2278,32 +13782,151 @@ export const generateArtifacts = async ({
       });
     }
   }
+};
 
-  await writeFile(path.join(projectDir, "src", "App.tsx"), makeAppFile(ir.screens), "utf-8");
+export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+  const {
+    projectDir,
+    ir,
+    componentMappings,
+    iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
+    designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
+    imageAssetMap = {},
+    generationLocale,
+    routerMode,
+    formHandlingMode,
+    llmModelName,
+    llmCodegenMode,
+    onLog
+  } = input;
+  const {
+    runtimeAdapters,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    transformGeneratedFileWithDesignSystem
+  } = await resolveGenerateArtifactsPhase({
+    input,
+    generationLocale,
+    formHandlingMode,
+    llmModelName,
+    llmCodegenMode,
+    designSystemFilePath,
+    onLog
+  });
+  const {
+    generatedPaths,
+    generationMetrics,
+    truncationByScreenId,
+    allIrNodeIds,
+    mappingByNodeId,
+    mappingWarnings
+  } = initializeGenerateArtifactsStatePhase({
+    ir,
+    componentMappings
+  });
+  const { iconResolver, themeComponentDefaults } = await runGenerateArtifactsBasePhase({
+    projectDir,
+    ir,
+    iconMapFilePath,
+    resolvedGenerationLocale,
+    runtimeAdapters,
+    generatedPaths,
+    onLog
+  });
+  const {
+    deterministicScreens,
+    identitiesByScreenId,
+    usedMappingNodeIds,
+    mappingWarnings: screenPhaseMappingWarnings,
+    accessibilityWarnings,
+    simplificationByScreen,
+    aggregatedSimplificationStats,
+    prototypeNavigationRenderedCount
+  } = runGenerateArtifactsScreenPhase({
+    ir,
+    mappingByNodeId,
+    truncationByScreenId,
+    imageAssetMap,
+    resolvedGenerationLocale,
+    resolvedFormHandlingMode,
+    iconResolver,
+    themeComponentDefaults,
+    transformGeneratedFileWithDesignSystem,
+    onLog
+  });
+  mappingWarnings.push(...screenPhaseMappingWarnings);
+  await persistGenerateArtifactsScreenPhase({
+    projectDir,
+    deterministicScreens,
+    runtimeAdapters,
+    generatedPaths
+  });
+  appendGenerateArtifactsMappingWarnings({
+    mappingByNodeId,
+    allIrNodeIds,
+    usedMappingNodeIds,
+    mappingWarnings
+  });
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "src", "App.tsx"),
+    content: makeAppFile({
+      screens: ir.screens,
+      identitiesByScreenId,
+      ...(routerMode !== undefined ? { routerMode } : {})
+    })
+  });
   generatedPaths.add("src/App.tsx");
+
+  generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;
+  generationMetrics.simplification = {
+    aggregate: aggregatedSimplificationStats,
+    screens: simplificationByScreen
+  };
+  const generationMetricsPayload = {
+    ...generationMetrics,
+    accessibilityWarnings
+  };
+  await runtimeAdapters.writeTextFile({
+    filePath: path.join(projectDir, "generation-metrics.json"),
+    content: `${JSON.stringify(generationMetricsPayload, null, 2)}\n`
+  });
+  generatedPaths.add("generation-metrics.json");
+
+  if (generationMetrics.degradedGeometryNodes.length > 0) {
+    onLog(`Geometry degraded for ${generationMetrics.degradedGeometryNodes.length} node(s) during staged fetch.`);
+  }
+  if ((generationMetrics.prototypeNavigationDetected ?? 0) > 0 || (generationMetrics.prototypeNavigationRendered ?? 0) > 0) {
+    onLog(
+      `Prototype navigation: detected=${generationMetrics.prototypeNavigationDetected ?? 0}, resolved=${
+        generationMetrics.prototypeNavigationResolved ?? 0
+      }, unresolved=${generationMetrics.prototypeNavigationUnresolved ?? 0}, rendered=${generationMetrics.prototypeNavigationRendered ?? 0}`
+    );
+  }
+  if ((generationMetrics.prototypeNavigationUnresolved ?? 0) > 0) {
+    onLog(
+      `Warning: ${generationMetrics.prototypeNavigationUnresolved} prototype navigation target(s) were unresolved and ignored.`
+    );
+  }
+  onLog(
+    `Simplify stats: removedEmptyNodes=${aggregatedSimplificationStats.removedEmptyNodes}, promotedSingleChild=${aggregatedSimplificationStats.promotedSingleChild}, promotedGroupMultiChild=${aggregatedSimplificationStats.promotedGroupMultiChild}, spacingMerges=${aggregatedSimplificationStats.spacingMerges}, guardedSkips=${aggregatedSimplificationStats.guardedSkips}`
+  );
+  if (accessibilityWarnings.length > 0) {
+    for (const warning of accessibilityWarnings) {
+      onLog(`[a11y] ${warning.message}`);
+    }
+    onLog(`Accessibility warnings: ${accessibilityWarnings.length} potential contrast issue(s).`);
+  }
+
   onLog("Generated deterministic baseline artifacts");
 
-  let themeApplied = false;
-  let screenApplied = 0;
+  const themeApplied = false;
+  const screenApplied = 0;
   const screenRejected: RejectedScreenEnhancement[] = [];
   const llmWarnings: Array<{
     code: "W_LLM_RESPONSES_INCOMPLETE";
     message: string;
   }> = [];
   const screenTotal = deterministicScreens.length;
-
-  const pushLlmIncompleteWarning = (message: string): void => {
-    if (llmWarnings.some((warning) => warning.message === message)) {
-      return;
-    }
-    llmWarnings.push({
-      code: "W_LLM_RESPONSES_INCOMPLETE",
-      message
-    });
-  };
-
-  const strictLlmMode = requestedMode === "llm_strict";
-  const deterministicMode = requestedMode === "deterministic";
   const mappingCoverage = {
     usedMappings: usedMappingNodeIds.size,
     fallbackNodes: Math.max(0, mappingByNodeId.size - usedMappingNodeIds.size),
@@ -2315,220 +13938,10 @@ export const generateArtifacts = async ({
     contractMismatchCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_CONTRACT_MISMATCH").length,
     disabledMappingCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_DISABLED").length
   };
-  if (deterministicMode) {
-    onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
-    return {
-      generatedPaths: Array.from(generatedPaths),
-      themeApplied,
-      screenApplied,
-      screenTotal,
-      screenRejected,
-      llmWarnings,
-      mappingCoverage,
-      mappingDiagnostics,
-      mappingWarnings: dedupedMappingWarnings
-    };
-  }
-
-  if (!llmClient) {
-    throw new Error("LLM client is required for hybrid and llm_strict modes");
-  }
-
-  const skipLlmEnhancement = requestedMode === "hybrid" && isWeakLlmForCodegen(llmModelName);
-  if (skipLlmEnhancement) {
-    onLog(
-      `LLM enhancement skipped for model '${llmModelName}' in hybrid mode; deterministic output retained`
-    );
-    return {
-      generatedPaths: Array.from(generatedPaths),
-      themeApplied,
-      screenApplied,
-      screenTotal,
-      screenRejected,
-      llmWarnings,
-      mappingCoverage,
-      mappingDiagnostics,
-      mappingWarnings: dedupedMappingWarnings
-    };
-  }
-
-  let typeScriptRuntime: TypeScriptRuntime;
-  try {
-    typeScriptRuntime = await import("typescript");
-  } catch (error) {
-    throw new WorkflowError({
-      code: "E_LLM_RUNTIME_UNAVAILABLE",
-      stage: "codegen.generate",
-      retryable: false,
-      message: `TypeScript runtime unavailable for non-deterministic mode: ${error instanceof Error ? error.message : "unknown error"}`
-    });
-  }
-
-  try {
-    onLog("Running optional LLM theme enhancement");
-    const llmTheme = await llmClient.generateTheme(ir);
-    const normalizedThemeContent = normalizeThemeCandidateContent(llmTheme.content);
-    const themeValidation = validateLlmThemeCandidate({
-      file: {
-        path: llmTheme.path,
-        content: normalizedThemeContent
-      },
-      expectedPath: deterministicTheme.path,
-      typeScriptRuntime
-    });
-    if (!themeValidation.isValid) {
-      const message = strictLlmMode
-        ? `LLM theme enhancement rejected by strict contract: ${
-            themeValidation.reason ?? "contract validation failed"
-          }; deterministic output retained`
-        : `LLM theme enhancement skipped: ${
-            themeValidation.reason ?? "contract validation failed"
-          }; deterministic output retained`;
-      onLog(message);
-    } else {
-      await writeGeneratedFile(projectDir, {
-        path: deterministicTheme.path,
-        content: normalizedThemeContent
-      });
-      themeApplied = true;
-      onLog("LLM theme enhancement applied");
-    }
-  } catch (error) {
-    if (isEgressPolicyDenyError(error)) {
-      throw new WorkflowError({
-        code: "E_EGRESS_POLICY_DENY",
-        stage: "codegen.generate",
-        retryable: false,
-        message: error instanceof Error ? error.message : "Egress policy denied outbound request"
-      });
-    }
-    const llmIncomplete = isLlmClientError(error) && error.code === "E_LLM_RESPONSES_INCOMPLETE";
-    if (llmIncomplete) {
-      const incompleteMessage = `LLM responses incomplete during theme enhancement; deterministic theme retained`;
-      if (strictLlmMode) {
-        throw new WorkflowError({
-          code: "E_LLM_RESPONSES_INCOMPLETE",
-          stage: "codegen.generate",
-          retryable: false,
-          message: `${incompleteMessage} (${error.message})`
-        });
-      }
-      pushLlmIncompleteWarning(incompleteMessage);
-    }
-    const message = strictLlmMode
-      ? `LLM theme enhancement rejected by strict execution error: ${
-          error instanceof Error ? error.message : "unknown error"
-        }; deterministic output retained`
-      : `LLM theme enhancement skipped: ${error instanceof Error ? error.message : "unknown error"}; deterministic output retained`;
-    onLog(message);
-  }
-
-  for (const { screen, file: deterministicScreen, requiredLiteralTexts } of deterministicScreens) {
-    const interactivityExpectation = inferScreenInteractivityExpectation(screen);
-    const totalAttempts = 3;
-    let lastFailureReason = "contract validation failed";
-    let screenAppliedInAttempt = false;
-
-    onLog(`Running optional LLM screen enhancement: ${screen.name}`);
-
-    for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-      try {
-        const llmFile =
-          attempt < totalAttempts
-            ? await llmClient.generateScreen(screen, ir.tokens, deterministicScreen.path, {
-                ...interactivityExpectation,
-                ...(attempt === 1 ? {} : { repairReason: lastFailureReason }),
-                requiredLabelSet: requiredLiteralTexts
-              })
-            : await llmClient.generateScreenFromBaseline({
-                screen,
-                tokens: ir.tokens,
-                expectedPath: deterministicScreen.path,
-                baselineSource: deterministicScreen.content,
-                requiredLiteralTexts,
-                forbiddenPlaceholderPolicy:
-                  "Never introduce generic placeholders that do not already exist in baseline content.",
-                hints: {
-                  ...interactivityExpectation,
-                  repairReason: lastFailureReason,
-                  requiredLabelSet: requiredLiteralTexts
-                }
-              });
-
-        const validation = validateLlmScreenByExpectation(
-          llmFile,
-          deterministicScreen.path,
-          interactivityExpectation,
-          screen,
-          deterministicScreen.content,
-          typeScriptRuntime,
-          requiredLiteralTexts
-        );
-
-        if (validation.isValid) {
-          await writeGeneratedFile(projectDir, { path: deterministicScreen.path, content: llmFile.content });
-          screenApplied += 1;
-          screenAppliedInAttempt = true;
-          onLog(`LLM screen enhancement applied (${screen.name}) [attempt ${attempt}/${totalAttempts}]`);
-          break;
-        }
-
-        lastFailureReason = validation.reason ?? "contract validation failed";
-        if (attempt < totalAttempts) {
-          onLog(
-            `LLM screen enhancement retry (${screen.name}) [attempt ${attempt + 1}/${totalAttempts}]: ${lastFailureReason}`
-          );
-        }
-      } catch (error) {
-        if (isEgressPolicyDenyError(error)) {
-          throw new WorkflowError({
-            code: "E_EGRESS_POLICY_DENY",
-            stage: "codegen.generate",
-            retryable: false,
-            message: error instanceof Error ? error.message : "Egress policy denied outbound request"
-          });
-        }
-        lastFailureReason = error instanceof Error ? error.message : "unknown error";
-        const llmIncomplete = isLlmClientError(error) && error.code === "E_LLM_RESPONSES_INCOMPLETE";
-        if (llmIncomplete) {
-          const incompleteMessage = `LLM responses incomplete during screen enhancement (${screen.name}); deterministic screen retained`;
-          if (strictLlmMode) {
-            throw new WorkflowError({
-              code: "E_LLM_RESPONSES_INCOMPLETE",
-              stage: "codegen.generate",
-              retryable: false,
-              message: `${incompleteMessage} (${lastFailureReason})`
-            });
-          }
-          pushLlmIncompleteWarning(incompleteMessage);
-        }
-        if (attempt < totalAttempts) {
-          onLog(
-            `LLM screen enhancement retry (${screen.name}) [attempt ${attempt + 1}/${totalAttempts}]: ${lastFailureReason}`
-          );
-        }
-      }
-    }
-
-    if (!screenAppliedInAttempt) {
-      screenRejected.push({
-        screenName: screen.name,
-        reason: lastFailureReason
-      });
-      if (lastFailureReason.includes("E_LLM_RESPONSES_INCOMPLETE")) {
-        pushLlmIncompleteWarning(
-          `LLM responses incomplete during screen enhancement (${screen.name}); deterministic screen retained`
-        );
-      }
-      const message = strictLlmMode
-        ? `LLM screen enhancement rejected by strict contract (${screen.name}) [attempt ${totalAttempts}/${totalAttempts}]: ${lastFailureReason}; deterministic output retained`
-        : `LLM screen enhancement skipped (${screen.name}) [attempt ${totalAttempts}/${totalAttempts}]: ${lastFailureReason}; deterministic output retained`;
-      onLog(message);
-    }
-  }
-  onLog(`LLM enhancement summary: themeApplied=${String(themeApplied)}, screensApplied=${screenApplied}/${screenTotal}`);
+  onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
   return {
     generatedPaths: Array.from(generatedPaths),
+    generationMetrics,
     themeApplied,
     screenApplied,
     screenTotal,

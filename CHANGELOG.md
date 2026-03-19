@@ -21,7 +21,11 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ### Changed
 
 - Deterministic app generation now uses route-level lazy loading for non-initial screens (`React.lazy` + `Suspense`).
+- Deterministic generated app shell defaults to `BrowserRouter` and supports runtime router mode override (`--router browser|hash`).
+- Documented BrowserRouter rewrite requirements and hash compatibility mode in README router guidance.
+- Added offline local Figma JSON ingestion mode (`figmaSourceMode=local_json`, `figmaJsonPath`) with strict submit-source exclusivity validation.
 - `validate.project` can execute optional performance assertion when `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION=true` (or `FIGMAPIPE_ENABLE_PERF_VALIDATION=true`).
+- Hardened deterministic MUI icon import emission with tuple-based dedupe and stable ordering for reproducible outputs.
 
 ## [1.0.0] - 2026-03-13
 

@@ -19,7 +19,7 @@ export default defineConfig({
   external: ["typescript"],
   sourcemap: true,
   clean: true,
-  splitting: false,
+  splitting: true,
   outDir: "dist",
   cjsInterop: true,
   esbuildOptions(options, context) {

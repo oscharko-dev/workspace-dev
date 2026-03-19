@@ -33,6 +33,9 @@ jobs:
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
 
+      - name: Enforce pipeline/template docs version consistency
+        run: pnpm run verify:docs-template-stack
+
       - name: Typecheck
         run: pnpm run typecheck
 

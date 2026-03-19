@@ -7,7 +7,7 @@
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MIT License](https://img.shields.io/github/license/oscharko-dev/workspace-dev)](https://github.com/oscharko-dev/workspace-dev/blob/dev/LICENSE)
 
-Autonomous local Workspace runtime for REST-based deterministic Figma-to-code generation.
+Autonomous local Workspace runtime for deterministic Figma-to-code generation via REST or local JSON input.
 
 `workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the full Workspace Dev platform backend stack.
 
@@ -45,7 +45,7 @@ The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
 
 - Vite 8 build output is emitted into `dist/ui`
 - Runtime serves `index.html` and hashed bundles under `/workspace/ui/assets/*`
-- API contracts remain unchanged (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
+- API contracts are versioned (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
 
 Useful scripts:
 
@@ -55,12 +55,22 @@ Useful scripts:
 - `pnpm run ui:lint`
 - `pnpm run ui:test`
 - `pnpm run ui:test:e2e`
+- `pnpm run test:golden`
+- `pnpm run test:golden:update`
+
+## Golden fixture tests
+
+Golden end-to-end fixtures validate deterministic output from `figma.json -> design-ir -> generated source` using curated local fixtures in `src/parity/fixtures/golden`.
+
+- `pnpm run test:golden` compares generated artifacts against committed expected files.
+- `pnpm run test:golden:update` updates expected golden files intentionally via `FIGMAPIPE_GOLDEN_APPROVE=true`.
 
 ## Scope and mode lock
 
 `workspace-dev` enforces:
 
 - `figmaSourceMode=rest`
+- `figmaSourceMode=local_json`
 - `llmCodegenMode=deterministic`
 
 Not available:
@@ -71,8 +81,11 @@ Not available:
 
 ## Required submit input
 
-- `figmaFileKey`
-- `figmaAccessToken`
+- `figmaSourceMode=rest`:
+  - `figmaFileKey`
+  - `figmaAccessToken`
+- `figmaSourceMode=local_json`:
+  - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 
 Optional Git/PR input:
 
@@ -81,6 +94,12 @@ Optional Git/PR input:
 - `repoToken` (required only when `enableGitPr=true`)
 - `projectName` (optional)
 - `targetPath` (optional, defaults to `figma-generated`)
+
+Optional token branding input:
+
+- `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
+- `generationLocale` (optional BCP 47 locale string; defaults to server runtime setting, fallback `de-DE`)
+- `formHandlingMode` (optional: `react_hook_form` or `legacy_use_state`; defaults to `react_hook_form`)
 
 With `enableGitPr=false`, generation is local-only.
 
@@ -92,6 +111,7 @@ With `enableGitPr=false`, generation is local-only.
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
+- `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
 - `GET /workspace/repros/:id/` - generated local preview
 
 ## Output layout
@@ -103,11 +123,14 @@ By default, generated files are written under:
 - `.workspace-dev/jobs/<jobId>/design-ir.json`
 - `.workspace-dev/repros/<jobId>/`
 - `.workspace-dev/jobs/<jobId>/repo/` (only when `enableGitPr=true`)
+- `.workspace-dev/jobs/<jobId>/generated-app/public/images/*` (when image export is enabled and image candidates exist)
+- `.workspace-dev/icon-fallback-map.json` (auto-bootstrapped fallback icon mapping catalog)
 
 ## CLI
 
 ```bash
 workspace-dev start [options]
+workspace-dev scan-design-system [options]
 ```
 
 ### Options
@@ -117,8 +140,46 @@ workspace-dev start [options]
 - `--output-root <path>` (default `.workspace-dev`)
 - `--figma-timeout-ms <ms>` (default `30000`)
 - `--figma-retries <count>` (default `3`)
+- `--figma-bootstrap-depth <n>` (default `5`)
+- `--figma-node-batch-size <n>` (default `6`)
+- `--figma-node-fetch-concurrency <n>` (default `3`)
+- `--figma-adaptive-batching <true|false>` (default `true`)
+- `--figma-max-screen-candidates <n>` (default `40`)
+- `--figma-screen-name-pattern <regex>` (default unset, case-insensitive include-filter for staged candidate names)
+- `--no-cache` (default `false`, disables figma.source file-system cache)
+- `--figma-cache-ttl-ms <ms>` (default `900000`)
+- `--icon-map-file <path>` (default `<outputRoot>/icon-fallback-map.json`)
+- `--design-system-file <path>` (default `<outputRoot>/design-system.json`; optional design-system mapping for deterministic codegen)
+- `--export-images <true|false>` (default `true`; exports Figma image assets to `generated-app/public/images`)
+- `--figma-screen-element-budget <n>` (default `1200`)
+- `--figma-screen-element-max-depth <n>` (default `14`)
+- `--brand <derived|sparkasse>` (default `derived`)
+- `--generation-locale <locale>` (default `de-DE`)
+- `--router <browser|hash>` (default `browser`)
+- `--command-timeout-ms <ms>` (default `900000`)
+- `--ui-validation <true|false>` (default `false`)
+- `--install-prefer-offline <true|false>` (default `true`)
+- `--skip-install <true|false>` (default `false`; expert mode, requires pre-existing `generated-app/node_modules`)
+- `--max-concurrent-jobs <n>` (default `1`; concurrent running job cap)
+- `--max-queued-jobs <n>` (default `20`; queued job cap before submit backpressure)
+- `--lint-autofix <true|false>` (default `true`; runs `pnpm lint --fix` before final `pnpm lint`)
 - `--preview <true|false>` (default `true`)
 - `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)
+
+### scan-design-system command
+
+Generate an initial design-system mapping config by scanning project imports:
+
+```bash
+workspace-dev scan-design-system [options]
+```
+
+Options:
+
+- `--project-root <path>` (default `process.cwd()`)
+- `--output <path>` (default `<project-root>/.workspace-dev/design-system.json`)
+- `--library <pkg>` (optional override for inferred package)
+- `--force` (overwrite existing output file)
 
 ### Environment variables
 
@@ -127,9 +188,43 @@ workspace-dev start [options]
 - `FIGMAPIPE_WORKSPACE_OUTPUT_ROOT`
 - `FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS`
 - `FIGMAPIPE_WORKSPACE_FIGMA_RETRIES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH`
+- `FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE`
+- `FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY`
+- `FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING`
+- `FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN`
+- `FIGMAPIPE_WORKSPACE_NO_CACHE`
+- `FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS`
+- `FIGMAPIPE_WORKSPACE_ICON_MAP_FILE`
+- `FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE`
+- `FIGMAPIPE_WORKSPACE_EXPORT_IMAGES`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET`
+- `FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH`
+- `FIGMAPIPE_WORKSPACE_BRAND`
+- `FIGMAPIPE_WORKSPACE_GENERATION_LOCALE`
+- `FIGMAPIPE_WORKSPACE_ROUTER`
+- `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
+- `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
+- `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
+- `FIGMAPIPE_WORKSPACE_SKIP_INSTALL`
+- `FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION`
 - `FIGMAPIPE_ENABLE_PERF_VALIDATION` (legacy alias)
+
+When `skipInstall` is enabled and `generated-app/node_modules` is missing, `validate.project` fails fast with a deterministic error message.
+When lint auto-fix is enabled, `validate.project` runs `pnpm lint --fix` before final `pnpm lint` and logs changed lint-relevant files.
+When `lint`, `typecheck`, or `build` fail, `validate.project` applies conservative auto-corrections (TypeScript codefix + organize imports) and retries validation up to 3 attempts.
+
+### Router mode
+
+Use `--router <browser|hash>` (or `FIGMAPIPE_WORKSPACE_ROUTER`) to control the generated `App.tsx` router:
+
+- `browser` (default): clean URLs like `/dashboard`; deployment requires SPA rewrites so app routes resolve to `index.html`.
+- `hash`: compatibility mode with URLs like `/#/dashboard`; no server-side rewrites are required.
+
+For local preview (`/workspace/repros/:jobId/*`), generated BrowserRouter apps auto-resolve a matching `basename` so deep links continue to work under the preview path.
 
 ## Web performance workflow
 
@@ -142,6 +237,13 @@ Artifacts are written to `template/react-mui-app/artifacts/performance` by defau
 Budget policy is configured in `template/react-mui-app/perf-budget.json`.
 Detailed operating notes: `docs/react-web-performance.md`.
 
+## React Compiler (template opt-in)
+
+Generated template builds can enable React Compiler via environment variables:
+
+- `VITE_ENABLE_REACT_COMPILER=true`
+- optional `VITE_REACT_COMPILER_TARGET=18|19`
+
 ## Example API flow
 
 ```bash
@@ -150,8 +252,24 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
   -d '{
     "figmaFileKey":"demo-file-key",
     "figmaAccessToken":"figd_...",
+    "brandTheme":"derived",
+    "generationLocale":"en-US",
+    "formHandlingMode":"react_hook_form",
     "enableGitPr": false,
     "figmaSourceMode":"rest",
+    "llmCodegenMode":"deterministic"
+  }'
+```
+
+Local JSON submit mode:
+
+```bash
+curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
+  -H 'content-type: application/json' \
+  -d '{
+    "figmaSourceMode":"local_json",
+    "figmaJsonPath":"./fixtures/figma-export.json",
+    "enableGitPr": false,
     "llmCodegenMode":"deterministic"
   }'
 ```

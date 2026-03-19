@@ -68,6 +68,22 @@ const normalizeNumber = (value) => {
   return value;
 };
 
+const resolveLighthouseRoot = (report) => {
+  if (report && typeof report === "object" && report.lhr && typeof report.lhr === "object") {
+    return report.lhr;
+  }
+  return report;
+};
+
+const pickMetric = (candidates) => {
+  for (const candidate of candidates) {
+    if (typeof candidate.value === "number" && Number.isFinite(candidate.value)) {
+      return candidate;
+    }
+  }
+  return { value: undefined, source: "missing" };
+};
+
 const parseStringArray = ({ envValue, fallback }) => {
   if (envValue && envValue.trim().length > 0) {
     try {
@@ -290,7 +306,8 @@ const collectAuditForRoute = async ({
   }
 
   const report = JSON.parse(await readFile(outputPath, "utf-8"));
-  const audits = report.lhr?.audits ?? {};
+  const lhr = resolveLighthouseRoot(report);
+  const audits = lhr?.audits ?? {};
   const resourceSummaryItems = audits["resource-summary"]?.details?.items;
   const jsBytes =
     Array.isArray(resourceSummaryItems) && resourceSummaryItems.length > 0
@@ -299,23 +316,53 @@ const collectAuditForRoute = async ({
           .reduce((total, item) => total + (Number(item.transferSize) || 0), 0)
       : normalizeNumber(audits["total-byte-weight"]?.numericValue) ?? 0;
 
-  const inpAudit = normalizeNumber(audits["interaction-to-next-paint"]?.numericValue);
-  const fallbackInp = normalizeNumber(audits["total-blocking-time"]?.numericValue);
+  const inpMetric = pickMetric([
+    {
+      value: normalizeNumber(audits["interaction-to-next-paint"]?.numericValue),
+      source: "interaction-to-next-paint"
+    },
+    {
+      value: normalizeNumber(audits["experimental-interaction-to-next-paint"]?.numericValue),
+      source: "experimental-interaction-to-next-paint"
+    },
+    {
+      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
+      source: "total-blocking-time-proxy"
+    },
+    {
+      value: normalizeNumber(audits.interactive?.numericValue),
+      source: "interactive-proxy"
+    }
+  ]);
+  const routeTransitionMetric = pickMetric([
+    {
+      value: normalizeNumber(audits.interactive?.numericValue),
+      source: "interactive"
+    },
+    {
+      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
+      source: "total-blocking-time-proxy"
+    }
+  ]);
 
   return {
     profile,
     route,
     url,
     metrics: {
-      inp_ms: inpAudit ?? fallbackInp,
+      inp_ms: inpMetric.value,
       lcp_ms: normalizeNumber(audits["largest-contentful-paint"]?.numericValue),
       cls: normalizeNumber(audits["cumulative-layout-shift"]?.numericValue),
       initial_js_kb: Math.round((jsBytes / 1024) * 100) / 100,
-      route_transition_ms: normalizeNumber(audits.interactive?.numericValue)
+      route_transition_ms: routeTransitionMetric.value
+    },
+    metricSources: {
+      inp: inpMetric.source,
+      route_transition_ms: routeTransitionMetric.source
     },
     audits: {
-      performance_score: normalizeNumber(report.lhr?.categories?.performance?.score),
-      fetch_time: report.lhr?.fetchTime
+      performance_score: normalizeNumber(lhr?.categories?.performance?.score),
+      fetch_time: lhr?.fetchTime
     },
     artifacts: {
       lighthouseReport: outputPath
@@ -339,6 +386,22 @@ const aggregateMetrics = (samples) => {
     initial_js_kb: p75(jsValues),
     route_transition_ms: p75(routeTransitionValues)
   };
+};
+
+const summarizeMetricSources = (samples) => {
+  const sourceCounts = {
+    inp: {},
+    route_transition_ms: {}
+  };
+
+  for (const sample of samples) {
+    const inpSource = sample.metricSources?.inp ?? "missing";
+    const routeSource = sample.metricSources?.route_transition_ms ?? "missing";
+    sourceCounts.inp[inpSource] = (sourceCounts.inp[inpSource] ?? 0) + 1;
+    sourceCounts.route_transition_ms[routeSource] = (sourceCounts.route_transition_ms[routeSource] ?? 0) + 1;
+  }
+
+  return sourceCounts;
 };
 
 const compareAgainstBudgets = ({ aggregate, budgets }) => {
@@ -528,6 +591,7 @@ const run = async () => {
         previewOrigin: origin
       },
       aggregate,
+      metricSources: summarizeMetricSources(samples),
       baselineStatus,
       checks: {
         budgets: budgetChecks,

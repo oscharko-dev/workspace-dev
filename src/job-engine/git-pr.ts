@@ -12,6 +12,7 @@ interface GitPrDeps {
     args: string[];
     env?: NodeJS.ProcessEnv;
     redactions?: string[];
+    timeoutMs?: number;
   }) => Promise<CommandResult>;
   fetchImpl: typeof fetch;
 }
@@ -107,6 +108,7 @@ export const runGitPrFlowWithDeps = async ({
   generatedProjectDir,
   jobDir,
   onLog,
+  commandTimeoutMs = 15 * 60_000,
   deps
 }: {
   input: WorkspaceJobInput;
@@ -114,6 +116,7 @@ export const runGitPrFlowWithDeps = async ({
   generatedProjectDir: string;
   jobDir: string;
   onLog: (message: string) => void;
+  commandTimeoutMs?: number;
   deps?: Partial<GitPrDeps>;
 }): Promise<GitPrExecutionResult> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
@@ -131,7 +134,8 @@ export const runGitPrFlowWithDeps = async ({
     throw new Error("Only GitHub repositories are supported in workspace-dev git.pr mode.");
   }
 
-  const boardKey = resolveBoardKey(input.figmaFileKey);
+  const boardKeySeed = input.figmaFileKey?.trim() || input.figmaJsonPath?.trim() || "local-json";
+  const boardKey = resolveBoardKey(boardKeySeed);
   const repoDir = path.join(jobDir, "repo");
   const redactions = [repoToken];
   const authedUrl = toGithubAuthedUrl({ repoUrl, token: repoToken });
@@ -140,7 +144,8 @@ export const runGitPrFlowWithDeps = async ({
     cwd: jobDir,
     command: "git",
     args: ["ls-remote", "--symref", authedUrl, "HEAD"],
-    redactions
+    redactions,
+    timeoutMs: commandTimeoutMs
   });
 
   const defaultBranch = parseDefaultBranchFromSymref(defaultBranchProbe.stdout) ?? "main";
@@ -149,7 +154,8 @@ export const runGitPrFlowWithDeps = async ({
     cwd: jobDir,
     command: "git",
     args: ["clone", "--depth", "1", "--branch", defaultBranch, authedUrl, repoDir],
-    redactions
+    redactions,
+    timeoutMs: commandTimeoutMs
   });
 
   if (!cloneResult.success) {
@@ -160,7 +166,8 @@ export const runGitPrFlowWithDeps = async ({
   const checkoutResult = await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["checkout", "-b", branchName]
+    args: ["checkout", "-b", branchName],
+    timeoutMs: commandTimeoutMs
   });
   if (!checkoutResult.success) {
     throw new Error(`git checkout failed: ${checkoutResult.combined.slice(0, 2000)}`);
@@ -178,7 +185,8 @@ export const runGitPrFlowWithDeps = async ({
   const addResult = await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["add", "-A", scopePath]
+    args: ["add", "-A", scopePath],
+    timeoutMs: commandTimeoutMs
   });
   if (!addResult.success) {
     throw new Error(`git add failed: ${addResult.combined.slice(0, 2000)}`);
@@ -187,7 +195,8 @@ export const runGitPrFlowWithDeps = async ({
   const changedFilesResult = await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["diff", "--cached", "--name-only"]
+    args: ["diff", "--cached", "--name-only"],
+    timeoutMs: commandTimeoutMs
   });
   if (!changedFilesResult.success) {
     throw new Error(`git diff failed: ${changedFilesResult.combined.slice(0, 2000)}`);
@@ -211,18 +220,21 @@ export const runGitPrFlowWithDeps = async ({
   await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["config", "user.name", "workspace-dev bot"]
+    args: ["config", "user.name", "workspace-dev bot"],
+    timeoutMs: commandTimeoutMs
   });
   await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["config", "user.email", "workspace-dev@workspace-dev.local"]
+    args: ["config", "user.email", "workspace-dev@workspace-dev.local"],
+    timeoutMs: commandTimeoutMs
   });
 
   const commitResult = await runCommand({
     cwd: repoDir,
     command: "git",
-    args: ["commit", "-m", `chore(figma): deterministic update ${boardKey}`]
+    args: ["commit", "-m", `chore(figma): deterministic update ${boardKey}`],
+    timeoutMs: commandTimeoutMs
   });
   if (!commitResult.success) {
     throw new Error(`git commit failed: ${commitResult.combined.slice(0, 2000)}`);
@@ -232,7 +244,8 @@ export const runGitPrFlowWithDeps = async ({
     cwd: repoDir,
     command: "git",
     args: ["push", "-u", "origin", branchName],
-    redactions
+    redactions,
+    timeoutMs: commandTimeoutMs
   });
   if (!pushResult.success) {
     throw new Error(`git push failed: ${pushResult.combined.slice(0, 2000)}`);
@@ -284,19 +297,22 @@ export const runGitPrFlow = async ({
   job,
   generatedProjectDir,
   jobDir,
-  onLog
+  onLog,
+  commandTimeoutMs = 15 * 60_000
 }: {
   input: WorkspaceJobInput;
   job: JobRecord;
   generatedProjectDir: string;
   jobDir: string;
   onLog: (message: string) => void;
+  commandTimeoutMs?: number;
 }): Promise<GitPrExecutionResult> => {
   return await runGitPrFlowWithDeps({
     input,
     job,
     generatedProjectDir,
     jobDir,
-    onLog
+    onLog,
+    commandTimeoutMs
   });
 };

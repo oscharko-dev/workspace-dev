@@ -15,14 +15,46 @@ test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
+    brandTheme: "Sparkasse",
+    generationLocale: "en-US",
+    formHandlingMode: "react_hook_form",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
   assert.equal(result.success, true);
   if (result.success) {
     assert.equal(result.data.figmaFileKey, "abc123");
+    assert.equal(result.data.brandTheme, "sparkasse");
+    assert.equal(result.data.generationLocale, "en-US");
+    assert.equal(result.data.formHandlingMode, "react_hook_form");
     assert.equal(result.data.figmaSourceMode, "rest");
     assert.equal(result.data.enableGitPr, false);
+  }
+});
+
+test("schema: valid local_json submit body parses correctly", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: "./fixtures/figma.json",
+    llmCodegenMode: "deterministic"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "local_json");
+    assert.equal(result.data.figmaJsonPath, "./fixtures/figma.json");
+    assert.equal(result.data.figmaFileKey, undefined);
+    assert.equal(result.data.figmaAccessToken, undefined);
+  }
+});
+
+test("schema: local_json mode is inferred from figmaJsonPath when figmaSourceMode is omitted", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaJsonPath: "./fixtures/figma.json"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "local_json");
+    assert.equal(result.data.figmaJsonPath, "./fixtures/figma.json");
   }
 });
 
@@ -37,6 +69,33 @@ test("schema: empty required values fail validation", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "",
     figmaAccessToken: ""
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: local_json mode rejects missing figmaJsonPath", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: local_json mode rejects rest credentials", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: "./fixtures/figma.json",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: rest mode rejects figmaJsonPath", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "rest",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    figmaJsonPath: "./fixtures/figma.json"
   });
   assert.equal(result.success, false);
 });
@@ -62,7 +121,27 @@ test("schema: optional fields must be strings when provided", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
-    projectName: 123
+    projectName: 123,
+    generationLocale: 5,
+    formHandlingMode: 7
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: brandTheme must be a supported enum value", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    brandTheme: "enterprise"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: formHandlingMode must be a supported enum value", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    formHandlingMode: "formik"
   });
   assert.equal(result.success, false);
 });
@@ -117,6 +196,21 @@ test("schema: workspace status rejects non-rest figmaSourceMode", () => {
     previewEnabled: true
   });
   assert.equal(result.success, false);
+});
+
+test("schema: workspace status allows local_json figmaSourceMode", () => {
+  const result = WorkspaceStatusSchema.safeParse({
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic",
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true
+  });
+  assert.equal(result.success, true);
 });
 
 test("schema: workspace status requires outputRoot and previewEnabled", () => {

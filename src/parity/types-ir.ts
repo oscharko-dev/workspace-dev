@@ -1,0 +1,346 @@
+export interface DesignTokenPalette {
+  primary: string;
+  secondary: string;
+  background: string;
+  text: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  divider: string;
+  action: DesignTokenActionPalette;
+}
+
+export interface DesignTokenActionPalette {
+  active: string;
+  hover: string;
+  selected: string;
+  disabled: string;
+  disabledBackground: string;
+  focus: string;
+}
+
+export type DesignTokenTypographyVariantName =
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
+  | "subtitle1"
+  | "subtitle2"
+  | "body1"
+  | "body2"
+  | "button"
+  | "caption"
+  | "overline";
+
+export interface DesignTokenTypographyVariant {
+  fontSizePx: number;
+  fontWeight: number;
+  lineHeightPx: number;
+  fontFamily?: string;
+  letterSpacingEm?: number;
+  textTransform?: "none" | "capitalize" | "uppercase" | "lowercase";
+}
+
+export type DesignTokenTypographyScale = Record<DesignTokenTypographyVariantName, DesignTokenTypographyVariant>;
+
+export interface DesignTokens {
+  palette: DesignTokenPalette;
+  borderRadius: number;
+  spacingBase: number;
+  fontFamily: string;
+  headingSize: number;
+  bodySize: number;
+  typography: DesignTokenTypographyScale;
+}
+
+export type PrimaryAxisAlignItems = "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
+export type CounterAxisAlignItems = "MIN" | "CENTER" | "MAX" | "BASELINE";
+
+export type VariantElementState = "default" | "hover" | "active" | "disabled";
+export type ResponsiveBreakpoint = "xs" | "sm" | "md" | "lg" | "xl";
+
+export interface VariantMuiProps {
+  variant?: "contained" | "outlined" | "text";
+  size?: "small" | "medium" | "large";
+  disabled?: boolean;
+}
+
+export interface VariantStateStyle {
+  backgroundColor?: string;
+  borderColor?: string;
+  color?: string;
+}
+
+export interface VariantStateSnapshot {
+  nodeId: string;
+  state?: VariantElementState;
+  properties: Record<string, string>;
+  muiProps: VariantMuiProps;
+  style: VariantStateStyle;
+  isDefault: boolean;
+}
+
+export interface VariantMappingIR {
+  properties: Record<string, string>;
+  muiProps: VariantMuiProps;
+  state?: VariantElementState;
+  defaultVariantNodeId?: string;
+  stateOverrides?: {
+    hover?: VariantStateStyle;
+    active?: VariantStateStyle;
+    disabled?: VariantStateStyle;
+  };
+  states?: VariantStateSnapshot[];
+}
+
+export interface ScreenResponsiveLayoutOverride {
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  gap?: number;
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+  widthRatio?: number;
+  minHeight?: number;
+}
+
+export type ScreenResponsiveLayoutOverridesByBreakpoint = Partial<
+  Record<ResponsiveBreakpoint, ScreenResponsiveLayoutOverride>
+>;
+
+export interface ScreenResponsiveVariantIR {
+  breakpoint: ResponsiveBreakpoint;
+  nodeId: string;
+  name: string;
+  width?: number;
+  height?: number;
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+  gap: number;
+  padding: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  isBase: boolean;
+}
+
+export interface ScreenResponsiveIR {
+  groupKey: string;
+  baseBreakpoint: ResponsiveBreakpoint;
+  variants: ScreenResponsiveVariantIR[];
+  rootLayoutOverrides?: ScreenResponsiveLayoutOverridesByBreakpoint;
+  topLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+}
+
+export interface ScreenElementIR {
+  id: string;
+  name: string;
+  nodeType: string;
+  type:
+    | "text"
+    | "container"
+    | "button"
+    | "input"
+    | "image"
+    | "grid"
+    | "stack"
+    | "paper"
+    | "card"
+    | "chip"
+    | "switch"
+    | "checkbox"
+    | "radio"
+    | "select"
+    | "slider"
+    | "rating"
+    | "list"
+    | "table"
+    | "tooltip"
+    | "appbar"
+    | "drawer"
+    | "breadcrumbs"
+    | "tab"
+    | "dialog"
+    | "snackbar"
+    | "stepper"
+    | "progress"
+    | "skeleton"
+    | "avatar"
+    | "badge"
+    | "divider"
+    | "navigation";
+  text?: string;
+  textRole?: "placeholder";
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fillColor?: string;
+  fillGradient?: string;
+  opacity?: number;
+  elevation?: number;
+  insetShadow?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textAlign?: "LEFT" | "CENTER" | "RIGHT";
+  vectorPaths?: string[];
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+  gap?: number;
+  padding?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  margin?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  cornerRadius?: number;
+  prototypeNavigation?: {
+    targetScreenId: string;
+    mode: "push" | "replace" | "overlay";
+  };
+  variantMapping?: VariantMappingIR;
+  children?: ScreenElementIR[];
+}
+
+export interface ScreenIR {
+  id: string;
+  name: string;
+  layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+  gap: number;
+  width?: number;
+  height?: number;
+  fillColor?: string;
+  fillGradient?: string;
+  padding: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  responsive?: ScreenResponsiveIR;
+  children: ScreenElementIR[];
+}
+
+export interface ScreenElementCountMetric {
+  screenId: string;
+  screenName: string;
+  elements: number;
+}
+
+export interface TruncatedScreenMetric {
+  screenId: string;
+  screenName: string;
+  originalElements: number;
+  retainedElements: number;
+  budget: number;
+}
+
+export interface DepthTruncatedScreenMetric {
+  screenId: string;
+  screenName: string;
+  maxDepth: number;
+  firstTruncatedDepth: number;
+  truncatedBranchCount: number;
+}
+
+export interface SimplificationMetrics {
+  removedEmptyNodes: number;
+  promotedSingleChild: number;
+  promotedGroupMultiChild: number;
+  spacingMerges: number;
+  guardedSkips: number;
+}
+
+export interface ScreenSimplificationMetric extends SimplificationMetrics {
+  screenId: string;
+  screenName: string;
+}
+
+export interface GenerationMetrics {
+  fetchedNodes: number;
+  skippedHidden: number;
+  skippedPlaceholders: number;
+  screenElementCounts: ScreenElementCountMetric[];
+  truncatedScreens: TruncatedScreenMetric[];
+  depthTruncatedScreens?: DepthTruncatedScreenMetric[];
+  degradedGeometryNodes: string[];
+  simplification?: {
+    aggregate: SimplificationMetrics;
+    screens: ScreenSimplificationMetric[];
+  };
+  prototypeNavigationDetected?: number;
+  prototypeNavigationResolved?: number;
+  prototypeNavigationUnresolved?: number;
+  prototypeNavigationRendered?: number;
+}
+
+export interface DesignIR {
+  sourceName: string;
+  screens: ScreenIR[];
+  tokens: DesignTokens;
+  metrics?: GenerationMetrics;
+}
+
+export interface DesignNodeFingerprint {
+  nodeId: string;
+  name: string;
+  type: ScreenElementIR["type"];
+  nodeType: string;
+  boundVariables?: string[];
+  text?: string;
+  fillColor?: string;
+  strokeColor?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  lineHeight?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
+  primaryAxisAlignItems?: PrimaryAxisAlignItems;
+  counterAxisAlignItems?: CounterAxisAlignItems;
+}
+
+export interface DesignScreenFingerprint {
+  screenId: string;
+  name: string;
+  filePath: string;
+  nodes: DesignNodeFingerprint[];
+}
+
+export interface DesignManifest {
+  boardKey: string;
+  figmaFileKey: string;
+  generatedAt: string;
+  tokens: DesignTokens;
+  screens: DesignScreenFingerprint[];
+}
+
+export interface GeneratedFile {
+  path: string;
+  content: string;
+}
+
+export interface ValidationFailure {
+  command: string;
+  output: string;
+}

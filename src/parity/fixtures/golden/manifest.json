@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "simple-auth",
+      "figmaJson": "simple-auth/figma.json",
+      "artifacts": [
+        {
+          "name": "design-ir",
+          "kind": "json",
+          "actual": "design-ir.json",
+          "expected": "simple-auth/expected/design-ir.json"
+        },
+        {
+          "name": "app-shell",
+          "kind": "text",
+          "actual": "src/App.tsx",
+          "expected": "simple-auth/expected/src_App.tsx"
+        },
+        {
+          "name": "theme",
+          "kind": "text",
+          "actual": "src/theme/theme.ts",
+          "expected": "simple-auth/expected/src_theme_theme.ts"
+        },
+        {
+          "name": "login-screen",
+          "kind": "text",
+          "actual": "src/screens/Login.tsx",
+          "expected": "simple-auth/expected/screens/Login.tsx"
+        }
+      ]
+    },
+    {
+      "id": "prototype-navigation",
+      "figmaJson": "prototype-navigation/figma.json",
+      "artifacts": [
+        {
+          "name": "design-ir",
+          "kind": "json",
+          "actual": "design-ir.json",
+          "expected": "prototype-navigation/expected/design-ir.json"
+        },
+        {
+          "name": "app-shell",
+          "kind": "text",
+          "actual": "src/App.tsx",
+          "expected": "prototype-navigation/expected/src_App.tsx"
+        },
+        {
+          "name": "theme",
+          "kind": "text",
+          "actual": "src/theme/theme.ts",
+          "expected": "prototype-navigation/expected/src_theme_theme.ts"
+        },
+        {
+          "name": "home-screen",
+          "kind": "text",
+          "actual": "src/screens/Home.tsx",
+          "expected": "prototype-navigation/expected/screens/Home.tsx"
+        },
+        {
+          "name": "details-screen",
+          "kind": "text",
+          "actual": "src/screens/Details.tsx",
+          "expected": "prototype-navigation/expected/screens/Details.tsx"
+        }
+      ]
+    }
+  ]
+}

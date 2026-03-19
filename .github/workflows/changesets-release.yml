@@ -44,6 +44,9 @@ jobs:
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
 
+      - name: Enforce pipeline/template docs version consistency
+        run: pnpm run verify:docs-template-stack
+
       - name: Verify npm signature attestations
         run: npm audit signatures
 

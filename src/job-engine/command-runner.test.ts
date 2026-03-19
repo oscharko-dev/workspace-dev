@@ -35,3 +35,35 @@ test("runCommand returns structured failure on spawn error", async () => {
   assert.equal(result.code, null);
   assert.ok(result.combined.length > 0);
 });
+
+test("runCommand terminates process when timeout is exceeded", async () => {
+  const result = await runCommand({
+    cwd: os.tmpdir(),
+    command: "node",
+    args: ["-e", "setTimeout(() => console.log('done'), 30_000)"],
+    timeoutMs: 1_000
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.timedOut, true);
+  assert.ok((result.durationMs ?? 0) >= 900);
+  assert.ok(result.combined.includes("Command timed out"));
+});
+
+test("runCommand terminates process when abort signal is triggered", async () => {
+  const abortController = new AbortController();
+  setTimeout(() => {
+    abortController.abort();
+  }, 200);
+
+  const result = await runCommand({
+    cwd: os.tmpdir(),
+    command: "node",
+    args: ["-e", "setTimeout(() => console.log('done'), 30_000)"],
+    abortSignal: abortController.signal
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.canceled, true);
+  assert.ok(result.combined.includes("Command canceled"));
+});

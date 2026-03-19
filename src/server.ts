@@ -62,12 +62,61 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const absoluteOutputRoot = path.isAbsolute(outputRoot)
     ? path.normalize(outputRoot)
     : path.resolve(workDir, outputRoot);
+  const absoluteIconMapFilePath =
+    typeof options.iconMapFilePath === "string" && options.iconMapFilePath.trim().length > 0
+      ? path.isAbsolute(options.iconMapFilePath)
+        ? path.normalize(options.iconMapFilePath)
+        : path.resolve(workDir, options.iconMapFilePath)
+      : undefined;
+  const absoluteDesignSystemFilePath =
+    typeof options.designSystemFilePath === "string" && options.designSystemFilePath.trim().length > 0
+      ? path.isAbsolute(options.designSystemFilePath)
+        ? path.normalize(options.designSystemFilePath)
+        : path.resolve(workDir, options.designSystemFilePath)
+      : undefined;
 
   const startedAt = Date.now();
   const defaults = getWorkspaceDefaults();
   const runtime = resolveRuntimeSettings({
     ...(options.figmaRequestTimeoutMs !== undefined ? { figmaRequestTimeoutMs: options.figmaRequestTimeoutMs } : {}),
     ...(options.figmaMaxRetries !== undefined ? { figmaMaxRetries: options.figmaMaxRetries } : {}),
+    ...(options.figmaBootstrapDepth !== undefined ? { figmaBootstrapDepth: options.figmaBootstrapDepth } : {}),
+    ...(options.figmaNodeBatchSize !== undefined ? { figmaNodeBatchSize: options.figmaNodeBatchSize } : {}),
+    ...(options.figmaNodeFetchConcurrency !== undefined
+      ? { figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency }
+      : {}),
+    ...(options.figmaAdaptiveBatchingEnabled !== undefined
+      ? { figmaAdaptiveBatchingEnabled: options.figmaAdaptiveBatchingEnabled }
+      : {}),
+    ...(options.figmaMaxScreenCandidates !== undefined
+      ? { figmaMaxScreenCandidates: options.figmaMaxScreenCandidates }
+      : {}),
+    ...(options.figmaScreenNamePattern !== undefined
+      ? { figmaScreenNamePattern: options.figmaScreenNamePattern }
+      : {}),
+    ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
+    ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
+    ...(absoluteIconMapFilePath !== undefined ? { iconMapFilePath: absoluteIconMapFilePath } : {}),
+    ...(absoluteDesignSystemFilePath !== undefined ? { designSystemFilePath: absoluteDesignSystemFilePath } : {}),
+    ...(options.exportImages !== undefined ? { exportImages: options.exportImages } : {}),
+    ...(options.figmaScreenElementBudget !== undefined
+      ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
+      : {}),
+    ...(options.figmaScreenElementMaxDepth !== undefined
+      ? { figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth }
+      : {}),
+    ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
+    ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
+    ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
+    ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
+    ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
+    ...(options.enableUnitTestValidation !== undefined
+      ? { enableUnitTestValidation: options.enableUnitTestValidation }
+      : {}),
+    ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),
+    ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
+    ...(options.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.maxConcurrentJobs } : {}),
+    ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });

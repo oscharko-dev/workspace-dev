@@ -1,9 +1,47 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWorkspaceServer } from "./server.js";
+
+const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_NODE_MODULES_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app/node_modules");
+
+const createLocalFigmaPayload = () => ({
+  name: "Workspace Dev Demo",
+  document: {
+    id: "0:1",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "1:1",
+        name: "Page 1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "2:1",
+            name: "Landing",
+            type: "FRAME",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1024 },
+            children: [
+              { id: "3:1", name: "Header", type: "FRAME", children: [] },
+              { id: "3:2", name: "Hero", type: "FRAME", children: [] }
+            ]
+          },
+          {
+            id: "2:2",
+            name: "Checkout",
+            type: "FRAME",
+            absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 844 },
+            children: [{ id: "4:1", name: "Container", type: "FRAME", children: [] }]
+          }
+        ]
+      }
+    ]
+  }
+});
 
 const createFakeFigmaFetch = (): typeof fetch => {
   return async (input) => {
@@ -17,39 +55,7 @@ const createFakeFigmaFetch = (): typeof fetch => {
       });
     }
 
-    const payload = {
-      name: "Workspace Dev Demo",
-      document: {
-        id: "0:1",
-        type: "DOCUMENT",
-        children: [
-          {
-            id: "1:1",
-            name: "Page 1",
-            type: "CANVAS",
-            children: [
-              {
-                id: "2:1",
-                name: "Landing",
-                type: "FRAME",
-                absoluteBoundingBox: { width: 1440, height: 1024 },
-                children: [
-                  { id: "3:1", name: "Header", type: "FRAME", children: [] },
-                  { id: "3:2", name: "Hero", type: "FRAME", children: [] }
-                ]
-              },
-              {
-                id: "2:2",
-                name: "Checkout",
-                type: "FRAME",
-                absoluteBoundingBox: { width: 390, height: 844 },
-                children: [{ id: "4:1", name: "Container", type: "FRAME", children: [] }]
-              }
-            ]
-          }
-        ]
-      }
-    };
+    const payload = createLocalFigmaPayload();
 
     return new Response(JSON.stringify(payload), {
       status: 200,
@@ -58,6 +64,22 @@ const createFakeFigmaFetch = (): typeof fetch => {
       }
     });
   };
+};
+
+const createNeverEndingCancelableFetch = (): typeof fetch => {
+  return async (_input, init) =>
+    await new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal instanceof AbortSignal) {
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true }
+        );
+      }
+    });
 };
 
 const waitForJobTerminalState = async ({
@@ -80,7 +102,7 @@ const waitForJobTerminalState = async ({
     assert.equal(response.statusCode, 200);
     const body = response.json<Record<string, unknown>>();
 
-    if (body.status === "completed" || body.status === "failed") {
+    if (body.status === "completed" || body.status === "failed" || body.status === "canceled") {
       return body;
     }
 
@@ -94,6 +116,42 @@ const waitForJobTerminalState = async ({
 
 const createTempOutputRoot = async (): Promise<string> => {
   return await mkdtemp(path.join(os.tmpdir(), "workspace-dev-test-"));
+};
+
+const isPathWithinRoot = ({ candidatePath, rootPath }: { candidatePath: string; rootPath: string }): boolean => {
+  const normalizedRoot = path.resolve(rootPath);
+  const normalizedCandidate = path.resolve(candidatePath);
+  return (
+    normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`)
+  );
+};
+
+const collectSymlinkTargets = async ({ rootDir }: { rootDir: string }): Promise<string[]> => {
+  const pendingDirs: string[] = [rootDir];
+  const resolvedTargets: string[] = [];
+
+  while (pendingDirs.length > 0) {
+    const currentDir = pendingDirs.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = await readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirs.push(entryPath);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) {
+        continue;
+      }
+      const target = await readlink(entryPath);
+      resolvedTargets.push(path.resolve(path.dirname(entryPath), target));
+    }
+  }
+
+  return resolvedTargets;
 };
 
 const extractUiAssetUrls = ({ html }: { html: string }): string[] => {
@@ -349,6 +407,39 @@ test("workspace server rejects submit requests without required fields", async (
   }
 });
 
+test("workspace server rejects ambiguous source inputs that mix rest and local_json fields", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: "./figma.json",
+        figmaFileKey: "demo",
+        figmaAccessToken: "figd_xxx"
+      }
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.issues));
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server accepts submit with 202 and job polling reaches completed", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -387,7 +478,27 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(finalStatus.status, "completed");
     assert.equal(request.repoToken, undefined);
     assert.equal(request.enableGitPr, false);
+    assert.equal(request.brandTheme, "derived");
+    assert.equal(request.generationLocale, "de-DE");
+    assert.equal(request.formHandlingMode, "react_hook_form");
     assert.equal(preview.enabled, true);
+
+    const generatedProjectDir = path.join(outputRoot, "jobs", jobId, "generated-app");
+    const symlinkTargets = await collectSymlinkTargets({ rootDir: generatedProjectDir });
+    const hasTemplateNodeModulesSymlink = symlinkTargets.some((target) =>
+      isPathWithinRoot({ candidatePath: target, rootPath: TEMPLATE_NODE_MODULES_ROOT })
+    );
+    assert.equal(
+      hasTemplateNodeModulesSymlink,
+      false,
+      "Generated app must not keep symlinks into template node_modules."
+    );
+    const generatedRootEntries = await readdir(generatedProjectDir);
+    assert.equal(
+      generatedRootEntries.includes("artifacts"),
+      false,
+      "Generated app must not include template artifacts directory."
+    );
 
     const resultResponse = await server.app.inject({
       method: "GET",
@@ -405,6 +516,183 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     assert.equal(previewResponse.statusCode, 200);
     assert.match(previewResponse.headers["content-type"] ?? "", /text\/html/i);
     assert.equal(previewResponse.body.includes('<div id="root"></div>'), true);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server accepts local_json submit and completes without Figma REST fetches", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const localJsonPath = path.join(outputRoot, "local-figma.json");
+  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  let fetchCalls = 0;
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error("Unexpected network fetch in local_json mode.");
+    }
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: localJsonPath,
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const acceptedModes = submitBody.acceptedModes as Record<string, unknown>;
+    assert.equal(acceptedModes.figmaSourceMode, "local_json");
+    assert.equal(acceptedModes.llmCodegenMode, "deterministic");
+
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const request = finalStatus.request as Record<string, unknown>;
+    assert.equal(finalStatus.status, "completed");
+    assert.equal(request.figmaSourceMode, "local_json");
+    assert.equal(request.figmaJsonPath, localJsonPath);
+    assert.equal(request.figmaFileKey, undefined);
+    assert.equal(request.formHandlingMode, "react_hook_form");
+    assert.equal(fetchCalls, 0);
+
+    const cleanedFigmaPath = path.join(outputRoot, "jobs", jobId, "figma.json");
+    const cleanedFigma = await readFile(cleanedFigmaPath, "utf8");
+    assert.match(cleanedFigma, /Workspace Dev Demo/i);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server fails validate.project when skipInstall=true and dependencies are missing", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    skipInstall: true,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const error = finalStatus.error as Record<string, unknown> | undefined;
+
+    assert.equal(finalStatus.status, "failed");
+    assert.equal(error?.stage, "validate.project");
+    assert.match(String(error?.message), /skipInstall=true requires an existing node_modules directory/i);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server resolves submit brandTheme and generationLocale overrides over server defaults", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    brandTheme: "sparkasse",
+    generationLocale: "de-DE",
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        brandTheme: "derived",
+        generationLocale: "en-US",
+        formHandlingMode: "legacy_use_state",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    const request = finalStatus.request as Record<string, unknown>;
+
+    assert.equal(finalStatus.status, "completed");
+    assert.equal(request.brandTheme, "derived");
+    assert.equal(request.generationLocale, "en-US");
+    assert.equal(request.formHandlingMode, "legacy_use_state");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server applies hash router runtime mode to generated App shell", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    routerMode: "hash",
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const submitResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const submitBody = submitResponse.json<Record<string, unknown>>();
+    const jobId = String(submitBody.jobId);
+    const finalStatus = await waitForJobTerminalState({ server, jobId, timeoutMs: 120_000 });
+    assert.equal(finalStatus.status, "completed");
+
+    const appPath = path.join(outputRoot, "jobs", jobId, "generated-app", "src", "App.tsx");
+    const appContent = await readFile(appPath, "utf8");
+    assert.ok(appContent.includes("HashRouter"));
+    assert.equal(appContent.includes("BrowserRouter"), false);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -464,6 +752,154 @@ test("workspace server returns JOB_NOT_FOUND for unknown job ids", async () => {
     assert.equal(response.statusCode, 404);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "JOB_NOT_FOUND");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server cancels queued jobs through POST /workspace/jobs/:id/cancel", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 2,
+    fetchImpl: createNeverEndingCancelableFetch()
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(firstSubmit.json<Record<string, unknown>>().jobId);
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(secondSubmit.statusCode, 202);
+    const secondJobId = String(secondSubmit.json<Record<string, unknown>>().jobId);
+
+    const cancelResponse = await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${secondJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "User canceled queued job."
+      }
+    });
+    assert.equal(cancelResponse.statusCode, 202);
+    const canceledBody = cancelResponse.json<Record<string, unknown>>();
+    assert.equal(canceledBody.status, "canceled");
+
+    const canceledStatus = await waitForJobTerminalState({ server, jobId: secondJobId, timeoutMs: 20_000 });
+    assert.equal(canceledStatus.status, "canceled");
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    const firstTerminal = await waitForJobTerminalState({ server, jobId: firstJobId, timeoutMs: 20_000 });
+    assert.equal(firstTerminal.status, "canceled");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server returns 429 backpressure when queue limit is reached", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 1,
+    fetchImpl: createNeverEndingCancelableFetch()
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(firstSubmit.json<Record<string, unknown>>().jobId);
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(secondSubmit.statusCode, 202);
+    const secondJobId = String(secondSubmit.json<Record<string, unknown>>().jobId);
+
+    const thirdSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-3",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(thirdSubmit.statusCode, 429);
+    const backpressureBody = thirdSubmit.json<Record<string, unknown>>();
+    assert.equal(backpressureBody.error, "QUEUE_BACKPRESSURE");
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${secondJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

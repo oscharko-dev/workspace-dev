@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { WorkspaceStatus } from "../contracts/index.js";
+import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { enforceModeLock } from "../mode-lock.js";
@@ -65,7 +65,7 @@ export function createWorkspaceRequestHandler({
       const parsedJobRoute = parseJobRoute(pathname);
       if (parsedJobRoute) {
         const jobId = decodeURIComponent(parsedJobRoute.jobId);
-        if (parsedJobRoute.resultOnly) {
+        if (parsedJobRoute.action === "result") {
           const jobResult = jobEngine.getJobResult(jobId);
           if (!jobResult) {
             sendJson({
@@ -79,6 +79,18 @@ export function createWorkspaceRequestHandler({
             return;
           }
           sendJson({ response, statusCode: 200, payload: jobResult });
+          return;
+        }
+
+        if (parsedJobRoute.action === "cancel") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for cancellation route '/workspace/jobs/${jobId}/cancel'.`
+            }
+          });
           return;
         }
 
@@ -171,6 +183,97 @@ export function createWorkspaceRequestHandler({
       }
     }
 
+    if (method === "POST") {
+      const parsedJobRoute = parseJobRoute(pathname);
+      if (parsedJobRoute?.action === "cancel") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        let reason: string | undefined;
+        if (rawBody.value !== undefined) {
+          if (
+            typeof rawBody.value !== "object" ||
+            rawBody.value === null ||
+            Array.isArray(rawBody.value)
+          ) {
+            sendJson({
+              response,
+              statusCode: 400,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: "Cancel request must be an object when body is provided." }]
+              }
+            });
+            return;
+          }
+
+          const payload = rawBody.value as Record<string, unknown>;
+          const allowedKeys = new Set(["reason"]);
+          const unknownKey = Object.keys(payload).find((key) => !allowedKeys.has(key));
+          if (unknownKey) {
+            sendJson({
+              response,
+              statusCode: 400,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: unknownKey, message: `Unexpected property '${unknownKey}'.` }]
+              }
+            });
+            return;
+          }
+
+          if (payload.reason !== undefined) {
+            if (typeof payload.reason !== "string" || payload.reason.trim().length === 0) {
+              sendJson({
+                response,
+                statusCode: 400,
+                payload: {
+                  error: "VALIDATION_ERROR",
+                  message: "Request validation failed.",
+                  issues: [{ path: "reason", message: "reason must be a non-empty string when provided." }]
+                }
+              });
+              return;
+            }
+            reason = payload.reason.trim();
+          }
+        }
+
+        const canceledJob = jobEngine.cancelJob({ jobId, ...(reason ? { reason } : {}) });
+        if (!canceledJob) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "JOB_NOT_FOUND",
+              message: `Unknown job '${jobId}'.`
+            }
+          });
+          return;
+        }
+        sendJson({
+          response,
+          statusCode: 202,
+          payload: canceledJob
+        });
+        return;
+      }
+    }
+
     if (method === "POST" && pathname === "/workspace/submit") {
       const rawBody = await readJsonBody(request);
       if (!rawBody.ok) {
@@ -193,9 +296,12 @@ export function createWorkspaceRequestHandler({
       }
 
       const { figmaSourceMode, llmCodegenMode } = parsed.data;
+      const resolvedFigmaSourceMode =
+        (figmaSourceMode?.trim().toLowerCase() as WorkspaceFigmaSourceMode | undefined) ?? defaults.figmaSourceMode;
+      const resolvedLlmCodegenMode = llmCodegenMode ?? defaults.llmCodegenMode;
       const modeLockInput = {
-        ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
-        ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {})
+        figmaSourceMode: resolvedFigmaSourceMode,
+        llmCodegenMode: resolvedLlmCodegenMode
       };
 
       try {
@@ -212,6 +318,7 @@ export function createWorkspaceRequestHandler({
             }),
             allowedModes: {
               figmaSourceMode: defaults.figmaSourceMode,
+              figmaSourceModes: ["rest", "local_json"],
               llmCodegenMode: defaults.llmCodegenMode
             }
           }
@@ -219,11 +326,51 @@ export function createWorkspaceRequestHandler({
         return;
       }
 
-      const accepted = jobEngine.submitJob({
-        ...parsed.data,
-        figmaSourceMode: defaults.figmaSourceMode,
-        llmCodegenMode: defaults.llmCodegenMode
-      });
+      let accepted: ReturnType<JobEngine["submitJob"]>;
+      try {
+        accepted = jobEngine.submitJob({
+          ...parsed.data,
+          figmaSourceMode: resolvedFigmaSourceMode,
+          llmCodegenMode: defaults.llmCodegenMode
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          (error as { code?: string }).code === "E_JOB_QUEUE_FULL"
+        ) {
+          const queueValue = (error as { queue?: unknown }).queue;
+          sendJson({
+            response,
+            statusCode: 429,
+            payload: {
+              error: "QUEUE_BACKPRESSURE",
+              message: sanitizeErrorMessage({
+                error,
+                fallback: "Job queue limit reached."
+              }),
+              queue:
+                typeof queueValue === "object" &&
+                queueValue !== null
+                  ? queueValue
+                  : undefined
+            }
+          });
+          return;
+        }
+        sendJson({
+          response,
+          statusCode: 500,
+          payload: {
+            error: "INTERNAL_ERROR",
+            message: sanitizeErrorMessage({
+              error,
+              fallback: "Could not submit job."
+            })
+          }
+        });
+        return;
+      }
 
       sendJson({
         response,

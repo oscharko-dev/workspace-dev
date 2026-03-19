@@ -9,9 +9,11 @@
 - Start local runtime on localhost
 - Serve reduced workspace UI on `/workspace/ui` and `/workspace/:figmaFileKey`
 - Enforce mode lock (`rest` + `deterministic`)
-- Execute autonomous job lifecycle (`queued -> running -> completed|failed`)
+- Execute autonomous job lifecycle (`queued -> running -> completed|failed|canceled`)
+- Enforce in-memory queue backpressure caps (`maxConcurrentJobs`, `maxQueuedJobs`)
 - Fetch Figma file over REST
 - Derive deterministic IR and generate local code artifacts
+- Auto-bootstrap deterministic icon fallback mapping at `<outputRoot>/icon-fallback-map.json`
 - Export and serve local preview from `.workspace-dev/repros/<jobId>`
 
 ## Explicit Non-Goals
@@ -37,7 +39,7 @@
 | ------ | ------------- | -------------- |
 | Runtime | Local Node.js process | Multi-service runtime |
 | Database | None | PostgreSQL |
-| Queue | None | Redis/BullMQ |
+| Queue | In-memory capped queue | Redis/BullMQ |
 | Source modes | REST only | REST + MCP + Hybrid |
 | Codegen modes | Deterministic only | Deterministic + LLM |
 | Preview | Local static export | Full platform preview |

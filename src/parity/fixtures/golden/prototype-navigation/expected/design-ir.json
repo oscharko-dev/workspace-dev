@@ -1,0 +1,312 @@
+{
+  "sourceName": "Prototype Navigation Board",
+  "screens": [
+    {
+      "id": "screen-home",
+      "name": "Home",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "home-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Dashboard",
+          "x": 24,
+          "y": 24,
+          "width": 190,
+          "height": 38,
+          "fillColor": "#1f2126",
+          "fontSize": 30,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 38,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "nav-button",
+          "name": "Open Details Button",
+          "nodeType": "FRAME",
+          "type": "paper",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "prototypeNavigation": {
+            "targetScreenId": "screen-details",
+            "mode": "push"
+          },
+          "x": 24,
+          "y": 90,
+          "width": 220,
+          "height": 48,
+          "fillColor": "#ed001f",
+          "children": [
+            {
+              "id": "nav-button-text",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "Open Details",
+              "x": 75,
+              "y": 103,
+              "width": 120,
+              "height": 22,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "CENTER"
+            }
+          ]
+        },
+        {
+          "id": "decorative-instance",
+          "name": "Placeholder Instance",
+          "nodeType": "INSTANCE",
+          "type": "container",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "x": 24,
+          "y": 170,
+          "width": 220,
+          "height": 40
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-details",
+      "name": "Details",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "details-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Details",
+          "x": 444,
+          "y": 24,
+          "width": 120,
+          "height": 36,
+          "fillColor": "#1f2126",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "details-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "A deterministic destination screen.",
+          "x": 444,
+          "y": 80,
+          "width": 280,
+          "height": 44,
+          "fillColor": "#383d47",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 22,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#ed001f",
+      "secondary": "#1f2126",
+      "background": "#ffffff",
+      "text": "#1f2126",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#ed001f",
+      "info": "#0288D1",
+      "divider": "#1f21261f",
+      "action": {
+        "active": "#1f21268a",
+        "hover": "#ed001f0a",
+        "selected": "#ed001f14",
+        "disabled": "#1f212642",
+        "disabledBackground": "#1f21261f",
+        "focus": "#ed001f1f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 16,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 30,
+    "bodySize": 16,
+    "typography": {
+      "h1": {
+        "fontSizePx": 30,
+        "fontWeight": 700,
+        "lineHeightPx": 38,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 38,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 16,
+        "fontWeight": 700,
+        "lineHeightPx": 38,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 1,
+    "prototypeNavigationResolved": 1,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-home",
+        "screenName": "Home",
+        "elements": 4
+      },
+      {
+        "screenId": "screen-details",
+        "screenName": "Details",
+        "elements": 2
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "degradedGeometryNodes": []
+  }
+}

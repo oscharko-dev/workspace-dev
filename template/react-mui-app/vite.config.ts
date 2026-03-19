@@ -1,5 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from "vitest/config";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 
 const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
@@ -29,15 +30,36 @@ const toAllowedHosts = (rawValue: string | undefined): string[] | true => {
 const liveEditBasePath = env.LIVE_EDIT_BASE_PATH;
 const liveEditHmrPath = env.LIVE_EDIT_HMR_PATH;
 const liveEditAllowedHosts = toAllowedHosts(env.LIVE_EDIT_ALLOWED_HOSTS);
+const enableReactCompiler = env.VITE_ENABLE_REACT_COMPILER?.trim().toLowerCase() === "true";
+const reactCompilerTarget = env.VITE_REACT_COMPILER_TARGET?.trim();
+const normalizedReactCompilerTarget =
+  reactCompilerTarget === "17" || reactCompilerTarget === "18" ? reactCompilerTarget : undefined;
 const normalizedBasePath = liveEditBasePath
   ? liveEditBasePath.endsWith("/")
     ? liveEditBasePath
     : `${liveEditBasePath}/`
   : "./";
 
+const reactCompilerPlugins = enableReactCompiler
+  ? [
+      babel({
+        presets: [
+          reactCompilerPreset(
+            normalizedReactCompilerTarget ? { target: normalizedReactCompilerTarget } : undefined
+          )
+        ]
+      } as unknown as Parameters<typeof babel>[0])
+    ]
+  : [];
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), ...reactCompilerPlugins],
   base: normalizedBasePath,
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts"
+  },
   server: {
     host: "0.0.0.0",
     allowedHosts: liveEditAllowedHosts,
