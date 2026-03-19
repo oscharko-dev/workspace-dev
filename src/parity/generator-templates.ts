@@ -114,7 +114,8 @@ import {
   roundStableSxNumericValue,
   normalizeThemeSxValueForKey,
   collectThemeSxSampleFromEntries,
-  collectThemeDefaultMatchedSxKeys
+  collectThemeDefaultMatchedSxKeys,
+  detectFormGroups
 } from "./generator-core.js";
 import type {
   RenderContext,
@@ -135,10 +136,15 @@ import type {
   RenderedButtonModel,
   ThemeComponentDefaults,
   ThemeSxStyleValue,
-  ListRowAnalysis
+  ListRowAnalysis,
+  FormGroupAssignment
 } from "./generator-core.js";
 
 export const literal = (value: string): string => JSON.stringify(value);
+
+const toPascalCase = (value: string): string => {
+  return value.replace(/(?:^|[^a-zA-Z0-9])([a-zA-Z0-9])/g, (_match, char: string) => char.toUpperCase());
+};
 
 export const clamp = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
@@ -2090,7 +2096,8 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
     key: buttonKey,
     label: buttonLabel,
     preferredSubmit: variant === "contained",
-    eligibleForSubmit: !inferredDisabled
+    eligibleForSubmit: !inferredDisabled,
+    ...(context.currentFormGroupId ? { formGroupId: context.currentFormGroupId } : {})
   });
   const size = inferButtonSize({
     element,
@@ -5994,10 +6001,12 @@ export interface FallbackRenderState {
   hasTextInputField: boolean;
   containerMaxWidth: string;
   screenContainerSx: string;
+  formGroups: FormGroupAssignment[];
 }
 
 export interface FallbackDependencyAssembly {
   formContextFileSpec?: FormContextFileSpec;
+  formContextFileSpecs?: FormContextFileSpec[];
   patternContextFileSpec?: PatternContextFileSpec;
   patternContextInitialStateDeclaration: string;
   navigationHookBlock: string;
@@ -6175,17 +6184,27 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
       : {})
   };
 
+  const formGroups = detectFormGroups(simplifiedChildren);
+  const formGroupByChildIndex = new Map<number, string>();
+  for (const group of formGroups) {
+    for (const childIndex of group.childIndices) {
+      formGroupByChildIndex.set(childIndex, group.groupId);
+    }
+  }
+
   const rendered = simplifiedChildren
-    .map((element) =>
-      renderElement(
+    .map((element, childIndex) => {
+      renderContext.currentFormGroupId = formGroupByChildIndex.get(childIndex);
+      return renderElement(
         element,
         3,
         rootParent,
         renderContext
-      )
-    )
+      );
+    })
     .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
     .join("\n");
+  renderContext.currentFormGroupId = undefined;
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
@@ -6247,7 +6266,8 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     hasSelectField,
     hasTextInputField,
     containerMaxWidth,
-    screenContainerSx
+    screenContainerSx,
+    formGroups
   };
 };
 
@@ -6265,43 +6285,77 @@ export const assembleFallbackDependencies = ({
     hasInteractiveFields,
     hasInteractiveAccordions,
     hasSelectField,
-    hasTextInputField
+    hasTextInputField,
+    formGroups
   } = renderState;
 
-  const initialValues = Object.fromEntries(renderContext.fields.map((field) => [field.key, field.defaultValue]));
-  const requiredFieldMap = Object.fromEntries(
-    renderContext.fields.filter((field) => field.required).map((field) => [field.key, true])
-  );
-  const validationTypeMap = Object.fromEntries(
-    renderContext.fields
-      .filter((field) => field.validationType)
-      .map((field) => [field.key, field.validationType as ValidationFieldType])
-  );
-  const validationMessageMap = Object.fromEntries(
-    renderContext.fields
-      .filter((field) => field.validationMessage)
-      .map((field) => [field.key, field.validationMessage as string])
-  );
-  const initialVisualErrorsMap = Object.fromEntries(
-    renderContext.fields
-      .filter((field) => field.hasVisualErrorExample)
-      .map((field) => [field.key, field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.")])
-  );
-  const selectOptionsMap = Object.fromEntries(
-    renderContext.fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
-  );
+  const buildFieldMaps = (fields: InteractiveFieldModel[]) => ({
+    initialValues: Object.fromEntries(fields.map((field) => [field.key, field.defaultValue])),
+    requiredFieldMap: Object.fromEntries(
+      fields.filter((field) => field.required).map((field) => [field.key, true])
+    ),
+    validationTypeMap: Object.fromEntries(
+      fields
+        .filter((field) => field.validationType)
+        .map((field) => [field.key, field.validationType as ValidationFieldType])
+    ),
+    validationMessageMap: Object.fromEntries(
+      fields
+        .filter((field) => field.validationMessage)
+        .map((field) => [field.key, field.validationMessage as string])
+    ),
+    initialVisualErrorsMap: Object.fromEntries(
+      fields
+        .filter((field) => field.hasVisualErrorExample)
+        .map((field) => [field.key, field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.")])
+    ),
+    selectOptionsMap: Object.fromEntries(
+      fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
+    )
+  });
+
+  const allFieldMaps = buildFieldMaps(renderContext.fields);
+  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap } = allFieldMaps;
+
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
   );
-  const preferredSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
-  const fallbackSubmitButton = renderContext.buttons.find((button) => button.eligibleForSubmit);
-  const primarySubmitButtonKey = hasInteractiveFields
-    ? (preferredSubmitButton?.key ?? fallbackSubmitButton?.key ?? "")
-    : "";
+
+  const resolveSubmitButtonKey = (buttons: RenderedButtonModel[]): string => {
+    const preferred = buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
+    const fallback = buttons.find((button) => button.eligibleForSubmit);
+    return preferred?.key ?? fallback?.key ?? "";
+  };
+
+  const primarySubmitButtonKey = hasInteractiveFields ? resolveSubmitButtonKey(renderContext.buttons) : "";
+
+  const hasMultipleFormGroups = formGroups.length > 1;
+  const formGroupContextSpecs: FormContextFileSpec[] = [];
+  if (hasMultipleFormGroups && enablePatternExtraction && hasInteractiveFields) {
+    for (const group of formGroups) {
+      const groupFields = renderContext.fields.filter((field) => field.formGroupId === group.groupId);
+      if (groupFields.length === 0) {
+        continue;
+      }
+      const groupMaps = buildFieldMaps(groupFields);
+      const groupComponentName = `${componentName}${toPascalCase(group.groupId)}`;
+      const usesRhf = resolvedFormHandlingMode === "react_hook_form";
+      const spec = usesRhf
+        ? buildReactHookFormContextFile({
+            screenComponentName: groupComponentName,
+            ...groupMaps
+          })
+        : buildLegacyFormContextFile({
+            screenComponentName: groupComponentName,
+            ...groupMaps
+          });
+      formGroupContextSpecs.push(spec);
+    }
+  }
 
   const submitButtonDeclaration =
     renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
-  const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields;
+  const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields && !hasMultipleFormGroups;
   const usesReactHookForm = hasInteractiveFields && resolvedFormHandlingMode === "react_hook_form";
   const formContextFileSpec = shouldGenerateFormContext
     ? usesReactHookForm
@@ -6487,6 +6541,7 @@ const ${dialogCloseHandlerVar} = (): void => {
 
   return {
     ...(formContextFileSpec ? { formContextFileSpec } : {}),
+    ...(formGroupContextSpecs.length > 0 ? { formContextFileSpecs: formGroupContextSpecs } : {}),
     ...(patternContextFileSpec ? { patternContextFileSpec } : {}),
     patternContextInitialStateDeclaration,
     navigationHookBlock,
@@ -6519,6 +6574,7 @@ export const composeFallbackScreenModule = ({
   const { renderContext, rendered, containerMaxWidth, screenContainerSx } = renderState;
   const {
     formContextFileSpec,
+    formContextFileSpecs,
     patternContextFileSpec,
     patternContextInitialStateDeclaration,
     navigationHookBlock,
@@ -6598,7 +6654,8 @@ ${patternContextInitialStateDeclaration}${screenExportSource}
   ];
   const contextFiles: GeneratedFile[] = [
     ...extractionPlan.contextFiles,
-    ...(formContextFileSpec ? [formContextFileSpec.file] : [])
+    ...(formContextFileSpec ? [formContextFileSpec.file] : []),
+    ...(formContextFileSpecs ? formContextFileSpecs.map((spec) => spec.file) : [])
   ];
 
   return {

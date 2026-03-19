@@ -2249,6 +2249,7 @@ export interface InteractiveFieldModel {
   labelColor?: string | undefined;
   valueFontFamily?: string | undefined;
   valueColor?: string | undefined;
+  formGroupId?: string | undefined;
 }
 
 interface InteractiveAccordionModel {
@@ -2388,6 +2389,7 @@ export interface RenderedButtonModel {
   label: string;
   preferredSubmit: boolean;
   eligibleForSubmit: boolean;
+  formGroupId?: string | undefined;
 }
 
 export interface RenderContext {
@@ -2432,6 +2434,7 @@ export interface RenderContext {
   themeSxSampleCollector?: ThemeSxSampleCollector;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
+  currentFormGroupId?: string | undefined;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {
@@ -3841,10 +3844,96 @@ export const registerInteractiveField = ({
     labelFontFamily: normalizeFontFamily(model.labelNode?.fontFamily),
     labelColor: model.labelNode?.fillColor,
     valueFontFamily: normalizeFontFamily(model.valueNode?.fontFamily),
-    valueColor: model.valueNode?.fillColor
+    valueColor: model.valueNode?.fillColor,
+    ...(context.currentFormGroupId ? { formGroupId: context.currentFormGroupId } : {})
   };
   context.fields.push(created);
   return created;
+};
+
+const subtreeContainsType = (element: ScreenElementIR, targetType: string): boolean => {
+  if (element.type === targetType) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => subtreeContainsType(child, targetType));
+};
+
+export interface FormGroupAssignment {
+  groupId: string;
+  childIndices: number[];
+}
+
+export const detectFormGroups = (simplifiedChildren: ScreenElementIR[]): FormGroupAssignment[] => {
+  if (simplifiedChildren.length === 0) {
+    return [];
+  }
+
+  const childSignals = simplifiedChildren.map((child) => ({
+    hasInput: subtreeContainsType(child, "input"),
+    hasButton: subtreeContainsType(child, "button")
+  }));
+
+  const totalInputChildren = childSignals.filter((signal) => signal.hasInput).length;
+  const totalButtonChildren = childSignals.filter((signal) => signal.hasButton).length;
+
+  if (totalInputChildren <= 1 || totalButtonChildren <= 1) {
+    return [];
+  }
+
+  const groups: FormGroupAssignment[] = [];
+  let currentGroup: { indices: number[]; hasInput: boolean; hasButton: boolean } | undefined;
+
+  for (let index = 0; index < simplifiedChildren.length; index += 1) {
+    const signal = childSignals[index];
+    if (!signal) {
+      continue;
+    }
+    const isFormRelated = signal.hasInput || signal.hasButton;
+
+    if (!isFormRelated) {
+      if (currentGroup && currentGroup.hasInput && !currentGroup.hasButton) {
+        currentGroup.indices.push(index);
+      } else if (currentGroup && currentGroup.hasInput && currentGroup.hasButton) {
+        groups.push({
+          groupId: `formGroup${groups.length}`,
+          childIndices: currentGroup.indices
+        });
+        currentGroup = undefined;
+      }
+      continue;
+    }
+
+    if (!currentGroup) {
+      currentGroup = { indices: [index], hasInput: signal.hasInput, hasButton: signal.hasButton };
+      continue;
+    }
+
+    if (currentGroup.hasInput && currentGroup.hasButton && signal.hasInput) {
+      groups.push({
+        groupId: `formGroup${groups.length}`,
+        childIndices: currentGroup.indices
+      });
+      currentGroup = { indices: [index], hasInput: signal.hasInput, hasButton: signal.hasButton };
+      continue;
+    }
+
+    currentGroup.indices.push(index);
+    currentGroup.hasInput = currentGroup.hasInput || signal.hasInput;
+    currentGroup.hasButton = currentGroup.hasButton || signal.hasButton;
+  }
+
+  if (currentGroup && currentGroup.hasInput && currentGroup.hasButton) {
+    groups.push({
+      groupId: `formGroup${groups.length}`,
+      childIndices: currentGroup.indices
+    });
+  }
+
+  if (groups.length <= 1) {
+    return [];
+  }
+
+  return groups;
 };
 
 export const registerInteractiveAccordion = ({
