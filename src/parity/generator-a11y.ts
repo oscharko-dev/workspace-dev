@@ -1,5 +1,9 @@
 import type { ScreenElementIR } from "./types.js";
 import {
+  HEADING_FONT_SIZE_MIN,
+  HEADING_FONT_WEIGHT_MIN
+} from "./constants.js";
+import {
   firstText,
   collectTextNodes,
   normalizeHexColor
@@ -203,7 +207,7 @@ export const inferHeadingComponentByNodeId = (elements: ScreenElementIR[]): Map<
       const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint));
       const fontSize = typeof node.fontSize === "number" ? node.fontSize : 0;
       const fontWeight = typeof node.fontWeight === "number" ? node.fontWeight : 0;
-      return hasHeadingHint || fontSize >= 20 || fontWeight >= 650;
+      return hasHeadingHint || fontSize >= HEADING_FONT_SIZE_MIN || fontWeight >= HEADING_FONT_WEIGHT_MIN;
     })
     .sort((left, right) => {
       const leftFontSize = typeof left.fontSize === "number" ? left.fontSize : 0;

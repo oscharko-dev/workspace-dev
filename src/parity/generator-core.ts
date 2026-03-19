@@ -19,6 +19,15 @@ import { BUILTIN_ICON_FALLBACK_CATALOG, ICON_FALLBACK_MAP_VERSION } from "./icon
 import { ensureTsxName } from "./path-utils.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { WorkflowError } from "./workflow-error.js";
+import {
+  HEADING_FONT_SIZE_MIN,
+  HEADING_FONT_WEIGHT_MIN,
+  LARGE_HEADING_FONT_SIZE_MIN,
+  LARGE_HEADING_FONT_WEIGHT_MIN,
+  PATTERN_SIMILARITY_THRESHOLD,
+  PATTERN_MIN_OCCURRENCES,
+  PATTERN_MIN_SUBTREE_NODE_COUNT
+} from "./constants.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import {
   applyDesignSystemMappingsToGeneratedTsx,
@@ -541,7 +550,7 @@ const toSortSemanticBucket = (element: ScreenElementIR): number => {
   const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => combinedSemanticText.includes(hint));
   const fontSize = typeof element.fontSize === "number" && Number.isFinite(element.fontSize) ? element.fontSize : 0;
   const fontWeight = typeof element.fontWeight === "number" && Number.isFinite(element.fontWeight) ? element.fontWeight : 0;
-  const isLargeHeadingText = element.type === "text" && (fontSize >= 24 || (fontSize >= 20 && fontWeight >= 600));
+  const isLargeHeadingText = element.type === "text" && (fontSize >= LARGE_HEADING_FONT_SIZE_MIN || (fontSize >= HEADING_FONT_SIZE_MIN && fontWeight >= LARGE_HEADING_FONT_WEIGHT_MIN));
   if (hasHeadingHint || isLargeHeadingText) {
     return 0;
   }
@@ -901,9 +910,7 @@ export const extractSharedSxConstantsFromScreenContent = (source: string): strin
   return `${beforeExport}\n\n${constantsBlock}\n\n${fromExport}`;
 };
 
-const PATTERN_SIMILARITY_THRESHOLD = 0.8;
-const PATTERN_MIN_OCCURRENCES = 3;
-const PATTERN_MIN_SUBTREE_NODE_COUNT = 3;
+// Pattern extraction constants imported from ./constants.js
 const EXTRACTION_CANDIDATE_TYPES = new Set<ScreenElementIR["type"]>([
   "container",
   "card",
@@ -2014,8 +2021,8 @@ const isHeadingLikeTextNode = (node: ScreenElementIR): boolean => {
   const normalizedName = normalizeInputSemanticText(node.name);
   return (
     HEADING_NAME_HINTS.some((hint) => normalizedName.includes(hint)) ||
-    (typeof node.fontSize === "number" && node.fontSize >= 20) ||
-    (typeof node.fontWeight === "number" && node.fontWeight >= 650)
+    (typeof node.fontSize === "number" && node.fontSize >= HEADING_FONT_SIZE_MIN) ||
+    (typeof node.fontWeight === "number" && node.fontWeight >= HEADING_FONT_WEIGHT_MIN)
   );
 };
 

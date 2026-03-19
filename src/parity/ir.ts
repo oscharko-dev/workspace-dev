@@ -48,6 +48,17 @@ import {
 } from "./ir-colors.js";
 import type { FigmaEffect, FigmaPaint } from "./ir-colors.js";
 import {
+  HEADING_FONT_SIZE_MIN,
+  HEADING_FONT_WEIGHT_MIN,
+  HEADING_LINE_HEIGHT_MULTIPLIER,
+  BODY_LINE_HEIGHT_MULTIPLIER,
+  REM_BASE_FONT_SIZE,
+  UPPERCASE_DETECTION_RATIO,
+  DEFAULT_SPACING_BASE,
+  TEXT_WIDTH_PROMINENCE_DIVISOR,
+  AREA_GEOMETRY_WEIGHT_DIVISOR
+} from "./constants.js";
+import {
   countSubtreeNodes,
   collectNodes,
   analyzeDepthPressure,
@@ -2244,7 +2255,7 @@ const TOKEN_DERIVATION_DEFAULTS: DesignTokens = {
     }
   },
   borderRadius: 8,
-  spacingBase: 8,
+  spacingBase: DEFAULT_SPACING_BASE,
   fontFamily: "Roboto, Arial, sans-serif",
   headingSize: 24,
   bodySize: 14,
@@ -2288,8 +2299,8 @@ const resolveTextRole = (node: FigmaNode): "heading" | "body" => {
   const fontWeight = node.style?.fontWeight ?? 0;
   const loweredName = (node.name ?? "").toLowerCase();
   if (
-    fontSize >= 20 ||
-    fontWeight >= 650 ||
+    fontSize >= HEADING_FONT_SIZE_MIN ||
+    fontWeight >= HEADING_FONT_WEIGHT_MIN ||
     hasAnySubstring(loweredName, ["heading", "headline", "title", "h1", "h2", "h3"])
   ) {
     return "heading";
@@ -2449,11 +2460,11 @@ const resolveSampleWeight = ({
   })();
 
   if (context === "heading" || context === "body") {
-    const emphasis = (node.style?.fontWeight ?? 0) >= 650 ? 1.15 : 1;
-    return base * clamp(textWidth / 160, 1, 6) * emphasis;
+    const emphasis = (node.style?.fontWeight ?? 0) >= HEADING_FONT_WEIGHT_MIN ? 1.15 : 1;
+    return base * clamp(textWidth / TEXT_WIDTH_PROMINENCE_DIVISOR, 1, 6) * emphasis;
   }
 
-  return base * clamp(Math.sqrt(area) / 120, 1, 8);
+  return base * clamp(Math.sqrt(area) / AREA_GEOMETRY_WEIGHT_DIVISOR, 1, 8);
 };
 
 const resolveFillColor = (node: FigmaNode): string | undefined => {
@@ -3089,7 +3100,7 @@ const isUppercaseLikeText = (value: string | undefined): boolean => {
     return false;
   }
   const uppercaseLetters = letters.replace(/[^A-ZÄÖÜ]/g, "");
-  return uppercaseLetters.length / letters.length >= 0.8;
+  return uppercaseLetters.length / letters.length >= UPPERCASE_DETECTION_RATIO;
 };
 
 const isButtonLikeTextNode = ({
@@ -3120,15 +3131,16 @@ const collectFontSamples = (root: FigmaNode | undefined): FontSample[] => {
     if (node.type === "TEXT" && hasMeaningfulNodeText(node)) {
       const role = resolveTextRole(node);
       const size = node.style?.fontSize ?? (role === "heading" ? 24 : 14);
-      const height = node.absoluteBoundingBox?.height ?? Math.max(size * (role === "heading" ? 1.3 : 1.5), size);
+      const lineHeightMultiplier = role === "heading" ? HEADING_LINE_HEIGHT_MULTIPLIER : BODY_LINE_HEIGHT_MULTIPLIER;
+      const height = node.absoluteBoundingBox?.height ?? Math.max(size * lineHeightMultiplier, size);
       const width = node.absoluteBoundingBox?.width ?? 120;
       const family = node.style?.fontFamily?.trim() || (TOKEN_DERIVATION_DEFAULTS.fontFamily.split(",")[0] ?? "Roboto");
       const fontWeight = node.style?.fontWeight ?? (role === "heading" ? 700 : 400);
-      const lineHeight = node.style?.lineHeightPx ?? Math.max(Math.round(size * (role === "heading" ? 1.3 : 1.5)), size);
+      const lineHeight = node.style?.lineHeightPx ?? Math.max(Math.round(size * lineHeightMultiplier), size);
       const isButtonLike = isButtonLikeTextNode({ node, ancestorNames });
       const roleWeight = role === "heading" ? 1.8 : 1;
-      const prominenceWeight = clamp(size / 16, 0.75, 2.5);
-      const geometryWeight = clamp(width / 160 + height / 96, 1, 8);
+      const prominenceWeight = clamp(size / REM_BASE_FONT_SIZE, 0.75, 2.5);
+      const geometryWeight = clamp(width / TEXT_WIDTH_PROMINENCE_DIVISOR + height / 96, 1, 8);
       samples.push({
         family,
         role,

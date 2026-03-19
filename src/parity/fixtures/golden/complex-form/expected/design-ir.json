@@ -1,0 +1,580 @@
+{
+  "sourceName": "Complex Form Board",
+  "screens": [
+    {
+      "id": "screen-form",
+      "name": "Registration",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "form-title",
+          "name": "Heading",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Create Account",
+          "x": 24,
+          "y": 24,
+          "width": 250,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "form-subtitle",
+          "name": "Subtitle",
+          "nodeType": "TEXT",
+          "type": "text",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "text": "Fill in your details to get started",
+          "x": 24,
+          "y": 64,
+          "width": 300,
+          "height": 20,
+          "fillColor": "#666b75",
+          "fontSize": 14,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "name-row",
+          "name": "Name Row",
+          "nodeType": "FRAME",
+          "type": "table",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "MIN",
+          "counterAxisAlignItems": "CENTER",
+          "x": 24,
+          "y": 100,
+          "width": 372,
+          "height": 56,
+          "children": [
+            {
+              "id": "first-name-field",
+              "name": "MuiTextFieldRoot",
+              "nodeType": "FRAME",
+              "type": "input",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "variant": "text"
+                },
+                "muiProps": {
+                  "variant": "text"
+                }
+              },
+              "x": 24,
+              "y": 100,
+              "width": 180,
+              "height": 56,
+              "strokeColor": "#bfc4cc",
+              "strokeWidth": 1,
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "first-name-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "First Name",
+                  "x": 36,
+                  "y": 104,
+                  "width": 70,
+                  "height": 16,
+                  "fillColor": "#666b75",
+                  "fontSize": 12,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 16,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "first-name-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "John",
+                  "x": 36,
+                  "y": 124,
+                  "width": 156,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "last-name-field",
+              "name": "MuiTextFieldRoot",
+              "nodeType": "FRAME",
+              "type": "input",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "variant": "text"
+                },
+                "muiProps": {
+                  "variant": "text"
+                }
+              },
+              "x": 216,
+              "y": 100,
+              "width": 180,
+              "height": 56,
+              "strokeColor": "#bfc4cc",
+              "strokeWidth": 1,
+              "cornerRadius": 8,
+              "children": [
+                {
+                  "id": "last-name-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "Last Name",
+                  "x": 228,
+                  "y": 104,
+                  "width": 65,
+                  "height": 16,
+                  "fillColor": "#666b75",
+                  "fontSize": 12,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 16,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "last-name-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "type": "text",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "text": "Doe",
+                  "x": 228,
+                  "y": 124,
+                  "width": 156,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "email-field",
+          "name": "MuiTextFieldRoot",
+          "nodeType": "FRAME",
+          "type": "input",
+          "layoutMode": "VERTICAL",
+          "gap": 4,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
+          },
+          "x": 24,
+          "y": 172,
+          "width": 372,
+          "height": 56,
+          "strokeColor": "#bfc4cc",
+          "strokeWidth": 1,
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "email-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "Email Address",
+              "x": 36,
+              "y": 176,
+              "width": 90,
+              "height": 16,
+              "fillColor": "#666b75",
+              "fontSize": 12,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 16,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "email-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "john@example.com",
+              "x": 36,
+              "y": 196,
+              "width": 348,
+              "height": 24,
+              "fillColor": "#1c1f24",
+              "fontSize": 16,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 24,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "checkbox-row",
+          "name": "Checkbox Row",
+          "nodeType": "FRAME",
+          "type": "checkbox",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "MIN",
+          "counterAxisAlignItems": "CENTER",
+          "x": 24,
+          "y": 244,
+          "width": 372,
+          "height": 24,
+          "children": [
+            {
+              "id": "checkbox-icon",
+              "name": "MuiCheckboxRoot",
+              "nodeType": "FRAME",
+              "type": "checkbox",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "x": 24,
+              "y": 244,
+              "width": 24,
+              "height": 24,
+              "strokeColor": "#ed001f",
+              "strokeWidth": 2,
+              "cornerRadius": 4
+            },
+            {
+              "id": "checkbox-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "I agree to the Terms and Conditions",
+              "x": 56,
+              "y": 246,
+              "width": 280,
+              "height": 20,
+              "fillColor": "#1c1f24",
+              "fontSize": 14,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "submit-button",
+          "name": "Primary Button",
+          "nodeType": "FRAME",
+          "type": "paper",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "CENTER",
+          "counterAxisAlignItems": "CENTER",
+          "x": 24,
+          "y": 284,
+          "width": 372,
+          "height": 48,
+          "fillColor": "#ed001f",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "submit-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "type": "text",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "text": "Create Account",
+              "x": 136,
+              "y": 297,
+              "width": 148,
+              "height": 22,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "CENTER"
+            }
+          ]
+        }
+      ],
+      "width": 420,
+      "height": 900,
+      "fillColor": "#ffffff"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#ed001f",
+      "secondary": "#1c1f24",
+      "background": "#ffffff",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#ed001f",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#ed001f0a",
+        "selected": "#ed001f14",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#ed001f1f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 6,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 28,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 12,
+        "fontWeight": 400,
+        "lineHeightPx": 16,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 12,
+        "fontWeight": 400,
+        "lineHeightPx": 16,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-form",
+        "screenName": "Registration",
+        "elements": 17
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "degradedGeometryNodes": []
+  }
+}
