@@ -4503,3 +4503,119 @@ test("deriveTokensForTesting uses styles map text reference for typography extra
   assert.equal(tokens.typography.button.textTransform, "none");
   assert.equal(Object.keys(tokens.typography).length, 13);
 });
+
+test("figmaToDesignIrWithOptions reports droppedTypeCounts in truncation metrics", () => {
+  const ir = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 4
+  });
+
+  const truncatedMetric = ir.metrics?.truncatedScreens[0];
+  assert.ok(truncatedMetric);
+  assert.equal(typeof truncatedMetric.droppedTypeCounts, "object");
+  const dropped = truncatedMetric.droppedTypeCounts ?? {};
+  const totalDropped = Object.values(dropped).reduce((sum, count) => sum + count, 0);
+  assert.equal(totalDropped > 0, true, "Expected at least one dropped element");
+  for (const [type, count] of Object.entries(dropped)) {
+    assert.equal(typeof type, "string");
+    assert.equal(typeof count, "number");
+    assert.equal(count > 0, true);
+  }
+});
+
+test("figmaToDesignIrWithOptions adaptive budget does not apply when budget is explicitly small", () => {
+  const ir = figmaToDesignIrWithOptions(createPriorityRetentionFigmaFile(), {
+    screenElementBudget: 3
+  });
+
+  const screenChildren = ir.screens[0].children as Array<{ children?: unknown[] }>;
+  assert.equal(countElements(screenChildren), 3);
+  assert.equal(ir.metrics?.truncatedScreens.length, 1);
+  assert.equal(ir.metrics?.truncatedScreens[0]?.retainedElements, 3);
+});
+
+test("figmaToDesignIrWithOptions adaptive budget does not scale above base budget for low interactive ratio screens", () => {
+  const buildLowInteractiveScreen = () => ({
+    name: "Low Interactive",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-lowint",
+              type: "FRAME",
+              name: "Content Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 5000 },
+              children: [
+                ...Array.from({ length: 1500 }, (_, i) => ({
+                  id: `content-${i}`,
+                  type: "TEXT",
+                  characters: `Content paragraph ${i} with meaningful text`,
+                  fills: [{ type: "SOLID", color: toFigmaColor("#333333") }],
+                  absoluteBoundingBox: { x: 24, y: i * 24, width: 600, height: 20 }
+                })),
+                {
+                  id: "single-btn",
+                  type: "FRAME",
+                  name: "MuiButtonRoot",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1976d2") }],
+                  absoluteBoundingBox: { x: 24, y: 36000, width: 200, height: 40 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const ir = figmaToDesignIrWithOptions(buildLowInteractiveScreen(), {
+    screenElementBudget: 1200
+  });
+
+  const truncated = ir.metrics?.truncatedScreens[0];
+  assert.ok(truncated, "Expected truncation metric for low-interactive screen");
+  assert.equal(truncated.retainedElements <= 1200, true, `Expected retained <= 1200, got ${truncated.retainedElements}`);
+});
+
+test("figmaToDesignIrWithOptions truncation metrics droppedTypeCounts is absent when no truncation occurs", () => {
+  const ir = figmaToDesignIrWithOptions(
+    {
+      name: "Small Screen",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          {
+            id: "0:1",
+            type: "CANVAS",
+            children: [
+              {
+                id: "screen-small",
+                type: "FRAME",
+                name: "Simple Screen",
+                absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 800 },
+                children: [
+                  {
+                    id: "text-1",
+                    type: "TEXT",
+                    characters: "Hello world",
+                    fills: [{ type: "SOLID", color: toFigmaColor("#000000") }],
+                    absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 24 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    { screenElementBudget: 1200 }
+  );
+
+  assert.equal(ir.metrics?.truncatedScreens.length, 0);
+});
