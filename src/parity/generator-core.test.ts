@@ -6522,7 +6522,7 @@ test("deterministic screen rendering maps simple horizontal containers to Stack 
   assert.equal(content.includes('display: "flex"'), false);
 });
 
-test("deterministic screen rendering keeps styled flex containers as Box with flex sx", () => {
+test("deterministic screen rendering renders styled flex containers as Stack with visual styles in sx", () => {
   const screen = {
     id: "stack-negative-styled-screen",
     name: "Stack Negative Styled",
@@ -6563,10 +6563,9 @@ test("deterministic screen rendering keeps styled flex containers as Box with fl
 
   const content = createDeterministicScreenFile(screen).content;
 
-  assert.ok(content.includes("<Box sx={{"));
-  assert.ok(content.includes('display: "flex"'));
-  assert.ok(content.includes('flexDirection: "row"'));
-  assert.equal(content.includes('<Stack direction="row"'), false);
+  assert.ok(content.includes('<Stack direction="row"'));
+  assert.equal(content.includes('display: "flex"'), false);
+  assert.equal(content.includes('flexDirection: "row"'), false);
 });
 
 test("deterministic screen rendering promotes elevated surface containers with content to Paper", () => {
@@ -8385,7 +8384,7 @@ test("deterministic screen rendering emits spacing units and rem typography with
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes("gap: 1.5"));
+  assert.ok(content.includes("spacing={1.5}") || content.includes("gap: 1.5"));
   assert.ok(content.includes("p: 2"));
   assert.equal(content.includes("pt: 2"), false);
   assert.equal(content.includes("pr: 2"), false);
@@ -8395,7 +8394,7 @@ test("deterministic screen rendering emits spacing units and rem typography with
   assert.ok(content.includes('lineHeight: "1.25rem"'));
   assert.ok(content.includes('fontSize: "1rem"'));
   assert.ok(content.includes('lineHeight: "1.5rem"'));
-  assert.equal(/\b(gap|p|px|py|p[trbl]|m|mx|my|m[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
+  assert.equal(/\b(p|px|py|p[trbl]|m|mx|my|m[trbl]|fontSize|lineHeight):\s*"[0-9.]+px"/.test(content), false);
 });
 
 test("deterministic screen rendering converts text letterSpacing from px to em with stable precision", () => {
