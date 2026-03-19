@@ -755,30 +755,39 @@ export const toLightThemePalette = (tokens: DesignTokens): ResolvedThemePalette 
   };
 };
 
-export const toDarkThemePalette = (tokens: DesignTokens): ResolvedThemePalette => {
+export const toDarkThemePalette = (
+  tokens: DesignTokens,
+  darkPaletteHints?: NonNullable<DesignIR["themeAnalysis"]>["darkPaletteHints"]
+): ResolvedThemePalette => {
+  const darkBackgroundDefault = darkPaletteHints?.background?.default ?? DARK_MODE_BACKGROUND_DEFAULT;
+  const darkBackgroundPaper = darkPaletteHints?.background?.paper ?? DARK_MODE_BACKGROUND_PAPER;
+  const darkTextPrimary = ensureContrastAgainstBackground({
+    color: darkPaletteHints?.text?.primary ?? DARK_MODE_TEXT_PRIMARY,
+    background: darkBackgroundDefault
+  });
   const adjustedPrimary = ensureContrastAgainstBackground({
-    color: tokens.palette.primary,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.primary ?? tokens.palette.primary,
+    background: darkBackgroundDefault
   });
   const adjustedSecondary = ensureContrastAgainstBackground({
-    color: tokens.palette.secondary,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.secondary ?? tokens.palette.secondary,
+    background: darkBackgroundDefault
   });
   const adjustedSuccess = ensureContrastAgainstBackground({
-    color: tokens.palette.success,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.success ?? tokens.palette.success,
+    background: darkBackgroundDefault
   });
   const adjustedWarning = ensureContrastAgainstBackground({
-    color: tokens.palette.warning,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.warning ?? tokens.palette.warning,
+    background: darkBackgroundDefault
   });
   const adjustedError = ensureContrastAgainstBackground({
-    color: tokens.palette.error,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.error ?? tokens.palette.error,
+    background: darkBackgroundDefault
   });
   const adjustedInfo = ensureContrastAgainstBackground({
-    color: tokens.palette.info,
-    background: DARK_MODE_BACKGROUND_DEFAULT
+    color: darkPaletteHints?.info ?? tokens.palette.info,
+    background: darkBackgroundDefault
   });
 
   return {
@@ -789,16 +798,16 @@ export const toDarkThemePalette = (tokens: DesignTokens): ResolvedThemePalette =
     error: adjustedError,
     info: adjustedInfo,
     background: {
-      default: DARK_MODE_BACKGROUND_DEFAULT,
-      paper: DARK_MODE_BACKGROUND_PAPER
+      default: darkBackgroundDefault,
+      paper: darkBackgroundPaper
     },
     text: {
-      primary: DARK_MODE_TEXT_PRIMARY
+      primary: darkTextPrimary
     },
-    divider: toHexWithAlpha(DARK_MODE_TEXT_PRIMARY, 0.12),
+    divider: darkPaletteHints?.divider ?? toHexWithAlpha(darkTextPrimary, 0.12),
     action: buildActionPalette({
       primaryColor: adjustedPrimary,
-      textColor: DARK_MODE_TEXT_PRIMARY
+      textColor: darkTextPrimary
     })
   };
 };
@@ -4646,7 +4655,8 @@ export const renderThemeComponentBlock = ({
 export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults): GeneratedFile => {
   const tokens = ir.tokens;
   const lightPalette = toLightThemePalette(tokens);
-  const darkPalette = toDarkThemePalette(tokens);
+  const includeDarkColorScheme = ir.themeAnalysis?.darkModeDetected ?? true;
+  const darkPalette = includeDarkColorScheme ? toDarkThemePalette(tokens, ir.themeAnalysis?.darkPaletteHints) : undefined;
   const responsiveThemeBreakpoints = deriveResponsiveThemeBreakpointValues(ir);
   const typographyEntries = DESIGN_TYPOGRAPHY_VARIANTS.map((variantName) => {
     const variant = tokens.typography[variantName];
@@ -4694,10 +4704,8 @@ export const appTheme = createTheme({
   colorSchemes: {
     light: {
       palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}
-    },
-    dark: {
-      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}
     }
+${darkPalette ? `,\n    dark: {\n      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}\n    }` : ""}
   },
   shape: {
     borderRadius: ${Math.max(0, Math.round(tokens.borderRadius))}
@@ -6858,11 +6866,13 @@ export default function ScreenSkeleton() {
 export const makeAppFile = ({
   screens,
   identitiesByScreenId = buildScreenArtifactIdentities(screens),
-  routerMode = DEFAULT_ROUTER_MODE
+  routerMode = DEFAULT_ROUTER_MODE,
+  includeThemeModeToggle = true
 }: {
   screens: ScreenIR[];
   identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
   routerMode?: WorkspaceRouterMode;
+  includeThemeModeToggle?: boolean;
 }): string => {
   const lazyScreens = screens.slice(1);
   const hasLazyRoutes = lazyScreens.length > 0;
@@ -6925,10 +6935,10 @@ const browserBasename = resolveBrowserBasename();
   const firstRoute = firstIdentity?.routePath ?? (firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/");
 
   return `${reactImport}
-import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
+${includeThemeModeToggle ? `import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import { Box, IconButton, Tooltip } from "@mui/material";
-import { useColorScheme } from "@mui/material/styles";
+import { useColorScheme } from "@mui/material/styles";` : ""}
 import { ${routerComponentName}, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ScreenSkeleton from "./components/ScreenSkeleton";
@@ -6937,7 +6947,7 @@ ${lazyImports.length > 0 ? `\n${lazyImports}` : ""}
 
 const routeLoadingFallback = <ScreenSkeleton />;
 ${browserBasenameBlock}
-
+${includeThemeModeToggle ? `
 function ThemeModeToggle() {
   const { mode, setMode, systemMode } = useColorScheme();
   const prefersDarkMode =
@@ -6975,11 +6985,12 @@ function ThemeModeToggle() {
     </Box>
   );
 }
+` : ""}
 
 export default function App() {
   return (
     ${routerOpenTag}
-      <ThemeModeToggle />
+${includeThemeModeToggle ? "      <ThemeModeToggle />" : ""}
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
 ${routes}
@@ -6992,4 +7003,3 @@ ${routes}
 }
 `;
 };
-
