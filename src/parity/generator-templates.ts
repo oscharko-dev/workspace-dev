@@ -18,6 +18,12 @@ import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import {
+  buildScreenArtifactIdentities,
+  toComponentName,
+  toDeterministicScreenPath
+} from "./generator-artifacts.js";
+import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
+import {
   registerMuiImports,
   registerIconImport,
   registerInteractiveField,
@@ -70,8 +76,6 @@ import {
   toFormContextHookName,
   extractSharedSxConstantsFromScreenContent,
   resolveIconColor,
-  toComponentName,
-  buildScreenArtifactIdentities,
   ICON_FALLBACK_BUILTIN_RESOLVER,
   buildPatternExtractionPlan,
   createEmptySimplificationStats,
@@ -80,8 +84,7 @@ import {
   roundStableSxNumericValue,
   normalizeThemeSxValueForKey,
   collectThemeSxSampleFromEntries,
-  collectThemeDefaultMatchedSxKeys,
-  toDeterministicScreenPath
+  collectThemeDefaultMatchedSxKeys
 } from "./generator-core.js";
 import type {
   RenderContext,
@@ -102,7 +105,6 @@ import type {
   RenderedButtonModel,
   ThemeComponentDefaults,
   ThemeSxStyleValue,
-  ScreenArtifactIdentity,
   ListRowAnalysis
 } from "./generator-core.js";
 
