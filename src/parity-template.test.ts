@@ -58,7 +58,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = 
   "src/performance/report-web-vitals.ts": "4a818db2533f3290aac059f7117beacb45cb8b604a643ad0f227ca8d3d213e5d",
   "src/test/jest-axe.d.ts": "078c99e9f30e0e2b4eae659114cbfb826321e5dc4bd6dbe93d1a2a22515a41eb",
   "src/test/setup.ts": "ddb53f127ab6a95a831510013d8b7dee6dc8fe377cce8187af4e3f19ad2704ff",
-  "src/theme/theme.ts": "6d873ec1d31aaa36bb233f2cb0df6adc0fd52bf12740e3325995a5264858be64"
+  "src/theme/theme.ts": "5d5c1a83ea21a626cf1e9047ea4c60a2f2e3377cf71d36daf0f943242a964c75"
 };
 
 test("template integrity: bundled template matches deterministic hash snapshot", async () => {
@@ -106,6 +106,7 @@ test("template semantics: main entry retains CssBaseline global reset", async ()
 
 test("template semantics: theme baseline ships both light and dark color schemes", async () => {
   const themeContent = await readFile(path.join(templateRoot, "src/theme/theme.ts"), "utf8");
+  assert.match(themeContent, /cssVariables:\s*true/);
   assert.match(themeContent, /colorSchemes:\s*\{/);
   assert.match(themeContent, /light:\s*\{/);
   assert.match(themeContent, /dark:\s*\{/);
