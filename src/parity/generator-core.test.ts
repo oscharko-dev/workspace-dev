@@ -8,7 +8,8 @@ import {
   createDeterministicScreenFile,
   createDeterministicThemeFile,
   generateArtifacts,
-  toDeterministicScreenPath
+  toDeterministicScreenPath,
+  detectFormGroups
 } from "./generator-core.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
@@ -10390,4 +10391,172 @@ test("deterministic screen rendering infers credit card validation from Kartennu
 
   const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('"credit_card"'), "Expected credit_card validation type for Kartennummer label");
+});
+
+test("detectFormGroups returns empty array for single form group", () => {
+  const children: any[] = [
+    createSemanticInputNode({ id: "email-field", name: "Email Input", label: "Email" }),
+    {
+      id: "submit-btn",
+      name: "Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      width: 200,
+      height: 48,
+      fillColor: "#d4001a",
+      children: [{ id: "submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Submit", fillColor: "#ffffff" }]
+    }
+  ];
+  const result = detectFormGroups(children);
+  assert.equal(result.length, 0, "Single form group should return empty array (fallback to single context)");
+});
+
+test("detectFormGroups detects two separate form groups", () => {
+  const children: any[] = [
+    createSemanticInputNode({ id: "login-email", name: "Login Email", label: "Email" }),
+    createSemanticInputNode({ id: "login-password", name: "Login Password", label: "Password" }),
+    {
+      id: "login-submit",
+      name: "Login Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      width: 200,
+      height: 48,
+      fillColor: "#d4001a",
+      children: [{ id: "login-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Login", fillColor: "#ffffff" }]
+    },
+    createSemanticInputNode({ id: "newsletter-email", name: "Newsletter Email", label: "Newsletter Email" }),
+    {
+      id: "newsletter-submit",
+      name: "Newsletter Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      width: 200,
+      height: 48,
+      fillColor: "#1976d2",
+      children: [{ id: "newsletter-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Subscribe", fillColor: "#ffffff" }]
+    }
+  ];
+  const result = detectFormGroups(children);
+  assert.equal(result.length, 2, "Should detect two form groups");
+  assert.equal(result[0]!.groupId, "formGroup0");
+  assert.equal(result[1]!.groupId, "formGroup1");
+  assert.ok(result[0]!.childIndices.length >= 2, "First group should contain login fields and button");
+  assert.ok(result[1]!.childIndices.length >= 2, "Second group should contain newsletter field and button");
+});
+
+test("detectFormGroups returns empty when only one button exists", () => {
+  const children: any[] = [
+    createSemanticInputNode({ id: "field-a", name: "Field A", label: "A" }),
+    createSemanticInputNode({ id: "field-b", name: "Field B", label: "B" }),
+    {
+      id: "single-btn",
+      name: "Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      width: 200,
+      height: 48,
+      fillColor: "#d4001a",
+      children: [{ id: "btn-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Submit", fillColor: "#ffffff" }]
+    }
+  ];
+  const result = detectFormGroups(children);
+  assert.equal(result.length, 0, "Should not split when only one button exists");
+});
+
+test("deterministic screen rendering assigns formGroupId to fields when multiple form groups exist", () => {
+  const screen = {
+    id: "multi-form-screen",
+    name: "Multi Form Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 16,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "login-group",
+        name: "Login Group",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        width: 320,
+        height: 200,
+        children: [
+          createSemanticInputNode({ id: "login-email", name: "Login Email Input", label: "Email" }),
+          {
+            id: "login-btn",
+            name: "Login Button",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 0,
+            y: 100,
+            width: 200,
+            height: 48,
+            fillColor: "#d4001a",
+            children: [{ id: "login-btn-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Login", fillColor: "#ffffff" }]
+          }
+        ]
+      },
+      {
+        id: "newsletter-group",
+        name: "Newsletter Group",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        width: 320,
+        height: 200,
+        children: [
+          createSemanticInputNode({ id: "nl-email", name: "Newsletter Email Input", label: "Newsletter" }),
+          {
+            id: "nl-btn",
+            name: "Newsletter Button",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 0,
+            y: 100,
+            width: 200,
+            height: 48,
+            fillColor: "#1976d2",
+            children: [{ id: "nl-btn-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Subscribe", fillColor: "#ffffff" }]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes("Login"), "Should render login form group");
+  assert.ok(content.includes("Newsletter") || content.includes("Subscribe"), "Should render newsletter form group");
+});
+
+test("deterministic screen rendering preserves single-form behavior for single form group", () => {
+  const screen = {
+    id: "single-form-screen",
+    name: "Single Form Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "email-field", name: "Email Input", label: "Email *", placeholder: "name@example.com" }),
+      {
+        id: "primary-submit",
+        name: "Primary Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [{ id: "primary-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Continue", fillColor: "#ffffff" }]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  assert.ok(content.includes('component="form"'), "Single form should have form component prop");
+  assert.ok(content.includes("validateFieldValue"), "Single form should have validation logic");
 });
