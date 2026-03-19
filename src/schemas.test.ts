@@ -17,6 +17,7 @@ test("schema: valid submit body parses correctly", () => {
     figmaAccessToken: "figd_xxx",
     brandTheme: "Sparkasse",
     generationLocale: "en-US",
+    formHandlingMode: "react_hook_form",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
@@ -25,6 +26,7 @@ test("schema: valid submit body parses correctly", () => {
     assert.equal(result.data.figmaFileKey, "abc123");
     assert.equal(result.data.brandTheme, "sparkasse");
     assert.equal(result.data.generationLocale, "en-US");
+    assert.equal(result.data.formHandlingMode, "react_hook_form");
     assert.equal(result.data.figmaSourceMode, "rest");
     assert.equal(result.data.enableGitPr, false);
   }
@@ -120,7 +122,8 @@ test("schema: optional fields must be strings when provided", () => {
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
     projectName: 123,
-    generationLocale: 5
+    generationLocale: 5,
+    formHandlingMode: 7
   });
   assert.equal(result.success, false);
 });
@@ -130,6 +133,15 @@ test("schema: brandTheme must be a supported enum value", () => {
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
     brandTheme: "enterprise"
+  });
+  assert.equal(result.success, false);
+});
+
+test("schema: formHandlingMode must be a supported enum value", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    formHandlingMode: "formik"
   });
   assert.equal(result.success, false);
 });

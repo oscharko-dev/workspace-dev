@@ -27,7 +27,7 @@ import {
   getDefaultDesignSystemConfigPath,
   loadDesignSystemConfigFile
 } from "../design-system.js";
-import type { WorkspaceRouterMode } from "../contracts/index.js";
+import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 
 interface GenerateArtifactsInput {
   projectDir: string;
@@ -38,6 +38,7 @@ interface GenerateArtifactsInput {
   imageAssetMap?: Record<string, string>;
   generationLocale?: string;
   routerMode?: WorkspaceRouterMode;
+  formHandlingMode?: WorkspaceFormHandlingMode;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
   onLog: (message: string) => void;
@@ -609,6 +610,7 @@ const toThemeColorLiteral = ({
 type ButtonVariant = "contained" | "outlined" | "text";
 type ButtonSize = "small" | "medium" | "large";
 type ValidationFieldType = "email" | "password" | "tel" | "number" | "date" | "url" | "search";
+type ResolvedFormHandlingMode = WorkspaceFormHandlingMode;
 type HeadingComponent = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 type LandmarkRole = "navigation";
 
@@ -632,6 +634,15 @@ const DARK_MODE_BACKGROUND_PAPER = "#1e1e1e";
 const DARK_MODE_TEXT_PRIMARY = "#f5f7fb";
 const LIGHTEN_TO_WHITE_STEP = 0.08;
 const LIGHTEN_TO_WHITE_MAX_STEPS = 11;
+const DEFAULT_FORM_HANDLING_MODE: ResolvedFormHandlingMode = "react_hook_form";
+
+const resolveFormHandlingMode = ({
+  requestedMode
+}: {
+  requestedMode: WorkspaceFormHandlingMode | undefined;
+}): ResolvedFormHandlingMode => {
+  return requestedMode === "legacy_use_state" ? "legacy_use_state" : DEFAULT_FORM_HANDLING_MODE;
+};
 
 const hasVisibleGradient = (value: string | undefined): boolean => {
   return typeof value === "string" && value.trim().length > 0;
@@ -2586,7 +2597,8 @@ const buildScreenPatternStatePlan = ({
     .map((clusterSpec) => `  ${clusterSpec.componentName}: Record<string, ${clusterSpec.stateTypeName}>;`)
     .join("\n");
   const providerPropsName = `${providerName}Props`;
-  const contextSource = `import { createContext, useContext, type ReactNode } from "react";
+  const contextSource = `/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, type ReactNode } from "react";
 
 ${clusterInterfaces}
 
@@ -2607,6 +2619,7 @@ export function ${providerName}({ initialState, children }: ${providerPropsName}
   return <${contextVarName}.Provider value={initialState}>{children}</${contextVarName}.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const ${hookName} = (): ${stateTypeName} => {
   return useContext(${contextVarName});
 };
@@ -2693,6 +2706,7 @@ const buildExtractedComponentFile = ({
     screenId: screen.id,
     screenName: `${screen.name}:${cluster.componentName}`,
     generationLocale,
+    formHandlingMode: "legacy_use_state",
     fields: [],
     accordions: [],
     tabs: [],
@@ -4647,6 +4661,7 @@ interface RenderContext {
   screenId: string;
   screenName: string;
   generationLocale: string;
+  formHandlingMode: ResolvedFormHandlingMode;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
   tabs: InteractiveTabsModel[];
@@ -6277,6 +6292,7 @@ const renderSemanticInput = (
   const helperTextId = `${field.key}-helper-text`;
   const requiredProp = field.required ? `${indent}    required\n` : "";
   const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
+  const usesReactHookForm = context.formHandlingMode === "react_hook_form";
 
   if (field.isSelect) {
     registerMuiImports(context, "FormControl", "InputLabel", "Select", "MenuItem", "FormHelperText");
@@ -6306,6 +6322,42 @@ const renderSemanticInput = (
 ${selectSxEntries.map((entry) => `${indent}      ${entry}`).join(",\n")}
 ${indent}    }}\n`
         : "";
+    if (usesReactHookForm) {
+      return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <FormControl
+${field.required ? `${indent}        required\n` : ""}${indent}        error={Boolean(helperText)}
+${indent}        sx={{ ${fieldSx} }}
+${indent}      >
+${indent}        <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelStyle} }}>{${literal(field.label)}}</InputLabel>
+${indent}        <Select
+${indent}          labelId={${literal(selectLabelId)}}
+${indent}          label={${literal(field.label)}}
+${indent}          value={controllerField.value ?? ""}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-describedby={${literal(helperTextId)}}
+${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
+${selectSxProp}
+${indent}        >
+${indent}          {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}            <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}          ))}
+${indent}        </Select>
+${indent}        <FormHelperText id={${literal(helperTextId)}}>{helperText}</FormHelperText>
+${indent}      </FormControl>
+${indent}    );
+${indent}  }}
+${indent}/>`;
+    }
     return `${indent}<FormControl
 ${requiredProp}${indent}    error={${fieldErrorExpression}}
 ${indent}    sx={{ ${fieldSx} }}
@@ -6371,6 +6423,35 @@ ${indent}</FormControl>`;
 ${textFieldSxEntries.map((entry) => `${indent}    ${entry}`).join(",\n")}
 ${indent}  }}\n`
       : "";
+  if (usesReactHookForm) {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <TextField
+${indent}        label={${literal(field.label)}}
+${field.placeholder ? `${indent}        placeholder={${literal(field.placeholder)}}\n` : ""}${field.inputType ? `${indent}        type={${literal(field.inputType)}}\n` : ""}${field.autoComplete ? `${indent}        autoComplete={${literal(field.autoComplete)}}\n` : ""}${field.required ? `${indent}        required\n` : ""}${indent}        value={controllerField.value ?? ""}
+${indent}        onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
+${indent}        onBlur={controllerField.onBlur}
+${indent}        error={Boolean(helperText)}
+${indent}        helperText={helperText}
+${indent}        aria-label={${literal(field.label)}}
+${indent}        aria-describedby={${literal(helperTextId)}}
+${textFieldSxProp}
+${indent}        slotProps={{
+${indent}          ${slotPropsEntries}
+${indent}        }}
+${indent}      />
+${indent}    );
+${indent}  }}
+${indent}/>`;
+  }
   return `${indent}<TextField
 ${indent}  label={${literal(field.label)}}
 ${placeholderProp}${typeProp}${autoCompleteProp}${textFieldRequiredProp}${indent}  value={formValues[${literal(field.key)}] ?? ""}
@@ -9810,6 +9891,41 @@ const renderSelectElement = (element: ScreenElementIR, depth: number, parent: Vi
   const fieldHelperTextExpression = `((touchedFields[${literal(field.key)}] ? fieldErrors[${literal(field.key)}] : initialVisualErrors[${literal(field.key)}]) ?? "")`;
   const requiredProp = field.required ? `${indent}  required\n` : "";
   const ariaRequiredProp = field.required ? `${indent}    aria-required="true"\n` : "";
+  if (context.formHandlingMode === "react_hook_form") {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      <FormControl
+${field.required ? `${indent}        required\n` : ""}${indent}        error={Boolean(helperText)}
+${indent}        sx={{ ${sx} }}
+${indent}      >
+${indent}        <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}</InputLabel>
+${indent}        <Select
+${indent}          labelId={${literal(labelId)}}
+${indent}          label={${literal(field.label)}}
+${indent}          value={controllerField.value ?? ""}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-describedby={${literal(helperTextId)}}
+${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
+${indent}        >
+${indent}          {(selectOptions[${literal(field.key)}] ?? []).map((option) => (
+${indent}            <MenuItem key={option} value={option}>{option}</MenuItem>
+${indent}          ))}
+${indent}        </Select>
+${indent}        <FormHelperText id={${literal(helperTextId)}}>{helperText}</FormHelperText>
+${indent}      </FormControl>
+${indent}    );
+${indent}  }}
+${indent}/>`;
+  }
   return `${indent}<FormControl
 ${requiredProp}${indent}  error={${fieldErrorExpression}}
 ${indent}  sx={{ ${sx} }}
@@ -10268,6 +10384,7 @@ const createThemeDerivationRenderContext = ({
     screenId: `${screen.id}:theme-defaults`,
     screenName: `${screen.name}:theme-defaults`,
     generationLocale,
+    formHandlingMode: "legacy_use_state",
     fields: [],
     accordions: [],
     tabs: [],
@@ -11289,7 +11406,7 @@ describe("${componentName}Screen", () => {
   };
 };
 
-const buildInlineFormStateBlock = ({
+const buildInlineLegacyFormStateBlock = ({
   hasSelectField,
   selectOptionsMap,
   initialVisualErrorsMap,
@@ -11433,7 +11550,7 @@ const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
 };`;
 };
 
-const buildFormContextFile = ({
+const buildLegacyFormContextFile = ({
   screenComponentName,
   initialValues,
   requiredFieldMap,
@@ -11455,7 +11572,8 @@ const buildFormContextFile = ({
   const contextVarName = `${screenComponentName}FormContext`;
   const contextValueTypeName = `${screenComponentName}FormContextValue`;
   const providerPropsTypeName = `${providerName}Props`;
-  const contextSource = `import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";
+  const contextSource = `/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";
 
 interface ${contextValueTypeName} {
   initialVisualErrors: Record<string, string>;
@@ -11616,6 +11734,385 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const ${hookName} = (): ${contextValueTypeName} => {
+  const context = useContext(${contextVarName});
+  if (!context) {
+    throw new Error("${hookName} must be used within ${providerName}");
+  }
+  return context;
+};
+`;
+  return {
+    file: {
+      path: path.posix.join("src", "context", ensureTsxName(`${screenComponentName}FormContext`)),
+      content: contextSource
+    },
+    providerName,
+    hookName,
+    importPath: `../context/${screenComponentName}FormContext`
+  };
+};
+
+const toReactHookFormSchemaEntries = ({
+  initialValues,
+  indent
+}: {
+  initialValues: Record<string, string>;
+  indent: string;
+}): string => {
+  const fieldKeys = Object.keys(initialValues).sort((left, right) => left.localeCompare(right));
+  return fieldKeys.map((fieldKey) => `${indent}${literal(fieldKey)}: createFieldSchema({ fieldKey: ${literal(fieldKey)} })`).join(",\n");
+};
+
+const buildInlineReactHookFormStateBlock = ({
+  hasSelectField,
+  selectOptionsMap,
+  initialVisualErrorsMap,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialValues
+}: {
+  hasSelectField: boolean;
+  selectOptionsMap: Record<string, string[]>;
+  initialVisualErrorsMap: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialValues: Record<string, string>;
+}): string => {
+  const selectOptionsDeclaration = hasSelectField
+    ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
+    : "";
+  const schemaEntries = toReactHookFormSchemaEntries({
+    initialValues,
+    indent: "  "
+  });
+  return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+  return z.string().superRefine((rawValue, issueContext) => {
+    const trimmed = rawValue.trim();
+    if (requiredFields[fieldKey] && trimmed.length === 0) {
+      issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
+      return;
+    }
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const validationType = fieldValidationTypes[fieldKey];
+    if (!validationType) {
+      return;
+    }
+    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+    switch (validationType) {
+      case "email":
+        if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "tel": {
+        const compactTel = trimmed.replace(/\\s+/g, "");
+        const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+        if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "url": {
+        try {
+          const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+          const parsed = new URL(normalizedUrl);
+          if (!(parsed.hostname && parsed.hostname.includes("."))) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+        } catch {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "number":
+        if (parseLocalizedNumber(trimmed) === undefined) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "date": {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+        if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValidDate =
+          date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+        if (!isValidDate) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  });
+};
+
+const formSchema = z.object({
+${schemaEntries}
+});
+
+const { control, handleSubmit } = useForm({
+  resolver: zodResolver(formSchema),
+  defaultValues: ${JSON.stringify(initialValues, null, 2)}
+});
+
+const onSubmit = (values: Record<string, string>): void => {
+  void values;
+  // Intentionally no-op in deterministic fallback output.
+};
+
+const resolveFieldErrorMessage = ({
+  fieldKey,
+  isTouched,
+  fieldError
+}: {
+  fieldKey: string;
+  isTouched: boolean;
+  fieldError: string | undefined;
+}): string => {
+  if (!isTouched) {
+    return initialVisualErrors[fieldKey] ?? "";
+  }
+  return fieldError ?? "";
+};`;
+};
+
+const buildReactHookFormContextFile = ({
+  screenComponentName,
+  initialValues,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  initialVisualErrorsMap,
+  selectOptionsMap
+}: {
+  screenComponentName: string;
+  initialValues: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  initialVisualErrorsMap: Record<string, string>;
+  selectOptionsMap: Record<string, string[]>;
+}): FormContextFileSpec => {
+  const providerName = toFormContextProviderName(screenComponentName);
+  const hookName = toFormContextHookName(screenComponentName);
+  const contextVarName = `${screenComponentName}FormContext`;
+  const contextValueTypeName = `${screenComponentName}FormContextValue`;
+  const providerPropsTypeName = `${providerName}Props`;
+  const schemaEntries = toReactHookFormSchemaEntries({
+    initialValues,
+    indent: "    "
+  });
+  const contextSource = `import { createContext, useContext, type ReactNode } from "react";
+import { useForm, type UseFormReturn } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+interface ${contextValueTypeName} {
+  initialVisualErrors: Record<string, string>;
+  selectOptions: Record<string, string[]>;
+  control: UseFormReturn<Record<string, string>>["control"];
+  handleSubmit: UseFormReturn<Record<string, string>>["handleSubmit"];
+  onSubmit: (values: Record<string, string>) => void;
+  resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
+}
+
+const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
+
+interface ${providerPropsTypeName} {
+  children: ReactNode;
+}
+
+export function ${providerName}({ children }: ${providerPropsTypeName}) {
+  const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+  const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+  const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+
+  const parseLocalizedNumber = (rawValue: string): number | undefined => {
+    const compact = rawValue.replace(/\\s+/g, "");
+    if (!compact) {
+      return undefined;
+    }
+    const lastDot = compact.lastIndexOf(".");
+    const lastComma = compact.lastIndexOf(",");
+    const decimalIndex = Math.max(lastDot, lastComma);
+    let normalized = compact;
+    if (decimalIndex >= 0) {
+      const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+      const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+      normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+    } else {
+      normalized = compact.replace(/[.,]/g, "");
+    }
+    if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+    return z.string().superRefine((rawValue, issueContext) => {
+      const trimmed = rawValue.trim();
+      if (requiredFields[fieldKey] && trimmed.length === 0) {
+        issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
+        return;
+      }
+      if (trimmed.length === 0) {
+        return;
+      }
+
+      const validationType = fieldValidationTypes[fieldKey];
+      if (!validationType) {
+        return;
+      }
+      const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+      switch (validationType) {
+        case "email":
+          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        case "tel": {
+          const compactTel = trimmed.replace(/\\s+/g, "");
+          const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+          if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "url": {
+          try {
+            const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+            const parsed = new URL(normalizedUrl);
+            if (!(parsed.hostname && parsed.hostname.includes("."))) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            }
+          } catch {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        case "number":
+          if (parseLocalizedNumber(trimmed) === undefined) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        case "date": {
+          if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+          if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+            return;
+          }
+          const date = new Date(Date.UTC(year, month - 1, day));
+          const isValidDate =
+            date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+          if (!isValidDate) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        }
+        default:
+          return;
+      }
+    });
+  };
+
+  const formSchema = z.object({
+${schemaEntries}
+  });
+
+  const { control, handleSubmit } = useForm({
+    resolver: zodResolver(formSchema),
+    defaultValues: ${JSON.stringify(initialValues, null, 2)}
+  });
+
+  const onSubmit = (values: Record<string, string>): void => {
+    void values;
+    // Intentionally no-op in deterministic fallback output.
+  };
+
+  const resolveFieldErrorMessage = ({
+    fieldKey,
+    isTouched,
+    fieldError
+  }: {
+    fieldKey: string;
+    isTouched: boolean;
+    fieldError: string | undefined;
+  }): string => {
+    if (!isTouched) {
+      return initialVisualErrors[fieldKey] ?? "";
+    }
+    return fieldError ?? "";
+  };
+
+  return (
+    <${contextVarName}.Provider
+      value={{
+        initialVisualErrors,
+        selectOptions,
+        control: control as unknown as UseFormReturn<Record<string, string>>["control"],
+        handleSubmit: handleSubmit as unknown as UseFormReturn<Record<string, string>>["handleSubmit"],
+        onSubmit,
+        resolveFieldErrorMessage
+      }}
+    >
+      {children}
+    </${contextVarName}.Provider>
+  );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
 export const ${hookName} = (): ${contextValueTypeName} => {
   const context = useContext(${contextVarName});
   if (!context) {
@@ -11644,6 +12141,7 @@ const fallbackScreenFile = ({
   imageAssetMap = {},
   routePathByScreenId = new Map<string, string>(),
   generationLocale,
+  formHandlingMode,
   truncationMetric,
   themeComponentDefaults,
   componentNameOverride,
@@ -11658,6 +12156,7 @@ const fallbackScreenFile = ({
   imageAssetMap?: Record<string, string>;
   routePathByScreenId?: Map<string, string>;
   generationLocale?: string;
+  formHandlingMode?: WorkspaceFormHandlingMode;
   truncationMetric?: {
     originalElements: number;
     retainedElements: number;
@@ -11676,6 +12175,9 @@ const fallbackScreenFile = ({
     requestedLocale: generationLocale,
     fallbackLocale: DEFAULT_GENERATION_LOCALE
   }).locale;
+  const resolvedFormHandlingMode = resolveFormHandlingMode({
+    requestedMode: formHandlingMode
+  });
   const resolvedThemeComponentDefaults = themeComponentDefaults;
 
   const simplificationStats = createEmptySimplificationStats();
@@ -11724,6 +12226,7 @@ const fallbackScreenFile = ({
     screenId: screen.id,
     screenName: screen.name,
     generationLocale: resolvedGenerationLocale,
+    formHandlingMode: resolvedFormHandlingMode,
     fields: [],
     accordions: [],
     tabs: [],
@@ -11858,41 +12361,70 @@ const fallbackScreenFile = ({
   const submitButtonDeclaration =
     renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
   const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields;
+  const usesReactHookForm = hasInteractiveFields && resolvedFormHandlingMode === "react_hook_form";
   const formContextFileSpec = shouldGenerateFormContext
-    ? buildFormContextFile({
-        screenComponentName: componentName,
-        initialValues,
-        requiredFieldMap,
-        validationTypeMap,
-        validationMessageMap,
-        initialVisualErrorsMap,
-        selectOptionsMap
-      })
+    ? usesReactHookForm
+      ? buildReactHookFormContextFile({
+          screenComponentName: componentName,
+          initialValues,
+          requiredFieldMap,
+          validationTypeMap,
+          validationMessageMap,
+          initialVisualErrorsMap,
+          selectOptionsMap
+        })
+      : buildLegacyFormContextFile({
+          screenComponentName: componentName,
+          initialValues,
+          requiredFieldMap,
+          validationTypeMap,
+          validationMessageMap,
+          initialVisualErrorsMap,
+          selectOptionsMap
+        })
     : undefined;
-  const formContextHookFields = [
-    "initialVisualErrors",
-    ...(hasSelectField ? ["selectOptions"] : []),
-    "formValues",
-    "fieldErrors",
-    "touchedFields",
-    "updateFieldValue",
-    "handleFieldBlur",
-    "handleSubmit"
-  ];
+  const formContextHookFields = usesReactHookForm
+    ? [
+        ...(hasSelectField ? ["selectOptions"] : []),
+        "control",
+        "handleSubmit",
+        "onSubmit",
+        "resolveFieldErrorMessage"
+      ]
+    : [
+        "initialVisualErrors",
+        ...(hasSelectField ? ["selectOptions"] : []),
+        "formValues",
+        "fieldErrors",
+        "touchedFields",
+        "updateFieldValue",
+        "handleFieldBlur",
+        "handleSubmit"
+      ];
   const formContextHookBlock = formContextFileSpec
     ? `const { ${formContextHookFields.join(", ")} } = ${formContextFileSpec.hookName}();`
     : "";
   const inlineFieldStateBlock =
     !formContextFileSpec && hasInteractiveFields
-      ? buildInlineFormStateBlock({
-          hasSelectField,
-          selectOptionsMap,
-          initialVisualErrorsMap,
-          requiredFieldMap,
-          validationTypeMap,
-          validationMessageMap,
-          initialValues
-        })
+      ? usesReactHookForm
+        ? buildInlineReactHookFormStateBlock({
+            hasSelectField,
+            selectOptionsMap,
+            initialVisualErrorsMap,
+            requiredFieldMap,
+            validationTypeMap,
+            validationMessageMap,
+            initialValues
+          })
+        : buildInlineLegacyFormStateBlock({
+            hasSelectField,
+            selectOptionsMap,
+            initialVisualErrorsMap,
+            requiredFieldMap,
+            validationTypeMap,
+            validationMessageMap,
+            initialValues
+          })
       : "";
   const accordionStateBlock = hasInteractiveAccordions
     ? `const [accordionState, setAccordionState] = useState<Record<string, boolean>>(${JSON.stringify(initialAccordionState, null, 2)});
@@ -11941,16 +12473,20 @@ const ${dialogCloseHandlerVar} = (): void => {
   ]
     .filter((chunk) => chunk.length > 0)
     .join("\n\n");
+  const usesInlineLegacyFormState = !formContextFileSpec && hasInteractiveFields && !usesReactHookForm;
+  const usesInlineReactHookForm = !formContextFileSpec && hasInteractiveFields && usesReactHookForm;
   const hasLocalStatefulElements =
-    (!formContextFileSpec && hasInteractiveFields) ||
+    usesInlineLegacyFormState ||
     hasInteractiveAccordions ||
     renderContext.tabs.length > 0 ||
     renderContext.dialogs.length > 0;
-  const containerFormProps = hasInteractiveFields ? ' component="form" onSubmit={handleSubmit} noValidate' : "";
+  const formSubmitExpression =
+    hasInteractiveFields && usesReactHookForm ? "handleSubmit(onSubmit)" : "handleSubmit";
+  const containerFormProps = hasInteractiveFields ? ` component="form" onSubmit={${formSubmitExpression}} noValidate` : "";
 
   const reactValueImports = hasLocalStatefulElements ? ["useState"] : [];
   const reactTypeImports: string[] = [];
-  if (!formContextFileSpec && hasInteractiveFields) {
+  if (usesInlineLegacyFormState) {
     reactTypeImports.push("FormEvent");
   }
   if (hasTextInputField) {
@@ -11967,6 +12503,12 @@ const ${dialogCloseHandlerVar} = (): void => {
     ...(reactTypeImports.length > 0 ? [`import type { ${reactTypeImports.join(", ")} } from "react";`] : [])
   ];
   const reactImportBlock = reactImportLines.length > 0 ? `${reactImportLines.join("\n")}\n` : "";
+  const reactHookFormImport = usesReactHookForm
+    ? `import { ${usesInlineReactHookForm ? "Controller, useForm" : "Controller"} } from "react-hook-form";\n`
+    : "";
+  const zodImportBlock = usesInlineReactHookForm
+    ? 'import { zodResolver } from "@hookform/resolvers/zod";\nimport { z } from "zod";\n'
+    : "";
   const selectChangeEventTypeImport = hasSelectField ? 'import type { SelectChangeEvent } from "@mui/material/Select";\n' : "";
   const routerImports: string[] = [];
   if (renderContext.usesRouterLink) {
@@ -12042,7 +12584,7 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     </Container>
   );
 }`;
-  const screenContent = `${truncationComment}${reactImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+  const screenContent = `${truncationComment}${reactImportBlock}${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;
@@ -12099,6 +12641,7 @@ export const createDeterministicScreenFile = (
   options?: {
     routePathByScreenId?: Map<string, string> | Record<string, string>;
     generationLocale?: string;
+    formHandlingMode?: WorkspaceFormHandlingMode;
     themeComponentDefaults?: ThemeComponentDefaults;
   }
 ): GeneratedFile => {
@@ -12113,7 +12656,8 @@ export const createDeterministicScreenFile = (
     routePathByScreenId,
     enablePatternExtraction: false,
     ...(options?.themeComponentDefaults ? { themeComponentDefaults: options.themeComponentDefaults } : {}),
-    ...(options?.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {})
+    ...(options?.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
+    ...(options?.formHandlingMode !== undefined ? { formHandlingMode: options.formHandlingMode } : {})
   }).file;
 };
 
@@ -12424,6 +12968,7 @@ export const generateArtifacts = async ({
   imageAssetMap = {},
   generationLocale,
   routerMode,
+  formHandlingMode,
   llmModelName,
   llmCodegenMode,
   onLog
@@ -12448,6 +12993,9 @@ export const generateArtifacts = async ({
         `Falling back to '${resolvedGenerationLocale.locale}'.`
     );
   }
+  const resolvedFormHandlingMode = resolveFormHandlingMode({
+    requestedMode: formHandlingMode
+  });
   const designSystemConfig = await loadDesignSystemConfigFile({
     designSystemFilePath,
     onLog
@@ -12574,6 +13122,7 @@ export const generateArtifacts = async ({
       imageAssetMap,
       routePathByScreenId,
       generationLocale: resolvedGenerationLocale.locale,
+      formHandlingMode: resolvedFormHandlingMode,
       ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
