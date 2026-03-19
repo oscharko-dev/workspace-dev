@@ -5526,6 +5526,7 @@ export const createDeterministicAppFile = (
   screens: ScreenIR[],
   options?: {
     routerMode?: WorkspaceRouterMode;
+    includeThemeModeToggle?: boolean;
   }
 ): GeneratedFile => {
   const identitiesByScreenId = buildScreenArtifactIdentities(screens);
@@ -5534,7 +5535,10 @@ export const createDeterministicAppFile = (
     content: makeAppFile({
       screens,
       identitiesByScreenId,
-      ...(options?.routerMode !== undefined ? { routerMode: options.routerMode } : {})
+      ...(options?.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
+      ...(options?.includeThemeModeToggle !== undefined
+        ? { includeThemeModeToggle: options.includeThemeModeToggle }
+        : {})
     })
   };
 };
@@ -6145,7 +6149,8 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     content: makeAppFile({
       screens: ir.screens,
       identitiesByScreenId,
-      ...(routerMode !== undefined ? { routerMode } : {})
+      ...(routerMode !== undefined ? { routerMode } : {}),
+      includeThemeModeToggle: ir.themeAnalysis?.darkModeDetected ?? true
     })
   });
   generatedPaths.add("src/App.tsx");

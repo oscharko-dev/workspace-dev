@@ -576,5 +576,13 @@
     "truncatedScreens": [],
     "depthTruncatedScreens": [],
     "degradedGeometryNodes": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
   }
 }

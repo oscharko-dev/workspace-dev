@@ -64,6 +64,8 @@ export type {
   DesignManifest,
   DesignNodeFingerprint,
   DesignScreenFingerprint,
+  DesignIrDarkPaletteHints,
+  DesignIrThemeAnalysis,
   DesignTokenActionPalette,
   DesignTokenPalette,
   DesignTokenTypographyScale,

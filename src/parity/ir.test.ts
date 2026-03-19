@@ -4619,3 +4619,107 @@ test("figmaToDesignIrWithOptions truncation metrics droppedTypeCounts is absent 
 
   assert.equal(ir.metrics?.truncatedScreens.length, 0);
 });
+
+test("figmaToDesignIrWithOptions derives dark mode analysis from luminance, naming, and pair signals", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Dark Analysis Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          name: "Dark Mode",
+          children: [
+            {
+              id: "screen-dark",
+              type: "FRAME",
+              name: "Dashboard Dark",
+              fills: [{ type: "SOLID", color: toFigmaColor("#101418") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 900 },
+              children: [
+                {
+                  id: "heading-dark",
+                  type: "TEXT",
+                  name: "Heading Dark",
+                  characters: "Nachtmodus",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#f5f7fb") }],
+                  style: { fontSize: 24, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 260, height: 32 }
+                }
+              ]
+            },
+            {
+              id: "screen-light",
+              type: "FRAME",
+              name: "Dashboard Light",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f8fafc") }],
+              absoluteBoundingBox: { x: 1240, y: 0, width: 1200, height: 900 },
+              children: [
+                {
+                  id: "heading-light",
+                  type: "TEXT",
+                  name: "Heading Light",
+                  characters: "Tagmodus",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#111827") }],
+                  style: { fontSize: 24, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 1280, y: 40, width: 240, height: 32 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(ir.themeAnalysis?.darkModeDetected, true);
+  assert.equal(ir.themeAnalysis?.signals.luminance, true);
+  assert.equal(ir.themeAnalysis?.signals.naming, true);
+  assert.equal(ir.themeAnalysis?.signals.lightDarkPair, true);
+  assert.equal(typeof ir.themeAnalysis?.darkPaletteHints?.background?.default, "string");
+  assert.equal(typeof ir.themeAnalysis?.darkPaletteHints?.text?.primary, "string");
+});
+
+test("figmaToDesignIrWithOptions marks light-only files as no dark mode detected", () => {
+  const ir = figmaToDesignIrWithOptions({
+    name: "Light Analysis Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          name: "Main",
+          children: [
+            {
+              id: "screen-light-only",
+              type: "FRAME",
+              name: "Overview",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f8fafc") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1200, height: 900 },
+              children: [
+                {
+                  id: "body-light-only",
+                  type: "TEXT",
+                  name: "Body",
+                  characters: "Heller Inhalt",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  style: { fontSize: 16, fontWeight: 400, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 120, width: 260, height: 24 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(ir.themeAnalysis?.darkModeDetected, false);
+  assert.equal(ir.themeAnalysis?.signals.luminance, false);
+  assert.equal(ir.themeAnalysis?.signals.naming, false);
+  assert.equal(ir.themeAnalysis?.darkPaletteHints, undefined);
+});

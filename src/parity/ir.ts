@@ -8,6 +8,8 @@ import {
 import type {
   CounterAxisAlignItems,
   DesignIR,
+  DesignIrDarkPaletteHints,
+  DesignIrThemeAnalysis,
   DesignTokenTypographyScale,
   DesignTokenTypographyVariant,
   DesignTokenTypographyVariantName,
@@ -3751,6 +3753,251 @@ const deriveTokens = (file: FigmaFile): DesignTokens => {
   };
 };
 
+const DARK_MODE_NAME_PATTERN = /\b(dark|night|nocturne|midnight|amoled)\b/i;
+const LIGHT_MODE_NAME_PATTERN = /\b(light|day)\b/i;
+const DEFAULT_DARK_BACKGROUND_COLOR = "#121212";
+const DEFAULT_DARK_TEXT_COLOR = "#f5f7fb";
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+const isHexColorLiteral = (value: string): boolean => {
+  return HEX_COLOR_PATTERN.test(value);
+};
+
+const parseHexColorRgb = (hex: string): { r: number; g: number; b: number } | undefined => {
+  if (!isHexColorLiteral(hex)) {
+    return undefined;
+  }
+  const normalized = hex.length === 9 ? hex.slice(0, 7) : hex;
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+    return undefined;
+  }
+  return { r, g, b };
+};
+
+const clampUnitInterval = (value: number): number => {
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 1) {
+    return 1;
+  }
+  return value;
+};
+
+const mixHexColors = ({ left, right, amount }: { left: string; right: string; amount: number }): string => {
+  const leftRgb = parseHexColorRgb(left);
+  const rightRgb = parseHexColorRgb(right);
+  if (!leftRgb || !rightRgb) {
+    return left;
+  }
+  const clampedAmount = clampUnitInterval(amount);
+  const blendChannel = (from: number, to: number): number => Math.round(from + (to - from) * clampedAmount);
+  const red = blendChannel(leftRgb.r, rightRgb.r);
+  const green = blendChannel(leftRgb.g, rightRgb.g);
+  const blue = blendChannel(leftRgb.b, rightRgb.b);
+  return `#${red.toString(16).padStart(2, "0")}${green.toString(16).padStart(2, "0")}${blue
+    .toString(16)
+    .padStart(2, "0")}`;
+};
+
+const resolveMostFrequentColor = (colors: string[]): string | undefined => {
+  if (colors.length === 0) {
+    return undefined;
+  }
+  const counts = new Map<string, number>();
+  for (const color of colors) {
+    counts.set(color, (counts.get(color) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+    return left[0].localeCompare(right[0]);
+  })[0]?.[0];
+};
+
+const resolveBestContrastCandidate = ({
+  backgroundColor,
+  candidates
+}: {
+  backgroundColor: string;
+  candidates: string[];
+}): string => {
+  const uniqueCandidates = [...new Set(candidates.filter((candidate) => isHexColorLiteral(candidate)))];
+  if (uniqueCandidates.length === 0) {
+    return DEFAULT_DARK_TEXT_COLOR;
+  }
+  return uniqueCandidates
+    .map((candidate) => ({
+      candidate,
+      score: contrastRatio(candidate, backgroundColor)
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return left.candidate.localeCompare(right.candidate);
+    })[0]?.candidate ?? DEFAULT_DARK_TEXT_COLOR;
+};
+
+const deriveThemeAnalysis = ({
+  file,
+  screens,
+  tokens
+}: {
+  file: FigmaFile;
+  screens: ScreenIR[];
+  tokens: DesignTokens;
+}): DesignIrThemeAnalysis => {
+  const nodes = file.document ? collectNodes(file.document, () => true) : [];
+  const styleCatalog = resolveNodeStyleCatalog(file);
+  const colorSamples = collectColorSamples({ nodes, styleCatalog });
+  const clusters = clusterSamples(colorSamples);
+
+  const screenBackgrounds = screens
+    .map((screen) => screen.fillColor)
+    .filter((value): value is string => typeof value === "string" && isHexColorLiteral(value));
+  const darkScreenBackgrounds = screenBackgrounds.filter((color) => luminance(color) < 0.3);
+  const lightScreenBackgrounds = screenBackgrounds.filter((color) => luminance(color) > 0.65);
+
+  const darkNameCandidates = [
+    file.name ?? "",
+    ...screens.map((screen) => screen.name),
+    ...nodes
+      .filter((node) => node.type === "CANVAS")
+      .map((node) => (typeof node.name === "string" ? node.name : ""))
+  ];
+  const darkNameMatches = darkNameCandidates.filter((name) => DARK_MODE_NAME_PATTERN.test(name)).length;
+  const lightNameMatches = darkNameCandidates.filter((name) => LIGHT_MODE_NAME_PATTERN.test(name)).length;
+
+  const clusterDarkCandidates = clusters.filter((cluster) => luminance(cluster.color) < 0.3 && cluster.totalWeight >= 4);
+  const luminanceSignal =
+    darkScreenBackgrounds.length > 0 &&
+    darkScreenBackgrounds.length / Math.max(1, screenBackgrounds.length) >= 0.25;
+  const namingSignal = darkNameMatches > 0 && darkNameMatches >= lightNameMatches;
+  const lightDarkPairSignal = darkScreenBackgrounds.length > 0 && lightScreenBackgrounds.length > 0;
+
+  const darkModeDetected = luminanceSignal || namingSignal || lightDarkPairSignal;
+  if (!darkModeDetected) {
+    return {
+      darkModeDetected: false,
+      signals: {
+        luminance: luminanceSignal,
+        naming: namingSignal,
+        lightDarkPair: lightDarkPairSignal
+      }
+    };
+  }
+
+  const darkBackground =
+    resolveMostFrequentColor(darkScreenBackgrounds) ??
+    clusterDarkCandidates
+      .slice()
+      .sort((left, right) => {
+        if (right.totalWeight !== left.totalWeight) {
+          return right.totalWeight - left.totalWeight;
+        }
+        return left.color.localeCompare(right.color);
+      })[0]?.color ??
+    DEFAULT_DARK_BACKGROUND_COLOR;
+
+  const darkPaperCandidate = clusterDarkCandidates
+    .map((cluster) => cluster.color)
+    .filter((color) => color !== darkBackground && luminance(color) > luminance(darkBackground) && luminance(color) <= 0.45)
+    .sort((left, right) => luminance(left) - luminance(right))[0];
+  const darkPaper = darkPaperCandidate ?? mixHexColors({ left: darkBackground, right: "#ffffff", amount: 0.08 });
+
+  const inferredText = chooseTextColor({
+    clusters,
+    backgroundColor: darkBackground
+  });
+  const darkText = resolveBestContrastCandidate({
+    backgroundColor: darkBackground,
+    candidates: [inferredText, tokens.palette.text, DEFAULT_DARK_TEXT_COLOR, "#ffffff", "#f3f4f6"]
+  });
+
+  const darkPrimary = choosePrimaryColor({
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText
+  });
+  const darkSecondary = chooseSecondaryColor({
+    clusters,
+    backgroundColor: darkBackground,
+    primaryColor: darkPrimary
+  });
+  const darkSuccess = chooseSemanticColor({
+    semanticKey: "success",
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText,
+    primaryColor: darkPrimary,
+    secondaryColor: darkSecondary
+  });
+  const darkWarning = chooseSemanticColor({
+    semanticKey: "warning",
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText,
+    primaryColor: darkPrimary,
+    secondaryColor: darkSecondary
+  });
+  const darkError = chooseSemanticColor({
+    semanticKey: "error",
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText,
+    primaryColor: darkPrimary,
+    secondaryColor: darkSecondary
+  });
+  const darkInfo = chooseSemanticColor({
+    semanticKey: "info",
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText,
+    primaryColor: darkPrimary,
+    secondaryColor: darkSecondary
+  });
+  const darkDivider = chooseSemanticColor({
+    semanticKey: "divider",
+    clusters,
+    backgroundColor: darkBackground,
+    textColor: darkText,
+    primaryColor: darkPrimary,
+    secondaryColor: darkSecondary
+  });
+
+  const darkPaletteHints: DesignIrDarkPaletteHints = {
+    primary: darkPrimary,
+    secondary: darkSecondary,
+    success: darkSuccess,
+    warning: darkWarning,
+    error: darkError,
+    info: darkInfo,
+    background: {
+      default: darkBackground,
+      paper: darkPaper
+    },
+    text: {
+      primary: darkText
+    },
+    divider: darkDivider
+  };
+
+  return {
+    darkModeDetected: true,
+    signals: {
+      luminance: luminanceSignal,
+      naming: namingSignal,
+      lightDarkPair: lightDarkPairSignal
+    },
+    darkPaletteHints
+  };
+};
+
 const isGenericElementName = (name: string): boolean => {
   const normalized = name.trim().toLowerCase();
   return (
@@ -3867,11 +4114,18 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
   }
 
   const derivedTokens = deriveTokens(parsed);
+  const resolvedTokens = resolvedBrandTheme === "sparkasse" ? applySparkasseThemeDefaults(derivedTokens) : derivedTokens;
+  const themeAnalysis = deriveThemeAnalysis({
+    file: parsed,
+    screens,
+    tokens: resolvedTokens
+  });
   const baseIr: DesignIR = {
     sourceName: parsed.name ?? "Figma File",
     screens,
-    tokens: resolvedBrandTheme === "sparkasse" ? applySparkasseThemeDefaults(derivedTokens) : derivedTokens,
-    metrics
+    tokens: resolvedTokens,
+    metrics,
+    themeAnalysis
   };
 
   if (!options?.mcpEnrichment) {
