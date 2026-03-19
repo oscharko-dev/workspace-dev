@@ -2332,6 +2332,14 @@ export const isElevatedSurfaceContainerForPaper = ({
   return elevatedSurfaceMatch || outlinedSurfaceMatch;
 };
 
+const STACK_HANDLED_SX_KEYS: ReadonlySet<string> = new Set([
+  "display",
+  "flexDirection",
+  "alignItems",
+  "justifyContent",
+  "gap"
+]);
+
 export const isSimpleFlexContainerForStack = ({
   element,
   context
@@ -2352,13 +2360,7 @@ export const isSimpleFlexContainerForStack = ({
   if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
     return false;
   }
-
-  const hasVisualStylingSignals = Boolean(
-    hasVisualStyle(element) ||
-      (typeof element.strokeWidth === "number" && Number.isFinite(element.strokeWidth) && element.strokeWidth > 0) ||
-      (typeof element.opacity === "number" && Number.isFinite(element.opacity) && element.opacity !== 1)
-  );
-  return !hasVisualStylingSignals;
+  return true;
 };
 
 export const toSimpleStackContainerSx = ({
@@ -2371,11 +2373,27 @@ export const toSimpleStackContainerSx = ({
   context: RenderContext;
 }): string => {
   const baseEntries = baseLayoutEntries(element, parent, {
-    includePaints: false,
+    includePaints: true,
     spacingBase: context.spacingBase,
     tokens: context.tokens
-  }).filter(([key]) => SIMPLE_STACK_GEOMETRY_SX_KEYS.has(key));
+  }).filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key));
   return sxString(baseEntries);
+};
+
+export const hasInterChildDividerPattern = (children: ScreenElementIR[]): boolean => {
+  if (children.length < 3) {
+    return false;
+  }
+  let dividerCount = 0;
+  let nonDividerCount = 0;
+  for (const child of children) {
+    if (child.type === "divider") {
+      dividerCount += 1;
+    } else {
+      nonDividerCount += 1;
+    }
+  }
+  return dividerCount >= 1 && nonDividerCount >= 2 && dividerCount >= nonDividerCount - 1;
 };
 
 export const renderSimpleFlexContainerAsStack = ({
@@ -2408,9 +2426,14 @@ export const renderSimpleFlexContainerAsStack = ({
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
   const roleProp = landmarkRole ? `role="${landmarkRole}"` : undefined;
   const ariaHiddenProp = isDecorative ? 'aria-hidden="true"' : undefined;
+  const useDividerProp = hasInterChildDividerPattern(element.children ?? []);
+  if (useDividerProp) {
+    registerMuiImports(context, "Divider");
+  }
   const props = [
     `direction=${literal(direction)}`,
     `spacing={${spacing}}`,
+    useDividerProp ? `divider={<Divider flexItem />}` : undefined,
     alignItems ? `alignItems=${literal(alignItems)}` : undefined,
     justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
     roleProp,
@@ -2419,8 +2442,11 @@ export const renderSimpleFlexContainerAsStack = ({
   ]
     .filter((entry): entry is string => Boolean(entry))
     .join(" ");
+  const filteredElement = useDividerProp
+    ? { ...element, children: (element.children ?? []).filter((child) => child.type !== "divider") }
+    : element;
   const renderedChildren = renderChildrenIntoParent({
-    element,
+    element: filteredElement,
     depth: depth + 1,
     context
   });
