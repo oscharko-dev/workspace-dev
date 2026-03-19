@@ -5345,6 +5345,146 @@ test("deterministic screen rendering maps top-level overlay modal patterns to Di
   assert.ok(content.includes("onClick={handleDialogClose1}"));
 });
 
+test("deterministic screen rendering keeps pre-dispatch dialog pattern precedence over table type strategy", () => {
+  const screen = {
+    id: "dialog-pattern-table-precedence-screen",
+    name: "Dialog Pattern Table Precedence Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "overlay-shell-table",
+        name: "Modal Overlay Table",
+        nodeType: "FRAME",
+        type: "table" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 844,
+        opacity: 0.72,
+        fillColor: "#121212",
+        children: [
+          {
+            id: "dialog-table-panel",
+            name: "Dialog Panel",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "VERTICAL" as const,
+            x: 45,
+            y: 210,
+            width: 300,
+            height: 320,
+            fillColor: "#ffffff",
+            elevation: 12,
+            children: [
+              {
+                id: "dialog-table-close",
+                name: "Close Button",
+                nodeType: "FRAME",
+                type: "button" as const,
+                x: 310,
+                y: 226,
+                width: 24,
+                height: 24,
+                children: [
+                  {
+                    id: "dialog-table-close-icon",
+                    name: "ic_close",
+                    nodeType: "INSTANCE",
+                    type: "container" as const,
+                    width: 16,
+                    height: 16
+                  }
+                ]
+              },
+              {
+                id: "dialog-table-title",
+                name: "Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Überweisung bestätigen",
+                x: 69,
+                y: 250,
+                fillColor: "#111827",
+                fontWeight: 700
+              },
+              {
+                id: "dialog-table-body",
+                name: "Body",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Möchten Sie die Zahlung jetzt ausführen?",
+                x: 69,
+                y: 292,
+                fillColor: "#374151"
+              },
+              {
+                id: "dialog-table-action-row",
+                name: "Action Row",
+                nodeType: "FRAME",
+                type: "container" as const,
+                layoutMode: "HORIZONTAL" as const,
+                x: 73,
+                y: 468,
+                width: 244,
+                height: 40,
+                children: [
+                  {
+                    id: "dialog-table-action-cancel",
+                    name: "Cancel Action",
+                    nodeType: "FRAME",
+                    type: "button" as const,
+                    x: 73,
+                    y: 468,
+                    width: 112,
+                    height: 40,
+                    children: [
+                      {
+                        id: "dialog-table-action-cancel-label",
+                        name: "Cancel Label",
+                        nodeType: "TEXT",
+                        type: "text" as const,
+                        text: "Abbrechen"
+                      }
+                    ]
+                  },
+                  {
+                    id: "dialog-table-action-confirm",
+                    name: "Confirm Action",
+                    nodeType: "FRAME",
+                    type: "button" as const,
+                    x: 205,
+                    y: 468,
+                    width: 112,
+                    height: 40,
+                    children: [
+                      {
+                        id: "dialog-table-action-confirm-label",
+                        name: "Confirm Label",
+                        nodeType: "TEXT",
+                        type: "text" as const,
+                        text: "Bestätigen"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<Dialog open={isDialogOpen1} onClose={handleDialogClose1}"));
+  assert.equal(content.includes("<Table size=\"small\""), false);
+});
+
 test("deterministic screen rendering keeps top-level data table patterns as Table instead of Tabs", () => {
   const screen = {
     id: "tab-regression-data-table-screen",
@@ -5859,6 +5999,62 @@ test("deterministic screen rendering promotes outlined surface containers with c
   assert.equal(content.includes('<Box sx={{ position: "absolute", left: "0px", top: "0px", width: "320px"'), false);
 });
 
+test("deterministic screen rendering keeps input container strategy precedence over paper-like signals", () => {
+  const screen = {
+    id: "input-paper-precedence-screen",
+    name: "Input Paper Precedence",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    fillColor: "#ffffff",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "input-paper-conflict-container",
+        name: "Account Number Input",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 72,
+        fillColor: "#f8fafc",
+        strokeColor: "#d1d5db",
+        strokeWidth: 1,
+        cornerRadius: 12,
+        children: [
+          {
+            id: "input-paper-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Kontonummer",
+            x: 16,
+            y: 12,
+            fillColor: "#6b7280",
+            fontSize: 12
+          },
+          {
+            id: "input-paper-value",
+            name: "Value",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "DE89 3704 0044 0532 0130 00",
+            x: 16,
+            y: 38,
+            fillColor: "#111827",
+            fontSize: 16
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<TextField"));
+  assert.equal(content.includes("<Paper "), false);
+});
+
 test("deterministic screen rendering keeps decorative elevated containers on Box fallback", () => {
   const screen = {
     id: "paper-surface-negative-decorative-screen",
@@ -6084,6 +6280,105 @@ test("deterministic screen rendering detects equal-width row containers and emit
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes("<Grid container"));
   assert.equal((content.match(/size=\{\{ xs: 12, sm: 6, md: 4 \}\}/g) ?? []).length, 3);
+});
+
+test("deterministic screen rendering keeps repeated-list strategy precedence over simple-flex stack signals", () => {
+  const makeRow = ({ id, y, title }: { id: string; y: number; title: string }) => ({
+    id,
+    name: `Row ${id}`,
+    nodeType: "FRAME",
+    type: "container" as const,
+    layoutMode: "HORIZONTAL" as const,
+    x: 0,
+    y,
+    width: 328,
+    height: 48,
+    children: [
+      {
+        id: `${id}-icon`,
+        name: "ic_search",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 8,
+        y: y + 14,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: `${id}-title`,
+        name: `${id}-title`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: title,
+        x: 44,
+        y: y + 8
+      },
+      {
+        id: `${id}-subtitle`,
+        name: `${id}-subtitle`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: `${title} Details`,
+        x: 44,
+        y: y + 26
+      },
+      {
+        id: `${id}-action`,
+        name: `${id}-action`,
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 300,
+        y: y + 12,
+        width: 24,
+        height: 24,
+        children: [
+          {
+            id: `${id}-action-icon`,
+            name: "ic_more_vert",
+            nodeType: "INSTANCE",
+            type: "container" as const,
+            x: 302,
+            y: y + 14,
+            width: 20,
+            height: 20,
+            children: []
+          }
+        ]
+      }
+    ]
+  });
+
+  const screen = {
+    id: "list-stack-precedence-screen",
+    name: "List Stack Precedence",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "list-stack-precedence-container",
+        name: "Pattern Container",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 0,
+        width: 336,
+        height: 176,
+        gap: 8,
+        children: [
+          makeRow({ id: "row-a", y: 0, title: "Eintrag A" }),
+          makeRow({ id: "row-b", y: 56, title: "Eintrag B" }),
+          makeRow({ id: "row-c", y: 112, title: "Eintrag C" })
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("<List "));
+  assert.equal(content.includes('<Stack direction="column"'), false);
 });
 
 test("deterministic screen rendering avoids false grid positives for vertical flow containers", () => {
@@ -8831,6 +9126,187 @@ test("deterministic screen rendering promotes repeating row patterns to semantic
   assert.ok(content.includes('secondary={"Beschreibung A"}'));
   assert.ok(content.includes('<Divider component="li" />'));
   assert.equal((content.match(/<ListItem key=\{/g) ?? []).length, 3);
+});
+
+test("deterministic screen rendering keeps mixed dispatch output byte-stable across repeated generation runs", () => {
+  const screen = {
+    id: "mixed-dispatch-stability-screen",
+    name: "Mixed Dispatch Stability",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 390,
+    height: 844,
+    fillColor: "#ffffff",
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "mixed-dispatch-header",
+        name: "Top Header",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "HORIZONTAL" as const,
+        x: 0,
+        y: 0,
+        width: 390,
+        height: 64,
+        fillColor: "#ee0000",
+        children: [
+          {
+            id: "mixed-dispatch-header-title",
+            name: "Header Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Dashboard",
+            x: 16,
+            y: 20,
+            fillColor: "#ffffff"
+          },
+          {
+            id: "mixed-dispatch-header-action",
+            name: "Open Menu",
+            nodeType: "FRAME",
+            type: "button" as const,
+            x: 334,
+            y: 16,
+            width: 40,
+            height: 32,
+            children: []
+          }
+        ]
+      },
+      {
+        id: "mixed-dispatch-tabs-host",
+        name: "Main Content Tabs Host",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "VERTICAL" as const,
+        x: 0,
+        y: 120,
+        width: 390,
+        height: 280,
+        children: [
+          {
+            id: "mixed-dispatch-tab-strip",
+            name: "Main Tabs",
+            nodeType: "FRAME",
+            type: "container" as const,
+            layoutMode: "HORIZONTAL" as const,
+            x: 16,
+            y: 120,
+            width: 358,
+            height: 48,
+            children: [
+              {
+                id: "mixed-dispatch-tab-overview",
+                name: "Overview Tab",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Übersicht",
+                x: 20,
+                y: 136,
+                fillColor: "#101010",
+                fontWeight: 700
+              },
+              {
+                id: "mixed-dispatch-tab-activity",
+                name: "Activity Tab",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Aktivität",
+                x: 138,
+                y: 136,
+                fillColor: "#6b7280",
+                fontWeight: 500
+              }
+            ]
+          },
+          {
+            id: "mixed-dispatch-tab-panel-a",
+            name: "Panel A",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 184,
+            width: 358,
+            height: 72,
+            children: [
+              {
+                id: "mixed-dispatch-tab-panel-a-text",
+                name: "Panel A Text",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Kontostand"
+              }
+            ]
+          },
+          {
+            id: "mixed-dispatch-tab-panel-b",
+            name: "Panel B",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 16,
+            y: 264,
+            width: 358,
+            height: 72,
+            children: [
+              {
+                id: "mixed-dispatch-tab-panel-b-text",
+                name: "Panel B Text",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Letzte Buchungen"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "mixed-dispatch-input",
+        name: "Konto Input",
+        nodeType: "FRAME",
+        type: "container" as const,
+        layoutMode: "NONE" as const,
+        x: 16,
+        y: 460,
+        width: 358,
+        height: 72,
+        fillColor: "#f8fafc",
+        strokeColor: "#d1d5db",
+        strokeWidth: 1,
+        cornerRadius: 12,
+        children: [
+          {
+            id: "mixed-dispatch-input-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Kontonummer",
+            x: 28,
+            y: 472,
+            fillColor: "#6b7280",
+            fontSize: 12
+          },
+          {
+            id: "mixed-dispatch-input-value",
+            name: "Value",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "DE89 3704 0044 0532 0130 00",
+            x: 28,
+            y: 498,
+            fillColor: "#111827",
+            fontSize: 16
+          }
+        ]
+      }
+    ]
+  };
+
+  const first = createDeterministicScreenFile(screen).content;
+  const second = createDeterministicScreenFile(screen).content;
+  assert.equal(first, second);
+  assert.ok(first.includes("<Tabs "));
+  assert.ok(first.includes("<TextField"));
 });
 
 test("deterministic screen rendering renders ListItemAvatar when repeating rows have avatars", () => {
