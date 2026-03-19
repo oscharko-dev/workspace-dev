@@ -1577,16 +1577,7 @@ const resolvePrototypeNavigation = ({
   return undefined;
 };
 
-const mapElement = ({
-  node,
-  depth,
-  inInstanceContext,
-  inInputContext,
-  placeholderMatcherConfig,
-  metrics,
-  depthContext,
-  navigationContext
-}: {
+interface MapElementInput {
   node: FigmaNode;
   depth: number;
   inInstanceContext: boolean;
@@ -1595,10 +1586,41 @@ const mapElement = ({
   metrics: MetricsAccumulator;
   depthContext: ScreenDepthBudgetContext;
   navigationContext: PrototypeNavigationResolutionContext;
-}): ScreenElementIR | null => {
+}
+
+type PlaceholderClassification = ReturnType<typeof classifyPlaceholderNode>;
+
+interface ElementSkipEvaluation {
+  skip: boolean;
+  placeholderClassification: PlaceholderClassification;
+}
+
+interface ElementBaseBuildResult {
+  element: ScreenElementIR;
+  elementType: ScreenElementIR["type"];
+}
+
+interface ElementTraversalContext {
+  isNextInstanceContext: boolean;
+  isNextInputContext: boolean;
+}
+
+const evaluateElementSkip = ({
+  node,
+  inInstanceContext,
+  inInputContext,
+  placeholderMatcherConfig,
+  metrics
+}: Pick<
+  MapElementInput,
+  "node" | "inInstanceContext" | "inInputContext" | "placeholderMatcherConfig" | "metrics"
+>): ElementSkipEvaluation => {
   if (node.visible === false) {
     metrics.skippedHidden += countSubtreeNodes(node);
-    return null;
+    return {
+      skip: true,
+      placeholderClassification: "none"
+    };
   }
 
   const placeholderClassification = classifyPlaceholderNode({
@@ -1607,28 +1629,41 @@ const mapElement = ({
   });
   if (inInstanceContext && placeholderClassification === "technical") {
     metrics.skippedPlaceholders += 1;
-    return null;
+    return {
+      skip: true,
+      placeholderClassification
+    };
   }
   if (inInstanceContext && !inInputContext && placeholderClassification === "generic") {
     metrics.skippedPlaceholders += 1;
-    return null;
+    return {
+      skip: true,
+      placeholderClassification
+    };
   }
 
   if (isHelperItemNode({ node }) && isNodeGeometryEmpty({ node })) {
     metrics.skippedPlaceholders += countSubtreeNodes(node);
-    return null;
+    return {
+      skip: true,
+      placeholderClassification
+    };
   }
 
-  const fill = resolveFirstVisibleSolidPaint(node.fills);
-  const gradientFill = resolveFirstVisibleGradientPaint(node.fills);
-  const stroke = resolveFirstVisibleSolidPaint(node.strokes);
-  const elevation = resolveElevationFromEffects(node.effects);
-  const insetShadow = resolveInsetShadowFromEffects(node.effects);
-  const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
-    .map((item) => item.path)
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return {
+    skip: false,
+    placeholderClassification
+  };
+};
+
+const buildElementBase = ({
+  node,
+  metrics,
+  navigationContext
+}: Pick<MapElementInput, "node" | "metrics" | "navigationContext">): ElementBaseBuildResult => {
   const elementType = determineElementType(node);
-  const variantMapping = node.type === "COMPONENT_SET" ? toComponentSetVariantMapping(node) : extractVariantDataFromNode(node);
+  const variantMapping =
+    node.type === "COMPONENT_SET" ? toComponentSetVariantMapping(node) : extractVariantDataFromNode(node);
   const prototypeNavigation = resolvePrototypeNavigation({
     node,
     metrics,
@@ -1649,6 +1684,34 @@ const mapElement = ({
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
     ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
   };
+
+  return {
+    element,
+    elementType
+  };
+};
+
+const enrichElementStyleAndGeometry = ({
+  node,
+  element,
+  placeholderClassification,
+  inInstanceContext,
+  inInputContext
+}: {
+  node: FigmaNode;
+  element: ScreenElementIR;
+  placeholderClassification: PlaceholderClassification;
+  inInstanceContext: boolean;
+  inInputContext: boolean;
+}): void => {
+  const fill = resolveFirstVisibleSolidPaint(node.fills);
+  const gradientFill = resolveFirstVisibleGradientPaint(node.fills);
+  const stroke = resolveFirstVisibleSolidPaint(node.strokes);
+  const elevation = resolveElevationFromEffects(node.effects);
+  const insetShadow = resolveInsetShadowFromEffects(node.effects);
+  const vectorPaths = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])]
+    .map((item) => item.path)
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 
   if (node.characters !== undefined) {
     element.text = node.characters;
@@ -1717,16 +1780,65 @@ const mapElement = ({
   if (node.cornerRadius !== undefined) {
     element.cornerRadius = node.cornerRadius;
   }
-  depthContext.mappedElementCount += 1;
+};
 
+const resolveTraversalContext = ({
+  node,
+  elementType,
+  inInstanceContext,
+  inInputContext
+}: {
+  node: FigmaNode;
+  elementType: ScreenElementIR["type"];
+  inInstanceContext: boolean;
+  inInputContext: boolean;
+}): ElementTraversalContext => {
   const loweredNodeName = (node.name ?? "").toLowerCase();
   const isCurrentInputContext =
     inInputContext ||
     elementType === "input" ||
     hasAnyWord(loweredNodeName, ["input", "textfield", "select", "formcontrol"]);
-  const isNextInstanceContext = inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET";
-  const isNextInputContext = isCurrentInputContext;
+  return {
+    isNextInstanceContext: inInstanceContext || node.type === "INSTANCE" || node.type === "COMPONENT_SET",
+    isNextInputContext: isCurrentInputContext
+  };
+};
 
+const markDepthTruncation = ({
+  depth,
+  depthContext
+}: Pick<MapElementInput, "depth" | "depthContext">): void => {
+  const nextDepth = depth + 1;
+  depthContext.truncatedBranchCount += 1;
+  depthContext.firstTruncatedDepth =
+    depthContext.firstTruncatedDepth === undefined
+      ? nextDepth
+      : Math.min(depthContext.firstTruncatedDepth, nextDepth);
+};
+
+const mapElementChildren = ({
+  node,
+  depth,
+  elementType,
+  element,
+  placeholderMatcherConfig,
+  metrics,
+  depthContext,
+  navigationContext,
+  traversalContext,
+  mapElementFn
+}: {
+  node: FigmaNode;
+  depth: number;
+  elementType: ScreenElementIR["type"];
+  element: ScreenElementIR;
+  placeholderMatcherConfig: PlaceholderMatcherConfig;
+  metrics: MetricsAccumulator;
+  depthContext: ScreenDepthBudgetContext;
+  navigationContext: PrototypeNavigationResolutionContext;
+  traversalContext: ElementTraversalContext;
+  mapElementFn: (input: MapElementInput) => ScreenElementIR | null;
+}): void => {
   if (node.type === "COMPONENT_SET") {
     const visibleChildren = (node.children ?? []).filter((child) => child.visible !== false);
     const defaultVariantNodeId = element.variantMapping?.defaultVariantNodeId;
@@ -1734,25 +1846,20 @@ const mapElement = ({
       (defaultVariantNodeId ? visibleChildren.find((child) => child.id === defaultVariantNodeId) : undefined) ??
       visibleChildren[0];
     if (!defaultVariantNode) {
-      return element;
+      return;
     }
 
     if (shouldTruncateChildrenByDepth({ node, depth, elementType, context: depthContext })) {
       element.children = [];
-      const nextDepth = depth + 1;
-      depthContext.truncatedBranchCount += 1;
-      depthContext.firstTruncatedDepth =
-        depthContext.firstTruncatedDepth === undefined
-          ? nextDepth
-          : Math.min(depthContext.firstTruncatedDepth, nextDepth);
-      return element;
+      markDepthTruncation({ depth, depthContext });
+      return;
     }
 
-    const mappedDefault = mapElement({
+    const mappedDefault = mapElementFn({
       node: defaultVariantNode,
       depth: depth + 1,
-      inInstanceContext: isNextInstanceContext,
-      inInputContext: isNextInputContext,
+      inInstanceContext: traversalContext.isNextInstanceContext,
+      inInputContext: traversalContext.isNextInputContext,
       placeholderMatcherConfig,
       metrics,
       depthContext,
@@ -1761,38 +1868,93 @@ const mapElement = ({
     if (mappedDefault) {
       element.children = [mappedDefault];
     }
-    return element;
+    return;
   }
 
   if (shouldTruncateChildrenByDepth({ node, depth, elementType, context: depthContext })) {
     element.children = [];
-    const nextDepth = depth + 1;
-    depthContext.truncatedBranchCount += 1;
-    depthContext.firstTruncatedDepth =
-      depthContext.firstTruncatedDepth === undefined
-        ? nextDepth
-        : Math.min(depthContext.firstTruncatedDepth, nextDepth);
-  } else if (node.children?.length) {
-    const children: ScreenElementIR[] = [];
-    for (const child of node.children) {
-      const mappedChild = mapElement({
-        node: child,
-        depth: depth + 1,
-        inInstanceContext: isNextInstanceContext,
-        inInputContext: isNextInputContext,
-        placeholderMatcherConfig,
-        metrics,
-        depthContext,
-        navigationContext
-      });
-      if (mappedChild) {
-        children.push(mappedChild);
-      }
-    }
-    if (children.length > 0) {
-      element.children = children;
+    markDepthTruncation({ depth, depthContext });
+    return;
+  }
+
+  if (!node.children?.length) {
+    return;
+  }
+
+  const children: ScreenElementIR[] = [];
+  for (const child of node.children) {
+    const mappedChild = mapElementFn({
+      node: child,
+      depth: depth + 1,
+      inInstanceContext: traversalContext.isNextInstanceContext,
+      inInputContext: traversalContext.isNextInputContext,
+      placeholderMatcherConfig,
+      metrics,
+      depthContext,
+      navigationContext
+    });
+    if (mappedChild) {
+      children.push(mappedChild);
     }
   }
+  if (children.length > 0) {
+    element.children = children;
+  }
+};
+
+const mapElement = ({
+  node,
+  depth,
+  inInstanceContext,
+  inInputContext,
+  placeholderMatcherConfig,
+  metrics,
+  depthContext,
+  navigationContext
+}: MapElementInput): ScreenElementIR | null => {
+  const skipEvaluation = evaluateElementSkip({
+    node,
+    inInstanceContext,
+    inInputContext,
+    placeholderMatcherConfig,
+    metrics
+  });
+  if (skipEvaluation.skip) {
+    return null;
+  }
+
+  const { element, elementType } = buildElementBase({
+    node,
+    metrics,
+    navigationContext
+  });
+  enrichElementStyleAndGeometry({
+    node,
+    element,
+    placeholderClassification: skipEvaluation.placeholderClassification,
+    inInstanceContext,
+    inInputContext
+  });
+  depthContext.mappedElementCount += 1;
+
+  const traversalContext = resolveTraversalContext({
+    node,
+    elementType,
+    inInstanceContext,
+    inInputContext
+  });
+  mapElementChildren({
+    node,
+    depth,
+    elementType,
+    element,
+    placeholderMatcherConfig,
+    metrics,
+    depthContext,
+    navigationContext,
+    traversalContext,
+    mapElementFn: mapElement
+  });
 
   return element;
 };
