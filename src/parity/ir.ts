@@ -51,9 +51,32 @@ import {
   toHexColor
 } from "./ir-colors.js";
 import type { FigmaEffect, FigmaPaint } from "./ir-colors.js";
-
-const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
-const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
+import {
+  countSubtreeNodes,
+  collectNodes,
+  analyzeDepthPressure,
+  shouldTruncateChildrenByDepth,
+  hasMeaningfulNodeText,
+  DEFAULT_SCREEN_ELEMENT_BUDGET,
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH
+} from "./ir-tree.js";
+import type { ScreenDepthBudgetContext } from "./ir-tree.js";
+export {
+  countSubtreeNodes,
+  collectNodes,
+  analyzeDepthPressure,
+  shouldTruncateChildrenByDepth,
+  DEFAULT_SCREEN_ELEMENT_BUDGET,
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
+  DEPTH_SEMANTIC_TYPES,
+  DEPTH_SEMANTIC_NAME_HINTS,
+  isDepthSemanticNode
+} from "./ir-tree.js";
+export type {
+  DepthAnalysis,
+  ScreenDepthBudgetContext,
+  TreeFigmaNode
+} from "./ir-tree.js";
 const GENERIC_PLACEHOLDER_TEXT_PATTERNS = [
   /^(type|enter|your)(?:\s+text)?(?:\s+here)?$/i,
   /^(label|title|subtitle|heading)$/i,
@@ -435,31 +458,7 @@ const addStyleSignals = (
   }
 };
 
-const countSubtreeNodes = (node: FigmaNode): number => {
-  const children = node.children ?? [];
-  if (children.length === 0) {
-    return 1;
-  }
-  return 1 + children.reduce((count, child) => count + countSubtreeNodes(child), 0);
-};
-
-const collectNodes = (node: FigmaNode, predicate: (candidate: FigmaNode) => boolean): FigmaNode[] => {
-  if (node.visible === false) {
-    return [];
-  }
-
-  const collected: FigmaNode[] = [];
-  if (predicate(node)) {
-    collected.push(node);
-  }
-  if (!node.children) {
-    return collected;
-  }
-  for (const child of node.children) {
-    collected.push(...collectNodes(child, predicate));
-  }
-  return collected;
-};
+// countSubtreeNodes and collectNodes moved to ir-tree.ts
 
 interface NormalizedVariantData {
   properties: Record<string, string>;
@@ -1007,167 +1006,14 @@ const classifyPlaceholderNode = ({
   });
 };
 
-const DEPTH_SEMANTIC_TYPES = new Set<ScreenElementIR["type"]>([
-  "text",
-  "button",
-  "input",
-  "select",
-  "switch",
-  "checkbox",
-  "radio",
-  "slider",
-  "rating",
-  "tab",
-  "drawer",
-  "breadcrumbs",
-  "navigation",
-  "stepper",
-  "table",
-  "snackbar"
-]);
-const DEPTH_SEMANTIC_NAME_HINTS = [
-  "button",
-  "cta",
-  "input",
-  "select",
-  "dropdown",
-  "textfield",
-  "form",
-  "switch",
-  "checkbox",
-  "radio",
-  "slider",
-  "rating",
-  "tab",
-  "drawer",
-  "breadcrumbs",
-  "navigation",
-  "stepper",
-  "accordion",
-  "table",
-  "snackbar",
-  "alert"
-];
-
-interface DepthAnalysis {
-  nodeCountByDepth: Map<number, number>;
-  semanticCountByDepth: Map<number, number>;
-  subtreeHasSemanticById: Map<string, boolean>;
-}
-
-interface ScreenDepthBudgetContext {
-  screenElementBudget: number;
-  configuredMaxDepth: number;
-  mappedElementCount: number;
-  nodeCountByDepth: Map<number, number>;
-  semanticCountByDepth: Map<number, number>;
-  subtreeHasSemanticById: Map<string, boolean>;
-  truncatedBranchCount: number;
-  firstTruncatedDepth?: number;
-}
+// DEPTH_SEMANTIC_TYPES, DEPTH_SEMANTIC_NAME_HINTS, DepthAnalysis, ScreenDepthBudgetContext,
+// hasMeaningfulNodeText, isDepthSemanticNode, analyzeDepthPressure, shouldTruncateChildrenByDepth
+// moved to ir-tree.ts
 
 interface PrototypeNavigationResolutionContext {
   nodeIdToScreenId: Map<string, string>;
   knownScreenIds: Set<string>;
 }
-
-const hasMeaningfulNodeText = (node: FigmaNode): boolean => {
-  const normalized = (node.characters ?? "").trim().toLowerCase();
-  return normalized.length > 0 && !isTechnicalPlaceholderText({ text: normalized });
-};
-
-const isDepthSemanticNode = (node: FigmaNode): boolean => {
-  if (node.visible === false) {
-    return false;
-  }
-  if (node.type === "TEXT") {
-    return hasMeaningfulNodeText(node);
-  }
-  const semanticType = determineElementType(node);
-  if (DEPTH_SEMANTIC_TYPES.has(semanticType)) {
-    return true;
-  }
-  const loweredName = (node.name ?? "").toLowerCase();
-  return hasAnySubstring(loweredName, DEPTH_SEMANTIC_NAME_HINTS);
-};
-
-const analyzeDepthPressure = (nodes: FigmaNode[]): DepthAnalysis => {
-  const nodeCountByDepth = new Map<number, number>();
-  const semanticCountByDepth = new Map<number, number>();
-  const subtreeHasSemanticById = new Map<string, boolean>();
-
-  const visit = (node: FigmaNode, depth: number): boolean => {
-    if (node.visible === false) {
-      return false;
-    }
-
-    nodeCountByDepth.set(depth, (nodeCountByDepth.get(depth) ?? 0) + 1);
-
-    const selfSemantic = isDepthSemanticNode(node);
-    if (selfSemantic) {
-      semanticCountByDepth.set(depth, (semanticCountByDepth.get(depth) ?? 0) + 1);
-    }
-
-    let childSemantic = false;
-    for (const child of node.children ?? []) {
-      childSemantic = visit(child, depth + 1) || childSemantic;
-    }
-
-    const hasSemanticSubtree = selfSemantic || childSemantic;
-    subtreeHasSemanticById.set(node.id, hasSemanticSubtree);
-    return hasSemanticSubtree;
-  };
-
-  for (const node of nodes) {
-    visit(node, 0);
-  }
-
-  return {
-    nodeCountByDepth,
-    semanticCountByDepth,
-    subtreeHasSemanticById
-  };
-};
-
-const shouldTruncateChildrenByDepth = ({
-  node,
-  depth,
-  elementType,
-  context
-}: {
-  node: FigmaNode;
-  depth: number;
-  elementType: ScreenElementIR["type"];
-  context: ScreenDepthBudgetContext;
-}): boolean => {
-  if (!node.children?.length) {
-    return false;
-  }
-
-  const nextDepth = depth + 1;
-  const remainingBudget = Math.max(0, context.screenElementBudget - context.mappedElementCount);
-  const nodeCountAtDepth = context.nodeCountByDepth.get(nextDepth) ?? 0;
-  const semanticCountAtDepth = context.semanticCountByDepth.get(nextDepth) ?? 0;
-  const subtreeHasSemantic = context.subtreeHasSemanticById.get(node.id) ?? false;
-  const semanticRelevant = DEPTH_SEMANTIC_TYPES.has(elementType) || subtreeHasSemantic;
-  const semanticDensityAtDepth = nodeCountAtDepth > 0 ? semanticCountAtDepth / nodeCountAtDepth : 0;
-
-  if (nextDepth <= context.configuredMaxDepth) {
-    const pressureMultiplier = semanticDensityAtDepth > 0.25 ? 6 : 4;
-    const highPressureCutoff = remainingBudget > 0 && nodeCountAtDepth > Math.max(remainingBudget * pressureMultiplier, 32);
-    return highPressureCutoff && !semanticRelevant;
-  }
-
-  if (remainingBudget <= 0) {
-    return true;
-  }
-  if (!semanticRelevant) {
-    return true;
-  }
-
-  const allowedSemanticDepthWidth = Math.max(remainingBudget * (semanticDensityAtDepth > 0.15 ? 3 : 2), 12);
-  return nodeCountAtDepth > allowedSemanticDepthWidth;
-};
 
 const normalizeNodeActionType = (value: string | undefined): string => {
   if (typeof value !== "string") {
@@ -2339,7 +2185,7 @@ const mapScreenCandidate = ({
   const sourceNode = normalized.node;
   const fill = resolveFirstVisibleSolidPaint(sourceNode.fills);
   const gradientFill = resolveFirstVisibleGradientPaint(sourceNode.fills);
-  const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? []);
+  const depthAnalysis = analyzeDepthPressure(sourceNode.children ?? [], determineElementType);
   const depthContext: ScreenDepthBudgetContext = {
     screenElementBudget,
     configuredMaxDepth: screenElementMaxDepth,
