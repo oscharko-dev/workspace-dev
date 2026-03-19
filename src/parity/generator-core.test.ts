@@ -1424,7 +1424,7 @@ test("deterministic screen rendering omits redundant boxSizing and visible overf
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.equal(content.includes('boxSizing: "border-box"'), false);
   assert.equal(content.includes('overflow: "visible"'), false);
   assert.ok(content.includes("<Container maxWidth="));
@@ -1490,7 +1490,7 @@ test("sortChildren visual hierarchy keeps row grouping for layout NONE with x in
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assertMarkersInOrder({
     content,
     markers: ['{"Top Left Item"}', '{"Top Right Item"}', '{"Bottom Left Item"}', '{"Bottom Right Item"}']
@@ -1543,7 +1543,7 @@ test("sortChildren visual hierarchy preserves overlap order via source index", (
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assertMarkersInOrder({
     content,
     markers: ['{"Overlap First Layer"}', '{"Overlap Second Layer"}']
@@ -1614,7 +1614,7 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assertMarkersInOrder({
     content,
     markers: ['{"Semantic Header"}', '{"Semantic Navigation"}', '{"Semantic Content"}', '<Divider aria-hidden="true"']
@@ -1761,7 +1761,7 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assertMarkersInOrder({
     content,
     markers: ['{"Horizontal Left"}', '{"Horizontal Middle"}', '{"Horizontal Right"}']
@@ -2882,19 +2882,63 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Form")), "utf8");
   assert.ok(screenContent.includes('import { LoanFormFormContextProvider, useLoanFormFormContext } from "../context/LoanFormFormContext";'));
   assert.ok(screenContent.includes("function LoanFormScreenContent() {"));
-  assert.ok(screenContent.includes("const { initialVisualErrors, formValues, fieldErrors, touchedFields, updateFieldValue, handleFieldBlur, handleSubmit } = useLoanFormFormContext();"));
+  assert.ok(
+    screenContent.includes(
+      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useLoanFormFormContext();"
+    )
+  );
   assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
-  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit} noValidate'));
+  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
+  assert.ok(screenContent.includes("<Controller"));
   assert.equal(screenContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(screenContent.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"), false);
   assert.equal(screenContent.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"), false);
 
   const formContextContent = await readFile(path.join(projectDir, "src", "context", "LoanFormFormContext.tsx"), "utf8");
   assert.ok(formContextContent.includes("createContext"));
-  assert.ok(formContextContent.includes('import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";'));
-  assert.ok(formContextContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("));
-  assert.ok(formContextContent.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
+  assert.ok(formContextContent.includes('import { useForm, type UseFormReturn } from "react-hook-form";'));
+  assert.ok(formContextContent.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
+  assert.ok(formContextContent.includes('import { z } from "zod";'));
+  assert.ok(formContextContent.includes("const { control, handleSubmit } = useForm({"));
+  assert.ok(formContextContent.includes("const onSubmit = (values: Record<string, string>): void => {"));
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
+});
+
+test("generateArtifacts keeps legacy form scaffolding when formHandlingMode=legacy_use_state is requested", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-form-legacy-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "legacy-form-screen",
+      name: "Legacy Form",
+      layoutMode: "VERTICAL" as const,
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [createSemanticInputNode({ id: "legacy-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" })]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    formHandlingMode: "legacy_use_state",
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Legacy Form")), "utf8");
+  assert.ok(screenContent.includes("<LegacyFormFormContextProvider>"));
+  assert.ok(screenContent.includes("useLegacyFormFormContext"));
+  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit} noValidate'));
+  assert.equal(screenContent.includes("<Controller"), false);
+
+  const formContextContent = await readFile(path.join(projectDir, "src", "context", "LegacyFormFormContext.tsx"), "utf8");
+  assert.ok(formContextContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("));
+  assert.ok(formContextContent.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
+  assert.equal(formContextContent.includes("useForm<Record<string, string>>"), false);
 });
 
 test("generateArtifacts injects exported image asset paths into image and CardMedia rendering", async () => {
@@ -3596,7 +3640,7 @@ test("deterministic screen rendering maps textRole placeholder to TextField plac
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('label={"Loan amount"}'));
   assert.ok(content.includes('placeholder={"Type here"}'));
   assert.equal(/":\s*"Type here"/.test(content), false);
@@ -3620,7 +3664,7 @@ test("deterministic screen rendering infers TextField type and conservative auto
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const cases: Array<{ label: string; type: string; autoComplete?: string }> = [
     { label: "Email", type: "email", autoComplete: "email" },
     { label: "Passwort", type: "password", autoComplete: "current-password" },
@@ -3663,7 +3707,7 @@ test("deterministic screen rendering infers TextField type from node name and pl
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const emailBlock = findRenderedTextFieldBlock({ content, label: "Kontakt" });
   assert.ok(emailBlock.includes('type={"email"}'));
   assert.ok(emailBlock.includes('autoComplete={"email"}'));
@@ -3688,7 +3732,7 @@ test("deterministic screen rendering prioritizes password type when multiple sem
     children: [createSemanticInputNode({ id: "priority-field", name: "priority-field", label: "Email Passwort" })]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const block = findRenderedTextFieldBlock({ content, label: "Email Passwort" });
   assert.ok(block.includes('type={"password"}'));
   assert.ok(block.includes('autoComplete={"current-password"}'));
@@ -3704,7 +3748,7 @@ test("deterministic screen rendering infers required fields from star labels and
     children: [createSemanticInputNode({ id: "required-email", name: "Email Input", label: "Email *" })]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const block = findRenderedTextFieldBlock({ content, label: "Email" });
   assert.equal(block.includes('label={"Email *"}'), false);
   assert.ok(block.includes('label={"Email"}'));
@@ -3747,7 +3791,7 @@ test("deterministic screen rendering maps TextField suffix adornment via slotPro
     children: [amountInput]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const block = findRenderedTextFieldBlock({ content, label: "Betrag" });
   assert.ok(content.includes("InputAdornment"));
   assert.ok(block.includes("slotProps={{"));
@@ -3794,7 +3838,7 @@ test("deterministic screen rendering emits form validation state scaffolding for
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('component="form" onSubmit={handleSubmit} noValidate'));
   assert.ok(content.includes("const initialVisualErrors: Record<string, string> = "));
   assert.ok(content.includes("const requiredFields: Record<string, boolean> = "));
@@ -3808,6 +3852,29 @@ test("deterministic screen rendering emits form validation state scaffolding for
   assert.ok(content.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
   assert.ok(content.includes('import type { FormEvent, ChangeEvent } from "react";'));
   assert.ok(content.includes('const primarySubmitButtonKey = "primary_submit_primary_submit";'));
+});
+
+test("deterministic screen rendering uses react-hook-form scaffolding by default", () => {
+  const screen = {
+    id: "rhf-default-screen",
+    name: "RHF Default Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 200,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [createSemanticInputNode({ id: "rhf-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" })]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
+  assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
+  assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
+  assert.ok(content.includes('import { z } from "zod";'));
+  assert.ok(content.includes("const { control, handleSubmit } = useForm({"));
+  assert.ok(content.includes("<Controller"));
+  assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
+  assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
 });
 
 test("deterministic screen rendering seeds visual error examples from red outlines", () => {
@@ -3843,7 +3910,7 @@ test("deterministic screen rendering seeds visual error examples from red outlin
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('"email_input_visual_error_field": "Please enter a valid email address."'));
   const block = findRenderedTextFieldBlock({ content, label: "Email" });
   assert.ok(block.includes("error={"));
@@ -3893,7 +3960,7 @@ test("deterministic screen rendering applies validation bindings for select cont
     ]
   };
 
-  const content = createDeterministicScreenFile(screen).content;
+  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   const block = findRenderedFormControlBlock({ content, label: "Status" });
   assert.equal(block.includes('label={"Status *"}'), false);
   assert.ok(block.includes('label={"Status"}'));

@@ -231,16 +231,19 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
   const defaultRequest = engine.getJob(defaultAccepted.jobId)?.request;
   assert.equal(defaultRequest?.brandTheme, "sparkasse");
   assert.equal(defaultRequest?.generationLocale, "de-DE");
+  assert.equal(defaultRequest?.formHandlingMode, "react_hook_form");
 
   const overrideAccepted = engine.submitJob({
     figmaFileKey: "abc",
     figmaAccessToken: "token",
     brandTheme: "derived",
-    generationLocale: "en-US"
+    generationLocale: "en-US",
+    formHandlingMode: "legacy_use_state"
   });
   const overrideRequest = engine.getJob(overrideAccepted.jobId)?.request;
   assert.equal(overrideRequest?.brandTheme, "derived");
   assert.equal(overrideRequest?.generationLocale, "en-US");
+  assert.equal(overrideRequest?.formHandlingMode, "legacy_use_state");
 });
 
 test("createJobEngine falls back invalid submit generationLocale and emits deterministic warning log", async () => {
@@ -369,6 +372,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   assert.equal(fetchCalls, 0);
   assert.equal(status.request.figmaSourceMode, "local_json");
   assert.equal(status.request.figmaJsonPath, localJsonPath);
+  assert.equal(status.request.formHandlingMode, "react_hook_form");
 });
 
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {

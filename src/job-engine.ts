@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
+  WorkspaceFormHandlingMode,
   WorkspaceJobInput,
   WorkspaceJobResult,
   WorkspaceJobStageName,
@@ -102,6 +103,14 @@ const resolveFigmaSourceMode = ({
     return "local_json";
   }
   return "rest";
+};
+
+const resolveFormHandlingMode = ({
+  submitFormHandlingMode
+}: {
+  submitFormHandlingMode: WorkspaceFormHandlingMode | undefined;
+}): WorkspaceFormHandlingMode => {
+  return submitFormHandlingMode === "legacy_use_state" ? "legacy_use_state" : "react_hook_form";
 };
 
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
@@ -328,6 +337,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
     const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
     const resolvedFigmaSourceMode = resolveFigmaSourceMode({ submitFigmaSourceMode: input.figmaSourceMode });
+    const resolvedFormHandlingMode = resolveFormHandlingMode({
+      submitFormHandlingMode: input.formHandlingMode
+    });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale
@@ -675,6 +687,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             imageAssetMap,
             generationLocale: resolvedGenerationLocale,
             routerMode: runtime.routerMode,
+            formHandlingMode: resolvedFormHandlingMode,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
             onLog: (message) => {
@@ -924,12 +937,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale
     });
+    const resolvedFormHandlingMode = resolveFormHandlingMode({
+      submitFormHandlingMode: input.formHandlingMode
+    });
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
       brandTheme: input.brandTheme ?? runtime.brandTheme,
-      generationLocale: generationLocaleResolution.locale
+      generationLocale: generationLocaleResolution.locale,
+      formHandlingMode: resolvedFormHandlingMode
     };
     if (input.figmaFileKey) {
       request.figmaFileKey = input.figmaFileKey;
