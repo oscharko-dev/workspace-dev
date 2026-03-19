@@ -59,6 +59,11 @@ export interface NormalizedVariantData {
   properties: Record<string, string>;
   muiProps: VariantMuiProps;
   state?: VariantElementState;
+  stateOverrides?: {
+    hover?: VariantStateStyle;
+    active?: VariantStateStyle;
+    disabled?: VariantStateStyle;
+  };
 }
 
 export interface ComponentSetVariantCandidate extends NormalizedVariantData {
@@ -304,11 +309,70 @@ export const resolveMuiPropsFromVariantProperties = ({
   return muiProps;
 };
 
+export const inferVariantSignalsFromNamePath = (
+  name: string | undefined
+): { state?: VariantElementState; variant?: string; size?: string; color?: string } => {
+  if (typeof name !== "string") {
+    return {};
+  }
+  const segments = name
+    .split("/")
+    .map((segment) => segment.trim().toLowerCase())
+    .filter((segment) => segment.length > 0);
+
+  const result: { state?: VariantElementState; variant?: string; size?: string; color?: string } = {};
+
+  for (const segment of segments) {
+    if (!result.state) {
+      const state = toVariantState(segment);
+      if (state) {
+        result.state = state;
+      }
+    }
+    if (!result.variant) {
+      const variant = toMuiVariant(segment);
+      if (variant) {
+        result.variant = variant;
+      }
+    }
+    if (!result.size) {
+      const size = toMuiSize(segment);
+      if (size) {
+        result.size = segment;
+      }
+    }
+    if (!result.color) {
+      const color = toMuiColor(segment);
+      if (color) {
+        result.color = segment;
+      }
+    }
+  }
+
+  return result;
+};
+
 export const extractVariantDataFromNode = (node: FigmaNode): NormalizedVariantData | undefined => {
   const properties = {
     ...extractVariantNameProperties(node.name),
     ...extractVariantPropertiesFromComponentProperties(node.componentProperties)
   };
+
+  const namePathSignals = inferVariantSignalsFromNamePath(node.name);
+
+  if (!properties.state && namePathSignals.state) {
+    properties.state = namePathSignals.state;
+  }
+  if (!properties.variant && namePathSignals.variant) {
+    properties.variant = namePathSignals.variant;
+  }
+  if (!properties.size && namePathSignals.size) {
+    properties.size = namePathSignals.size;
+  }
+  if (!properties.color && namePathSignals.color) {
+    properties.color = namePathSignals.color;
+  }
+
   const stateFromProperties = toVariantState(properties.state);
   const state = stateFromProperties ?? (typeof properties.disabled === "string" && isTruthyVariantFlag(properties.disabled) ? "disabled" : undefined);
   const sortedProperties = toSortedVariantProperties(properties);
@@ -319,11 +383,21 @@ export const extractVariantDataFromNode = (node: FigmaNode): NormalizedVariantDa
   if (Object.keys(sortedProperties).length === 0 && Object.keys(muiProps).length === 0 && !state) {
     return undefined;
   }
-  return {
+
+  const result: NormalizedVariantData = {
     properties: sortedProperties,
     muiProps,
     ...(state ? { state } : {})
   };
+
+  if (state && state !== "default") {
+    const nodeStyle = extractVariantStyleFromNode(node);
+    if (Object.keys(nodeStyle).length > 0) {
+      result.stateOverrides = { [state]: nodeStyle };
+    }
+  }
+
+  return result;
 };
 
 export const extractDefaultVariantProperties = (

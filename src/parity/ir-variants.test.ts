@@ -6,6 +6,7 @@ import {
   extractFirstTextFillColor,
   extractVariantDataFromNode,
   extractVariantStyleFromNode,
+  inferVariantSignalsFromNamePath,
   normalizeVariantKey,
   normalizeVariantValue,
   resolveMuiPropsFromVariantProperties,
@@ -375,4 +376,116 @@ test("toComponentSetVariantMapping resolves color from component properties", ()
   assert.equal(mapping.muiProps.color, "primary");
   assert.equal(mapping.states?.length, 2);
   assert.equal(mapping.states?.[1]?.muiProps.color, "error");
+});
+
+test("inferVariantSignalsFromNamePath extracts state from component path segments", () => {
+  assert.equal(inferVariantSignalsFromNamePath("Button/Hover").state, "hover");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Active").state, "active");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Pressed").state, "active");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Disabled").state, "disabled");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Default").state, "default");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Enabled").state, "default");
+  assert.equal(inferVariantSignalsFromNamePath("Primary Button").state, undefined);
+});
+
+test("inferVariantSignalsFromNamePath extracts variant from component path segments", () => {
+  assert.equal(inferVariantSignalsFromNamePath("Button/Outlined").variant, "outlined");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Contained/Default").variant, "contained");
+  assert.equal(inferVariantSignalsFromNamePath("Filled Button").variant, "contained");
+  assert.equal(inferVariantSignalsFromNamePath("Text/Small").variant, "text");
+});
+
+test("inferVariantSignalsFromNamePath extracts size from component path segments", () => {
+  assert.equal(inferVariantSignalsFromNamePath("Button/Small").size, "small");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Large").size, "large");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Medium").size, "medium");
+});
+
+test("inferVariantSignalsFromNamePath extracts color from component path segments", () => {
+  assert.equal(inferVariantSignalsFromNamePath("Button/Secondary").color, "secondary");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Error").color, "error");
+  assert.equal(inferVariantSignalsFromNamePath("Button/Success/Large").color, "success");
+});
+
+test("inferVariantSignalsFromNamePath returns empty for unknown segments", () => {
+  const result = inferVariantSignalsFromNamePath("Frame/Container");
+  assert.equal(result.state, undefined);
+  assert.equal(result.variant, undefined);
+  assert.equal(result.size, undefined);
+  assert.equal(result.color, undefined);
+});
+
+test("extractVariantDataFromNode infers state from INSTANCE name path", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-hover",
+    type: "INSTANCE",
+    name: "Button/Hover",
+    fills: [toSolidPaint("#2f6fed")]
+  });
+  assert.ok(result);
+  assert.equal(result.state, "hover");
+  assert.equal(result.stateOverrides?.hover?.backgroundColor, "#2f6fed");
+});
+
+test("extractVariantDataFromNode infers variant from INSTANCE name when no componentProperties", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-outlined",
+    type: "INSTANCE",
+    name: "Button/Outlined/Small"
+  });
+  assert.ok(result);
+  assert.equal(result.muiProps.variant, "outlined");
+  assert.equal(result.muiProps.size, "small");
+});
+
+test("extractVariantDataFromNode prefers explicit componentProperties over name path signals", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-explicit",
+    type: "INSTANCE",
+    name: "Button/Outlined",
+    componentProperties: {
+      Variant: { type: "VARIANT", value: "Contained" },
+      Size: { type: "VARIANT", value: "Large" }
+    }
+  });
+  assert.ok(result);
+  assert.equal(result.muiProps.variant, "contained");
+  assert.equal(result.muiProps.size, "large");
+});
+
+test("extractVariantDataFromNode generates stateOverrides for disabled INSTANCE", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-disabled",
+    type: "INSTANCE",
+    name: "Submit Button",
+    componentProperties: {
+      State: { type: "VARIANT", value: "Disabled" }
+    },
+    fills: [toSolidPaint("#d1d5db")],
+    children: [
+      {
+        id: "btn-disabled-label",
+        type: "TEXT",
+        fills: [toSolidPaint("#9ca3af")],
+        characters: "Submit"
+      }
+    ]
+  });
+  assert.ok(result);
+  assert.equal(result.state, "disabled");
+  assert.equal(result.muiProps.disabled, true);
+  assert.equal(result.stateOverrides?.disabled?.backgroundColor, "#d1d5db");
+  assert.equal(result.stateOverrides?.disabled?.color, "#9ca3af");
+});
+
+test("extractVariantDataFromNode does not generate stateOverrides for default state", () => {
+  const result = extractVariantDataFromNode({
+    id: "btn-default",
+    type: "INSTANCE",
+    name: "Button/Default",
+    fills: [toSolidPaint("#1976d2")]
+  });
+  assert.ok(result);
+  assert.equal(result.state, "default");
+  assert.equal(result.stateOverrides, undefined);
 });
