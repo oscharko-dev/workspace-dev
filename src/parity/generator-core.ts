@@ -1985,7 +1985,7 @@ const allocateSharedSxConstantName = ({
   nextPreferredNumber: number;
 } => {
   let suffix = preferredNumber;
-  while (true) {
+  for (;;) {
     const candidate = `${SHARED_SX_IDENTIFIER_PREFIX}${suffix}`;
     if (!reservedNames.has(candidate) && !knownIdentifiers.has(candidate)) {
       reservedNames.add(candidate);
@@ -2768,11 +2768,9 @@ const buildExtractedComponentFile = ({
         .join(`src={${binding.propName}}`);
       continue;
     }
-    if (binding.kind === "image_alt") {
-      renderedComponentBody = renderedComponentBody
-        .split(`alt={${placeholderLiteral}}`)
-        .join(`alt={${binding.propName}}`);
-    }
+    renderedComponentBody = renderedComponentBody
+      .split(`alt={${placeholderLiteral}}`)
+      .join(`alt={${binding.propName}}`);
   }
 
   const renderedWithSx = injectRootSxPropForExtractedComponent(renderedComponentBody);
@@ -2781,10 +2779,13 @@ const buildExtractedComponentFile = ({
   }
 
   const contextFileSpec = patternStatePlan.contextFileSpec;
-  const usesPatternContext =
-    contextFileSpec !== undefined &&
+  const patternContextSpec =
+    contextFileSpec &&
     contextFileSpec.contextEnabledComponentNames.has(cluster.componentName) &&
-    cluster.propBindings.length > 0;
+    cluster.propBindings.length > 0
+      ? contextFileSpec
+      : undefined;
+  const usesPatternContext = patternContextSpec !== undefined;
   const sortedMuiImports = [...componentRenderContext.muiImports].sort((left, right) => left.localeCompare(right));
   if (sortedMuiImports.length === 0) {
     return undefined;
@@ -2795,17 +2796,12 @@ const buildExtractedComponentFile = ({
   const mappedImports = componentRenderContext.mappedImports
     .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
     .join("\n");
-  const routerImports: string[] = [];
-  if (componentRenderContext.usesRouterLink) {
-    routerImports.push("Link as RouterLink");
-  }
-  if (componentRenderContext.usesNavigateHandler) {
-    routerImports.push("useNavigate");
-  }
+  const routerImports: string[] = componentRenderContext.usesRouterLink ? ["Link as RouterLink"] : [];
   const reactRouterImport = routerImports.length > 0 ? `import { ${routerImports.join(", ")} } from "react-router-dom";\n` : "";
-  const patternContextImport =
-    usesPatternContext && contextFileSpec ? `import { ${contextFileSpec.hookName} } from "${contextFileSpec.importPath}";\n` : "";
-  const navigationHookBlock = componentRenderContext.usesNavigateHandler ? "const navigate = useNavigate();" : "";
+  const patternContextImport = patternContextSpec
+    ? `import { ${patternContextSpec.hookName} } from "${patternContextSpec.importPath}";\n`
+    : "";
+  const navigationHookBlock = "";
   const sortedBindings = [...cluster.propBindings].sort((left, right) => left.propName.localeCompare(right.propName));
   const propsInterfaceEntries = usesPatternContext
     ? ["  instanceId: string;", "  sx?: SxProps<Theme>;"].join("\n")
@@ -2813,17 +2809,16 @@ const buildExtractedComponentFile = ({
         "\n"
       );
   const parameterEntries = usesPatternContext ? ["instanceId", "sx"] : ["sx", ...sortedBindings.map((binding) => binding.propName)];
-  const patternContextBindingBlock =
-    usesPatternContext && contextFileSpec
-      ? [
-          `const patternContext = ${contextFileSpec.hookName}();`,
-          `const patternState = patternContext.${cluster.componentName}[instanceId];`,
-          ...sortedBindings.map((binding) => {
-            const fallbackSuffix = binding.kind === "image_src" ? "" : ' ?? ""';
-            return `const ${binding.propName} = patternState?.${binding.propName}${fallbackSuffix};`;
-          })
-        ].join("\n")
-      : "";
+  const patternContextBindingBlock = patternContextSpec
+    ? [
+        `const patternContext = ${patternContextSpec.hookName}();`,
+        `const patternState = patternContext.${cluster.componentName}[instanceId];`,
+        ...sortedBindings.map((binding) => {
+          const fallbackSuffix = binding.kind === "image_src" ? "" : ' ?? ""';
+          return `const ${binding.propName} = patternState?.${binding.propName}${fallbackSuffix};`;
+        })
+      ].join("\n")
+    : "";
   const componentSetupBlock = [patternContextBindingBlock, navigationHookBlock]
     .filter((block) => block.length > 0)
     .join("\n\n");
@@ -6802,9 +6797,10 @@ const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualPa
     element,
     mappedVariant: mappedMuiProps?.variant
   });
+  const buttonLabel = (label ?? element.name).trim() || "Button";
   context.buttons.push({
     key: buttonKey,
-    label: (label ?? element.name ?? "Button").trim() || "Button",
+    label: buttonLabel,
     preferredSubmit: variant === "contained",
     eligibleForSubmit: !inferredDisabled
   });
@@ -10664,7 +10660,7 @@ const deriveThemeComponentDefaultsFromScreens = ({
   });
   const chipSizeCounts = new Map<"small" | "medium", number>();
   for (const chipNode of chipNodes) {
-    const mappedSize = toChipSize(chipNode.variantMapping?.muiProps?.size);
+    const mappedSize = toChipSize(chipNode.variantMapping?.muiProps.size);
     const inferredSize = mappedSize ?? inferChipSizeFromHeight(chipNode.height);
     if (!inferredSize) {
       continue;
