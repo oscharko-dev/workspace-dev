@@ -78,5 +78,84 @@ export const AREA_GEOMETRY_WEIGHT_DIVISOR = 120;
 /** WCAG AA minimum contrast ratio for normal-sized text. */
 export const WCAG_AA_NORMAL_TEXT_CONTRAST_MIN = 4.5;
 
+// ── Depth-pressure analysis (ir-tree.ts) ───────────────────────────────────
+
+/** Semantic density above which the higher pressure multiplier is used. */
+export const DEPTH_HIGH_SEMANTIC_DENSITY_THRESHOLD = 0.25;
+
+/** Budget-to-node-count multiplier when semantic density exceeds the high threshold. */
+export const DEPTH_HIGH_DENSITY_PRESSURE_MULTIPLIER = 6;
+
+/** Budget-to-node-count multiplier when semantic density is at or below the high threshold. */
+export const DEPTH_LOW_DENSITY_PRESSURE_MULTIPLIER = 4;
+
+/** Minimum node-count floor for high-pressure cutoff calculation. */
+export const DEPTH_MIN_NODE_COUNT_FLOOR = 32;
+
+/** Semantic density above which the wider semantic-depth multiplier is used. */
+export const DEPTH_SEMANTIC_WIDTH_DENSITY_THRESHOLD = 0.15;
+
+/** Multiplier for allowed semantic depth width when density exceeds the width threshold. */
+export const DEPTH_HIGH_DENSITY_WIDTH_MULTIPLIER = 3;
+
+/** Multiplier for allowed semantic depth width when density is at or below the width threshold. */
+export const DEPTH_LOW_DENSITY_WIDTH_MULTIPLIER = 2;
+
+/** Minimum allowed semantic depth width floor. */
+export const DEPTH_MIN_SEMANTIC_WIDTH = 12;
+
+// ── Classification geometry thresholds (ir-classification.ts) ──────────────
+
+/** Minimum corner radius (px) to classify a node as having rounded corners. */
+export const ROUNDED_CORNER_RADIUS_MIN = 8;
+
+/** Minimum width (px) for a node to be considered field-sized (input/select). */
+export const FIELD_MIN_WIDTH = 96;
+
+/** Minimum height (px) for a node to be considered field-sized. */
+export const FIELD_MIN_HEIGHT = 28;
+
+/** Maximum height (px) for a node to be considered field-sized. */
+export const FIELD_MAX_HEIGHT = 140;
+
+/** Minimum length (px) along the long axis for divider detection. */
+export const DIVIDER_MIN_LENGTH = 16;
+
+/** Maximum thickness (px) along the short axis for divider detection. */
+export const DIVIDER_MAX_THICKNESS = 2;
+
+/** Minimum children in a row/cell for table row-cell structure detection. */
+export const TABLE_ROW_CELL_MIN_CHILDREN = 2;
+
+/** Minimum width (px) for structural table classification. */
+export const TABLE_MIN_WIDTH = 180;
+
+/** Pixel threshold for position-bucket grouping (row/column detection). */
+export const POSITION_BUCKET_THRESHOLD = 18;
+
+/** Minimum child count for grid structural classification. */
+export const GRID_MIN_CHILDREN = 4;
+
+/** Minimum row buckets for grid classification. */
+export const GRID_MIN_ROW_BUCKETS = 2;
+
+/** Minimum column buckets for grid classification. */
+export const GRID_MIN_COLUMN_BUCKETS = 2;
+
+/** Minimum child count for list structural classification. */
+export const LIST_MIN_CHILDREN = 3;
+
+/** Minimum text-bearing children for list classification. */
+export const LIST_MIN_TEXT_CHILDREN = 2;
+
+/** Minimum width (px) for card geometry classification. */
+export const CARD_MIN_WIDTH = 120;
+
+/** Minimum height (px) for card geometry classification. */
+export const CARD_MIN_HEIGHT = 80;
+
+/** Minimum table structure child count. */
+export const TABLE_MIN_CHILDREN = 2;
+
 // Note: MUI default breakpoint values are maintained in generator-responsive.ts
 // as MUI_DEFAULT_BREAKPOINT_VALUES to avoid import cycles.
