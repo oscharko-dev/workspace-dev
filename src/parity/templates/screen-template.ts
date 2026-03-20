@@ -3221,12 +3221,13 @@ export const renderElement = (
             .filter(([, value]) => value !== undefined)
             .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
       const props = [`sx={{ ${sx} }}`, ...propEntries].join(" ");
-      return `${indent}<${extractionInvocation.componentName} ${props} />`;
+      const raw = `${indent}<${extractionInvocation.componentName} ${props} />`;
+      return wrapWithIrMarkers({ element, depth, raw, extracted: true });
     }
 
     const mappedElement = renderMappedElement(element, depth, parent, context);
     if (mappedElement) {
-      return mappedElement;
+      return wrapWithIrMarkers({ element, depth, raw: mappedElement });
     }
 
     if (element.nodeType === "VECTOR" && element.type !== "image") {
@@ -3240,17 +3241,42 @@ export const renderElement = (
       context
     });
     if (preDispatchRendered !== undefined) {
-      return preDispatchRendered;
+      if (preDispatchRendered === null) {
+        return null;
+      }
+      return wrapWithIrMarkers({ element, depth, raw: preDispatchRendered });
     }
-    return resolveElementRenderStrategy(element.type)({
+    const strategyRendered = resolveElementRenderStrategy(element.type)({
       element,
       depth,
       parent,
       context
     });
+    if (strategyRendered === null) {
+      return null;
+    }
+    return wrapWithIrMarkers({ element, depth, raw: strategyRendered });
   } finally {
     context.activeRenderElements.delete(element);
   }
+};
+
+const wrapWithIrMarkers = ({
+  element,
+  depth,
+  raw,
+  extracted
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  raw: string;
+  extracted?: boolean;
+}): string => {
+  const indent = "  ".repeat(depth);
+  const safeName = element.name.replace(/[*/]/g, "_");
+  const startTag = `${indent}{/* @ir:start ${element.id} ${safeName} ${element.type}${extracted ? " extracted" : ""} */}`;
+  const endTag = `${indent}{/* @ir:end ${element.id} */}`;
+  return `${startTag}\n${raw}\n${endTag}`;
 };
 
 
