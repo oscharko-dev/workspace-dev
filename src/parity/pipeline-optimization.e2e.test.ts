@@ -61,6 +61,17 @@ const collectAllElements = (elements: Array<{ type: string; children?: unknown[]
   return result;
 };
 
+const DEPRECATED_MUI_PROP_PATTERNS = [
+  "InputProps={{",
+  "InputLabelProps={{",
+  "FormHelperTextProps={{",
+  "PaperProps={{",
+  "PopperProps={{",
+  "TransitionProps={{",
+  "ContentProps={{",
+  "ClickAwayListenerProps={{"
+] as const;
+
 // ── Constants validation ────────────────────────────────────────────────────
 
 test("E2E: centralized constants are used consistently in pipeline output", { skip: skipReason }, async () => {
@@ -194,6 +205,14 @@ test("E2E: generated screen files contain valid React component structure", { sk
       !content.includes("undefined undefined"),
       `Screen '${screen.name}' must not have doubled undefined tokens`
     );
+
+    for (const pattern of DEPRECATED_MUI_PROP_PATTERNS) {
+      assert.equal(
+        content.includes(pattern),
+        false,
+        `Screen '${screen.name}' must not include deprecated MUI prop pattern '${pattern}'`
+      );
+    }
   }
 });
 
