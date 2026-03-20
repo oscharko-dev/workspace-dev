@@ -136,11 +136,10 @@ export const buildElementBase = ({
     navigationContext
   });
   const margin = mapMargin(node);
-  const element: ScreenElementIR = {
+  const baseElement = {
     id: node.id,
     name: node.name ?? node.type,
     nodeType: node.type,
-    type: elementType,
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),
@@ -150,6 +149,17 @@ export const buildElementBase = ({
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
     ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
   };
+  const element: ScreenElementIR =
+    elementType === "text"
+      ? {
+          ...baseElement,
+          type: "text",
+          text: typeof node.characters === "string" ? node.characters : ""
+        }
+      : {
+          ...baseElement,
+          type: elementType
+        };
 
   return {
     element,

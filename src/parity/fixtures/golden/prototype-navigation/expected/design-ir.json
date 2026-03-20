@@ -17,7 +17,6 @@
           "id": "home-title",
           "name": "Title",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -26,6 +25,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Dashboard",
           "x": 24,
           "y": 24,
@@ -42,7 +42,6 @@
           "id": "nav-button",
           "name": "Open Details Button",
           "nodeType": "FRAME",
-          "type": "paper",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -55,6 +54,7 @@
             "targetScreenId": "screen-details",
             "mode": "push"
           },
+          "type": "paper",
           "x": 24,
           "y": 90,
           "width": 220,
@@ -65,7 +65,6 @@
               "id": "nav-button-text",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -74,6 +73,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Open Details",
               "x": 75,
               "y": 103,
@@ -92,7 +92,6 @@
           "id": "decorative-instance",
           "name": "Placeholder Instance",
           "nodeType": "INSTANCE",
-          "type": "container",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -101,6 +100,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "container",
           "x": 24,
           "y": 170,
           "width": 220,
@@ -127,7 +127,6 @@
           "id": "details-title",
           "name": "Title",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -136,6 +135,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Details",
           "x": 444,
           "y": 24,
@@ -152,7 +152,6 @@
           "id": "details-body",
           "name": "Body",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -161,6 +160,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "A deterministic destination screen.",
           "x": 444,
           "y": 80,

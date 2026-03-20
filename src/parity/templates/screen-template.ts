@@ -3,12 +3,16 @@
 // Extracted from generator-templates.ts (issue #298)
 // ---------------------------------------------------------------------------
 import path from "node:path";
+import {
+  isTextElement
+} from "../types.js";
 import type {
   ComponentMappingRule,
   DesignTokens,
   DesignTokenTypographyVariantName,
   GeneratedFile,
   SimplificationMetrics,
+  TextElementIR,
   ScreenElementIR,
   ScreenIR
 } from "../types.js";
@@ -154,10 +158,10 @@ import {
   buildReactHookFormContextFile
 } from "./form-template.js";
 
-export const renderText = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+export const renderText = (element: TextElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
-  const text = literal(element.text?.trim() || element.name);
+  const text = literal(element.text.trim() || element.name);
   const headingComponent = context.headingComponentByNodeId.get(element.id);
   const typographyVariantName = context.typographyVariantByNodeId.get(element.id);
   const typographyVariant = typographyVariantName && context.tokens ? context.tokens.typography[typographyVariantName] : undefined;
@@ -681,10 +685,10 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
   const buttonKey = toStateKey(element);
   const mappedMuiProps = element.variantMapping?.muiProps;
   const textNodes = collectTextNodes(element)
-    .filter((node) => Boolean(node.text?.trim()))
+    .filter((node) => Boolean(node.text.trim()))
     .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
   const labelNode = textNodes[0];
-  const label = labelNode?.text?.trim();
+  const label = labelNode?.text.trim();
   const buttonTextColor = firstTextColor(element);
   const endIconRoot = findFirstByName(element, "buttonendicon");
   const iconNode = pickBestIconNode(element) ?? endIconRoot;
@@ -852,7 +856,7 @@ export const isPillShapedOutlinedButton = (element: ScreenElementIR): boolean =>
   const hasStroke = Boolean(element.strokeColor);
   const isPill = (element.cornerRadius ?? 0) >= 32;
   const texts = collectTextNodes(element);
-  const hasSingleText = texts.length >= 1 && Boolean(texts[0]?.text?.trim());
+  const hasSingleText = texts.length >= 1 && Boolean(texts[0]?.text.trim());
   const noFill =
     (!element.fillColor || element.fillColor === "#ffffff" || element.fillColor === "#FFFFFF") && !element.fillGradient;
   return hasStroke && isPill && hasSingleText && noFill;
@@ -1649,7 +1653,7 @@ export const renderStructuredAppBarToolbarChildren = ({
   }
 
   const titleNode =
-    children.find((child) => child.type === "text" && Boolean(child.text?.trim())) ??
+    children.find((child) => isTextElement(child) && Boolean(child.text.trim())) ??
     children.find((child) => {
       if (isLikelyAppBarToolbarActionNode({ node: child, context })) {
         return false;
@@ -2533,7 +2537,8 @@ export const renderSelectElement = (element: ScreenElementIR, depth: number, par
   const optionsFromChildren = collectRenderedItems(element, context.generationLocale)
     .map((item) => sanitizeSelectOptionValue(item.label))
     .filter((value) => value.length > 0);
-  const fallbackDefault = sanitizeSelectOptionValue(element.text?.trim() || firstText(element)?.trim() || "Option 1");
+  const ownText = isTextElement(element) ? element.text.trim() : element.text?.trim();
+  const fallbackDefault = sanitizeSelectOptionValue(ownText || firstText(element)?.trim() || "Option 1");
   const options =
     optionsFromChildren.length > 0
       ? [...new Set(optionsFromChildren)]
@@ -3087,7 +3092,8 @@ export const runElementPreDispatchStrategies = ({
 };
 
 export const elementRenderStrategies: Partial<Record<ScreenElementIR["type"], ElementRenderStrategy>> = {
-  text: ({ element, depth, parent, context }) => renderText(element, depth, parent, context),
+  text: ({ element, depth, parent, context }) =>
+    isTextElement(element) ? renderText(element, depth, parent, context) : renderContainer(element, depth, parent, context),
   input: ({ element, depth, parent, context }) => renderSemanticInput(element, depth, parent, context),
   select: ({ element, depth, parent, context }) => renderSelectElement(element, depth, parent, context),
   button: ({ element, depth, parent, context }) => renderButton(element, depth, parent, context),
@@ -4326,4 +4332,3 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
     dependencies
   });
 };
-
