@@ -348,3 +348,33 @@ test("E2E: tree traversal functions work on real Figma file", { skip: !shouldRun
   assert.equal(DEFAULT_SCREEN_ELEMENT_BUDGET, 1_200);
   assert.equal(DEFAULT_SCREEN_ELEMENT_MAX_DEPTH, 14);
 });
+
+// ── Stress: deep tree does not cause stack overflow ──────────────────────────
+
+const buildDeepChain = (depth: number): TreeFigmaNode => {
+  let current: TreeFigmaNode = { id: `n:${depth}`, type: "TEXT", characters: "Leaf" };
+  for (let i = depth - 1; i >= 0; i--) {
+    current = { id: `n:${i}`, type: "FRAME", name: i === 0 ? "Button Root" : `Frame-${i}`, children: [current] };
+  }
+  return current;
+};
+
+test("countSubtreeNodes handles 10 000-deep tree without stack overflow", () => {
+  const root = buildDeepChain(10_000);
+  assert.equal(countSubtreeNodes(root), 10_001);
+});
+
+test("collectNodes handles 10 000-deep tree without stack overflow", () => {
+  const root = buildDeepChain(10_000);
+  const textNodes = collectNodes(root, (n) => n.type === "TEXT");
+  assert.equal(textNodes.length, 1);
+  assert.equal(textNodes[0].id, "n:10000");
+});
+
+test("analyzeDepthPressure handles 10 000-deep tree without stack overflow", () => {
+  const root = buildDeepChain(10_000);
+  const analysis = analyzeDepthPressure([root], stubDetermineElementType);
+  assert.ok(analysis.nodeCountByDepth.size > 0);
+  assert.ok(analysis.subtreeHasSemanticById.get("n:0"), "Root subtree should have semantic (leaf TEXT)");
+  assert.ok(analysis.subtreeHasSemanticById.get("n:10000"), "Leaf TEXT node should be semantic");
+});
