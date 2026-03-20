@@ -30,6 +30,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockExceedsMaxSize.mockReturnValue(false);
 
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true
+  });
+
   // jsdom does not implement matchMedia
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -183,6 +189,61 @@ describe("CodeViewer", () => {
 
     const copyBtn = screen.getByTestId("inspector-copy-button");
     expect(copyBtn).toHaveTextContent("Copy Range");
+  });
+
+  it("copy button writes full file content to clipboard", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-copy-button"));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("line1\nline2\nline3");
+    });
+  });
+
+  it("copy button writes only highlighted range to clipboard", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4",
+        filePath: "src/App.tsx",
+        highlightRange: { startLine: 2, endLine: 3 }
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-copy-button"));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("line2\nline3");
+    });
+  });
+
+  it("scrolls highlighted range into view", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4\nline5",
+        filePath: "src/App.tsx",
+        highlightRange: { startLine: 3, endLine: 4 }
+      })
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
   });
 
   it("falls back to plain text when no highlight result", async () => {

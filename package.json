@@ -71,7 +71,7 @@
     "ui:typecheck": "pnpm exec tsc --project ui-src/tsconfig.json --noEmit",
     "ui:lint": "pnpm exec eslint --max-warnings=0 --config ui-src/.eslintrc.cjs \"ui-src/src/**/*.{ts,tsx}\"",
     "ui:test": "pnpm exec vitest run --config ui-src/vite.config.ts",
-    "ui:test:e2e": "pnpm exec playwright test --config ui-src/playwright.config.ts",
+    "ui:test:e2e": "pnpm run ui:build && pnpm exec playwright test --config ui-src/playwright.config.ts",
     "lint:boundaries": "node scripts/check-boundary.mjs",
     "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\" --ignore-pattern \"src/parity/fixtures/golden/**\"",
     "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
@@ -91,7 +91,7 @@
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",
-    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap",
+    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run ui:test:e2e && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap",
     "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap",
     "prepublishOnly": "pnpm run release:quality-gates:publish-lifecycle"
   },

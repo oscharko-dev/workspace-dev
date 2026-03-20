@@ -1647,7 +1647,7 @@ test("deterministic screen rendering omits redundant boxSizing and visible overf
   const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.equal(content.includes('boxSizing: "border-box"'), false);
   assert.equal(content.includes('overflow: "visible"'), false);
-  assert.ok(content.includes("<Container maxWidth="));
+  assert.match(content, /<Container\b[^>]*\bmaxWidth=/);
 });
 
 test("sortChildren visual hierarchy keeps row grouping for layout NONE with x interleaving", () => {

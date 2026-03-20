@@ -54,7 +54,7 @@ Useful scripts:
 - `pnpm run ui:typecheck`
 - `pnpm run ui:lint`
 - `pnpm run ui:test`
-- `pnpm run ui:test:e2e`
+- `pnpm run ui:test:e2e` (deterministic inspector flow via local fixture rewrite, no Figma token required in CI)
 - `pnpm run test:golden`
 - `pnpm run test:golden:update`
 
