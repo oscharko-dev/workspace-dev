@@ -86,28 +86,43 @@ export const DEPTH_SEMANTIC_NAME_HINTS: string[] = [
 
 // ── Generic tree traversal ──────────────────────────────────────────────────
 
-export const countSubtreeNodes = (node: TreeFigmaNode): number => {
-  const children = node.children ?? [];
-  if (children.length === 0) {
-    return 1;
+export const countSubtreeNodes = (root: TreeFigmaNode): number => {
+  let count = 0;
+  const stack: TreeFigmaNode[] = [root];
+  while (stack.length > 0) {
+    count++;
+    const node = stack.pop()!;
+    const children = node.children;
+    if (children) {
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push(children[i]!);
+      }
+    }
   }
-  return 1 + children.reduce((count, child) => count + countSubtreeNodes(child), 0);
+  return count;
 };
 
-export const collectNodes = <T extends TreeFigmaNode>(node: T, predicate: (candidate: T) => boolean): T[] => {
-  if ((node as TreeFigmaNode).visible === false) {
+export const collectNodes = <T extends TreeFigmaNode>(root: T, predicate: (candidate: T) => boolean): T[] => {
+  if ((root as TreeFigmaNode).visible === false) {
     return [];
   }
 
   const collected: T[] = [];
-  if (predicate(node)) {
-    collected.push(node);
-  }
-  if (!node.children) {
-    return collected;
-  }
-  for (const child of node.children) {
-    collected.push(...collectNodes(child as T, predicate));
+  const stack: T[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if ((node as TreeFigmaNode).visible === false) {
+      continue;
+    }
+    if (predicate(node)) {
+      collected.push(node);
+    }
+    const children = node.children;
+    if (children) {
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push(children[i] as T);
+      }
+    }
   }
   return collected;
 };
@@ -162,9 +177,21 @@ export const analyzeDepthPressure = (
   const semanticCountByDepth = new Map<number, number>();
   const subtreeHasSemanticById = new Map<string, boolean>();
 
-  const visit = (node: TreeFigmaNode, depth: number): boolean => {
+  // Phase 1: Iterative DFS to collect visited nodes in pre-order with depth
+  // and compute per-depth counts. We record parent→child relationships for
+  // bottom-up semantic propagation.
+  const visited: Array<{ node: TreeFigmaNode; selfSemantic: boolean }> = [];
+  const parentIdOf = new Map<string, string>();
+  const stack: Array<{ node: TreeFigmaNode; depth: number; parentId: string | undefined }> = [];
+
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    stack.push({ node: nodes[i]!, depth: 0, parentId: undefined });
+  }
+
+  while (stack.length > 0) {
+    const { node, depth, parentId } = stack.pop()!;
     if (node.visible === false) {
-      return false;
+      continue;
     }
 
     nodeCountByDepth.set(depth, (nodeCountByDepth.get(depth) ?? 0) + 1);
@@ -174,18 +201,33 @@ export const analyzeDepthPressure = (
       semanticCountByDepth.set(depth, (semanticCountByDepth.get(depth) ?? 0) + 1);
     }
 
-    let childSemantic = false;
-    for (const child of node.children ?? []) {
-      childSemantic = visit(child, depth + 1) || childSemantic;
+    visited.push({ node, selfSemantic });
+    if (parentId !== undefined) {
+      parentIdOf.set(node.id, parentId);
     }
 
-    const hasSemanticSubtree = selfSemantic || childSemantic;
-    subtreeHasSemanticById.set(node.id, hasSemanticSubtree);
-    return hasSemanticSubtree;
-  };
+    const children = node.children;
+    if (children) {
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push({ node: children[i]!, depth: depth + 1, parentId: node.id });
+      }
+    }
+  }
 
-  for (const node of nodes) {
-    visit(node, 0);
+  // Phase 2: Reverse iteration (post-order) to propagate semantic flags
+  // bottom-up. Children appear after their parent in the visited array,
+  // so reverse iteration processes children before parents.
+  for (let i = visited.length - 1; i >= 0; i--) {
+    const { node, selfSemantic } = visited[i]!;
+    const current = subtreeHasSemanticById.get(node.id) ?? false;
+    const hasSemantic = selfSemantic || current;
+    subtreeHasSemanticById.set(node.id, hasSemantic);
+    if (hasSemantic) {
+      const pid = parentIdOf.get(node.id);
+      if (pid !== undefined) {
+        subtreeHasSemanticById.set(pid, true);
+      }
+    }
   }
 
   return {
