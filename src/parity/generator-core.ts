@@ -534,6 +534,7 @@ const initializeGenerateArtifactsStatePhase = ({
     skippedPlaceholders: ir.metrics?.skippedPlaceholders ?? 0,
     screenElementCounts: [...(ir.metrics?.screenElementCounts ?? [])],
     truncatedScreens: [...(ir.metrics?.truncatedScreens ?? [])],
+    ...(ir.metrics?.classificationFallbacks ? { classificationFallbacks: [...ir.metrics.classificationFallbacks] } : {}),
     degradedGeometryNodes: [...(ir.metrics?.degradedGeometryNodes ?? [])],
     prototypeNavigationDetected: ir.metrics?.prototypeNavigationDetected ?? 0,
     prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,

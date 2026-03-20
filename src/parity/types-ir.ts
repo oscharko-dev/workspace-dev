@@ -330,6 +330,17 @@ export interface DepthTruncatedScreenMetric {
   truncatedBranchCount: number;
 }
 
+export interface ClassificationFallbackMetric {
+  screenId: string;
+  screenName: string;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  depth: number;
+  matchedRulePriority?: number;
+  layoutMode?: string;
+}
+
 export interface SimplificationMetrics {
   removedEmptyNodes: number;
   promotedSingleChild: number;
@@ -350,6 +361,7 @@ export interface GenerationMetrics {
   screenElementCounts: ScreenElementCountMetric[];
   truncatedScreens: TruncatedScreenMetric[];
   depthTruncatedScreens?: DepthTruncatedScreenMetric[];
+  classificationFallbacks?: ClassificationFallbackMetric[];
   degradedGeometryNodes: string[];
   simplification?: {
     aggregate: SimplificationMetrics;
@@ -508,6 +520,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     screenElementCounts: [...(raw.metrics?.screenElementCounts ?? [])],
     truncatedScreens: [...(raw.metrics?.truncatedScreens ?? [])],
     degradedGeometryNodes: [...(raw.metrics?.degradedGeometryNodes ?? [])],
+    ...(raw.metrics?.classificationFallbacks ? { classificationFallbacks: [...raw.metrics.classificationFallbacks] } : {}),
     prototypeNavigationDetected: raw.metrics?.prototypeNavigationDetected ?? 0,
     prototypeNavigationResolved: raw.metrics?.prototypeNavigationResolved ?? 0,
     prototypeNavigationUnresolved: raw.metrics?.prototypeNavigationUnresolved ?? 0,

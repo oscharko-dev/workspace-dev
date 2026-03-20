@@ -8,7 +8,7 @@ import type {
   ScreenElementIR
 } from "./types.js";
 import {
-  classifyElementTypeFromNode
+  classifyElementTypeDecisionFromNode
 } from "./ir-classification.js";
 import {
   hasVisibleShadowEffect,
@@ -191,6 +191,7 @@ export interface MetricsAccumulator {
   screenElementCounts: GenerationMetrics["screenElementCounts"];
   truncatedScreens: GenerationMetrics["truncatedScreens"];
   depthTruncatedScreens: NonNullable<GenerationMetrics["depthTruncatedScreens"]>;
+  classificationFallbacks: NonNullable<GenerationMetrics["classificationFallbacks"]>;
   degradedGeometryNodes: string[];
 }
 
@@ -484,8 +485,18 @@ export const addStyleSignals = (
   }
 };
 
-export const determineElementType = (node: FigmaNode): ScreenElementIR["type"] => {
-  return classifyElementTypeFromNode({
+export const determineElementType = (
+  node: FigmaNode,
+  options?: {
+    onFallback?: (input: {
+      node: FigmaNode;
+      depth: number;
+      matchedRulePriority?: number;
+    }) => void;
+    depth?: number;
+  }
+): ScreenElementIR["type"] => {
+  const decision = classifyElementTypeDecisionFromNode({
     node,
     dependencies: {
       hasSolidFill: (candidate) => Boolean(resolveFirstVisibleSolidPaint(candidate.fills)),
@@ -495,6 +506,14 @@ export const determineElementType = (node: FigmaNode): ScreenElementIR["type"] =
       hasStroke: (candidate) => Boolean(resolveFirstVisibleSolidPaint(candidate.strokes))
     }
   });
+  if (decision.fallback) {
+    options?.onFallback?.({
+      node,
+      depth: options.depth ?? 0,
+      ...(decision.matchedRulePriority !== undefined ? { matchedRulePriority: decision.matchedRulePriority } : {})
+    });
+  }
+  return decision.type;
 };
 
 export const mapPadding = (node: FigmaNode): { top: number; right: number; bottom: number; left: number } => {

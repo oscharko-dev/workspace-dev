@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { WorkspaceJobDiagnostic } from "../contracts/index.js";
 import { runCommand as runCommandImpl } from "./command-runner.js";
+import { createPipelineError, type PipelineDiagnosticInput } from "./errors.js";
 import {
+  parseValidationDiagnostics,
   runValidationFeedback as runValidationFeedbackImpl,
   type RetryableValidationStage,
+  type ValidationDiagnostic,
   type ValidationFeedbackResult
 } from "./validation-feedback.js";
 import type { CommandResult } from "./types.js";
@@ -40,6 +44,7 @@ const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjec
 const LINT_RELEVANT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]);
 const MAX_LOGGED_CHANGED_FILES = 20;
 const MAX_VALIDATION_ATTEMPTS = 3;
+const MAX_EMITTED_VALIDATION_DIAGNOSTICS = 8;
 
 const toPosixPath = (filePath: string): string => {
   return filePath.split(path.sep).join("/");
@@ -113,6 +118,134 @@ const formatChangedFilesForLog = ({ changedFiles }: { changedFiles: string[] }):
   return `${listed} (+${omittedCount} more)`;
 };
 
+const toRetryableDiagnosticStage = (commandName: string): RetryableValidationStage | undefined => {
+  if (commandName === "lint") {
+    return "lint";
+  }
+  if (commandName === "typecheck") {
+    return "typecheck";
+  }
+  if (commandName === "build") {
+    return "build";
+  }
+  return undefined;
+};
+
+const toCodeContext = async ({
+  filePath,
+  line
+}: {
+  filePath: string | undefined;
+  line: number | undefined;
+}): Promise<string | undefined> => {
+  if (!filePath || !line || line <= 0) {
+    return undefined;
+  }
+  try {
+    const content = await readFile(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    if (lines.length === 0) {
+      return undefined;
+    }
+    const lineIndex = Math.min(lines.length - 1, line - 1);
+    const start = Math.max(0, lineIndex - 1);
+    const end = Math.min(lines.length - 1, lineIndex + 1);
+    const output: string[] = [];
+    for (let index = start; index <= end; index += 1) {
+      output.push(`${index + 1}: ${lines[index] ?? ""}`);
+    }
+    return output.join("\n");
+  } catch {
+    return undefined;
+  }
+};
+
+const toValidationDetailDiagnostics = async ({
+  diagnostics
+}: {
+  diagnostics: ValidationDiagnostic[];
+}): Promise<WorkspaceJobDiagnostic[]> => {
+  const detailed: WorkspaceJobDiagnostic[] = [];
+  for (const diagnostic of diagnostics.slice(0, MAX_EMITTED_VALIDATION_DIAGNOSTICS)) {
+    const codeContext = await toCodeContext({
+      filePath: diagnostic.filePath,
+      line: diagnostic.line
+    });
+    detailed.push({
+      code: "E_VALIDATE_PROJECT_DETAIL",
+      message:
+        `${diagnostic.message}` +
+        `${diagnostic.code ? ` (${diagnostic.code})` : diagnostic.rule ? ` (${diagnostic.rule})` : ""}`,
+      suggestion: "Fix the generated source near the reported location and rerun the job.",
+      stage: "validate.project",
+      severity: "error",
+      details: {
+        commandStage: diagnostic.stage,
+        ...(diagnostic.filePath ? { filePath: diagnostic.filePath } : {}),
+        ...(diagnostic.line ? { line: diagnostic.line } : {}),
+        ...(diagnostic.column ? { column: diagnostic.column } : {}),
+        ...(diagnostic.code ? { code: diagnostic.code } : {}),
+        ...(diagnostic.rule ? { rule: diagnostic.rule } : {}),
+        ...(codeContext ? { codeContext } : {})
+      }
+    });
+  }
+  return detailed;
+};
+
+const toValidationPipelineError = async ({
+  commandName,
+  timeoutSuffix,
+  failureHint,
+  output,
+  generatedProjectDir,
+  diagnostics,
+  summary
+}: {
+  commandName: string;
+  timeoutSuffix: string;
+  failureHint?: string;
+  output: string;
+  generatedProjectDir: string;
+  diagnostics: ValidationDiagnostic[];
+  summary: string | undefined;
+}) => {
+  const hintSuffix = failureHint ? ` (${failureHint})` : "";
+  const detailDiagnostics = await toValidationDetailDiagnostics({
+    diagnostics
+  });
+  const primaryDiagnostic: PipelineDiagnosticInput = {
+    code: "E_VALIDATE_PROJECT",
+    message: `${commandName} failed${timeoutSuffix}${hintSuffix}.`,
+    suggestion: "Resolve generated-project validation diagnostics and rerun the pipeline.",
+    stage: "validate.project",
+    severity: "error",
+    details: {
+      command: commandName,
+      ...(summary ? { summary } : {}),
+      ...(failureHint ? { failureHint } : {}),
+      output: output.slice(0, 2000),
+      generatedProjectDir
+    }
+  };
+  return createPipelineError({
+    code: "E_VALIDATE_PROJECT",
+    stage: "validate.project",
+    message: `${commandName} failed${timeoutSuffix}${hintSuffix}: ${output.slice(0, 2000)}`,
+    diagnostics: [
+      primaryDiagnostic,
+      ...detailDiagnostics.map((entry) => ({
+        code: entry.code,
+        message: entry.message,
+        suggestion: entry.suggestion,
+        stage: entry.stage,
+        severity: entry.severity,
+        ...(entry.details ? { details: entry.details } : {})
+      }))
+    ]
+  });
+};
+
 export const runProjectValidationWithDeps = async ({
   generatedProjectDir,
   onLog,
@@ -150,9 +283,23 @@ export const runProjectValidationWithDeps = async ({
   if (skipInstall) {
     const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir });
     if (!nodeModulesExists) {
-      throw new Error(
-        `skipInstall=true requires an existing node_modules directory at ${path.join(generatedProjectDir, "node_modules")}.`
-      );
+      throw createPipelineError({
+        code: "E_VALIDATE_PROJECT",
+        stage: "validate.project",
+        message: `skipInstall=true requires an existing node_modules directory at ${path.join(generatedProjectDir, "node_modules")}.`,
+        diagnostics: [
+          {
+            code: "E_VALIDATE_PROJECT",
+            message: "Validation cannot run because node_modules is missing while skipInstall=true.",
+            suggestion: "Either disable skipInstall or ensure dependencies are installed in generated-app/node_modules.",
+            stage: "validate.project",
+            severity: "error",
+            details: {
+              generatedProjectDir
+            }
+          }
+        ]
+      });
     }
     onLog("Skipping install because skipInstall=true.");
   }
@@ -238,7 +385,24 @@ export const runProjectValidationWithDeps = async ({
     }
     if (!installResult.success) {
       const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
-      throw new Error(`${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`);
+      throw createPipelineError({
+        code: "E_VALIDATE_PROJECT",
+        stage: "validate.project",
+        message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`,
+        diagnostics: [
+          {
+            code: "E_VALIDATE_PROJECT",
+            message: `${installCommand.name} failed${timeoutSuffix}.`,
+            suggestion: "Check dependency resolution/network access and rerun validation.",
+            stage: "validate.project",
+            severity: "error",
+            details: {
+              command: installCommand.name,
+              output: installResult.combined.slice(0, 2000)
+            }
+          }
+        ]
+      });
     }
   }
 
@@ -304,16 +468,36 @@ export const runProjectValidationWithDeps = async ({
       }
 
       const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
-      const truncatedOutput = result.combined.slice(0, 2000);
+      const retryableStage = toRetryableDiagnosticStage(command.name);
+      const parsedDiagnostics =
+        retryableStage !== undefined
+          ? parseValidationDiagnostics({
+              stage: retryableStage,
+              output: result.combined,
+              generatedProjectDir
+            })
+          : [];
 
       if (!isRetryableStage(command.name)) {
-        throw new Error(`${command.name} failed${timeoutSuffix}: ${truncatedOutput}`);
+        throw await toValidationPipelineError({
+          commandName: command.name,
+          timeoutSuffix,
+          output: result.combined,
+          generatedProjectDir,
+          diagnostics: parsedDiagnostics,
+          summary: undefined
+        });
       }
 
       if (attempt >= MAX_VALIDATION_ATTEMPTS) {
-        throw new Error(
-          `${command.name} failed${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts: ${truncatedOutput}`
-        );
+        throw await toValidationPipelineError({
+          commandName: command.name,
+          timeoutSuffix: `${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts`,
+          output: result.combined,
+          generatedProjectDir,
+          diagnostics: parsedDiagnostics,
+          summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`
+        });
       }
 
       const feedback = await runValidationFeedback({
@@ -328,9 +512,15 @@ export const runProjectValidationWithDeps = async ({
       );
 
       if (feedback.changedFiles.length === 0) {
-        throw new Error(
-          `${command.name} failed${timeoutSuffix}; no auto-corrections were applied. Diagnostics: ${feedback.summary}. Output: ${truncatedOutput}`
-        );
+        throw await toValidationPipelineError({
+          commandName: command.name,
+          timeoutSuffix,
+          failureHint: "no auto-corrections were applied",
+          output: result.combined,
+          generatedProjectDir,
+          diagnostics: feedback.diagnostics,
+          summary: feedback.summary
+        });
       }
 
       onLog(

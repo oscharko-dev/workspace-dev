@@ -23,6 +23,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.16.0] - 2026-03-20
+
+### Structured pipeline diagnostics on failed jobs
+
+Added:
+
+- `WorkspaceJobDiagnosticSeverity = "error" | "warning" | "info"`
+- `WorkspaceJobDiagnosticValue` recursive JSON-safe value union for diagnostic details
+- `WorkspaceJobDiagnostic` payload shape for actionable stage diagnostics
+- `WorkspaceJobError.diagnostics?: WorkspaceJobDiagnostic[]` (optional structured diagnostics)
+
 ## [2.15.0] - 2026-03-19
 
 ### Form handling mode selection for generated forms

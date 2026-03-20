@@ -248,6 +248,83 @@ test("runProjectValidationWithDeps aborts retry loop when feedback cannot apply 
   );
 });
 
+test("runProjectValidationWithDeps emits structured diagnostics for failed retryable command", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-diagnostics-"));
+  const sourceDir = path.join(generatedProjectDir, "src");
+  const sourceFile = path.join(sourceDir, "main.ts");
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+  await mkdir(sourceDir, { recursive: true });
+  await writeFile(sourceFile, "const unused = 1;\n", "utf8");
+
+  try {
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir,
+          onLog: () => {
+            // no-op
+          },
+          skipInstall: true,
+          deps: {
+            runCommand: async ({ args }) => {
+              if (args[0] === "lint" && args.length === 1) {
+                return {
+                  success: false,
+                  code: 1,
+                  stdout: "",
+                  stderr: "lint failed",
+                  combined: "lint failed"
+                };
+              }
+              return {
+                success: true,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                combined: ""
+              };
+            },
+            runValidationFeedback: async () => ({
+              diagnostics: [
+                {
+                  stage: "lint",
+                  message: "unused variable",
+                  filePath: sourceFile,
+                  line: 1,
+                  column: 7,
+                  rule: "no-unused-vars"
+                }
+              ],
+              changedFiles: [],
+              correctionsApplied: 0,
+              fileCorrections: [],
+              summary: "unused variable"
+            })
+          }
+        }),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        const typed = error as Error & {
+          code?: string;
+          diagnostics?: Array<{
+            code?: string;
+            details?: Record<string, unknown>;
+          }>;
+        };
+        assert.equal(typed.code, "E_VALIDATE_PROJECT");
+        assert.equal(typed.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");
+        assert.equal(typed.diagnostics?.[0]?.details?.command, "lint");
+        assert.equal(typed.diagnostics?.[1]?.code, "E_VALIDATE_PROJECT_DETAIL");
+        assert.equal(typed.diagnostics?.[1]?.details?.filePath, sourceFile);
+        assert.equal(String(typed.diagnostics?.[1]?.details?.codeContext ?? "").includes("1: const unused = 1;"), true);
+        return true;
+      }
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("runProjectValidationWithDeps enforces max validation attempts", async () => {
   let feedbackInvocations = 0;
 
