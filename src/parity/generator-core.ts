@@ -192,7 +192,14 @@ export {
   isDecorativeElement,
   inferHeadingComponentByNodeId,
   resolveBackgroundHexForText,
-  pushLowContrastWarning
+  pushLowContrastWarning,
+  inferAriaLiveRegion,
+  shouldAddFocusTrap,
+  hasAppBarAndMainContent,
+  buildTabA11yId,
+  buildTabPanelA11yId,
+  buildAccordionHeaderA11yId,
+  buildAccordionPanelA11yId
 } from "./generator-a11y.js";
 export type { AccessibilityWarning } from "./generator-a11y.js";
 

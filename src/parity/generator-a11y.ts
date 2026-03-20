@@ -255,6 +255,87 @@ export const resolveBackgroundHexForText = ({
   );
 };
 
+// ── ARIA live region detection ────────────────────────────────────────────
+
+export const A11Y_LIVE_REGION_HINTS: readonly string[] = [
+  "snackbar", "toast", "notification", "alert", "banner",
+  "error", "warning", "success", "info",
+  "loading", "spinner", "progress", "skeleton"
+];
+
+export const A11Y_LOADING_STATE_HINTS: readonly string[] = [
+  "loading", "spinner", "progress", "circular", "linear"
+];
+
+/**
+ * Infers whether an element should have an aria-live attribute and which
+ * politeness level to use.  Returns `"assertive"` for error / alert content
+ * and `"polite"` for informational / loading content, or `undefined` when
+ * the element does not appear to be a live region.
+ */
+export const inferAriaLiveRegion = (element: ScreenElementIR): "assertive" | "polite" | undefined => {
+  const normalizedName = (element.name ?? "").toLowerCase().replace(/[_./:-]+/g, " ");
+  if (!A11Y_LIVE_REGION_HINTS.some((hint) => normalizedName.includes(hint))) {
+    return undefined;
+  }
+  const isAssertive =
+    normalizedName.includes("error") ||
+    normalizedName.includes("alert") ||
+    element.type === "snackbar";
+  return isAssertive ? "assertive" : "polite";
+};
+
+// ── Focus trap / overlay detection ───────────────────────────────────────
+
+/**
+ * Returns `true` when the element represents an overlay that should trap
+ * focus (dialog, drawer).  MUI Dialog already ships with focus-trap but we
+ * emit explicit `aria-modal` and `aria-labelledby` for generated code that
+ * might be further customised.
+ */
+export const shouldAddFocusTrap = (element: ScreenElementIR): boolean => {
+  return element.type === "dialog" || element.type === "drawer";
+};
+
+// ── Skip navigation detection ────────────────────────────────────────────
+
+/**
+ * Returns `true` when the element list contains both an AppBar (banner)
+ * element **and** a main content container, making a "Skip to main content"
+ * link useful for keyboard-only users.
+ */
+export const hasAppBarAndMainContent = (elements: ScreenElementIR[]): boolean => {
+  let hasAppBar = false;
+  let hasContent = false;
+  for (const element of elements) {
+    if (element.type === "appbar") {
+      hasAppBar = true;
+    } else if (element.type !== "navigation" && element.type !== "drawer" && element.type !== "divider") {
+      hasContent = true;
+    }
+    if (hasAppBar && hasContent) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// ── Tab panel ARIA ID generators ─────────────────────────────────────────
+
+export const buildTabA11yId = (stateId: number, index: number): string =>
+  `tab-${stateId}-${index}`;
+
+export const buildTabPanelA11yId = (stateId: number, index: number): string =>
+  `tabpanel-${stateId}-${index}`;
+
+// ── Accordion ARIA ID generators ─────────────────────────────────────────
+
+export const buildAccordionHeaderA11yId = (stateId: string): string =>
+  `accordion-header-${stateId}`;
+
+export const buildAccordionPanelA11yId = (stateId: string): string =>
+  `accordion-panel-${stateId}`;
+
 export const pushLowContrastWarning = ({
   context,
   element,
