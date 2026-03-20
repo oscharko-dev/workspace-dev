@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractSharedSxConstantsFromScreenContent } from "./generator-sx.js";
+import { extractSharedSxConstantsFromScreenContent, countTopLevelSxProperties } from "./generator-sx.js";
 
 const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
 
@@ -74,4 +74,19 @@ export default function Demo() {
   const content = extractSharedSxConstantsFromScreenContent(source);
   assert.equal(content.includes("const sharedSxStyle1 = {"), false);
   assert.equal(countOccurrences(content, "sx={sharedSxStyle"), 0);
+});
+
+test("top-level sx property counting counts direct entries deterministically", () => {
+  const count = countTopLevelSxProperties(`
+    px: 2,
+    py: 3,
+    display: "flex",
+    "&:hover": { bgcolor: "primary.main", color: "common.white" }
+  `);
+  assert.equal(count, 4);
+});
+
+test("top-level sx property counting returns undefined for invalid sx object syntax", () => {
+  const count = countTopLevelSxProperties(`px: 2, display:`);
+  assert.equal(count, undefined);
 });

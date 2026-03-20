@@ -39,7 +39,12 @@ import type {
   ExtractedComponentImportSpec
 } from "./generator-render.js";
 import type { ThemeComponentDefaults } from "./generator-design-system.js";
-import { extractSharedSxConstantsFromScreenContent, SX_ATTRIBUTE_PREFIX, findSxBodyEndIndex } from "./generator-sx.js";
+import {
+  extractSharedSxConstantsFromScreenContent,
+  SX_ATTRIBUTE_PREFIX,
+  findSxBodyEndIndex,
+  countTopLevelSxProperties
+} from "./generator-sx.js";
 
 export interface PatternExtractionInvocation {
   componentName: string;
@@ -522,9 +527,81 @@ const cloneElementForExtraction = (element: ScreenElementIR): ScreenElementIR =>
   };
 };
 
-const injectRootSxPropForExtractedComponent = (renderedRoot: string): string | undefined => {
+interface ExtractedComponentRootSxAnalysis {
+  rootTagName: string;
+  rootSxBody: string;
+  rootSxPropertyCount: number | undefined;
+  withMergedSx: string;
+  withSxPropOnly: string;
+}
+
+const findRootOpeningTagEndIndex = (renderedRoot: string): number | undefined => {
+  const rootTagStartIndex = renderedRoot.indexOf("<");
+  if (rootTagStartIndex < 0) {
+    return undefined;
+  }
+
+  let braceDepth = 0;
+  let activeQuote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+  for (let index = rootTagStartIndex + 1; index < renderedRoot.length; index += 1) {
+    const char = renderedRoot[index];
+    if (!char) {
+      continue;
+    }
+
+    if (activeQuote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === activeQuote) {
+        activeQuote = undefined;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      activeQuote = char;
+      continue;
+    }
+    if (char === "{") {
+      braceDepth += 1;
+      continue;
+    }
+    if (char === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (char === ">" && braceDepth === 0) {
+      return index;
+    }
+  }
+
+  return undefined;
+};
+
+const extractRootSxAnalysisForExtractedComponent = (renderedRoot: string): ExtractedComponentRootSxAnalysis | undefined => {
+  const rootTagMatch = renderedRoot.match(/^\s*<([A-Za-z][A-Za-z0-9_]*)\b/);
+  const rootTagName = rootTagMatch?.[1];
+  if (!rootTagName) {
+    return undefined;
+  }
+
+  const rootOpeningTagEndIndex = findRootOpeningTagEndIndex(renderedRoot);
+  if (rootOpeningTagEndIndex === undefined) {
+    return undefined;
+  }
+
   const sxStartIndex = renderedRoot.indexOf(SX_ATTRIBUTE_PREFIX);
   if (sxStartIndex < 0) {
+    return undefined;
+  }
+  if (sxStartIndex > rootOpeningTagEndIndex) {
     return undefined;
   }
   const bodyStartIndex = sxStartIndex + SX_ATTRIBUTE_PREFIX.length;
@@ -538,9 +615,48 @@ const injectRootSxPropForExtractedComponent = (renderedRoot: string): string | u
   if (renderedRoot[bodyEndIndex + 1] !== "}") {
     return undefined;
   }
-  const body = renderedRoot.slice(bodyStartIndex, bodyEndIndex).trim();
-  const replacement = `sx={[{ ${body} }, sx]}`;
-  return `${renderedRoot.slice(0, sxStartIndex)}${replacement}${renderedRoot.slice(bodyEndIndex + 2)}`;
+  if (bodyEndIndex > rootOpeningTagEndIndex) {
+    return undefined;
+  }
+  const rootSxBody = renderedRoot.slice(bodyStartIndex, bodyEndIndex).trim();
+
+  return {
+    rootTagName,
+    rootSxBody,
+    rootSxPropertyCount: countTopLevelSxProperties(rootSxBody),
+    withMergedSx: `${renderedRoot.slice(0, sxStartIndex)}sx={[{ ${rootSxBody} }, sx]}${renderedRoot.slice(bodyEndIndex + 2)}`,
+    withSxPropOnly: `${renderedRoot.slice(0, sxStartIndex)}sx={sx}${renderedRoot.slice(bodyEndIndex + 2)}`
+  };
+};
+
+const replaceRootTagNameInRenderedComponent = ({
+  renderedRoot,
+  currentRootTagName,
+  nextRootTagName
+}: {
+  renderedRoot: string;
+  currentRootTagName: string;
+  nextRootTagName: string;
+}): string | undefined => {
+  const openingTagToken = `<${currentRootTagName}`;
+  const openingTagIndex = renderedRoot.indexOf(openingTagToken);
+  if (openingTagIndex < 0) {
+    return undefined;
+  }
+  const openingTagNameStartIndex = openingTagIndex + 1;
+  const withOpeningTagReplaced = `${renderedRoot.slice(0, openingTagNameStartIndex)}${nextRootTagName}${renderedRoot.slice(
+    openingTagNameStartIndex + currentRootTagName.length
+  )}`;
+
+  const closingTagToken = `</${currentRootTagName}>`;
+  const closingTagIndex = withOpeningTagReplaced.lastIndexOf(closingTagToken);
+  if (closingTagIndex < 0) {
+    return undefined;
+  }
+  const closingTagNameStartIndex = closingTagIndex + 2;
+  return `${withOpeningTagReplaced.slice(0, closingTagNameStartIndex)}${nextRootTagName}${withOpeningTagReplaced.slice(
+    closingTagNameStartIndex + currentRootTagName.length
+  )}`;
 };
 
 export const toPatternContextProviderName = (screenComponentName: string): string => {
@@ -688,6 +804,7 @@ const buildExtractedComponentFile = ({
   routePathByScreenId,
   mappingByNodeId,
   pageBackgroundColorNormalized,
+  disallowedStyledRootMuiComponents,
   themeComponentDefaults,
   responsiveTopLevelLayoutOverrides
 }: {
@@ -702,6 +819,7 @@ const buildExtractedComponentFile = ({
   routePathByScreenId: Map<string, string>;
   mappingByNodeId: Map<string, ComponentMappingRule>;
   pageBackgroundColorNormalized: string | undefined;
+  disallowedStyledRootMuiComponents: ReadonlySet<string>;
   themeComponentDefaults?: ThemeComponentDefaults;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }): GeneratedFile | undefined => {
@@ -808,8 +926,8 @@ const buildExtractedComponentFile = ({
       .join(`alt={${binding.propName}}`);
   }
 
-  const renderedWithSx = injectRootSxPropForExtractedComponent(renderedComponentBody);
-  if (!renderedWithSx) {
+  const rootSxAnalysis = extractRootSxAnalysisForExtractedComponent(renderedComponentBody);
+  if (!rootSxAnalysis) {
     return undefined;
   }
 
@@ -824,6 +942,27 @@ const buildExtractedComponentFile = ({
   const sortedMuiImports = [...componentRenderContext.muiImports].sort((left, right) => left.localeCompare(right));
   if (sortedMuiImports.length === 0) {
     return undefined;
+  }
+  const shouldUseStyledRootComponent =
+    cluster.members.length >= PATTERN_MIN_OCCURRENCES &&
+    sortedMuiImports.includes(rootSxAnalysis.rootTagName) &&
+    !disallowedStyledRootMuiComponents.has(rootSxAnalysis.rootTagName) &&
+    (rootSxAnalysis.rootSxPropertyCount ?? 0) >= 4;
+  let renderedWithSx = rootSxAnalysis.withMergedSx;
+  let styledRootDeclaration = "";
+  if (shouldUseStyledRootComponent) {
+    const styledRootComponentName = `${cluster.componentName}Root`;
+    const styledTagReplaced = replaceRootTagNameInRenderedComponent({
+      renderedRoot: rootSxAnalysis.withSxPropOnly,
+      currentRootTagName: rootSxAnalysis.rootTagName,
+      nextRootTagName: styledRootComponentName
+    });
+    if (styledTagReplaced) {
+      renderedWithSx = styledTagReplaced;
+      styledRootDeclaration =
+        `const ${styledRootComponentName} = styled(${rootSxAnalysis.rootTagName})` +
+        `(({ theme }) => theme.unstable_sx({ ${rootSxAnalysis.rootSxBody} }));\n\n`;
+    }
   }
   const iconImports = normalizeIconImports(componentRenderContext.iconImports)
     .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
@@ -857,10 +996,14 @@ const buildExtractedComponentFile = ({
   const componentSetupBlock = [patternContextBindingBlock, navigationHookBlock]
     .filter((block) => block.length > 0)
     .join("\n\n");
-  const componentSource = `${reactRouterImport}${patternContextImport}import type { SxProps, Theme } from "@mui/material/styles";
+  const stylesImportLine = styledRootDeclaration
+    ? 'import { styled, type SxProps, type Theme } from "@mui/material/styles";'
+    : 'import type { SxProps, Theme } from "@mui/material/styles";';
+  const componentSource = `${reactRouterImport}${patternContextImport}${stylesImportLine}
 import { ${sortedMuiImports.join(", ")} } from "@mui/material";
 ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}
 
+${styledRootDeclaration}
 interface ${cluster.componentName}Props {
 ${propsInterfaceEntries}
 }
@@ -1111,6 +1254,7 @@ export const buildPatternExtractionPlan = ({
   routePathByScreenId,
   mappingByNodeId,
   pageBackgroundColorNormalized,
+  disallowedStyledRootMuiComponents = new Set<string>(),
   themeComponentDefaults,
   responsiveTopLevelLayoutOverrides
 }: {
@@ -1127,6 +1271,7 @@ export const buildPatternExtractionPlan = ({
   routePathByScreenId: Map<string, string>;
   mappingByNodeId: Map<string, ComponentMappingRule>;
   pageBackgroundColorNormalized: string | undefined;
+  disallowedStyledRootMuiComponents?: ReadonlySet<string>;
   themeComponentDefaults?: ThemeComponentDefaults;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }): PatternExtractionPlan => {
@@ -1170,6 +1315,7 @@ export const buildPatternExtractionPlan = ({
       routePathByScreenId,
       mappingByNodeId,
       pageBackgroundColorNormalized,
+      disallowedStyledRootMuiComponents,
       ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
       ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {})
     });

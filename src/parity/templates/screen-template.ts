@@ -3609,6 +3609,7 @@ export interface FallbackScreenFileInput {
   componentNameOverride?: string;
   filePathOverride?: string;
   enablePatternExtraction?: boolean;
+  disallowedStyledRootMuiComponents?: ReadonlySet<string>;
 }
 
 export interface PreparedFallbackScreenModel {
@@ -3635,6 +3636,7 @@ export interface PreparedFallbackScreenModel {
   mappingByNodeId: Map<string, ComponentMappingRule>;
   pageBackgroundColorNormalized: string | undefined;
   enablePatternExtraction: boolean;
+  disallowedStyledRootMuiComponents: ReadonlySet<string>;
 }
 
 export interface FallbackRenderState {
@@ -3684,7 +3686,8 @@ export const prepareFallbackScreenModel = ({
   themeComponentDefaults,
   componentNameOverride,
   filePathOverride,
-  enablePatternExtraction = true
+  enablePatternExtraction = true,
+  disallowedStyledRootMuiComponents = new Set<string>()
 }: FallbackScreenFileInput): PreparedFallbackScreenModel => {
   const componentName = componentNameOverride ?? toComponentName(screen.name);
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
@@ -3737,6 +3740,7 @@ export const prepareFallbackScreenModel = ({
     routePathByScreenId,
     mappingByNodeId,
     pageBackgroundColorNormalized,
+    disallowedStyledRootMuiComponents,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
@@ -3766,7 +3770,8 @@ export const prepareFallbackScreenModel = ({
     routePathByScreenId,
     mappingByNodeId,
     pageBackgroundColorNormalized,
-    enablePatternExtraction
+    enablePatternExtraction,
+    disallowedStyledRootMuiComponents
   };
 };
 

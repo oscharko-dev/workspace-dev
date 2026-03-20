@@ -2444,11 +2444,15 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.ok(componentContent.includes("interface OffersPattern1Props"));
   assert.ok(componentContent.includes("instanceId: string;"));
   assert.ok(componentContent.includes("sx?: SxProps<Theme>;"));
+  assert.ok(componentContent.includes('import { styled, type SxProps, type Theme } from "@mui/material/styles";'));
   assert.ok(componentContent.includes('import { useOffersPatternContext } from "../context/OffersPatternContext";'));
   assert.ok(componentContent.includes("const patternContext = useOffersPatternContext();"));
   assert.equal(componentContent.includes("offerTitleText: string;"), false);
   assert.equal(componentContent.includes("offerImageSrc: string;"), false);
-  assert.ok(componentContent.includes("sx={[{"));
+  assert.ok(componentContent.includes("const OffersPattern1Root = styled(Card)(({ theme }) => theme.unstable_sx({"));
+  assert.ok(componentContent.includes("theme.unstable_sx({"));
+  assert.ok(componentContent.includes("<OffersPattern1Root sx={sx}>"));
+  assert.equal(componentContent.includes("sx={[{"), false);
   assert.equal(componentContent.includes("/images/offer-a.png"), false);
 
   const patternContextContent = await readFile(path.join(projectDir, "src", "context", "OffersPatternContext.tsx"), "utf8");
@@ -3005,6 +3009,8 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
   assert.ok(patternContent.includes('import { ContentCard } from "@acme/ui";'));
   assert.ok(patternContent.includes("<ContentCard"));
   assert.equal(/<Card(?=[\s>])/.test(patternContent), false);
+  assert.equal(patternContent.includes("theme.unstable_sx("), false);
+  assert.ok(patternContent.includes("sx={[{"));
 });
 
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
@@ -3495,6 +3501,69 @@ test("generateArtifacts skips pattern context when extracted clusters have no dy
   const componentContent = await readFile(path.join(projectDir, "src", "components", "StaticOffersPattern1.tsx"), "utf8");
   assert.equal(componentContent.includes("instanceId: string;"), false);
   assert.equal(componentContent.includes("PatternContext"), false);
+});
+
+test("generateArtifacts keeps merged sx fallback for extracted patterns with fewer than four root sx properties", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-low-root-sx-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "low-root-sx-screen",
+      name: "Low Root SX",
+      layoutMode: "VERTICAL" as const,
+      gap: 12,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "low-root-card-a",
+          name: "Compact Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          children: [
+            { id: "low-root-card-a-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "A" },
+            { id: "low-root-card-a-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Alpha" }
+          ]
+        },
+        {
+          id: "low-root-card-b",
+          name: "Compact Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          children: [
+            { id: "low-root-card-b-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "B" },
+            { id: "low-root-card-b-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Bravo" }
+          ]
+        },
+        {
+          id: "low-root-card-c",
+          name: "Compact Card",
+          nodeType: "FRAME",
+          type: "card" as const,
+          children: [
+            { id: "low-root-card-c-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "C" },
+            { id: "low-root-card-c-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Charlie" }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const patternComponentPath = result.generatedPaths.find((entry) => /src\/components\/LowRoot.*Pattern1\.tsx$/.test(entry));
+  assert.ok(patternComponentPath, "Expected extracted pattern component for low-root-sx scenario.");
+  const patternContent = await readFile(path.join(projectDir, patternComponentPath ?? ""), "utf8");
+  assert.equal(patternContent.includes("theme.unstable_sx("), false);
+  assert.equal(patternContent.includes("Root = styled("), false);
+  assert.ok(patternContent.includes("sx={[{"));
 });
 
 test("generateArtifacts skips extraction when structure similarity threshold is not met", async () => {

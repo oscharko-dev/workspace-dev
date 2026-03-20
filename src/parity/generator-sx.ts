@@ -460,6 +460,14 @@ const parseSxObjectBody = (body: string): ParsedSxObject | undefined => {
   return parsed.object;
 };
 
+export const countTopLevelSxProperties = (body: string): number | undefined => {
+  const parsedBody = parseSxObjectBody(body.trim());
+  if (!parsedBody) {
+    return undefined;
+  }
+  return parsedBody.properties.length;
+};
+
 const normalizeExpressionForSignature = (expression: string): string => {
   let normalized = "";
   let pendingWhitespace = false;

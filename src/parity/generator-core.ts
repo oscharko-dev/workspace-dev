@@ -385,6 +385,7 @@ interface GenerateArtifactsResolvedPhase {
   resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+  designSystemConfig?: LoadedDesignSystemConfig;
 }
 
 const resolveGenerateArtifactsPhase = async ({
@@ -451,7 +452,8 @@ const resolveGenerateArtifactsPhase = async ({
     runtimeAdapters,
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
-    transformGeneratedFileWithDesignSystem
+    transformGeneratedFileWithDesignSystem,
+    ...(designSystemConfig ? { designSystemConfig } : {})
   };
 };
 
@@ -621,6 +623,7 @@ const runGenerateArtifactsScreenPhase = ({
   resolvedFormHandlingMode,
   iconResolver,
   themeComponentDefaults,
+  designSystemMappedMuiComponents,
   transformGeneratedFileWithDesignSystem,
   onLog
 }: {
@@ -638,6 +641,7 @@ const runGenerateArtifactsScreenPhase = ({
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   iconResolver: IconFallbackResolver;
   themeComponentDefaults: ThemeComponentDefaults | undefined;
+  designSystemMappedMuiComponents: ReadonlySet<string>;
   transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
   onLog: (message: string) => void;
 }): GenerateArtifactsScreenPhase => {
@@ -673,6 +677,9 @@ const runGenerateArtifactsScreenPhase = ({
       generationLocale: resolvedGenerationLocale.locale,
       formHandlingMode: resolvedFormHandlingMode,
       ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      ...(designSystemMappedMuiComponents.size > 0
+        ? { disallowedStyledRootMuiComponents: designSystemMappedMuiComponents }
+        : {}),
       ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
       ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
       ...(truncationMetric ? { truncationMetric } : {})
@@ -811,7 +818,8 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     runtimeAdapters,
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
-    transformGeneratedFileWithDesignSystem
+    transformGeneratedFileWithDesignSystem,
+    designSystemConfig
   } = await resolveGenerateArtifactsPhase({
     input,
     generationLocale,
@@ -859,6 +867,7 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     resolvedFormHandlingMode,
     iconResolver,
     themeComponentDefaults,
+    designSystemMappedMuiComponents: new Set(Object.keys(designSystemConfig?.mappings ?? {})),
     transformGeneratedFileWithDesignSystem,
     onLog
   });
