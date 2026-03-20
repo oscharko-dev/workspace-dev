@@ -41,7 +41,7 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
   return !withoutPrefix.startsWith("jobs") && !withoutPrefix.startsWith("repros");
 }
 
-export function parseJobRoute(pathname: string): { jobId: string; action: "status" | "result" | "cancel" } | undefined {
+export function parseJobRoute(pathname: string): { jobId: string; action: "status" | "result" | "cancel" | "design-ir" } | undefined {
   if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
     return undefined;
   }
@@ -70,6 +70,17 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     return {
       jobId,
       action: "cancel"
+    };
+  }
+
+  if (rest.endsWith("/design-ir")) {
+    const jobId = rest.slice(0, -"/design-ir".length);
+    if (!jobId || jobId.includes("/")) {
+      return undefined;
+    }
+    return {
+      jobId,
+      action: "design-ir"
     };
   }
 
