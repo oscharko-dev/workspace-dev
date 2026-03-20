@@ -11,7 +11,8 @@ import {
   toDeterministicScreenPath,
   detectFormGroups,
   normalizeIconImports,
-  isDeepIconImport
+  isDeepIconImport,
+  extractSharedSxConstantsFromScreenContent
 } from "./generator-core.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
@@ -7371,6 +7372,24 @@ test("deterministic screen rendering assigns shared sx constants deterministical
   assert.match(content, /const sharedSxStyle2 = \{[^}]*left: "30px"[^}]*width: "32px"[^}]*height: "32px"[^}]*\};/);
   assert.equal(countOccurrences(content, "sx={sharedSxStyle1}"), 3);
   assert.equal(countOccurrences(content, "sx={sharedSxStyle2}"), 3);
+});
+
+test("generator-core shared sx extraction deduplicates semantically equivalent reordered sx objects", () => {
+  const source = `import { Box } from "@mui/material";
+export default function Demo() {
+  return (
+    <>
+      <Box sx={{ left: "0px", width: "24px", height: "24px" }} />
+      <Box sx={{ width: "24px", height: "24px", left: "0px" }} />
+      <Box sx={{ height: "24px", left: "0px", width: "24px" }} />
+    </>
+  );
+}`;
+
+  const content = extractSharedSxConstantsFromScreenContent(source);
+  assert.equal(content.includes("const sharedSxStyle1 = {"), true);
+  assert.equal(countOccurrences(content, "sx={sharedSxStyle1}"), 3);
+  assert.equal(countOccurrences(content, "sx={{"), 0);
 });
 
 test("deterministic screen rendering keeps avatar text for icon-like containers", () => {
