@@ -209,6 +209,7 @@ export interface WorkspaceJobArtifacts {
   designIrFile?: string;
   figmaJsonFile?: string;
   generationMetricsFile?: string;
+  componentManifestFile?: string;
   stageTimingsFile?: string;
   reproDir?: string;
 }

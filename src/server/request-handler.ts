@@ -183,6 +183,86 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedJobRoute.action === "component-manifest") {
+          const record = jobEngine.getJobRecord(jobId);
+          if (!record) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          if (record.status === "queued" || record.status === "running") {
+            sendJson({
+              response,
+              statusCode: 409,
+              payload: {
+                error: "JOB_NOT_COMPLETED",
+                message: `Job '${jobId}' has status '${record.status}' — component manifest is only available after the job finishes.`
+              }
+            });
+            return;
+          }
+
+          const manifestPath = record.artifacts.componentManifestFile;
+          if (!manifestPath) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "COMPONENT_MANIFEST_NOT_FOUND",
+                message: `Component manifest artifact not available for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          let manifestContent: string;
+          try {
+            manifestContent = await readFile(manifestPath, "utf8");
+          } catch {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "COMPONENT_MANIFEST_NOT_FOUND",
+                message: `Component manifest file not found on disk for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          let manifest: unknown;
+          try {
+            manifest = JSON.parse(manifestContent) as unknown;
+          } catch {
+            sendJson({
+              response,
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: `Failed to parse component manifest for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              jobId,
+              ...(manifest as Record<string, unknown>)
+            }
+          });
+          return;
+        }
+
         const job = jobEngine.getJob(jobId);
         if (!job) {
           sendJson({
