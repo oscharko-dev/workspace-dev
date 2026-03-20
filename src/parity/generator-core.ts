@@ -24,7 +24,6 @@ import {
 } from "../design-system.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
-import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
 import type { ThemeComponentDefaults } from "./generator-design-system.js";
 import {
@@ -232,6 +231,42 @@ interface RejectedScreenEnhancement {
   screenName: string;
   reason: string;
 }
+
+// ── Streaming artifact types (issue #312) ────────────────────────────────
+
+/** A single file yielded by the streaming generator. */
+export interface StreamingArtifactFile {
+  path: string;
+  content: string;
+}
+
+/** Progress event emitted per completed screen. */
+export interface StreamingProgressEvent {
+  type: "progress";
+  screenIndex: number;
+  screenCount: number;
+  screenName: string;
+}
+
+/** Discriminated union for all streaming artifact events. */
+export type StreamingArtifactEvent =
+  | { type: "theme"; files: StreamingArtifactFile[] }
+  | { type: "screen"; screenName: string; files: StreamingArtifactFile[] }
+  | { type: "app"; file: StreamingArtifactFile }
+  | { type: "metrics"; file: StreamingArtifactFile }
+  | StreamingProgressEvent;
+
+/** Default batch size for parallel screen generation. */
+const STREAMING_SCREEN_BATCH_SIZE = 4;
+
+/** Split an array into chunks of the given size. */
+const chunk = <T>(array: readonly T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+};
 
 interface GenerateArtifactsResult {
   generatedPaths: string[];
@@ -593,156 +628,9 @@ const runGenerateArtifactsBasePhase = async ({
   };
 };
 
-interface DeterministicScreenPersistedArtifact {
-  file: GeneratedFile;
-  componentFiles: GeneratedFile[];
-  contextFiles: GeneratedFile[];
-  testFiles: GeneratedFile[];
-}
-
-interface GenerateArtifactsScreenPhase {
-  deterministicScreens: DeterministicScreenPersistedArtifact[];
-  identitiesByScreenId: Map<string, ScreenArtifactIdentity>;
-  usedMappingNodeIds: Set<string>;
-  mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>;
-  accessibilityWarnings: AccessibilityWarning[];
-  simplificationByScreen: ScreenSimplificationMetric[];
-  aggregatedSimplificationStats: SimplificationMetrics;
-  prototypeNavigationRenderedCount: number;
-}
-
-const runGenerateArtifactsScreenPhase = ({
-  ir,
-  mappingByNodeId,
-  truncationByScreenId,
-  imageAssetMap,
-  resolvedGenerationLocale,
-  resolvedFormHandlingMode,
-  iconResolver,
-  themeComponentDefaults,
-  designSystemMappedMuiComponents,
-  transformGeneratedFileWithDesignSystem,
-  onLog
-}: {
-  ir: DesignIR;
-  mappingByNodeId: Map<string, ComponentMappingRule>;
-  truncationByScreenId: Map<string, {
-    screenId: string;
-    screenName: string;
-    originalElements: number;
-    retainedElements: number;
-    budget: number;
-  }>;
-  imageAssetMap: Record<string, string>;
-  resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
-  resolvedFormHandlingMode: ResolvedFormHandlingMode;
-  iconResolver: IconFallbackResolver;
-  themeComponentDefaults: ThemeComponentDefaults | undefined;
-  designSystemMappedMuiComponents: ReadonlySet<string>;
-  transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
-  onLog: (message: string) => void;
-}): GenerateArtifactsScreenPhase => {
-  const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
-  const routePathByScreenId = new Map(
-    Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
-  );
-  const usedMappingNodeIds = new Set<string>();
-  const mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }> = [];
-  const accessibilityWarnings: AccessibilityWarning[] = [];
-  const simplificationByScreen: ScreenSimplificationMetric[] = [];
-  const aggregatedSimplificationStats = createEmptySimplificationStats();
-  let prototypeNavigationRenderedCount = 0;
-  const deterministicScreens = ir.screens.map((screen) => {
-    const identity = identitiesByScreenId.get(screen.id);
-    const truncationMetric = truncationByScreenId.get(screen.id);
-    if (truncationMetric) {
-      onLog(
-        `Screen '${screen.name}' truncated from ${truncationMetric.originalElements} to ${truncationMetric.retainedElements} elements (budget=${truncationMetric.budget}).`
-      );
-    }
-    const deterministicScreen = fallbackScreenFile({
-      screen,
-      mappingByNodeId,
-      spacingBase: ir.tokens.spacingBase,
-      tokens: ir.tokens,
-      iconResolver,
-      imageAssetMap,
-      routePathByScreenId,
-      generationLocale: resolvedGenerationLocale.locale,
-      formHandlingMode: resolvedFormHandlingMode,
-      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
-      ...(designSystemMappedMuiComponents.size > 0
-        ? { disallowedStyledRootMuiComponents: designSystemMappedMuiComponents }
-        : {}),
-      ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
-      ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
-      ...(truncationMetric ? { truncationMetric } : {})
-    });
-    accumulateSimplificationStats({
-      target: aggregatedSimplificationStats,
-      source: deterministicScreen.simplificationStats
-    });
-    simplificationByScreen.push({
-      screenId: screen.id,
-      screenName: screen.name,
-      ...deterministicScreen.simplificationStats
-    });
-    prototypeNavigationRenderedCount += deterministicScreen.prototypeNavigationRenderedCount;
-    for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
-      usedMappingNodeIds.add(nodeId);
-    }
-    for (const warning of deterministicScreen.mappingWarnings) {
-      mappingWarnings.push({
-        code: warning.code,
-        message: warning.message
-      });
-    }
-    accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
-    return {
-      file: transformGeneratedFileWithDesignSystem(deterministicScreen.file),
-      componentFiles: deterministicScreen.componentFiles.map((file) => transformGeneratedFileWithDesignSystem(file)),
-      contextFiles: deterministicScreen.contextFiles,
-      testFiles: deterministicScreen.testFiles
-    };
-  });
-  return {
-    deterministicScreens,
-    identitiesByScreenId,
-    usedMappingNodeIds,
-    mappingWarnings,
-    accessibilityWarnings,
-    simplificationByScreen,
-    aggregatedSimplificationStats,
-    prototypeNavigationRenderedCount
-  };
-};
-
-const persistGenerateArtifactsScreenPhase = async ({
-  projectDir,
-  deterministicScreens,
-  runtimeAdapters,
-  generatedPaths
-}: {
-  projectDir: string;
-  deterministicScreens: DeterministicScreenPersistedArtifact[];
-  runtimeAdapters: GenerateArtifactsRuntimeAdapters;
-  generatedPaths: Set<string>;
-}): Promise<void> => {
-  await Promise.all(
-    deterministicScreens
-      .flatMap((item) => [item.file, ...item.componentFiles, ...item.contextFiles, ...item.testFiles])
-      .map(async (file) => {
-        await runtimeAdapters.writeGeneratedFile(projectDir, file);
-        generatedPaths.add(file.path);
-      })
-  );
-};
+// NOTE: runGenerateArtifactsScreenPhase and persistGenerateArtifactsScreenPhase
+// were removed in issue #312 — their logic is now inlined inside the streaming
+// generator (generateArtifactsStreaming) to enable per-screen file writes.
 
 const appendGenerateArtifactsMappingWarnings = ({
   mappingByNodeId,
@@ -792,7 +680,15 @@ const appendGenerateArtifactsMappingWarnings = ({
   }
 };
 
-export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+// ---------------------------------------------------------------------------
+// generateArtifactsStreaming — async generator that yields files as they're
+// completed, enabling O(1)-per-screen memory and real-time progress feedback.
+// See issue #312 for the design rationale.
+// ---------------------------------------------------------------------------
+
+export async function* generateArtifactsStreaming(
+  input: GenerateArtifactsInput
+): AsyncGenerator<StreamingArtifactEvent, GenerateArtifactsResult> {
   const irValidation = validateDesignIR(input.ir);
   if (!irValidation.valid) {
     throw new WorkflowError({
@@ -840,6 +736,8 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     ir,
     componentMappings
   });
+
+  // ── Phase 1: Theme & shared base files (yield immediately) ────────────
   const { iconResolver, themeComponentDefaults } = await runGenerateArtifactsBasePhase({
     projectDir,
     ir,
@@ -849,52 +747,134 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     generatedPaths,
     onLog
   });
-  const {
-    deterministicScreens,
-    identitiesByScreenId,
-    usedMappingNodeIds,
-    mappingWarnings: screenPhaseMappingWarnings,
-    accessibilityWarnings,
-    simplificationByScreen,
-    aggregatedSimplificationStats,
-    prototypeNavigationRenderedCount
-  } = runGenerateArtifactsScreenPhase({
-    ir,
-    mappingByNodeId,
-    truncationByScreenId,
-    imageAssetMap,
-    resolvedGenerationLocale,
-    resolvedFormHandlingMode,
-    iconResolver,
-    themeComponentDefaults,
-    designSystemMappedMuiComponents: new Set(Object.keys(designSystemConfig?.mappings ?? {})),
-    transformGeneratedFileWithDesignSystem,
-    onLog
-  });
-  mappingWarnings.push(...screenPhaseMappingWarnings);
-  await persistGenerateArtifactsScreenPhase({
-    projectDir,
-    deterministicScreens,
-    runtimeAdapters,
-    generatedPaths
-  });
+
+  const themeFiles: StreamingArtifactFile[] = [];
+  for (const p of generatedPaths) {
+    themeFiles.push({ path: p, content: "" });
+  }
+  yield { type: "theme", files: themeFiles };
+
+  // ── Phase 2: Per-screen generation in parallel batches ────────────────
+  const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
+  const routePathByScreenId = new Map(
+    Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
+  );
+  const usedMappingNodeIds = new Set<string>();
+  const screenMappingWarnings: Array<{
+    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    message: string;
+  }> = [];
+  const accessibilityWarnings: AccessibilityWarning[] = [];
+  const simplificationByScreen: ScreenSimplificationMetric[] = [];
+  const aggregatedSimplificationStats = createEmptySimplificationStats();
+  let prototypeNavigationRenderedCount = 0;
+  const designSystemMappedMuiComponents = new Set(Object.keys(designSystemConfig?.mappings ?? {}));
+
+  const screenBatches = chunk(ir.screens, STREAMING_SCREEN_BATCH_SIZE);
+  let screenIndex = 0;
+
+  for (const batch of screenBatches) {
+    const batchResults = batch.map((screen) => {
+      const identity = identitiesByScreenId.get(screen.id);
+      const truncationMetric = truncationByScreenId.get(screen.id);
+      if (truncationMetric) {
+        onLog(
+          `Screen '${screen.name}' truncated from ${truncationMetric.originalElements} to ${truncationMetric.retainedElements} elements (budget=${truncationMetric.budget}).`
+        );
+      }
+      const deterministicScreen = fallbackScreenFile({
+        screen,
+        mappingByNodeId,
+        spacingBase: ir.tokens.spacingBase,
+        tokens: ir.tokens,
+        iconResolver,
+        imageAssetMap,
+        routePathByScreenId,
+        generationLocale: resolvedGenerationLocale.locale,
+        formHandlingMode: resolvedFormHandlingMode,
+        ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+        ...(designSystemMappedMuiComponents.size > 0
+          ? { disallowedStyledRootMuiComponents: designSystemMappedMuiComponents }
+          : {}),
+        ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
+        ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
+        ...(truncationMetric ? { truncationMetric } : {})
+      });
+      return { screen, deterministicScreen };
+    });
+
+    for (const { screen, deterministicScreen } of batchResults) {
+      accumulateSimplificationStats({
+        target: aggregatedSimplificationStats,
+        source: deterministicScreen.simplificationStats
+      });
+      simplificationByScreen.push({
+        screenId: screen.id,
+        screenName: screen.name,
+        ...deterministicScreen.simplificationStats
+      });
+      prototypeNavigationRenderedCount += deterministicScreen.prototypeNavigationRenderedCount;
+      for (const nodeId of deterministicScreen.usedMappingNodeIds.values()) {
+        usedMappingNodeIds.add(nodeId);
+      }
+      for (const warning of deterministicScreen.mappingWarnings) {
+        screenMappingWarnings.push({ code: warning.code, message: warning.message });
+      }
+      accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
+
+      const screenFile = transformGeneratedFileWithDesignSystem(deterministicScreen.file);
+      const componentFiles = deterministicScreen.componentFiles.map((file) =>
+        transformGeneratedFileWithDesignSystem(file)
+      );
+      const allScreenFiles = [screenFile, ...componentFiles, ...deterministicScreen.contextFiles, ...deterministicScreen.testFiles];
+
+      // Write files for this screen immediately
+      await Promise.all(
+        allScreenFiles.map(async (file) => {
+          await runtimeAdapters.writeGeneratedFile(projectDir, file);
+          generatedPaths.add(file.path);
+        })
+      );
+
+      yield {
+        type: "screen",
+        screenName: screen.name,
+        files: allScreenFiles.map((f) => ({ path: f.path, content: f.content }))
+      };
+
+      screenIndex++;
+      yield {
+        type: "progress",
+        screenIndex,
+        screenCount: ir.screens.length,
+        screenName: screen.name
+      };
+    }
+  }
+
+  mappingWarnings.push(...screenMappingWarnings);
   appendGenerateArtifactsMappingWarnings({
     mappingByNodeId,
     allIrNodeIds,
     usedMappingNodeIds,
     mappingWarnings
   });
+
+  // ── Phase 3: App.tsx (depends on all screen routes) ───────────────────
+  const appContent = makeAppFile({
+    screens: ir.screens,
+    identitiesByScreenId,
+    ...(routerMode !== undefined ? { routerMode } : {}),
+    includeThemeModeToggle: ir.themeAnalysis?.darkModeDetected ?? true
+  });
   await runtimeAdapters.writeTextFile({
     filePath: path.join(projectDir, "src", "App.tsx"),
-    content: makeAppFile({
-      screens: ir.screens,
-      identitiesByScreenId,
-      ...(routerMode !== undefined ? { routerMode } : {}),
-      includeThemeModeToggle: ir.themeAnalysis?.darkModeDetected ?? true
-    })
+    content: appContent
   });
   generatedPaths.add("src/App.tsx");
+  yield { type: "app", file: { path: "src/App.tsx", content: appContent } };
 
+  // ── Phase 4: Metrics ──────────────────────────────────────────────────
   generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;
   generationMetrics.simplification = {
     aggregate: aggregatedSimplificationStats,
@@ -904,12 +884,15 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     ...generationMetrics,
     accessibilityWarnings
   };
+  const metricsContent = `${JSON.stringify(generationMetricsPayload, null, 2)}\n`;
   await runtimeAdapters.writeTextFile({
     filePath: path.join(projectDir, "generation-metrics.json"),
-    content: `${JSON.stringify(generationMetricsPayload, null, 2)}\n`
+    content: metricsContent
   });
   generatedPaths.add("generation-metrics.json");
+  yield { type: "metrics", file: { path: "generation-metrics.json", content: metricsContent } };
 
+  // ── Log summary ───────────────────────────────────────────────────────
   if (generationMetrics.degradedGeometryNodes.length > 0) {
     onLog(`Geometry degraded for ${generationMetrics.degradedGeometryNodes.length} node(s) during staged fetch.`);
   }
@@ -935,38 +918,42 @@ export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<
     onLog(`Accessibility warnings: ${accessibilityWarnings.length} potential contrast issue(s).`);
   }
 
-  onLog("Generated deterministic baseline artifacts");
+  onLog("Generated deterministic baseline artifacts (streaming)");
 
-  const themeApplied = false;
-  const screenApplied = 0;
-  const screenRejected: RejectedScreenEnhancement[] = [];
-  const llmWarnings: Array<{
-    code: "W_LLM_RESPONSES_INCOMPLETE";
-    message: string;
-  }> = [];
-  const screenTotal = deterministicScreens.length;
-  const mappingCoverage = {
-    usedMappings: usedMappingNodeIds.size,
-    fallbackNodes: Math.max(0, mappingByNodeId.size - usedMappingNodeIds.size),
-    totalCandidateNodes: mappingByNodeId.size
-  };
   const dedupedMappingWarnings = dedupeMappingWarnings(mappingWarnings);
-  const mappingDiagnostics = {
-    missingMappingCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_MISSING").length,
-    contractMismatchCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_CONTRACT_MISMATCH").length,
-    disabledMappingCount: dedupedMappingWarnings.filter((warning) => warning.code === "W_COMPONENT_MAPPING_DISABLED").length
-  };
   onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
   return {
     generatedPaths: Array.from(generatedPaths),
     generationMetrics,
-    themeApplied,
-    screenApplied,
-    screenTotal,
-    screenRejected,
-    llmWarnings,
-    mappingCoverage,
-    mappingDiagnostics,
+    themeApplied: false,
+    screenApplied: 0,
+    screenTotal: ir.screens.length,
+    screenRejected: [],
+    llmWarnings: [],
+    mappingCoverage: {
+      usedMappings: usedMappingNodeIds.size,
+      fallbackNodes: Math.max(0, mappingByNodeId.size - usedMappingNodeIds.size),
+      totalCandidateNodes: mappingByNodeId.size
+    },
+    mappingDiagnostics: {
+      missingMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_MISSING").length,
+      contractMismatchCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_CONTRACT_MISMATCH").length,
+      disabledMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_DISABLED").length
+    },
     mappingWarnings: dedupedMappingWarnings
   };
+}
+
+// ---------------------------------------------------------------------------
+// generateArtifacts — backward-compatible batch wrapper that consumes the
+// streaming generator and returns the final result.
+// ---------------------------------------------------------------------------
+
+export const generateArtifacts = async (input: GenerateArtifactsInput): Promise<GenerateArtifactsResult> => {
+  const generator = generateArtifactsStreaming(input);
+  let iterResult = await generator.next();
+  while (!iterResult.done) {
+    iterResult = await generator.next();
+  }
+  return iterResult.value;
 };

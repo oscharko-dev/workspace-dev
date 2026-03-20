@@ -34,7 +34,8 @@ import {
 import { createTemplateCopyFilter } from "./job-engine/template-copy-filter.js";
 import type { CreateJobEngineInput, FigmaFileResponse, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
 import { runProjectValidation } from "./job-engine/validation.js";
-import { generateArtifacts } from "./parity/generator-core.js";
+import { generateArtifactsStreaming } from "./parity/generator-core.js";
+import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -679,7 +680,15 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             }
           }
 
-          return await generateArtifacts({
+          const streamingOnLog = (message: string): void => {
+            pushLog({
+              job,
+              level: "info",
+              stage: "codegen.generate",
+              message
+            });
+          };
+          const generator = generateArtifactsStreaming({
             projectDir: generatedProjectDir,
             ir,
             iconMapFilePath,
@@ -690,15 +699,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             formHandlingMode: resolvedFormHandlingMode,
             llmModelName: "deterministic",
             llmCodegenMode: "deterministic",
-            onLog: (message) => {
+            onLog: streamingOnLog
+          });
+          let iterResult = await generator.next();
+          while (!iterResult.done) {
+            const event: StreamingArtifactEvent = iterResult.value;
+            if (event.type === "progress") {
               pushLog({
                 job,
                 level: "info",
                 stage: "codegen.generate",
-                message
+                message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
               });
             }
-          });
+            iterResult = await generator.next();
+          }
+          return iterResult.value;
         }
       });
 
