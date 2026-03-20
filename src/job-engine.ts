@@ -1756,14 +1756,27 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
   };
 
+  const getJobRecord: JobEngine["getJobRecord"] = (jobId) => {
+    const job = jobs.get(jobId);
+    if (!job) {
+      return undefined;
+    }
+    return {
+      jobId: job.jobId,
+      status: job.status,
+      artifacts: { ...job.artifacts }
+    };
+  };
+
   return {
     submitJob,
     cancelJob,
     getJob,
     getJobResult,
+    getJobRecord,
     resolvePreviewAsset
   };
 };
 
 export { resolveRuntimeSettings };
-export type { JobEngine, JobEngineRuntime } from "./job-engine/types.js";
+export type { JobEngine, JobEngineRuntime, JobRecordSnapshot } from "./job-engine/types.js";

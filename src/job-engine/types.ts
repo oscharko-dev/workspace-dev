@@ -124,10 +124,18 @@ export interface GitPrExecutionResult {
   changedFiles: string[];
 }
 
+/** Minimal internal job snapshot for handlers that need raw artifact paths and status. */
+export interface JobRecordSnapshot {
+  jobId: string;
+  status: WorkspaceJobRuntimeStatus;
+  artifacts: WorkspaceJobArtifacts;
+}
+
 export interface JobEngine {
   submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
   cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
+  getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;
   resolvePreviewAsset: (jobId: string, previewPath: string) => Promise<{ content: Buffer; contentType: string } | undefined>;
 }
