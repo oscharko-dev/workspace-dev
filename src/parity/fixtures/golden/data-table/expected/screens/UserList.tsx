@@ -18,7 +18,7 @@ export default function UserListScreen() {
   };
   return (
     <Container maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 2, py: 2 }}>
-      <Typography variant="h1" component="h1" sx={{ color: "text.primary", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Users"}</Typography>
+      <Typography variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Users"}</Typography>
       <Box sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", bgcolor: "#f5f5f7" }}>
         <Typography variant="body1" sx={sharedSxStyle1}>{"Name"}</Typography>
         <Typography variant="body1" sx={sharedSxStyle1}>{"Email"}</Typography>

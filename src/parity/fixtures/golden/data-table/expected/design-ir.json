@@ -457,7 +457,7 @@
   ],
   "tokens": {
     "palette": {
-      "primary": "#ffedd1",
+      "primary": "#1c1f24",
       "secondary": "#fbfbfc",
       "background": "#fbfbfc",
       "text": "#1c1f24",
@@ -468,11 +468,11 @@
       "divider": "#1c1f241f",
       "action": {
         "active": "#1c1f248a",
-        "hover": "#ffedd10a",
-        "selected": "#ffedd114",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
         "disabled": "#1c1f2442",
         "disabledBackground": "#1c1f241f",
-        "focus": "#ffedd11f"
+        "focus": "#1c1f241f"
       }
     },
     "borderRadius": 14,

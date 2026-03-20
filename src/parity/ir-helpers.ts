@@ -217,6 +217,23 @@ export const parseHex = (hex: string): { r: number; g: number; b: number } => {
   return { r, g, b };
 };
 
+// ── Cached parseHex for hot paths (palette clustering) ──────────────────
+const parseHexCache = new Map<string, { r: number; g: number; b: number }>();
+
+export const parseHexCached = (hex: string): { r: number; g: number; b: number } => {
+  const cached = parseHexCache.get(hex);
+  if (cached) {
+    return cached;
+  }
+  const result = parseHex(hex);
+  parseHexCache.set(hex, result);
+  return result;
+};
+
+export const clearParseHexCache = (): void => {
+  parseHexCache.clear();
+};
+
 export const luminance = (hex: string): number => {
   const { r, g, b } = parseHex(hex);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -268,6 +285,15 @@ export const colorDistance = (leftHex: string, rightHex: string): number => {
   return Math.sqrt(dr * dr + dg * dg + db * db);
 };
 
+export const colorDistanceCached = (leftHex: string, rightHex: string): number => {
+  const left = parseHexCached(leftHex);
+  const right = parseHexCached(rightHex);
+  const dr = left.r - right.r;
+  const dg = left.g - right.g;
+  const db = left.b - right.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+};
+
 export const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
@@ -301,6 +327,75 @@ export const quantizeColorKey = (hex: string, step: number): string => {
     return clamp(quantized, 0, 255);
   };
   return toHexFromRgb(parseChannel(0), parseChannel(2), parseChannel(4));
+};
+
+// ── Spatial grid for O(n log n) color cluster merging ────────────────────
+export interface SpatialColorGrid<T> {
+  insert: (item: T, hex: string) => void;
+  findNearest: (hex: string, maxDistance: number) => T | undefined;
+}
+
+export const createSpatialColorGrid = <T>(cellSize: number): SpatialColorGrid<T> => {
+  const cells = new Map<string, Array<{ item: T; r: number; g: number; b: number }>>();
+
+  const toCellKey = (r: number, g: number, b: number): string => {
+    const cr = Math.floor(r / cellSize);
+    const cg = Math.floor(g / cellSize);
+    const cb = Math.floor(b / cellSize);
+    return `${cr},${cg},${cb}`;
+  };
+
+  const neighborOffsets: Array<[number, number, number]> = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dg = -1; dg <= 1; dg++) {
+      for (let db = -1; db <= 1; db++) {
+        neighborOffsets.push([dr, dg, db]);
+      }
+    }
+  }
+
+  return {
+    insert(item: T, hex: string): void {
+      const parsed = parseHexCached(hex);
+      const key = toCellKey(parsed.r, parsed.g, parsed.b);
+      const bucket = cells.get(key);
+      if (bucket) {
+        bucket.push({ item, r: parsed.r, g: parsed.g, b: parsed.b });
+      } else {
+        cells.set(key, [{ item, r: parsed.r, g: parsed.g, b: parsed.b }]);
+      }
+    },
+
+    findNearest(hex: string, maxDistance: number): T | undefined {
+      const parsed = parseHexCached(hex);
+      const cr = Math.floor(parsed.r / cellSize);
+      const cg = Math.floor(parsed.g / cellSize);
+      const cb = Math.floor(parsed.b / cellSize);
+      const maxDistSq = maxDistance * maxDistance;
+      let bestItem: T | undefined;
+      let bestDistSq = maxDistSq + 1;
+
+      for (const [dr, dg, db] of neighborOffsets) {
+        const key = `${cr + dr},${cg + dg},${cb + db}`;
+        const bucket = cells.get(key);
+        if (!bucket) {
+          continue;
+        }
+        for (const entry of bucket) {
+          const diffR = parsed.r - entry.r;
+          const diffG = parsed.g - entry.g;
+          const diffB = parsed.b - entry.b;
+          const distSq = diffR * diffR + diffG * diffG + diffB * diffB;
+          if (distSq <= maxDistSq && distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestItem = entry.item;
+          }
+        }
+      }
+
+      return bestItem;
+    }
+  };
 };
 
 export const median = (values: number[]): number | undefined => {
