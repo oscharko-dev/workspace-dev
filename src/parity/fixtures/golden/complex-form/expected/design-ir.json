@@ -17,7 +17,6 @@
           "id": "form-title",
           "name": "Heading",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -26,6 +25,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Create Account",
           "x": 24,
           "y": 24,
@@ -42,7 +42,6 @@
           "id": "form-subtitle",
           "name": "Subtitle",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -51,6 +50,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Fill in your details to get started",
           "x": 24,
           "y": 64,
@@ -67,7 +67,6 @@
           "id": "name-row",
           "name": "Name Row",
           "nodeType": "FRAME",
-          "type": "table",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
           "padding": {
@@ -78,6 +77,7 @@
           },
           "primaryAxisAlignItems": "MIN",
           "counterAxisAlignItems": "CENTER",
+          "type": "table",
           "x": 24,
           "y": 100,
           "width": 372,
@@ -87,7 +87,6 @@
               "id": "first-name-field",
               "name": "MuiTextFieldRoot",
               "nodeType": "FRAME",
-              "type": "input",
               "layoutMode": "VERTICAL",
               "gap": 4,
               "padding": {
@@ -104,6 +103,7 @@
                   "variant": "text"
                 }
               },
+              "type": "input",
               "x": 24,
               "y": 100,
               "width": 180,
@@ -116,7 +116,6 @@
                   "id": "first-name-label",
                   "name": "Label",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -125,6 +124,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "First Name",
                   "x": 36,
                   "y": 104,
@@ -141,7 +141,6 @@
                   "id": "first-name-value",
                   "name": "Value",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -150,6 +149,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "John",
                   "x": 36,
                   "y": 124,
@@ -168,7 +168,6 @@
               "id": "last-name-field",
               "name": "MuiTextFieldRoot",
               "nodeType": "FRAME",
-              "type": "input",
               "layoutMode": "VERTICAL",
               "gap": 4,
               "padding": {
@@ -185,6 +184,7 @@
                   "variant": "text"
                 }
               },
+              "type": "input",
               "x": 216,
               "y": 100,
               "width": 180,
@@ -197,7 +197,6 @@
                   "id": "last-name-label",
                   "name": "Label",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -206,6 +205,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Last Name",
                   "x": 228,
                   "y": 104,
@@ -222,7 +222,6 @@
                   "id": "last-name-value",
                   "name": "Value",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -231,6 +230,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Doe",
                   "x": 228,
                   "y": 124,
@@ -251,7 +251,6 @@
           "id": "email-field",
           "name": "MuiTextFieldRoot",
           "nodeType": "FRAME",
-          "type": "input",
           "layoutMode": "VERTICAL",
           "gap": 4,
           "padding": {
@@ -268,6 +267,7 @@
               "variant": "text"
             }
           },
+          "type": "input",
           "x": 24,
           "y": 172,
           "width": 372,
@@ -280,7 +280,6 @@
               "id": "email-label",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -289,6 +288,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Email Address",
               "x": 36,
               "y": 176,
@@ -305,7 +305,6 @@
               "id": "email-value",
               "name": "Value",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -314,6 +313,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "john@example.com",
               "x": 36,
               "y": 196,
@@ -332,7 +332,6 @@
           "id": "checkbox-row",
           "name": "Checkbox Row",
           "nodeType": "FRAME",
-          "type": "checkbox",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
           "padding": {
@@ -343,6 +342,7 @@
           },
           "primaryAxisAlignItems": "MIN",
           "counterAxisAlignItems": "CENTER",
+          "type": "checkbox",
           "x": 24,
           "y": 244,
           "width": 372,
@@ -352,7 +352,6 @@
               "id": "checkbox-icon",
               "name": "MuiCheckboxRoot",
               "nodeType": "FRAME",
-              "type": "checkbox",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -361,6 +360,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "checkbox",
               "x": 24,
               "y": 244,
               "width": 24,
@@ -373,7 +373,6 @@
               "id": "checkbox-label",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -382,6 +381,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "I agree to the Terms and Conditions",
               "x": 56,
               "y": 246,
@@ -400,7 +400,6 @@
           "id": "submit-button",
           "name": "Primary Button",
           "nodeType": "FRAME",
-          "type": "paper",
           "layoutMode": "HORIZONTAL",
           "gap": 0,
           "padding": {
@@ -411,6 +410,7 @@
           },
           "primaryAxisAlignItems": "CENTER",
           "counterAxisAlignItems": "CENTER",
+          "type": "paper",
           "x": 24,
           "y": 284,
           "width": 372,
@@ -422,7 +422,6 @@
               "id": "submit-label",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -431,6 +430,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Create Account",
               "x": 136,
               "y": 297,

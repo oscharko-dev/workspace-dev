@@ -164,44 +164,56 @@ export interface ScreenResponsiveIR {
   topLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
 }
 
-export interface ScreenElementIR {
+export type ScreenElementType =
+  | "text"
+  | "container"
+  | "button"
+  | "input"
+  | "image"
+  | "grid"
+  | "stack"
+  | "paper"
+  | "card"
+  | "chip"
+  | "switch"
+  | "checkbox"
+  | "radio"
+  | "select"
+  | "slider"
+  | "rating"
+  | "list"
+  | "table"
+  | "tooltip"
+  | "appbar"
+  | "drawer"
+  | "breadcrumbs"
+  | "tab"
+  | "dialog"
+  | "snackbar"
+  | "stepper"
+  | "progress"
+  | "skeleton"
+  | "avatar"
+  | "badge"
+  | "divider"
+  | "navigation";
+
+export interface ElementSpacingIR {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface ElementPrototypeNavigationIR {
+  targetScreenId: string;
+  mode: "push" | "replace" | "overlay";
+}
+
+export interface BaseElementIR {
   id: string;
   name: string;
   nodeType: string;
-  type:
-    | "text"
-    | "container"
-    | "button"
-    | "input"
-    | "image"
-    | "grid"
-    | "stack"
-    | "paper"
-    | "card"
-    | "chip"
-    | "switch"
-    | "checkbox"
-    | "radio"
-    | "select"
-    | "slider"
-    | "rating"
-    | "list"
-    | "table"
-    | "tooltip"
-    | "appbar"
-    | "drawer"
-    | "breadcrumbs"
-    | "tab"
-    | "dialog"
-    | "snackbar"
-    | "stepper"
-    | "progress"
-    | "skeleton"
-    | "avatar"
-    | "badge"
-    | "divider"
-    | "navigation";
-  text?: string;
   textRole?: "placeholder";
   x?: number;
   y?: number;
@@ -225,27 +237,41 @@ export interface ScreenElementIR {
   primaryAxisAlignItems?: PrimaryAxisAlignItems;
   counterAxisAlignItems?: CounterAxisAlignItems;
   gap?: number;
-  padding?: {
-    top: number;
-    right: number;
-    bottom: number;
-    left: number;
-  };
-  margin?: {
-    top: number;
-    right: number;
-    bottom: number;
-    left: number;
-  };
+  padding?: ElementSpacingIR;
+  margin?: ElementSpacingIR;
   cornerRadius?: number;
-  prototypeNavigation?: {
-    targetScreenId: string;
-    mode: "push" | "replace" | "overlay";
-  };
+  prototypeNavigation?: ElementPrototypeNavigationIR;
   variantMapping?: VariantMappingIR;
   cssGridHints?: CssGridChildHints;
   children?: ScreenElementIR[];
 }
+
+export interface TextElementIR extends BaseElementIR {
+  type: "text";
+  text: string;
+}
+
+export type NonTextElementType = Exclude<ScreenElementType, "text">;
+
+export interface NonTextElementIR extends BaseElementIR {
+  type: NonTextElementType;
+  text?: string;
+}
+
+export type ScreenElementIR = TextElementIR | NonTextElementIR;
+
+export const isTextElement = (element: ScreenElementIR): element is TextElementIR => {
+  return element.type === "text";
+};
+
+export const isNonTextElement = (element: ScreenElementIR): element is NonTextElementIR => {
+  return element.type !== "text";
+};
+
+type AssertTrue<T extends true> = T;
+export type ScreenElementIRTextRequiresText = AssertTrue<
+  Extract<ScreenElementIR, { type: "text" }> extends { text: string } ? true : false
+>;
 
 /**
  * CSS Grid placement hints for a child element within a grid container.

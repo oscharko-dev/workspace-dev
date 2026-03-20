@@ -2,6 +2,9 @@
 // ir-tokens.ts — Token derivation, theme analysis, and MCP enrichment
 // Extracted from ir.ts (issue #299)
 // ---------------------------------------------------------------------------
+import {
+  isTextElement
+} from "./types.js";
 import type {
   DesignIR,
   DesignIrDarkPaletteHints,
@@ -458,12 +461,30 @@ export const applyMcpHintToElement = (
     hint?.semanticName && (isGenericElementName(element.name) || hint.semanticName.length > element.name.length + 2)
       ? hint.semanticName
       : element.name;
-
-  return {
+  const nextChildren = (element.children ?? []).map((child) => applyMcpHintToElement(child, hintsById));
+  const nextType = inferredType ?? element.type;
+  const baseWithHint = {
     ...element,
     name: nextName,
-    type: inferredType ?? element.type,
-    children: (element.children ?? []).map((child) => applyMcpHintToElement(child, hintsById))
+    children: nextChildren
+  };
+
+  if (nextType === element.type) {
+    return baseWithHint;
+  }
+
+  if (nextType === "text") {
+    const fallbackText = isTextElement(element) ? element.text : element.text?.trim() ?? nextName;
+    return {
+      ...baseWithHint,
+      type: "text",
+      text: fallbackText
+    };
+  }
+
+  return {
+    ...baseWithHint,
+    type: nextType
   };
 };
 

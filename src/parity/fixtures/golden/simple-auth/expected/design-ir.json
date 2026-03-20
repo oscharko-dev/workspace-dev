@@ -17,7 +17,6 @@
           "id": "login-title",
           "name": "Title",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -26,6 +25,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Welcome Back",
           "x": 16,
           "y": 16,
@@ -42,7 +42,6 @@
           "id": "email-field",
           "name": "MuiFormControlRoot",
           "nodeType": "FRAME",
-          "type": "input",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
           "padding": {
@@ -53,6 +52,7 @@
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
+          "type": "input",
           "x": 16,
           "y": 80,
           "width": 358,
@@ -62,7 +62,6 @@
               "id": "email-label",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -71,6 +70,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Email",
               "x": 24,
               "y": 96,
@@ -89,7 +89,6 @@
           "id": "submit-button",
           "name": "Primary Button",
           "nodeType": "FRAME",
-          "type": "paper",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -98,6 +97,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "paper",
           "x": 16,
           "y": 156,
           "width": 220,
@@ -108,7 +108,6 @@
               "id": "submit-button-label",
               "name": "Label",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -117,6 +116,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Sign In",
               "x": 84,
               "y": 169,

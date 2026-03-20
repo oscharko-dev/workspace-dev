@@ -17,7 +17,6 @@
           "id": "table-title",
           "name": "Title",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -26,6 +25,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Users",
           "x": 16,
           "y": 16,
@@ -42,7 +42,6 @@
           "id": "table-header",
           "name": "Table Header",
           "nodeType": "FRAME",
-          "type": "table",
           "layoutMode": "HORIZONTAL",
           "gap": 0,
           "padding": {
@@ -53,6 +52,7 @@
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
+          "type": "table",
           "x": 16,
           "y": 64,
           "width": 768,
@@ -63,7 +63,6 @@
               "id": "header-name",
               "name": "Header Name",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -72,6 +71,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Name",
               "x": 32,
               "y": 78,
@@ -88,7 +88,6 @@
               "id": "header-email",
               "name": "Header Email",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -97,6 +96,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Email",
               "x": 228,
               "y": 78,
@@ -113,7 +113,6 @@
               "id": "header-role",
               "name": "Header Role",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -122,6 +121,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Role",
               "x": 444,
               "y": 78,
@@ -138,7 +138,6 @@
               "id": "header-status",
               "name": "Header Status",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -147,6 +146,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Status",
               "x": 600,
               "y": 78,
@@ -165,7 +165,6 @@
           "id": "table-row-1",
           "name": "Table Row",
           "nodeType": "FRAME",
-          "type": "table",
           "layoutMode": "HORIZONTAL",
           "gap": 0,
           "padding": {
@@ -176,6 +175,7 @@
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
+          "type": "table",
           "x": 16,
           "y": 112,
           "width": 768,
@@ -185,7 +185,6 @@
               "id": "row1-name",
               "name": "Cell Name",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -194,6 +193,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Alice Johnson",
               "x": 32,
               "y": 128,
@@ -210,7 +210,6 @@
               "id": "row1-email",
               "name": "Cell Email",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -219,6 +218,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "alice@example.com",
               "x": 228,
               "y": 128,
@@ -235,7 +235,6 @@
               "id": "row1-role",
               "name": "Cell Role",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -244,6 +243,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Admin",
               "x": 444,
               "y": 128,
@@ -260,7 +260,6 @@
               "id": "row1-status",
               "name": "MuiChipRoot",
               "nodeType": "FRAME",
-              "type": "chip",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -269,6 +268,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "chip",
               "x": 600,
               "y": 124,
               "width": 70,
@@ -280,7 +280,6 @@
                   "id": "row1-status-text",
                   "name": "Label",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -289,6 +288,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Active",
                   "x": 610,
                   "y": 130,
@@ -309,7 +309,6 @@
           "id": "table-row-2",
           "name": "Table Row",
           "nodeType": "FRAME",
-          "type": "table",
           "layoutMode": "HORIZONTAL",
           "gap": 0,
           "padding": {
@@ -320,6 +319,7 @@
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
+          "type": "table",
           "x": 16,
           "y": 164,
           "width": 768,
@@ -329,7 +329,6 @@
               "id": "row2-name",
               "name": "Cell Name",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -338,6 +337,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Bob Smith",
               "x": 32,
               "y": 180,
@@ -354,7 +354,6 @@
               "id": "row2-email",
               "name": "Cell Email",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -363,6 +362,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "bob@example.com",
               "x": 228,
               "y": 180,
@@ -379,7 +379,6 @@
               "id": "row2-role",
               "name": "Cell Role",
               "nodeType": "TEXT",
-              "type": "text",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -388,6 +387,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "text",
               "text": "Editor",
               "x": 444,
               "y": 180,
@@ -404,7 +404,6 @@
               "id": "row2-status",
               "name": "MuiChipRoot",
               "nodeType": "FRAME",
-              "type": "chip",
               "layoutMode": "NONE",
               "gap": 0,
               "padding": {
@@ -413,6 +412,7 @@
                 "bottom": 0,
                 "left": 0
               },
+              "type": "chip",
               "x": 600,
               "y": 176,
               "width": 80,
@@ -424,7 +424,6 @@
                   "id": "row2-status-text",
                   "name": "Label",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -433,6 +432,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Pending",
                   "x": 608,
                   "y": 182,
