@@ -8,7 +8,7 @@ const desktopViewportMatrix = [
 
 for (const viewport of desktopViewportMatrix) {
   test(`renders workspace shell at ${viewport.label}`, async ({ page }) => {
-    const uiUrl = process.env.WORKSPACE_DEV_UI_URL ?? "http://127.0.0.1:1983/workspace/ui";
+    const uiUrl = process.env.WORKSPACE_DEV_UI_URL ?? "http://127.0.0.1:19831/workspace/ui";
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto(uiUrl);
 
