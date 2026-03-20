@@ -243,7 +243,21 @@ export interface ScreenElementIR {
     mode: "push" | "replace" | "overlay";
   };
   variantMapping?: VariantMappingIR;
+  cssGridHints?: CssGridChildHints;
   children?: ScreenElementIR[];
+}
+
+/**
+ * CSS Grid placement hints for a child element within a grid container.
+ * Populated during IR derivation when spanning or named-area patterns are detected.
+ */
+export interface CssGridChildHints {
+  /** Number of columns this child spans (default 1). */
+  gridColumnSpan?: number;
+  /** Number of rows this child spans (default 1). */
+  gridRowSpan?: number;
+  /** Named grid area derived from Figma auto-layout naming. */
+  gridArea?: string;
 }
 
 export interface ScreenIR {

@@ -157,5 +157,19 @@ export const CARD_MIN_HEIGHT = 80;
 /** Minimum table structure child count. */
 export const TABLE_MIN_CHILDREN = 2;
 
+// ── CSS Grid detection (generator-render.ts) ──────────────────────────────
+
+/** Minimum ratio by which a child must exceed the average column width to be considered spanning. */
+export const CSS_GRID_SPAN_WIDTH_RATIO = 1.6;
+
+/** Minimum ratio by which a child must exceed the average row height to be considered row-spanning. */
+export const CSS_GRID_SPAN_HEIGHT_RATIO = 1.6;
+
+/** Coefficient of variation threshold above which column widths are considered asymmetric. */
+export const CSS_GRID_ASYMMETRIC_CV_THRESHOLD = 0.25;
+
+/** Minimum number of children required for CSS Grid detection. */
+export const CSS_GRID_MIN_CHILDREN = 3;
+
 // Note: MUI default breakpoint values are maintained in generator-responsive.ts
 // as MUI_DEFAULT_BREAKPOINT_VALUES to avoid import cycles.
