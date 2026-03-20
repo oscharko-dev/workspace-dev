@@ -43,6 +43,7 @@ import { runProjectValidation } from "./job-engine/validation.js";
 import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
+import { buildComponentManifest } from "./parity/component-manifest.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -1339,6 +1340,30 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
       if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
         job.artifacts.generationMetricsFile = path.join(generatedProjectDir, "generation-metrics.json");
+      }
+
+      // Build component manifest mapping IR nodes to generated code ranges
+      try {
+        const manifest = await buildComponentManifest({
+          projectDir: generatedProjectDir,
+          screens: ir.screens
+        });
+        const manifestPath = path.join(generatedProjectDir, "component-manifest.json");
+        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+        job.artifacts.componentManifestFile = manifestPath;
+        pushLog({
+          job,
+          level: "info",
+          stage: "codegen.generate",
+          message: `Component manifest written with ${manifest.screens.length} screens.`
+        });
+      } catch (error) {
+        pushLog({
+          job,
+          level: "warn",
+          stage: "codegen.generate",
+          message: `Component manifest generation failed: ${getErrorMessage(error)}`
+        });
       }
 
       await runStage({
