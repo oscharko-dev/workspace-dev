@@ -86,6 +86,40 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
+// Search / filter: prune tree keeping parent path when a child matches
+// ---------------------------------------------------------------------------
+
+export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  if (!query.trim()) {
+    return nodes;
+  }
+  const lower = query.toLowerCase();
+
+  function matches(node: TreeNode): boolean {
+    return node.name.toLowerCase().includes(lower);
+  }
+
+  function prune(list: TreeNode[]): TreeNode[] {
+    const kept: TreeNode[] = [];
+    for (const node of list) {
+      if (matches(node)) {
+        // Include the node with all its children (matched directly)
+        kept.push(node);
+      } else if (node.children && node.children.length > 0) {
+        // Check if any descendant matches — keep parent path
+        const filteredChildren = prune(node.children);
+        if (filteredChildren.length > 0) {
+          kept.push({ ...node, children: filteredChildren });
+        }
+      }
+    }
+    return kept;
+  }
+
+  return prune(nodes);
+}
+
+// ---------------------------------------------------------------------------
 // Flatten tree for keyboard navigation
 // ---------------------------------------------------------------------------
 
@@ -322,6 +356,8 @@ export function ComponentTree({
   collapsed,
   onToggleCollapsed
 }: ComponentTreeProps): JSX.Element {
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Expand all screen-level nodes by default
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -333,10 +369,35 @@ export function ComponentTree({
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
+  // Filter screens based on search query
+  const filteredScreens = useMemo(
+    () => filterTree(screens, searchQuery),
+    [screens, searchQuery]
+  );
+
+  // When searching, auto-expand all nodes so matches are visible
+  const effectiveExpandedIds = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return expandedIds;
+    }
+    // Collect all node ids from filteredScreens
+    const allIds = new Set<string>();
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        allIds.add(n.id);
+        if (n.children) {
+          walk(n.children);
+        }
+      }
+    };
+    walk(filteredScreens);
+    return allIds;
+  }, [searchQuery, expandedIds, filteredScreens]);
+
   // Flatten visible nodes for keyboard navigation
   const flatNodes = useMemo(
-    () => flattenVisible(screens, expandedIds),
-    [screens, expandedIds]
+    () => flattenVisible(filteredScreens, effectiveExpandedIds),
+    [filteredScreens, effectiveExpandedIds]
   );
 
   const toggleExpand = useCallback((nodeId: string) => {
@@ -382,7 +443,7 @@ export function ComponentTree({
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         if (current.children && current.children.length > 0) {
-          if (!expandedIds.has(current.id)) {
+          if (!effectiveExpandedIds.has(current.id)) {
             toggleExpand(current.id);
           } else {
             // Move focus to first child
@@ -394,7 +455,7 @@ export function ComponentTree({
         }
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (expandedIds.has(current.id) && current.children && current.children.length > 0) {
+        if (effectiveExpandedIds.has(current.id) && current.children && current.children.length > 0) {
           toggleExpand(current.id);
         }
       } else if (e.key === "Enter" || e.key === " ") {
@@ -402,7 +463,7 @@ export function ComponentTree({
         onSelect(current.id);
       }
     },
-    [focusedId, flatNodes, expandedIds, toggleExpand, onSelect]
+    [focusedId, flatNodes, effectiveExpandedIds, toggleExpand, onSelect]
   );
 
   if (collapsed) {
@@ -444,6 +505,19 @@ export function ComponentTree({
         </button>
       </div>
 
+      {/* Search input */}
+      <div className="shrink-0 border-b border-slate-200 px-2 py-1.5">
+        <input
+          type="search"
+          data-testid="tree-search-input"
+          placeholder="Search components…"
+          value={searchQuery}
+          onChange={(e) => { setSearchQuery(e.target.value); }}
+          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none"
+          aria-label="Search component tree"
+        />
+      </div>
+
       {/* Tree */}
       <div
         role="tree"
@@ -457,16 +531,18 @@ export function ComponentTree({
           }
         }}
       >
-        {screens.length === 0 ? (
-          <p className="px-2 py-4 text-center text-xs text-slate-400">No components</p>
+        {filteredScreens.length === 0 ? (
+          <p className="px-2 py-4 text-center text-xs text-slate-400">
+            {searchQuery.trim() ? "No matching components" : "No components"}
+          </p>
         ) : (
-          screens.map((screen) => (
+          filteredScreens.map((screen) => (
             <ScreenTreeNode
               key={screen.id}
               screen={screen}
               selectedId={selectedId}
               onSelect={onSelect}
-              expandedIds={expandedIds}
+              expandedIds={effectiveExpandedIds}
               onToggleExpand={toggleExpand}
               focusedId={focusedId}
               onFocusNode={setFocusedId}

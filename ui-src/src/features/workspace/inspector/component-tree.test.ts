@@ -1,0 +1,323 @@
+/**
+ * Unit tests for ComponentTree component.
+ *
+ * Covers tree rendering, search/filter with parent path preservation,
+ * node selection, expand/collapse, and keyboard navigation.
+ *
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/385
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { createElement } from "react";
+import { ComponentTree, filterTree, type TreeNode } from "./component-tree";
+
+// jsdom does not implement scrollIntoView
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+// ---------------------------------------------------------------------------
+// Test data
+// ---------------------------------------------------------------------------
+
+function makeScreens(): TreeNode[] {
+  return [
+    {
+      id: "screen-home",
+      name: "Home",
+      type: "screen",
+      children: [
+        {
+          id: "header-bar",
+          name: "HeaderBar",
+          type: "appbar",
+          children: [
+            { id: "logo", name: "Logo", type: "image" },
+            { id: "nav-menu", name: "NavMenu", type: "navigation" }
+          ]
+        },
+        {
+          id: "price-card",
+          name: "PriceCard",
+          type: "card",
+          children: [
+            { id: "amount", name: "Amount", type: "text" },
+            { id: "label", name: "Label", type: "text" }
+          ]
+        },
+        { id: "submit-btn", name: "SubmitButton", type: "button" }
+      ]
+    },
+    {
+      id: "screen-details",
+      name: "Details",
+      type: "screen",
+      children: [
+        { id: "detail-title", name: "DetailTitle", type: "text" }
+      ]
+    }
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// filterTree (pure function)
+// ---------------------------------------------------------------------------
+
+describe("filterTree", () => {
+  const screens = makeScreens();
+
+  it("returns all nodes when query is empty", () => {
+    expect(filterTree(screens, "")).toBe(screens);
+    expect(filterTree(screens, "  ")).toBe(screens);
+  });
+
+  it("filters by name (case-insensitive)", () => {
+    const result = filterTree(screens, "logo");
+    // Should keep Home > HeaderBar > Logo path
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("Home");
+    expect(result[0]!.children).toHaveLength(1);
+    expect(result[0]!.children![0]!.name).toBe("HeaderBar");
+    expect(result[0]!.children![0]!.children).toHaveLength(1);
+    expect(result[0]!.children![0]!.children![0]!.name).toBe("Logo");
+  });
+
+  it("preserves parent path for deep matches", () => {
+    const result = filterTree(screens, "Amount");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.children).toHaveLength(1);
+    expect(result[0]!.children![0]!.name).toBe("PriceCard");
+    expect(result[0]!.children![0]!.children).toHaveLength(1);
+    expect(result[0]!.children![0]!.children![0]!.name).toBe("Amount");
+  });
+
+  it("includes all children when parent matches", () => {
+    const result = filterTree(screens, "HeaderBar");
+    expect(result).toHaveLength(1);
+    const headerBar = result[0]!.children![0]!;
+    expect(headerBar.name).toBe("HeaderBar");
+    // Should include all children of HeaderBar since parent matched directly
+    expect(headerBar.children).toHaveLength(2);
+  });
+
+  it("matches across multiple screens", () => {
+    const result = filterTree(screens, "title");
+    // Should match DetailTitle in Details screen
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("Details");
+    expect(result[0]!.children).toHaveLength(1);
+    expect(result[0]!.children![0]!.name).toBe("DetailTitle");
+  });
+
+  it("returns empty array when no nodes match", () => {
+    const result = filterTree(screens, "zzzzz");
+    expect(result).toHaveLength(0);
+  });
+
+  it("matches screen-level nodes directly", () => {
+    const result = filterTree(screens, "home");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("Home");
+    // All children preserved since screen matched directly
+    expect(result[0]!.children).toHaveLength(3);
+  });
+
+  it("handles multiple sibling matches at the same level", () => {
+    // Both Logo and Label contain 'l'
+    const result = filterTree(screens, "Label");
+    expect(result).toHaveLength(1);
+    const priceCard = result[0]!.children![0]!;
+    expect(priceCard.name).toBe("PriceCard");
+    expect(priceCard.children).toHaveLength(1);
+    expect(priceCard.children![0]!.name).toBe("Label");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ComponentTree rendering
+// ---------------------------------------------------------------------------
+
+describe("ComponentTree", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn()
+  };
+
+  it("renders the component tree with screen nodes", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(screen.getByTestId("component-tree")).toBeInTheDocument();
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Details")).toBeInTheDocument();
+  });
+
+  it("renders the search input", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const searchInput = screen.getByTestId("tree-search-input");
+    expect(searchInput).toBeInTheDocument();
+    expect(searchInput).toHaveAttribute("placeholder", "Search components…");
+  });
+
+  it("renders child nodes when screen is expanded by default", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(screen.getByText("HeaderBar")).toBeInTheDocument();
+    expect(screen.getByText("PriceCard")).toBeInTheDocument();
+    expect(screen.getByText("SubmitButton")).toBeInTheDocument();
+  });
+
+  it("renders type badges on nodes", () => {
+    render(createElement(ComponentTree, defaultProps));
+    // Check that badge with title "button" exists on SubmitButton's row
+    const submitNode = screen.getByTestId("tree-node-submit-btn");
+    const badge = within(submitNode).getByTitle("button");
+    expect(badge).toBeInTheDocument();
+    expect(badge.textContent).toBe("B");
+  });
+
+  it("highlights selected node", () => {
+    render(createElement(ComponentTree, { ...defaultProps, selectedId: "submit-btn" }));
+    const node = screen.getByTestId("tree-node-submit-btn");
+    expect(node).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("calls onSelect when node is clicked", () => {
+    const onSelect = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onSelect }));
+    // SubmitButton is a direct child of Home screen (expanded by default)
+    fireEvent.click(screen.getByTestId("tree-node-submit-btn"));
+    expect(onSelect).toHaveBeenCalledWith("submit-btn");
+  });
+
+  it("collapses a screen when chevron is clicked", () => {
+    render(createElement(ComponentTree, defaultProps));
+    // HeaderBar should be visible (Home is expanded by default)
+    expect(screen.getByText("HeaderBar")).toBeInTheDocument();
+
+    // Click collapse on first screen
+    const homeScreen = screen.getByTestId("tree-screen-screen-home");
+    const collapseBtn = within(homeScreen).getByLabelText("Collapse");
+    fireEvent.click(collapseBtn);
+
+    // HeaderBar should no longer be visible
+    expect(screen.queryByText("HeaderBar")).not.toBeInTheDocument();
+  });
+
+  it("shows collapsed state with expand button", () => {
+    render(createElement(ComponentTree, { ...defaultProps, collapsed: true }));
+    expect(screen.queryByTestId("component-tree")).not.toBeInTheDocument();
+    expect(screen.getByTestId("tree-expand-button")).toBeInTheDocument();
+  });
+
+  it("calls onToggleCollapsed when collapse button is clicked", () => {
+    const onToggleCollapsed = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onToggleCollapsed }));
+    fireEvent.click(screen.getByTestId("tree-collapse-button"));
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Search interaction
+// ---------------------------------------------------------------------------
+
+describe("ComponentTree search", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn()
+  };
+
+  it("filters nodes when typing in search input", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const searchInput = screen.getByTestId("tree-search-input");
+    fireEvent.change(searchInput, { target: { value: "Logo" } });
+
+    // Logo should still be visible
+    expect(screen.getByText("Logo")).toBeInTheDocument();
+    // PriceCard should not be visible (no match)
+    expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
+    // SubmitButton should not be visible
+    expect(screen.queryByText("SubmitButton")).not.toBeInTheDocument();
+    // Details screen should not be visible (no matching children)
+    expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  });
+
+  it("shows 'No matching components' when search has no results", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const searchInput = screen.getByTestId("tree-search-input");
+    fireEvent.change(searchInput, { target: { value: "zzzzz" } });
+    expect(screen.getByText("No matching components")).toBeInTheDocument();
+  });
+
+  it("restores full tree when search is cleared", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const searchInput = screen.getByTestId("tree-search-input");
+
+    // Filter
+    fireEvent.change(searchInput, { target: { value: "Logo" } });
+    expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
+
+    // Clear
+    fireEvent.change(searchInput, { target: { value: "" } });
+    // Screens are expanded by default, so top-level children are visible
+    expect(screen.getByText("PriceCard")).toBeInTheDocument();
+    expect(screen.getByText("HeaderBar")).toBeInTheDocument();
+  });
+
+  it("search is case-insensitive", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const searchInput = screen.getByTestId("tree-search-input");
+    fireEvent.change(searchInput, { target: { value: "logo" } });
+    expect(screen.getByText("Logo")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keyboard navigation
+// ---------------------------------------------------------------------------
+
+describe("ComponentTree keyboard navigation", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn()
+  };
+
+  it("navigates with ArrowDown and selects with Enter", () => {
+    const onSelect = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onSelect }));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+
+    // Arrow down once from Home
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    // Arrow down again
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    // Select current node
+    fireEvent.keyDown(tree, { key: "Enter" });
+
+    expect(onSelect).toHaveBeenCalled();
+  });
+
+  it("Space key also selects a node", () => {
+    const onSelect = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onSelect }));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+    fireEvent.keyDown(tree, { key: " " });
+
+    expect(onSelect).toHaveBeenCalled();
+  });
+});

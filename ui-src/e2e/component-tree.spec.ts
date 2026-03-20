@@ -301,5 +301,91 @@ test.describe("Component Tree E2E", () => {
         await expect(codeContent).toBeVisible();
       }
     });
+
+    test("search input filters tree nodes and preserves parent path", async ({ page }) => {
+      test.setTimeout(300_000);
+
+      const uiUrl = process.env["WORKSPACE_DEV_UI_URL"] ?? "http://127.0.0.1:1983/workspace/ui";
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await page.goto(uiUrl);
+
+      await expect(page.getByRole("heading", { name: "Workspace Dev" })).toBeVisible();
+
+      const figmaKeyInput = page.getByLabel("Figma file key");
+      await figmaKeyInput.clear();
+      await figmaKeyInput.fill(FIGMA_FILE_KEY);
+
+      const tokenInput = page.getByLabel("Figma access token");
+      await tokenInput.fill(FIGMA_ACCESS_TOKEN);
+
+      await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
+
+      await expect(async () => {
+        const completedBadges = page.locator("span").filter({ hasText: /^COMPLETED$/ });
+        const failedBadges = page.locator("span").filter({ hasText: /^FAILED$/ });
+        const completedCount = await completedBadges.count();
+        const failedCount = await failedBadges.count();
+        expect(completedCount + failedCount).toBeGreaterThan(0);
+      }).toPass({ timeout: 280_000, intervals: [3_000] });
+
+      const completedBadges = page.locator("span").filter({ hasText: /^COMPLETED$/ });
+      const jobCompleted = (await completedBadges.count()) > 0;
+
+      if (!jobCompleted) {
+        return;
+      }
+
+      const componentTree = page.getByTestId("component-tree");
+      await expect(componentTree).toBeVisible({ timeout: 10_000 });
+
+      // Search input should be present
+      const searchInput = page.getByTestId("tree-search-input");
+      await expect(searchInput).toBeVisible();
+
+      // Count initial tree items
+      const treeItems = componentTree.locator("[role='treeitem']");
+      const initialCount = await treeItems.count();
+      expect(initialCount).toBeGreaterThan(0);
+
+      // Get the name of the first child node to use as search term
+      const firstChild = componentTree.locator("[data-testid^='tree-node-']").first();
+      const firstChildVisible = (await firstChild.count()) > 0;
+
+      if (firstChildVisible) {
+        const childName = await firstChild.locator("span.truncate").textContent();
+        if (childName && childName.length > 2) {
+          // Type a partial name into search
+          const searchTerm = childName.slice(0, 3);
+          await searchInput.fill(searchTerm);
+
+          // Wait for filter to apply
+          await page.waitForTimeout(300);
+
+          // Filtered count should be less than or equal to initial
+          const filteredCount = await treeItems.count();
+          expect(filteredCount).toBeLessThanOrEqual(initialCount);
+          expect(filteredCount).toBeGreaterThan(0);
+
+          // Clear search
+          await searchInput.fill("");
+          await page.waitForTimeout(300);
+
+          // Should restore full tree
+          const restoredCount = await treeItems.count();
+          expect(restoredCount).toBe(initialCount);
+        }
+      }
+
+      // Test "no results" state
+      await searchInput.fill("zzzznonexistent");
+      await page.waitForTimeout(300);
+      await expect(componentTree.getByText("No matching components")).toBeVisible();
+
+      // Clear and verify tree comes back
+      await searchInput.fill("");
+      await page.waitForTimeout(300);
+      const finalCount = await treeItems.count();
+      expect(finalCount).toBe(initialCount);
+    });
   });
 });
