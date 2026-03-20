@@ -7,8 +7,8 @@ function RegistrationScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useRegistrationFormContext();
   return (
     <Container maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
-      <Typography variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
-      <Typography variant="h2" component="h2" sx={{ color: "#666b75", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Fill in your details to get started"}</Typography>
+      <Typography variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
+      <Typography variant="h2" component="h2" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Fill in your details to get started"}</Typography>
       <Table size="small" sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 2 }}>
         <TableHead>
           <TableRow>
@@ -48,7 +48,7 @@ function RegistrationScreenContent() {
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667, borderRadius: 1,
           "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
-          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#666b75" }
+          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
         }}
 
               slotProps={{
@@ -60,7 +60,7 @@ function RegistrationScreenContent() {
         }}
       />
       <FormControlLabel sx={{ width: "88.6%", maxWidth: "372px", minHeight: "24px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 1.333 }} control={<Checkbox />} label={"I agree to the Terms and Conditions"} />
-      <Paper sx={{ width: "88.6%", maxWidth: "372px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", bgcolor: "primary.main", borderRadius: 1 }}>
+      <Paper sx={{ width: "88.6%", maxWidth: "372px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", bgcolor: "error.main", borderRadius: 1 }}>
         <Typography variant="body1" sx={{ fontWeight: 600, color: "background.default", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
       </Paper>
     </Container>
