@@ -1,4 +1,9 @@
-import { useCallback, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+
+export interface HighlightRange {
+  startLine: number;
+  endLine: number;
+}
 
 interface CodePaneProps {
   files: Array<{ path: string; sizeBytes: number }>;
@@ -6,6 +11,7 @@ interface CodePaneProps {
   onSelectFile: (filePath: string) => void;
   fileContent: string | null;
   isLoadingContent: boolean;
+  highlightRange?: HighlightRange | null;
 }
 
 export function CodePane({
@@ -13,9 +19,11 @@ export function CodePane({
   selectedFile,
   onSelectFile,
   fileContent,
-  isLoadingContent
+  isLoadingContent,
+  highlightRange
 }: CodePaneProps): JSX.Element {
   const [copied, setCopied] = useState(false);
+  const highlightRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = useCallback(async () => {
     if (!fileContent) {
@@ -32,9 +40,18 @@ export function CodePane({
     }
   }, [fileContent]);
 
+  // Scroll to highlighted range when it changes
+  useEffect(() => {
+    if (highlightRange && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [highlightRange]);
+
   const codeFiles = files.filter(
     (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts")
   );
+
+  const lines = fileContent?.split("\n") ?? [];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -66,15 +83,39 @@ export function CodePane({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-white p-3">
+      <div className="min-h-0 flex-1 overflow-auto bg-white p-0">
         {isLoadingContent ? (
-          <p className="m-0 text-xs text-slate-500">Loading file…</p>
+          <p className="m-0 p-3 text-xs text-slate-500">Loading file…</p>
         ) : fileContent !== null ? (
-          <pre className="m-0 whitespace-pre-wrap text-xs leading-relaxed text-slate-800">
-            {fileContent}
-          </pre>
+          <div data-testid="code-content" className="min-w-0">
+            {lines.map((line, i) => {
+              const lineNum = i + 1;
+              const isHighlighted =
+                highlightRange != null &&
+                lineNum >= highlightRange.startLine &&
+                lineNum <= highlightRange.endLine;
+
+              return (
+                <div
+                  key={i}
+                  ref={isHighlighted && lineNum === highlightRange!.startLine ? highlightRef : undefined}
+                  data-testid={isHighlighted ? "highlighted-line" : undefined}
+                  className={`flex text-xs leading-relaxed ${
+                    isHighlighted ? "bg-emerald-50" : ""
+                  }`}
+                >
+                  <span className="inline-block w-10 shrink-0 pr-2 text-right text-slate-400 select-none">
+                    {lineNum}
+                  </span>
+                  <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-all text-slate-800">
+                    {line}
+                  </pre>
+                </div>
+              );
+            })}
+          </div>
         ) : (
-          <p className="m-0 text-xs text-slate-500">Select a file to view its source.</p>
+          <p className="m-0 p-3 text-xs text-slate-500">Select a file to view its source.</p>
         )}
       </div>
     </div>
