@@ -20,7 +20,11 @@ import {
   HEADING_FONT_SIZE_MIN,
   HEADING_FONT_WEIGHT_MIN,
   LARGE_HEADING_FONT_SIZE_MIN,
-  LARGE_HEADING_FONT_WEIGHT_MIN
+  LARGE_HEADING_FONT_WEIGHT_MIN,
+  CSS_GRID_SPAN_WIDTH_RATIO,
+  CSS_GRID_SPAN_HEIGHT_RATIO,
+  CSS_GRID_ASYMMETRIC_CV_THRESHOLD,
+  CSS_GRID_MIN_CHILDREN
 } from "./constants.js";
 import {
   normalizeOpacityForSx,
@@ -1746,8 +1750,14 @@ const GRID_EQUAL_WIDTH_DELTA_THRESHOLD_PX = 24;
 const GRID_MATRIX_MIN_OCCUPANCY = 0.55;
 
 interface GridLayoutDetection {
-  mode: "matrix" | "equal-row";
+  mode: "matrix" | "equal-row" | "css-grid";
   columnCount: number;
+  /** CSS Grid template columns (e.g., ["1fr", "2fr", "1fr"]). Only set for mode "css-grid". */
+  gridTemplateColumns?: string[];
+  /** CSS Grid template rows (e.g., ["auto", "1fr", "auto"]). Only set for mode "css-grid". */
+  gridTemplateRows?: string[];
+  /** Per-child grid placement. Key is child index in sorted order. */
+  childSpans?: Map<number, { columnStart: number; columnEnd: number; rowStart: number; rowEnd: number }>;
 }
 
 const isFiniteNumber = (value: number | undefined): value is number => {
@@ -1875,6 +1885,165 @@ export const detectGridLikeContainerLayout = (element: ScreenElementIR): GridLay
   return {
     mode: "equal-row",
     columnCount: columnClusters.length
+  };
+};
+
+/**
+ * Detects CSS Grid layout patterns in grid-classified elements.
+ * Identifies spanning cells, asymmetric columns, and named grid areas.
+ * Returns CSS Grid metadata when the layout is better served by CSS Grid
+ * than by MUI's flex-based Grid component.
+ */
+export const detectCssGridLayout = (element: ScreenElementIR): GridLayoutDetection | null => {
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "NONE");
+  if (children.length < CSS_GRID_MIN_CHILDREN) {
+    return null;
+  }
+
+  // Only detect CSS Grid for elements without Figma auto-layout (absolute positioning)
+  // or for explicitly grid-classified elements. Flex-based layouts should stay as flex.
+  const layoutMode = element.layoutMode ?? "NONE";
+  if (layoutMode !== "NONE" && element.type !== "grid") {
+    return null;
+  }
+
+  const positionedChildren = children.filter(
+    (child) => isFiniteNumber(child.x) && isFiniteNumber(child.y) && isFiniteNumber(child.width) && isFiniteNumber(child.height)
+  );
+  if (positionedChildren.length < CSS_GRID_MIN_CHILDREN) {
+    return null;
+  }
+
+  // Cluster children into row and column positions
+  const rowClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.y ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+  const columnClusters = clusterAxisValues({
+    values: positionedChildren.map((child) => child.x ?? 0),
+    tolerance: GRID_CLUSTER_TOLERANCE_PX
+  });
+
+  // Require at least 2 rows and 2 columns for a genuine 2D grid layout
+  if (rowClusters.length < 2 || columnClusters.length < 2) {
+    return null;
+  }
+
+  // Compute average column width from cluster positions
+  const columnWidths: number[] = [];
+  for (let i = 0; i < columnClusters.length; i++) {
+    const clusterX = columnClusters[i] ?? 0;
+    const nextClusterX = columnClusters[i + 1];
+    if (nextClusterX !== undefined) {
+      columnWidths.push(nextClusterX - clusterX);
+    } else {
+      // Last column — estimate from children in that column
+      const childrenInColumn = positionedChildren.filter(
+        (child) => toNearestClusterIndex({ value: child.x ?? 0, clusters: columnClusters }) === i
+      );
+      const maxWidth = Math.max(...childrenInColumn.map((c) => c.width ?? 0));
+      columnWidths.push(maxWidth > 0 ? maxWidth : columnWidths.at(-1) ?? 100);
+    }
+  }
+
+  // Check for asymmetric columns
+  const avgColumnWidth = columnWidths.reduce((sum, w) => sum + w, 0) / columnWidths.length;
+  const widthVariance = columnWidths.reduce((sum, w) => sum + (w - avgColumnWidth) ** 2, 0) / columnWidths.length;
+  const widthCv = avgColumnWidth > 0 ? Math.sqrt(widthVariance) / avgColumnWidth : 0;
+  const isAsymmetric = widthCv > CSS_GRID_ASYMMETRIC_CV_THRESHOLD;
+
+  // Check for spanning children
+  const childSpans = new Map<number, { columnStart: number; columnEnd: number; rowStart: number; rowEnd: number }>();
+  let hasSpanning = false;
+
+  for (let childIdx = 0; childIdx < positionedChildren.length; childIdx++) {
+    const child = positionedChildren[childIdx];
+    if (!child) {
+      continue;
+    }
+    const childX = child.x ?? 0;
+    const childY = child.y ?? 0;
+    const childWidth = child.width ?? 0;
+    const childHeight = child.height ?? 0;
+    const childRight = childX + childWidth;
+    const childBottom = childY + childHeight;
+
+    const colStart = toNearestClusterIndex({ value: childX, clusters: columnClusters });
+    const rowStart = toNearestClusterIndex({ value: childY, clusters: rowClusters });
+
+    // Determine column span by checking how many column clusters this child covers
+    let colEnd = colStart + 1;
+    for (let c = colStart + 1; c < columnClusters.length; c++) {
+      const clusterCenter = columnClusters[c] ?? 0;
+      if (childRight > clusterCenter + GRID_CLUSTER_TOLERANCE_PX) {
+        colEnd = c + 1;
+      }
+    }
+    // If child width significantly exceeds average column width, it spans
+    if (childWidth > avgColumnWidth * CSS_GRID_SPAN_WIDTH_RATIO && colEnd - colStart <= 1) {
+      colEnd = Math.min(colStart + Math.round(childWidth / avgColumnWidth), columnClusters.length);
+    }
+
+    // Determine row span
+    let rowEnd = rowStart + 1;
+    for (let r = rowStart + 1; r < rowClusters.length; r++) {
+      const clusterCenter = rowClusters[r] ?? 0;
+      if (childBottom > clusterCenter + GRID_CLUSTER_TOLERANCE_PX) {
+        rowEnd = r + 1;
+      }
+    }
+    // Check row spanning by height
+    const avgRowHeight = rowClusters.length > 1
+      ? ((rowClusters.at(-1) ?? 0) - (rowClusters[0] ?? 0)) / (rowClusters.length - 1)
+      : childHeight;
+    if (childHeight > avgRowHeight * CSS_GRID_SPAN_HEIGHT_RATIO && rowEnd - rowStart <= 1 && avgRowHeight > 0) {
+      rowEnd = Math.min(rowStart + Math.round(childHeight / avgRowHeight), rowClusters.length);
+    }
+
+    if (colEnd - colStart > 1 || rowEnd - rowStart > 1) {
+      hasSpanning = true;
+    }
+
+    // Find original index in children array
+    const originalIndex = children.indexOf(child);
+    childSpans.set(originalIndex >= 0 ? originalIndex : childIdx, {
+      columnStart: colStart + 1,
+      columnEnd: colEnd + 1,
+      rowStart: rowStart + 1,
+      rowEnd: rowEnd + 1
+    });
+  }
+
+  // Also check for named grid areas from child names
+  const hasNamedAreas = children.some((child) => {
+    const childName = child.name.toLowerCase();
+    return childName.includes("grid-area") || childName.includes("gridarea") ||
+           childName.includes("header") || childName.includes("sidebar") || childName.includes("footer") ||
+           (child.cssGridHints?.gridArea !== undefined);
+  });
+
+  // Only use CSS Grid if there's a reason to prefer it over MUI Grid
+  if (!hasSpanning && !isAsymmetric && !hasNamedAreas) {
+    return null;
+  }
+
+  // Build gridTemplateColumns from column widths as fr units
+  const totalWidth = columnWidths.reduce((sum, w) => sum + w, 0);
+  const gridTemplateColumns = columnWidths.map((w) => {
+    const ratio = totalWidth > 0 ? w / totalWidth : 1 / columnWidths.length;
+    const fr = Math.max(1, Math.round(ratio * columnClusters.length));
+    return `${fr}fr`;
+  });
+
+  // Build gridTemplateRows — use "auto" for each detected row
+  const gridTemplateRows = rowClusters.map(() => "auto");
+
+  return {
+    mode: "css-grid",
+    columnCount: columnClusters.length,
+    gridTemplateColumns,
+    gridTemplateRows,
+    childSpans
   };
 };
 

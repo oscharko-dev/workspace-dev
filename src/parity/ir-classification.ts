@@ -68,7 +68,9 @@ type BooleanContextKey =
   | "hasStrongImageName"
   | "hasIconLikeName"
   | "isLikelyGridByStructure"
-  | "isLikelyListByStructure";
+  | "isLikelyListByStructure"
+  | "hasCssGridNamingHint"
+  | "hasSpanningChildHint";
 
 interface NodeClassificationContext<TNode extends ElementClassificationNode> {
   node: TNode;
@@ -99,6 +101,8 @@ interface NodeClassificationContext<TNode extends ElementClassificationNode> {
   columnBuckets: number;
   isLikelyGridByStructure: boolean;
   isLikelyListByStructure: boolean;
+  hasCssGridNamingHint: boolean;
+  hasSpanningChildHint: boolean;
 }
 
 interface NodeClassificationDependencies<TNode extends ElementClassificationNode> {
@@ -294,6 +298,30 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
   const isLikelyGridByStructure = childCount >= GRID_MIN_CHILDREN && rowBuckets >= GRID_MIN_ROW_BUCKETS && columnBuckets >= GRID_MIN_COLUMN_BUCKETS && node.layoutMode !== "VERTICAL";
   const isLikelyListByStructure = !hasVisualSurface && childCount >= LIST_MIN_CHILDREN && textChildCount >= LIST_MIN_TEXT_CHILDREN && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
 
+  // CSS Grid naming hints — detect Figma naming conventions for grid areas/spanning
+  const hasCssGridNamingHint = hasAnySubstring(name, [
+    "grid-area", "gridarea", "grid-template", "gridtemplate",
+    "cssgrid", "css-grid", "grid-column", "grid-row"
+  ]) || children.some((child) => {
+    const childName = (child.name ?? "").toLowerCase();
+    return hasAnySubstring(childName, ["grid-area", "gridarea", "span-", "col-span", "row-span", "colspan", "rowspan"]);
+  });
+
+  // Spanning child detection — children whose width significantly exceeds the average
+  const hasSpanningChildHint = (() => {
+    if (childCount < 3) {
+      return false;
+    }
+    const childWidths = children
+      .map((child) => child.absoluteBoundingBox?.width)
+      .filter((w): w is number => typeof w === "number" && Number.isFinite(w) && w > 0);
+    if (childWidths.length < 3) {
+      return false;
+    }
+    const averageWidth = childWidths.reduce((sum, w) => sum + w, 0) / childWidths.length;
+    return childWidths.some((w) => w > averageWidth * 1.6);
+  })();
+
   return {
     node,
     name,
@@ -322,7 +350,9 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
     rowBuckets,
     columnBuckets,
     isLikelyGridByStructure,
-    isLikelyListByStructure
+    isLikelyListByStructure,
+    hasCssGridNamingHint,
+    hasSpanningChildHint
   };
 };
 
@@ -424,6 +454,10 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
   { type: "list", priority: 141, words: ["list"] },
   { type: "list", priority: 142, requires: { hasListishChildNames: true } },
   { type: "list", priority: 143, requires: { isLikelyListByStructure: true } },
+
+  // --- Priority 148–149: grid (CSS Grid naming / spanning hints) ---
+  { type: "grid", priority: 148, requires: { hasCssGridNamingHint: true, hasChildren: true } },
+  { type: "grid", priority: 149, requires: { isLikelyGridByStructure: true, hasSpanningChildHint: true } },
 
   // --- Priority 150–159: grid (keyword + structural) ---
   { type: "grid", priority: 150, keywords: ["muigrid", "grid2"] },
