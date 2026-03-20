@@ -54,6 +54,7 @@ import {
   detectDialogOverlayPattern,
   detectNavigationBarPattern,
   detectGridLikeContainerLayout,
+  detectCssGridLayout,
   detectRepeatedListPattern,
   ensureTabsStateModel,
   ensureDialogStateModel,
@@ -2130,7 +2131,130 @@ ${renderedActions}
 ${indent}</BottomNavigation>`;
 };
 
+/**
+ * Renders a CSS Grid layout using Box with display: "grid" sx props.
+ * Used when the detection identifies spanning cells, asymmetric columns,
+ * or named grid areas — patterns that require true CSS Grid rather than
+ * MUI's flex-based Grid component.
+ */
+export const renderCssGridLayout = ({
+  element,
+  depth,
+  parent,
+  context,
+  cssGridDetection
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  cssGridDetection: {
+    gridTemplateColumns?: string[];
+    gridTemplateRows?: string[];
+    childSpans?: Map<number, { columnStart: number; columnEnd: number; rowStart: number; rowEnd: number }>;
+  };
+}): string | null => {
+  const children = element.children ?? [];
+  if (children.length < 2) {
+    return null;
+  }
+
+  registerMuiImports(context, "Box");
+  const indent = "  ".repeat(depth);
+  const gap =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 2
+      : 2;
+
+  const baseSx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: true
+  });
+
+  // Build CSS Grid sx properties
+  const gridSxParts: string[] = [`display: "grid"`];
+  if (cssGridDetection.gridTemplateColumns && cssGridDetection.gridTemplateColumns.length > 0) {
+    gridSxParts.push(`gridTemplateColumns: "${cssGridDetection.gridTemplateColumns.join(" ")}"`);
+  }
+  if (cssGridDetection.gridTemplateRows && cssGridDetection.gridTemplateRows.length > 0) {
+    gridSxParts.push(`gridTemplateRows: "${cssGridDetection.gridTemplateRows.join(" ")}"`);
+  }
+  gridSxParts.push(`gap: ${gap}`);
+
+  const combinedSx = baseSx
+    ? `${gridSxParts.join(", ")}, ${baseSx}`
+    : gridSxParts.join(", ");
+
+  const renderedChildren = children
+    .map((child, index) => {
+      const span = cssGridDetection.childSpans?.get(index);
+      const gridArea = child.cssGridHints?.gridArea;
+      const childContent = renderElement(
+        child,
+        depth + 2,
+        {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          name: element.name,
+          fillColor: element.fillColor,
+          fillGradient: element.fillGradient,
+          layoutMode: element.layoutMode ?? "NONE"
+        },
+        context
+      );
+      const resolvedChildContent = childContent ?? (() => {
+        registerMuiImports(context, "Box");
+        return `${indent}    <Box />`;
+      })();
+
+      // Build child placement sx
+      const childSxParts: string[] = [];
+      if (gridArea) {
+        childSxParts.push(`gridArea: "${gridArea}"`);
+      } else if (span && (span.columnEnd - span.columnStart > 1 || span.rowEnd - span.rowStart > 1)) {
+        if (span.columnEnd - span.columnStart > 1) {
+          childSxParts.push(`gridColumn: "${span.columnStart} / ${span.columnEnd}"`);
+        }
+        if (span.rowEnd - span.rowStart > 1) {
+          childSxParts.push(`gridRow: "${span.rowStart} / ${span.rowEnd}"`);
+        }
+      }
+
+      if (childSxParts.length > 0) {
+        return `${indent}  <Box sx={{ ${childSxParts.join(", ")} }}>
+${resolvedChildContent}
+${indent}  </Box>`;
+      }
+      return resolvedChildContent;
+    })
+    .join("\n");
+
+  return `${indent}<Box sx={{ ${combinedSx} }}>
+${renderedChildren}
+${indent}</Box>`;
+};
+
 export const renderGrid = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  // Try CSS Grid first for complex layouts (spanning, asymmetric, named areas)
+  const cssGridDetection = detectCssGridLayout(element);
+  if (cssGridDetection) {
+    const cssGridRendered = renderCssGridLayout({
+      element,
+      depth,
+      parent,
+      context,
+      cssGridDetection
+    });
+    if (cssGridRendered) {
+      return cssGridRendered;
+    }
+  }
+
+  // Fall back to MUI Grid for simple layouts
   const rendered = renderGridLayout({
     element,
     depth,
@@ -2690,6 +2814,22 @@ export const tryRenderIconLikeContainer: ContainerRenderStrategy = (input) => {
 };
 
 export const tryRenderGridLikeContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  // Try CSS Grid first for containers with spanning/asymmetric patterns
+  const cssGridDetection = detectCssGridLayout(element);
+  if (cssGridDetection) {
+    const cssGridRendered = renderCssGridLayout({
+      element,
+      depth,
+      parent,
+      context,
+      cssGridDetection
+    });
+    if (cssGridRendered) {
+      return asContainerStrategyMatch(cssGridRendered);
+    }
+  }
+
+  // Fall back to MUI Grid for simpler grid patterns
   const detectedGridLayout = detectGridLikeContainerLayout(element);
   if (!detectedGridLayout) {
     return undefined;

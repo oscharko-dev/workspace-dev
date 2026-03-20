@@ -64,6 +64,7 @@ export {
   loadIconFallbackResolver,
   resolveFallbackIconComponent,
   detectGridLikeContainerLayout,
+  detectCssGridLayout,
   createDeterministicScreenFile,
   createDeterministicAppFile,
   flattenElements,
