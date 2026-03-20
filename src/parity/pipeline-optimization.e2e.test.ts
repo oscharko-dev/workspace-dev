@@ -223,7 +223,7 @@ test("E2E: generated artifacts include a valid theme file", { skip: skipReason }
     return;
   }
 
-  assert.ok(themeContent.includes("createTheme"), "Theme must use createTheme");
+  assert.ok(themeContent.includes("extendTheme"), "Theme must use extendTheme");
   assert.ok(themeContent.includes("palette"), "Theme must define palette");
   assert.ok(themeContent.includes("typography"), "Theme must define typography");
 });
