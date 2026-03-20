@@ -159,19 +159,7 @@ export const indexScreenNodeIds = ({
 };
 
 export const countElements = (elements: ScreenElementIR[]): number => {
-  let total = 0;
-  const stack = [...elements];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) {
-      continue;
-    }
-    total += 1;
-    if (current.children?.length) {
-      stack.push(...current.children);
-    }
-  }
-  return total;
+  return analyzeElementsForBudgeting(elements).totalCount;
 };
 
 export interface TruncationCandidate {
@@ -302,34 +290,7 @@ export const resolveTruncationPriority = (
 };
 
 export const collectTruncationCandidates = (elements: ScreenElementIR[]): TruncationCandidate[] => {
-  const candidates: TruncationCandidate[] = [];
-  const ancestorIds: string[] = [];
-  let traversalIndex = 0;
-
-  const visit = (element: ScreenElementIR, depth: number): void => {
-    const { score, mustKeep } = resolveTruncationPriority(element);
-    candidates.push({
-      id: element.id,
-      elementType: element.type,
-      ancestorIds: [...ancestorIds],
-      depth,
-      traversalIndex,
-      area: resolveElementArea(element),
-      score,
-      mustKeep
-    });
-    traversalIndex += 1;
-    ancestorIds.push(element.id);
-    for (const child of element.children ?? []) {
-      visit(child, depth + 1);
-    }
-    ancestorIds.pop();
-  };
-
-  for (const element of elements) {
-    visit(element, 0);
-  }
-  return candidates;
+  return analyzeElementsForBudgeting(elements).truncationCandidates;
 };
 
 export const sortCandidatesByPriority = (candidates: TruncationCandidate[]): TruncationCandidate[] => {
@@ -379,33 +340,77 @@ export const INTERACTIVE_ELEMENT_TYPES: ReadonlySet<ScreenElementIR["type"]> = n
   "tab", "drawer", "breadcrumbs", "navigation", "stepper"
 ]);
 
+export interface ElementTraversalAnalysis {
+  totalCount: number;
+  interactiveCount: number;
+  truncationCandidates: TruncationCandidate[];
+}
+
+/**
+ * Single pre-order traversal used by budgeting/truncation helpers.
+ * This keeps candidate ranking deterministic while avoiding duplicate passes.
+ */
+export const analyzeElementsForBudgeting = (elements: ScreenElementIR[]): ElementTraversalAnalysis => {
+  const truncationCandidates: TruncationCandidate[] = [];
+  const ancestorIds: string[] = [];
+  let traversalIndex = 0;
+  let totalCount = 0;
+  let interactiveCount = 0;
+
+  const visit = (element: ScreenElementIR, depth: number): void => {
+    totalCount += 1;
+    if (INTERACTIVE_ELEMENT_TYPES.has(element.type)) {
+      interactiveCount += 1;
+    }
+
+    const { score, mustKeep } = resolveTruncationPriority(element);
+    truncationCandidates.push({
+      id: element.id,
+      elementType: element.type,
+      ancestorIds: [...ancestorIds],
+      depth,
+      traversalIndex,
+      area: resolveElementArea(element),
+      score,
+      mustKeep
+    });
+    traversalIndex += 1;
+
+    ancestorIds.push(element.id);
+    for (const child of element.children ?? []) {
+      visit(child, depth + 1);
+    }
+    ancestorIds.pop();
+  };
+
+  for (const element of elements) {
+    visit(element, 0);
+  }
+
+  return {
+    totalCount,
+    interactiveCount,
+    truncationCandidates
+  };
+};
+
 export const ADAPTIVE_BUDGET_MAX_SCALE = 1.5;
 export const ADAPTIVE_BUDGET_INTERACTIVE_THRESHOLD = 0.15;
 
 export const countInteractiveElements = (elements: ScreenElementIR[]): number => {
-  let count = 0;
-  const stack = [...elements];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) continue;
-    if (INTERACTIVE_ELEMENT_TYPES.has(current.type)) {
-      count += 1;
-    }
-    if (current.children?.length) {
-      stack.push(...current.children);
-    }
-  }
-  return count;
+  return analyzeElementsForBudgeting(elements).interactiveCount;
 };
 
 export const resolveAdaptiveBudget = ({
   elements,
   originalCount,
-  baseBudget
+  baseBudget,
+  interactiveCount
 }: {
   elements: ScreenElementIR[];
   originalCount: number;
   baseBudget: number;
+  interactiveCount?: number;
 }): number => {
   if (originalCount <= baseBudget) {
     return baseBudget;
@@ -413,8 +418,8 @@ export const resolveAdaptiveBudget = ({
   if (baseBudget < DEFAULT_SCREEN_ELEMENT_BUDGET) {
     return baseBudget;
   }
-  const interactiveCount = countInteractiveElements(elements);
-  const interactiveRatio = originalCount > 0 ? interactiveCount / originalCount : 0;
+  const resolvedInteractiveCount = interactiveCount ?? countInteractiveElements(elements);
+  const interactiveRatio = originalCount > 0 ? resolvedInteractiveCount / originalCount : 0;
   if (interactiveRatio >= ADAPTIVE_BUDGET_INTERACTIVE_THRESHOLD) {
     const scale = 1 + Math.min(interactiveRatio, 0.5);
     return Math.trunc(Math.min(baseBudget * scale, baseBudget * ADAPTIVE_BUDGET_MAX_SCALE));
@@ -430,10 +435,12 @@ export interface TruncationResult {
 
 export const truncateElementsToBudget = ({
   elements,
-  budget
+  budget,
+  candidates
 }: {
   elements: ScreenElementIR[];
   budget: number;
+  candidates?: TruncationCandidate[];
 }): TruncationResult => {
   if (budget <= 0 || elements.length === 0) {
     return {
@@ -443,18 +450,18 @@ export const truncateElementsToBudget = ({
     };
   }
 
-  const candidates = collectTruncationCandidates(elements);
-  if (candidates.length <= budget) {
+  const resolvedCandidates = candidates ?? collectTruncationCandidates(elements);
+  if (resolvedCandidates.length <= budget) {
     return {
       elements,
-      retainedCount: candidates.length,
+      retainedCount: resolvedCandidates.length,
       droppedTypeCounts: {}
     };
   }
 
   const selectedIds = new Set<string>();
   let remaining = budget;
-  const sortedCandidates = sortCandidatesByPriority(candidates);
+  const sortedCandidates = sortCandidatesByPriority(resolvedCandidates);
 
   const selectCandidate = (candidate: TruncationCandidate): void => {
     if (remaining <= 0 || selectedIds.has(candidate.id)) {
@@ -488,14 +495,14 @@ export const truncateElementsToBudget = ({
   }
 
   if (remaining > 0 && selectedIds.size === 0) {
-    const fallbackCandidate = candidates.find((candidate) => candidate.depth === 0) ?? candidates[0];
+    const fallbackCandidate = resolvedCandidates.find((candidate) => candidate.depth === 0) ?? resolvedCandidates[0];
     if (fallbackCandidate) {
       selectCandidate(fallbackCandidate);
     }
   }
 
   const droppedTypeCounts: Record<string, number> = {};
-  for (const candidate of candidates) {
+  for (const candidate of resolvedCandidates) {
     if (!selectedIds.has(candidate.id)) {
       droppedTypeCounts[candidate.elementType] = (droppedTypeCounts[candidate.elementType] ?? 0) + 1;
     }
@@ -835,15 +842,21 @@ export const mapScreenCandidate = ({
     }
   }
 
-  const originalElements = countElements(mappedChildren);
+  const mappedElementAnalysis = analyzeElementsForBudgeting(mappedChildren);
+  const originalElements = mappedElementAnalysis.totalCount;
   const adaptiveBudget = resolveAdaptiveBudget({
     elements: mappedChildren,
     originalCount: originalElements,
-    baseBudget: screenElementBudget
+    baseBudget: screenElementBudget,
+    interactiveCount: mappedElementAnalysis.interactiveCount
   });
   const { elements: budgetedChildren, retainedCount, droppedTypeCounts } =
     originalElements > adaptiveBudget
-      ? truncateElementsToBudget({ elements: mappedChildren, budget: adaptiveBudget })
+      ? truncateElementsToBudget({
+          elements: mappedChildren,
+          budget: adaptiveBudget,
+          candidates: mappedElementAnalysis.truncationCandidates
+        })
       : { elements: mappedChildren, retainedCount: originalElements, droppedTypeCounts: {} as Record<string, number> };
 
   const width = sourceNode.absoluteBoundingBox?.width;
