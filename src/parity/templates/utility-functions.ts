@@ -2,7 +2,11 @@
 // utility-functions.ts — Shared helpers: spacing, colors, fonts, sx, text
 // Extracted from generator-templates.ts (issue #298)
 // ---------------------------------------------------------------------------
+import {
+  isTextElement
+} from "../types.js";
 import type {
+  TextElementIR,
   DesignIR,
   DesignTokens,
   ScreenElementIR,
@@ -1224,7 +1228,7 @@ export const firstText = (element: ScreenElementIR, visited: Set<ScreenElementIR
     return undefined;
   }
   visited.add(element);
-  if (element.type === "text" && element.text?.trim()) {
+  if (isTextElement(element) && element.text.trim()) {
     return element.text.trim();
   }
   for (const child of element.children ?? []) {
@@ -1282,12 +1286,12 @@ export const firstVectorColor = (element: ScreenElementIR, visited: Set<ScreenEl
   return undefined;
 };
 
-export const collectTextNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+export const collectTextNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): TextElementIR[] => {
   if (visited.has(element)) {
     return [];
   }
   visited.add(element);
-  const local = element.type === "text" && element.text?.trim() ? [element] : [];
+  const local = isTextElement(element) && element.text.trim() ? [element] : [];
   const nested = (element.children ?? []).flatMap((child) => collectTextNodes(child, visited));
   return [...local, ...nested];
 };
@@ -1388,6 +1392,5 @@ export const toAlertSeverityFromName = (name: string): "error" | "warning" | "in
   }
   return "info";
 };
-
 
 

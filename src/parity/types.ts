@@ -55,10 +55,12 @@ export type {
   MappingPolicy
 } from "./types-mapping.js";
 
-export { validateDesignIR } from "./types-ir.js";
+export { validateDesignIR, isTextElement, isNonTextElement } from "./types-ir.js";
 
 export type {
+  BaseElementIR,
   CounterAxisAlignItems,
+  CssGridChildHints,
   DepthTruncatedScreenMetric,
   DesignIR,
   DesignManifest,
@@ -75,9 +77,16 @@ export type {
   GeneratedFile,
   GenerationMetrics,
   PrimaryAxisAlignItems,
+  ElementPrototypeNavigationIR,
+  ElementSpacingIR,
+  NonTextElementIR,
+  NonTextElementType,
   ResponsiveBreakpoint,
   ScreenElementCountMetric,
   ScreenElementIR,
+  ScreenElementIRTextRequiresText,
+  ScreenElementType,
+  TextElementIR,
   ScreenIR,
   ScreenResponsiveIR,
   ScreenResponsiveLayoutOverride,

@@ -17,7 +17,6 @@
           "id": "header",
           "name": "Title",
           "nodeType": "TEXT",
-          "type": "text",
           "layoutMode": "NONE",
           "gap": 0,
           "padding": {
@@ -26,6 +25,7 @@
             "bottom": 0,
             "left": 0
           },
+          "type": "text",
           "text": "Dashboard",
           "x": 16,
           "y": 16,
@@ -42,7 +42,6 @@
           "id": "card-container",
           "name": "Cards Grid",
           "nodeType": "FRAME",
-          "type": "table",
           "layoutMode": "HORIZONTAL",
           "gap": 16,
           "padding": {
@@ -53,6 +52,7 @@
           },
           "primaryAxisAlignItems": "MIN",
           "counterAxisAlignItems": "MIN",
+          "type": "table",
           "x": 16,
           "y": 68,
           "width": 992,
@@ -62,7 +62,6 @@
               "id": "card-1",
               "name": "MuiCardRoot",
               "nodeType": "FRAME",
-              "type": "table",
               "layoutMode": "VERTICAL",
               "gap": 8,
               "padding": {
@@ -71,6 +70,7 @@
                 "bottom": 16,
                 "left": 16
               },
+              "type": "table",
               "x": 16,
               "y": 68,
               "width": 320,
@@ -83,7 +83,6 @@
                   "id": "card-1-title",
                   "name": "Heading",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -92,6 +91,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Revenue",
                   "x": 32,
                   "y": 84,
@@ -108,7 +108,6 @@
                   "id": "card-1-inner",
                   "name": "Inner Container",
                   "nodeType": "FRAME",
-                  "type": "stack",
                   "layoutMode": "VERTICAL",
                   "gap": 4,
                   "padding": {
@@ -117,6 +116,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "stack",
                   "x": 32,
                   "y": 116,
                   "width": 288,
@@ -126,7 +126,6 @@
                       "id": "card-1-value",
                       "name": "Value",
                       "nodeType": "TEXT",
-                      "type": "text",
                       "layoutMode": "NONE",
                       "gap": 0,
                       "padding": {
@@ -135,6 +134,7 @@
                         "bottom": 0,
                         "left": 0
                       },
+                      "type": "text",
                       "text": "$42,500",
                       "x": 32,
                       "y": 116,
@@ -151,7 +151,6 @@
                       "id": "card-1-detail-wrapper",
                       "name": "Detail Wrapper",
                       "nodeType": "FRAME",
-                      "type": "stack",
                       "layoutMode": "VERTICAL",
                       "gap": 4,
                       "padding": {
@@ -160,6 +159,7 @@
                         "bottom": 0,
                         "left": 0
                       },
+                      "type": "stack",
                       "x": 32,
                       "y": 160,
                       "width": 288,
@@ -169,7 +169,6 @@
                           "id": "card-1-detail-row",
                           "name": "Detail Row",
                           "nodeType": "FRAME",
-                          "type": "stack",
                           "layoutMode": "HORIZONTAL",
                           "gap": 8,
                           "padding": {
@@ -180,6 +179,7 @@
                           },
                           "primaryAxisAlignItems": "SPACE_BETWEEN",
                           "counterAxisAlignItems": "CENTER",
+                          "type": "stack",
                           "x": 32,
                           "y": 160,
                           "width": 288,
@@ -189,7 +189,6 @@
                               "id": "card-1-detail-label",
                               "name": "Detail Label",
                               "nodeType": "TEXT",
-                              "type": "text",
                               "layoutMode": "NONE",
                               "gap": 0,
                               "padding": {
@@ -198,6 +197,7 @@
                                 "bottom": 0,
                                 "left": 0
                               },
+                              "type": "text",
                               "text": "+12.5% from last month",
                               "x": 32,
                               "y": 160,
@@ -222,7 +222,6 @@
               "id": "card-2",
               "name": "MuiCardRoot",
               "nodeType": "FRAME",
-              "type": "card",
               "layoutMode": "VERTICAL",
               "gap": 8,
               "padding": {
@@ -231,6 +230,7 @@
                 "bottom": 16,
                 "left": 16
               },
+              "type": "card",
               "x": 352,
               "y": 68,
               "width": 320,
@@ -243,7 +243,6 @@
                   "id": "card-2-title",
                   "name": "Heading",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -252,6 +251,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "Users",
                   "x": 368,
                   "y": 84,
@@ -268,7 +268,6 @@
                   "id": "card-2-value",
                   "name": "Value",
                   "nodeType": "TEXT",
-                  "type": "text",
                   "layoutMode": "NONE",
                   "gap": 0,
                   "padding": {
@@ -277,6 +276,7 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "type": "text",
                   "text": "1,250",
                   "x": 368,
                   "y": 116,

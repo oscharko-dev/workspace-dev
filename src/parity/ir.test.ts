@@ -2115,6 +2115,30 @@ test("figmaToDesignIrWithOptions applies MCP enrichment hints", () => {
   assert.equal(node?.type, "input");
 });
 
+test("figmaToDesignIrWithOptions retags semantic text hints with a valid text payload", () => {
+  const ir = figmaToDesignIrWithOptions(createSampleFigmaFile(), {
+    mcpEnrichment: {
+      sourceMode: "mcp",
+      toolNames: ["figma-mcp"],
+      nodeHints: [
+        {
+          nodeId: "i1",
+          semanticName: "Kontostand Titel",
+          semanticType: "headline text",
+          sourceTools: ["figma-mcp"]
+        }
+      ]
+    }
+  });
+
+  const flattened = ir.screens.flatMap((screen) => screen.children);
+  const node = flattened.find((entry) => entry.id === "i1");
+  assert.ok(node);
+  assert.equal(node?.type, "text");
+  assert.equal(typeof node?.text, "string");
+  assert.equal((node?.text?.trim().length ?? 0) > 0, true);
+});
+
 test("figmaToDesignIrWithOptions classifies extended element types deterministically", () => {
   const ir = figmaToDesignIrWithOptions(createElementTypeMatrixFigmaFile());
   const byId = new Map(ir.screens[0]?.children.map((child) => [child.id, child.type]));

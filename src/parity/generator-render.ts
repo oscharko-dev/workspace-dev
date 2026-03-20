@@ -4,6 +4,9 @@
 // ---------------------------------------------------------------------------
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  isTextElement
+} from "./types.js";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -247,13 +250,14 @@ const resolvePromotionMode = ({
   if (children.length === 0) {
     return { mode: "none", guarded: false };
   }
+  const ownText = element.text?.trim();
 
   const blockedByGuardrails = Boolean(
     element.prototypeNavigation ||
       isIconLikeNode(element) ||
       isSemanticIconWrapper(element) ||
       hasPromotionBlockingVisualStyle(element) ||
-      element.text?.trim() ||
+      ownText ||
       children.some((child) => {
         return (
           Boolean(child.prototypeNavigation) ||
@@ -299,8 +303,8 @@ const simplifyNode = ({
     children: simplifiedChildren
   };
 
-  if (simplified.type === "text") {
-    return simplified.text?.trim() ? simplified : null;
+  if (isTextElement(simplified)) {
+    return simplified.text.trim() ? simplified : null;
   }
 
   if (simplified.type === "image") {
@@ -316,7 +320,8 @@ const simplifyNode = ({
   }
 
   const hasChildren = simplifiedChildren.length > 0;
-  if (!hasChildren && !hasVisualStyle(simplified) && !simplified.text?.trim()) {
+  const simplifiedOwnText = simplified.text?.trim();
+  if (!hasChildren && !hasVisualStyle(simplified) && !simplifiedOwnText) {
     if (simplified.prototypeNavigation) {
       return simplified;
     }
@@ -430,7 +435,8 @@ const isRtlLocale = (locale: string | undefined): boolean => {
 
 const toSortSemanticBucket = (element: ScreenElementIR): number => {
   const normalizedName = normalizeInputSemanticText(element.name || "");
-  const normalizedText = normalizeInputSemanticText(element.text?.trim() || "");
+  const ownText = isTextElement(element) ? element.text.trim() : element.text?.trim() || "";
+  const normalizedText = normalizeInputSemanticText(ownText);
   const combinedSemanticText = `${normalizedName} ${normalizedText}`.trim();
   const hasHeadingHint = HEADING_NAME_HINTS.some((hint) => combinedSemanticText.includes(hint));
   const fontSize = typeof element.fontSize === "number" && Number.isFinite(element.fontSize) ? element.fontSize : 0;
@@ -445,7 +451,7 @@ const toSortSemanticBucket = (element: ScreenElementIR): number => {
     return 1;
   }
 
-  const hasReadableText = Boolean(firstText(element)?.trim() || element.text?.trim());
+  const hasReadableText = Boolean(firstText(element)?.trim() || ownText);
   const isDecorativeImage =
     element.type === "image" &&
     A11Y_IMAGE_DECORATIVE_HINTS.some((hint) => normalizedName.includes(hint));
@@ -670,7 +676,7 @@ export const hasMeaningfulTextDescendants = ({
     return cached;
   }
   const resolved = collectTextNodes(element).some((node) => {
-    const text = node.text?.trim() ?? "";
+    const text = node.text.trim();
     if (!text) {
       return false;
     }
