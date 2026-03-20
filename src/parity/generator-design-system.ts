@@ -764,11 +764,13 @@ export const deriveThemeComponentDefaultsFromIr = ({
   });
 };
 
-export const createDeterministicThemeFile = (ir: DesignIR): GeneratedFile => {
+export const createDeterministicThemeFile = (ir: DesignIR, generationLocale?: string): GeneratedFile => {
   return fallbackThemeFile(
     ir,
     deriveThemeComponentDefaultsFromIr({
-      ir
-    })
+      ir,
+      ...(generationLocale ? { generationLocale } : {})
+    }),
+    generationLocale
   );
 };

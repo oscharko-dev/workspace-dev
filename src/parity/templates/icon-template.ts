@@ -6,7 +6,9 @@ import type { ScreenElementIR } from "../types.js";
 import {
   registerMuiImports,
   resolveFallbackIconComponent,
-  resolveIconColor
+  resolveIconColor,
+  isRtlLocale,
+  DIRECTIONAL_ICON_NAMES
 } from "../generator-core.js";
 import type {
   RenderContext,
@@ -51,12 +53,14 @@ export const renderFallbackIconExpression = ({
 
   const iconComponent = resolveFallbackIconComponent({ element, parent, context });
   const color = resolveIconColor(element);
+  const rtlMirror = isRtlLocale(context.generationLocale) && DIRECTIONAL_ICON_NAMES.has(iconComponent);
   const sx = sxString([
     ["width", toPxLiteral(element.width)],
     ["height", toPxLiteral(element.height)],
     ["fontSize", toPxLiteral(element.width ? Math.max(12, Math.round(element.width * 0.9)) : 16)],
     ["lineHeight", literal("1")],
     ["color", toThemeColorLiteral({ color, tokens: context.tokens })],
+    ["transform", rtlMirror ? literal("scaleX(-1)") : undefined],
     ...extraEntries
   ]);
   const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";

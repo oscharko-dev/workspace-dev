@@ -13,7 +13,8 @@ import {
 import {
   THEME_COMPONENT_ORDER,
   roundStableSxNumericValue,
-  normalizeThemeSxValueForKey
+  normalizeThemeSxValueForKey,
+  isRtlLocale
 } from "../generator-core.js";
 import type {
   ThemeComponentDefaults,
@@ -187,8 +188,9 @@ export const renderThemeComponentBlock = ({
   return `    ${componentName}: {\n${componentEntries.join(",\n")}\n    }`;
 };
 
-export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults): GeneratedFile => {
+export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults, generationLocale?: string): GeneratedFile => {
   const tokens = ir.tokens;
+  const rtl = isRtlLocale(generationLocale);
   const lightPalette = toLightThemePalette(tokens);
   const includeDarkColorScheme = ir.themeAnalysis?.darkModeDetected ?? true;
   const darkPalette = includeDarkColorScheme ? toDarkThemePalette(tokens, ir.themeAnalysis?.darkPaletteHints) : undefined;
@@ -230,12 +232,17 @@ export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeCo
     })
     .filter((block): block is string => Boolean(block));
 
+  const directionBlock = rtl ? `  direction: "rtl",\n` : "";
+  const cssBaselineBlock = rtl
+    ? `,\n    MuiCssBaseline: {\n      styleOverrides: {\n        body: {\n          direction: "rtl"\n        }\n      }\n    }`
+    : "";
+
   return {
     path: "src/theme/theme.ts",
     content: `import { extendTheme } from "@mui/material/styles";
 
 export const appTheme = extendTheme({
-  colorSchemes: {
+${directionBlock}  colorSchemes: {
     light: {
       palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}
     }
@@ -250,7 +257,7 @@ ${responsiveThemeBreakpoints ? `  breakpoints: {\n    values: ${toResponsiveBrea
 ${typographyEntries}
   },
   components: {
-${componentBlocks.join(",\n")}
+${componentBlocks.join(",\n")}${cssBaselineBlock}
   }
 });
 `
