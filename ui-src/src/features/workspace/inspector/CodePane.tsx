@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useState, type JSX } from "react";
+import { CodeViewer, type HighlightRange } from "./CodeViewer";
 
-export interface HighlightRange {
-  startLine: number;
-  endLine: number;
-}
+export type { HighlightRange } from "./CodeViewer";
 
 interface CodePaneProps {
   files: Array<{ path: string; sizeBytes: number }>;
@@ -22,39 +20,18 @@ export function CodePane({
   isLoadingContent,
   highlightRange
 }: CodePaneProps): JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const highlightRef = useRef<HTMLDivElement>(null);
-
-  const handleCopy = useCallback(async () => {
-    if (!fileContent) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(fileContent);
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch {
-      // Clipboard API may not be available
-    }
-  }, [fileContent]);
-
-  // Scroll to highlighted range when it changes
-  useEffect(() => {
-    if (highlightRange && highlightRef.current) {
-      highlightRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  }, [highlightRange]);
+  const [jsonVisible, setJsonVisible] = useState(false);
 
   const codeFiles = files.filter(
-    (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts")
+    (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts") || (jsonVisible && f.path.endsWith(".json"))
   );
 
-  const lines = fileContent?.split("\n") ?? [];
+  const jsonFiles = files.filter((f) => f.path.endsWith(".json"));
+  const hasJsonFiles = jsonFiles.length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* File selector header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <select
           data-testid="inspector-file-selector"
@@ -70,50 +47,28 @@ export function CodePane({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          data-testid="inspector-copy-button"
-          onClick={() => {
-            void handleCopy();
-          }}
-          disabled={!fileContent}
-          className="shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
+        {hasJsonFiles ? (
+          <button
+            type="button"
+            data-testid="inspector-json-toggle"
+            onClick={() => { setJsonVisible((v) => !v); }}
+            className="shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            {jsonVisible ? "Hide JSON" : "Show JSON"}
+          </button>
+        ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-white p-0">
+      {/* Code viewer or loading/empty state */}
+      <div className="min-h-0 flex-1">
         {isLoadingContent ? (
           <p className="m-0 p-3 text-xs text-slate-500">Loading file…</p>
-        ) : fileContent !== null ? (
-          <div data-testid="code-content" className="min-w-0">
-            {lines.map((line, i) => {
-              const lineNum = i + 1;
-              const isHighlighted =
-                highlightRange != null &&
-                lineNum >= highlightRange.startLine &&
-                lineNum <= highlightRange.endLine;
-
-              return (
-                <div
-                  key={i}
-                  ref={isHighlighted && lineNum === highlightRange!.startLine ? highlightRef : undefined}
-                  data-testid={isHighlighted ? "highlighted-line" : undefined}
-                  className={`flex text-xs leading-relaxed ${
-                    isHighlighted ? "bg-emerald-50" : ""
-                  }`}
-                >
-                  <span className="inline-block w-10 shrink-0 pr-2 text-right text-slate-400 select-none">
-                    {lineNum}
-                  </span>
-                  <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-all text-slate-800">
-                    {line}
-                  </pre>
-                </div>
-              );
-            })}
-          </div>
+        ) : fileContent !== null && selectedFile ? (
+          <CodeViewer
+            code={fileContent}
+            filePath={selectedFile}
+            highlightRange={highlightRange}
+          />
         ) : (
           <p className="m-0 p-3 text-xs text-slate-500">Select a file to view its source.</p>
         )}
