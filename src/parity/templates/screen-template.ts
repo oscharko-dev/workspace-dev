@@ -2360,7 +2360,7 @@ export const renderDrawer = (element: ScreenElementIR, depth: number, parent: Vi
     depth: depth + 2,
     context
   });
-  return `${indent}<Drawer open variant="persistent" PaperProps={{ role: "navigation" }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+  return `${indent}<Drawer open variant="persistent" slotProps={{ paper: { role: "navigation" } }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
 ${indent}  <Box sx={{ width: "100%" }}>
 ${renderedChildren || `${indent}    <Box />`}
 ${indent}  </Box>
@@ -4186,5 +4186,4 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
     dependencies
   });
 };
-
 

@@ -9684,7 +9684,8 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes("<CardActions>"));
   assert.ok(content.includes("<Table "));
   assert.ok(content.includes("<Tooltip "));
-  assert.ok(content.includes('<Drawer open variant="persistent" PaperProps={{ role: "navigation" }}'));
+  assert.ok(content.includes('<Drawer open variant="persistent" slotProps={{ paper: { role: "navigation" } }}'));
+  assert.equal(content.includes("PaperProps={{"), false);
   assert.ok(content.includes("<Breadcrumbs "));
   assert.ok(content.includes("<Select"));
   assert.ok(content.includes("<Slider "));
