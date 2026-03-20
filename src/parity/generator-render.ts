@@ -390,7 +390,31 @@ export const simplifyElements = ({
   return result;
 };
 
-const RTL_LANGUAGE_CODES = new Set(["ar", "he", "fa", "ur"]);
+export const RTL_LANGUAGE_CODES: ReadonlySet<string> = new Set(["ar", "he", "fa", "ur"]);
+
+/** Icon component names that represent directional concepts and should be mirrored in RTL layouts. */
+export const DIRECTIONAL_ICON_NAMES: ReadonlySet<string> = new Set([
+  "ArrowBackIcon",
+  "ArrowForwardIcon",
+  "ArrowBackIosIcon",
+  "ArrowForwardIosIcon",
+  "ArrowLeftIcon",
+  "ArrowRightIcon",
+  "ChevronLeftIcon",
+  "ChevronRightIcon",
+  "NavigateBeforeIcon",
+  "NavigateNextIcon",
+  "KeyboardArrowLeftIcon",
+  "KeyboardArrowRightIcon",
+  "LastPageIcon",
+  "FirstPageIcon",
+  "SendIcon",
+  "ReplyIcon",
+  "ForwardIcon",
+  "RedoIcon",
+  "UndoIcon"
+]);
+
 const VISUAL_SORT_ROW_TOLERANCE_PX = 18;
 
 interface SortChildrenOptions {
@@ -425,7 +449,7 @@ const toLocaleLanguageCode = (locale: string | undefined): string | undefined =>
   }
 };
 
-const isRtlLocale = (locale: string | undefined): boolean => {
+export const isRtlLocale = (locale: string | undefined): boolean => {
   const languageCode = toLocaleLanguageCode(locale);
   if (!languageCode) {
     return false;
