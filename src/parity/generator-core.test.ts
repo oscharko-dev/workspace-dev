@@ -7634,6 +7634,90 @@ test("deterministic screen rendering applies synonym mapping for user and trash 
   ]);
 });
 
+test("deterministic screen rendering applies semantic aliases for x and hamburger", () => {
+  const screen = {
+    id: "semantic-alias-icon-screen",
+    name: "Semantic Alias Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "semantic-close-icon",
+        name: "icon/x",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: "semantic-menu-icon",
+        name: "icon/hamburger",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 24,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+  assert.equal(hasMuiIconBarrelImport(content), false);
+  assert.deepEqual(iconImportLines, [
+    'import CloseIcon from "@mui/icons-material/Close";',
+    'import MenuIcon from "@mui/icons-material/Menu";'
+  ]);
+});
+
+test("deterministic screen rendering strips size and variant suffixes for icon matching", () => {
+  const screen = {
+    id: "decorator-strip-icon-screen",
+    name: "Decorator Strip Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "decorator-arrow-icon",
+        name: "ic_arrow_forward_24",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      },
+      {
+        id: "decorator-search-icon",
+        name: "ic_search_outlined",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 24,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const iconImportLines = extractMuiIconImportLines(content);
+  assert.equal(hasMuiIconBarrelImport(content), false);
+  assert.deepEqual(iconImportLines, [
+    'import ArrowForwardIcon from "@mui/icons-material/ArrowForward";',
+    'import SearchIcon from "@mui/icons-material/Search";'
+  ]);
+});
+
 test("deterministic screen rendering applies bounded fuzzy matching for icon names", () => {
   const screen = {
     id: "fuzzy-icon-screen",
@@ -7659,6 +7743,33 @@ test("deterministic screen rendering applies bounded fuzzy matching for icon nam
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes('import SearchIcon from "@mui/icons-material/Search";'));
   assert.ok(content.includes("<SearchIcon"));
+});
+
+test("deterministic screen rendering rejects low-confidence fuzzy icon matches", () => {
+  const screen = {
+    id: "low-confidence-fuzzy-icon-screen",
+    name: "Low Confidence Fuzzy Icon Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "low-confidence-settings-icon",
+        name: "icon/setxincs",
+        nodeType: "INSTANCE",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+        children: []
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";'));
+  assert.equal(content.includes('import SettingsIcon from "@mui/icons-material/Settings";'), false);
 });
 
 test("deterministic screen rendering falls back to InfoOutlinedIcon for unknown icon names", () => {

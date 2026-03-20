@@ -1138,6 +1138,10 @@ const ICON_FALLBACK_DEFAULT_IMPORT_SPEC: IconImportSpec = {
 const ICON_FALLBACK_STYLE_TOKENS = new Set(["outlined", "rounded", "sharp", "twotone", "two", "tone", "filled"]);
 const ICON_FALLBACK_MAX_PHRASE_LENGTH = 3;
 const ICON_FALLBACK_FUZZY_STOPWORDS = new Set(["icon", "icons", "name", "real"]);
+const ICON_FALLBACK_FUZZY_MAX_DISTANCE = 2;
+const ICON_FALLBACK_FUZZY_MIN_CONFIDENCE = 0.8;
+const ICON_FALLBACK_INPUT_NOISE_TOKENS = new Set(["ic", "icon", "icons", "mui", "material"]);
+const ICON_FALLBACK_SIZE_TOKEN_PATTERN = /^\d+(?:px|dp|pt)?$/;
 
 const normalizeIconLookupText = (value: string): string => {
   return normalizeInputSemanticText(value);
@@ -1306,6 +1310,7 @@ const compileIconFallbackResolver = ({ map }: { map: IconFallbackMap }): IconFal
 
 const ICON_FALLBACK_ALIAS_OVERRIDES: Record<string, string[]> = {
   BookmarkBorder: ["bookmark outline", "bookmark_outline", "bookmark outlined", "merken"],
+  Close: ["x"],
   HelpOutline: ["questionmark", "hilfe"],
   HomeOutlined: ["homepage", "startseite"],
   PersonSearch: ["personensuche", "person_search", "search_person", "search person", "person search"],
@@ -1315,7 +1320,9 @@ const ICON_FALLBACK_ALIAS_OVERRIDES: Record<string, string[]> = {
   Delete: ["trash"],
   Mail: ["postbox"],
   Add: ["plus"],
+  Menu: ["hamburger"],
   Search: ["magnifier"],
+  Settings: ["gear"],
   InfoOutlined: ["hint", "info hint", "info_hint"]
 };
 
@@ -1439,6 +1446,49 @@ const toIconInputTokens = (normalizedInput: string): string[] => {
   return normalizedInput.split(" ").filter((token) => token.length > 0);
 };
 
+const isIconSizeToken = (token: string): boolean => {
+  return ICON_FALLBACK_SIZE_TOKEN_PATTERN.test(token);
+};
+
+const toMeaningfulIconInputTokens = (tokens: string[]): string[] => {
+  return tokens.filter((token) => {
+    if (!token) {
+      return false;
+    }
+    if (ICON_FALLBACK_INPUT_NOISE_TOKENS.has(token)) {
+      return false;
+    }
+    if (ICON_FALLBACK_STYLE_TOKENS.has(token)) {
+      return false;
+    }
+    if (isIconSizeToken(token)) {
+      return false;
+    }
+    return true;
+  });
+};
+
+const resolveIconLookupInput = ({
+  rawInput
+}: {
+  rawInput: string;
+}): {
+  normalizedInput: string;
+  normalizedTokens: string[];
+  semanticInput: string;
+  semanticTokens: string[];
+} => {
+  const normalizedInput = normalizeIconLookupText(rawInput);
+  const normalizedTokens = toIconInputTokens(normalizedInput);
+  const semanticTokens = toMeaningfulIconInputTokens(normalizedTokens);
+  return {
+    normalizedInput,
+    normalizedTokens,
+    semanticInput: semanticTokens.join(" "),
+    semanticTokens
+  };
+};
+
 const containsBoundaryAlias = ({ text, alias }: { text: string; alias: string }): boolean => {
   return text === alias || text.startsWith(`${alias} `) || text.endsWith(` ${alias}`) || text.includes(` ${alias} `);
 };
@@ -1495,6 +1545,19 @@ const toBoundedLevenshteinDistance = ({
 
   const result = previous[right.length] ?? maxDistance + 1;
   return result <= maxDistance ? result : undefined;
+};
+
+const toFuzzyMatchConfidence = ({
+  alias,
+  term,
+  distance
+}: {
+  alias: string;
+  term: string;
+  distance: number;
+}): number => {
+  const referenceLength = Math.max(alias.length, term.length, 1);
+  return Math.max(0, 1 - distance / referenceLength);
 };
 
 export const toSequentialDeltas = (values: number[]): number[] => {
@@ -1587,20 +1650,24 @@ const resolveFallbackIconByFuzzyDistance = ({
   tokens: string[];
   resolver: IconFallbackResolver;
 }): CompiledIconFallbackEntry | undefined => {
-  const phraseTerms = normalizedInput.includes(" ") ? [] : [normalizedInput];
+  const phraseTerms = normalizedInput.length > 0 ? [normalizedInput] : [];
   const terms = [...new Set([...phraseTerms, ...tokens])]
     .map((term) => term.trim())
     .filter((term) => term.length >= 4 && !ICON_FALLBACK_FUZZY_STOPWORDS.has(term));
-  const candidates: Array<{ entry: CompiledIconFallbackEntry; distance: number; tokenScore: number }> = [];
+  const candidates: Array<{ entry: CompiledIconFallbackEntry; distance: number; tokenScore: number; confidence: number }> = [];
   for (const entry of resolver.entries) {
     let bestDistance: number | undefined;
     let bestTokenScore = 0;
+    let bestConfidence = 0;
     for (const alias of entry.aliases) {
       for (const term of terms) {
         if (!term || Math.abs(alias.length - term.length) > 3) {
           continue;
         }
-        const maxDistance = Math.max(1, Math.min(3, Math.floor(Math.min(alias.length, term.length) / 4)));
+        const maxDistance = Math.max(
+          1,
+          Math.min(ICON_FALLBACK_FUZZY_MAX_DISTANCE, Math.floor(Math.min(alias.length, term.length) / 4))
+        );
         const distance = toBoundedLevenshteinDistance({
           left: alias,
           right: term,
@@ -1609,14 +1676,24 @@ const resolveFallbackIconByFuzzyDistance = ({
         if (distance === undefined) {
           continue;
         }
+        const confidence = toFuzzyMatchConfidence({
+          alias,
+          term,
+          distance
+        });
+        if (confidence <= ICON_FALLBACK_FUZZY_MIN_CONFIDENCE) {
+          continue;
+        }
         const tokenScore = alias.split(" ").length;
         if (
           bestDistance === undefined ||
-          distance < bestDistance ||
-          (distance === bestDistance && tokenScore > bestTokenScore)
+          confidence > bestConfidence ||
+          (confidence === bestConfidence &&
+            (distance < bestDistance || (distance === bestDistance && tokenScore > bestTokenScore)))
         ) {
           bestDistance = distance;
           bestTokenScore = tokenScore;
+          bestConfidence = confidence;
         }
       }
     }
@@ -1624,7 +1701,8 @@ const resolveFallbackIconByFuzzyDistance = ({
       candidates.push({
         entry,
         distance: bestDistance,
-        tokenScore: bestTokenScore
+        tokenScore: bestTokenScore,
+        confidence: bestConfidence
       });
     }
   }
@@ -1633,6 +1711,7 @@ const resolveFallbackIconByFuzzyDistance = ({
   }
   candidates.sort((left, right) => {
     return (
+      right.confidence - left.confidence ||
       left.distance - right.distance ||
       right.tokenScore - left.tokenScore ||
       left.entry.priority - right.entry.priority ||
@@ -1649,22 +1728,29 @@ const resolveIconImportSpecFromCatalog = ({
   rawInput: string;
   resolver: IconFallbackResolver;
 }): IconImportSpec => {
-  const normalizedInput = normalizeIconLookupText(rawInput);
+  const { normalizedInput, normalizedTokens, semanticInput, semanticTokens } = resolveIconLookupInput({
+    rawInput
+  });
   if (!normalizedInput) {
     return ICON_FALLBACK_DEFAULT_IMPORT_SPEC;
   }
 
-  const tokens = toIconInputTokens(normalizedInput);
-  const exact = resolveFallbackIconByExactPhrase({
-    normalizedInput,
-    resolver
-  });
-  if (exact) {
-    return exact.importSpec;
+  const exactLookupCandidates = [...new Set([semanticInput, normalizedInput].filter((value) => value.length > 0))];
+  for (const lookupInput of exactLookupCandidates) {
+    const exact = resolveFallbackIconByExactPhrase({
+      normalizedInput: lookupInput,
+      resolver
+    });
+    if (exact) {
+      return exact.importSpec;
+    }
   }
 
+  const lookupInput = semanticInput || normalizedInput;
+  const tokens = semanticTokens.length > 0 ? semanticTokens : normalizedTokens;
+
   const tokenBoundary = resolveFallbackIconByTokenBoundary({
-    normalizedInput,
+    normalizedInput: lookupInput,
     tokens,
     resolver
   });
@@ -1681,7 +1767,7 @@ const resolveIconImportSpecFromCatalog = ({
   }
 
   const fuzzy = resolveFallbackIconByFuzzyDistance({
-    normalizedInput,
+    normalizedInput: lookupInput,
     tokens,
     resolver
   });
