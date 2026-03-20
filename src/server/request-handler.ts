@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
@@ -7,8 +8,8 @@ import { enforceModeLock } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
 import { SubmitRequestSchema, formatZodError } from "../schemas.js";
-import { sendBuffer, sendJson, readJsonBody } from "./http-helpers.js";
-import { isWorkspaceProjectRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath } from "./routes.js";
+import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
+import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
 interface CreateWorkspaceRequestHandlerInput {
@@ -196,6 +197,176 @@ export function createWorkspaceRequestHandler({
         }
 
         sendJson({ response, statusCode: 200, payload: job });
+        return;
+      }
+
+      const parsedFilesRoute = parseJobFilesRoute(pathname);
+      if (parsedFilesRoute) {
+        const jobId = decodeURIComponent(parsedFilesRoute.jobId);
+        const record = jobEngine.getJobRecord(jobId);
+
+        if (!record) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "JOB_NOT_FOUND",
+              message: `Unknown job '${jobId}'.`
+            }
+          });
+          return;
+        }
+
+        if (record.status === "queued" || record.status === "running") {
+          sendJson({
+            response,
+            statusCode: 409,
+            payload: {
+              error: "JOB_NOT_COMPLETED",
+              message: `Job '${jobId}' has status '${record.status}' — files are only available after the job finishes.`
+            }
+          });
+          return;
+        }
+
+        const projectDir = record.artifacts.generatedProjectDir;
+        if (!projectDir) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "FILES_NOT_FOUND",
+              message: `Generated project directory not available for job '${jobId}'.`
+            }
+          });
+          return;
+        }
+
+        // Directory listing
+        if (parsedFilesRoute.filePath === undefined) {
+          const dirFilterParam = requestUrl.searchParams.get("dir");
+          const dirFilter: string | undefined = dirFilterParam !== null ? dirFilterParam : undefined;
+
+          if (dirFilter !== undefined) {
+            const dirValidation = validateSourceFilePath(`${dirFilter}/placeholder.ts`);
+            if (!dirValidation.valid) {
+              sendJson({
+                response,
+                statusCode: 403,
+                payload: {
+                  error: "FORBIDDEN_PATH",
+                  message: dirValidation.reason
+                }
+              });
+              return;
+            }
+          }
+
+          let fileEntries: Array<{ path: string; sizeBytes: number }>;
+          try {
+            fileEntries = await collectSourceFiles(projectDir, dirFilter);
+          } catch {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "FILES_NOT_FOUND",
+                message: `Generated project directory not found on disk for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              jobId,
+              files: fileEntries
+            }
+          });
+          return;
+        }
+
+        // Single file content
+        const filePath = decodeURIComponent(parsedFilesRoute.filePath);
+        const validation = validateSourceFilePath(filePath);
+        if (!validation.valid) {
+          sendJson({
+            response,
+            statusCode: 403,
+            payload: {
+              error: "FORBIDDEN_PATH",
+              message: validation.reason
+            }
+          });
+          return;
+        }
+
+        const absolutePath = path.join(projectDir, filePath);
+
+        // Ensure resolved path stays within projectDir (belt-and-suspenders)
+        const resolved = path.resolve(absolutePath);
+        const resolvedProjectDir = path.resolve(projectDir);
+        if (!resolved.startsWith(`${resolvedProjectDir}/`)) {
+          sendJson({
+            response,
+            statusCode: 403,
+            payload: {
+              error: "FORBIDDEN_PATH",
+              message: "Path escapes project directory."
+            }
+          });
+          return;
+        }
+
+        // Reject symlinks
+        try {
+          const lstats = await lstat(absolutePath);
+          if (lstats.isSymbolicLink()) {
+            sendJson({
+              response,
+              statusCode: 403,
+              payload: {
+                error: "FORBIDDEN_PATH",
+                message: "Symbolic links are not allowed."
+              }
+            });
+            return;
+          }
+        } catch {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "FILE_NOT_FOUND",
+              message: `File '${filePath}' not found in job '${jobId}'.`
+            }
+          });
+          return;
+        }
+
+        let content: string;
+        try {
+          content = await readFile(absolutePath, "utf8");
+        } catch {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "FILE_NOT_FOUND",
+              message: `File '${filePath}' not found in job '${jobId}'.`
+            }
+          });
+          return;
+        }
+
+        sendText({
+          response,
+          statusCode: 200,
+          contentType: "text/plain; charset=utf-8",
+          payload: content
+        });
         return;
       }
 
@@ -477,4 +648,72 @@ export function createWorkspaceRequestHandler({
       }
     });
   };
+}
+
+/** Allowed extensions for directory listing (matches validateSourceFilePath). */
+const LISTING_EXTENSIONS = new Set([".tsx", ".ts", ".json", ".css", ".html", ".svg"]);
+const LISTING_BLOCKED_DIRS = new Set(["node_modules", "dist"]);
+
+async function collectSourceFiles(
+  projectDir: string,
+  dirFilter?: string
+): Promise<Array<{ path: string; sizeBytes: number }>> {
+  const results: Array<{ path: string; sizeBytes: number }> = [];
+  const baseDir = dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
+
+  const walk = async (dir: string): Promise<void> => {
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+
+    for (const name of names) {
+      if (LISTING_BLOCKED_DIRS.has(name)) {
+        continue;
+      }
+      if (name.startsWith(".")) {
+        continue;
+      }
+
+      const fullPath = path.join(dir, name);
+
+      let fileStat: Awaited<ReturnType<typeof lstat>>;
+      try {
+        fileStat = await lstat(fullPath);
+      } catch {
+        continue;
+      }
+
+      if (fileStat.isSymbolicLink()) {
+        continue;
+      }
+
+      if (fileStat.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+
+      if (!fileStat.isFile()) {
+        continue;
+      }
+
+      const dotIndex = name.lastIndexOf(".");
+      if (dotIndex === -1) {
+        continue;
+      }
+      const ext = name.slice(dotIndex);
+      if (!LISTING_EXTENSIONS.has(ext)) {
+        continue;
+      }
+
+      const relativePath = path.relative(projectDir, fullPath);
+      results.push({ path: relativePath, sizeBytes: fileStat.size });
+    }
+  };
+
+  await walk(baseDir);
+  results.sort((a, b) => a.path.localeCompare(b.path));
+  return results;
 }

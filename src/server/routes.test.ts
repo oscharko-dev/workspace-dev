@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isWorkspaceProjectRoute,
+  parseJobFilesRoute,
   parseJobRoute,
   parseReproRoute,
-  resolveUiAssetPath
+  resolveUiAssetPath,
+  validateSourceFilePath
 } from "./routes.js";
 
 test("resolveUiAssetPath resolves index and nested asset paths", () => {
@@ -68,4 +70,96 @@ test("parseReproRoute parses preview paths with safe index fallback", () => {
     previewPath: "assets/app.js"
   });
   assert.equal(parseReproRoute("/workspace/repros//assets/app.js"), undefined);
+});
+
+test("parseJobFilesRoute parses directory listing and file content routes", () => {
+  // Non-matching
+  assert.equal(parseJobFilesRoute("/workspace"), undefined);
+  assert.equal(parseJobFilesRoute("/workspace/jobs/"), undefined);
+  assert.equal(parseJobFilesRoute("/workspace/jobs/job-1"), undefined);
+  assert.equal(parseJobFilesRoute("/workspace/jobs/job-1/result"), undefined);
+
+  // Directory listing
+  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files"), {
+    jobId: "job-1",
+    filePath: undefined
+  });
+  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/"), {
+    jobId: "job-1",
+    filePath: undefined
+  });
+
+  // Single file
+  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/src/App.tsx"), {
+    jobId: "job-1",
+    filePath: "src/App.tsx"
+  });
+  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/src/screens/Home.tsx"), {
+    jobId: "job-1",
+    filePath: "src/screens/Home.tsx"
+  });
+
+  // Empty jobId
+  assert.equal(parseJobFilesRoute("/workspace/jobs//files"), undefined);
+  assert.equal(parseJobFilesRoute("/workspace/jobs//files/src/App.tsx"), undefined);
+});
+
+test("validateSourceFilePath allows valid source paths", () => {
+  assert.deepEqual(validateSourceFilePath("src/App.tsx"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src/screens/Home.tsx"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src/theme/theme.ts"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src/theme/tokens.json"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("public/index.html"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src/styles/main.css"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("public/logo.svg"), { valid: true });
+});
+
+test("validateSourceFilePath rejects path traversal attempts", () => {
+  const result1 = validateSourceFilePath("../../../etc/passwd");
+  assert.equal(result1.valid, false);
+
+  const result2 = validateSourceFilePath("src/../../../etc/passwd");
+  assert.equal(result2.valid, false);
+
+  const result3 = validateSourceFilePath("src/screens/../../secret.ts");
+  assert.equal(result3.valid, false);
+});
+
+test("validateSourceFilePath rejects absolute paths", () => {
+  const result = validateSourceFilePath("/etc/passwd");
+  assert.equal(result.valid, false);
+});
+
+test("validateSourceFilePath rejects blocked directories", () => {
+  const result1 = validateSourceFilePath("node_modules/react/index.ts");
+  assert.equal(result1.valid, false);
+
+  const result2 = validateSourceFilePath("dist/bundle.js");
+  assert.equal(result2.valid, false);
+
+  const result3 = validateSourceFilePath(".env");
+  assert.equal(result3.valid, false);
+
+  // Nested node_modules
+  const result4 = validateSourceFilePath("src/node_modules/evil.ts");
+  assert.equal(result4.valid, false);
+});
+
+test("validateSourceFilePath rejects disallowed extensions", () => {
+  const result1 = validateSourceFilePath("src/script.js");
+  assert.equal(result1.valid, false);
+
+  const result2 = validateSourceFilePath("src/data.xml");
+  assert.equal(result2.valid, false);
+
+  const result3 = validateSourceFilePath("README");
+  assert.equal(result3.valid, false);
+});
+
+test("validateSourceFilePath rejects empty and null-byte paths", () => {
+  const result1 = validateSourceFilePath("");
+  assert.equal(result1.valid, false);
+
+  const result2 = validateSourceFilePath("src/App\0.tsx");
+  assert.equal(result2.valid, false);
 });
