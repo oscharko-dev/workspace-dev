@@ -12,6 +12,7 @@ import {
   type WorkspaceSubmitFormData,
   type WorkspaceSubmitPayload
 } from "./submit-schema";
+import { InspectorPanel } from "./inspector/InspectorPanel";
 
 const endpoints = {
   health: "/healthz",
@@ -897,28 +898,34 @@ export function WorkspacePage(): JSX.Element {
           </pre>
         </section>
 
-        <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
-          <div className="mb-3">
-            <h2 className="m-0 text-xl font-bold text-slate-900">Result / Preview</h2>
-            <p className="m-0 text-sm text-slate-600">Generated output for the latest job</p>
-          </div>
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
-            <p className="m-0">{previewMessage}</p>
-            {previewUrl ? (
-              <a
-                href={previewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-block font-semibold text-emerald-700 hover:underline"
-              >
-                Open Preview
-              </a>
-            ) : null}
-          </div>
-          <pre data-testid="submit-payload" className={`${payloadPreClasses} h-28 shrink-0`}>
-            {submitPayloadView}
-          </pre>
-        </section>
+        {jobStatus === "completed" && previewUrl && activeJobId ? (
+          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
+            <InspectorPanel jobId={activeJobId} previewUrl={previewUrl} />
+          </section>
+        ) : (
+          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
+            <div className="mb-3">
+              <h2 className="m-0 text-xl font-bold text-slate-900">Result / Preview</h2>
+              <p className="m-0 text-sm text-slate-600">Generated output for the latest job</p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
+              <p className="m-0">{previewMessage}</p>
+              {previewUrl ? (
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-semibold text-emerald-700 hover:underline"
+                >
+                  Open Preview
+                </a>
+              ) : null}
+            </div>
+            <pre data-testid="submit-payload" className={`${payloadPreClasses} h-28 shrink-0`}>
+              {submitPayloadView}
+            </pre>
+          </section>
+        )}
       </main>
 
       <footer className="flex shrink-0 items-center justify-center border-t border-slate-200 px-4 py-3 text-center text-xs text-slate-600 lg:px-6 xl:px-8">
