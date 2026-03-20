@@ -36,6 +36,7 @@ import type { CreateJobEngineInput, FigmaFileResponse, JobEngine, JobRecord, Wor
 import { runProjectValidation } from "./job-engine/validation.js";
 import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
+import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -530,6 +531,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         }
       });
 
+      const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
+
       const ir = await runStage({
         job,
         stage: "ir.derive",
@@ -541,10 +544,45 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               message: "Figma cleaning removed all screen candidates."
             });
           }
-          const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
+
+          const irDerivationOptions = {
             screenElementBudget: runtime.figmaScreenElementBudget,
             screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
-            brandTheme: resolvedBrandTheme,
+            brandTheme: resolvedBrandTheme
+          };
+
+          const irCacheLog = (message: string): void => {
+            pushLog({ job, level: "info", stage: "ir.derive", message });
+          };
+
+          if (runtime.irCacheEnabled) {
+            const contentHash = computeContentHash(figmaFetch.file);
+            const optionsHash = computeOptionsHash(irDerivationOptions);
+
+            const cached = await loadCachedIr({
+              cacheDir: irCacheDir,
+              contentHash,
+              optionsHash,
+              ttlMs: runtime.irCacheTtlMs,
+              onLog: irCacheLog
+            });
+
+            if (cached) {
+              await writeFile(designIrFile, `${JSON.stringify(cached, null, 2)}\n`, "utf8");
+              pushLog({
+                job,
+                level: "info",
+                stage: "ir.derive",
+                message:
+                  `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens ` +
+                  `(brandTheme=${resolvedBrandTheme}).`
+              });
+              return cached;
+            }
+          }
+
+          const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
+            ...irDerivationOptions,
             sourceMetrics: {
               fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
               degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
@@ -558,6 +596,20 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             });
           }
           await writeFile(designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
+
+          if (runtime.irCacheEnabled) {
+            const contentHash = computeContentHash(figmaFetch.file);
+            const optionsHash = computeOptionsHash(irDerivationOptions);
+            await saveCachedIr({
+              cacheDir: irCacheDir,
+              contentHash,
+              optionsHash,
+              ttlMs: runtime.irCacheTtlMs,
+              ir: derived,
+              onLog: irCacheLog
+            });
+          }
+
           const depthTruncatedScreens = derived.metrics?.depthTruncatedScreens ?? [];
           if (depthTruncatedScreens.length > 0) {
             const summary = depthTruncatedScreens

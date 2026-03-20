@@ -76,6 +76,8 @@ export interface JobEngineRuntime {
   figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
+  irCacheEnabled: boolean;
+  irCacheTtlMs: number;
   iconMapFilePath: string | undefined;
   designSystemFilePath: string | undefined;
   exportImages: boolean;
