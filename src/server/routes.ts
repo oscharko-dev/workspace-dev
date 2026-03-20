@@ -94,6 +94,101 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
   };
 }
 
+export function parseJobFilesRoute(
+  pathname: string
+): { jobId: string; filePath: string | undefined } | undefined {
+  if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
+    return undefined;
+  }
+
+  const rest = pathname.slice(JOB_ROUTE_PREFIX.length);
+  if (!rest) {
+    return undefined;
+  }
+
+  const filesSegment = "/files";
+  const filesSegmentIndex = rest.indexOf(filesSegment);
+  if (filesSegmentIndex === -1) {
+    return undefined;
+  }
+
+  const jobId = rest.slice(0, filesSegmentIndex);
+  if (!jobId || jobId.includes("/")) {
+    return undefined;
+  }
+
+  const afterFiles = rest.slice(filesSegmentIndex + filesSegment.length);
+
+  // Exact match: /workspace/jobs/{jobId}/files
+  if (afterFiles.length === 0) {
+    return { jobId, filePath: undefined };
+  }
+
+  // Must have a leading slash for file path
+  if (!afterFiles.startsWith("/")) {
+    return undefined;
+  }
+
+  const filePath = afterFiles.slice(1);
+  if (filePath.length === 0) {
+    return { jobId, filePath: undefined };
+  }
+
+  return { jobId, filePath };
+}
+
+/** Allowed extensions for generated source file serving. */
+const ALLOWED_FILE_EXTENSIONS = new Set([".tsx", ".ts", ".json", ".css", ".html", ".svg"]);
+
+/** Blocked directory prefixes that must never be served. */
+const BLOCKED_PATH_PREFIXES = ["node_modules/", "dist/", ".env"];
+
+export function validateSourceFilePath(
+  filePath: string
+): { valid: true } | { valid: false; reason: string } {
+  if (filePath.length === 0) {
+    return { valid: false, reason: "Empty file path." };
+  }
+
+  // Reject absolute paths
+  if (filePath.startsWith("/")) {
+    return { valid: false, reason: "Absolute paths are not allowed." };
+  }
+
+  // Reject path traversal
+  if (filePath.includes("..")) {
+    return { valid: false, reason: "Path traversal is not allowed." };
+  }
+
+  // Reject null bytes
+  if (filePath.includes("\0")) {
+    return { valid: false, reason: "Null bytes in path are not allowed." };
+  }
+
+  // Reject blocked prefixes
+  for (const blocked of BLOCKED_PATH_PREFIXES) {
+    if (filePath === blocked || filePath.startsWith(blocked)) {
+      return { valid: false, reason: `Access to '${blocked}' is forbidden.` };
+    }
+    // Also block when nested (e.g. "src/node_modules/...")
+    if (filePath.includes(`/${blocked}`)) {
+      return { valid: false, reason: `Access to '${blocked}' is forbidden.` };
+    }
+  }
+
+  // Reject files not in the allowlist
+  const dotIndex = filePath.lastIndexOf(".");
+  if (dotIndex === -1) {
+    return { valid: false, reason: "File extension required." };
+  }
+  const ext = filePath.slice(dotIndex);
+  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
+    return { valid: false, reason: `Extension '${ext}' is not allowed.` };
+  }
+
+  return { valid: true };
+}
+
 export function parseReproRoute(pathname: string): { jobId: string; previewPath: string } | undefined {
   if (!pathname.startsWith(REPRO_ROUTE_PREFIX)) {
     return undefined;
