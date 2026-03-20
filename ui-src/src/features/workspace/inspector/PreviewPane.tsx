@@ -1,11 +1,21 @@
-import { useState, type JSX } from "react";
+import { useRef, useState, type JSX } from "react";
+import { InspectOverlay } from "./InspectOverlay";
 
 interface PreviewPaneProps {
   previewUrl: string;
+  inspectEnabled: boolean;
+  onToggleInspect: () => void;
+  onInspectSelect: (irNodeId: string) => void;
 }
 
-export function PreviewPane({ previewUrl }: PreviewPaneProps): JSX.Element {
+export function PreviewPane({
+  previewUrl,
+  inspectEnabled,
+  onToggleInspect,
+  onInspectSelect
+}: PreviewPaneProps): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -15,13 +25,24 @@ export function PreviewPane({ previewUrl }: PreviewPaneProps): JSX.Element {
         </div>
       ) : null}
       <iframe
+        ref={iframeRef}
         src={previewUrl}
         title="Live preview"
         className="h-full w-full flex-1 border-0"
         onLoad={() => {
           setIsLoading(false);
+          // Re-send inspect state to the iframe after it loads
+          if (inspectEnabled && iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({ type: "inspect:enable" }, "*");
+          }
         }}
         sandbox="allow-scripts allow-same-origin"
+      />
+      <InspectOverlay
+        inspectEnabled={inspectEnabled}
+        onToggleInspect={onToggleInspect}
+        onSelectNode={onInspectSelect}
+        iframeRef={iframeRef}
       />
     </div>
   );

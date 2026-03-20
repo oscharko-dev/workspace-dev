@@ -469,6 +469,20 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        // Inject inspect-bridge script into HTML responses served from the preview
+        if (previewAsset.contentType.startsWith("text/html")) {
+          const html = previewAsset.content.toString("utf8");
+          const injectedHtml = injectInspectBridgeScript(html);
+          sendBuffer({
+            response,
+            statusCode: 200,
+            contentType: previewAsset.contentType,
+            payload: Buffer.from(injectedHtml, "utf8"),
+            cacheControl: "no-store, no-cache, must-revalidate, max-age=0"
+          });
+          return;
+        }
+
         sendBuffer({
           response,
           statusCode: 200,
@@ -796,4 +810,101 @@ async function collectSourceFiles(
   await walk(baseDir);
   results.sort((a, b) => a.path.localeCompare(b.path));
   return results;
+}
+
+/**
+ * Inspect-bridge script injected into preview HTML when served via the
+ * workspace-dev server. This script is NOT baked into the generated code —
+ * it's injected at serve-time only. It enables the click-to-inspect overlay
+ * by communicating element boundaries to the parent frame via postMessage.
+ *
+ * < 2 KB minified.
+ */
+const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
+(function(){
+  var enabled=false,overlay=null,tooltip=null;
+  function getIrTarget(el){
+    var cur=el;
+    while(cur&&cur!==document.body){
+      if(cur.dataset&&cur.dataset.irId)return cur;
+      cur=cur.parentElement;
+    }
+    return null;
+  }
+  function ensureOverlay(){
+    if(!overlay){
+      overlay=document.createElement("div");
+      overlay.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid rgba(59,130,246,0.8);background:rgba(59,130,246,0.15);transition:all 80ms ease;display:none;";
+      document.body.appendChild(overlay);
+    }
+    if(!tooltip){
+      tooltip=document.createElement("div");
+      tooltip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#1e293b;color:#f8fafc;font:11px/1.3 system-ui,sans-serif;padding:2px 6px;border-radius:3px;white-space:nowrap;display:none;";
+      document.body.appendChild(tooltip);
+    }
+  }
+  function showOverlay(target){
+    ensureOverlay();
+    var r=target.getBoundingClientRect();
+    overlay.style.left=r.left+"px";overlay.style.top=r.top+"px";
+    overlay.style.width=r.width+"px";overlay.style.height=r.height+"px";
+    overlay.style.display="block";
+    var name=target.dataset.irId||"";
+    tooltip.textContent=target.dataset.irName||name;
+    tooltip.style.left=r.left+"px";
+    tooltip.style.top=Math.max(0,r.top-20)+"px";
+    tooltip.style.display="block";
+  }
+  function hideOverlay(){
+    if(overlay)overlay.style.display="none";
+    if(tooltip)tooltip.style.display="none";
+  }
+  function onMouseMove(e){
+    if(!enabled)return;
+    var t=getIrTarget(e.target);
+    if(t){
+      showOverlay(t);
+      var r=t.getBoundingClientRect();
+      window.parent.postMessage({type:"inspect:hover",irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||"",rect:{x:r.x,y:r.y,width:r.width,height:r.height}},"*");
+    }else{
+      hideOverlay();
+    }
+  }
+  function onClick(e){
+    if(!enabled)return;
+    var t=getIrTarget(e.target);
+    if(t){
+      e.preventDefault();e.stopPropagation();
+      window.parent.postMessage({type:"inspect:select",irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||""},"*");
+    }
+  }
+  window.addEventListener("message",function(e){
+    if(!e.data||typeof e.data.type!=="string")return;
+    if(e.data.type==="inspect:enable"){
+      enabled=true;
+      document.body.style.cursor="crosshair";
+      ensureOverlay();
+    }else if(e.data.type==="inspect:disable"){
+      enabled=false;
+      document.body.style.cursor="";
+      hideOverlay();
+    }
+  });
+  document.addEventListener("mousemove",onMouseMove,true);
+  document.addEventListener("click",onClick,true);
+})();
+</script>`;
+
+function injectInspectBridgeScript(html: string): string {
+  // Inject right before </body> if it exists, otherwise before </html>,
+  // otherwise append at the end.
+  const bodyClose = html.lastIndexOf("</body>");
+  if (bodyClose !== -1) {
+    return `${html.slice(0, bodyClose)}${INSPECT_BRIDGE_SCRIPT}\n${html.slice(bodyClose)}`;
+  }
+  const htmlClose = html.lastIndexOf("</html>");
+  if (htmlClose !== -1) {
+    return `${html.slice(0, htmlClose)}${INSPECT_BRIDGE_SCRIPT}\n${html.slice(htmlClose)}`;
+  }
+  return `${html}\n${INSPECT_BRIDGE_SCRIPT}`;
 }

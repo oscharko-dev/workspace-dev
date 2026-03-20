@@ -3261,6 +3261,25 @@ export const renderElement = (
   }
 };
 
+/**
+ * Inject `data-ir-id` and `data-ir-name` attributes into the first JSX opening
+ * tag of a rendered element string. This enables the click-to-inspect overlay
+ * to map DOM elements back to their IR node identifiers without affecting
+ * styling or functionality.
+ */
+const injectDataIrId = (raw: string, irNodeId: string, irNodeName: string): string => {
+  // Match the first JSX opening tag: <ComponentName or <component-name
+  // Insert data-ir-id right after the tag name, before any props or self-close.
+  const pattern = /^(\s*<[A-Za-z][A-Za-z0-9.]*)/;
+  const match = pattern.exec(raw);
+  if (!match || match[0] === undefined) {
+    return raw;
+  }
+  const insertPos = match[0].length;
+  const safeName = irNodeName.replace(/"/g, "&quot;");
+  return `${raw.slice(0, insertPos)} data-ir-id="${irNodeId}" data-ir-name="${safeName}"${raw.slice(insertPos)}`;
+};
+
 const wrapWithIrMarkers = ({
   element,
   depth,
@@ -3276,7 +3295,8 @@ const wrapWithIrMarkers = ({
   const safeName = element.name.replace(/[*/]/g, "_");
   const startTag = `${indent}{/* @ir:start ${element.id} ${safeName} ${element.type}${extracted ? " extracted" : ""} */}`;
   const endTag = `${indent}{/* @ir:end ${element.id} */}`;
-  return `${startTag}\n${raw}\n${endTag}`;
+  const taggedRaw = injectDataIrId(raw, element.id, element.name);
+  return `${startTag}\n${taggedRaw}\n${endTag}`;
 };
 
 

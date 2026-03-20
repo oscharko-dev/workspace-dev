@@ -142,6 +142,7 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [inspectEnabled, setInspectEnabled] = useState(false);
 
   const encodedJobId = encodeURIComponent(jobId);
 
@@ -308,6 +309,18 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
     [handleSelectTreeNode, manifest, irScreens]
   );
 
+  // Handle inspect:select from the preview iframe overlay
+  const handleInspectSelect = useCallback(
+    (irNodeId: string) => {
+      handleTreeSelect(irNodeId);
+    },
+    [handleTreeSelect]
+  );
+
+  const handleToggleInspect = useCallback(() => {
+    setInspectEnabled((prev) => !prev);
+  }, []);
+
   return (
     <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
@@ -331,7 +344,12 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
 
         {/* Center: Preview pane */}
         <div className="relative min-h-[200px] flex-1 lg:min-h-0" style={{ resize: "none" }}>
-          <PreviewPane previewUrl={previewUrl} />
+          <PreviewPane
+            previewUrl={previewUrl}
+            inspectEnabled={inspectEnabled}
+            onToggleInspect={handleToggleInspect}
+            onInspectSelect={handleInspectSelect}
+          />
         </div>
 
         {/* Resizable divider */}
