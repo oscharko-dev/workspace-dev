@@ -125,6 +125,7 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     screenElementCounts: [],
     truncatedScreens: [],
     depthTruncatedScreens: [],
+    classificationFallbacks: [],
     degradedGeometryNodes: [...(options?.sourceMetrics?.degradedGeometryNodes ?? [])]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .sort((left, right) => left.localeCompare(right))
@@ -149,11 +150,18 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     screens,
     tokens: resolvedTokens
   });
+  const metricsOutput = {
+    ...metrics,
+    ...(metrics.classificationFallbacks.length > 0
+      ? { classificationFallbacks: [...metrics.classificationFallbacks] }
+      : {})
+  };
+
   const baseIr: DesignIR = {
     sourceName: parsed.name ?? "Figma File",
     screens,
     tokens: resolvedTokens,
-    metrics,
+    metrics: metricsOutput,
     themeAnalysis
   };
 

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.15.0
+ * Contract version: 2.16.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -180,6 +180,27 @@ export interface WorkspaceJobLog {
   message: string;
 }
 
+export type WorkspaceJobDiagnosticSeverity = "error" | "warning" | "info";
+
+export type WorkspaceJobDiagnosticValue =
+  | string
+  | number
+  | boolean
+  | null
+  | WorkspaceJobDiagnosticValue[]
+  | { [key: string]: WorkspaceJobDiagnosticValue };
+
+export interface WorkspaceJobDiagnostic {
+  code: string;
+  message: string;
+  suggestion: string;
+  stage: WorkspaceJobStageName;
+  severity: WorkspaceJobDiagnosticSeverity;
+  figmaNodeId?: string;
+  figmaUrl?: string;
+  details?: Record<string, WorkspaceJobDiagnosticValue>;
+}
+
 /** Artifact paths emitted by autonomous job execution. */
 export interface WorkspaceJobArtifacts {
   outputRoot: string;
@@ -206,6 +227,7 @@ export interface WorkspaceJobError {
   code: string;
   stage: WorkspaceJobStageName;
   message: string;
+  diagnostics?: WorkspaceJobDiagnostic[];
 }
 
 /** Queue snapshot attached to job payloads for queue-state visibility. */
@@ -272,4 +294,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.15.0" as const;
+export const CONTRACT_VERSION = "2.16.0" as const;

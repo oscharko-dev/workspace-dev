@@ -52,6 +52,8 @@ import type {
 
 export interface MapElementInput {
   node: FigmaNode;
+  screenId: string;
+  screenName: string;
   depth: number;
   inInstanceContext: boolean;
   inInputContext: boolean;
@@ -141,10 +143,27 @@ export const evaluateElementSkip = ({
 
 export const buildElementBase = ({
   node,
+  depth,
+  screenId,
+  screenName,
   metrics,
   navigationContext
-}: Pick<MapElementInput, "node" | "metrics" | "navigationContext">): ElementBaseBuildResult => {
-  const elementType = determineElementType(node);
+}: Pick<MapElementInput, "node" | "depth" | "screenId" | "screenName" | "metrics" | "navigationContext">): ElementBaseBuildResult => {
+  const elementType = determineElementType(node, {
+    depth,
+    onFallback: ({ matchedRulePriority }) => {
+      metrics.classificationFallbacks.push({
+        screenId,
+        screenName,
+        nodeId: node.id,
+        nodeName: node.name ?? node.type,
+        nodeType: node.type,
+        depth,
+        ...(node.layoutMode ? { layoutMode: node.layoutMode } : {}),
+        ...(matchedRulePriority !== undefined ? { matchedRulePriority } : {})
+      });
+    }
+  });
   const variantMapping =
     node.type === "COMPONENT_SET" ? toComponentSetVariantMapping(node) : extractVariantDataFromNode(node);
   const prototypeNavigation = resolvePrototypeNavigation({
@@ -311,6 +330,8 @@ export const markDepthTruncation = ({
 
 export const mapElementChildren = ({
   node,
+  screenId,
+  screenName,
   depth,
   elementType,
   element,
@@ -322,6 +343,8 @@ export const mapElementChildren = ({
   mapElementFn
 }: {
   node: FigmaNode;
+  screenId: string;
+  screenName: string;
   depth: number;
   elementType: ScreenElementIR["type"];
   element: ScreenElementIR;
@@ -350,6 +373,8 @@ export const mapElementChildren = ({
 
     const mappedDefault = mapElementFn({
       node: defaultVariantNode,
+      screenId,
+      screenName,
       depth: depth + 1,
       inInstanceContext: traversalContext.isNextInstanceContext,
       inInputContext: traversalContext.isNextInputContext,
@@ -378,6 +403,8 @@ export const mapElementChildren = ({
   for (const child of node.children) {
     const mappedChild = mapElementFn({
       node: child,
+      screenId,
+      screenName,
       depth: depth + 1,
       inInstanceContext: traversalContext.isNextInstanceContext,
       inInputContext: traversalContext.isNextInputContext,
@@ -426,9 +453,12 @@ const baseElementVisitor: ElementMappingVisitor = {
     if (state.skipNode) {
       return;
     }
-    const { node, metrics, navigationContext } = state.input;
+    const { node, depth, screenId, screenName, metrics, navigationContext } = state.input;
     const { element, elementType } = buildElementBase({
       node,
+      depth,
+      screenId,
+      screenName,
       metrics,
       navigationContext
     });
@@ -489,6 +519,8 @@ const childTraversalVisitor: ElementMappingVisitor = {
 
     const {
       node,
+      screenId,
+      screenName,
       depth,
       placeholderMatcherConfig,
       metrics,
@@ -498,6 +530,8 @@ const childTraversalVisitor: ElementMappingVisitor = {
 
     mapElementChildren({
       node,
+      screenId,
+      screenName,
       depth,
       elementType: state.elementType,
       element: state.element,

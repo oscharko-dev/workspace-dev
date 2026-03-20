@@ -829,6 +829,8 @@ export const mapScreenCandidate = ({
   for (const child of sourceNode.children ?? []) {
     const mapped = mapElement({
       node: child,
+      screenId: sourceNode.id,
+      screenName: normalized.name,
       depth: 0,
       inInstanceContext: sourceNode.type === "INSTANCE" || sourceNode.type === "COMPONENT_SET",
       inInputContext: false,
