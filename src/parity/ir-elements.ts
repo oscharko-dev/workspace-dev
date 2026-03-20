@@ -42,6 +42,13 @@ import {
 import {
   resolvePrototypeNavigation
 } from "./ir-navigation.js";
+import {
+  visitIrNode
+} from "./ir-visitor.js";
+import type {
+  IrVisitContext,
+  IrVisitor
+} from "./ir-visitor.js";
 
 export interface MapElementInput {
   node: FigmaNode;
@@ -69,6 +76,16 @@ export interface ElementBaseBuildResult {
 export interface ElementTraversalContext {
   isNextInstanceContext: boolean;
   isNextInputContext: boolean;
+}
+
+interface ElementMappingVisitorState {
+  input: MapElementInput;
+  mapElementFn: (input: MapElementInput) => ScreenElementIR | null;
+  skipNode: boolean;
+  placeholderClassification: PlaceholderClassification;
+  element?: ScreenElementIR;
+  elementType?: ScreenElementIR["type"];
+  traversalContext?: ElementTraversalContext;
 }
 
 export const evaluateElementSkip = ({
@@ -378,59 +395,159 @@ export const mapElementChildren = ({
   }
 };
 
-export const mapElement = ({
-  node,
-  depth,
-  inInstanceContext,
-  inInputContext,
-  placeholderMatcherConfig,
-  metrics,
-  depthContext,
-  navigationContext
-}: MapElementInput): ScreenElementIR | null => {
-  const skipEvaluation = evaluateElementSkip({
-    node,
-    inInstanceContext,
-    inInputContext,
-    placeholderMatcherConfig,
-    metrics
+type ElementMappingVisitor = IrVisitor<FigmaNode, ElementMappingVisitorState>;
+type ElementMappingVisitorContext = IrVisitContext<FigmaNode, ElementMappingVisitorState>;
+
+const skipEvaluationVisitor: ElementMappingVisitor = {
+  name: "skip-evaluation",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    const {
+      node,
+      inInstanceContext,
+      inInputContext,
+      placeholderMatcherConfig,
+      metrics
+    } = state.input;
+    const skipEvaluation = evaluateElementSkip({
+      node,
+      inInstanceContext,
+      inInputContext,
+      placeholderMatcherConfig,
+      metrics
+    });
+    state.skipNode = skipEvaluation.skip;
+    state.placeholderClassification = skipEvaluation.placeholderClassification;
+  }
+};
+
+const baseElementVisitor: ElementMappingVisitor = {
+  name: "build-base-element",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    if (state.skipNode) {
+      return;
+    }
+    const { node, metrics, navigationContext } = state.input;
+    const { element, elementType } = buildElementBase({
+      node,
+      metrics,
+      navigationContext
+    });
+    state.element = element;
+    state.elementType = elementType;
+  }
+};
+
+const styleAndGeometryVisitor: ElementMappingVisitor = {
+  name: "style-and-geometry",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    if (state.skipNode || !state.element) {
+      return;
+    }
+    const { node, inInstanceContext, inInputContext } = state.input;
+    enrichElementStyleAndGeometry({
+      node,
+      element: state.element,
+      placeholderClassification: state.placeholderClassification,
+      inInstanceContext,
+      inInputContext
+    });
+  }
+};
+
+const depthAccountingVisitor: ElementMappingVisitor = {
+  name: "depth-accounting",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    if (state.skipNode || !state.element) {
+      return;
+    }
+    state.input.depthContext.mappedElementCount += 1;
+  }
+};
+
+const traversalContextVisitor: ElementMappingVisitor = {
+  name: "resolve-traversal-context",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    if (state.skipNode || !state.elementType) {
+      return;
+    }
+    const { node, inInstanceContext, inInputContext } = state.input;
+    state.traversalContext = resolveTraversalContext({
+      node,
+      elementType: state.elementType,
+      inInstanceContext,
+      inInputContext
+    });
+  }
+};
+
+const childTraversalVisitor: ElementMappingVisitor = {
+  name: "map-children",
+  enter: ({ state }: ElementMappingVisitorContext): void => {
+    if (state.skipNode || !state.element || !state.elementType || !state.traversalContext) {
+      return;
+    }
+
+    const {
+      node,
+      depth,
+      placeholderMatcherConfig,
+      metrics,
+      depthContext,
+      navigationContext
+    } = state.input;
+
+    mapElementChildren({
+      node,
+      depth,
+      elementType: state.elementType,
+      element: state.element,
+      placeholderMatcherConfig,
+      metrics,
+      depthContext,
+      navigationContext,
+      traversalContext: state.traversalContext,
+      mapElementFn: state.mapElementFn
+    });
+  }
+};
+
+/**
+ * Ordered mapping phases for one Figma node.
+ *
+ * Ordering is dependency-sensitive:
+ * 1) skip checks gate all later work
+ * 2) base element/type must exist before style enrichment
+ * 3) mapped-element counting must happen before depth-based child truncation
+ * 4) traversal context must be computed before child mapping
+ */
+export const ELEMENT_MAPPING_VISITORS: readonly ElementMappingVisitor[] = [
+  skipEvaluationVisitor,
+  baseElementVisitor,
+  styleAndGeometryVisitor,
+  depthAccountingVisitor,
+  traversalContextVisitor,
+  childTraversalVisitor
+];
+
+export const mapElement = (input: MapElementInput): ScreenElementIR | null => {
+  const visitorState: ElementMappingVisitorState = {
+    input,
+    mapElementFn: mapElement,
+    skipNode: false,
+    placeholderClassification: "none"
+  };
+
+  visitIrNode({
+    node: input.node,
+    depth: input.depth,
+    state: visitorState,
+    visitors: ELEMENT_MAPPING_VISITORS,
+    // Child traversal is explicitly controlled by the final visitor phase.
+    traverseChildren: (): void => undefined
   });
-  if (skipEvaluation.skip) {
+
+  if (visitorState.skipNode || !visitorState.element) {
     return null;
   }
-
-  const { element, elementType } = buildElementBase({
-    node,
-    metrics,
-    navigationContext
-  });
-  enrichElementStyleAndGeometry({
-    node,
-    element,
-    placeholderClassification: skipEvaluation.placeholderClassification,
-    inInstanceContext,
-    inInputContext
-  });
-  depthContext.mappedElementCount += 1;
-
-  const traversalContext = resolveTraversalContext({
-    node,
-    elementType,
-    inInstanceContext,
-    inInputContext
-  });
-  mapElementChildren({
-    node,
-    depth,
-    elementType,
-    element,
-    placeholderMatcherConfig,
-    metrics,
-    depthContext,
-    navigationContext,
-    traversalContext,
-    mapElementFn: mapElement
-  });
-
-  return element;
+  return visitorState.element;
 };
