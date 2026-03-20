@@ -1,8 +1,11 @@
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { enforceModeLock } from "../mode-lock.js";
+import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
+import type { ScreenIR } from "../parity/types-ir.js";
 import { SubmitRequestSchema, formatZodError } from "../schemas.js";
 import { sendBuffer, sendJson, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath } from "./routes.js";
@@ -89,6 +92,91 @@ export function createWorkspaceRequestHandler({
             payload: {
               error: "METHOD_NOT_ALLOWED",
               message: `Use POST for cancellation route '/workspace/jobs/${jobId}/cancel'.`
+            }
+          });
+          return;
+        }
+
+        if (parsedJobRoute.action === "design-ir") {
+          const record = jobEngine.getJobRecord(jobId);
+          if (!record) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          if (record.status === "queued" || record.status === "running") {
+            sendJson({
+              response,
+              statusCode: 409,
+              payload: {
+                error: "JOB_NOT_COMPLETED",
+                message: `Job '${jobId}' has status '${record.status}' — design IR is only available after the job finishes.`
+              }
+            });
+            return;
+          }
+
+          const designIrPath = record.artifacts.designIrFile;
+          if (!designIrPath) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "DESIGN_IR_NOT_FOUND",
+                message: `Design IR artifact not available for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          let rawIr: unknown;
+          try {
+            const content = await readFile(designIrPath, "utf8");
+            rawIr = JSON.parse(content) as unknown;
+          } catch {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "DESIGN_IR_NOT_FOUND",
+                message: `Design IR file not found on disk for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          const irData = rawIr as {
+            sourceName?: string;
+            screens?: ScreenIR[];
+            tokens?: unknown;
+          };
+
+          const screens: ScreenIR[] = Array.isArray(irData.screens) ? irData.screens : [];
+          const identities = buildScreenArtifactIdentities(screens);
+
+          const enrichedScreens = screens.map((screen) => {
+            const identity = identities.get(screen.id);
+            return {
+              ...screen,
+              ...(identity ? { generatedFile: identity.filePath } : {})
+            };
+          });
+
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              jobId,
+              sourceName: irData.sourceName ?? null,
+              screens: enrichedScreens,
+              tokens: irData.tokens ?? null
             }
           });
           return;
