@@ -3,6 +3,25 @@
 // Refactored from procedural if-chains to declarative rules (issue #300)
 // ---------------------------------------------------------------------------
 import type { ScreenElementIR } from "./types.js";
+import {
+  ROUNDED_CORNER_RADIUS_MIN,
+  FIELD_MIN_WIDTH,
+  FIELD_MIN_HEIGHT,
+  FIELD_MAX_HEIGHT,
+  DIVIDER_MIN_LENGTH,
+  DIVIDER_MAX_THICKNESS,
+  TABLE_ROW_CELL_MIN_CHILDREN,
+  TABLE_MIN_CHILDREN,
+  TABLE_MIN_WIDTH,
+  POSITION_BUCKET_THRESHOLD,
+  GRID_MIN_CHILDREN,
+  GRID_MIN_ROW_BUCKETS,
+  GRID_MIN_COLUMN_BUCKETS,
+  LIST_MIN_CHILDREN,
+  LIST_MIN_TEXT_CHILDREN,
+  CARD_MIN_WIDTH,
+  CARD_MIN_HEIGHT
+} from "./constants.js";
 
 type ElementTypeValue = ScreenElementIR["type"];
 
@@ -213,7 +232,7 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
   const hasVisualFill = hasSolidFill || hasGradientFill;
   const hasVisualSurface = hasVisualFill || hasShadow;
   const hasStroke = dependencies.hasStroke(node);
-  const hasRoundedCorners = (node.cornerRadius ?? 0) >= 8;
+  const hasRoundedCorners = (node.cornerRadius ?? 0) >= ROUNDED_CORNER_RADIUS_MIN;
   const hasListishChildNames = children.some((child) => {
     const childName = (child.name ?? "").toLowerCase();
     return (
@@ -237,9 +256,9 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
     "formcontrol"
   ]);
   const hasSelectSemantic = hasAnySubstring(name, ["muiselect", "selectroot", "selectfield", "dropdown"]);
-  const isFieldSized = width >= 96 && height >= 28 && height <= 140;
+  const isFieldSized = width >= FIELD_MIN_WIDTH && height >= FIELD_MIN_HEIGHT && height <= FIELD_MAX_HEIGHT;
   const isLikelyDividerByGeometry =
-    !hasChildren && hasVisualFill && ((width >= 16 && height > 0 && height <= 2) || (height >= 16 && width > 0 && width <= 2));
+    !hasChildren && hasVisualFill && ((width >= DIVIDER_MIN_LENGTH && height > 0 && height <= DIVIDER_MAX_THICKNESS) || (height >= DIVIDER_MIN_LENGTH && width > 0 && width <= DIVIDER_MAX_THICKNESS));
 
   const hasTableishChildNames = children.some((child) => {
     const childName = (child.name ?? "").toLowerCase();
@@ -250,8 +269,8 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
       childName.includes("table cell")
     );
   });
-  const hasRowCellStructure = children.some((child) => (child.children?.length ?? 0) >= 2);
-  const isLikelyTableByStructure = hasChildren && childCount >= 2 && hasRowCellStructure && (width >= 180 || hasTableishChildNames);
+  const hasRowCellStructure = children.some((child) => (child.children?.length ?? 0) >= TABLE_ROW_CELL_MIN_CHILDREN);
+  const isLikelyTableByStructure = hasChildren && childCount >= TABLE_MIN_CHILDREN && hasRowCellStructure && (width >= TABLE_MIN_WIDTH || hasTableishChildNames);
   const hasButtonLabelHint =
     name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
@@ -263,17 +282,17 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
       .map((child) => child.absoluteBoundingBox?.y)
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
       .sort((left, right) => left - right),
-    threshold: 18
+    threshold: POSITION_BUCKET_THRESHOLD
   });
   const columnBuckets = countPositionBuckets({
     values: children
       .map((child) => child.absoluteBoundingBox?.x)
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
       .sort((left, right) => left - right),
-    threshold: 18
+    threshold: POSITION_BUCKET_THRESHOLD
   });
-  const isLikelyGridByStructure = childCount >= 4 && rowBuckets >= 2 && columnBuckets >= 2 && node.layoutMode !== "VERTICAL";
-  const isLikelyListByStructure = !hasVisualSurface && childCount >= 3 && textChildCount >= 2 && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
+  const isLikelyGridByStructure = childCount >= GRID_MIN_CHILDREN && rowBuckets >= GRID_MIN_ROW_BUCKETS && columnBuckets >= GRID_MIN_COLUMN_BUCKETS && node.layoutMode !== "VERTICAL";
+  const isLikelyListByStructure = !hasVisualSurface && childCount >= LIST_MIN_CHILDREN && textChildCount >= LIST_MIN_TEXT_CHILDREN && (node.layoutMode === "VERTICAL" || node.layoutMode === "NONE");
 
   return {
     node,
@@ -418,7 +437,7 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
     type: "card",
     priority: 162,
     requires: { hasChildren: true, hasVisualSurface: true, hasRoundedCorners: true },
-    geometry: { minWidth: 120, minHeight: 80 }
+    geometry: { minWidth: CARD_MIN_WIDTH, minHeight: CARD_MIN_HEIGHT }
   },
 
   // --- Priority 180–189: paper (keyword + visual surface) ---

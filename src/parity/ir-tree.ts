@@ -10,7 +10,15 @@ import { isTechnicalPlaceholderText } from "../figma-node-heuristics.js";
 import type { ScreenElementIR } from "./types.js";
 import {
   DEFAULT_SCREEN_ELEMENT_BUDGET as _DEFAULT_SCREEN_ELEMENT_BUDGET,
-  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH as _DEFAULT_SCREEN_ELEMENT_MAX_DEPTH
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH as _DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
+  DEPTH_HIGH_SEMANTIC_DENSITY_THRESHOLD,
+  DEPTH_HIGH_DENSITY_PRESSURE_MULTIPLIER,
+  DEPTH_LOW_DENSITY_PRESSURE_MULTIPLIER,
+  DEPTH_MIN_NODE_COUNT_FLOOR,
+  DEPTH_SEMANTIC_WIDTH_DENSITY_THRESHOLD,
+  DEPTH_HIGH_DENSITY_WIDTH_MULTIPLIER,
+  DEPTH_LOW_DENSITY_WIDTH_MULTIPLIER,
+  DEPTH_MIN_SEMANTIC_WIDTH
 } from "./constants.js";
 
 // ── Minimal FigmaNode shape needed by tree traversal ─────────────────────────
@@ -213,8 +221,8 @@ export const shouldTruncateChildrenByDepth = ({
   const semanticDensityAtDepth = nodeCountAtDepth > 0 ? semanticCountAtDepth / nodeCountAtDepth : 0;
 
   if (nextDepth <= context.configuredMaxDepth) {
-    const pressureMultiplier = semanticDensityAtDepth > 0.25 ? 6 : 4;
-    const highPressureCutoff = remainingBudget > 0 && nodeCountAtDepth > Math.max(remainingBudget * pressureMultiplier, 32);
+    const pressureMultiplier = semanticDensityAtDepth > DEPTH_HIGH_SEMANTIC_DENSITY_THRESHOLD ? DEPTH_HIGH_DENSITY_PRESSURE_MULTIPLIER : DEPTH_LOW_DENSITY_PRESSURE_MULTIPLIER;
+    const highPressureCutoff = remainingBudget > 0 && nodeCountAtDepth > Math.max(remainingBudget * pressureMultiplier, DEPTH_MIN_NODE_COUNT_FLOOR);
     return highPressureCutoff && !semanticRelevant;
   }
 
@@ -225,6 +233,6 @@ export const shouldTruncateChildrenByDepth = ({
     return true;
   }
 
-  const allowedSemanticDepthWidth = Math.max(remainingBudget * (semanticDensityAtDepth > 0.15 ? 3 : 2), 12);
+  const allowedSemanticDepthWidth = Math.max(remainingBudget * (semanticDensityAtDepth > DEPTH_SEMANTIC_WIDTH_DENSITY_THRESHOLD ? DEPTH_HIGH_DENSITY_WIDTH_MULTIPLIER : DEPTH_LOW_DENSITY_WIDTH_MULTIPLIER), DEPTH_MIN_SEMANTIC_WIDTH);
   return nodeCountAtDepth > allowedSemanticDepthWidth;
 };
