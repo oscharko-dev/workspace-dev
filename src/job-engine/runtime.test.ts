@@ -15,6 +15,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaScreenNamePattern, undefined);
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
+  assert.equal(runtime.irCacheEnabled, true);
+  assert.equal(runtime.irCacheTtlMs, 60 * 60_000);
   assert.equal(runtime.iconMapFilePath, undefined);
   assert.equal(runtime.designSystemFilePath, undefined);
   assert.equal(runtime.exportImages, true);

@@ -11,6 +11,8 @@ const DEFAULT_ADAPTIVE_BATCHING_ENABLED = true;
 const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_IR_CACHE_ENABLED = true;
+const DEFAULT_IR_CACHE_TTL_MS = 60 * 60_000;
 const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
@@ -57,6 +59,8 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern,
   figmaCacheEnabled,
   figmaCacheTtlMs,
+  irCacheEnabled,
+  irCacheTtlMs,
   iconMapFilePath,
   designSystemFilePath,
   exportImages,
@@ -85,6 +89,8 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern?: string;
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
+  irCacheEnabled?: boolean;
+  irCacheTtlMs?: number;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   exportImages?: boolean;
@@ -141,6 +147,11 @@ export const resolveRuntimeSettings = ({
       typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
         : DEFAULT_FIGMA_CACHE_TTL_MS,
+    irCacheEnabled: typeof irCacheEnabled === "boolean" ? irCacheEnabled : DEFAULT_IR_CACHE_ENABLED,
+    irCacheTtlMs:
+      typeof irCacheTtlMs === "number" && Number.isFinite(irCacheTtlMs)
+        ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(irCacheTtlMs)))
+        : DEFAULT_IR_CACHE_TTL_MS,
     iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
     designSystemFilePath:
       typeof designSystemFilePath === "string" && designSystemFilePath.trim().length > 0
