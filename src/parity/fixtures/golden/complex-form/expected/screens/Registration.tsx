@@ -6,7 +6,7 @@ import { RegistrationFormContextProvider, useRegistrationFormContext } from "../
 function RegistrationScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useRegistrationFormContext();
   return (
-    <Container maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
       <Typography variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
       <Typography variant="h2" component="h2" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Fill in your details to get started"}</Typography>
       <Table size="small" sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 2 }}>

@@ -82,7 +82,11 @@ import {
   simplifyElements,
   collectThemeSxSampleFromEntries,
   collectThemeDefaultMatchedSxKeys,
-  detectFormGroups
+  detectFormGroups,
+  buildTabA11yId,
+  buildTabPanelA11yId,
+  buildAccordionHeaderA11yId,
+  buildAccordionPanelA11yId
 } from "../generator-core.js";
 import type {
   RenderContext,
@@ -658,6 +662,8 @@ export const renderSemanticAccordion = (
     ["boxShadow", literal("none")]
   ]);
 
+  const accordionHeaderId = buildAccordionHeaderA11yId(accordionModel.key);
+  const accordionPanelId = buildAccordionPanelA11yId(accordionModel.key);
   return `${indent}<Accordion
 ${indent}  expanded={accordionState[${literal(accordionModel.key)}] ?? ${accordionModel.defaultExpanded ? "true" : "false"}}
 ${indent}  onChange={(_, expanded) => updateAccordionState(${literal(accordionModel.key)}, expanded)}
@@ -666,12 +672,12 @@ ${indent}  elevation={0}
 ${indent}  square
 ${indent}  sx={{ ${accordionSx}, "&::before": { display: "none" } }}
 ${indent}>
-${indent}  <AccordionSummary expandIcon={${expandIconExpression}} sx={{ ${summarySx} }}>
+${indent}  <AccordionSummary id={${literal(accordionHeaderId)}} aria-controls={${literal(accordionPanelId)}} expandIcon={${expandIconExpression}} sx={{ ${summarySx} }}>
 ${indent}    <Box sx={{ width: "100%", position: "relative", minHeight: ${literal(`${Math.max(20, Math.round(summaryContent.height ?? 24))}px`)} }}>
 ${renderedSummary || `${indent}      <Typography>{${literal(summaryFallbackLabel)}}</Typography>`}
 ${indent}    </Box>
 ${indent}  </AccordionSummary>
-${indent}  <AccordionDetails sx={{ p: 0 }}>
+${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
 ${indent}    <Box sx={{ ${detailsSx} }}>
 ${renderedDetails || `${indent}      <Box />`}
 ${indent}    </Box>
@@ -1816,15 +1822,20 @@ export const renderTabs = (
     parent,
     context
   });
+  const tabsLabel = resolveElementA11yLabel({ element, fallback: "Tabs" });
+  const hasPanels = panelNodes.length === tabItems.length && panelNodes.length > 0;
   const renderedTabs = tabItems
     .map((tab, index) => {
       const navigation = resolvePrototypeNavigationBinding({ element: tab.node, context });
       const linkProps = navigation ? toRouterLinkProps({ navigation, context }) : "";
-      return `${indent}  <Tab key={${literal(tab.id)}} value={${index}} label={${literal(tab.label)}}${linkProps} />`;
+      const tabId = buildTabA11yId(tabsStateModel.stateId, index);
+      const panelId = hasPanels ? buildTabPanelA11yId(tabsStateModel.stateId, index) : undefined;
+      const ariaControlsProp = panelId ? ` aria-controls={${literal(panelId)}}` : "";
+      return `${indent}  <Tab key={${literal(tab.id)}} id={${literal(tabId)}} value={${index}} label={${literal(tab.label)}}${ariaControlsProp}${linkProps} />`;
     })
     .join("\n");
   const renderedPanels =
-    panelNodes.length === tabItems.length && panelNodes.length > 0
+    hasPanels
       ? panelNodes
           .map((panelNode, index) => {
             const panelContent =
@@ -1843,13 +1854,15 @@ export const renderTabs = (
                 },
                 context
               ) ?? `${indent}    <Box />`;
-            return `${indent}  <Box key={${literal(panelNode.id)}} role="tabpanel" hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
+            const panelId = buildTabPanelA11yId(tabsStateModel.stateId, index);
+            const tabId = buildTabA11yId(tabsStateModel.stateId, index);
+            return `${indent}  <Box key={${literal(panelNode.id)}} id={${literal(panelId)}} role="tabpanel" aria-labelledby={${literal(tabId)}} hidden={${tabValueVar} !== ${index}} sx={{ pt: 2 }}>
 ${panelContent}
 ${indent}  </Box>`;
           })
           .join("\n")
       : "";
-  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} sx={{ ${sx} }}>
+  return `${indent}<Tabs value={${tabValueVar}} onChange={${tabChangeHandlerVar}} aria-label={${literal(tabsLabel)}} sx={{ ${sx} }}>
 ${renderedTabs}
 ${indent}</Tabs>${renderedPanels ? `\n${renderedPanels}` : ""}`;
 };
@@ -1908,8 +1921,10 @@ export const renderDialog = (
             .join("\n")
         : "";
     const actionsBlock = renderedActions ? `\n${indent}  <DialogActions>\n${renderedActions}\n${indent}  </DialogActions>` : "";
-    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
-${detectedPattern.title ? `${indent}  <DialogTitle>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
+    const dialogTitleId = detectedPattern.title ? `dialog-title-${dialogStateModel.stateId}` : undefined;
+    const ariaLabelledByProp = dialogTitleId ? ` aria-labelledby={${literal(dialogTitleId)}}` : "";
+    return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}}${ariaLabelledByProp} aria-modal="true" sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${detectedPattern.title ? `${indent}  <DialogTitle id={${literal(dialogTitleId!)}}>{${literal(detectedPattern.title)}}</DialogTitle>\n` : ""}${contentBlock}${actionsBlock}
 ${indent}</Dialog>`;
   }
 
@@ -1931,8 +1946,10 @@ ${indent}</Dialog>`;
   const contentBlock = renderedChildren.trim()
     ? `${indent}  <DialogContent>\n${renderedChildren}\n${indent}  </DialogContent>`
     : `${indent}  <DialogContent />`;
-  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}} sx={{ "& .MuiDialog-paper": { ${sx} } }}>
-${title ? `${indent}  <DialogTitle>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
+  const fallbackDialogTitleId = title ? `dialog-title-${dialogStateModel.stateId}` : undefined;
+  const fallbackAriaLabelledByProp = fallbackDialogTitleId ? ` aria-labelledby={${literal(fallbackDialogTitleId)}}` : "";
+  return `${indent}<Dialog open={${dialogOpenVar}} onClose={${dialogCloseHandlerVar}}${fallbackAriaLabelledByProp} aria-modal="true" sx={{ "& .MuiDialog-paper": { ${sx} } }}>
+${title ? `${indent}  <DialogTitle id={${literal(fallbackDialogTitleId!)}}>{${literal(title)}}</DialogTitle>\n` : ""}${contentBlock}
 ${indent}</Dialog>`;
 };
 
@@ -1969,10 +1986,10 @@ export const renderProgress = (element: ScreenElementIR, depth: number, parent: 
   });
   if (isLinear) {
     registerMuiImports(context, "LinearProgress");
-    return `${indent}<LinearProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+    return `${indent}<LinearProgress variant="determinate" value={65} aria-live="polite" aria-label="Loading" sx={{ ${sx} }} />`;
   }
   registerMuiImports(context, "CircularProgress");
-  return `${indent}<CircularProgress variant="determinate" value={65} sx={{ ${sx} }} />`;
+  return `${indent}<CircularProgress variant="determinate" value={65} aria-live="polite" aria-label="Loading" sx={{ ${sx} }} />`;
 };
 
 export const renderAvatar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
@@ -2130,7 +2147,8 @@ export const renderNavigation = (element: ScreenElementIR, depth: number, parent
       return `${indent}  <BottomNavigationAction key={${literal(action.id)}} value={${index}} label={${literal(action.label)}}${linkProps} />`;
     })
     .join("\n");
-  return `${indent}<BottomNavigation role="navigation" showLabels value={0} sx={{ ${sx} }}>
+  const navLabel = resolveElementA11yLabel({ element, fallback: "Navigation" });
+  return `${indent}<BottomNavigation role="navigation" aria-label={${literal(navLabel)}} showLabels value={0} sx={{ ${sx} }}>
 ${renderedActions}
 ${indent}</BottomNavigation>`;
 };
@@ -2488,7 +2506,8 @@ export const renderDrawer = (element: ScreenElementIR, depth: number, parent: Vi
     depth: depth + 2,
     context
   });
-  return `${indent}<Drawer open variant="persistent" slotProps={{ paper: { role: "navigation" } }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
+  const drawerLabel = resolveElementA11yLabel({ element, fallback: "Navigation drawer" });
+  return `${indent}<Drawer open variant="persistent" aria-label={${literal(drawerLabel)}} slotProps={{ paper: { role: "navigation" } }} sx={{ "& .MuiDrawer-paper": { ${sx} } }}>
 ${indent}  <Box sx={{ width: "100%" }}>
 ${renderedChildren || `${indent}    <Box />`}
 ${indent}  </Box>
@@ -2657,7 +2676,7 @@ export const renderSnackbar = (element: ScreenElementIR, depth: number, parent: 
     context,
     includePaints: false
   });
-  return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+  return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }} role="status" aria-live="polite">
 ${indent}  <Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>
 ${indent}</Snackbar>`;
 };
@@ -4249,7 +4268,7 @@ ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
-    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
+    <Container id="main-content" maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
     </Container>
   );
@@ -4279,7 +4298,7 @@ ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
-    <Container maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
+    <Container id="main-content" maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
 ${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
     </Container>
   );

@@ -6,7 +6,7 @@ import { LoginFormContextProvider, useLoginFormContext } from "../context/LoginF
 function LoginScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useLoginFormContext();
   return (
-    <Container maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
       <Typography variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
       <Controller
         name={"muiformcontrolroot_email_field"}
