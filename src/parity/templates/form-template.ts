@@ -84,6 +84,8 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
   switch (validationType) {
     case "email":
       return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+    case "password":
+      return trimmed.length >= 8 ? "" : validationMessage;
     case "tel": {
       const compactTel = trimmed.replace(/\\s+/g, "");
       const digitCount = (compactTel.match(/\\d/g) ?? []).length;
@@ -293,6 +295,8 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
     switch (validationType) {
       case "email":
         return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed) ? "" : validationMessage;
+      case "password":
+        return trimmed.length >= 8 ? "" : validationMessage;
       case "tel": {
         const compactTel = trimmed.replace(/\\s+/g, "");
         const digitCount = (compactTel.match(/\\d/g) ?? []).length;
@@ -532,6 +536,11 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
           issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
         }
         return;
+      case "password":
+        if (trimmed.length < 8) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
       case "tel": {
         const compactTel = trimmed.replace(/\\s+/g, "");
         const digitCount = (compactTel.match(/\\d/g) ?? []).length;
@@ -636,12 +645,16 @@ const formSchema = z.object({
 ${schemaEntries}
 });
 
-const { control, handleSubmit } = useForm({
+type FormData = z.infer<typeof formSchema>;
+
+const defaultValues: FormData = ${JSON.stringify(initialValues, null, 2)};
+
+const { control, handleSubmit } = useForm<FormData>({
   resolver: zodResolver(formSchema),
-  defaultValues: ${JSON.stringify(initialValues, null, 2)}
+  defaultValues
 });
 
-const onSubmit = (values: Record<string, string>): void => {
+const onSubmit = (values: FormData): void => {
   void values;
   // Intentionally no-op in deterministic fallback output.
 };
@@ -683,6 +696,7 @@ export const buildReactHookFormContextFile = ({
   const hookName = toFormContextHookName(screenComponentName);
   const contextVarName = `${screenComponentName}FormContext`;
   const contextValueTypeName = `${screenComponentName}FormContextValue`;
+  const formDataTypeName = `${screenComponentName}FormData`;
   const providerPropsTypeName = `${providerName}Props`;
   const schemaEntries = toReactHookFormSchemaEntries({
     initialValues,
@@ -696,9 +710,9 @@ import { z } from "zod";
 export interface ${contextValueTypeName} {
   initialVisualErrors: Record<string, string>;
   selectOptions: Record<string, string[]>;
-  control: UseFormReturn<Record<string, string>>["control"];
-  handleSubmit: UseFormReturn<Record<string, string>>["handleSubmit"];
-  onSubmit: (values: Record<string, string>) => void;
+  control: UseFormReturn<${formDataTypeName}>["control"];
+  handleSubmit: UseFormReturn<${formDataTypeName}>["handleSubmit"];
+  onSubmit: (values: ${formDataTypeName}) => void;
   resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
 }
 
@@ -758,6 +772,11 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
       switch (validationType) {
         case "email":
           if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+          return;
+        case "password":
+          if (trimmed.length < 8) {
             issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
           }
           return;
@@ -865,12 +884,16 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
 ${schemaEntries}
   });
 
-  const { control, handleSubmit } = useForm({
+  type ${formDataTypeName} = z.infer<typeof formSchema>;
+
+  const defaultValues: ${formDataTypeName} = ${JSON.stringify(initialValues, null, 2)};
+
+  const { control, handleSubmit } = useForm<${formDataTypeName}>({
     resolver: zodResolver(formSchema),
-    defaultValues: ${JSON.stringify(initialValues, null, 2)}
+    defaultValues
   });
 
-  const onSubmit = (values: Record<string, string>): void => {
+  const onSubmit = (values: ${formDataTypeName}): void => {
     void values;
     // Intentionally no-op in deterministic fallback output.
   };
@@ -895,8 +918,8 @@ ${schemaEntries}
       value={{
         initialVisualErrors,
         selectOptions,
-        control: control as unknown as UseFormReturn<Record<string, string>>["control"],
-        handleSubmit: handleSubmit as unknown as UseFormReturn<Record<string, string>>["handleSubmit"],
+        control,
+        handleSubmit,
         onSubmit,
         resolveFieldErrorMessage
       }}
@@ -925,4 +948,3 @@ export const ${hookName} = (): ${contextValueTypeName} => {
     importPath: `../context/${screenComponentName}FormContext`
   };
 };
-

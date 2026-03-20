@@ -3676,8 +3676,10 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes('import { useForm, type UseFormReturn } from "react-hook-form";'));
   assert.ok(formContextContent.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(formContextContent.includes('import { z } from "zod";'));
-  assert.ok(formContextContent.includes("const { control, handleSubmit } = useForm({"));
-  assert.ok(formContextContent.includes("const onSubmit = (values: Record<string, string>): void => {"));
+  assert.ok(formContextContent.includes("type LoanFormFormData = z.infer<typeof formSchema>;"));
+  assert.ok(formContextContent.includes("const { control, handleSubmit } = useForm<LoanFormFormData>({"));
+  assert.ok(formContextContent.includes("const onSubmit = (values: LoanFormFormData): void => {"));
+  assert.equal(formContextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
 });
 
@@ -4706,7 +4708,8 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
   assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(content.includes('import { z } from "zod";'));
-  assert.ok(content.includes("const { control, handleSubmit } = useForm({"));
+  assert.ok(content.includes("type FormData = z.infer<typeof formSchema>;"));
+  assert.ok(content.includes("const { control, handleSubmit } = useForm<FormData>({"));
   assert.ok(content.includes("<Controller"));
   assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
@@ -10470,6 +10473,46 @@ test("deterministic screen rendering emits IBAN validation in react-hook-form mo
   assert.ok(content.includes('"iban"'), "Expected IBAN validation type in RHF mode");
   assert.ok(content.includes('case "iban"'), "Expected IBAN case in RHF createFieldSchema");
   assert.ok(content.includes("Please enter a valid IBAN."), "Expected IBAN validation message in RHF mode");
+});
+
+test("deterministic screen rendering emits password min-length validation in react-hook-form mode", () => {
+  const screen = {
+    id: "password-rhf-screen",
+    name: "Password RHF Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({ id: "password-field", name: "Password Input", label: "Password" }),
+      {
+        id: "password-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 100,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "password-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes('"password"'), "Expected password validation type in RHF mode");
+  assert.ok(content.includes("Password must be at least 8 characters."), "Expected password validation message in RHF mode");
+  assert.ok(content.includes('case "password"'), "Expected password case in RHF createFieldSchema");
+  assert.ok(content.includes("if (trimmed.length < 8) {"), "Expected min-length guard in RHF password validation");
 });
 
 test("deterministic screen rendering infers postal code validation from German Postleitzahl label", () => {

@@ -435,6 +435,8 @@ const inferTextFieldValidationMessage = (validationType: ValidationFieldType | u
   switch (validationType) {
     case "email":
       return "Please enter a valid email address.";
+    case "password":
+      return "Password must be at least 8 characters.";
     case "tel":
       return "Please enter a valid phone number.";
     case "url":
