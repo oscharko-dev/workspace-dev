@@ -33,6 +33,7 @@ import type {
 } from "./ir-helpers.js";
 import {
   parseHex,
+  clearParseHexCache,
   luminance,
   contrastRatio,
   saturation,
@@ -42,7 +43,8 @@ import {
   toHexWithAlpha,
   quantizeColorKey,
   emptyStyleSignals,
-  addStyleSignals
+  addStyleSignals,
+  createSpatialColorGrid
 } from "./ir-helpers.js";
 
 export const TOKEN_DERIVATION_DEFAULTS: DesignTokens = {
@@ -370,10 +372,28 @@ export const mergeClusters = (target: ColorCluster, source: ColorCluster): void 
   target.color = finalizeClusterColor(target);
 };
 
+export const NEAR_DUPLICATE_DISTANCE = 5;
+
+const deduplicateSamples = (samples: ColorSample[]): ColorSample[] => {
+  const seen = new Map<string, ColorSample>();
+  for (const sample of samples) {
+    const key = quantizeColorKey(sample.color, NEAR_DUPLICATE_DISTANCE);
+    const existing = seen.get(key);
+    if (existing) {
+      existing.weight += sample.weight;
+      addStyleSignals(existing.styleSignals, sample.styleSignals);
+    } else {
+      seen.set(key, { ...sample, styleSignals: { ...sample.styleSignals } });
+    }
+  }
+  return [...seen.values()];
+};
+
 export const clusterSamples = (samples: ColorSample[]): ColorCluster[] => {
+  const deduped = deduplicateSamples(samples);
   const buckets = new Map<string, ColorCluster>();
 
-  for (const sample of samples) {
+  for (const sample of deduped) {
     const key = quantizeColorKey(sample.color, COLOR_CLUSTER_STEP);
     const existing = buckets.get(key);
     if (!existing) {
@@ -406,21 +426,29 @@ export const clusterSamples = (samples: ColorSample[]): ColorCluster[] => {
 
   const merged: ColorCluster[] = [];
   const sorted = [...buckets.values()].sort((left, right) => right.totalWeight - left.totalWeight);
+  const grid = createSpatialColorGrid<ColorCluster>(COLOR_CLUSTER_MERGE_THRESHOLD);
+
   for (const cluster of sorted) {
-    const match = merged.find((candidate) => colorDistance(candidate.color, cluster.color) <= COLOR_CLUSTER_MERGE_THRESHOLD);
+    const match = grid.findNearest(cluster.color, COLOR_CLUSTER_MERGE_THRESHOLD);
     if (match) {
       mergeClusters(match, cluster);
+      // Re-index is not needed: the match stays in place and its color
+      // shifts only marginally (weighted average), so it remains reachable
+      // in the same or adjacent grid cell for subsequent lookups.
     } else {
-      merged.push({
+      const copy: ColorCluster = {
         color: cluster.color,
         totalWeight: cluster.totalWeight,
         channels: { ...cluster.channels },
         contexts: { ...cluster.contexts },
         styleSignals: { ...cluster.styleSignals }
-      });
+      };
+      merged.push(copy);
+      grid.insert(copy, copy.color);
     }
   }
 
+  clearParseHexCache();
   return merged.sort((left, right) => right.totalWeight - left.totalWeight);
 };
 

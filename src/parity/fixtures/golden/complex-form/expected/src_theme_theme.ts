@@ -5,8 +5,8 @@ export const appTheme = extendTheme({
     light: {
       palette: {
       mode: "light",
-      primary: { main: "#ed001f" },
-      secondary: { main: "#1c1f24" },
+      primary: { main: "#1c1f24" },
+      secondary: { main: "#666b75" },
       success: { main: "#16A34A" },
       warning: { main: "#D97706" },
       error: { main: "#ed001f" },
@@ -16,11 +16,11 @@ export const appTheme = extendTheme({
       divider: "#1c1f241f",
       action: {
         active: "#1c1f248a",
-        hover: "#ed001f0a",
-        selected: "#ed001f14",
+        hover: "#1c1f240a",
+        selected: "#1c1f2414",
         disabled: "#1c1f2442",
         disabledBackground: "#1c1f241f",
-        focus: "#ed001f1f"
+        focus: "#1c1f241f"
       }
     }
     }
