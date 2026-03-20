@@ -13,6 +13,7 @@ import type {
   ResponsiveBreakpoint,
   VariantStateStyle
 } from "../types.js";
+import { isRtlLocale } from "../generator-render.js";
 import { WCAG_AA_NORMAL_TEXT_CONTRAST_MIN } from "../constants.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../../contracts/index.js";
 import {
@@ -1081,12 +1082,14 @@ export const baseLayoutEntries = (
     preferInsetShadow?: boolean;
     spacingBase?: number;
     tokens?: DesignTokens | undefined;
+    generationLocale?: string;
   }
 ): Array<[string, string | number | undefined]> => {
   const includePaints = options?.includePaints ?? true;
   const preferInsetShadow = options?.preferInsetShadow ?? true;
   const spacingBase = normalizeSpacingBase(options?.spacingBase);
   const tokens = options?.tokens;
+  const rtl = isRtlLocale(options?.generationLocale);
   const parentLayout = parent.layoutMode ?? "NONE";
   const parentWidth =
     typeof parent.width === "number" && Number.isFinite(parent.width) && parent.width > 0 ? parent.width : undefined;
@@ -1112,7 +1115,7 @@ export const baseLayoutEntries = (
 
   const entries: Array<[string, string | number | undefined]> = [
     ["position", resolvedPosition ? literal(resolvedPosition) : undefined],
-    ["left", isAbsoluteChild ? toPxLiteral((element.x ?? 0) - (parent.x ?? 0)) : undefined],
+    [rtl ? "insetInlineStart" : "left", isAbsoluteChild ? toPxLiteral((element.x ?? 0) - (parent.x ?? 0)) : undefined],
     ["top", isAbsoluteChild ? toPxLiteral((element.y ?? 0) - (parent.y ?? 0)) : undefined],
     ["width", isFlowContainer ? responsiveWidth : toPxLiteral(element.width)],
     ["maxWidth", isFlowContainer ? toPxLiteral(element.width) : undefined],
@@ -1149,9 +1152,9 @@ export const baseLayoutEntries = (
       xKey: "px",
       yKey: "py",
       topKey: "pt",
-      rightKey: "pr",
+      rightKey: rtl ? "paddingInlineEnd" : "pr",
       bottomKey: "pb",
-      leftKey: "pl"
+      leftKey: rtl ? "paddingInlineStart" : "pl"
     }),
     ...toBoxSpacingSxEntries({
       values: element.margin,
@@ -1160,9 +1163,9 @@ export const baseLayoutEntries = (
       xKey: "mx",
       yKey: "my",
       topKey: "mt",
-      rightKey: "mr",
+      rightKey: rtl ? "marginInlineEnd" : "mr",
       bottomKey: "mb",
-      leftKey: "ml"
+      leftKey: rtl ? "marginInlineStart" : "ml"
     }),
     ["opacity", normalizeOpacityForSx(element.opacity)],
     ...toPaintSxEntries({
@@ -1209,7 +1212,8 @@ export const toElementSx = ({
     includePaints,
     preferInsetShadow,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const responsiveEntries = toResponsiveLayoutMediaEntries({
     baseLayoutMode: element.layoutMode ?? "NONE",

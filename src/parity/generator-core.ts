@@ -74,7 +74,10 @@ export {
   toDeterministicImagePlaceholderSrc,
   isPlainRecord,
   clusterAxisValues,
-  toNearestClusterIndex
+  toNearestClusterIndex,
+  RTL_LANGUAGE_CODES,
+  DIRECTIONAL_ICON_NAMES,
+  isRtlLocale
 } from "./generator-render.js";
 export type {
   VirtualParent,
@@ -620,7 +623,7 @@ const runGenerateArtifactsBasePhase = async ({
     content: JSON.stringify(ir.tokens, null, 2)
   });
   generatedPaths.add("src/theme/tokens.json");
-  const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults);
+  const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults, resolvedGenerationLocale.locale);
   await runtimeAdapters.writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
   const deterministicErrorBoundary = makeErrorBoundaryFile();

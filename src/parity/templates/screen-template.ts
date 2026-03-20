@@ -86,7 +86,8 @@ import {
   buildTabA11yId,
   buildTabPanelA11yId,
   buildAccordionHeaderA11yId,
-  buildAccordionPanelA11yId
+  buildAccordionPanelA11yId,
+  isRtlLocale
 } from "../generator-core.js";
 import type {
   RenderContext,
@@ -178,7 +179,8 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
   const baseTextLayoutEntries = baseLayoutEntries(element, parent, {
     includePaints: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const responsiveTextLayoutEntries = toResponsiveLayoutMediaEntries({
     baseLayoutMode: element.layoutMode ?? "NONE",
@@ -235,13 +237,13 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     ["color", toThemeColorLiteral({ color: element.fillColor, tokens: context.tokens })],
     [
       "textAlign",
-      element.textAlign === "LEFT"
-        ? literal("left")
-        : element.textAlign === "CENTER"
-          ? literal("center")
-          : element.textAlign === "RIGHT"
-            ? literal("right")
-            : undefined
+      (() => {
+        const rtl = isRtlLocale(context.generationLocale);
+        if (element.textAlign === "LEFT") return literal(rtl ? "start" : "left");
+        if (element.textAlign === "CENTER") return literal("center");
+        if (element.textAlign === "RIGHT") return literal(rtl ? "end" : "right");
+        return undefined;
+      })()
     ],
     ["textDecoration", isLinkLikeColor ? literal("underline") : undefined],
     ["cursor", isLinkLikeColor ? literal("pointer") : undefined],
@@ -293,7 +295,8 @@ export const renderSemanticInput = (
   const baseFieldLayoutEntries = baseLayoutEntries(outlineContainer, parent, {
     includePaints: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const fieldSxEntries: Array<[string, string | number | undefined]> = [
     ...baseFieldLayoutEntries,
@@ -626,9 +629,9 @@ export const renderSemanticAccordion = (
       xKey: "px",
       yKey: "py",
       topKey: "pt",
-      rightKey: "pr",
+      rightKey: isRtlLocale(context.generationLocale) ? "paddingInlineEnd" : "pr",
       bottomKey: "pb",
-      leftKey: "pl"
+      leftKey: isRtlLocale(context.generationLocale) ? "paddingInlineStart" : "pl"
     })
   ]);
 
@@ -641,15 +644,16 @@ export const renderSemanticAccordion = (
       xKey: "px",
       yKey: "py",
       topKey: "pt",
-      rightKey: "pr",
+      rightKey: isRtlLocale(context.generationLocale) ? "paddingInlineEnd" : "pr",
       bottomKey: "pb",
-      leftKey: "pl"
+      leftKey: isRtlLocale(context.generationLocale) ? "paddingInlineStart" : "pl"
     })
   ]);
 
   const baseAccordionLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const accordionSx = sxString([
     ...baseAccordionLayoutEntries,
@@ -711,7 +715,8 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
     const iconColor = resolveIconColor(iconNode) ?? buttonTextColor;
     const baseIconButtonLayoutEntries = baseLayoutEntries(element, parent, {
       spacingBase: context.spacingBase,
-      tokens: context.tokens
+      tokens: context.tokens,
+      generationLocale: context.generationLocale
     });
     const iconButtonSxEntries: Array<[string, string | number | undefined]> = [
       ...baseIconButtonLayoutEntries,
@@ -798,7 +803,8 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
 
   const baseButtonLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const sxEntries = filterButtonVariantEntries({
     entries: [
@@ -1063,7 +1069,8 @@ export const toSimpleStackContainerSx = ({
   const baseEntries = baseLayoutEntries(element, parent, {
     includePaints: true,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   }).filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key));
   return sxString(baseEntries);
 };
@@ -1375,7 +1382,8 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
   const baseCardLayoutEntries = baseLayoutEntries(element, parent, {
     preferInsetShadow: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const cardSxEntries = [
     ...baseCardLayoutEntries,
@@ -1493,7 +1501,8 @@ export const renderChip = (element: ScreenElementIR, depth: number, parent: Virt
   const chipDefaults = context.themeComponentDefaults?.MuiChip;
   const baseChipLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const chipLayoutEntries = [
     ...baseChipLayoutEntries,
@@ -1731,7 +1740,8 @@ export const renderAppBar = (element: ScreenElementIR, depth: number, parent: Vi
     normalizeHexColor(element.fillColor) === normalizeHexColor(appBarDefaults?.backgroundColor);
   const baseAppBarLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const appBarSxEntries = [
     ...baseAppBarLayoutEntries,
@@ -2002,7 +2012,8 @@ export const renderAvatar = (element: ScreenElementIR, depth: number, parent: Vi
   const avatarDefaults = context.themeComponentDefaults?.MuiAvatar;
   const baseAvatarLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const avatarSxEntries = [
     ...baseAvatarLayoutEntries,
@@ -2094,7 +2105,8 @@ export const renderDividerElement = (element: ScreenElementIR, depth: number, pa
   const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
     includePaints: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const dividerSxEntries: Array<[string, string | number | undefined]> = [
     ...baseDividerLayoutEntries,
@@ -2336,7 +2348,8 @@ export const renderPaper = (element: ScreenElementIR, depth: number, parent: Vir
   const variant = elevation && elevation > 0 ? undefined : element.strokeColor ? "outlined" : undefined;
   const basePaperLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const paperSxEntries = [
     ...basePaperLayoutEntries,
@@ -2723,7 +2736,8 @@ export const renderImageElement = (element: ScreenElementIR, depth: number, pare
   const baseImageLayoutEntries = baseLayoutEntries(element, parent, {
     includePaints: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const sx = sxString([
     ...baseImageLayoutEntries,
@@ -2784,7 +2798,8 @@ export const renderContainerIconWrapper = ({
   const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
     includePaints: false,
     spacingBase: context.spacingBase,
-    tokens: context.tokens
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
   });
   const iconExpression = renderFallbackIconExpression({
     element,
@@ -2965,7 +2980,8 @@ export const renderContainerFallback = ({
       normalizeHexColor(element.fillColor) === normalizeHexColor(dividerDefaultColor);
     const baseDividerLayoutEntries = baseLayoutEntries(element, parent, {
       spacingBase: context.spacingBase,
-      tokens: context.tokens
+      tokens: context.tokens,
+      generationLocale: context.generationLocale
     });
     const dividerSxEntries: Array<[string, string | number | undefined]> = [
       ...baseDividerLayoutEntries,
