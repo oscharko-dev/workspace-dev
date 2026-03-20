@@ -1,4 +1,10 @@
+// ---------------------------------------------------------------------------
+// ir-classification.ts — Data-driven element classification engine
+// Refactored from procedural if-chains to declarative rules (issue #300)
+// ---------------------------------------------------------------------------
 import type { ScreenElementIR } from "./types.js";
+
+type ElementTypeValue = ScreenElementIR["type"];
 
 interface ElementClassificationNode {
   id: string;
@@ -19,6 +25,31 @@ interface ElementClassificationNode {
 interface SemanticHintContext {
   combined: string;
 }
+
+/**
+ * Boolean flags computed from node context, used by declarative rules.
+ */
+type BooleanContextKey =
+  | "hasChildren"
+  | "hasVisualFill"
+  | "hasVisualSurface"
+  | "hasStroke"
+  | "hasRoundedCorners"
+  | "hasImageFill"
+  | "hasListishChildNames"
+  | "hasInputSemantic"
+  | "hasSelectSemantic"
+  | "isFieldSized"
+  | "isLikelyDividerByGeometry"
+  | "hasTableishChildNames"
+  | "hasRowCellStructure"
+  | "isLikelyTableByStructure"
+  | "hasButtonLabelHint"
+  | "hasButtonKeyword"
+  | "hasStrongImageName"
+  | "hasIconLikeName"
+  | "isLikelyGridByStructure"
+  | "isLikelyListByStructure";
 
 interface NodeClassificationContext<TNode extends ElementClassificationNode> {
   node: TNode;
@@ -59,20 +90,67 @@ interface NodeClassificationDependencies<TNode extends ElementClassificationNode
   hasStroke(node: TNode): boolean;
 }
 
-interface TypeRule<TContext> {
-  type: ScreenElementIR["type"];
-  matches(context: TContext): boolean;
+// ---------------------------------------------------------------------------
+// Declarative classification rule types
+// ---------------------------------------------------------------------------
+
+/**
+ * A declarative classification rule. All specified conditions are ANDed.
+ * Within `keywords` and `words`, matches are ORed (any match suffices).
+ * If both `keywords` and `words` are specified, they are ORed together
+ * (at least one match from either group is required).
+ *
+ * Rules are evaluated in priority order (lower priority number = checked first).
+ * First matching rule wins.
+ */
+export interface ClassificationRule {
+  /** The element type to assign when this rule matches. */
+  type: ElementTypeValue;
+  /** Explicit evaluation priority — lower values are checked first. */
+  priority: number;
+  /** Substring matches against the lowercased node name (OR within array). */
+  keywords?: readonly string[];
+  /** Word-boundary matches against the lowercased node name (OR within array). */
+  words?: readonly string[];
+  /** Exact match on node.type (OR within array). */
+  nodeTypes?: readonly string[];
+  /** Boolean context flags that must match (AND between entries). */
+  requires?: Partial<Record<BooleanContextKey, boolean>>;
+  /** Geometry constraints (AND between entries). */
+  geometry?: {
+    minWidth?: number;
+    minHeight?: number;
+  };
+  /** Layout mode must be one of these (OR within array). */
+  layoutModes?: readonly ("HORIZONTAL" | "VERTICAL" | "NONE")[];
+  /** Word-boundary exclusions — rule fails if any word matches (AND). */
+  excludeWords?: readonly string[];
 }
+
+/**
+ * A declarative semantic hint classification rule.
+ * Evaluated against the combined semantic name + type string.
+ */
+export interface SemanticClassificationRule {
+  type: ElementTypeValue;
+  priority: number;
+  keywords?: readonly string[];
+  words?: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// String matching utilities (re-exported for use by other IR modules)
+// ---------------------------------------------------------------------------
 
 const escapeRegExp = (value: string): string => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
-export const hasAnySubstring = (value: string, tokens: string[]): boolean => {
+export const hasAnySubstring = (value: string, tokens: readonly string[]): boolean => {
   return tokens.some((token) => value.includes(token));
 };
 
-export const hasAnyWord = (value: string, words: string[]): boolean => {
+export const hasAnyWord = (value: string, words: readonly string[]): boolean => {
   return words.some((word) => new RegExp(`\\b${escapeRegExp(word)}\\b`, "i").test(value));
 };
 
@@ -88,6 +166,10 @@ export const isIconLikeNodeName = (value: string): boolean => {
     hasAnyWord(value, ["icon"])
   );
 };
+
+// ---------------------------------------------------------------------------
+// Context construction helpers
+// ---------------------------------------------------------------------------
 
 const countPositionBuckets = ({
   values,
@@ -225,305 +307,302 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
   };
 };
 
-const NODE_TYPE_RULES: ReadonlyArray<TypeRule<NodeClassificationContext<ElementClassificationNode>>> = [
-  {
-    type: "text",
-    matches: ({ node }) => node.type === "TEXT"
-  },
-  {
-    type: "select",
-    matches: ({ hasSelectSemantic, name, isFieldSized, hasChildren }) =>
-      (hasSelectSemantic || hasAnyWord(name, ["select", "dropdown"])) && (isFieldSized || hasChildren)
-  },
-  {
-    type: "slider",
-    matches: ({ name }) => hasAnySubstring(name, ["muislider", "slider"]) || hasAnyWord(name, ["slider", "range"])
-  },
-  {
-    type: "rating",
-    matches: ({ name }) => hasAnySubstring(name, ["muirating"]) || hasAnyWord(name, ["rating", "stars", "star rating"])
-  },
-  {
-    type: "skeleton",
-    matches: ({ name }) =>
-      hasAnySubstring(name, ["muiskeleton", "loadingplaceholder"]) ||
-      hasAnyWord(name, ["skeleton", "placeholder shimmer", "loading skeleton"])
-  },
-  {
-    type: "input",
-    matches: ({ hasInputSemantic, name, isFieldSized, hasChildren }) =>
-      (hasInputSemantic || hasAnyWord(name, ["input", "textfield", "field"])) && (isFieldSized || hasChildren)
-  },
-  {
-    type: "switch",
-    matches: ({ name }) => hasAnySubstring(name, ["muiswitch", "switchbase"]) || hasAnyWord(name, ["switch", "toggle"])
-  },
-  {
-    type: "checkbox",
-    matches: ({ name }) => hasAnySubstring(name, ["muicheckbox"]) || hasAnyWord(name, ["checkbox"])
-  },
-  {
-    type: "radio",
-    matches: ({ name }) => hasAnySubstring(name, ["muiradio"]) || hasAnyWord(name, ["radio"])
-  },
-  {
-    type: "chip",
-    matches: ({ name }) => hasAnySubstring(name, ["muichip"]) || hasAnyWord(name, ["chip"])
-  },
-  {
-    type: "tab",
-    matches: ({ name }) => hasAnySubstring(name, ["muitabs", "muitab"]) || hasAnyWord(name, ["tab", "tabs"])
-  },
-  {
-    type: "progress",
-    matches: ({ name }) =>
-      hasAnySubstring(name, ["muicircularprogress", "muilinearprogress", "circularprogress", "linearprogress", "progressbar"]) ||
-      hasAnyWord(name, ["progress", "loader", "loading", "spinner"])
-  },
-  {
-    type: "avatar",
-    matches: ({ name }) => hasAnySubstring(name, ["muiavatar"]) || hasAnyWord(name, ["avatar"])
-  },
-  {
-    type: "badge",
-    matches: ({ name }) => hasAnySubstring(name, ["muibadge"]) || hasAnyWord(name, ["badge"])
-  },
-  {
-    type: "divider",
-    matches: ({ name, isLikelyDividerByGeometry }) =>
-      hasAnySubstring(name, ["muidivider", "separator"]) || hasAnyWord(name, ["divider"]) || isLikelyDividerByGeometry
-  },
-  {
-    type: "appbar",
-    matches: ({ name }) => hasAnySubstring(name, ["muiappbar", "topbar"]) || hasAnyWord(name, ["appbar", "app bar", "toolbar"])
-  },
-  {
-    type: "drawer",
-    matches: ({ name }) => hasAnySubstring(name, ["muidrawer", "sidedrawer", "navigationdrawer"]) || hasAnyWord(name, ["drawer", "sidebar"])
-  },
-  {
-    type: "breadcrumbs",
-    matches: ({ name }) => hasAnySubstring(name, ["muibreadcrumbs"]) || hasAnyWord(name, ["breadcrumbs", "breadcrumb"])
-  },
-  {
-    type: "tooltip",
-    matches: ({ name }) => hasAnySubstring(name, ["muitooltip"]) || hasAnyWord(name, ["tooltip", "hover info"])
-  },
-  {
-    type: "table",
-    matches: ({ name }) => hasAnySubstring(name, ["muitable"]) || hasAnyWord(name, ["table"])
-  },
-  {
-    type: "table",
-    matches: ({ isLikelyTableByStructure }) => isLikelyTableByStructure
-  },
-  {
-    type: "navigation",
-    matches: ({ name }) =>
-      hasAnySubstring(name, ["bottomnavigation", "navigationbar", "muitabbar"]) || hasAnyWord(name, ["navigation", "navbar"])
-  },
-  {
-    type: "snackbar",
-    matches: ({ name }) => hasAnySubstring(name, ["muisnackbar", "muialert"]) || hasAnyWord(name, ["snackbar", "toast", "alert"])
-  },
-  {
-    type: "dialog",
-    matches: ({ name }) => hasAnySubstring(name, ["muidialog", "modal"]) || hasAnyWord(name, ["dialog", "modal"])
-  },
-  {
-    type: "stepper",
-    matches: ({ name }) => hasAnySubstring(name, ["muistepper"]) || hasAnyWord(name, ["stepper"])
-  },
-  {
-    type: "list",
-    matches: ({ name, hasListishChildNames, isLikelyListByStructure }) =>
-      hasAnySubstring(name, ["muilist", "listitem", "muilistitem"]) ||
-      hasAnyWord(name, ["list"]) ||
-      hasListishChildNames ||
-      isLikelyListByStructure
-  },
-  {
-    type: "grid",
-    matches: ({ name }) => hasAnySubstring(name, ["muigrid", "grid2"]) || hasAnyWord(name, ["grid", "tile"])
-  },
-  {
-    type: "grid",
-    matches: ({ isLikelyGridByStructure }) => isLikelyGridByStructure
-  },
+// ---------------------------------------------------------------------------
+// Declarative node classification rules
+// ---------------------------------------------------------------------------
+
+/**
+ * Data-driven classification rules for Figma node → MUI component type mapping.
+ *
+ * Rules are evaluated in priority order (ascending). First matching rule wins.
+ * Each rule's conditions are ANDed; within `keywords`/`words` arrays, matches
+ * are ORed. If both `keywords` and `words` are present, at least one match
+ * from either group suffices (OR between groups).
+ *
+ * Priority bands:
+ *   10–19   Primitive types (text)
+ *   20–29   Form controls with semantic detection (select, input)
+ *   30–59   Simple keyword-matched form controls
+ *   60–99   Simple keyword-matched components
+ *   100–199 Layout & structural components
+ *   200–299 Structural inference rules (table, grid, card, paper, stack)
+ *   300–399 Button & image rules
+ */
+export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
+  // --- Priority 10: text (primitive node type) ---
+  { type: "text", priority: 10, nodeTypes: ["TEXT"] },
+
+  // --- Priority 20–29: select (semantic + keyword, requires field sizing or children) ---
+  { type: "select", priority: 20, requires: { hasSelectSemantic: true, isFieldSized: true } },
+  { type: "select", priority: 21, requires: { hasSelectSemantic: true, hasChildren: true } },
+  { type: "select", priority: 22, words: ["select", "dropdown"], requires: { isFieldSized: true } },
+  { type: "select", priority: 23, words: ["select", "dropdown"], requires: { hasChildren: true } },
+
+  // --- Priority 30–39: slider, rating, skeleton ---
+  { type: "slider", priority: 30, keywords: ["muislider", "slider"] },
+  { type: "slider", priority: 31, words: ["slider", "range"] },
+  { type: "rating", priority: 32, keywords: ["muirating"] },
+  { type: "rating", priority: 33, words: ["rating", "stars", "star rating"] },
+  { type: "skeleton", priority: 34, keywords: ["muiskeleton", "loadingplaceholder"] },
+  { type: "skeleton", priority: 35, words: ["skeleton", "placeholder shimmer", "loading skeleton"] },
+
+  // --- Priority 40–49: input (semantic + keyword, requires field sizing or children) ---
+  { type: "input", priority: 40, requires: { hasInputSemantic: true, isFieldSized: true } },
+  { type: "input", priority: 41, requires: { hasInputSemantic: true, hasChildren: true } },
+  { type: "input", priority: 42, words: ["input", "textfield", "field"], requires: { isFieldSized: true } },
+  { type: "input", priority: 43, words: ["input", "textfield", "field"], requires: { hasChildren: true } },
+
+  // --- Priority 50–59: switch, checkbox, radio ---
+  { type: "switch", priority: 50, keywords: ["muiswitch", "switchbase"] },
+  { type: "switch", priority: 51, words: ["switch", "toggle"] },
+  { type: "checkbox", priority: 52, keywords: ["muicheckbox"] },
+  { type: "checkbox", priority: 53, words: ["checkbox"] },
+  { type: "radio", priority: 54, keywords: ["muiradio"] },
+  { type: "radio", priority: 55, words: ["radio"] },
+
+  // --- Priority 60–79: chip, tab, progress, avatar, badge ---
+  { type: "chip", priority: 60, keywords: ["muichip"] },
+  { type: "chip", priority: 61, words: ["chip"] },
+  { type: "tab", priority: 62, keywords: ["muitabs", "muitab"] },
+  { type: "tab", priority: 63, words: ["tab", "tabs"] },
+  { type: "progress", priority: 64, keywords: ["muicircularprogress", "muilinearprogress", "circularprogress", "linearprogress", "progressbar"] },
+  { type: "progress", priority: 65, words: ["progress", "loader", "loading", "spinner"] },
+  { type: "avatar", priority: 66, keywords: ["muiavatar"] },
+  { type: "avatar", priority: 67, words: ["avatar"] },
+  { type: "badge", priority: 68, keywords: ["muibadge"] },
+  { type: "badge", priority: 69, words: ["badge"] },
+
+  // --- Priority 80–99: divider, appbar, drawer, breadcrumbs, tooltip ---
+  { type: "divider", priority: 80, keywords: ["muidivider", "separator"] },
+  { type: "divider", priority: 81, words: ["divider"] },
+  { type: "divider", priority: 82, requires: { isLikelyDividerByGeometry: true } },
+  { type: "appbar", priority: 84, keywords: ["muiappbar", "topbar"] },
+  { type: "appbar", priority: 85, words: ["appbar", "app bar", "toolbar"] },
+  { type: "drawer", priority: 86, keywords: ["muidrawer", "sidedrawer", "navigationdrawer"] },
+  { type: "drawer", priority: 87, words: ["drawer", "sidebar"] },
+  { type: "breadcrumbs", priority: 88, keywords: ["muibreadcrumbs"] },
+  { type: "breadcrumbs", priority: 89, words: ["breadcrumbs", "breadcrumb"] },
+  { type: "tooltip", priority: 90, keywords: ["muitooltip"] },
+  { type: "tooltip", priority: 91, words: ["tooltip", "hover info"] },
+
+  // --- Priority 100–119: table (keyword + structural) ---
+  { type: "table", priority: 100, keywords: ["muitable"] },
+  { type: "table", priority: 101, words: ["table"] },
+  { type: "table", priority: 102, requires: { isLikelyTableByStructure: true } },
+
+  // --- Priority 120–139: navigation, snackbar, dialog, stepper ---
+  { type: "navigation", priority: 120, keywords: ["bottomnavigation", "navigationbar", "muitabbar"] },
+  { type: "navigation", priority: 121, words: ["navigation", "navbar"] },
+  { type: "snackbar", priority: 122, keywords: ["muisnackbar", "muialert"] },
+  { type: "snackbar", priority: 123, words: ["snackbar", "toast", "alert"] },
+  { type: "dialog", priority: 124, keywords: ["muidialog", "modal"] },
+  { type: "dialog", priority: 125, words: ["dialog", "modal"] },
+  { type: "stepper", priority: 126, keywords: ["muistepper"] },
+  { type: "stepper", priority: 127, words: ["stepper"] },
+
+  // --- Priority 140–149: list (keyword + structural) ---
+  { type: "list", priority: 140, keywords: ["muilist", "listitem", "muilistitem"] },
+  { type: "list", priority: 141, words: ["list"] },
+  { type: "list", priority: 142, requires: { hasListishChildNames: true } },
+  { type: "list", priority: 143, requires: { isLikelyListByStructure: true } },
+
+  // --- Priority 150–159: grid (keyword + structural) ---
+  { type: "grid", priority: 150, keywords: ["muigrid", "grid2"] },
+  { type: "grid", priority: 151, words: ["grid", "tile"] },
+  { type: "grid", priority: 152, requires: { isLikelyGridByStructure: true } },
+
+  // --- Priority 160–179: card (keyword + geometry) ---
+  { type: "card", priority: 160, keywords: ["muicard"] },
+  { type: "card", priority: 161, words: ["card"] },
   {
     type: "card",
-    matches: ({ name }) => hasAnySubstring(name, ["muicard"]) || hasAnyWord(name, ["card"])
+    priority: 162,
+    requires: { hasChildren: true, hasVisualSurface: true, hasRoundedCorners: true },
+    geometry: { minWidth: 120, minHeight: 80 }
   },
-  {
-    type: "card",
-    matches: ({ hasChildren, hasVisualSurface, hasRoundedCorners, width, height }) =>
-      hasChildren && hasVisualSurface && hasRoundedCorners && width >= 120 && height >= 80
-  },
-  {
-    type: "paper",
-    matches: ({ name }) => hasAnySubstring(name, ["muipaper"]) || hasAnyWord(name, ["paper", "surface"])
-  },
+
+  // --- Priority 180–189: paper (keyword + visual surface) ---
+  { type: "paper", priority: 180, keywords: ["muipaper"] },
+  { type: "paper", priority: 181, words: ["paper", "surface"] },
   {
     type: "paper",
-    matches: ({ hasChildren, hasVisualSurface, name }) => hasChildren && hasVisualSurface && !hasAnyWord(name, ["card"])
+    priority: 182,
+    requires: { hasChildren: true, hasVisualSurface: true },
+    excludeWords: ["card"]
   },
+
+  // --- Priority 190–199: stack (keyword + layout) ---
+  { type: "stack", priority: 190, keywords: ["muistack"] },
+  { type: "stack", priority: 191, words: ["stack"] },
   {
     type: "stack",
-    matches: ({ name }) => hasAnySubstring(name, ["muistack"]) || hasAnyWord(name, ["stack"])
+    priority: 192,
+    requires: { hasChildren: true, hasVisualSurface: false },
+    layoutModes: ["HORIZONTAL", "VERTICAL"]
   },
+
+  // --- Priority 300–319: button ---
+  { type: "button", priority: 300, keywords: ["cta"] },
+  { type: "button", priority: 301, requires: { hasButtonKeyword: true, hasVisualSurface: true } },
+  { type: "button", priority: 302, requires: { hasButtonKeyword: true, hasStroke: true } },
+  { type: "button", priority: 303, requires: { hasButtonKeyword: true, hasRoundedCorners: true } },
+  { type: "button", priority: 304, requires: { hasButtonKeyword: true, hasButtonLabelHint: true } },
+
+  // --- Priority 320–339: image ---
   {
-    type: "stack",
-    matches: ({ hasChildren, node, hasVisualSurface }) =>
-      hasChildren && (node.layoutMode === "HORIZONTAL" || node.layoutMode === "VERTICAL") && !hasVisualSurface
-  },
-  {
-    type: "button",
-    matches: ({ name, hasButtonKeyword, hasVisualSurface, hasStroke, hasRoundedCorners, hasButtonLabelHint }) =>
-      name.includes("cta") || (hasButtonKeyword && (hasVisualSurface || hasStroke || hasRoundedCorners || hasButtonLabelHint))
+    type: "image",
+    priority: 320,
+    nodeTypes: ["RECTANGLE", "FRAME", "VECTOR"],
+    requires: { hasImageFill: true, hasChildren: false, hasIconLikeName: false }
   },
   {
     type: "image",
-    matches: ({ node, hasImageFill, hasChildren, hasIconLikeName }) =>
-      (node.type === "RECTANGLE" || node.type === "FRAME" || node.type === "VECTOR") && hasImageFill && !hasChildren && !hasIconLikeName
+    priority: 321,
+    nodeTypes: ["RECTANGLE", "FRAME"],
+    requires: { hasStrongImageName: true, hasChildren: false }
   },
   {
     type: "image",
-    matches: ({ node, hasStrongImageName, hasChildren }) =>
-      (node.type === "RECTANGLE" || node.type === "FRAME") && hasStrongImageName && !hasChildren
-  },
-  {
-    type: "image",
-    matches: ({ node, hasStrongImageName, hasChildren, hasIconLikeName }) =>
-      node.type === "VECTOR" && hasStrongImageName && !hasChildren && !hasIconLikeName
+    priority: 322,
+    nodeTypes: ["VECTOR"],
+    requires: { hasStrongImageName: true, hasChildren: false, hasIconLikeName: false }
   }
 ];
 
-const SEMANTIC_HINT_RULES: ReadonlyArray<TypeRule<SemanticHintContext>> = [
-  {
-    type: "text",
-    matches: ({ combined }) => hasAnyWord(combined, ["text", "typography", "headline", "title", "label"])
-  },
-  {
-    type: "input",
-    matches: ({ combined }) => hasAnySubstring(combined, ["formcontrol", "textfield", "text field"]) || hasAnyWord(combined, ["input", "field"])
-  },
-  {
-    type: "select",
-    matches: ({ combined }) => hasAnyWord(combined, ["select", "dropdown"])
-  },
-  {
-    type: "switch",
-    matches: ({ combined }) => hasAnyWord(combined, ["switch", "toggle"])
-  },
-  {
-    type: "checkbox",
-    matches: ({ combined }) => hasAnyWord(combined, ["checkbox"])
-  },
-  {
-    type: "radio",
-    matches: ({ combined }) => hasAnyWord(combined, ["radio"])
-  },
-  {
-    type: "slider",
-    matches: ({ combined }) => hasAnyWord(combined, ["slider", "range"])
-  },
-  {
-    type: "rating",
-    matches: ({ combined }) => hasAnyWord(combined, ["rating", "stars"])
-  },
-  {
-    type: "chip",
-    matches: ({ combined }) => hasAnyWord(combined, ["chip"])
-  },
-  {
-    type: "tab",
-    matches: ({ combined }) => hasAnyWord(combined, ["tab", "tabs"])
-  },
-  {
-    type: "grid",
-    matches: ({ combined }) => hasAnyWord(combined, ["grid", "grid2", "tile"])
-  },
-  {
-    type: "stack",
-    matches: ({ combined }) => hasAnyWord(combined, ["stack"])
-  },
-  {
-    type: "paper",
-    matches: ({ combined }) => hasAnyWord(combined, ["paper", "surface"])
-  },
-  {
-    type: "progress",
-    matches: ({ combined }) => hasAnyWord(combined, ["progress", "loader", "spinner"])
-  },
-  {
-    type: "skeleton",
-    matches: ({ combined }) => hasAnyWord(combined, ["skeleton", "placeholder"])
-  },
-  {
-    type: "avatar",
-    matches: ({ combined }) => hasAnyWord(combined, ["avatar"])
-  },
-  {
-    type: "badge",
-    matches: ({ combined }) => hasAnyWord(combined, ["badge"])
-  },
-  {
-    type: "divider",
-    matches: ({ combined }) => hasAnyWord(combined, ["divider", "separator"])
-  },
-  {
-    type: "appbar",
-    matches: ({ combined }) => hasAnySubstring(combined, ["appbar", "app bar"]) || hasAnyWord(combined, ["toolbar"])
-  },
-  {
-    type: "drawer",
-    matches: ({ combined }) => hasAnyWord(combined, ["drawer", "sidebar"])
-  },
-  {
-    type: "breadcrumbs",
-    matches: ({ combined }) => hasAnyWord(combined, ["breadcrumbs", "breadcrumb"])
-  },
-  {
-    type: "tooltip",
-    matches: ({ combined }) => hasAnyWord(combined, ["tooltip"])
-  },
-  {
-    type: "table",
-    matches: ({ combined }) => hasAnyWord(combined, ["table", "datatable", "data table"])
-  },
-  {
-    type: "navigation",
-    matches: ({ combined }) => hasAnyWord(combined, ["navigation", "navbar"])
-  },
-  {
-    type: "dialog",
-    matches: ({ combined }) => hasAnyWord(combined, ["dialog", "modal"])
-  },
-  {
-    type: "snackbar",
-    matches: ({ combined }) => hasAnyWord(combined, ["snackbar", "toast", "alert"])
-  },
-  {
-    type: "stepper",
-    matches: ({ combined }) => hasAnyWord(combined, ["stepper", "step"])
-  },
-  {
-    type: "list",
-    matches: ({ combined }) => hasAnyWord(combined, ["list", "listitem"])
-  },
-  {
-    type: "card",
-    matches: ({ combined }) => hasAnyWord(combined, ["card"])
-  },
-  {
-    type: "button",
-    matches: ({ combined }) => hasAnyWord(combined, ["button", "cta"])
-  },
-  {
-    type: "image",
-    matches: ({ combined }) => hasAnyWord(combined, ["image", "photo", "illustration", "icon"])
-  }
+// ---------------------------------------------------------------------------
+// Declarative semantic hint classification rules
+// ---------------------------------------------------------------------------
+
+export const SEMANTIC_CLASSIFICATION_RULES: readonly SemanticClassificationRule[] = [
+  { type: "text", priority: 10, words: ["text", "typography", "headline", "title", "label"] },
+  { type: "input", priority: 20, keywords: ["formcontrol", "textfield", "text field"] },
+  { type: "input", priority: 21, words: ["input", "field"] },
+  { type: "select", priority: 30, words: ["select", "dropdown"] },
+  { type: "switch", priority: 40, words: ["switch", "toggle"] },
+  { type: "checkbox", priority: 50, words: ["checkbox"] },
+  { type: "radio", priority: 60, words: ["radio"] },
+  { type: "slider", priority: 70, words: ["slider", "range"] },
+  { type: "rating", priority: 80, words: ["rating", "stars"] },
+  { type: "chip", priority: 90, words: ["chip"] },
+  { type: "tab", priority: 100, words: ["tab", "tabs"] },
+  { type: "grid", priority: 110, words: ["grid", "grid2", "tile"] },
+  { type: "stack", priority: 120, words: ["stack"] },
+  { type: "paper", priority: 130, words: ["paper", "surface"] },
+  { type: "progress", priority: 140, words: ["progress", "loader", "spinner"] },
+  { type: "skeleton", priority: 150, words: ["skeleton", "placeholder"] },
+  { type: "avatar", priority: 160, words: ["avatar"] },
+  { type: "badge", priority: 170, words: ["badge"] },
+  { type: "divider", priority: 180, words: ["divider", "separator"] },
+  { type: "appbar", priority: 190, keywords: ["appbar", "app bar"] },
+  { type: "appbar", priority: 191, words: ["toolbar"] },
+  { type: "drawer", priority: 200, words: ["drawer", "sidebar"] },
+  { type: "breadcrumbs", priority: 210, words: ["breadcrumbs", "breadcrumb"] },
+  { type: "tooltip", priority: 220, words: ["tooltip"] },
+  { type: "table", priority: 230, words: ["table", "datatable", "data table"] },
+  { type: "navigation", priority: 240, words: ["navigation", "navbar"] },
+  { type: "dialog", priority: 250, words: ["dialog", "modal"] },
+  { type: "snackbar", priority: 260, words: ["snackbar", "toast", "alert"] },
+  { type: "stepper", priority: 270, words: ["stepper", "step"] },
+  { type: "list", priority: 280, words: ["list", "listitem"] },
+  { type: "card", priority: 290, words: ["card"] },
+  { type: "button", priority: 300, words: ["button", "cta"] },
+  { type: "image", priority: 310, words: ["image", "photo", "illustration", "icon"] }
 ];
+
+// ---------------------------------------------------------------------------
+// Rule evaluation engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluates whether a declarative classification rule matches the given context.
+ * All specified condition groups are ANDed. Within `keywords`/`words`, matches
+ * are ORed. If both `keywords` and `words` are specified, at least one match
+ * from either group suffices.
+ */
+const matchesNodeRule = <TNode extends ElementClassificationNode>(
+  rule: ClassificationRule,
+  context: NodeClassificationContext<TNode>
+): boolean => {
+  // Node type check
+  if (rule.nodeTypes !== undefined && !rule.nodeTypes.includes(context.node.type)) {
+    return false;
+  }
+
+  // Name matching: keywords OR words (at least one must match if either is specified)
+  const hasNameCondition = rule.keywords !== undefined || rule.words !== undefined;
+  if (hasNameCondition) {
+    const keywordMatch = rule.keywords !== undefined && hasAnySubstring(context.name, rule.keywords);
+    const wordMatch = rule.words !== undefined && hasAnyWord(context.name, rule.words);
+    if (!keywordMatch && !wordMatch) {
+      return false;
+    }
+  }
+
+  // Context boolean requirements (AND)
+  if (rule.requires !== undefined) {
+    const entries = Object.entries(rule.requires) as [BooleanContextKey, boolean][];
+    for (const [key, expectedValue] of entries) {
+      if (context[key] !== expectedValue) {
+        return false;
+      }
+    }
+  }
+
+  // Geometry constraints (AND)
+  if (rule.geometry !== undefined) {
+    if (rule.geometry.minWidth !== undefined && context.width < rule.geometry.minWidth) {
+      return false;
+    }
+    if (rule.geometry.minHeight !== undefined && context.height < rule.geometry.minHeight) {
+      return false;
+    }
+  }
+
+  // Layout mode check (OR within array)
+  if (rule.layoutModes !== undefined) {
+    const nodeLayout = context.node.layoutMode ?? "NONE";
+    if (!rule.layoutModes.includes(nodeLayout)) {
+      return false;
+    }
+  }
+
+  // Name exclusions (none must match)
+  if (rule.excludeWords !== undefined && hasAnyWord(context.name, rule.excludeWords)) {
+    return false;
+  }
+
+  return true;
+};
+
+/**
+ * Evaluates whether a semantic classification rule matches the given context.
+ */
+const matchesSemanticRule = (
+  rule: SemanticClassificationRule,
+  context: SemanticHintContext
+): boolean => {
+  const hasNameCondition = rule.keywords !== undefined || rule.words !== undefined;
+  if (hasNameCondition) {
+    const keywordMatch = rule.keywords !== undefined && hasAnySubstring(context.combined, rule.keywords);
+    const wordMatch = rule.words !== undefined && hasAnyWord(context.combined, rule.words);
+    if (!keywordMatch && !wordMatch) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// Pre-sort rules by priority at module load time for consistent evaluation order
+const sortedNodeRules: readonly ClassificationRule[] = [...NODE_CLASSIFICATION_RULES].sort(
+  (a, b) => a.priority - b.priority
+);
+const sortedSemanticRules: readonly SemanticClassificationRule[] = [...SEMANTIC_CLASSIFICATION_RULES].sort(
+  (a, b) => a.priority - b.priority
+);
+
+// ---------------------------------------------------------------------------
+// Public API (backward-compatible exports)
+// ---------------------------------------------------------------------------
 
 export const classifyElementTypeFromNode = <TNode extends ElementClassificationNode>({
   node,
@@ -537,8 +616,8 @@ export const classifyElementTypeFromNode = <TNode extends ElementClassificationN
     dependencies
   });
 
-  for (const rule of NODE_TYPE_RULES as ReadonlyArray<TypeRule<NodeClassificationContext<TNode>>>) {
-    if (rule.matches(context)) {
+  for (const rule of sortedNodeRules) {
+    if (matchesNodeRule(rule, context)) {
       return rule.type;
     }
   }
@@ -558,8 +637,8 @@ export const classifyElementTypeFromSemanticHint = ({
     return undefined;
   }
   const context: SemanticHintContext = { combined };
-  for (const rule of SEMANTIC_HINT_RULES) {
-    if (rule.matches(context)) {
+  for (const rule of sortedSemanticRules) {
+    if (matchesSemanticRule(rule, context)) {
       return rule.type;
     }
   }
