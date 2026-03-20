@@ -6,13 +6,19 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  WorkspaceJobDiagnostic,
   WorkspaceJobInput,
   WorkspaceJobResult,
   WorkspaceJobStageName,
   WorkspaceJobStatus
 } from "./contracts/index.js";
 import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
-import { createPipelineError, getErrorMessage } from "./job-engine/errors.js";
+import {
+  createPipelineError,
+  getErrorMessage,
+  mergePipelineDiagnostics,
+  type PipelineDiagnosticInput
+} from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
 import { fetchFigmaFile } from "./job-engine/figma-source.js";
@@ -43,8 +49,293 @@ const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(file
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
 const TEMPLATE_COPY_FILTER = createTemplateCopyFilter({ templateRoot: TEMPLATE_ROOT });
 
+const WORKSPACE_JOB_STAGES: WorkspaceJobStageName[] = [
+  "figma.source",
+  "ir.derive",
+  "template.prepare",
+  "codegen.generate",
+  "validate.project",
+  "repro.export",
+  "git.pr"
+];
+const WORKSPACE_JOB_STAGE_SET = new Set<WorkspaceJobStageName>(WORKSPACE_JOB_STAGES);
+
+const isWorkspaceJobStageName = (value: unknown): value is WorkspaceJobStageName => {
+  return typeof value === "string" && WORKSPACE_JOB_STAGE_SET.has(value as WorkspaceJobStageName);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const diagnostics: PipelineDiagnosticInput[] = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+    if (typeof candidate.code !== "string" || typeof candidate.message !== "string" || typeof candidate.suggestion !== "string") {
+      continue;
+    }
+    diagnostics.push({
+      code: candidate.code,
+      message: candidate.message,
+      suggestion: candidate.suggestion,
+      ...(isWorkspaceJobStageName(candidate.stage) ? { stage: candidate.stage } : {}),
+      ...(candidate.severity === "error" || candidate.severity === "warning" || candidate.severity === "info"
+        ? { severity: candidate.severity }
+        : {}),
+      ...(typeof candidate.figmaNodeId === "string" ? { figmaNodeId: candidate.figmaNodeId } : {}),
+      ...(typeof candidate.figmaUrl === "string" ? { figmaUrl: candidate.figmaUrl } : {}),
+      ...(isRecord(candidate.details) ? { details: candidate.details } : {})
+    });
+  }
+  return diagnostics.length > 0 ? diagnostics : undefined;
+};
+
+const toPipelineError = ({
+  error,
+  fallbackStage
+}: {
+  error: unknown;
+  fallbackStage: WorkspaceJobStageName;
+}): WorkspacePipelineError => {
+  if (isPipelineError(error)) {
+    return error;
+  }
+  if (error instanceof Error && "code" in error && typeof (error as { code?: unknown }).code === "string") {
+    const candidate = error as Error & {
+      code: string;
+      stage?: unknown;
+      diagnostics?: unknown;
+    };
+    const diagnostics = toDiagnosticInputs(candidate.diagnostics);
+    return createPipelineError({
+      code: candidate.code,
+      stage: isWorkspaceJobStageName(candidate.stage) ? candidate.stage : fallbackStage,
+      message: candidate.message,
+      cause: error,
+      ...(diagnostics ? { diagnostics } : {})
+    });
+  }
+  return createPipelineError({
+    code: "E_PIPELINE_UNKNOWN",
+    stage: fallbackStage,
+    message: getErrorMessage(error),
+    cause: error
+  });
+};
+
+const toFigmaNodeUrl = ({
+  fileKey,
+  nodeId
+}: {
+  fileKey: string | undefined;
+  nodeId: string | undefined;
+}): string | undefined => {
+  if (!fileKey || !nodeId) {
+    return undefined;
+  }
+  const trimmedFileKey = fileKey.trim();
+  const trimmedNodeId = nodeId.trim();
+  if (!trimmedFileKey || !trimmedNodeId) {
+    return undefined;
+  }
+  return `https://www.figma.com/design/${encodeURIComponent(trimmedFileKey)}?node-id=${encodeURIComponent(
+    trimmedNodeId.replace(/:/g, "-")
+  )}`;
+};
+
+interface RejectedScreenCandidate {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  reason: "hidden-page" | "hidden-node" | "non-screen-root" | "unsupported-node-type" | "section-without-screen-like-children";
+  pageId?: string;
+  pageName?: string;
+}
+
+const collectRejectedSectionCandidates = ({
+  section,
+  pageId,
+  pageName
+}: {
+  section: Record<string, unknown>;
+  pageId?: string;
+  pageName?: string;
+}): RejectedScreenCandidate[] => {
+  const sectionChildren = Array.isArray(section.children) ? section.children : [];
+  const rejections: RejectedScreenCandidate[] = [];
+  let hasNestedScreenLike = false;
+  for (const nestedCandidate of sectionChildren) {
+    if (!isRecord(nestedCandidate)) {
+      continue;
+    }
+    const nestedType = typeof nestedCandidate.type === "string" ? nestedCandidate.type : "UNKNOWN";
+    if (nestedType === "FRAME" || nestedType === "COMPONENT") {
+      hasNestedScreenLike = true;
+      continue;
+    }
+    const nestedId = typeof nestedCandidate.id === "string" ? nestedCandidate.id : "unknown";
+    const nestedName = typeof nestedCandidate.name === "string" ? nestedCandidate.name : nestedType;
+    if (nestedType === "SECTION") {
+      const nestedSectionRejections = collectRejectedSectionCandidates({
+        section: nestedCandidate,
+        ...(pageId ? { pageId } : {}),
+        ...(pageName ? { pageName } : {})
+      });
+      if (nestedSectionRejections.length > 0) {
+        rejections.push(...nestedSectionRejections);
+      }
+      continue;
+    }
+    rejections.push({
+      nodeId: nestedId,
+      nodeName: nestedName,
+      nodeType: nestedType,
+      reason: "unsupported-node-type",
+      ...(pageId ? { pageId } : {}),
+      ...(pageName ? { pageName } : {})
+    });
+  }
+  if (!hasNestedScreenLike) {
+    rejections.push({
+      nodeId: typeof section.id === "string" ? section.id : "unknown",
+      nodeName: typeof section.name === "string" ? section.name : "Section",
+      nodeType: "SECTION",
+      reason: "section-without-screen-like-children",
+      ...(pageId ? { pageId } : {}),
+      ...(pageName ? { pageName } : {})
+    });
+  }
+  return rejections;
+};
+
+const analyzeScreenCandidateRejections = ({
+  sourceFile
+}: {
+  sourceFile: FigmaFileResponse;
+}): {
+  rejectedCandidates: RejectedScreenCandidate[];
+  rootCandidateCount: number;
+} => {
+  const rejectedCandidates: RejectedScreenCandidate[] = [];
+  if (!isRecord(sourceFile.document)) {
+    return {
+      rejectedCandidates,
+      rootCandidateCount: 0
+    };
+  }
+  const documentNode = sourceFile.document;
+  const pages = Array.isArray(documentNode.children) ? documentNode.children : [];
+  let rootCandidateCount = 0;
+  for (const pageCandidate of pages) {
+    if (!isRecord(pageCandidate)) {
+      continue;
+    }
+    const pageId = typeof pageCandidate.id === "string" ? pageCandidate.id : undefined;
+    const pageName = typeof pageCandidate.name === "string" ? pageCandidate.name : undefined;
+    if (pageCandidate.visible === false) {
+      rejectedCandidates.push({
+        nodeId: pageId ?? "unknown",
+        nodeName: pageName ?? "Page",
+        nodeType: "CANVAS",
+        reason: "hidden-page"
+      });
+      continue;
+    }
+    const pageChildren = Array.isArray(pageCandidate.children) ? pageCandidate.children : [];
+    for (const childCandidate of pageChildren) {
+      if (!isRecord(childCandidate)) {
+        continue;
+      }
+      const nodeType = typeof childCandidate.type === "string" ? childCandidate.type : "UNKNOWN";
+      const nodeId = typeof childCandidate.id === "string" ? childCandidate.id : "unknown";
+      const nodeName = typeof childCandidate.name === "string" ? childCandidate.name : nodeType;
+      if (childCandidate.visible === false) {
+        rejectedCandidates.push({
+          nodeId,
+          nodeName,
+          nodeType,
+          reason: "hidden-node",
+          ...(pageId ? { pageId } : {}),
+          ...(pageName ? { pageName } : {})
+        });
+        continue;
+      }
+      if (nodeType === "FRAME" || nodeType === "COMPONENT") {
+        rootCandidateCount += 1;
+        continue;
+      }
+      if (nodeType === "SECTION") {
+        const sectionRejections = collectRejectedSectionCandidates({
+          section: childCandidate,
+          ...(pageId ? { pageId } : {}),
+          ...(pageName ? { pageName } : {})
+        });
+        rejectedCandidates.push(...sectionRejections);
+        continue;
+      }
+      rejectedCandidates.push({
+        nodeId,
+        nodeName,
+        nodeType,
+        reason: "non-screen-root",
+        ...(pageId ? { pageId } : {}),
+        ...(pageName ? { pageName } : {})
+      });
+    }
+  }
+  return {
+    rejectedCandidates: rejectedCandidates.slice(0, 20),
+    rootCandidateCount
+  };
+};
+
+const SCREEN_REJECTION_REASON_MESSAGE: Record<RejectedScreenCandidate["reason"], string> = {
+  "hidden-page": "The page is hidden.",
+  "hidden-node": "The node is hidden.",
+  "non-screen-root": "The node is not a supported top-level screen root (expected FRAME/COMPONENT/SECTION).",
+  "unsupported-node-type": "The node type is not supported as a screen candidate.",
+  "section-without-screen-like-children": "The section has no FRAME/COMPONENT children."
+};
+
+const SCREEN_REJECTION_REASON_SUGGESTION: Record<RejectedScreenCandidate["reason"], string> = {
+  "hidden-page": "Unhide the page or move target screens into a visible page.",
+  "hidden-node": "Unhide the node or choose a visible FRAME/COMPONENT root.",
+  "non-screen-root": "Use FRAME/COMPONENT roots for screen-level content or wrap content in a FRAME.",
+  "unsupported-node-type": "Convert or wrap the node into a FRAME/COMPONENT that can be treated as a screen root.",
+  "section-without-screen-like-children": "Add at least one FRAME/COMPONENT under this section."
+};
+
+const toSortedReasonCounts = ({
+  rejectedCandidates
+}: {
+  rejectedCandidates: RejectedScreenCandidate[];
+}): Record<string, number> => {
+  const reasonCounts = new Map<string, number>();
+  for (const entry of rejectedCandidates) {
+    reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
+  }
+  return [...reasonCounts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .reduce<Record<string, number>>((accumulator, [reason, count]) => {
+      accumulator[reason] = count;
+      return accumulator;
+    }, {});
+};
+
 const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
-  return error instanceof Error && "stage" in error && "code" in error;
+  return (
+    error instanceof Error &&
+    "stage" in error &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    isWorkspaceJobStageName((error as { stage?: unknown }).stage)
+  );
 };
 
 const isPerfValidationEnabled = (): boolean => {
@@ -294,14 +585,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         throw cancellationError;
       }
 
-      const typedError = isPipelineError(error)
-        ? error
-        : createPipelineError({
-            code: "E_PIPELINE_UNKNOWN",
-            stage,
-            message: getErrorMessage(error),
-            cause: error
-          });
+      const typedError = toPipelineError({
+        error,
+        fallbackStage: stage
+      });
       updateStage({
         job,
         stage,
@@ -347,6 +634,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       runtimeGenerationLocale: runtime.generationLocale
     });
     const resolvedGenerationLocale = generationLocaleResolution.locale;
+    const figmaFileKeyForDiagnostics = resolvedFigmaSourceMode === "rest" ? input.figmaFileKey?.trim() : undefined;
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -368,27 +656,60 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.preview.url = `${resolveBaseUrl()}/workspace/repros/${job.jobId}/`;
     }
 
+    let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const persistStageTimings = async (): Promise<void> => {
+      const payload: {
+        jobId: string;
+        status: WorkspaceJobStatus["status"];
+        generatedAt: string;
+        stages: WorkspaceJobStatus["stages"];
+        diagnostics?: WorkspaceJobDiagnostic[];
+        cancellation?: WorkspaceJobStatus["cancellation"];
+        error?: WorkspaceJobStatus["error"];
+      } = {
+        jobId: job.jobId,
+        status: job.status,
+        generatedAt: nowIso(),
+        stages: job.stages
+      };
+      if (collectedDiagnostics && collectedDiagnostics.length > 0) {
+        payload.diagnostics = collectedDiagnostics;
+      }
+      if (job.cancellation) {
+        payload.cancellation = job.cancellation;
+      }
+      if (job.error) {
+        payload.error = job.error;
+      }
+      await writeFile(stageTimingsFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    };
+
+    const appendDiagnostics = ({
+      stage,
+      diagnostics
+    }: {
+      stage: WorkspaceJobStageName;
+      diagnostics: PipelineDiagnosticInput[];
+    }): void => {
+      if (diagnostics.length === 0) {
+        return;
+      }
+      const normalized = createPipelineError({
+        code: "E_PIPELINE_DIAGNOSTICS_INTERNAL",
+        stage,
+        message: "Collected pipeline diagnostics.",
+        diagnostics
+      }).diagnostics;
+      collectedDiagnostics = mergePipelineDiagnostics({
+        ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
+        ...(normalized ? { second: normalized } : {})
+      });
+    };
+
     try {
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
-
-      const persistStageTimings = async (): Promise<void> => {
-        await writeFile(
-          stageTimingsFile,
-          `${JSON.stringify(
-            {
-              jobId: job.jobId,
-              status: job.status,
-              generatedAt: nowIso(),
-              stages: job.stages
-            },
-            null,
-            2
-          )}\n`,
-          "utf8"
-        );
-      };
 
       const figmaFetch = await runStage({
         job,
@@ -537,11 +858,257 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         stage: "ir.derive",
         action: async () => {
+          const emitIrMetricDiagnostics = ({
+            source
+          }: {
+            source: {
+              metrics?: {
+                truncatedScreens?: Array<{
+                  screenId: string;
+                  screenName: string;
+                  originalElements: number;
+                  retainedElements: number;
+                  budget: number;
+                }>;
+                depthTruncatedScreens?: Array<{
+                  screenId: string;
+                  screenName: string;
+                  firstTruncatedDepth: number;
+                  truncatedBranchCount: number;
+                  maxDepth: number;
+                }>;
+                classificationFallbacks?: Array<{
+                  screenId: string;
+                  screenName: string;
+                  nodeId: string;
+                  nodeName: string;
+                  nodeType: string;
+                  depth: number;
+                  matchedRulePriority?: number;
+                  layoutMode?: string;
+                }>;
+              };
+            };
+          }): void => {
+            const budgetTruncatedScreens = [...(source.metrics?.truncatedScreens ?? [])].sort((left, right) => {
+              if (left.screenName !== right.screenName) {
+                return left.screenName.localeCompare(right.screenName);
+              }
+              return left.screenId.localeCompare(right.screenId);
+            });
+            if (budgetTruncatedScreens.length > 0) {
+              const diagnostics: PipelineDiagnosticInput[] = budgetTruncatedScreens.slice(0, 8).map((entry) => {
+                const figmaUrl = toFigmaNodeUrl({
+                  fileKey: figmaFileKeyForDiagnostics,
+                  nodeId: entry.screenId
+                });
+                return {
+                  code: "W_IR_ELEMENT_BUDGET_TRUNCATION",
+                  message:
+                    `Screen '${entry.screenName}' exceeded element budget (${entry.retainedElements}/${entry.originalElements} retained).`,
+                  suggestion:
+                    "Split the screen into smaller sections/components or increase figmaScreenElementBudget if larger screens are intentional.",
+                  stage: "ir.derive",
+                  severity: "warning",
+                  figmaNodeId: entry.screenId,
+                  ...(figmaUrl ? { figmaUrl } : {}),
+                  details: {
+                    screenId: entry.screenId,
+                    screenName: entry.screenName,
+                    originalElements: entry.originalElements,
+                    retainedElements: entry.retainedElements,
+                    budget: entry.budget
+                  }
+                };
+              });
+              appendDiagnostics({
+                stage: "ir.derive",
+                diagnostics
+              });
+            }
+
+            const depthTruncatedScreens = [...(source.metrics?.depthTruncatedScreens ?? [])].sort((left, right) => {
+              if (left.screenName !== right.screenName) {
+                return left.screenName.localeCompare(right.screenName);
+              }
+              return left.screenId.localeCompare(right.screenId);
+            });
+            if (depthTruncatedScreens.length > 0) {
+              const summary = depthTruncatedScreens
+                .slice(0, 3)
+                .map(
+                  (entry) =>
+                    `'${entry.screenName}' branches=${entry.truncatedBranchCount} firstDepth=${entry.firstTruncatedDepth}`
+                )
+                .join("; ");
+              pushLog({
+                job,
+                level: "warn",
+                stage: "ir.derive",
+                message:
+                  `Dynamic depth truncation applied on ${depthTruncatedScreens.length} screen(s) ` +
+                  `(maxDepth=${runtime.figmaScreenElementMaxDepth}). ${summary}`
+              });
+
+              const diagnostics: PipelineDiagnosticInput[] = depthTruncatedScreens.slice(0, 8).map((entry) => {
+                const figmaUrl = toFigmaNodeUrl({
+                  fileKey: figmaFileKeyForDiagnostics,
+                  nodeId: entry.screenId
+                });
+                return {
+                  code: "W_IR_DEPTH_TRUNCATION",
+                  message:
+                    `Depth truncation started at depth ${entry.firstTruncatedDepth} for screen '${entry.screenName}'.`,
+                  suggestion:
+                    "Split deeply nested content into smaller screens/components or increase figmaScreenElementMaxDepth.",
+                  stage: "ir.derive",
+                  severity: "warning",
+                  figmaNodeId: entry.screenId,
+                  ...(figmaUrl ? { figmaUrl } : {}),
+                  details: {
+                    screenId: entry.screenId,
+                    screenName: entry.screenName,
+                    maxDepth: entry.maxDepth,
+                    firstTruncatedDepth: entry.firstTruncatedDepth,
+                    truncatedBranchCount: entry.truncatedBranchCount
+                  }
+                };
+              });
+              appendDiagnostics({
+                stage: "ir.derive",
+                diagnostics
+              });
+            }
+
+            const classificationFallbacks = [...(source.metrics?.classificationFallbacks ?? [])].sort((left, right) => {
+              if (left.screenName !== right.screenName) {
+                return left.screenName.localeCompare(right.screenName);
+              }
+              if (left.depth !== right.depth) {
+                return left.depth - right.depth;
+              }
+              return left.nodeId.localeCompare(right.nodeId);
+            });
+            if (classificationFallbacks.length > 0) {
+              pushLog({
+                job,
+                level: "warn",
+                stage: "ir.derive",
+                message:
+                  `Classification fallback to container used for ${classificationFallbacks.length} node(s). ` +
+                  `Top sample: ${classificationFallbacks
+                    .slice(0, 3)
+                    .map((entry) => `'${entry.nodeName}'`)
+                    .join(", ")}`
+              });
+              const diagnostics: PipelineDiagnosticInput[] = classificationFallbacks.slice(0, 12).map((entry) => {
+                const figmaUrl = toFigmaNodeUrl({
+                  fileKey: figmaFileKeyForDiagnostics,
+                  nodeId: entry.nodeId
+                });
+                return {
+                  code: "W_IR_CLASSIFICATION_FALLBACK",
+                  message: `Node '${entry.nodeName}' fell back to generic 'container' classification.`,
+                  suggestion:
+                    "Use clearer component naming/structure (e.g., button/input/list/table semantics) so deterministic classification can resolve a specific type.",
+                  stage: "ir.derive",
+                  severity: "warning",
+                  figmaNodeId: entry.nodeId,
+                  ...(figmaUrl ? { figmaUrl } : {}),
+                  details: {
+                    screenId: entry.screenId,
+                    screenName: entry.screenName,
+                    nodeId: entry.nodeId,
+                    nodeName: entry.nodeName,
+                    nodeType: entry.nodeType,
+                    depth: entry.depth,
+                    ...(entry.layoutMode ? { layoutMode: entry.layoutMode } : {}),
+                    ...(entry.matchedRulePriority !== undefined
+                      ? { matchedRulePriority: entry.matchedRulePriority }
+                      : {})
+                  }
+                };
+              });
+              appendDiagnostics({
+                stage: "ir.derive",
+                diagnostics
+              });
+            }
+          };
+          const buildIrEmptyDiagnostics = (): PipelineDiagnosticInput[] => {
+            const { rejectedCandidates, rootCandidateCount } = analyzeScreenCandidateRejections({
+              sourceFile: figmaFetch.file
+            });
+            const reasonCounts = toSortedReasonCounts({
+              rejectedCandidates
+            });
+            if (figmaFetch.cleaning.report.screenCandidateCount <= 0) {
+              reasonCounts["cleaning-removed-candidates"] = 1;
+            }
+            const candidateDiagnostics: PipelineDiagnosticInput[] = rejectedCandidates.slice(0, 8).map((entry) => {
+              const figmaUrl = toFigmaNodeUrl({
+                fileKey: figmaFileKeyForDiagnostics,
+                nodeId: entry.nodeId
+              });
+              return {
+                code: "E_IR_EMPTY_CANDIDATE_REJECTED",
+                message: `Rejected node '${entry.nodeName}' (${entry.nodeType}): ${SCREEN_REJECTION_REASON_MESSAGE[entry.reason]}`,
+                suggestion: SCREEN_REJECTION_REASON_SUGGESTION[entry.reason],
+                stage: "ir.derive",
+                severity: "error",
+                ...(entry.nodeId ? { figmaNodeId: entry.nodeId } : {}),
+                ...(figmaUrl ? { figmaUrl } : {}),
+                details: {
+                  reason: entry.reason,
+                  ...(entry.pageId ? { pageId: entry.pageId } : {}),
+                  ...(entry.pageName ? { pageName: entry.pageName } : {}),
+                  nodeType: entry.nodeType
+                }
+              };
+            });
+            return [
+              {
+                code: "E_IR_EMPTY",
+                message: "IR derivation produced zero screens.",
+                suggestion:
+                  "Provide at least one visible FRAME/COMPONENT root screen and avoid layouts that are fully removed by cleaning.",
+                stage: "ir.derive",
+                severity: "error",
+                details: {
+                  rootCandidateCount,
+                  rejectedCandidateCount: rejectedCandidates.length,
+                  reasonCounts,
+                  screenCandidateCountAfterCleaning: figmaFetch.cleaning.report.screenCandidateCount
+                }
+              },
+              ...candidateDiagnostics
+            ];
+          };
+
           if (figmaFetch.cleaning.report.screenCandidateCount <= 0) {
             throw createPipelineError({
               code: "E_FIGMA_CLEAN_EMPTY",
               stage: "ir.derive",
-              message: "Figma cleaning removed all screen candidates."
+              message: "Figma cleaning removed all screen candidates.",
+              diagnostics: [
+                {
+                  code: "E_FIGMA_CLEAN_EMPTY",
+                  message: "No screen candidates remained after Figma cleaning.",
+                  suggestion:
+                    "Ensure at least one visible FRAME/COMPONENT (or SECTION with FRAME/COMPONENT children) remains after cleaning.",
+                  stage: "ir.derive",
+                  severity: "error",
+                  details: {
+                    inputNodeCount: figmaFetch.cleaning.report.inputNodeCount,
+                    outputNodeCount: figmaFetch.cleaning.report.outputNodeCount,
+                    screenCandidateCount: figmaFetch.cleaning.report.screenCandidateCount,
+                    removedHiddenNodes: figmaFetch.cleaning.report.removedHiddenNodes,
+                    removedPlaceholderNodes: figmaFetch.cleaning.report.removedPlaceholderNodes,
+                    removedHelperNodes: figmaFetch.cleaning.report.removedHelperNodes,
+                    removedInvalidNodes: figmaFetch.cleaning.report.removedInvalidNodes
+                  }
+                }
+              ]
             });
           }
 
@@ -577,22 +1144,38 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
                   `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens ` +
                   `(brandTheme=${resolvedBrandTheme}).`
               });
+              emitIrMetricDiagnostics({ source: cached });
               return cached;
             }
           }
 
-          const derived = figmaToDesignIrWithOptions(figmaFetch.file, {
-            ...irDerivationOptions,
-            sourceMetrics: {
-              fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
-              degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
+          let derived: ReturnType<typeof figmaToDesignIrWithOptions>;
+          try {
+            derived = figmaToDesignIrWithOptions(figmaFetch.file, {
+              ...irDerivationOptions,
+              sourceMetrics: {
+                fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
+                degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
+              }
+            });
+          } catch (error) {
+            if (error instanceof Error && error.message.includes("No top-level frames/components found in Figma file")) {
+              throw createPipelineError({
+                code: "E_IR_EMPTY",
+                stage: "ir.derive",
+                message: "No screen found in IR.",
+                cause: error,
+                diagnostics: buildIrEmptyDiagnostics()
+              });
             }
-          });
+            throw error;
+          }
           if (!Array.isArray(derived.screens) || derived.screens.length === 0) {
             throw createPipelineError({
               code: "E_IR_EMPTY",
               stage: "ir.derive",
-              message: "No screen found in IR"
+              message: "No screen found in IR.",
+              diagnostics: buildIrEmptyDiagnostics()
             });
           }
           await writeFile(designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
@@ -610,24 +1193,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             });
           }
 
-          const depthTruncatedScreens = derived.metrics?.depthTruncatedScreens ?? [];
-          if (depthTruncatedScreens.length > 0) {
-            const summary = depthTruncatedScreens
-              .slice(0, 3)
-              .map(
-                (entry) =>
-                  `'${entry.screenName}' branches=${entry.truncatedBranchCount} firstDepth=${entry.firstTruncatedDepth}`
-              )
-              .join("; ");
-            pushLog({
-              job,
-              level: "warn",
-              stage: "ir.derive",
-              message:
-                `Dynamic depth truncation applied on ${depthTruncatedScreens.length} screen(s) ` +
-                `(maxDepth=${runtime.figmaScreenElementMaxDepth}). ${summary}`
-            });
-          }
+          emitIrMetricDiagnostics({ source: derived });
+
           pushLog({
             job,
             level: "info",
@@ -888,21 +1455,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job.cancellation.completedAt = nowIso();
         markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
         try {
-          await writeFile(
-            stageTimingsFile,
-            `${JSON.stringify(
-              {
-                jobId: job.jobId,
-                status: job.status,
-                generatedAt: nowIso(),
-                stages: job.stages,
-                cancellation: job.cancellation
-              },
-              null,
-              2
-            )}\n`,
-            "utf8"
-          );
+          await persistStageTimings();
         } catch {
           // Ignore stage-timing persistence failures during cancellation handling.
         }
@@ -915,39 +1468,29 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         return;
       }
 
-      const typedError = isPipelineError(error)
-        ? error
-        : createPipelineError({
-            code: "E_PIPELINE_UNKNOWN",
-            stage: job.currentStage ?? "figma.source",
-            message: getErrorMessage(error),
-            cause: error
-          });
+      const typedError = toPipelineError({
+        error,
+        fallbackStage: job.currentStage ?? "figma.source"
+      });
+      const mergedDiagnostics = mergePipelineDiagnostics({
+        ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
+        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {})
+      });
+      if (mergedDiagnostics) {
+        collectedDiagnostics = mergedDiagnostics;
+      }
 
       job.status = "failed";
       job.finishedAt = nowIso();
       job.error = {
         code: typedError.code,
         stage: typedError.stage,
-        message: typedError.message
+        message: typedError.message,
+        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
       };
       job.currentStage = typedError.stage;
       try {
-        await writeFile(
-          stageTimingsFile,
-          `${JSON.stringify(
-            {
-              jobId: job.jobId,
-              status: job.status,
-              generatedAt: nowIso(),
-              stages: job.stages,
-              error: job.error
-            },
-            null,
-            2
-          )}\n`,
-          "utf8"
-        );
+        await persistStageTimings();
       } catch {
         // Ignore stage-timing persistence failures during error handling.
       }

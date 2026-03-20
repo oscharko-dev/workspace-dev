@@ -73,3 +73,22 @@ test("toWorkflowError maps non-error value to fallback message", () => {
   assert.equal(output.retryable, false);
   assert.deepEqual(output.cause, { context: "invalid payload" });
 });
+
+test("WorkflowError preserves optional diagnostics", () => {
+  const diagnostics = [
+    {
+      code: "W_IR_CLASSIFICATION_FALLBACK",
+      message: "Fallback used.",
+      suggestion: "Rename node.",
+      stage: "ir.derive" as const,
+      severity: "warning" as const
+    }
+  ];
+  const error = new WorkflowError({
+    code: "E_TEST",
+    message: "failure",
+    diagnostics
+  });
+
+  assert.deepEqual(error.diagnostics, diagnostics);
+});

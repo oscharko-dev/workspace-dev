@@ -502,14 +502,176 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_CLEAN_EMPTY");
   assert.equal(status.error?.stage, "ir.derive");
+  assert.equal(status.error?.diagnostics?.[0]?.code, "E_FIGMA_CLEAN_EMPTY");
+  assert.equal(status.error?.diagnostics?.[0]?.severity, "error");
+  assert.equal(status.error?.diagnostics?.[0]?.details?.screenCandidateCount, 0);
+  assert.equal(
+    String(status.error?.diagnostics?.[0]?.suggestion ?? "").includes("visible FRAME/COMPONENT"),
+    true
+  );
 
   const rawPath = path.join(status.artifacts.jobDir, "figma.raw.json");
   const cleanedPath = path.join(status.artifacts.jobDir, "figma.json");
+  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
   const raw = await readFile(rawPath, "utf8");
   const cleaned = await readFile(cleanedPath, "utf8");
+  const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+  };
 
   assert.equal(raw.length > cleaned.length, true);
   assert.equal(cleaned.includes('"visible": false'), false);
+  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "E_FIGMA_CLEAN_EMPTY"), true);
+});
+
+test("createJobEngine surfaces truncation/classification warnings in failure diagnostics with figma links", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-warnings-"));
+  const payload = {
+    name: "Diagnostics board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Main Screen",
+              children: [
+                {
+                  id: "nested-1",
+                  type: "FRAME",
+                  name: "Layer Alpha",
+                  children: [
+                    {
+                      id: "nested-2",
+                      type: "FRAME",
+                      name: "Layer Beta",
+                      children: [{ id: "nested-3", type: "RECTANGLE", name: "Unknown Box", children: [] }]
+                    }
+                  ]
+                },
+                { id: "rect-1", type: "RECTANGLE", name: "Mystery Block", children: [] },
+                { id: "rect-2", type: "RECTANGLE", name: "Mystery Block 2", children: [] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaScreenElementBudget: 2,
+      figmaScreenElementMaxDepth: 1,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
+  assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
+  assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_DEPTH_TRUNCATION"), true);
+  assert.equal(
+    status.error?.diagnostics?.some((entry) => entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id=")),
+    true
+  );
+
+  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
+  const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+  };
+  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
+  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "E_VALIDATE_PROJECT"), true);
+});
+
+test("createJobEngine surfaces budget truncation diagnostics with figma links", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-budget-"));
+  const payload = {
+    name: "Budget diagnostics board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-budget-1",
+              type: "FRAME",
+              name: "Budget Screen",
+              children: Array.from({ length: 140 }, (_, index) => ({
+                id: `rect-${index + 1}`,
+                type: "RECTANGLE",
+                name: `Block ${index + 1}`,
+                children: []
+              }))
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaScreenElementBudget: 2,
+      figmaScreenElementMaxDepth: 14,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
+  assert.equal(
+    status.error?.diagnostics?.some((entry) => entry.code === "W_IR_ELEMENT_BUDGET_TRUNCATION"),
+    true
+  );
+  assert.equal(
+    status.error?.diagnostics?.some((entry) => entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id=")),
+    true
+  );
 });
 
 const createImageBoardPayload = () => ({

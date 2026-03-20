@@ -1,6 +1,7 @@
 import type {
   WorkspaceBrandTheme,
   WorkspaceGitPrStatus,
+  WorkspaceJobDiagnostic,
   WorkspaceJobArtifacts,
   WorkspaceJobCancellation,
   WorkspaceJobError,
@@ -57,6 +58,7 @@ export interface JobRecord {
 export interface WorkspacePipelineError extends Error {
   code: string;
   stage: WorkspaceJobStageName;
+  diagnostics?: WorkspaceJobDiagnostic[];
 }
 
 export interface JobEnginePaths {

@@ -664,6 +664,25 @@ export const classifyElementTypeFromNode = <TNode extends ElementClassificationN
   node: TNode;
   dependencies: NodeClassificationDependencies<TNode>;
 }): ScreenElementIR["type"] => {
+  return classifyElementTypeDecisionFromNode({
+    node,
+    dependencies
+  }).type;
+};
+
+export interface NodeClassificationDecision {
+  type: ScreenElementIR["type"];
+  matchedRulePriority?: number;
+  fallback: boolean;
+}
+
+export const classifyElementTypeDecisionFromNode = <TNode extends ElementClassificationNode>({
+  node,
+  dependencies
+}: {
+  node: TNode;
+  dependencies: NodeClassificationDependencies<TNode>;
+}): NodeClassificationDecision => {
   const context = createNodeClassificationContext({
     node,
     dependencies
@@ -671,11 +690,18 @@ export const classifyElementTypeFromNode = <TNode extends ElementClassificationN
 
   for (const rule of sortedNodeRules) {
     if (matchesNodeRule(rule, context)) {
-      return rule.type;
+      return {
+        type: rule.type,
+        matchedRulePriority: rule.priority,
+        fallback: false
+      };
     }
   }
 
-  return "container";
+  return {
+    type: "container",
+    fallback: true
+  };
 };
 
 export const classifyElementTypeFromSemanticHint = ({
