@@ -15,3 +15,6 @@ pnpm-debug.log*
 /FIGMA_GUIDE.md
 /FIGMA_LEITFADEN.md
 /FIGMA_LEITFADEN_V2.md
+/.intent/
+/.claude/
+CLAUDE.md
