@@ -1036,7 +1036,7 @@ const STACK_HANDLED_SX_KEYS: ReadonlySet<string> = new Set([
 
 export const isSimpleFlexContainerForStack = ({
   element,
-  context
+  context: _context
 }: {
   element: ScreenElementIR;
   context: RenderContext;
@@ -1049,9 +1049,6 @@ export const isSimpleFlexContainerForStack = ({
     return false;
   }
   if ((element.children?.length ?? 0) === 0) {
-    return false;
-  }
-  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
     return false;
   }
   return true;
@@ -1071,8 +1068,17 @@ export const toSimpleStackContainerSx = ({
     spacingBase: context.spacingBase,
     tokens: context.tokens,
     generationLocale: context.generationLocale
-  }).filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key));
-  return sxString(baseEntries);
+  });
+  const responsiveEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseEntries)
+  });
+  return sxString([
+    ...baseEntries.filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key)),
+    ...responsiveEntries
+  ]);
 };
 
 export const hasInterChildDividerPattern = (children: ScreenElementIR[]): boolean => {
