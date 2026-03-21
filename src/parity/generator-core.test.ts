@@ -4784,11 +4784,19 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
   assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(content.includes('import { z } from "zod";'));
+  assert.ok(content.includes("const fieldSchemaSpecs = "));
+  assert.ok(content.includes("type FieldSchemaSpec = {"));
+  assert.ok(content.includes("const createFieldSchema = <TSpec extends FieldSchemaSpec>({"));
+  assert.ok(
+    content.includes('type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;')
+  );
+  assert.ok(/createFieldSchema\(\{ fieldKey: "[^"]+", spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(content));
   assert.ok(content.includes("type FormInput = z.input<typeof formSchema>;"));
   assert.ok(content.includes("type FormOutput = z.output<typeof formSchema>;"));
   assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({"));
   assert.ok(content.includes("if (!isTouched && !isSubmitted) {"));
   assert.ok(content.includes("<Controller"));
+  assert.equal(content.includes("fieldValidationTypes[fieldKey]"), false);
   assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
 });
@@ -4837,9 +4845,9 @@ test("deterministic screen rendering enforces select option membership in RHF sc
 
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes("const selectOptions: Record<string, string[]> = "));
-  assert.ok(content.includes("const selectFieldOptions = selectOptions[fieldKey];"));
+  assert.ok(content.includes("const selectFieldOptions = spec.selectOptions;"));
   assert.ok(content.includes("!selectFieldOptions.includes(rawValue)"));
-  assert.ok(content.includes('fieldValidationMessages[fieldKey] ?? "Please select a valid option."'));
+  assert.ok(content.includes('spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".")'));
 });
 
 test("deterministic screen rendering seeds visual error examples from red outlines", () => {
