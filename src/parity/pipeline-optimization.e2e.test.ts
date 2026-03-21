@@ -29,6 +29,9 @@ const skipReason =
     ? "FIGMA_ACCESS_TOKEN not set – skipping pipeline optimization E2E tests"
     : undefined;
 
+// Match opening JSX <Stack ...> tags at line start, while tolerating '>' characters in quoted attrs.
+const STACK_OPEN_TAG_REGEX = /^\s*<Stack\b(?:"[^"]*"|'[^']*'|[^'"<>])*>/gm;
+
 let cachedFigmaFile: unknown;
 
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
@@ -258,7 +261,7 @@ test("E2E: Stack components use direction prop and generate valid spacing", { sk
     const file = createDeterministicScreenFile(screen);
     const content = file.content;
 
-    const stackMatches = [...content.matchAll(/<Stack\b[^>]*/g)];
+    const stackMatches = [...content.matchAll(STACK_OPEN_TAG_REGEX)];
     for (const match of stackMatches) {
       totalStackOccurrences += 1;
       const tag = match[0];

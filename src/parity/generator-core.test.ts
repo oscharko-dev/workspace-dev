@@ -4793,6 +4793,55 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
 });
 
+test("deterministic screen rendering enforces select option membership in RHF schemas", () => {
+  const screen = {
+    id: "rhf-select-membership-screen",
+    name: "RHF Select Membership Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "rhf-status-select",
+        name: "Status Select",
+        nodeType: "FRAME",
+        type: "select" as const,
+        width: 260,
+        height: 56,
+        children: [
+          {
+            id: "rhf-status-select-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Status"
+          },
+          {
+            id: "rhf-status-select-option-1",
+            name: "Option 1",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Aktiv"
+          },
+          {
+            id: "rhf-status-select-option-2",
+            name: "Option 2",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Inaktiv"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.ok(content.includes("const selectOptions: Record<string, string[]> = "));
+  assert.ok(content.includes("const selectFieldOptions = selectOptions[fieldKey];"));
+  assert.ok(content.includes("!selectFieldOptions.includes(rawValue)"));
+  assert.ok(content.includes('fieldValidationMessages[fieldKey] ?? "Please select a valid option."'));
+});
+
 test("deterministic screen rendering seeds visual error examples from red outlines", () => {
   const screen = {
     id: "visual-error-screen",

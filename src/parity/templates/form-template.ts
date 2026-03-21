@@ -519,6 +519,16 @@ export const buildInlineReactHookFormStateBlock = ({
     initialValues,
     indent: "  "
   });
+  const selectMembershipValidationBlock = hasSelectField
+    ? `    const selectFieldOptions = selectOptions[fieldKey];
+    if (Array.isArray(selectFieldOptions) && selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
+      const selectValidationMessage = fieldValidationMessages[fieldKey] ?? "Please select a valid option.";
+      issueContext.addIssue({ code: z.ZodIssueCode.custom, message: selectValidationMessage });
+      return;
+    }
+
+`
+    : "";
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
 const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
 const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
@@ -558,7 +568,7 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       return;
     }
 
-    const validationType = fieldValidationTypes[fieldKey];
+${selectMembershipValidationBlock}    const validationType = fieldValidationTypes[fieldKey];
     if (!validationType) {
       return;
     }
@@ -802,6 +812,13 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       return;
     }
     if (trimmed.length === 0) {
+      return;
+    }
+
+    const selectFieldOptions = selectOptions[fieldKey];
+    if (Array.isArray(selectFieldOptions) && selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
+      const selectValidationMessage = fieldValidationMessages[fieldKey] ?? "Please select a valid option.";
+      issueContext.addIssue({ code: z.ZodIssueCode.custom, message: selectValidationMessage });
       return;
     }
 
