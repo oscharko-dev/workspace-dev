@@ -1,0 +1,495 @@
+{
+  "sourceName": "RTL Layout Board",
+  "screens": [
+    {
+      "id": "screen-landing",
+      "name": "Landing",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "rtl-heading",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "مرحباً بكم",
+          "x": 24,
+          "y": 24,
+          "width": 342,
+          "height": 44,
+          "fillColor": "#1a1a1f",
+          "fontSize": 32,
+          "fontWeight": 700,
+          "fontFamily": "Cairo",
+          "lineHeight": 44,
+          "textAlign": "RIGHT"
+        },
+        {
+          "id": "rtl-subtitle",
+          "name": "Subtitle",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "اكتشف أفضل المنتجات والخدمات",
+          "x": 24,
+          "y": 84,
+          "width": 342,
+          "height": 24,
+          "fillColor": "#666b75",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Cairo",
+          "lineHeight": 24,
+          "textAlign": "RIGHT"
+        },
+        {
+          "id": "rtl-card-1",
+          "name": "Feature Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 24,
+          "y": 124,
+          "width": 342,
+          "height": 100,
+          "fillColor": "#f5f7fa",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "rtl-card1-text",
+              "name": "Content",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "stack",
+              "x": 36,
+              "y": 136,
+              "width": 250,
+              "height": 76,
+              "children": [
+                {
+                  "id": "rtl-card1-title",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "التصميم الاحترافي",
+                  "x": 36,
+                  "y": 136,
+                  "width": 250,
+                  "height": 28,
+                  "fillColor": "#1a1a1f",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Cairo",
+                  "lineHeight": 28,
+                  "textAlign": "RIGHT"
+                },
+                {
+                  "id": "rtl-card1-desc",
+                  "name": "Description",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "نقدم تصاميم عصرية ومبتكرة",
+                  "x": 36,
+                  "y": 168,
+                  "width": 250,
+                  "height": 22,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Cairo",
+                  "lineHeight": 22,
+                  "textAlign": "RIGHT"
+                }
+              ]
+            },
+            {
+              "id": "rtl-card1-icon",
+              "name": "Icon",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "container",
+              "x": 310,
+              "y": 148,
+              "width": 44,
+              "height": 44,
+              "fillColor": "#3d78f5",
+              "cornerRadius": 8
+            }
+          ]
+        },
+        {
+          "id": "rtl-card-2",
+          "name": "Feature Card",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 12,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 24,
+          "y": 240,
+          "width": 342,
+          "height": 100,
+          "fillColor": "#f5f7fa",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "rtl-card2-text",
+              "name": "Content",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 4,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "stack",
+              "x": 36,
+              "y": 252,
+              "width": 250,
+              "height": 76,
+              "children": [
+                {
+                  "id": "rtl-card2-title",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "الدعم الفني",
+                  "x": 36,
+                  "y": 252,
+                  "width": 250,
+                  "height": 28,
+                  "fillColor": "#1a1a1f",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Cairo",
+                  "lineHeight": 28,
+                  "textAlign": "RIGHT"
+                },
+                {
+                  "id": "rtl-card2-desc",
+                  "name": "Description",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "فريق متخصص لمساعدتك",
+                  "x": 36,
+                  "y": 284,
+                  "width": 250,
+                  "height": 22,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Cairo",
+                  "lineHeight": 22,
+                  "textAlign": "RIGHT"
+                }
+              ]
+            },
+            {
+              "id": "rtl-card2-icon",
+              "name": "Icon",
+              "nodeType": "RECTANGLE",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "container",
+              "x": 310,
+              "y": 264,
+              "width": 44,
+              "height": 44,
+              "fillColor": "#26ad61",
+              "cornerRadius": 8
+            }
+          ]
+        },
+        {
+          "id": "rtl-cta",
+          "name": "CTA Button",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "paper",
+          "x": 24,
+          "y": 380,
+          "width": 342,
+          "height": 48,
+          "fillColor": "#3d78f5",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "rtl-cta-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "ابدأ الآن",
+              "x": 150,
+              "y": 392,
+              "width": 90,
+              "height": 24,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Cairo",
+              "lineHeight": 24,
+              "textAlign": "CENTER"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1a1a1f",
+      "secondary": "#666b75",
+      "background": "#fcfcfd",
+      "text": "#1a1a1f",
+      "success": "#26ad61",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#3d78f5",
+      "divider": "#1a1a1f1f",
+      "action": {
+        "active": "#1a1a1f8a",
+        "hover": "#1a1a1f0a",
+        "selected": "#1a1a1f14",
+        "disabled": "#1a1a1f42",
+        "disabledBackground": "#1a1a1f1f",
+        "focus": "#1a1a1f1f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 12,
+    "fontFamily": "Cairo, Roboto, Arial, sans-serif",
+    "headingSize": 32,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 44,
+        "fontFamily": "Cairo"
+      },
+      "h2": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Cairo"
+      },
+      "h3": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Cairo"
+      },
+      "h4": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Cairo"
+      },
+      "h5": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Cairo"
+      },
+      "h6": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Cairo"
+      },
+      "subtitle1": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Cairo"
+      },
+      "subtitle2": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Cairo"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Cairo"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Cairo"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 44,
+        "fontFamily": "Cairo",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Cairo"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Cairo",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-landing",
+        "screenName": "Landing",
+        "elements": 14
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [
+      {
+        "screenId": "screen-landing",
+        "screenName": "Landing",
+        "nodeId": "rtl-card1-icon",
+        "nodeName": "Icon",
+        "nodeType": "RECTANGLE",
+        "depth": 1
+      },
+      {
+        "screenId": "screen-landing",
+        "screenName": "Landing",
+        "nodeId": "rtl-card2-icon",
+        "nodeName": "Icon",
+        "nodeType": "RECTANGLE",
+        "depth": 1
+      }
+    ],
+    "degradedGeometryNodes": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

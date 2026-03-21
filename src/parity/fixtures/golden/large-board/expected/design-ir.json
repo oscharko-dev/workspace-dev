@@ -1,0 +1,1059 @@
+{
+  "sourceName": "Large Board",
+  "screens": [
+    {
+      "id": "screen-splash",
+      "name": "Splash",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 200,
+        "right": 24,
+        "bottom": 200,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "splash-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "AppName",
+          "x": 24,
+          "y": 380,
+          "width": 342,
+          "height": 48,
+          "fillColor": "#ffffff",
+          "fontSize": 40,
+          "fontWeight": 800,
+          "fontFamily": "Inter",
+          "lineHeight": 48,
+          "textAlign": "CENTER"
+        },
+        {
+          "id": "splash-tagline",
+          "name": "Tagline",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Your digital companion",
+          "x": 24,
+          "y": 444,
+          "width": 342,
+          "height": 24,
+          "fillColor": "#d9e6ff",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "CENTER"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#265cf5"
+    },
+    {
+      "id": "screen-onboarding",
+      "name": "Onboarding",
+      "layoutMode": "VERTICAL",
+      "gap": 24,
+      "padding": {
+        "top": 48,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "onb-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Welcome",
+          "x": 454,
+          "y": 48,
+          "width": 342,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "onb-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Let us set up your account in a few easy steps.",
+          "x": 454,
+          "y": 108,
+          "width": 342,
+          "height": 48,
+          "fillColor": "#666b75",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-login",
+      "name": "Login",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 48,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "login-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Sign In",
+          "x": 884,
+          "y": 48,
+          "width": 342,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "login-email",
+          "name": "MuiFormControlRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "input",
+          "x": 884,
+          "y": 100,
+          "width": 342,
+          "height": 56,
+          "children": [
+            {
+              "id": "login-email-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Email",
+              "x": 896,
+              "y": 116,
+              "width": 60,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "login-password",
+          "name": "MuiFormControlRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "input",
+          "x": 884,
+          "y": 172,
+          "width": 342,
+          "height": 56,
+          "children": [
+            {
+              "id": "login-pw-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Password",
+              "x": 896,
+              "y": 188,
+              "width": 80,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-register",
+      "name": "Register",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 48,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "reg-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Create Account",
+          "x": 1314,
+          "y": 48,
+          "width": 342,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "reg-name",
+          "name": "MuiFormControlRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "input",
+          "x": 1314,
+          "y": 100,
+          "width": 342,
+          "height": 56,
+          "children": [
+            {
+              "id": "reg-name-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Full Name",
+              "x": 1326,
+              "y": 116,
+              "width": 80,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-home",
+      "name": "Home",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "home-greeting",
+          "name": "Greeting",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Good Morning",
+          "x": 1736,
+          "y": 16,
+          "width": 358,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "home-subtitle",
+          "name": "Subtitle",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Here is your daily summary",
+          "x": 1736,
+          "y": 52,
+          "width": 358,
+          "height": 20,
+          "fillColor": "#666b75",
+          "fontSize": 14,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#f7fafc"
+    },
+    {
+      "id": "screen-feed",
+      "name": "Feed",
+      "layoutMode": "VERTICAL",
+      "gap": 12,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "feed-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Activity Feed",
+          "x": 2166,
+          "y": 16,
+          "width": 358,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#f7fafc"
+    },
+    {
+      "id": "screen-search",
+      "name": "Search",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "search-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Search",
+          "x": 2596,
+          "y": 16,
+          "width": 358,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "search-field",
+          "name": "MuiFormControlRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "input",
+          "x": 2596,
+          "y": 64,
+          "width": 358,
+          "height": 48,
+          "children": [
+            {
+              "id": "search-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Search",
+              "x": 2608,
+              "y": 78,
+              "width": 60,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-profile",
+      "name": "Profile",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "prof-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "My Profile",
+          "x": 3034,
+          "y": 24,
+          "width": 342,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "prof-avatar",
+          "name": "Avatar",
+          "nodeType": "ELLIPSE",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "avatar",
+          "x": 3034,
+          "y": 72,
+          "width": 80,
+          "height": 80,
+          "fillColor": "#d9d9e6"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-settings",
+      "name": "Settings",
+      "layoutMode": "VERTICAL",
+      "gap": 12,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "set-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Settings",
+          "x": 3456,
+          "y": 16,
+          "width": 358,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "set-item1",
+          "name": "Item",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Notifications",
+          "x": 3456,
+          "y": 60,
+          "width": 358,
+          "height": 24,
+          "fillColor": "#1c1f24",
+          "fontSize": 16,
+          "fontWeight": 500,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "set-item2",
+          "name": "Item",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Privacy",
+          "x": 3456,
+          "y": 96,
+          "width": 358,
+          "height": 24,
+          "fillColor": "#1c1f24",
+          "fontSize": 16,
+          "fontWeight": 500,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-notifications",
+      "name": "Notifications",
+      "layoutMode": "VERTICAL",
+      "gap": 8,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "notif-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Notifications",
+          "x": 3886,
+          "y": 16,
+          "width": 358,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "notif-empty",
+          "name": "Empty State",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "No new notifications",
+          "x": 3886,
+          "y": 300,
+          "width": 358,
+          "height": 20,
+          "fillColor": "#999ea8",
+          "fontSize": 14,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "CENTER"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    },
+    {
+      "id": "screen-about",
+      "name": "About",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "about-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "About",
+          "x": 4324,
+          "y": 24,
+          "width": 342,
+          "height": 32,
+          "fillColor": "#1c1f24",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 32,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "about-version",
+          "name": "Version",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Version 2.1.0",
+          "x": 4324,
+          "y": 72,
+          "width": 342,
+          "height": 20,
+          "fillColor": "#666b75",
+          "fontSize": 14,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "about-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Built with care by the engineering team.",
+          "x": 4324,
+          "y": 108,
+          "width": 342,
+          "height": 24,
+          "fillColor": "#1c1f24",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#ffffff"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#fefefe",
+      "background": "#fefefe",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#d9e5fd",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 16,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 40,
+    "bodySize": 16,
+    "typography": {
+      "h1": {
+        "fontSizePx": 40,
+        "fontWeight": 800,
+        "lineHeightPx": 48,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-splash",
+        "screenName": "Splash",
+        "elements": 2
+      },
+      {
+        "screenId": "screen-onboarding",
+        "screenName": "Onboarding",
+        "elements": 2
+      },
+      {
+        "screenId": "screen-login",
+        "screenName": "Login",
+        "elements": 5
+      },
+      {
+        "screenId": "screen-register",
+        "screenName": "Register",
+        "elements": 3
+      },
+      {
+        "screenId": "screen-home",
+        "screenName": "Home",
+        "elements": 2
+      },
+      {
+        "screenId": "screen-feed",
+        "screenName": "Feed",
+        "elements": 1
+      },
+      {
+        "screenId": "screen-search",
+        "screenName": "Search",
+        "elements": 3
+      },
+      {
+        "screenId": "screen-profile",
+        "screenName": "Profile",
+        "elements": 2
+      },
+      {
+        "screenId": "screen-settings",
+        "screenName": "Settings",
+        "elements": 3
+      },
+      {
+        "screenId": "screen-notifications",
+        "screenName": "Notifications",
+        "elements": 2
+      },
+      {
+        "screenId": "screen-about",
+        "screenName": "About",
+        "elements": 3
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

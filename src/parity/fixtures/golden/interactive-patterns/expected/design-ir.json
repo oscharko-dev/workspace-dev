@@ -1,0 +1,739 @@
+{
+  "sourceName": "Interactive Patterns Board",
+  "screens": [
+    {
+      "id": "screen-settings",
+      "name": "Settings",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "settings-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Settings",
+          "x": 16,
+          "y": 16,
+          "width": 200,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "tabs-container",
+          "name": "MuiTabsRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "tab",
+          "x": 16,
+          "y": 68,
+          "width": 768,
+          "height": 48,
+          "fillColor": "#ffffff",
+          "children": [
+            {
+              "id": "tab-general",
+              "name": "MuiTabRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "tab",
+              "x": 16,
+              "y": 68,
+              "width": 256,
+              "height": 48,
+              "children": [
+                {
+                  "id": "tab-general-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "General",
+                  "x": 108,
+                  "y": 82,
+                  "width": 72,
+                  "height": 20,
+                  "fillColor": "#3d78f5",
+                  "fontSize": 14,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "tab-notifications",
+              "name": "MuiTabRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "tab",
+              "x": 272,
+              "y": 68,
+              "width": 256,
+              "height": 48,
+              "children": [
+                {
+                  "id": "tab-notif-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Notifications",
+                  "x": 349,
+                  "y": 82,
+                  "width": 102,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "CENTER"
+                }
+              ]
+            },
+            {
+              "id": "tab-security",
+              "name": "MuiTabRoot",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "tab",
+              "x": 528,
+              "y": 68,
+              "width": 256,
+              "height": 48,
+              "children": [
+                {
+                  "id": "tab-sec-label",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Security",
+                  "x": 620,
+                  "y": 82,
+                  "width": 72,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "CENTER"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "accordion-section",
+          "name": "MuiAccordionRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "card",
+          "x": 16,
+          "y": 132,
+          "width": 768,
+          "height": 300,
+          "fillColor": "#ffffff",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "accordion-header-1",
+              "name": "Accordion Header",
+              "nodeType": "FRAME",
+              "layoutMode": "HORIZONTAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "primaryAxisAlignItems": "SPACE_BETWEEN",
+              "counterAxisAlignItems": "CENTER",
+              "type": "stack",
+              "x": 16,
+              "y": 132,
+              "width": 768,
+              "height": 56,
+              "children": [
+                {
+                  "id": "acc-title-1",
+                  "name": "Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Profile Information",
+                  "x": 32,
+                  "y": 148,
+                  "width": 200,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "accordion-content-1",
+              "name": "Accordion Content",
+              "nodeType": "FRAME",
+              "layoutMode": "VERTICAL",
+              "gap": 12,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "stack",
+              "x": 16,
+              "y": 188,
+              "width": 768,
+              "height": 120,
+              "children": [
+                {
+                  "id": "acc-body-1",
+                  "name": "Body",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Update your personal details and contact information.",
+                  "x": 32,
+                  "y": 200,
+                  "width": 700,
+                  "height": 22,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 22,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "accordion-header-2",
+              "name": "Accordion Header",
+              "nodeType": "FRAME",
+              "layoutMode": "HORIZONTAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "primaryAxisAlignItems": "SPACE_BETWEEN",
+              "counterAxisAlignItems": "CENTER",
+              "type": "stack",
+              "x": 16,
+              "y": 308,
+              "width": 768,
+              "height": 56,
+              "children": [
+                {
+                  "id": "acc-title-2",
+                  "name": "Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Preferences",
+                  "x": 32,
+                  "y": 324,
+                  "width": 150,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "accordion-header-3",
+              "name": "Accordion Header",
+              "nodeType": "FRAME",
+              "layoutMode": "HORIZONTAL",
+              "gap": 8,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "primaryAxisAlignItems": "SPACE_BETWEEN",
+              "counterAxisAlignItems": "CENTER",
+              "type": "stack",
+              "x": 16,
+              "y": 364,
+              "width": 768,
+              "height": 56,
+              "children": [
+                {
+                  "id": "acc-title-3",
+                  "name": "Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Privacy Settings",
+                  "x": 32,
+                  "y": 380,
+                  "width": 180,
+                  "height": 24,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 16,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 24,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dialog-trigger",
+          "name": "MuiDialogRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 200,
+          "y": 500,
+          "width": 400,
+          "height": 300,
+          "fillColor": "#ffffff",
+          "cornerRadius": 12,
+          "children": [
+            {
+              "id": "dialog-title",
+              "name": "Dialog Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Confirm Changes",
+              "x": 224,
+              "y": 524,
+              "width": 350,
+              "height": 28,
+              "fillColor": "#1c1f24",
+              "fontSize": 20,
+              "fontWeight": 700,
+              "fontFamily": "Inter",
+              "lineHeight": 28,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "dialog-body",
+              "name": "Dialog Body",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Are you sure you want to save these changes? This action cannot be undone.",
+              "x": 224,
+              "y": 568,
+              "width": 350,
+              "height": 66,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "dialog-actions",
+              "name": "Actions",
+              "nodeType": "FRAME",
+              "layoutMode": "HORIZONTAL",
+              "gap": 12,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "stack",
+              "x": 224,
+              "y": 720,
+              "width": 350,
+              "height": 48,
+              "children": [
+                {
+                  "id": "dialog-cancel",
+                  "name": "Cancel Button",
+                  "nodeType": "FRAME",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "container",
+                  "x": 394,
+                  "y": 720,
+                  "width": 80,
+                  "height": 40,
+                  "children": [
+                    {
+                      "id": "cancel-label",
+                      "name": "Label",
+                      "nodeType": "TEXT",
+                      "layoutMode": "NONE",
+                      "gap": 0,
+                      "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                      },
+                      "type": "text",
+                      "text": "Cancel",
+                      "x": 408,
+                      "y": 730,
+                      "width": 52,
+                      "height": 20,
+                      "fillColor": "#666b75",
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "fontFamily": "Inter",
+                      "lineHeight": 20,
+                      "textAlign": "CENTER"
+                    }
+                  ]
+                },
+                {
+                  "id": "dialog-confirm",
+                  "name": "Confirm Button",
+                  "nodeType": "FRAME",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "paper",
+                  "x": 486,
+                  "y": 720,
+                  "width": 88,
+                  "height": 40,
+                  "fillColor": "#3d78f5",
+                  "cornerRadius": 8,
+                  "children": [
+                    {
+                      "id": "confirm-label",
+                      "name": "Label",
+                      "nodeType": "TEXT",
+                      "layoutMode": "NONE",
+                      "gap": 0,
+                      "padding": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                      },
+                      "type": "text",
+                      "text": "Confirm",
+                      "x": 504,
+                      "y": 730,
+                      "width": 52,
+                      "height": 20,
+                      "fillColor": "#ffffff",
+                      "fontSize": 14,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeight": 20,
+                      "textAlign": "CENTER"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 800,
+      "height": 1000,
+      "fillColor": "#fafafc"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#fdfdfe",
+      "background": "#fdfdfe",
+      "text": "#666b75",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#3d78f5",
+      "divider": "#666b751f",
+      "action": {
+        "active": "#666b758a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#666b7542",
+        "disabledBackground": "#666b751f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 10,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 28,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 20,
+        "fontWeight": 700,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 16,
+        "fontWeight": 700,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 22,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-settings",
+        "screenName": "Settings",
+        "elements": 25
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [
+      {
+        "screenId": "screen-settings",
+        "screenName": "Settings",
+        "nodeId": "dialog-cancel",
+        "nodeName": "Cancel Button",
+        "nodeType": "FRAME",
+        "depth": 2
+      }
+    ],
+    "degradedGeometryNodes": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}
