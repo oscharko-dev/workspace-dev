@@ -479,7 +479,7 @@ export const toCrossFieldRefineChain = ({
         case "match":
           return `\n${indent}.refine(\n${indent}  (data) => data[${literal(rule.sourceFieldKey)}].trim().length === 0 || data[${literal(rule.targetFieldKey)}].trim().length === 0 || data[${literal(rule.sourceFieldKey)}] === data[${literal(rule.targetFieldKey)}],\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
         case "date_after":
-          return `\n${indent}.refine(\n${indent}  (data) => {\n${indent}    const start = data[${literal(rule.sourceFieldKey)}].trim();\n${indent}    const end = data[${literal(rule.targetFieldKey)}].trim();\n${indent}    if (start.length === 0 || end.length === 0) return true;\n${indent}    return end > start;\n${indent}  },\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
+          return `\n${indent}.refine(\n${indent}  (data) => {\n${indent}    const toComparableDateString = (value: unknown): string | undefined => {\n${indent}      if (typeof value === "string") {\n${indent}        const trimmed = value.trim();\n${indent}        if (trimmed.length === 0) return undefined;\n${indent}        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) return undefined;\n${indent}        return trimmed;\n${indent}      }\n${indent}      if (value instanceof Date) {\n${indent}        if (!Number.isFinite(value.getTime())) return undefined;\n${indent}        const year = value.getUTCFullYear();\n${indent}        const month = String(value.getUTCMonth() + 1).padStart(2, "0");\n${indent}        const day = String(value.getUTCDate()).padStart(2, "0");\n${indent}        return year + "-" + month + "-" + day;\n${indent}      }\n${indent}      return undefined;\n${indent}    };\n${indent}    const startDate = toComparableDateString(data[${literal(rule.sourceFieldKey)}]);\n${indent}    const endDate = toComparableDateString(data[${literal(rule.targetFieldKey)}]);\n${indent}    if (startDate === undefined || endDate === undefined) return true;\n${indent}    return endDate > startDate;\n${indent}  },\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
         case "numeric_gt":
           return `\n${indent}.refine(\n${indent}  (data) => {\n${indent}    const toComparableNumber = (value: unknown): number | undefined => {\n${indent}      if (typeof value === "number") {\n${indent}        return Number.isFinite(value) ? value : undefined;\n${indent}      }\n${indent}      if (typeof value === "string") {\n${indent}        return parseLocalizedNumber(value.trim());\n${indent}      }\n${indent}      return undefined;\n${indent}    };\n${indent}    const minVal = toComparableNumber(data[${literal(rule.sourceFieldKey)}]);\n${indent}    const maxVal = toComparableNumber(data[${literal(rule.targetFieldKey)}]);\n${indent}    if (minVal === undefined || maxVal === undefined) return true;\n${indent}    return maxVal > minVal;\n${indent}  },\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
         default:
@@ -688,6 +688,8 @@ ${selectMembershipValidationBlock}    const validationType = fieldValidationType
     switch (validationType) {
       case "number":
         return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
+      case "date":
+        return trimmed;
       case "iban":
         return trimmed.length === 0 ? trimmed : trimmed.replace(/\\s+/g, "").toUpperCase();
       case "credit_card":
@@ -942,6 +944,8 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
     switch (validationType) {
       case "number":
         return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
+      case "date":
+        return trimmed;
       case "iban":
         return trimmed.length === 0 ? trimmed : trimmed.replace(/\\s+/g, "").toUpperCase();
       case "credit_card":

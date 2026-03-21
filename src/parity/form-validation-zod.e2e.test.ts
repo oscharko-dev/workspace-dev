@@ -584,9 +584,15 @@ test("E2E: cross-field validation — password match .refine() is emitted in gen
     "Expected date_after validation message"
   );
   assert.ok(
-    contextContent.includes("end > start"),
-    "Expected date comparison logic in .refine()"
+    contextContent.includes("const toComparableDateString = (value: unknown): string | undefined => {"),
+    "Expected date_after refine to normalize unknown input values safely"
   );
+  assert.ok(
+    contextContent.includes("endDate > startDate"),
+    "Expected normalized date comparison logic in .refine()"
+  );
+  assert.equal(contextContent.includes('data["start_date"].trim()'), false);
+  assert.equal(contextContent.includes('data["end_date"].trim()'), false);
 
   // --- numeric_gt cross-field rule ---
   assert.ok(
@@ -889,6 +895,14 @@ test("E2E: Zod .transform() — typed output with number/iban/credit_card transf
   assert.ok(
     contextContent.includes('.replace(/[\\s-]+/g, "")'),
     "Expected credit card normalization in transform"
+  );
+  assert.ok(
+    contextContent.includes('case "date":'),
+    "Expected date transform case branch to be emitted"
+  );
+  assert.ok(
+    contextContent.includes("return trimmed;"),
+    "Expected date transform to emit canonical trimmed YYYY-MM-DD output"
   );
 
   // --- context interface uses correct types ---
