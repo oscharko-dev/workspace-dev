@@ -66,7 +66,7 @@ Tests use the **Node.js native test runner** via `tsx --test`. UI tests use Vite
 - ESLint with strict TypeScript rules (`type-imports`, `no-explicit-any`, `no-floating-promises`, `exactOptionalPropertyTypes`).
 - `lint:boundaries` — prevents imports from `services/*`, `workspace/*`, `infra/*`.
 - `lint:no-telemetry` — enforces zero telemetry.
-- `lint:size` — bundle size limits (35 KB index.js, 5 KB contracts).
+- `lint:size` — bundle size limits (53 KB index.js, 5 KB contracts).
 - `lint:publint` / `lint:types-publish` — package correctness for npm distribution.
 
 ## TypeScript

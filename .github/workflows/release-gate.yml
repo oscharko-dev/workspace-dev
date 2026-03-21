@@ -48,6 +48,15 @@ jobs:
       - name: Canonical tests
         run: pnpm run test
 
+      - name: Coverage thresholds
+        run: pnpm run test:coverage
+
+      - name: Install Playwright browser (Chromium)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: UI E2E tests
+        run: pnpm run ui:test:e2e
+
       - name: Run tests with flaky retry
         run: pnpm run test:flaky-retry
 

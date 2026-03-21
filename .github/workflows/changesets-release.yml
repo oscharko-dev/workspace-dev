@@ -54,6 +54,9 @@ jobs:
         run: |
           pnpm run typecheck
           pnpm run test
+          pnpm run test:coverage
+          pnpm exec playwright install --with-deps chromium
+          pnpm run ui:test:e2e
           pnpm run test:flaky-retry
           pnpm run test:bdd
           pnpm run test:property-based
