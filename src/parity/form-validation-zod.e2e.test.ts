@@ -199,6 +199,18 @@ const createCrossFieldValidationScreen = (): any => {
         label: "End Date",
         placeholder: "YYYY-MM-DD"
       }),
+      createSemanticInputNode({
+        id: "cf-min-amount",
+        name: "Minimum Amount Input",
+        label: "Minimum Amount",
+        placeholder: "1.000,00"
+      }),
+      createSemanticInputNode({
+        id: "cf-max-amount",
+        name: "Maximum Amount Input",
+        label: "Maximum Amount",
+        placeholder: "2.000,00"
+      }),
       {
         id: "cf-submit",
         name: "Submit",
@@ -443,6 +455,21 @@ test("E2E: cross-field validation — password match .refine() is emitted in gen
   assert.ok(
     contextContent.includes("end > start"),
     "Expected date comparison logic in .refine()"
+  );
+
+  // --- numeric_gt cross-field rule ---
+  assert.ok(
+    contextContent.includes("Must be greater than Minimum Amount."),
+    "Expected numeric_gt validation message"
+  );
+  assert.ok(
+    contextContent.includes("const toComparableNumber = (value: unknown): number | undefined => {"),
+    "Expected numeric_gt refine to normalize unknown input values safely"
+  );
+  assert.equal(
+    /parseLocalizedNumber\\(data\\[[^\\]]+\\]\\.trim\\(\\)\\)/.test(contextContent),
+    false,
+    "Expected numeric_gt refine to avoid direct data[field].trim() access"
   );
 
   // --- structural integrity ---

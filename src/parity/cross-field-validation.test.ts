@@ -215,10 +215,15 @@ test("toCrossFieldRefineChain: generates .refine() for numeric_gt rule", () => {
   ];
   const result = toCrossFieldRefineChain({ rules, indent: "" });
   assert.ok(result.includes(".refine("));
+  assert.ok(result.includes("const toComparableNumber = (value: unknown): number | undefined => {"));
+  assert.ok(result.includes('const minVal = toComparableNumber(data["min_val"]);'));
+  assert.ok(result.includes('const maxVal = toComparableNumber(data["max_val"]);'));
   assert.ok(result.includes("parseLocalizedNumber"));
   assert.ok(result.includes("maxVal > minVal"));
   assert.ok(result.includes("Must be greater than Min."));
   assert.ok(result.includes('path: ["max_val"]'));
+  assert.equal(result.includes('parseLocalizedNumber(data["min_val"].trim())'), false);
+  assert.equal(result.includes('parseLocalizedNumber(data["max_val"].trim())'), false);
 });
 
 test("toCrossFieldRefineChain: chains multiple .refine() calls", () => {
