@@ -697,7 +697,7 @@ type FormOutput = z.output<typeof formSchema>;
 
 const defaultValues: FormInput = ${JSON.stringify(initialValues, null, 2)};
 
-const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormInput>({${useFormModeLine}
+const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({${useFormModeLine}
   resolver: zodResolver(formSchema),
   defaultValues
 });
@@ -711,13 +711,15 @@ const onSubmit = async (values: FormOutput): Promise<void> => {
 const resolveFieldErrorMessage = ({
   fieldKey,
   isTouched,
+  isSubmitted,
   fieldError
 }: {
   fieldKey: string;
   isTouched: boolean;
+  isSubmitted: boolean;
   fieldError: string | undefined;
 }): string => {
-  if (!isTouched) {
+  if (!isTouched && !isSubmitted) {
     return initialVisualErrors[fieldKey] ?? "";
   }
   return fieldError ?? "";
@@ -946,8 +948,14 @@ export interface ${contextValueTypeName} {
   control: UseFormReturn<${formInputTypeName}>["control"];
   handleSubmit: UseFormReturn<${formInputTypeName}>["handleSubmit"];
   onSubmit: (values: ${formOutputTypeName}) => Promise<void>;
-  resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
+  resolveFieldErrorMessage: (input: {
+    fieldKey: string;
+    isTouched: boolean;
+    isSubmitted: boolean;
+    fieldError: string | undefined;
+  }) => string;
   isSubmitting: boolean;
+  isSubmitted: boolean;
   reset: UseFormReturn<${formInputTypeName}>["reset"];
   setError: UseFormReturn<${formInputTypeName}>["setError"];
 }
@@ -961,7 +969,7 @@ export interface ${providerPropsTypeName} {
 export function ${providerName}({ children }: ${providerPropsTypeName}) {
   const defaultValues: ${formInputTypeName} = ${JSON.stringify(initialValues, null, 2)};
 
-  const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}
+  const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
     defaultValues
   });
@@ -975,13 +983,15 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
   const resolveFieldErrorMessage = ({
     fieldKey,
     isTouched,
+    isSubmitted,
     fieldError
   }: {
     fieldKey: string;
     isTouched: boolean;
+    isSubmitted: boolean;
     fieldError: string | undefined;
   }): string => {
-    if (!isTouched) {
+    if (!isTouched && !isSubmitted) {
       return initialVisualErrors[fieldKey] ?? "";
     }
     return fieldError ?? "";
@@ -997,6 +1007,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
         onSubmit,
         resolveFieldErrorMessage,
         isSubmitting,
+        isSubmitted,
         reset,
         setError
       }}

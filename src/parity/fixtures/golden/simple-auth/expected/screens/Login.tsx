@@ -4,7 +4,7 @@ import { Container, Paper, TextField, Typography } from "@mui/material";
 import { LoginFormContextProvider, useLoginFormContext } from "../context/LoginFormContext";
 
 function LoginScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useLoginFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useLoginFormContext();
   return (
     <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
       {/* @ir:start login-title Title text */}
@@ -18,6 +18,7 @@ function LoginScreenContent() {
           const helperText = resolveFieldErrorMessage({
             fieldKey: "muiformcontrolroot_email_field",
             isTouched: fieldState.isTouched,
+            isSubmitted,
             fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
           });
           return (

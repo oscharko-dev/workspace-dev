@@ -3730,7 +3730,7 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(screenContent.includes("function LoanFormScreenContent() {"));
   assert.ok(
     screenContent.includes(
-      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useLoanFormFormContext();"
+      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useLoanFormFormContext();"
     )
   );
   assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
@@ -3747,7 +3747,13 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes('import { z } from "zod";'));
   assert.ok(formContextContent.includes("export type LoanFormFormInput = z.input<typeof formSchema>;"));
   assert.ok(formContextContent.includes("export type LoanFormFormOutput = z.output<typeof formSchema>;"));
-  assert.ok(formContextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<LoanFormFormInput>({"));
+  assert.ok(
+    formContextContent.includes(
+      "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<LoanFormFormInput>({"
+    )
+  );
+  assert.ok(formContextContent.includes("isSubmitted: boolean;"));
+  assert.ok(formContextContent.includes("if (!isTouched && !isSubmitted) {"));
   assert.ok(formContextContent.includes("const onSubmit = async (values: LoanFormFormOutput): Promise<void> => {"));
   assert.equal(formContextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
@@ -4780,7 +4786,8 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(content.includes('import { z } from "zod";'));
   assert.ok(content.includes("type FormInput = z.input<typeof formSchema>;"));
   assert.ok(content.includes("type FormOutput = z.output<typeof formSchema>;"));
-  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormInput>({"));
+  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({"));
+  assert.ok(content.includes("if (!isTouched && !isSubmitted) {"));
   assert.ok(content.includes("<Controller"));
   assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
@@ -5065,4 +5072,3 @@ test("deterministic screen rendering infers heading hierarchy components from ty
   assert.ok(h6Line.includes('component="h6"'));
   assert.equal(bodyLine.includes('component="h'), false);
 });
-

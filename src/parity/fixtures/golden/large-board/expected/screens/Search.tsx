@@ -4,7 +4,7 @@ import { Container, TextField, Typography } from "@mui/material";
 import { SearchFormContextProvider, useSearchFormContext } from "../context/SearchFormContext";
 
 function SearchScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useSearchFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useSearchFormContext();
   return (
     <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
       {/* @ir:start search-title Title text */}
@@ -18,6 +18,7 @@ function SearchScreenContent() {
           const helperText = resolveFieldErrorMessage({
             fieldKey: "muiformcontrolroot_search_field",
             isTouched: fieldState.isTouched,
+            isSubmitted,
             fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
           });
           return (

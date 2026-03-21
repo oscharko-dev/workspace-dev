@@ -376,6 +376,7 @@ ${indent}  render={({ field: controllerField, fieldState }) => {
 ${indent}    const helperText = resolveFieldErrorMessage({
 ${indent}      fieldKey: ${literal(field.key)},
 ${indent}      isTouched: fieldState.isTouched,
+${indent}      isSubmitted,
 ${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
 ${indent}    });
 ${indent}    return (
@@ -477,6 +478,7 @@ ${indent}  render={({ field: controllerField, fieldState }) => {
 ${indent}    const helperText = resolveFieldErrorMessage({
 ${indent}      fieldKey: ${literal(field.key)},
 ${indent}      isTouched: fieldState.isTouched,
+${indent}      isSubmitted,
 ${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
 ${indent}    });
 ${indent}    return (
@@ -2629,6 +2631,7 @@ ${indent}  render={({ field: controllerField, fieldState }) => {
 ${indent}    const helperText = resolveFieldErrorMessage({
 ${indent}      fieldKey: ${literal(field.key)},
 ${indent}      isTouched: fieldState.isTouched,
+${indent}      isSubmitted,
 ${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
 ${indent}    });
 ${indent}    return (
@@ -4135,7 +4138,8 @@ export const assembleFallbackDependencies = ({
         "handleSubmit",
         "onSubmit",
         "resolveFieldErrorMessage",
-        "isSubmitting"
+        "isSubmitting",
+        "isSubmitted"
       ]
     : [
         "initialVisualErrors",

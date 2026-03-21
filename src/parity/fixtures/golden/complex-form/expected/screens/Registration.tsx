@@ -4,7 +4,7 @@ import { Checkbox, Container, FormControlLabel, Paper, Table, TableBody, TableCe
 import { RegistrationFormContextProvider, useRegistrationFormContext } from "../context/RegistrationFormContext";
 
 function RegistrationScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useRegistrationFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useRegistrationFormContext();
   return (
     <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
       {/* @ir:start form-title Heading text */}
@@ -37,6 +37,7 @@ function RegistrationScreenContent() {
           const helperText = resolveFieldErrorMessage({
             fieldKey: "muitextfieldroot_email_field",
             isTouched: fieldState.isTouched,
+            isSubmitted,
             fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
           });
           return (

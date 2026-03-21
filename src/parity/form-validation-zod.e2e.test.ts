@@ -154,13 +154,18 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
 
   assert.ok(contextContent.includes("export type TypedZodValidationFormFormInput = z.input<typeof formSchema>;"));
   assert.ok(contextContent.includes("export type TypedZodValidationFormFormOutput = z.output<typeof formSchema>;"));
-  assert.ok(contextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<TypedZodValidationFormFormInput>({"));
+  assert.ok(
+    contextContent.includes(
+      "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<TypedZodValidationFormFormInput>({"
+    )
+  );
   assert.ok(contextContent.includes("const onSubmit = async (values: TypedZodValidationFormFormOutput): Promise<void> => {"));
   assert.ok(contextContent.includes("resolver: zodResolver(formSchema),"));
   assert.ok(contextContent.includes('case "password"'));
   assert.ok(contextContent.includes("if (trimmed.length < 8) {"));
   assert.ok(contextContent.includes("Password must be at least 8 characters."));
   assert.equal(contextContent.includes("as unknown as UseFormReturn"), false);
+  assert.ok(contextContent.includes("if (!isTouched && !isSubmitted) {"));
 });
 
 // ---------------------------------------------------------------------------
@@ -554,8 +559,8 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
 
   // --- expanded useForm destructuring ---
   assert.ok(
-    contextContent.includes("formState: { isSubmitting }"),
-    "Expected formState: { isSubmitting } in useForm destructuring"
+    contextContent.includes("formState: { isSubmitting, isSubmitted }"),
+    "Expected formState: { isSubmitting, isSubmitted } in useForm destructuring"
   );
   assert.ok(
     contextContent.includes("reset,"),
@@ -586,6 +591,10 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
     "Expected isSubmitting in context interface"
   );
   assert.ok(
+    contextContent.includes("isSubmitted: boolean;"),
+    "Expected isSubmitted in context interface"
+  );
+  assert.ok(
     contextContent.includes('reset: UseFormReturn<SubmissionLifecycleFormFormInput>["reset"];'),
     "Expected reset in context interface"
   );
@@ -598,6 +607,10 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
   assert.ok(
     contextContent.includes("isSubmitting,"),
     "Expected isSubmitting in provider value"
+  );
+  assert.ok(
+    contextContent.includes("isSubmitted,"),
+    "Expected isSubmitted in provider value"
   );
   assert.ok(
     contextContent.includes("reset,"),
@@ -619,6 +632,14 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
   assert.ok(
     screenContent.includes("isSubmitting"),
     "Expected isSubmitting destructured from context hook"
+  );
+  assert.ok(
+    screenContent.includes("isSubmitted"),
+    "Expected isSubmitted propagation in generated screen"
+  );
+  assert.ok(
+    screenContent.includes("isSubmitted,"),
+    "Expected isSubmitted passed into resolveFieldErrorMessage calls"
   );
 });
 
