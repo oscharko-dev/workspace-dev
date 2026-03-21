@@ -433,6 +433,16 @@ test("inspector endpoints: completed jobs expose expected payloads and files sec
     assert.equal(manifest.jobId, jobId);
     assert.equal(manifest.screens.length, 2);
 
+    const previewIndexResponse = await fetch(
+      `${running.baseUrl}/workspace/repros/${encodeURIComponent(jobId)}/`,
+      { signal: AbortSignal.timeout(5_000) }
+    );
+    assert.equal(previewIndexResponse.status, 200);
+    const previewHtml = await previewIndexResponse.text();
+    assert.equal(previewHtml.includes("data-workspace-dev-inspect"), true);
+    assert.equal(previewHtml.includes("sessionToken"), true);
+    assert.equal(previewHtml.includes("allowedParentOrigin"), true);
+
     const designScreenIds = new Set(designIr.screens.map((screen) => screen.id));
     for (const screen of manifest.screens) {
       assert.equal(designScreenIds.has(screen.screenId), true, "manifest screen must map to design-ir screen");

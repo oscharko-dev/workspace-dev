@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 
 interface OverlayRect {
   left: number;
@@ -13,32 +13,115 @@ interface InspectOverlayProps {
   onToggleInspect: () => void;
   onSelectNode: (irNodeId: string) => void;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  iframeLoadVersion: number;
+}
+
+function createInspectSessionToken(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `inspect-${Date.now().toString(36)}-${randomPart}`;
+}
+
+function toSafeOrigin(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) {
+    return null;
+  }
+  try {
+    const origin = new URL(rawUrl, window.location.href).origin;
+    return origin === "null" ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isHoverRect(value: unknown): value is { x: number; y: number; width: number; height: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const rect = value as Record<string, unknown>;
+  return (
+    isFiniteNumber(rect.x) &&
+    isFiniteNumber(rect.y) &&
+    isFiniteNumber(rect.width) &&
+    isFiniteNumber(rect.height)
+  );
 }
 
 export function InspectOverlay({
   inspectEnabled,
   onToggleInspect,
   onSelectNode,
-  iframeRef
+  iframeRef,
+  iframeLoadVersion
 }: InspectOverlayProps): JSX.Element {
   const [overlayRect, setOverlayRect] = useState<OverlayRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const sessionTokenRef = useRef<string | null>(null);
+  const expectedPreviewOriginRef = useRef<string | null>(null);
 
-  // Send enable/disable messages to the iframe
-  useEffect(() => {
+  const resolvePreviewOrigin = useCallback((): string | null => {
     const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) {
+    if (!iframe) {
+      return null;
+    }
+    const origin = toSafeOrigin(iframe.src);
+    if (origin) {
+      expectedPreviewOriginRef.current = origin;
+    }
+    return origin;
+  }, [iframeRef]);
+
+  const postInspectControlMessage = useCallback(
+    (type: "inspect:enable" | "inspect:disable"): void => {
+      const iframe = iframeRef.current;
+      const targetWindow = iframe?.contentWindow;
+      const sessionToken = sessionTokenRef.current;
+      if (!targetWindow || !sessionToken) {
+        return;
+      }
+      const previewOrigin = resolvePreviewOrigin();
+      targetWindow.postMessage(
+        {
+          type,
+          sessionToken
+        },
+        previewOrigin ?? "*"
+      );
+    },
+    [iframeRef, resolvePreviewOrigin]
+  );
+
+  // Send enable/disable messages to the iframe (also re-send on iframe load)
+  useEffect(() => {
+    if (!inspectEnabled) {
+      if (sessionTokenRef.current) {
+        postInspectControlMessage("inspect:disable");
+      }
+      sessionTokenRef.current = null;
+      expectedPreviewOriginRef.current = null;
+      setOverlayRect(null);
       return;
     }
-    iframe.contentWindow.postMessage(
-      { type: inspectEnabled ? "inspect:enable" : "inspect:disable" },
-      "*"
-    );
-  }, [inspectEnabled, iframeRef]);
+
+    if (!sessionTokenRef.current) {
+      sessionTokenRef.current = createInspectSessionToken();
+    }
+    postInspectControlMessage("inspect:enable");
+  }, [inspectEnabled, iframeLoadVersion, postInspectControlMessage]);
 
   // Listen for postMessage from the iframe — compute overlay rect in the event callback
   useEffect(() => {
     const handler = (event: MessageEvent<unknown>): void => {
+      if (!inspectEnabled) {
+        return;
+      }
       if (!event.data || typeof event.data !== "object") {
         return;
       }
@@ -46,27 +129,55 @@ export function InspectOverlay({
       if (typeof data.type !== "string") {
         return;
       }
-
-      if (data.type === "inspect:hover" && inspectEnabled) {
-        const rect = data.rect as { x: number; y: number; width: number; height: number } | undefined;
-        if (typeof data.irNodeId === "string" && rect) {
-          const iframe = iframeRef.current;
-          const overlayEl = overlayRef.current;
-          if (iframe && overlayEl) {
-            const iframeRect = iframe.getBoundingClientRect();
-            const containerRect = overlayEl.getBoundingClientRect();
-            setOverlayRect({
-              left: iframeRect.left - containerRect.left + rect.x,
-              top: iframeRect.top - containerRect.top + rect.y,
-              width: rect.width,
-              height: rect.height,
-              irNodeName: typeof data.irNodeName === "string" ? data.irNodeName : ""
-            });
-          }
-        }
+      if (data.type !== "inspect:hover" && data.type !== "inspect:select") {
+        return;
       }
 
-      if (data.type === "inspect:select" && inspectEnabled) {
+      const iframe = iframeRef.current;
+      const iframeWindow = iframe?.contentWindow;
+      if (!iframe || !iframeWindow) {
+        return;
+      }
+      if (event.source !== iframeWindow) {
+        return;
+      }
+
+      const previewOrigin = expectedPreviewOriginRef.current ?? resolvePreviewOrigin();
+      if (!previewOrigin || event.origin !== previewOrigin) {
+        return;
+      }
+
+      const activeSessionToken = sessionTokenRef.current;
+      if (
+        !activeSessionToken ||
+        typeof data.sessionToken !== "string" ||
+        data.sessionToken !== activeSessionToken
+      ) {
+        return;
+      }
+
+      if (data.type === "inspect:hover") {
+        if (typeof data.irNodeId !== "string" || !isHoverRect(data.rect)) {
+          return;
+        }
+
+        const overlayEl = overlayRef.current;
+        if (!overlayEl) {
+          return;
+        }
+
+        const iframeRect = iframe.getBoundingClientRect();
+        const containerRect = overlayEl.getBoundingClientRect();
+        setOverlayRect({
+          left: iframeRect.left - containerRect.left + data.rect.x,
+          top: iframeRect.top - containerRect.top + data.rect.y,
+          width: data.rect.width,
+          height: data.rect.height,
+          irNodeName: typeof data.irNodeName === "string" ? data.irNodeName : ""
+        });
+      }
+
+      if (data.type === "inspect:select") {
         if (typeof data.irNodeId === "string") {
           onSelectNode(data.irNodeId);
         }
@@ -77,7 +188,7 @@ export function InspectOverlay({
     return () => {
       window.removeEventListener("message", handler);
     };
-  }, [inspectEnabled, onSelectNode, iframeRef]);
+  }, [inspectEnabled, onSelectNode, iframeRef, resolvePreviewOrigin]);
 
   // Derive effective overlay rect — null when inspect is disabled
   const effectiveOverlayRect = inspectEnabled ? overlayRect : null;

@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import { createElement } from "react";
 import { InspectOverlay } from "./InspectOverlay";
 
+const PREVIEW_ORIGIN = "http://127.0.0.1:19831";
+const PREVIEW_URL = `${PREVIEW_ORIGIN}/workspace/repros/job-1/`;
+
 describe("InspectOverlay", () => {
   const onToggleInspect = vi.fn();
   const onSelectNode = vi.fn();
@@ -10,12 +13,15 @@ describe("InspectOverlay", () => {
   const createIframeRef = (): {
     iframeRef: React.RefObject<HTMLIFrameElement | null>;
     postMessage: ReturnType<typeof vi.fn>;
+    iframeContentWindow: { postMessage: ReturnType<typeof vi.fn> };
   } => {
     const iframe = document.createElement("iframe");
+    iframe.src = PREVIEW_URL;
     const postMessage = vi.fn();
+    const iframeContentWindow = { postMessage };
 
     Object.defineProperty(iframe, "contentWindow", {
-      value: { postMessage },
+      value: iframeContentWindow,
       configurable: true
     });
 
@@ -36,8 +42,31 @@ describe("InspectOverlay", () => {
 
     return {
       iframeRef: { current: iframe },
-      postMessage
+      postMessage,
+      iframeContentWindow
     };
+  };
+
+  const getLastEnableSessionToken = ({
+    postMessage
+  }: {
+    postMessage: ReturnType<typeof vi.fn>;
+  }): string => {
+    const calls = [...postMessage.mock.calls].reverse();
+    const enableCall = calls.find(([message]) => {
+      return Boolean(message) && typeof message === "object" && (message as { type?: string }).type === "inspect:enable";
+    });
+    expect(enableCall).toBeDefined();
+    if (!enableCall || typeof enableCall[0] !== "object" || !enableCall[0]) {
+      throw new Error("inspect:enable call was not found");
+    }
+
+    const token = (enableCall[0] as { sessionToken?: unknown }).sessionToken;
+    expect(typeof token).toBe("string");
+    if (typeof token !== "string") {
+      throw new Error("session token is missing");
+    }
+    return token;
   };
 
   beforeEach(() => {
@@ -48,7 +77,7 @@ describe("InspectOverlay", () => {
     cleanup();
   });
 
-  it("posts inspect:disable on mount and inspect:enable when toggled on", async () => {
+  it("posts inspect:enable/disable with session token and explicit preview origin", () => {
     const { iframeRef, postMessage } = createIframeRef();
 
     const { rerender } = render(
@@ -56,36 +85,59 @@ describe("InspectOverlay", () => {
         inspectEnabled: false,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 
-    expect(postMessage).toHaveBeenCalledWith({ type: "inspect:disable" }, "*");
+    expect(postMessage).toHaveBeenCalledTimes(0);
 
     rerender(
       createElement(InspectOverlay, {
         inspectEnabled: true,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 
-    expect(postMessage).toHaveBeenLastCalledWith({ type: "inspect:enable" }, "*");
+    const sessionToken = getLastEnableSessionToken({ postMessage });
+    expect(postMessage).toHaveBeenLastCalledWith(
+      { type: "inspect:enable", sessionToken },
+      PREVIEW_ORIGIN
+    );
+
+    rerender(
+      createElement(InspectOverlay, {
+        inspectEnabled: false,
+        onToggleInspect,
+        onSelectNode,
+        iframeRef,
+        iframeLoadVersion: 0
+      })
+    );
+
+    expect(postMessage).toHaveBeenLastCalledWith(
+      { type: "inspect:disable", sessionToken },
+      PREVIEW_ORIGIN
+    );
   });
 
-  it("renders hover highlight and tooltip from inspect:hover postMessage", async () => {
-    const { iframeRef } = createIframeRef();
+  it("renders hover highlight and tooltip from validated inspect:hover postMessage", async () => {
+    const { iframeRef, postMessage, iframeContentWindow } = createIframeRef();
 
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 
+    const sessionToken = getLastEnableSessionToken({ postMessage });
     const container = screen.getByTestId("inspect-overlay-container");
     Object.defineProperty(container, "getBoundingClientRect", {
       value: () => ({
@@ -106,6 +158,7 @@ describe("InspectOverlay", () => {
       new MessageEvent("message", {
         data: {
           type: "inspect:hover",
+          sessionToken,
           irNodeId: "home-title",
           irNodeName: "Title",
           rect: {
@@ -114,7 +167,9 @@ describe("InspectOverlay", () => {
             width: 120,
             height: 42
           }
-        }
+        },
+        origin: PREVIEW_ORIGIN,
+        source: iframeContentWindow as unknown as MessageEventSource
       })
     );
 
@@ -131,15 +186,30 @@ describe("InspectOverlay", () => {
     });
   });
 
-  it("calls onSelectNode for inspect:select postMessage", async () => {
-    const { iframeRef } = createIframeRef();
+  it("accepts inspect:select only for expected origin/source/session", async () => {
+    const { iframeRef, postMessage, iframeContentWindow } = createIframeRef();
 
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
+      })
+    );
+
+    const sessionToken = getLastEnableSessionToken({ postMessage });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "inspect:select",
+          sessionToken,
+          irNodeId: "foreign-origin-node"
+        },
+        origin: "https://evil.example",
+        source: iframeContentWindow as unknown as MessageEventSource
       })
     );
 
@@ -147,27 +217,46 @@ describe("InspectOverlay", () => {
       new MessageEvent("message", {
         data: {
           type: "inspect:select",
-          irNodeId: "nav-button"
-        }
+          sessionToken: "wrong-session-token",
+          irNodeId: "wrong-session-node"
+        },
+        origin: PREVIEW_ORIGIN,
+        source: iframeContentWindow as unknown as MessageEventSource
+      })
+    );
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "inspect:select",
+          sessionToken,
+          irNodeId: "valid-node"
+        },
+        origin: PREVIEW_ORIGIN,
+        source: iframeContentWindow as unknown as MessageEventSource
       })
     );
 
     await waitFor(() => {
-      expect(onSelectNode).toHaveBeenCalledWith("nav-button");
+      expect(onSelectNode).toHaveBeenCalledTimes(1);
+      expect(onSelectNode).toHaveBeenCalledWith("valid-node");
     });
   });
 
   it("ignores invalid message payloads", async () => {
-    const { iframeRef } = createIframeRef();
+    const { iframeRef, postMessage, iframeContentWindow } = createIframeRef();
 
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
+
+    const sessionToken = getLastEnableSessionToken({ postMessage });
 
     window.dispatchEvent(new MessageEvent("message", { data: null }));
     window.dispatchEvent(new MessageEvent("message", { data: "invalid" }));
@@ -175,9 +264,12 @@ describe("InspectOverlay", () => {
       new MessageEvent("message", {
         data: {
           type: "inspect:hover",
+          sessionToken,
           irNodeId: 123,
           rect: "invalid"
-        }
+        },
+        origin: PREVIEW_ORIGIN,
+        source: iframeContentWindow as unknown as MessageEventSource
       })
     );
 
@@ -188,17 +280,19 @@ describe("InspectOverlay", () => {
   });
 
   it("clears hover overlay when inspect mode is disabled", async () => {
-    const { iframeRef } = createIframeRef();
+    const { iframeRef, postMessage, iframeContentWindow } = createIframeRef();
 
     const { rerender } = render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 
+    const sessionToken = getLastEnableSessionToken({ postMessage });
     const container = screen.getByTestId("inspect-overlay-container");
     Object.defineProperty(container, "getBoundingClientRect", {
       value: () => ({
@@ -219,6 +313,7 @@ describe("InspectOverlay", () => {
       new MessageEvent("message", {
         data: {
           type: "inspect:hover",
+          sessionToken,
           irNodeId: "home-title",
           irNodeName: "Title",
           rect: {
@@ -227,7 +322,9 @@ describe("InspectOverlay", () => {
             width: 90,
             height: 24
           }
-        }
+        },
+        origin: PREVIEW_ORIGIN,
+        source: iframeContentWindow as unknown as MessageEventSource
       })
     );
 
@@ -240,7 +337,8 @@ describe("InspectOverlay", () => {
         inspectEnabled: false,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 
@@ -257,7 +355,8 @@ describe("InspectOverlay", () => {
         inspectEnabled: false,
         onToggleInspect,
         onSelectNode,
-        iframeRef
+        iframeRef,
+        iframeLoadVersion: 0
       })
     );
 

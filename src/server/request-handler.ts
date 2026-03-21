@@ -822,7 +822,7 @@ async function collectSourceFiles(
  */
 const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
 (function(){
-  var enabled=false,overlay=null,tooltip=null;
+  var enabled=false,overlay=null,tooltip=null,activeSessionToken=null,allowedParentOrigin=null;
   function getIrTarget(el){
     var cur=el;
     while(cur&&cur!==document.body){
@@ -859,33 +859,49 @@ const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
     if(overlay)overlay.style.display="none";
     if(tooltip)tooltip.style.display="none";
   }
+  function postToParent(payload){
+    if(!allowedParentOrigin)return;
+    window.parent.postMessage(payload,allowedParentOrigin);
+  }
   function onMouseMove(e){
-    if(!enabled)return;
+    if(!enabled||!activeSessionToken)return;
     var t=getIrTarget(e.target);
     if(t){
       showOverlay(t);
       var r=t.getBoundingClientRect();
-      window.parent.postMessage({type:"inspect:hover",irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||"",rect:{x:r.x,y:r.y,width:r.width,height:r.height}},"*");
+      postToParent({type:"inspect:hover",sessionToken:activeSessionToken,irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||"",rect:{x:r.x,y:r.y,width:r.width,height:r.height}});
     }else{
       hideOverlay();
     }
   }
   function onClick(e){
-    if(!enabled)return;
+    if(!enabled||!activeSessionToken)return;
     var t=getIrTarget(e.target);
     if(t){
       e.preventDefault();e.stopPropagation();
-      window.parent.postMessage({type:"inspect:select",irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||""},"*");
+      postToParent({type:"inspect:select",sessionToken:activeSessionToken,irNodeId:t.dataset.irId,irNodeName:t.dataset.irName||""});
     }
   }
   window.addEventListener("message",function(e){
-    if(!e.data||typeof e.data.type!=="string")return;
-    if(e.data.type==="inspect:enable"){
+    var data=e.data;
+    if(!data||typeof data.type!=="string")return;
+    if(e.source!==window.parent)return;
+    if(data.type==="inspect:enable"){
+      if(typeof data.sessionToken!=="string"||data.sessionToken.length===0)return;
       enabled=true;
+      activeSessionToken=data.sessionToken;
+      allowedParentOrigin=e.origin;
       document.body.style.cursor="crosshair";
       ensureOverlay();
-    }else if(e.data.type==="inspect:disable"){
+      return;
+    }
+    if(data.type==="inspect:disable"){
+      if(!enabled||typeof data.sessionToken!=="string")return;
+      if(e.origin!==allowedParentOrigin)return;
+      if(data.sessionToken!==activeSessionToken)return;
       enabled=false;
+      activeSessionToken=null;
+      allowedParentOrigin=null;
       document.body.style.cursor="";
       hideOverlay();
     }
