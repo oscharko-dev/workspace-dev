@@ -162,6 +162,100 @@ describe("CodeViewer", () => {
     expect(wrapBtn).toHaveTextContent("Wrap: Off");
   });
 
+  it("focuses find input on Ctrl+F shortcut", () => {
+    mockHighlightCode.mockResolvedValue(null);
+
+    render(
+      createElement(CodeViewer, {
+        code: "const x = 1;",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    expect(findInput).not.toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(findInput).toHaveFocus();
+  });
+
+  it("updates search count and navigates matches with Enter and Shift+Enter", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+
+    render(
+      createElement(CodeViewer, {
+        code: "alpha alpha\nalpha\nomega",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    const matchCount = screen.getByTestId("code-viewer-find-count");
+
+    fireEvent.change(findInput, { target: { value: "alpha" } });
+    await waitFor(() => {
+      expect(matchCount).toHaveTextContent("1 of 3");
+    });
+    expect(screen.getByTestId("code-viewer-active-match-line")).toHaveTextContent("1");
+
+    fireEvent.keyDown(findInput, { key: "Enter" });
+    await waitFor(() => {
+      expect(matchCount).toHaveTextContent("2 of 3");
+    });
+
+    fireEvent.keyDown(findInput, { key: "Enter", shiftKey: true });
+    await waitFor(() => {
+      expect(matchCount).toHaveTextContent("1 of 3");
+    });
+  });
+
+  it("jumps to clamped line using :line input", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4\nline5",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    fireEvent.change(findInput, { target: { value: ":999" } });
+    fireEvent.keyDown(findInput, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-jump-target-line")).toHaveTextContent("5");
+    });
+  });
+
+  it("preserves IR highlight range while using find and line jump", async () => {
+    mockHighlightCode.mockResolvedValue(null);
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4",
+        filePath: "src/App.tsx",
+        highlightRange: { startLine: 2, endLine: 3 }
+      })
+    );
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    fireEvent.change(findInput, { target: { value: "line" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-find-count")).toHaveTextContent("1 of 4");
+    });
+
+    fireEvent.change(findInput, { target: { value: ":4" } });
+    fireEvent.keyDown(findInput, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-jump-target-line")).toHaveTextContent("4");
+      expect(screen.getAllByTestId("highlighted-line")).toHaveLength(2);
+    });
+  });
+
   it("copy button is present and labeled correctly", () => {
     mockHighlightCode.mockResolvedValue(null);
 
