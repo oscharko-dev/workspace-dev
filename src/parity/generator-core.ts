@@ -119,12 +119,15 @@ export {
   isLikelyInputContainer,
   registerInteractiveField,
   detectFormGroups,
+  detectCrossFieldRules,
   buildSemanticInputModel,
   toFormContextProviderName,
   toFormContextHookName
 } from "./generator-forms.js";
 export type {
   ValidationFieldType,
+  CrossFieldRuleType,
+  CrossFieldRule,
   ResolvedFormHandlingMode,
   InteractiveFieldModel,
   FormGroupAssignment,

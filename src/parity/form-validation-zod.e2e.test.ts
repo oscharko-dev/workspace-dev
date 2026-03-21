@@ -161,3 +161,127 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   assert.ok(contextContent.includes("Password must be at least 8 characters."));
   assert.equal(contextContent.includes("as unknown as UseFormReturn"), false);
 });
+
+// ---------------------------------------------------------------------------
+// Cross-field validation E2E tests
+// ---------------------------------------------------------------------------
+
+const createCrossFieldValidationScreen = (): any => {
+  return {
+    id: "cross-field-validation-screen",
+    name: "Cross Field Validation Form",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticInputNode({
+        id: "cf-password",
+        name: "Password Input",
+        label: "Password *",
+        placeholder: "Enter password"
+      }),
+      createSemanticInputNode({
+        id: "cf-confirm-password",
+        name: "Confirm Password Input",
+        label: "Confirm Password *",
+        placeholder: "Confirm your password"
+      }),
+      createSemanticInputNode({
+        id: "cf-start-date",
+        name: "Start Date Input",
+        label: "Start Date",
+        placeholder: "YYYY-MM-DD"
+      }),
+      createSemanticInputNode({
+        id: "cf-end-date",
+        name: "End Date Input",
+        label: "End Date",
+        placeholder: "YYYY-MM-DD"
+      }),
+      {
+        id: "cf-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 300,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "cf-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+};
+
+test("E2E: cross-field validation — password match .refine() is emitted in generated context file", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createCrossFieldValidationScreen();
+  const injectedIr = {
+    ...ir,
+    screens: [...ir.screens, injectedScreen]
+  };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-cross-field-"));
+  await generateArtifacts({
+    projectDir,
+    ir: injectedIr,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const generatedContextPath = path.join(projectDir, "src", "context", "CrossFieldValidationFormFormContext.tsx");
+  const contextContent = await readFile(generatedContextPath, "utf8");
+
+  // --- password match cross-field rule ---
+  assert.ok(
+    contextContent.includes(".refine("),
+    "Expected .refine() chain on formSchema for cross-field validation"
+  );
+  assert.ok(
+    contextContent.includes("Must match Password."),
+    "Expected password match validation message"
+  );
+  assert.ok(
+    contextContent.includes('case "password"'),
+    "Expected per-field password validation case to still exist"
+  );
+
+  // --- date_after cross-field rule ---
+  assert.ok(
+    contextContent.includes("Must be after Start Date."),
+    "Expected date_after validation message"
+  );
+  assert.ok(
+    contextContent.includes("end > start"),
+    "Expected date comparison logic in .refine()"
+  );
+
+  // --- structural integrity ---
+  assert.ok(
+    contextContent.includes("z.object("),
+    "Expected z.object() schema"
+  );
+  assert.ok(
+    contextContent.includes("zodResolver(formSchema)"),
+    "Expected zodResolver integration"
+  );
+  assert.ok(
+    contextContent.includes("type CrossFieldValidationFormFormData = z.infer<typeof formSchema>;"),
+    "Expected z.infer type alias"
+  );
+});

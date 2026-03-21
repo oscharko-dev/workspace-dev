@@ -37,6 +37,15 @@ export type ValidationFieldType =
   | "credit_card";
 export type ResolvedFormHandlingMode = WorkspaceFormHandlingMode;
 
+export type CrossFieldRuleType = "match" | "date_after" | "numeric_gt";
+
+export interface CrossFieldRule {
+  type: CrossFieldRuleType;
+  sourceFieldKey: string;
+  targetFieldKey: string;
+  message: string;
+}
+
 export interface FormContextFileSpec {
   file: GeneratedFile;
   providerName: string;
@@ -770,4 +779,135 @@ export const buildSemanticInputModel = (element: ScreenElementIR): SemanticInput
       : undefined,
     isSelect
   };
+};
+
+// ---------------------------------------------------------------------------
+// Cross-field validation rule detection
+// ---------------------------------------------------------------------------
+
+const MATCH_CONFIRM_PATTERNS = [
+  /\bconfirm\b/,
+  /\bbestätigen\b/,
+  /\bbestaetigen\b/,
+  /\brepeat\b/,
+  /\bwiederholen\b/,
+  /\bretype\b/,
+  /\bre-enter\b/,
+  /\bverify\b/
+];
+
+const DATE_START_PATTERNS = [/\bstart\b/, /\bvon\b/, /\bfrom\b/, /\bbegin\b/, /\bab\b/];
+const DATE_END_PATTERNS = [/\bend\b/, /\bbis\b/, /\bto\b/, /\buntil\b/];
+
+const NUMERIC_MIN_PATTERNS = [/\bmin\b/, /\bminimum\b/, /\bmindest\b/];
+const NUMERIC_MAX_PATTERNS = [/\bmax\b/, /\bmaximum\b/, /\bhöchst\b/, /\bhoechst\b/];
+
+const matchesAny = (value: string, patterns: RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(value));
+
+const stripConfirmPrefix = (value: string): string =>
+  value
+    .replace(/\b(confirm|bestätigen|bestaetigen|repeat|wiederholen|retype|re-enter|verify)\b/gi, "")
+    .replace(/[_\s-]+/g, " ")
+    .trim()
+    .toLowerCase();
+
+export const detectCrossFieldRules = (fields: InteractiveFieldModel[]): CrossFieldRule[] => {
+  const rules: CrossFieldRule[] = [];
+  const nonSelectFields = fields.filter((field) => !field.isSelect);
+
+  // --- match rules (e.g. password / confirm password) ---
+  for (const field of nonSelectFields) {
+    const normalizedLabel = normalizeInputSemanticText(field.label);
+    const normalizedKey = normalizeInputSemanticText(field.key);
+    const hints = [normalizedLabel, normalizedKey];
+
+    if (!matchesAny(hints.join(" "), MATCH_CONFIRM_PATTERNS)) {
+      continue;
+    }
+
+    const baseLabel = stripConfirmPrefix(normalizedLabel);
+    const baseKey = stripConfirmPrefix(normalizedKey);
+
+    const sourceField = nonSelectFields.find((candidate) => {
+      if (candidate.key === field.key) {
+        return false;
+      }
+      const candidateLabel = normalizeInputSemanticText(candidate.label).toLowerCase();
+      const candidateKey = normalizeInputSemanticText(candidate.key).toLowerCase();
+      return (
+        (baseLabel.length > 0 && candidateLabel === baseLabel) ||
+        (baseKey.length > 0 && candidateKey === baseKey) ||
+        (candidate.validationType !== undefined &&
+          candidate.validationType === field.validationType &&
+          candidate.validationType === "password")
+      );
+    });
+
+    if (sourceField) {
+      const sourceLabel = sourceField.label || sourceField.key;
+      rules.push({
+        type: "match",
+        sourceFieldKey: sourceField.key,
+        targetFieldKey: field.key,
+        message: `Must match ${sourceLabel}.`
+      });
+    }
+  }
+
+  // --- date_after rules (e.g. start date / end date) ---
+  const dateFields = nonSelectFields.filter((field) => field.validationType === "date");
+  if (dateFields.length >= 2) {
+    const startFields = dateFields.filter((field) => {
+      const hints = normalizeInputSemanticText(`${field.label} ${field.key}`);
+      return matchesAny(hints, DATE_START_PATTERNS);
+    });
+    const endFields = dateFields.filter((field) => {
+      const hints = normalizeInputSemanticText(`${field.label} ${field.key}`);
+      return matchesAny(hints, DATE_END_PATTERNS);
+    });
+
+    for (const startField of startFields) {
+      for (const endField of endFields) {
+        if (startField.key === endField.key) {
+          continue;
+        }
+        rules.push({
+          type: "date_after",
+          sourceFieldKey: startField.key,
+          targetFieldKey: endField.key,
+          message: `Must be after ${startField.label || startField.key}.`
+        });
+      }
+    }
+  }
+
+  // --- numeric_gt rules (e.g. min amount / max amount) ---
+  const numberFields = nonSelectFields.filter((field) => field.validationType === "number");
+  if (numberFields.length >= 2) {
+    const minFields = numberFields.filter((field) => {
+      const hints = normalizeInputSemanticText(`${field.label} ${field.key}`);
+      return matchesAny(hints, NUMERIC_MIN_PATTERNS);
+    });
+    const maxFields = numberFields.filter((field) => {
+      const hints = normalizeInputSemanticText(`${field.label} ${field.key}`);
+      return matchesAny(hints, NUMERIC_MAX_PATTERNS);
+    });
+
+    for (const minField of minFields) {
+      for (const maxField of maxFields) {
+        if (minField.key === maxField.key) {
+          continue;
+        }
+        rules.push({
+          type: "numeric_gt",
+          sourceFieldKey: minField.key,
+          targetFieldKey: maxField.key,
+          message: `Must be greater than ${minField.label || minField.key}.`
+        });
+      }
+    }
+  }
+
+  return rules;
 };

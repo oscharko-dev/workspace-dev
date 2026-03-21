@@ -10,7 +10,8 @@ import {
 } from "../generator-core.js";
 import type {
   ValidationFieldType,
-  FormContextFileSpec
+  FormContextFileSpec,
+  CrossFieldRule
 } from "../generator-core.js";
 import { literal } from "./utility-functions.js";
 
@@ -461,6 +462,32 @@ export const toReactHookFormSchemaEntries = ({
   return fieldKeys.map((fieldKey) => `${indent}${literal(fieldKey)}: createFieldSchema({ fieldKey: ${literal(fieldKey)} })`).join(",\n");
 };
 
+export const toCrossFieldRefineChain = ({
+  rules,
+  indent
+}: {
+  rules: readonly CrossFieldRule[];
+  indent: string;
+}): string => {
+  if (rules.length === 0) {
+    return "";
+  }
+  return rules
+    .map((rule) => {
+      switch (rule.type) {
+        case "match":
+          return `\n${indent}.refine(\n${indent}  (data) => data[${literal(rule.sourceFieldKey)}].trim().length === 0 || data[${literal(rule.targetFieldKey)}].trim().length === 0 || data[${literal(rule.sourceFieldKey)}] === data[${literal(rule.targetFieldKey)}],\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
+        case "date_after":
+          return `\n${indent}.refine(\n${indent}  (data) => {\n${indent}    const start = data[${literal(rule.sourceFieldKey)}].trim();\n${indent}    const end = data[${literal(rule.targetFieldKey)}].trim();\n${indent}    if (start.length === 0 || end.length === 0) return true;\n${indent}    return end > start;\n${indent}  },\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
+        case "numeric_gt":
+          return `\n${indent}.refine(\n${indent}  (data) => {\n${indent}    const minVal = parseLocalizedNumber(data[${literal(rule.sourceFieldKey)}].trim());\n${indent}    const maxVal = parseLocalizedNumber(data[${literal(rule.targetFieldKey)}].trim());\n${indent}    if (minVal === undefined || maxVal === undefined) return true;\n${indent}    return maxVal > minVal;\n${indent}  },\n${indent}  { message: ${literal(rule.message)}, path: [${literal(rule.targetFieldKey)}] }\n${indent})`;
+        default:
+          return "";
+      }
+    })
+    .join("");
+};
+
 export const buildInlineReactHookFormStateBlock = ({
   hasSelectField,
   selectOptionsMap,
@@ -468,7 +495,8 @@ export const buildInlineReactHookFormStateBlock = ({
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
-  initialValues
+  initialValues,
+  crossFieldRules = []
 }: {
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
@@ -477,10 +505,12 @@ export const buildInlineReactHookFormStateBlock = ({
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
   initialValues: Record<string, string>;
+  crossFieldRules?: readonly CrossFieldRule[];
 }): string => {
   const selectOptionsDeclaration = hasSelectField
     ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
     : "";
+  const refineChain = toCrossFieldRefineChain({ rules: crossFieldRules, indent: "" });
   const schemaEntries = toReactHookFormSchemaEntries({
     initialValues,
     indent: "  "
@@ -643,7 +673,7 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
 
 const formSchema = z.object({
 ${schemaEntries}
-});
+})${refineChain};
 
 type FormData = z.infer<typeof formSchema>;
 
@@ -682,7 +712,8 @@ export const buildReactHookFormContextFile = ({
   validationTypeMap,
   validationMessageMap,
   initialVisualErrorsMap,
-  selectOptionsMap
+  selectOptionsMap,
+  crossFieldRules = []
 }: {
   screenComponentName: string;
   initialValues: Record<string, string>;
@@ -691,6 +722,7 @@ export const buildReactHookFormContextFile = ({
   validationMessageMap: Record<string, string>;
   initialVisualErrorsMap: Record<string, string>;
   selectOptionsMap: Record<string, string[]>;
+  crossFieldRules?: readonly CrossFieldRule[];
 }): FormContextFileSpec => {
   const providerName = toFormContextProviderName(screenComponentName);
   const hookName = toFormContextHookName(screenComponentName);
@@ -698,6 +730,7 @@ export const buildReactHookFormContextFile = ({
   const contextValueTypeName = `${screenComponentName}FormContextValue`;
   const formDataTypeName = `${screenComponentName}FormData`;
   const providerPropsTypeName = `${providerName}Props`;
+  const refineChain = toCrossFieldRefineChain({ rules: crossFieldRules, indent: "  " });
   const schemaEntries = toReactHookFormSchemaEntries({
     initialValues,
     indent: "    "
@@ -882,7 +915,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
 
   const formSchema = z.object({
 ${schemaEntries}
-  });
+  })${refineChain};
 
   type ${formDataTypeName} = z.infer<typeof formSchema>;
 
