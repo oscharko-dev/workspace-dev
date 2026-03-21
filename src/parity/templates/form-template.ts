@@ -460,7 +460,49 @@ export const toReactHookFormSchemaEntries = ({
   indent: string;
 }): string => {
   const fieldKeys = Object.keys(initialValues).sort((left, right) => left.localeCompare(right));
-  return fieldKeys.map((fieldKey) => `${indent}${literal(fieldKey)}: createFieldSchema({ fieldKey: ${literal(fieldKey)} })`).join(",\n");
+  return fieldKeys
+    .map(
+      (fieldKey) =>
+        `${indent}${literal(fieldKey)}: createFieldSchema({ fieldKey: ${literal(fieldKey)}, spec: fieldSchemaSpecs[${literal(fieldKey)}] })`
+    )
+    .join(",\n");
+};
+
+const toReactHookFormFieldSchemaSpecsLiteral = ({
+  initialValues,
+  requiredFieldMap,
+  validationTypeMap,
+  validationMessageMap,
+  selectOptionsMap
+}: {
+  initialValues: Record<string, string>;
+  requiredFieldMap: Record<string, boolean>;
+  validationTypeMap: Record<string, ValidationFieldType>;
+  validationMessageMap: Record<string, string>;
+  selectOptionsMap: Record<string, string[]>;
+}): string => {
+  const fieldKeys = Object.keys(initialValues).sort((left, right) => left.localeCompare(right));
+  const specs: Record<
+    string,
+    {
+      required: boolean;
+      validationType?: ValidationFieldType;
+      validationMessage: string;
+      selectOptions: string[];
+      selectValidationMessage: string;
+    }
+  > = {};
+  for (const fieldKey of fieldKeys) {
+    const validationType = validationTypeMap[fieldKey];
+    specs[fieldKey] = {
+      required: requiredFieldMap[fieldKey] ?? false,
+      ...(validationType ? { validationType } : {}),
+      validationMessage: validationMessageMap[fieldKey] ?? "Invalid value.",
+      selectOptions: selectOptionsMap[fieldKey] ?? [],
+      selectValidationMessage: validationMessageMap[fieldKey] ?? "Please select a valid option."
+    };
+  }
+  return JSON.stringify(specs, null, 2);
 };
 
 export const toCrossFieldRefineChain = ({
@@ -519,10 +561,18 @@ export const buildInlineReactHookFormStateBlock = ({
     initialValues,
     indent: "  "
   });
+  const fieldSchemaSpecsLiteral = toReactHookFormFieldSchemaSpecsLiteral({
+    initialValues,
+    requiredFieldMap,
+    validationTypeMap,
+    validationMessageMap,
+    selectOptionsMap
+  });
   const selectMembershipValidationBlock = hasSelectField
-    ? `    const selectFieldOptions = selectOptions[fieldKey];
-    if (Array.isArray(selectFieldOptions) && selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
-      const selectValidationMessage = fieldValidationMessages[fieldKey] ?? "Please select a valid option.";
+    ? `    const selectFieldOptions = spec.selectOptions;
+    if (selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
+      const selectValidationMessage =
+        spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".");
       issueContext.addIssue({ code: z.ZodIssueCode.custom, message: selectValidationMessage });
       return;
     }
@@ -530,9 +580,7 @@ export const buildInlineReactHookFormStateBlock = ({
 `
     : "";
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
-const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const fieldSchemaSpecs = ${fieldSchemaSpecsLiteral} as const;
 
 const parseLocalizedNumber = (rawValue: string): number | undefined => {
   const compact = rawValue.replace(/\\s+/g, "");
@@ -557,10 +605,38 @@ const parseLocalizedNumber = (rawValue: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+type FieldValidationType =
+  | "email"
+  | "password"
+  | "tel"
+  | "number"
+  | "date"
+  | "url"
+  | "search"
+  | "iban"
+  | "plz"
+  | "credit_card";
+
+type FieldSchemaSpec = {
+  required: boolean;
+  validationType?: FieldValidationType;
+  validationMessage: string;
+  selectOptions: readonly string[];
+  selectValidationMessage: string;
+};
+
+type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;
+
+const createFieldSchema = <TSpec extends FieldSchemaSpec>({
+  fieldKey,
+  spec
+}: {
+  fieldKey: string;
+  spec: TSpec;
+}) => {
   return z.string().superRefine((rawValue, issueContext) => {
     const trimmed = rawValue.trim();
-    if (requiredFields[fieldKey] && trimmed.length === 0) {
+    if (spec.required && trimmed.length === 0) {
       issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
       return;
     }
@@ -568,11 +644,11 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       return;
     }
 
-${selectMembershipValidationBlock}    const validationType = fieldValidationTypes[fieldKey];
+${selectMembershipValidationBlock}    const validationType = spec.validationType;
     if (!validationType) {
       return;
     }
-    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+    const validationMessage = spec.validationMessage ?? ("Invalid value for " + fieldKey + ".");
 
     switch (validationType) {
       case "email":
@@ -684,7 +760,7 @@ ${selectMembershipValidationBlock}    const validationType = fieldValidationType
     }
   }).transform((rawValue) => {
     const trimmed = rawValue.trim();
-    const validationType = fieldValidationTypes[fieldKey];
+    const validationType = spec.validationType;
     switch (validationType) {
       case "number":
         return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
@@ -697,7 +773,7 @@ ${selectMembershipValidationBlock}    const validationType = fieldValidationType
       default:
         return rawValue;
     }
-  });
+  }) as z.ZodType<FieldSchemaOutput<TSpec>, z.ZodTypeDef, string>;
 };
 
 const formSchema = z.object({
@@ -772,15 +848,20 @@ export const buildReactHookFormContextFile = ({
     initialValues,
     indent: "    "
   });
+  const fieldSchemaSpecsLiteral = toReactHookFormFieldSchemaSpecsLiteral({
+    initialValues,
+    requiredFieldMap,
+    validationTypeMap,
+    validationMessageMap,
+    selectOptionsMap
+  });
   const contextSource = `import { createContext, useContext, type ReactNode } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
-const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const fieldSchemaSpecs = ${fieldSchemaSpecsLiteral} as const;
 const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
 
 const parseLocalizedNumber = (rawValue: string): number | undefined => {
@@ -806,10 +887,38 @@ const parseLocalizedNumber = (rawValue: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+type FieldValidationType =
+  | "email"
+  | "password"
+  | "tel"
+  | "number"
+  | "date"
+  | "url"
+  | "search"
+  | "iban"
+  | "plz"
+  | "credit_card";
+
+type FieldSchemaSpec = {
+  required: boolean;
+  validationType?: FieldValidationType;
+  validationMessage: string;
+  selectOptions: readonly string[];
+  selectValidationMessage: string;
+};
+
+type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;
+
+const createFieldSchema = <TSpec extends FieldSchemaSpec>({
+  fieldKey,
+  spec
+}: {
+  fieldKey: string;
+  spec: TSpec;
+}) => {
   return z.string().superRefine((rawValue, issueContext) => {
     const trimmed = rawValue.trim();
-    if (requiredFields[fieldKey] && trimmed.length === 0) {
+    if (spec.required && trimmed.length === 0) {
       issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
       return;
     }
@@ -817,18 +926,19 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       return;
     }
 
-    const selectFieldOptions = selectOptions[fieldKey];
-    if (Array.isArray(selectFieldOptions) && selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
-      const selectValidationMessage = fieldValidationMessages[fieldKey] ?? "Please select a valid option.";
+    const selectFieldOptions = spec.selectOptions;
+    if (selectFieldOptions.length > 0 && !selectFieldOptions.includes(rawValue)) {
+      const selectValidationMessage =
+        spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".");
       issueContext.addIssue({ code: z.ZodIssueCode.custom, message: selectValidationMessage });
       return;
     }
 
-    const validationType = fieldValidationTypes[fieldKey];
+    const validationType = spec.validationType;
     if (!validationType) {
       return;
     }
-    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+    const validationMessage = spec.validationMessage ?? ("Invalid value for " + fieldKey + ".");
 
     switch (validationType) {
       case "email":
@@ -940,7 +1050,7 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
     }
   }).transform((rawValue) => {
     const trimmed = rawValue.trim();
-    const validationType = fieldValidationTypes[fieldKey];
+    const validationType = spec.validationType;
     switch (validationType) {
       case "number":
         return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
@@ -953,7 +1063,7 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       default:
         return rawValue;
     }
-  });
+  }) as z.ZodType<FieldSchemaOutput<TSpec>, z.ZodTypeDef, string>;
 };
 
 const formSchema = z.object({

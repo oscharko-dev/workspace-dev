@@ -277,15 +277,15 @@ test("E2E: select schema validation enforces deterministic option membership in 
     "Expected deterministic selectOptions map in generated RHF context"
   );
   assert.ok(
-    contextContent.includes("const selectFieldOptions = selectOptions[fieldKey];"),
-    "Expected select option lookup by fieldKey in createFieldSchema"
+    contextContent.includes("const selectFieldOptions = spec.selectOptions;"),
+    "Expected select option lookup from field-specific schema spec"
   );
   assert.ok(
     contextContent.includes("!selectFieldOptions.includes(rawValue)"),
     "Expected select membership guard for non-empty values"
   );
   assert.ok(
-    contextContent.includes('fieldValidationMessages[fieldKey] ?? "Please select a valid option."'),
+    contextContent.includes('spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".")'),
     "Expected deterministic select validation fallback message"
   );
   assert.ok(
@@ -878,6 +878,22 @@ test("E2E: Zod .transform() — typed output with number/iban/credit_card transf
     contextContent.includes(".transform((rawValue)"),
     "Expected .transform() chain on field schema"
   );
+  assert.ok(
+    contextContent.includes("const fieldSchemaSpecs = "),
+    "Expected deterministic field schema specs map in generated RHF context"
+  );
+  assert.ok(
+    /createFieldSchema\(\{ fieldKey: "[^"]+", spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(contextContent),
+    "Expected schema entries to bind field-specific specs into createFieldSchema"
+  );
+  assert.ok(
+    contextContent.includes("const createFieldSchema = <TSpec extends FieldSchemaSpec>({"),
+    "Expected generic field-specific createFieldSchema typing"
+  );
+  assert.ok(
+    contextContent.includes('type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;'),
+    "Expected FieldSchemaOutput conditional typing for transformed outputs"
+  );
 
   // --- number transform uses parseLocalizedNumber ---
   assert.ok(
@@ -913,5 +929,10 @@ test("E2E: Zod .transform() — typed output with number/iban/credit_card transf
   assert.ok(
     contextContent.includes("onSubmit: (values: TransformTypedOutputFormFormOutput) => Promise<void>"),
     "Expected context interface onSubmit to use FormOutput"
+  );
+  assert.equal(
+    contextContent.includes("fieldValidationTypes[fieldKey]"),
+    false,
+    "Expected RHF schema logic to avoid runtime fieldValidationTypes[fieldKey] dispatch"
   );
 });
