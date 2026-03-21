@@ -4,7 +4,7 @@ import { Container, TextField, Typography } from "@mui/material";
 import { RegisterFormContextProvider, useRegisterFormContext } from "../context/RegisterFormContext";
 
 function RegisterScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useRegisterFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useRegisterFormContext();
   return (
     <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
       {/* @ir:start reg-title Title text */}

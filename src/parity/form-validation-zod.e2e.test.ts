@@ -153,8 +153,8 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   assert.ok(screenContent.includes("<Controller"));
 
   assert.ok(contextContent.includes("type TypedZodValidationFormFormData = z.infer<typeof formSchema>;"));
-  assert.ok(contextContent.includes("const { control, handleSubmit } = useForm<TypedZodValidationFormFormData>({"));
-  assert.ok(contextContent.includes("const onSubmit = (values: TypedZodValidationFormFormData): void => {"));
+  assert.ok(contextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<TypedZodValidationFormFormData>({"));
+  assert.ok(contextContent.includes("const onSubmit = async (values: TypedZodValidationFormFormData): Promise<void> => {"));
   assert.ok(contextContent.includes("resolver: zodResolver(formSchema),"));
   assert.ok(contextContent.includes('case "password"'));
   assert.ok(contextContent.includes("if (trimmed.length < 8) {"));
@@ -456,5 +456,140 @@ test("E2E: cross-field validation — password match .refine() is emitted in gen
   assert.ok(
     contextContent.includes("type CrossFieldValidationFormFormData = z.infer<typeof formSchema>;"),
     "Expected z.infer type alias"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Form submission lifecycle E2E tests
+// ---------------------------------------------------------------------------
+
+const createSubmissionLifecycleScreen = (): any => ({
+  id: "submission-lifecycle-screen",
+  name: "Submission Lifecycle Form",
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  children: [
+    createSemanticInputNode({
+      id: "sl-email",
+      name: "Email Input",
+      label: "Email *",
+      placeholder: "name@example.com"
+    }),
+    createSemanticInputNode({
+      id: "sl-name",
+      name: "Name Input",
+      label: "Full Name *"
+    }),
+    {
+      id: "sl-submit",
+      name: "Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      x: 0,
+      y: 180,
+      width: 220,
+      height: 48,
+      fillColor: "#1976d2",
+      children: [
+        {
+          id: "sl-submit-label",
+          name: "Label",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Submit",
+          fillColor: "#ffffff"
+        }
+      ]
+    }
+  ]
+});
+
+test("E2E: submission lifecycle — useForm destructures formState, reset, setError; onSubmit is async", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createSubmissionLifecycleScreen();
+  const injectedIr = { ...ir, screens: [...ir.screens, injectedScreen] };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-submission-lifecycle-"));
+  await generateArtifacts({
+    projectDir,
+    ir: injectedIr,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "SubmissionLifecycleFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  // --- expanded useForm destructuring ---
+  assert.ok(
+    contextContent.includes("formState: { isSubmitting }"),
+    "Expected formState: { isSubmitting } in useForm destructuring"
+  );
+  assert.ok(
+    contextContent.includes("reset,"),
+    "Expected reset in useForm destructuring"
+  );
+  assert.ok(
+    contextContent.includes("setError }"),
+    "Expected setError in useForm destructuring"
+  );
+
+  // --- async onSubmit ---
+  assert.ok(
+    contextContent.includes("const onSubmit = async (values: SubmissionLifecycleFormFormData): Promise<void> => {"),
+    "Expected async onSubmit with Promise<void> return type"
+  );
+  assert.ok(
+    contextContent.includes("// TODO: Replace with actual API call."),
+    "Expected TODO comment in onSubmit"
+  );
+  assert.ok(
+    contextContent.includes('setError("fieldKey"'),
+    "Expected setError example comment"
+  );
+
+  // --- context interface includes new properties ---
+  assert.ok(
+    contextContent.includes("isSubmitting: boolean;"),
+    "Expected isSubmitting in context interface"
+  );
+  assert.ok(
+    contextContent.includes('reset: UseFormReturn<SubmissionLifecycleFormFormData>["reset"];'),
+    "Expected reset in context interface"
+  );
+  assert.ok(
+    contextContent.includes('setError: UseFormReturn<SubmissionLifecycleFormFormData>["setError"];'),
+    "Expected setError in context interface"
+  );
+
+  // --- provider exposes new values ---
+  assert.ok(
+    contextContent.includes("isSubmitting,"),
+    "Expected isSubmitting in provider value"
+  );
+  assert.ok(
+    contextContent.includes("reset,"),
+    "Expected reset in provider value"
+  );
+  assert.ok(
+    contextContent.includes("setError"),
+    "Expected setError in provider value"
+  );
+
+  // --- submit button disabled binding in screen ---
+  const screenPath = path.join(projectDir, toDeterministicScreenPath(injectedScreen.name));
+  const screenContent = await readFile(screenPath, "utf8");
+
+  assert.ok(
+    screenContent.includes("disabled={isSubmitting"),
+    "Expected disabled={isSubmitting} on submit button"
+  );
+  assert.ok(
+    screenContent.includes("isSubmitting"),
+    "Expected isSubmitting destructured from context hook"
   );
 });

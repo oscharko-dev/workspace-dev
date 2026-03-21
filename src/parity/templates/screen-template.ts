@@ -854,7 +854,12 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
   const colorProp = mappedColor && mappedColor !== "primary" ? ` color="${mappedColor}"` : "";
   const sizeProp = size ? ` size="${size}"` : "";
   const fullWidthProp = fullWidth ? " fullWidth" : "";
-  const disabledProp = inferredDisabled ? " disabled" : "";
+  const isRhfSubmitButton = !navigation && !inferredDisabled && context.formHandlingMode === "react_hook_form" && context.fields.length > 0;
+  const disabledProp = inferredDisabled
+    ? " disabled"
+    : isRhfSubmitButton
+      ? ` disabled={isSubmitting && primarySubmitButtonKey === ${literal(buttonKey)}}`
+      : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
   const typeProp = navigation ? "" : ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
@@ -4129,7 +4134,8 @@ export const assembleFallbackDependencies = ({
         "control",
         "handleSubmit",
         "onSubmit",
-        "resolveFieldErrorMessage"
+        "resolveFieldErrorMessage",
+        "isSubmitting"
       ]
     : [
         "initialVisualErrors",
