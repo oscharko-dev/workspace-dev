@@ -54,7 +54,8 @@ Useful scripts:
 - `pnpm run ui:typecheck`
 - `pnpm run ui:lint`
 - `pnpm run ui:test`
-- `pnpm run ui:test:e2e` (deterministic inspector flow via local fixture rewrite, no Figma token required in CI)
+- `pnpm run ui:test:e2e` (Chromium-only deterministic inspector flow via local fixture rewrite, no Figma token required in CI)
+- `pnpm run ui:test:e2e:matrix` (Chromium + Firefox + WebKit + mobile device project matrix)
 - `pnpm run test:golden`
 - `pnpm run test:golden:update`
 
