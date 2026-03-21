@@ -223,6 +223,179 @@ const createCrossFieldValidationScreen = (): any => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Validation mode E2E tests
+// ---------------------------------------------------------------------------
+
+const createSemanticInputNodeWithError = ({
+  id,
+  name,
+  label,
+  placeholder,
+  strokeColor
+}: {
+  id: string;
+  name: string;
+  label: string;
+  placeholder?: string;
+  strokeColor?: string;
+}): any => {
+  return {
+    id,
+    name,
+    nodeType: "FRAME",
+    type: "input" as const,
+    layoutMode: "VERTICAL" as const,
+    gap: 4,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    width: 320,
+    height: 72,
+    ...(strokeColor ? { strokeColor } : {}),
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: label,
+        y: 0
+      },
+      ...(placeholder
+        ? [
+            {
+              id: `${id}-placeholder`,
+              name: "Placeholder",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: placeholder,
+              textRole: "placeholder" as const,
+              y: 24
+            }
+          ]
+        : [])
+    ]
+  };
+};
+
+const createShortFormScreen = (): any => ({
+  id: "short-form-screen",
+  name: "Short Login Form",
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  children: [
+    createSemanticInputNode({ id: "sf-email", name: "Email Input", label: "Email *" }),
+    createSemanticInputNode({ id: "sf-password", name: "Password Input", label: "Password *" }),
+    {
+      id: "sf-submit", name: "Submit", nodeType: "FRAME", type: "button" as const,
+      x: 0, y: 160, width: 220, height: 48, fillColor: "#1976d2",
+      children: [{ id: "sf-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Login", fillColor: "#ffffff" }]
+    }
+  ]
+});
+
+const createVisualErrorFormScreen = (): any => ({
+  id: "visual-error-form-screen",
+  name: "Visual Error Form",
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  children: [
+    createSemanticInputNodeWithError({ id: "ve-email", name: "Email Input", label: "Email *", strokeColor: "#d32f2f" }),
+    createSemanticInputNode({ id: "ve-password", name: "Password Input", label: "Password *" }),
+    {
+      id: "ve-submit", name: "Submit", nodeType: "FRAME", type: "button" as const,
+      x: 0, y: 160, width: 220, height: 48, fillColor: "#1976d2",
+      children: [{ id: "ve-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Submit", fillColor: "#ffffff" }]
+    }
+  ]
+});
+
+const createLongFormScreen = (): any => ({
+  id: "long-form-screen",
+  name: "Long Registration Form",
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  children: [
+    createSemanticInputNode({ id: "lf-first", name: "First Name Input", label: "First Name *" }),
+    createSemanticInputNode({ id: "lf-last", name: "Last Name Input", label: "Last Name *" }),
+    createSemanticInputNode({ id: "lf-email", name: "Email Input", label: "Email *" }),
+    createSemanticInputNode({ id: "lf-phone", name: "Phone Input", label: "Phone" }),
+    createSemanticInputNode({ id: "lf-address", name: "Address Input", label: "Address" }),
+    createSemanticInputNode({ id: "lf-city", name: "City Input", label: "City" }),
+    {
+      id: "lf-submit", name: "Submit", nodeType: "FRAME", type: "button" as const,
+      x: 0, y: 500, width: 220, height: 48, fillColor: "#1976d2",
+      children: [{ id: "lf-submit-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Register", fillColor: "#ffffff" }]
+    }
+  ]
+});
+
+test("E2E: validation mode — short form (2 fields) defaults to onSubmit (no mode: property)", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createShortFormScreen();
+  const injectedIr = { ...ir, screens: [...ir.screens, injectedScreen] };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-valmode-short-"));
+  await generateArtifacts({
+    projectDir, ir: injectedIr,
+    llmCodegenMode: "deterministic", llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "ShortLoginFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  assert.ok(contextContent.includes("useForm<ShortLoginFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes("resolver: zodResolver(formSchema)"), "Expected zodResolver");
+  assert.equal(contextContent.includes('mode:'), false, "Short form should NOT have mode: property (defaults to onSubmit)");
+});
+
+test("E2E: validation mode — form with visual error outline emits mode: onTouched", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createVisualErrorFormScreen();
+  const injectedIr = { ...ir, screens: [...ir.screens, injectedScreen] };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-valmode-touched-"));
+  await generateArtifacts({
+    projectDir, ir: injectedIr,
+    llmCodegenMode: "deterministic", llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "VisualErrorFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  assert.ok(contextContent.includes("useForm<VisualErrorFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes('mode: "onTouched"'), "Expected mode: onTouched for form with visual errors");
+});
+
+test("E2E: validation mode — long form (6 fields) emits mode: onBlur", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createLongFormScreen();
+  const injectedIr = { ...ir, screens: [...ir.screens, injectedScreen] };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-valmode-blur-"));
+  await generateArtifacts({
+    projectDir, ir: injectedIr,
+    llmCodegenMode: "deterministic", llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "LongRegistrationFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  assert.ok(contextContent.includes("useForm<LongRegistrationFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes('mode: "onBlur"'), "Expected mode: onBlur for long form (6+ fields)");
+});
+
 test("E2E: cross-field validation — password match .refine() is emitted in generated context file", { skip: skipReason }, async () => {
   const figmaFile = await fetchFigmaFileOnce();
   const ir = figmaToDesignIrWithOptions(figmaFile);

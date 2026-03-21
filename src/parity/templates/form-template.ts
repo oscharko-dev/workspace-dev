@@ -11,7 +11,8 @@ import {
 import type {
   ValidationFieldType,
   FormContextFileSpec,
-  CrossFieldRule
+  CrossFieldRule,
+  RhfValidationMode
 } from "../generator-core.js";
 import { literal } from "./utility-functions.js";
 
@@ -496,7 +497,8 @@ export const buildInlineReactHookFormStateBlock = ({
   validationTypeMap,
   validationMessageMap,
   initialValues,
-  crossFieldRules = []
+  crossFieldRules = [],
+  validationMode = "onSubmit"
 }: {
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
@@ -506,11 +508,13 @@ export const buildInlineReactHookFormStateBlock = ({
   validationMessageMap: Record<string, string>;
   initialValues: Record<string, string>;
   crossFieldRules?: readonly CrossFieldRule[];
+  validationMode?: RhfValidationMode;
 }): string => {
   const selectOptionsDeclaration = hasSelectField
     ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
     : "";
   const refineChain = toCrossFieldRefineChain({ rules: crossFieldRules, indent: "" });
+  const useFormModeLine = validationMode !== "onSubmit" ? `\n  mode: ${literal(validationMode)},` : "";
   const schemaEntries = toReactHookFormSchemaEntries({
     initialValues,
     indent: "  "
@@ -679,7 +683,7 @@ type FormData = z.infer<typeof formSchema>;
 
 const defaultValues: FormData = ${JSON.stringify(initialValues, null, 2)};
 
-const { control, handleSubmit } = useForm<FormData>({
+const { control, handleSubmit } = useForm<FormData>({${useFormModeLine}
   resolver: zodResolver(formSchema),
   defaultValues
 });
@@ -713,7 +717,8 @@ export const buildReactHookFormContextFile = ({
   validationMessageMap,
   initialVisualErrorsMap,
   selectOptionsMap,
-  crossFieldRules = []
+  crossFieldRules = [],
+  validationMode = "onSubmit"
 }: {
   screenComponentName: string;
   initialValues: Record<string, string>;
@@ -723,6 +728,7 @@ export const buildReactHookFormContextFile = ({
   initialVisualErrorsMap: Record<string, string>;
   selectOptionsMap: Record<string, string[]>;
   crossFieldRules?: readonly CrossFieldRule[];
+  validationMode?: RhfValidationMode;
 }): FormContextFileSpec => {
   const providerName = toFormContextProviderName(screenComponentName);
   const hookName = toFormContextHookName(screenComponentName);
@@ -731,6 +737,7 @@ export const buildReactHookFormContextFile = ({
   const formDataTypeName = `${screenComponentName}FormData`;
   const providerPropsTypeName = `${providerName}Props`;
   const refineChain = toCrossFieldRefineChain({ rules: crossFieldRules, indent: "  " });
+  const useFormModeLine = validationMode !== "onSubmit" ? `\n    mode: ${literal(validationMode)},` : "";
   const schemaEntries = toReactHookFormSchemaEntries({
     initialValues,
     indent: "    "
@@ -921,7 +928,7 @@ ${schemaEntries}
 
   const defaultValues: ${formDataTypeName} = ${JSON.stringify(initialValues, null, 2)};
 
-  const { control, handleSubmit } = useForm<${formDataTypeName}>({
+  const { control, handleSubmit } = useForm<${formDataTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
     defaultValues
   });

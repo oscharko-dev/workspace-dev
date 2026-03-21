@@ -39,6 +39,8 @@ export type ResolvedFormHandlingMode = WorkspaceFormHandlingMode;
 
 export type CrossFieldRuleType = "match" | "date_after" | "numeric_gt";
 
+export type RhfValidationMode = "onSubmit" | "onBlur" | "onTouched";
+
 export interface CrossFieldRule {
   type: CrossFieldRuleType;
   sourceFieldKey: string;
@@ -910,4 +912,27 @@ export const detectCrossFieldRules = (fields: InteractiveFieldModel[]): CrossFie
   }
 
   return rules;
+};
+
+// ---------------------------------------------------------------------------
+// Validation mode inference
+// ---------------------------------------------------------------------------
+
+const LONG_FORM_FIELD_THRESHOLD = 5;
+
+export const inferValidationMode = ({
+  fields,
+  hasVisualErrors
+}: {
+  fields: readonly InteractiveFieldModel[];
+  hasVisualErrors: boolean;
+}): RhfValidationMode => {
+  if (hasVisualErrors) {
+    return "onTouched";
+  }
+  const nonSelectFieldCount = fields.filter((field) => !field.isSelect).length;
+  if (nonSelectFieldCount >= LONG_FORM_FIELD_THRESHOLD) {
+    return "onBlur";
+  }
+  return "onSubmit";
 };
