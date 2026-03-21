@@ -21,6 +21,7 @@ const FIXTURE_PATH = path.resolve(
   fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
 );
 const TERMINAL_STATUS_PATTERN = /^(COMPLETED|FAILED|CANCELED)$/;
+const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)/;
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
 
 /**
@@ -117,30 +118,43 @@ export async function triggerDeterministicGeneration(page: Page): Promise<void> 
 }
 
 /**
+ * Waits until the submit status reaches any terminal state.
+ */
+export async function waitForSubmitTerminalStatus(
+  page: Page,
+  options?: { timeoutMs?: number }
+): Promise<string> {
+  const timeoutMs = options?.timeoutMs ?? 120_000;
+  const submitLine = page.getByTestId("runtime-card").getByText(/^Submit:/);
+  const intervalsMs = [500, 1_000, 2_000] as const;
+  const startedAt = Date.now();
+  let intervalIndex = 0;
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const lineText = (await submitLine.textContent())?.trim() ?? "";
+    const match = lineText.match(TERMINAL_STATUS_CAPTURE_PATTERN);
+    const status = match?.[1] ?? "";
+
+    if (TERMINAL_STATUS_PATTERN.test(status)) {
+      return status;
+    }
+
+    const waitMs = intervalsMs[Math.min(intervalIndex, intervalsMs.length - 1)] ?? 2_000;
+    intervalIndex += 1;
+    await page.waitForTimeout(waitMs);
+  }
+
+  throw new Error(`Timed out waiting for terminal submit status after ${String(timeoutMs)}ms.`);
+}
+
+/**
  * Waits until the submit status reaches a terminal state and requires COMPLETED.
  */
-export async function waitForCompletedSubmitStatus(page: Page): Promise<void> {
-  const submitLine = page.getByTestId("runtime-card").getByText(/^Submit:/);
-
-  const terminalStatus = await expect
-    .poll(
-      async () => {
-        const lineText = (await submitLine.textContent())?.trim() ?? "";
-        const match = lineText.match(/Submit:\s*([A-Z_]+)/);
-        return match?.[1] ?? "";
-      },
-      {
-        timeout: 120_000,
-        intervals: [500, 1_000, 2_000]
-      }
-    )
-    .toMatch(TERMINAL_STATUS_PATTERN)
-    .then(async () => {
-      const lineText = (await submitLine.textContent())?.trim() ?? "";
-      const match = lineText.match(/Submit:\s*([A-Z_]+)/);
-      return match?.[1] ?? "";
-    });
-
+export async function waitForCompletedSubmitStatus(
+  page: Page,
+  options?: { timeoutMs?: number }
+): Promise<void> {
+  const terminalStatus = await waitForSubmitTerminalStatus(page, options);
   expect(terminalStatus, `Expected deterministic flow to complete, but terminal status was ${terminalStatus}`).toBe(
     "COMPLETED"
   );
