@@ -132,6 +132,7 @@ export {
   buildInlineLegacyFormStateBlock,
   buildLegacyFormContextFile,
   toReactHookFormSchemaEntries,
+  toCrossFieldRefineChain,
   buildInlineReactHookFormStateBlock,
   buildReactHookFormContextFile
 } from "./templates/form-template.js";

@@ -83,6 +83,7 @@ import {
   collectThemeSxSampleFromEntries,
   collectThemeDefaultMatchedSxKeys,
   detectFormGroups,
+  detectCrossFieldRules,
   buildTabA11yId,
   buildTabPanelA11yId,
   buildAccordionHeaderA11yId,
@@ -4047,11 +4048,12 @@ export const assembleFallbackDependencies = ({
     ),
     selectOptionsMap: Object.fromEntries(
       fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
-    )
+    ),
+    crossFieldRules: detectCrossFieldRules(fields)
   });
 
   const allFieldMaps = buildFieldMaps(renderContext.fields);
-  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap } = allFieldMaps;
+  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap, crossFieldRules } = allFieldMaps;
 
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
@@ -4102,7 +4104,8 @@ export const assembleFallbackDependencies = ({
           validationTypeMap,
           validationMessageMap,
           initialVisualErrorsMap,
-          selectOptionsMap
+          selectOptionsMap,
+          crossFieldRules
         })
       : buildLegacyFormContextFile({
           screenComponentName: componentName,
@@ -4145,7 +4148,8 @@ export const assembleFallbackDependencies = ({
             requiredFieldMap,
             validationTypeMap,
             validationMessageMap,
-            initialValues
+            initialValues,
+            crossFieldRules
           })
         : buildInlineLegacyFormStateBlock({
             hasSelectField,
