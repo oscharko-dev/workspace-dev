@@ -77,6 +77,47 @@ const createSemanticInputNode = ({
   };
 };
 
+const createSemanticSelectNode = ({
+  id,
+  name,
+  label,
+  options
+}: {
+  id: string;
+  name: string;
+  label: string;
+  options: string[];
+}): any => {
+  return {
+    id,
+    name,
+    nodeType: "FRAME",
+    type: "select" as const,
+    layoutMode: "VERTICAL" as const,
+    gap: 4,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    width: 320,
+    height: 72,
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: label,
+        y: 0
+      },
+      ...options.map((option, index) => ({
+        id: `${id}-option-${index + 1}`,
+        name: `Option ${index + 1}`,
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: option
+      }))
+    ]
+  };
+};
+
 const createTypedZodValidationScreen = (): any => {
   return {
     id: "typed-zod-validation-screen",
@@ -110,6 +151,45 @@ const createTypedZodValidationScreen = (): any => {
         children: [
           {
             id: "typed-zod-submit-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Submit",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+};
+
+const createSelectMembershipValidationScreen = (): any => {
+  return {
+    id: "select-membership-validation-screen",
+    name: "Select Membership Validation Form",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticSelectNode({
+        id: "sm-status",
+        name: "Status Select",
+        label: "Status",
+        options: ["Aktiv", "Inaktiv", "Gesperrt"]
+      }),
+      {
+        id: "sm-submit",
+        name: "Submit",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 160,
+        width: 220,
+        height: 48,
+        fillColor: "#1976d2",
+        children: [
+          {
+            id: "sm-submit-label",
             name: "Label",
             nodeType: "TEXT",
             type: "text" as const,
@@ -166,6 +246,52 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   assert.ok(contextContent.includes("Password must be at least 8 characters."));
   assert.equal(contextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(contextContent.includes("if (!isTouched && !isSubmitted) {"));
+});
+
+test("E2E: select schema validation enforces deterministic option membership in RHF context generation", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createSelectMembershipValidationScreen();
+  const injectedIr = {
+    ...ir,
+    screens: [...ir.screens, injectedScreen]
+  };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-select-membership-"));
+  await generateArtifacts({
+    projectDir,
+    ir: injectedIr,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "SelectMembershipValidationFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  assert.ok(
+    contextContent.includes("const selectOptions: Record<string, string[]> = "),
+    "Expected deterministic selectOptions map in generated RHF context"
+  );
+  assert.ok(
+    contextContent.includes("const selectFieldOptions = selectOptions[fieldKey];"),
+    "Expected select option lookup by fieldKey in createFieldSchema"
+  );
+  assert.ok(
+    contextContent.includes("!selectFieldOptions.includes(rawValue)"),
+    "Expected select membership guard for non-empty values"
+  );
+  assert.ok(
+    contextContent.includes('fieldValidationMessages[fieldKey] ?? "Please select a valid option."'),
+    "Expected deterministic select validation fallback message"
+  );
+  assert.ok(
+    contextContent.includes("if (trimmed.length === 0) {"),
+    "Expected optional-empty behavior guard to remain present"
+  );
 });
 
 // ---------------------------------------------------------------------------
