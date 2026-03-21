@@ -559,7 +559,7 @@ const hasMuiIconBarrelImport = (content: string): boolean => {
 };
 
 const extractContainerMaxWidth = (content: string): "sm" | "md" | "lg" | "xl" | undefined => {
-  const match = content.match(/<Container maxWidth="(sm|md|lg|xl)"/);
+  const match = content.match(/<Container\b[^>]*\bmaxWidth="(sm|md|lg|xl)"/);
   if (!match) {
     return undefined;
   }
@@ -1837,7 +1837,7 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
   const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"Semantic Header"}', '{"Semantic Navigation"}', '{"Semantic Content"}', '<Divider aria-hidden="true"']
+    markers: ['{"Semantic Header"}', '{"Semantic Navigation"}', '{"Semantic Content"}', '<Divider data-ir-id="semantic-divider"']
   });
 });
 
@@ -2451,7 +2451,7 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.equal(componentContent.includes("offerImageSrc: string;"), false);
   assert.ok(componentContent.includes("const OffersPattern1Root = styled(Card)(({ theme }) => theme.unstable_sx({"));
   assert.ok(componentContent.includes("theme.unstable_sx({"));
-  assert.ok(componentContent.includes("<OffersPattern1Root sx={sx}>"));
+  assert.match(componentContent, /<OffersPattern1Root\b[^>]*\bsx=\{sx\}[^>]*>/);
   assert.equal(componentContent.includes("sx={[{"), false);
   assert.equal(componentContent.includes("/images/offer-a.png"), false);
 

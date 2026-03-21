@@ -1,6 +1,33 @@
 import { Container, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { DashboardPattern1 } from "../components/DashboardPattern1";
+import { DashboardPatternContextProvider, type DashboardPatternContextState } from "../context/DashboardPatternContext";
 
-export default function DashboardScreen() {
+const patternContextInitialState: DashboardPatternContextState = {
+  "DashboardPattern1": {
+    "card-activity": {
+      "cardTitleText": "Recent Activity",
+      "subtitleText": "Last 7 days"
+    },
+    "card-chart": {
+      "cardTitleText": "Sales Overview",
+      "subtitleText": "Monthly revenue trends"
+    },
+    "card-orders": {
+      "cardTitleText": "Pending Orders",
+      "subtitleText": "127"
+    },
+    "card-revenue": {
+      "cardTitleText": "Revenue",
+      "subtitleText": "$45,231"
+    },
+    "card-users": {
+      "cardTitleText": "Active Users",
+      "subtitleText": "2,350"
+    }
+  }
+};
+
+function DashboardScreenContent() {
   return (
     <Container id="main-content" maxWidth="lg" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 660px)", bgcolor: "#f5f7fa", px: 0.667, py: 0.667 }}>
       {/* @ir:start dash-title Title text */}
@@ -35,5 +62,13 @@ export default function DashboardScreen() {
       </Table>
       {/* @ir:end cards-grid */}
     </Container>
+  );
+}
+
+export default function DashboardScreen() {
+  return (
+      <DashboardPatternContextProvider initialState={patternContextInitialState}>
+      <DashboardScreenContent />
+      </DashboardPatternContextProvider>
   );
 }

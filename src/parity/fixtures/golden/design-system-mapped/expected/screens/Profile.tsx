@@ -1,53 +1,41 @@
-import { Avatar, Badge, Box, Card, CardContent, Chip, Container, Divider, Stack, Typography } from "@mui/material";
+import { Avatar, Badge, Box, Chip, Container, Divider, Stack, Typography } from "@mui/material";
+import { ProfilePattern1 } from "../components/ProfilePattern1";
+import { ProfilePatternContextProvider, type ProfilePatternContextState } from "../context/ProfilePatternContext";
 
-const sharedSxStyle1 = { color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" };
-const sharedSxStyle2 = { width: "30%", maxWidth: "240px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1 };
-const sharedSxStyle3 = { color: "#757575", textAlign: "left", whiteSpace: "pre-wrap" };
+const patternContextInitialState: ProfilePatternContextState = {
+  "ProfilePattern1": {
+    "stats-card-1": {
+      "labelText": "Projects",
+      "valueText": "42"
+    },
+    "stats-card-2": {
+      "labelText": "Contributions",
+      "valueText": "1,284"
+    },
+    "stats-card-3": {
+      "labelText": "Reviews",
+      "valueText": "89"
+    }
+  }
+};
 
-export default function ProfileScreen() {
+function ProfileScreenContent() {
   return (
     <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 401px)", bgcolor: "#f7f7fa", px: 2, py: 2 }}>
       {/* @ir:start profile-title Title text */}
-      <Typography data-ir-id="profile-title" data-ir-name="Title" variant="h2" component="h4" sx={sharedSxStyle1}>{"User Profile"}</Typography>
+      <Typography data-ir-id="profile-title" data-ir-name="Title" variant="h2" component="h4" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"User Profile"}</Typography>
       {/* @ir:end profile-title */}
       {/* @ir:start avatar-section Avatar Section avatar */}
       <Avatar data-ir-id="avatar-section" data-ir-name="Avatar Section" sx={{ width: "94%", maxWidth: "752px", minHeight: "80px", display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>{"Jane Smith"}</Avatar>
       {/* @ir:end avatar-section */}
-      {/* @ir:start stats-card-1 Stats Card card */}
-      <Card data-ir-id="stats-card-1" data-ir-name="Stats Card" sx={sharedSxStyle2}>
-        <CardContent>
-          {/* @ir:start stat1-label Label text */}
-          <Typography data-ir-id="stat1-label" data-ir-name="Label" variant="body1" sx={sharedSxStyle3}>{"Projects"}</Typography>
-          {/* @ir:end stat1-label */}
-          {/* @ir:start stat1-value Value text */}
-          <Typography data-ir-id="stat1-value" data-ir-name="Value" variant="h1" component="h1" sx={sharedSxStyle1}>{"42"}</Typography>
-          {/* @ir:end stat1-value */}
-        </CardContent>
-      </Card>
+      {/* @ir:start stats-card-1 Stats Card card extracted */}
+      <ProfilePattern1 data-ir-id="stats-card-1" data-ir-name="Stats Card" sx={sharedSxStyle1} instanceId={"stats-card-1"} />
       {/* @ir:end stats-card-1 */}
-      {/* @ir:start stats-card-2 Stats Card card */}
-      <Card data-ir-id="stats-card-2" data-ir-name="Stats Card" sx={sharedSxStyle2}>
-        <CardContent>
-          {/* @ir:start stat2-label Label text */}
-          <Typography data-ir-id="stat2-label" data-ir-name="Label" variant="body1" sx={sharedSxStyle3}>{"Contributions"}</Typography>
-          {/* @ir:end stat2-label */}
-          {/* @ir:start stat2-value Value text */}
-          <Typography data-ir-id="stat2-value" data-ir-name="Value" variant="h1" component="h2" sx={sharedSxStyle1}>{"1,284"}</Typography>
-          {/* @ir:end stat2-value */}
-        </CardContent>
-      </Card>
+      {/* @ir:start stats-card-2 Stats Card card extracted */}
+      <ProfilePattern1 data-ir-id="stats-card-2" data-ir-name="Stats Card" sx={sharedSxStyle1} instanceId={"stats-card-2"} />
       {/* @ir:end stats-card-2 */}
-      {/* @ir:start stats-card-3 Stats Card card */}
-      <Card data-ir-id="stats-card-3" data-ir-name="Stats Card" sx={sharedSxStyle2}>
-        <CardContent>
-          {/* @ir:start stat3-label Label text */}
-          <Typography data-ir-id="stat3-label" data-ir-name="Label" variant="body1" sx={sharedSxStyle3}>{"Reviews"}</Typography>
-          {/* @ir:end stat3-label */}
-          {/* @ir:start stat3-value Value text */}
-          <Typography data-ir-id="stat3-value" data-ir-name="Value" variant="h1" component="h3" sx={sharedSxStyle1}>{"89"}</Typography>
-          {/* @ir:end stat3-value */}
-        </CardContent>
-      </Card>
+      {/* @ir:start stats-card-3 Stats Card card extracted */}
+      <ProfilePattern1 data-ir-id="stats-card-3" data-ir-name="Stats Card" sx={sharedSxStyle1} instanceId={"stats-card-3"} />
       {/* @ir:end stats-card-3 */}
       {/* @ir:start divider-1 MuiDividerRoot divider */}
       <Divider data-ir-id="divider-1" data-ir-name="MuiDividerRoot" aria-hidden="true" sx={{ width: "752px", height: "1px" }} />
@@ -83,5 +71,15 @@ export default function ProfileScreen() {
       </Badge>
       {/* @ir:end badge-item */}
     </Container>
+  );
+}
+
+const sharedSxStyle1 = { width: "30%", maxWidth: "240px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1, bgcolor: "#ffffff", borderRadius: 0.75 };
+
+export default function ProfileScreen() {
+  return (
+      <ProfilePatternContextProvider initialState={patternContextInitialState}>
+      <ProfileScreenContent />
+      </ProfilePatternContextProvider>
   );
 }
