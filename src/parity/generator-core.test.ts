@@ -3745,9 +3745,10 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes('import { useForm, type UseFormReturn } from "react-hook-form";'));
   assert.ok(formContextContent.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(formContextContent.includes('import { z } from "zod";'));
-  assert.ok(formContextContent.includes("type LoanFormFormData = z.infer<typeof formSchema>;"));
-  assert.ok(formContextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<LoanFormFormData>({"));
-  assert.ok(formContextContent.includes("const onSubmit = async (values: LoanFormFormData): Promise<void> => {"));
+  assert.ok(formContextContent.includes("export type LoanFormFormInput = z.input<typeof formSchema>;"));
+  assert.ok(formContextContent.includes("export type LoanFormFormOutput = z.output<typeof formSchema>;"));
+  assert.ok(formContextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<LoanFormFormInput>({"));
+  assert.ok(formContextContent.includes("const onSubmit = async (values: LoanFormFormOutput): Promise<void> => {"));
   assert.equal(formContextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
 });
@@ -4777,8 +4778,9 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
   assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(content.includes('import { z } from "zod";'));
-  assert.ok(content.includes("type FormData = z.infer<typeof formSchema>;"));
-  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormData>({"));
+  assert.ok(content.includes("type FormInput = z.input<typeof formSchema>;"));
+  assert.ok(content.includes("type FormOutput = z.output<typeof formSchema>;"));
+  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormInput>({"));
   assert.ok(content.includes("<Controller"));
   assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
