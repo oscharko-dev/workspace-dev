@@ -56,6 +56,7 @@ const ALLOWED_INTERACTION_TRIGGER_KEYS = new Set(["type"]);
 const ALLOWED_INTERACTION_ACTION_KEYS = new Set(["type", "destinationId", "navigation", "transitionNodeID", "transitionNodeId"]);
 
 interface FigmaCleaningAccumulator {
+  inputNodeCount: number;
   outputNodeCount: number;
   removedHiddenNodes: number;
   removedPlaceholderNodes: number;
@@ -101,11 +102,23 @@ const countSubtreeNodes = (value: unknown): number => {
   if (!isRecord(value)) {
     return 0;
   }
-  const children = Array.isArray(value.children) ? value.children : [];
-  let count = 1;
-  for (const child of children) {
-    count += countSubtreeNodes(child);
+
+  let count = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!isRecord(current)) {
+      continue;
+    }
+    count += 1;
+    if (!Array.isArray(current.children)) {
+      continue;
+    }
+    for (const child of current.children) {
+      stack.push(child);
+    }
   }
+
   return count;
 };
 
@@ -625,151 +638,208 @@ const sanitizeInteractions = (
   return nextInteractions.length > 0 ? nextInteractions : undefined;
 };
 
+interface TraverseFrameProcess {
+  kind: "process";
+  nodeCandidate: unknown;
+  inInstanceContext: boolean;
+  target: Record<string, unknown>[];
+}
+
+interface TraverseFrameFinalize {
+  kind: "finalize";
+  node: Record<string, unknown>;
+  children: Record<string, unknown>[];
+  target: Record<string, unknown>[];
+}
+
+type TraverseFrame = TraverseFrameProcess | TraverseFrameFinalize;
+
 const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record<string, unknown> | null => {
   const { metrics } = context;
-  if (!isRecord(nodeCandidate)) {
-    return null;
-  }
+  const rootResult: Record<string, unknown>[] = [];
+  const stack: TraverseFrame[] = [
+    {
+      kind: "process",
+      nodeCandidate,
+      inInstanceContext: context.inInstanceContext,
+      target: rootResult
+    }
+  ];
 
-  if (nodeCandidate.visible === false) {
-    metrics.removedHiddenNodes += countSubtreeNodes(nodeCandidate);
-    return null;
-  }
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) {
+      continue;
+    }
 
-  const nodeType = typeof nodeCandidate.type === "string" ? nodeCandidate.type : undefined;
-  const nodeId = typeof nodeCandidate.id === "string" ? nodeCandidate.id : undefined;
-  if (!nodeType || !nodeId) {
-    metrics.removedInvalidNodes += countSubtreeNodes(nodeCandidate);
-    return null;
-  }
+    if (frame.kind === "finalize") {
+      if (frame.children.length > 0) {
+        frame.node.children = frame.children;
+      }
+      frame.target.push(frame.node);
+      metrics.outputNodeCount += 1;
+      continue;
+    }
 
-  if (context.inInstanceContext && isTechnicalPlaceholderNode({ node: nodeCandidate })) {
-    metrics.removedPlaceholderNodes += 1;
-    return null;
-  }
+    const current = frame.nodeCandidate;
+    if (!isRecord(current)) {
+      continue;
+    }
 
-  if (isHelperItemNode({ node: nodeCandidate }) && isNodeGeometryEmpty({ node: nodeCandidate })) {
-    metrics.removedHelperNodes += countSubtreeNodes(nodeCandidate);
-    return null;
-  }
+    if (current.visible === false) {
+      const removedSubtreeCount = countSubtreeNodes(current);
+      metrics.inputNodeCount += removedSubtreeCount;
+      metrics.removedHiddenNodes += removedSubtreeCount;
+      continue;
+    }
 
-  metrics.removedPropertyCount += countRemovedKeys(nodeCandidate, ALLOWED_NODE_KEYS);
+    const nodeType = typeof current.type === "string" ? current.type : undefined;
+    const nodeId = typeof current.id === "string" ? current.id : undefined;
+    if (!nodeType || !nodeId) {
+      const removedSubtreeCount = countSubtreeNodes(current);
+      metrics.inputNodeCount += removedSubtreeCount;
+      metrics.removedInvalidNodes += removedSubtreeCount;
+      continue;
+    }
 
-  const nextNode: Record<string, unknown> = {
-    id: nodeId,
-    type: nodeType
-  };
-  if (typeof nodeCandidate.name === "string") {
-    nextNode.name = nodeCandidate.name;
-  }
-  if (typeof nodeCandidate.layoutMode === "string") {
-    nextNode.layoutMode = nodeCandidate.layoutMode;
-  }
-  if (typeof nodeCandidate.primaryAxisAlignItems === "string") {
-    nextNode.primaryAxisAlignItems = nodeCandidate.primaryAxisAlignItems;
-  }
-  if (typeof nodeCandidate.counterAxisAlignItems === "string") {
-    nextNode.counterAxisAlignItems = nodeCandidate.counterAxisAlignItems;
-  }
-  if (isFiniteNumber(nodeCandidate.itemSpacing)) {
-    nextNode.itemSpacing = nodeCandidate.itemSpacing;
-  }
-  if (isFiniteNumber(nodeCandidate.paddingTop)) {
-    nextNode.paddingTop = nodeCandidate.paddingTop;
-  }
-  if (isFiniteNumber(nodeCandidate.paddingRight)) {
-    nextNode.paddingRight = nodeCandidate.paddingRight;
-  }
-  if (isFiniteNumber(nodeCandidate.paddingBottom)) {
-    nextNode.paddingBottom = nodeCandidate.paddingBottom;
-  }
-  if (isFiniteNumber(nodeCandidate.paddingLeft)) {
-    nextNode.paddingLeft = nodeCandidate.paddingLeft;
-  }
-  if (isFiniteNumber(nodeCandidate.strokeWeight)) {
-    nextNode.strokeWeight = nodeCandidate.strokeWeight;
-  }
-  if (isFiniteNumber(nodeCandidate.cornerRadius)) {
-    nextNode.cornerRadius = nodeCandidate.cornerRadius;
-  }
-  if (isFiniteNumber(nodeCandidate.opacity) && nodeCandidate.opacity >= 0 && nodeCandidate.opacity < 1) {
-    nextNode.opacity = nodeCandidate.opacity;
-  }
-  if (typeof nodeCandidate.characters === "string") {
-    nextNode.characters = nodeCandidate.characters;
-  }
+    if (frame.inInstanceContext && isTechnicalPlaceholderNode({ node: current })) {
+      const removedSubtreeCount = countSubtreeNodes(current);
+      metrics.inputNodeCount += removedSubtreeCount;
+      metrics.removedPlaceholderNodes += 1;
+      continue;
+    }
 
-  const absoluteBoundingBox = sanitizeAbsoluteBoundingBox(nodeCandidate.absoluteBoundingBox, metrics);
-  if (absoluteBoundingBox) {
-    nextNode.absoluteBoundingBox = absoluteBoundingBox;
-  }
+    if (isHelperItemNode({ node: current }) && isNodeGeometryEmpty({ node: current })) {
+      const removedSubtreeCount = countSubtreeNodes(current);
+      metrics.inputNodeCount += removedSubtreeCount;
+      metrics.removedHelperNodes += removedSubtreeCount;
+      continue;
+    }
 
-  const style = sanitizeStyle(nodeCandidate.style, metrics);
-  if (style) {
-    nextNode.style = style;
-  }
+    metrics.inputNodeCount += 1;
+    metrics.removedPropertyCount += countRemovedKeys(current, ALLOWED_NODE_KEYS);
 
-  const fills = sanitizePaints(nodeCandidate.fills, metrics);
-  if (fills) {
-    nextNode.fills = fills;
-  }
+    const nextNode: Record<string, unknown> = {
+      id: nodeId,
+      type: nodeType
+    };
+    if (typeof current.name === "string") {
+      nextNode.name = current.name;
+    }
+    if (typeof current.layoutMode === "string") {
+      nextNode.layoutMode = current.layoutMode;
+    }
+    if (typeof current.primaryAxisAlignItems === "string") {
+      nextNode.primaryAxisAlignItems = current.primaryAxisAlignItems;
+    }
+    if (typeof current.counterAxisAlignItems === "string") {
+      nextNode.counterAxisAlignItems = current.counterAxisAlignItems;
+    }
+    if (isFiniteNumber(current.itemSpacing)) {
+      nextNode.itemSpacing = current.itemSpacing;
+    }
+    if (isFiniteNumber(current.paddingTop)) {
+      nextNode.paddingTop = current.paddingTop;
+    }
+    if (isFiniteNumber(current.paddingRight)) {
+      nextNode.paddingRight = current.paddingRight;
+    }
+    if (isFiniteNumber(current.paddingBottom)) {
+      nextNode.paddingBottom = current.paddingBottom;
+    }
+    if (isFiniteNumber(current.paddingLeft)) {
+      nextNode.paddingLeft = current.paddingLeft;
+    }
+    if (isFiniteNumber(current.strokeWeight)) {
+      nextNode.strokeWeight = current.strokeWeight;
+    }
+    if (isFiniteNumber(current.cornerRadius)) {
+      nextNode.cornerRadius = current.cornerRadius;
+    }
+    if (isFiniteNumber(current.opacity) && current.opacity >= 0 && current.opacity < 1) {
+      nextNode.opacity = current.opacity;
+    }
+    if (typeof current.characters === "string") {
+      nextNode.characters = current.characters;
+    }
 
-  const strokes = sanitizePaints(nodeCandidate.strokes, metrics);
-  if (strokes) {
-    nextNode.strokes = strokes;
-  }
+    const absoluteBoundingBox = sanitizeAbsoluteBoundingBox(current.absoluteBoundingBox, metrics);
+    if (absoluteBoundingBox) {
+      nextNode.absoluteBoundingBox = absoluteBoundingBox;
+    }
 
-  const effects = sanitizeEffects(nodeCandidate.effects, metrics);
-  if (effects) {
-    nextNode.effects = effects;
-  }
+    const style = sanitizeStyle(current.style, metrics);
+    if (style) {
+      nextNode.style = style;
+    }
 
-  const fillGeometry = sanitizeGeometryList(nodeCandidate.fillGeometry, metrics);
-  if (fillGeometry) {
-    nextNode.fillGeometry = fillGeometry;
-  }
+    const fills = sanitizePaints(current.fills, metrics);
+    if (fills) {
+      nextNode.fills = fills;
+    }
 
-  const strokeGeometry = sanitizeGeometryList(nodeCandidate.strokeGeometry, metrics);
-  if (strokeGeometry) {
-    nextNode.strokeGeometry = strokeGeometry;
-  }
+    const strokes = sanitizePaints(current.strokes, metrics);
+    if (strokes) {
+      nextNode.strokes = strokes;
+    }
 
-  const componentProperties = sanitizeVariantComponentProperties(nodeCandidate.componentProperties, metrics);
-  if (componentProperties) {
-    nextNode.componentProperties = componentProperties;
-  }
+    const effects = sanitizeEffects(current.effects, metrics);
+    if (effects) {
+      nextNode.effects = effects;
+    }
 
-  const componentPropertyDefinitions = sanitizeVariantComponentPropertyDefinitions(
-    nodeCandidate.componentPropertyDefinitions,
-    metrics
-  );
-  if (componentPropertyDefinitions) {
-    nextNode.componentPropertyDefinitions = componentPropertyDefinitions;
-  }
+    const fillGeometry = sanitizeGeometryList(current.fillGeometry, metrics);
+    if (fillGeometry) {
+      nextNode.fillGeometry = fillGeometry;
+    }
 
-  const interactions = sanitizeInteractions(nodeCandidate.interactions, metrics);
-  if (interactions) {
-    nextNode.interactions = interactions;
-  }
+    const strokeGeometry = sanitizeGeometryList(current.strokeGeometry, metrics);
+    if (strokeGeometry) {
+      nextNode.strokeGeometry = strokeGeometry;
+    }
 
-  const isNextInstanceContext =
-    context.inInstanceContext || nodeType === "INSTANCE" || nodeType === "COMPONENT_SET";
-  if (Array.isArray(nodeCandidate.children)) {
-    const children = nodeCandidate.children
-      .map((child) =>
-        sanitizeNode(child, {
-          inInstanceContext: isNextInstanceContext,
-          metrics
-        })
-      )
-      .filter((child): child is Record<string, unknown> => Boolean(child));
-    if (children.length > 0) {
-      nextNode.children = children;
+    const componentProperties = sanitizeVariantComponentProperties(current.componentProperties, metrics);
+    if (componentProperties) {
+      nextNode.componentProperties = componentProperties;
+    }
+
+    const componentPropertyDefinitions = sanitizeVariantComponentPropertyDefinitions(
+      current.componentPropertyDefinitions,
+      metrics
+    );
+    if (componentPropertyDefinitions) {
+      nextNode.componentPropertyDefinitions = componentPropertyDefinitions;
+    }
+
+    const interactions = sanitizeInteractions(current.interactions, metrics);
+    if (interactions) {
+      nextNode.interactions = interactions;
+    }
+
+    const childTarget: Record<string, unknown>[] = [];
+    stack.push({
+      kind: "finalize",
+      node: nextNode,
+      children: childTarget,
+      target: frame.target
+    });
+
+    if (!Array.isArray(current.children) || current.children.length === 0) {
+      continue;
+    }
+
+    const isNextInstanceContext = frame.inInstanceContext || nodeType === "INSTANCE" || nodeType === "COMPONENT_SET";
+    for (let index = current.children.length - 1; index >= 0; index -= 1) {
+      stack.push({
+        kind: "process",
+        nodeCandidate: current.children[index],
+        inInstanceContext: isNextInstanceContext,
+        target: childTarget
+      });
     }
   }
 
-  metrics.outputNodeCount += 1;
-  return nextNode;
+  return rootResult[0] ?? null;
 };
 
 const collectSectionScreensCount = (sectionNode: Record<string, unknown>): number => {
@@ -825,6 +895,7 @@ export const cleanFigmaForCodegen = ({ file }: { file: FigmaFileResponse }): Cle
   const rawFile = isRecord(file) ? file : {};
 
   const metrics: FigmaCleaningAccumulator = {
+    inputNodeCount: 0,
     outputNodeCount: 0,
     removedHiddenNodes: 0,
     removedPlaceholderNodes: 0,
@@ -833,7 +904,6 @@ export const cleanFigmaForCodegen = ({ file }: { file: FigmaFileResponse }): Cle
     removedPropertyCount: countRemovedKeys(rawFile, ALLOWED_FILE_KEYS)
   };
 
-  const inputNodeCount = countSubtreeNodes(rawFile.document);
   const cleanedDocument = sanitizeNode(rawFile.document, {
     inInstanceContext: false,
     metrics
@@ -848,7 +918,7 @@ export const cleanFigmaForCodegen = ({ file }: { file: FigmaFileResponse }): Cle
   }
 
   const report: FigmaCleaningReport = {
-    inputNodeCount,
+    inputNodeCount: metrics.inputNodeCount,
     outputNodeCount: metrics.outputNodeCount,
     removedHiddenNodes: metrics.removedHiddenNodes,
     removedPlaceholderNodes: metrics.removedPlaceholderNodes,
