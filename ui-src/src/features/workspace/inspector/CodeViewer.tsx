@@ -87,8 +87,13 @@ export function CodeViewer({
   filePath,
   highlightRange
 }: CodeViewerProps): JSX.Element {
-  const [highlightResult, setHighlightResult] = useState<HighlightResult | null>(null);
-  const [isHighlighting, setIsHighlighting] = useState(false);
+  const [highlightState, setHighlightState] = useState<{
+    result: HighlightResult | null;
+    /** Inputs that produced this result — used to detect staleness */
+    forCode: string;
+    forFilePath: string;
+    forTheme: string;
+  } | null>(null);
   const [wordWrap, setWordWrap] = useState(false);
   const [copied, setCopied] = useState(false);
   const highlightRef = useRef<HTMLDivElement>(null);
@@ -114,17 +119,14 @@ export function CodeViewer({
   // Run Shiki highlighting
   useEffect(() => {
     if (isOversize) {
-      setHighlightResult(null);
       return;
     }
 
     let cancelled = false;
-    setIsHighlighting(true);
 
     void highlightCode(code, filePath, currentTheme).then((result) => {
       if (!cancelled) {
-        setHighlightResult(result);
-        setIsHighlighting(false);
+        setHighlightState({ result, forCode: code, forFilePath: filePath, forTheme: currentTheme });
       }
     });
 
@@ -133,23 +135,31 @@ export function CodeViewer({
     };
   }, [code, filePath, currentTheme, isOversize]);
 
-  // Scroll to highlighted range
+  // Determine if the current highlight state matches the current inputs
+  const isFresh = highlightState !== null
+    && highlightState.forCode === code
+    && highlightState.forFilePath === filePath
+    && highlightState.forTheme === currentTheme;
+  const isHighlighting = !isOversize && !isFresh;
+  const effectiveHighlightResult = isOversize || !isFresh ? null : highlightState.result;
+
+  // Scroll to highlighted range once highlighting settles
   useEffect(() => {
-    if (highlightRange && highlightRef.current && typeof highlightRef.current.scrollIntoView === "function") {
+    if (isFresh && highlightRange && highlightRef.current && typeof highlightRef.current.scrollIntoView === "function") {
       highlightRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [highlightRange, highlightResult]);
+  }, [highlightRange, isFresh]);
 
   // Parse highlighted lines
   const highlightedLines = useMemo(() => {
-    if (!highlightResult) return null;
-    return parseShikiLines(highlightResult.html);
-  }, [highlightResult]);
+    if (!effectiveHighlightResult) return null;
+    return parseShikiLines(effectiveHighlightResult.html);
+  }, [effectiveHighlightResult]);
 
   const bgColor = useMemo(() => {
-    if (!highlightResult) return null;
-    return extractBgColor(highlightResult.html);
-  }, [highlightResult]);
+    if (!effectiveHighlightResult) return null;
+    return extractBgColor(effectiveHighlightResult.html);
+  }, [effectiveHighlightResult]);
 
   const isDark = currentTheme === "github-dark";
 
@@ -250,7 +260,7 @@ export function CodeViewer({
         data-testid="code-content"
         style={{ backgroundColor: bgColor ?? (isDark ? "#0d1117" : "#ffffff") }}
       >
-        {isHighlighting && !highlightResult ? (
+        {isHighlighting ? (
           <p
             className="m-0 p-3 text-xs"
             style={{ color: isDark ? "#8b949e" : "#57606a" }}

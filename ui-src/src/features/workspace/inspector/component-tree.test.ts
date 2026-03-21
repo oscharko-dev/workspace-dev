@@ -9,7 +9,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { createElement } from "react";
-import { ComponentTree, filterTree, type TreeNode } from "./component-tree";
+import { ComponentTree, type TreeNode } from "./component-tree";
+import { filterTree } from "./component-tree-utils";
 
 // jsdom does not implement scrollIntoView
 beforeEach(() => {

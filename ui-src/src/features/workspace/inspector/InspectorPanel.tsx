@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useMemo, useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
@@ -209,17 +209,12 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
     return designIrQuery.data.payload.screens;
   }, [designIrQuery.data]);
 
-  // --- Auto-select first screen file from manifest ---
-  useEffect(() => {
-    if (selectedFile) {
-      return;
-    }
-
+  // --- Derive default file from manifest/files when none explicitly selected ---
+  const defaultFile = useMemo<string | null>(() => {
     if (manifest?.screens?.length) {
       const firstScreen = manifest.screens[0];
       if (firstScreen && firstScreen.file) {
-        setSelectedFile(firstScreen.file);
-        return;
+        return firstScreen.file;
       }
     }
 
@@ -227,19 +222,23 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
       (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts")
     );
     if (codeFiles.length > 0 && codeFiles[0]) {
-      setSelectedFile(codeFiles[0].path);
+      return codeFiles[0].path;
     }
-  }, [files, manifest, selectedFile]);
+
+    return null;
+  }, [files, manifest]);
+
+  const effectiveSelectedFile = selectedFile ?? defaultFile;
 
   const fileContentQuery = useQuery({
-    queryKey: ["inspector-file-content", jobId, selectedFile],
-    enabled: Boolean(selectedFile),
+    queryKey: ["inspector-file-content", jobId, effectiveSelectedFile],
+    enabled: Boolean(effectiveSelectedFile),
     queryFn: async () => {
-      if (!selectedFile) {
+      if (!effectiveSelectedFile) {
         throw new Error("No file selected");
       }
       const resp = await fetch(
-        `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(selectedFile)}`
+        `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
       );
       if (!resp.ok) {
         throw new Error(`Failed to fetch file: ${resp.status}`);
@@ -366,7 +365,7 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
         <div className="min-h-[200px] flex-1 lg:min-h-0">
           <CodePane
             files={files}
-            selectedFile={selectedFile}
+            selectedFile={effectiveSelectedFile}
             onSelectFile={handleSelectFile}
             fileContent={fileContentQuery.data ?? null}
             isLoadingContent={fileContentQuery.isLoading}
