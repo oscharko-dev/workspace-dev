@@ -405,6 +405,130 @@ test("cleanFigmaForCodegen reports zero screen candidates when nothing screen-li
   assert.equal(result.report.removedHiddenNodes >= 1, true);
 });
 
+test("cleanFigmaForCodegen keeps exact removal counters for dropped branch categories", () => {
+  const input = {
+    name: "Removal counters",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-metrics",
+              type: "FRAME",
+              name: "Screen",
+              children: [
+                {
+                  id: "hidden-root",
+                  type: "FRAME",
+                  visible: false,
+                  children: [{ id: "hidden-child", type: "TEXT", characters: "hidden" }]
+                },
+                {
+                  type: "FRAME",
+                  children: [{ id: "invalid-child", type: "TEXT", characters: "invalid child" }]
+                },
+                {
+                  id: "helper-empty",
+                  type: "FRAME",
+                  name: "_Item",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 0, height: 24 },
+                  children: [{ id: "helper-child", type: "TEXT", characters: "helper child" }]
+                },
+                {
+                  id: "instance-1",
+                  type: "INSTANCE",
+                  children: [
+                    {
+                      id: "placeholder-1",
+                      type: "TEXT",
+                      characters: "Swap Component",
+                      children: [{ id: "placeholder-child", type: "TEXT", characters: "placeholder child" }]
+                    },
+                    { id: "kept-1", type: "TEXT", characters: "Kept text" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+
+  assert.equal(result.report.inputNodeCount, 13);
+  assert.equal(result.report.outputNodeCount, 5);
+  assert.equal(result.report.removedHiddenNodes, 2);
+  assert.equal(result.report.removedInvalidNodes, 2);
+  assert.equal(result.report.removedHelperNodes, 2);
+  assert.equal(result.report.removedPlaceholderNodes, 1);
+  assert.equal(result.report.outputNodeCount < result.report.inputNodeCount, true);
+  assert.equal(findNodeById(result.cleanedFile.document, "kept-1")?.id, "kept-1");
+  assert.equal(findNodeById(result.cleanedFile.document, "placeholder-child"), undefined);
+});
+
+test("cleanFigmaForCodegen handles deeply nested trees without stack overflow", () => {
+  const depth = 5_000;
+  const chainRoot: Record<string, unknown> = {
+    id: "chain-0",
+    type: "FRAME",
+    children: []
+  };
+  let cursor = chainRoot;
+  for (let index = 1; index <= depth; index += 1) {
+    const next: Record<string, unknown> = {
+      id: `chain-${index}`,
+      type: "FRAME",
+      children: []
+    };
+    cursor.children = [next];
+    cursor = next;
+  }
+
+  const input = {
+    name: "Deep tree",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [chainRoot]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+  const expectedNodeCount = depth + 3;
+
+  assert.equal(result.report.inputNodeCount, expectedNodeCount);
+  assert.equal(result.report.outputNodeCount, expectedNodeCount);
+  assert.equal(result.report.removedHiddenNodes, 0);
+  assert.equal(result.report.removedInvalidNodes, 0);
+  assert.equal(result.report.removedHelperNodes, 0);
+  assert.equal(result.report.removedPlaceholderNodes, 0);
+  let lastChainNode: Record<string, unknown> | undefined;
+  let current: unknown = result.cleanedFile.document;
+  while (current && typeof current === "object" && !Array.isArray(current)) {
+    const record = current as Record<string, unknown>;
+    if (typeof record.id === "string" && record.id.startsWith("chain-")) {
+      lastChainNode = record;
+    }
+    if (!Array.isArray(record.children) || record.children.length === 0) {
+      break;
+    }
+    current = record.children[0];
+  }
+  assert.equal(lastChainNode?.id, `chain-${depth}`);
+});
+
 test("cleanFigmaForCodegen keeps only finite node opacity values in [0,1)", () => {
   const input = {
     name: "Opacity Demo",
