@@ -84,6 +84,7 @@ import {
   collectThemeDefaultMatchedSxKeys,
   detectFormGroups,
   detectCrossFieldRules,
+  inferValidationMode,
   buildTabA11yId,
   buildTabPanelA11yId,
   buildAccordionHeaderA11yId,
@@ -4049,11 +4050,15 @@ export const assembleFallbackDependencies = ({
     selectOptionsMap: Object.fromEntries(
       fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
     ),
-    crossFieldRules: detectCrossFieldRules(fields)
+    crossFieldRules: detectCrossFieldRules(fields),
+    validationMode: inferValidationMode({
+      fields,
+      hasVisualErrors: fields.some((field) => field.hasVisualErrorExample === true)
+    })
   });
 
   const allFieldMaps = buildFieldMaps(renderContext.fields);
-  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap, crossFieldRules } = allFieldMaps;
+  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap, crossFieldRules, validationMode } = allFieldMaps;
 
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
@@ -4105,7 +4110,8 @@ export const assembleFallbackDependencies = ({
           validationMessageMap,
           initialVisualErrorsMap,
           selectOptionsMap,
-          crossFieldRules
+          crossFieldRules,
+          validationMode
         })
       : buildLegacyFormContextFile({
           screenComponentName: componentName,
@@ -4149,7 +4155,8 @@ export const assembleFallbackDependencies = ({
             validationTypeMap,
             validationMessageMap,
             initialValues,
-            crossFieldRules
+            crossFieldRules,
+            validationMode
           })
         : buildInlineLegacyFormStateBlock({
             hasSelectField,

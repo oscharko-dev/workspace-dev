@@ -120,6 +120,7 @@ export {
   registerInteractiveField,
   detectFormGroups,
   detectCrossFieldRules,
+  inferValidationMode,
   buildSemanticInputModel,
   toFormContextProviderName,
   toFormContextHookName
@@ -128,6 +129,7 @@ export type {
   ValidationFieldType,
   CrossFieldRuleType,
   CrossFieldRule,
+  RhfValidationMode,
   ResolvedFormHandlingMode,
   InteractiveFieldModel,
   FormGroupAssignment,
