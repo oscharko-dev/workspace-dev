@@ -7,8 +7,11 @@ function LoginScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useLoginFormContext();
   return (
     <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
-      <Typography variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
-      <Controller
+      {/* @ir:start login-title Title text */}
+      <Typography data-ir-id="login-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
+      {/* @ir:end login-title */}
+      {/* @ir:start email-field MuiFormControlRoot input */}
+      <Controller data-ir-id="email-field" data-ir-name="MuiFormControlRoot"
         name={"muiformcontrolroot_email_field"}
         control={control}
         render={({ field: controllerField, fieldState }) => {
@@ -42,9 +45,14 @@ function LoginScreenContent() {
           );
         }}
       />
-      <Paper sx={{ position: "relative", width: "56.4%", maxWidth: "220px", minHeight: "48px", bgcolor: "primary.main" }}>
-        <Typography variant="body1" sx={{ position: "absolute", left: "68px", top: "13px", color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Sign In"}</Typography>
+      {/* @ir:end email-field */}
+      {/* @ir:start submit-button Primary Button paper */}
+      <Paper data-ir-id="submit-button" data-ir-name="Primary Button" sx={{ position: "relative", width: "56.4%", maxWidth: "220px", minHeight: "48px", bgcolor: "primary.main" }}>
+        {/* @ir:start submit-button-label Label text */}
+        <Typography data-ir-id="submit-button-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "68px", top: "13px", color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Sign In"}</Typography>
+        {/* @ir:end submit-button-label */}
       </Paper>
+      {/* @ir:end submit-button */}
     </Container>
   );
 }

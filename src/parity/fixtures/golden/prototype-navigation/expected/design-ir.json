@@ -307,6 +307,16 @@
     ],
     "truncatedScreens": [],
     "depthTruncatedScreens": [],
+    "classificationFallbacks": [
+      {
+        "screenId": "screen-home",
+        "screenName": "Home",
+        "nodeId": "decorative-instance",
+        "nodeName": "Placeholder Instance",
+        "nodeType": "INSTANCE",
+        "depth": 0
+      }
+    ],
     "degradedGeometryNodes": []
   },
   "themeAnalysis": {
