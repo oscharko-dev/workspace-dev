@@ -1035,8 +1035,7 @@ const STACK_HANDLED_SX_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 export const isSimpleFlexContainerForStack = ({
-  element,
-  context: _context
+  element
 }: {
   element: ScreenElementIR;
   context: RenderContext;
@@ -3278,7 +3277,7 @@ const injectDataIrId = (raw: string, irNodeId: string, irNodeName: string): stri
   // Insert data-ir-id right after the tag name, before any props or self-close.
   const pattern = /^(\s*<[A-Za-z][A-Za-z0-9.]*)/;
   const match = pattern.exec(raw);
-  if (!match || match[0] === undefined) {
+  if (!match) {
     return raw;
   }
   const insertPos = match[0].length;

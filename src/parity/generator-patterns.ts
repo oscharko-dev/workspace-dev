@@ -359,7 +359,7 @@ const toTextValueForExtraction = (node: ScreenElementIR | undefined): string | u
   if (!node || node.type !== "text") {
     return undefined;
   }
-  const normalizedText = node.text?.trim();
+  const normalizedText = node.text.trim();
   if (normalizedText && normalizedText.length > 0) {
     return normalizedText;
   }

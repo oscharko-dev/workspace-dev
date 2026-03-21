@@ -62,11 +62,23 @@ const sanitizeDiagnosticValue = ({
       .filter((entry): entry is WorkspaceJobDiagnosticValue => entry !== undefined);
     return normalizedItems;
   }
-  if (!value || typeof value !== "object") {
-    return truncateText(String(value), 500);
+  if (typeof value !== "object") {
+    if (typeof value === "undefined") {
+      return "undefined";
+    }
+    if (typeof value === "function") {
+      return truncateText(`[Function ${value.name || "anonymous"}]`, 500);
+    }
+    if (typeof value === "symbol") {
+      return truncateText(value.description ? `Symbol(${value.description})` : "Symbol()", 500);
+    }
+    if (typeof value === "bigint") {
+      return truncateText(`${value.toString()}n`, 500);
+    }
+    return undefined;
   }
   if (depth >= MAX_DIAGNOSTIC_DETAILS_DEPTH) {
-    return truncateText(String(value), 500);
+    return truncateText(Object.prototype.toString.call(value), 500);
   }
   const record = value as Record<string, unknown>;
   const output: Record<string, WorkspaceJobDiagnosticValue> = {};

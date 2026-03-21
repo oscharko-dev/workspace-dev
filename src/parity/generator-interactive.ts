@@ -346,7 +346,7 @@ export const analyzeListRow = ({
   const textNodes = collectTextNodes(row)
     .filter((node) => !excludedTextNodeIds.has(node.id))
     .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
-  const textValues = textNodes.map((node) => node.text?.trim() ?? "").filter((value) => value.length > 0);
+  const textValues = textNodes.map((node) => node.text.trim()).filter((value) => value.length > 0);
   const fallbackLabel = firstText(row)?.trim() || row.name || "Item";
   const primaryText = textValues[0] ?? fallbackLabel;
   const secondaryText = textValues[1] && textValues[1] !== primaryText ? textValues[1] : undefined;

@@ -493,15 +493,12 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     }
   }
 
+  const tokensCandidate = raw.tokens as Partial<DesignTokens> | undefined;
   if (
-    !raw.tokens ||
-    typeof raw.tokens !== "object" ||
-    !raw.tokens.palette ||
-    !raw.tokens.palette.primary ||
-    !raw.tokens.palette.background ||
-    !raw.tokens.typography ||
-    typeof raw.tokens.typography !== "object" ||
-    Object.keys(raw.tokens.typography).length === 0
+    !tokensCandidate?.palette?.primary ||
+    !tokensCandidate.palette.background ||
+    !tokensCandidate.typography ||
+    Object.keys(tokensCandidate.typography).length === 0
   ) {
     errors.push({
       code: "IR_MISSING_TOKENS",

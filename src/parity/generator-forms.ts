@@ -2,7 +2,7 @@
 // generator-forms.ts — Form detection, validation, and state management
 // Extracted from generator-core.ts (issue #297)
 // ---------------------------------------------------------------------------
-import type { ScreenElementIR, GeneratedFile } from "./types.js";
+import type { ScreenElementIR, TextElementIR, GeneratedFile } from "./types.js";
 import type { WorkspaceFormHandlingMode } from "../contracts/index.js";
 import {
   firstVectorColor,
@@ -477,7 +477,7 @@ const isLikelyInputPlaceholderText = (value: string | undefined): boolean => {
   return INPUT_PLACEHOLDER_GENERIC_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
-const splitTextRows = (texts: ScreenElementIR[]): { topRow: ScreenElementIR[]; bottomRow: ScreenElementIR[] } => {
+const splitTextRows = (texts: TextElementIR[]): { topRow: TextElementIR[]; bottomRow: TextElementIR[] } => {
   if (texts.length === 0) {
     return { topRow: [], bottomRow: [] };
   }
@@ -515,10 +515,10 @@ export const isLikelyInputContainer = (element: ScreenElementIR): boolean => {
   const sizeLooksLikeField = width >= 120 && height >= 36 && height <= 120;
   const hasInputSemantics = hasAnySubtreeName(element, INPUT_NAME_HINTS);
 
-  const texts = collectTextNodes(element).filter((node) => (node.text?.trim() ?? "").length > 0);
+  const texts = collectTextNodes(element).filter((node) => node.text.trim().length > 0);
   const { topRow, bottomRow } = splitTextRows(texts);
   const hasLabelValuePattern =
-    topRow.some((node) => !isValueLikeText(node.text ?? "")) && bottomRow.some((node) => isValueLikeText(node.text ?? ""));
+    topRow.some((node) => !isValueLikeText(node.text)) && bottomRow.some((node) => isValueLikeText(node.text));
 
   if (hasInputSemantics && sizeLooksLikeField) {
     return true;
@@ -700,21 +700,21 @@ export const buildSemanticInputModel = (element: ScreenElementIR): SemanticInput
     bottomRow.find((node) => isPlaceholderNode(node)) ?? texts.find((node) => isPlaceholderNode(node));
   const labelNode =
     topRow.find((node) => {
-      const text = node.text?.trim() ?? "";
+      const text = node.text.trim();
       return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
-      const text = node.text?.trim() ?? "";
+      const text = node.text.trim();
       return text.length > 0 && !isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
   const valueNode =
     bottomRow.find((node) => {
-      const text = node.text?.trim() ?? "";
+      const text = node.text.trim();
       return text.length > 0 && !isSuffixText(text) && !isPlaceholderNode(node);
     }) ??
     texts.find((node) => {
-      const text = node.text?.trim() ?? "";
+      const text = node.text.trim();
       return text.length > 0 && isValueLikeText(text) && !isSuffixText(text) && !isPlaceholderNode(node);
     });
 
@@ -731,7 +731,7 @@ export const buildSemanticInputModel = (element: ScreenElementIR): SemanticInput
 
   const rightBoundary = (element.x ?? 0) + (element.width ?? 0) * 0.62;
   const suffixTextNode = texts.find((node) => {
-    const text = node.text?.trim() ?? "";
+    const text = node.text.trim();
     return text.length > 0 && isSuffixText(text) && (node.x ?? 0) >= rightBoundary;
   });
 
@@ -744,7 +744,7 @@ export const buildSemanticInputModel = (element: ScreenElementIR): SemanticInput
 
   const hasAdornment = hasSubtreeName(element, "inputadornmentroot");
   const isSelect = hasSubtreeName(element, "muiselectselect") || Boolean(suffixIconCandidate && !suffixTextNode);
-  const suffixText = suffixTextNode?.text?.trim() ?? (hasAdornment && !suffixIconCandidate ? "€" : undefined);
+  const suffixText = suffixTextNode ? suffixTextNode.text.trim() : hasAdornment && !suffixIconCandidate ? "€" : undefined;
   const suffixIconNode = suffixIconCandidate && suffixIconCandidate.paths.length > 0 ? suffixIconCandidate : undefined;
 
   return {
