@@ -15,6 +15,7 @@ export function PreviewPane({
   onInspectSelect
 }: PreviewPaneProps): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
+  const [iframeLoadVersion, setIframeLoadVersion] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   return (
@@ -31,10 +32,7 @@ export function PreviewPane({
         className="h-full w-full flex-1 border-0"
         onLoad={() => {
           setIsLoading(false);
-          // Re-send inspect state to the iframe after it loads
-          if (inspectEnabled && iframeRef.current?.contentWindow) {
-            iframeRef.current.contentWindow.postMessage({ type: "inspect:enable" }, "*");
-          }
+          setIframeLoadVersion((prev) => prev + 1);
         }}
         sandbox="allow-scripts allow-same-origin"
       />
@@ -43,6 +41,7 @@ export function PreviewPane({
         onToggleInspect={onToggleInspect}
         onSelectNode={onInspectSelect}
         iframeRef={iframeRef}
+        iframeLoadVersion={iframeLoadVersion}
       />
     </div>
   );
