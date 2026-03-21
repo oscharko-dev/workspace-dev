@@ -81,6 +81,22 @@ interface DesignIrPayload {
   screens: DesignIrScreen[];
 }
 
+interface FileContentResponse {
+  ok: boolean;
+  status: number;
+  content: string | null;
+  error: string | null;
+  message: string | null;
+}
+
+interface EndpointErrorDetails {
+  status: number;
+  code: string;
+  message: string;
+}
+
+type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
+
 interface InspectorPanelProps {
   jobId: string;
   previewUrl: string;
@@ -111,6 +127,60 @@ function isDesignIrPayload(value: unknown): value is DesignIrPayload {
   }
   const rec = value as Record<string, unknown>;
   return typeof rec.jobId === "string" && Array.isArray(rec.screens);
+}
+
+function isComponentManifestPayload(value: unknown): value is ComponentManifestPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const rec = value as Record<string, unknown>;
+  return typeof rec.jobId === "string" && Array.isArray(rec.screens);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function toEndpointError({
+  status,
+  payload,
+  fallbackCode,
+  fallbackMessage
+}: {
+  status: number;
+  payload: unknown;
+  fallbackCode: string;
+  fallbackMessage: string;
+}): EndpointErrorDetails {
+  if (!isRecord(payload)) {
+    return {
+      status,
+      code: fallbackCode,
+      message: fallbackMessage
+    };
+  }
+
+  const payloadCode = typeof payload.error === "string" ? payload.error : fallbackCode;
+  const payloadMessage = typeof payload.message === "string" ? payload.message : fallbackMessage;
+
+  return {
+    status,
+    code: payloadCode,
+    message: payloadMessage
+  };
+}
+
+function getStatusBadgeClasses(status: InspectorSourceStatus): string {
+  if (status === "ready") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  }
+  if (status === "loading") {
+    return "border-slate-300 bg-slate-100 text-slate-700";
+  }
+  if (status === "empty") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  return "border-rose-200 bg-rose-50 text-rose-900";
 }
 
 // ---------------------------------------------------------------------------
@@ -223,37 +293,177 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
 
   // --- Derived data ---
 
-  const files = useMemo<FileEntry[]>(() => {
-    if (!filesQuery.data?.ok || !isFilesPayload(filesQuery.data.payload)) {
-      return [];
+  const filesState = useMemo<{
+    status: InspectorSourceStatus;
+    files: FileEntry[];
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    if (filesQuery.isLoading && !filesQuery.data) {
+      return { status: "loading", files: [], error: null };
     }
-    return filesQuery.data.payload.files;
-  }, [filesQuery.data]);
 
-  const manifest = useMemo<ComponentManifestPayload | null>(() => {
-    const payload = manifestQuery.data?.payload as ComponentManifestPayload | undefined;
-    if (payload?.screens?.length) {
-      return payload;
+    if (!filesQuery.data) {
+      return { status: "loading", files: [], error: null };
     }
-    return null;
-  }, [manifestQuery.data]);
 
-  const treeNodes = useMemo<TreeNode[]>(() => {
-    if (!designIrQuery.data?.ok || !isDesignIrPayload(designIrQuery.data.payload)) {
-      return [];
+    if (!filesQuery.data.ok) {
+      return {
+        status: "error",
+        files: [],
+        error: toEndpointError({
+          status: filesQuery.data.status,
+          payload: filesQuery.data.payload,
+          fallbackCode: "FILES_FETCH_FAILED",
+          fallbackMessage: "Could not load generated files."
+        })
+      };
     }
-    return irScreensToTreeNodes(designIrQuery.data.payload.screens);
-  }, [designIrQuery.data]);
 
-  const hasTreePane = treeNodes.length > 0;
-  const hasExpandedTree = hasTreePane && !treeCollapsed;
-
-  const irScreens = useMemo<DesignIrScreen[]>(() => {
-    if (!designIrQuery.data?.ok || !isDesignIrPayload(designIrQuery.data.payload)) {
-      return [];
+    if (!isFilesPayload(filesQuery.data.payload)) {
+      return {
+        status: "error",
+        files: [],
+        error: {
+          status: filesQuery.data.status,
+          code: "FILES_INVALID_PAYLOAD",
+          message: "Generated files response payload is invalid."
+        }
+      };
     }
-    return designIrQuery.data.payload.screens;
-  }, [designIrQuery.data]);
+
+    if (filesQuery.data.payload.files.length === 0) {
+      return {
+        status: "empty",
+        files: [],
+        error: null
+      };
+    }
+
+    return {
+      status: "ready",
+      files: filesQuery.data.payload.files,
+      error: null
+    };
+  }, [filesQuery.data, filesQuery.isLoading]);
+
+  const manifestState = useMemo<{
+    status: InspectorSourceStatus;
+    manifest: ComponentManifestPayload | null;
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    if (manifestQuery.isLoading && !manifestQuery.data) {
+      return { status: "loading", manifest: null, error: null };
+    }
+
+    if (!manifestQuery.data) {
+      return { status: "loading", manifest: null, error: null };
+    }
+
+    if (!manifestQuery.data.ok) {
+      return {
+        status: "error",
+        manifest: null,
+        error: toEndpointError({
+          status: manifestQuery.data.status,
+          payload: manifestQuery.data.payload,
+          fallbackCode: "MANIFEST_FETCH_FAILED",
+          fallbackMessage: "Could not load component manifest."
+        })
+      };
+    }
+
+    if (!isComponentManifestPayload(manifestQuery.data.payload)) {
+      return {
+        status: "error",
+        manifest: null,
+        error: {
+          status: manifestQuery.data.status,
+          code: "MANIFEST_INVALID_PAYLOAD",
+          message: "Component manifest payload is invalid."
+        }
+      };
+    }
+
+    if (manifestQuery.data.payload.screens.length === 0) {
+      return {
+        status: "empty",
+        manifest: null,
+        error: null
+      };
+    }
+
+    return {
+      status: "ready",
+      manifest: manifestQuery.data.payload,
+      error: null
+    };
+  }, [manifestQuery.data, manifestQuery.isLoading]);
+
+  const designIrState = useMemo<{
+    status: InspectorSourceStatus;
+    screens: DesignIrScreen[];
+    treeNodes: TreeNode[];
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    if (designIrQuery.isLoading && !designIrQuery.data) {
+      return { status: "loading", screens: [], treeNodes: [], error: null };
+    }
+
+    if (!designIrQuery.data) {
+      return { status: "loading", screens: [], treeNodes: [], error: null };
+    }
+
+    if (!designIrQuery.data.ok) {
+      return {
+        status: "error",
+        screens: [],
+        treeNodes: [],
+        error: toEndpointError({
+          status: designIrQuery.data.status,
+          payload: designIrQuery.data.payload,
+          fallbackCode: "DESIGN_IR_FETCH_FAILED",
+          fallbackMessage: "Could not load design IR."
+        })
+      };
+    }
+
+    if (!isDesignIrPayload(designIrQuery.data.payload)) {
+      return {
+        status: "error",
+        screens: [],
+        treeNodes: [],
+        error: {
+          status: designIrQuery.data.status,
+          code: "DESIGN_IR_INVALID_PAYLOAD",
+          message: "Design IR payload is invalid."
+        }
+      };
+    }
+
+    if (designIrQuery.data.payload.screens.length === 0) {
+      return {
+        status: "empty",
+        screens: [],
+        treeNodes: [],
+        error: null
+      };
+    }
+
+    return {
+      status: "ready",
+      screens: designIrQuery.data.payload.screens,
+      treeNodes: irScreensToTreeNodes(designIrQuery.data.payload.screens),
+      error: null
+    };
+  }, [designIrQuery.data, designIrQuery.isLoading]);
+
+  const files = filesState.files;
+  const manifest = manifestState.manifest;
+  const treeNodes = designIrState.treeNodes;
+  const irScreens = designIrState.screens;
+
+  const hasTreePane = designIrState.status !== "ready" || treeNodes.length > 0;
+  const hasExpandedTree = designIrState.status === "ready" ? hasTreePane && !treeCollapsed : hasTreePane;
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -369,20 +579,133 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
   const fileContentQuery = useQuery({
     queryKey: ["inspector-file-content", jobId, effectiveSelectedFile],
     enabled: Boolean(effectiveSelectedFile),
-    queryFn: async () => {
+    queryFn: async (): Promise<FileContentResponse> => {
       if (!effectiveSelectedFile) {
-        throw new Error("No file selected");
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "FILE_NOT_SELECTED",
+          message: "No file selected."
+        };
       }
-      const resp = await fetch(
-        `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
-      );
-      if (!resp.ok) {
-        throw new Error(`Failed to fetch file: ${resp.status}`);
+      try {
+        const response = await fetch(
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
+        );
+        const body = await response.text();
+        if (response.ok) {
+          return {
+            ok: true,
+            status: response.status,
+            content: body,
+            error: null,
+            message: null
+          };
+        }
+
+        let parsedPayload: unknown = null;
+        if (body.trim()) {
+          try {
+            parsedPayload = JSON.parse(body) as unknown;
+          } catch {
+            parsedPayload = null;
+          }
+        }
+
+        const error = toEndpointError({
+          status: response.status,
+          payload: parsedPayload,
+          fallbackCode: "FILE_CONTENT_FETCH_FAILED",
+          fallbackMessage: `Could not load file '${effectiveSelectedFile}'.`
+        });
+
+        return {
+          ok: false,
+          status: error.status,
+          content: null,
+          error: error.code,
+          message: error.message
+        };
+      } catch {
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "FILE_CONTENT_FETCH_FAILED",
+          message: `Could not load file '${effectiveSelectedFile}'.`
+        };
       }
-      return await resp.text();
     },
     staleTime: Infinity
   });
+
+  const fileContentState = useMemo<{
+    status: InspectorSourceStatus;
+    content: string | null;
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    if (!effectiveSelectedFile) {
+      return {
+        status: "empty",
+        content: null,
+        error: null
+      };
+    }
+
+    if (fileContentQuery.isLoading && !fileContentQuery.data) {
+      return {
+        status: "loading",
+        content: null,
+        error: null
+      };
+    }
+
+    if (!fileContentQuery.data) {
+      return {
+        status: "loading",
+        content: null,
+        error: null
+      };
+    }
+
+    if (!fileContentQuery.data.ok) {
+      return {
+        status: "error",
+        content: null,
+        error: {
+          status: fileContentQuery.data.status,
+          code: fileContentQuery.data.error ?? "FILE_CONTENT_FETCH_FAILED",
+          message: fileContentQuery.data.message ?? `Could not load file '${effectiveSelectedFile}'.`
+        }
+      };
+    }
+
+    return {
+      status: "ready",
+      content: fileContentQuery.data.content,
+      error: null
+    };
+  }, [effectiveSelectedFile, fileContentQuery.data, fileContentQuery.isLoading]);
+
+  const handleRetryFiles = useCallback(() => {
+    void filesQuery.refetch();
+  }, [filesQuery.refetch]);
+
+  const handleRetryManifest = useCallback(() => {
+    void manifestQuery.refetch();
+  }, [manifestQuery.refetch]);
+
+  const handleRetryDesignIr = useCallback(() => {
+    void designIrQuery.refetch();
+  }, [designIrQuery.refetch]);
+
+  const handleRetryFileContent = useCallback(() => {
+    if (!effectiveSelectedFile) {
+      return;
+    }
+    void fileContentQuery.refetch();
+  }, [effectiveSelectedFile, fileContentQuery.refetch]);
 
   // --- Handlers ---
 
@@ -433,7 +756,7 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
       handleSelectTreeNode(nodeId);
 
       // Fallback for screens: if manifest didn't match, try IR screen generatedFile
-      if (manifest && !findManifestEntry(nodeId, manifest)) {
+      if (!manifest || !findManifestEntry(nodeId, manifest)) {
         const irScreen = irScreens.find((s) => s.id === nodeId);
         if (irScreen?.generatedFile) {
           setSelectedFile(irScreen.generatedFile);
@@ -636,26 +959,165 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
     };
   }, [collapsedPreviewShare, hasExpandedTree, isDesktopLayout, paneRatios.code]);
 
+  const sourceStatuses = useMemo(() => {
+    return [
+      { source: "files", label: "Files", status: filesState.status },
+      { source: "design-ir", label: "Design IR", status: designIrState.status },
+      { source: "component-manifest", label: "Manifest", status: manifestState.status },
+      { source: "file-content", label: "File content", status: fileContentState.status }
+    ] as const;
+  }, [designIrState.status, fileContentState.status, filesState.status, manifestState.status]);
+
+  const sourceErrorBanners = useMemo(() => {
+    const banners: Array<{
+      source: "files" | "design-ir" | "component-manifest" | "file-content";
+      title: string;
+      details: EndpointErrorDetails;
+      onRetry: (() => void) | null;
+    }> = [];
+
+    if (filesState.error) {
+      banners.push({
+        source: "files",
+        title: "Generated files unavailable",
+        details: filesState.error,
+        onRetry: handleRetryFiles
+      });
+    }
+
+    if (designIrState.error) {
+      banners.push({
+        source: "design-ir",
+        title: "Design IR unavailable",
+        details: designIrState.error,
+        onRetry: handleRetryDesignIr
+      });
+    }
+
+    if (manifestState.error) {
+      banners.push({
+        source: "component-manifest",
+        title: "Component mapping unavailable",
+        details: manifestState.error,
+        onRetry: handleRetryManifest
+      });
+    }
+
+    if (fileContentState.error) {
+      banners.push({
+        source: "file-content",
+        title: "Selected file unavailable",
+        details: fileContentState.error,
+        onRetry: handleRetryFileContent
+      });
+    }
+
+    return banners;
+  }, [
+    designIrState.error,
+    fileContentState.error,
+    filesState.error,
+    handleRetryDesignIr,
+    handleRetryFileContent,
+    handleRetryFiles,
+    handleRetryManifest,
+    manifestState.error
+  ]);
+
   return (
     <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
         <h2 className="m-0 text-xl font-bold text-slate-900">Inspector</h2>
         <p className="m-0 text-sm text-slate-600">Live preview and generated source code</p>
+        <div className="mt-3 flex flex-wrap gap-2" data-testid="inspector-source-statuses">
+          {sourceStatuses.map(({ source, label, status }) => (
+            <span
+              key={source}
+              data-testid={`inspector-source-${source}-${status}`}
+              className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold ${getStatusBadgeClasses(status)}`}
+            >
+              {label}: {status}
+            </span>
+          ))}
+        </div>
+        {manifestState.status === "empty" ? (
+          <p
+            data-testid="inspector-manifest-empty-warning"
+            className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+          >
+            Component manifest is empty. Tree selection still works, but file-to-component mappings are unavailable.
+          </p>
+        ) : null}
+        {sourceErrorBanners.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-2" data-testid="inspector-error-banners">
+            {sourceErrorBanners.map((banner) => (
+              <div
+                key={banner.source}
+                data-testid={`inspector-error-${banner.source}`}
+                className="flex flex-wrap items-center gap-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900"
+              >
+                <span className="font-semibold">{banner.title}</span>
+                <span>
+                  {banner.details.message} ({banner.details.code}, HTTP {String(banner.details.status)})
+                </span>
+                {banner.onRetry ? (
+                  <button
+                    type="button"
+                    data-testid={`inspector-banner-retry-${banner.source}`}
+                    onClick={banner.onRetry}
+                    className="cursor-pointer rounded border border-rose-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-800 transition hover:bg-rose-100"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div ref={layoutContainerRef} className="flex min-h-0 flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
         {/* Left: Component Tree sidebar */}
         {hasTreePane ? (
           <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0" style={treePaneStyle}>
-            <ComponentTree
-              screens={treeNodes}
-              selectedId={selectedNodeId}
-              onSelect={handleTreeSelect}
-              collapsed={treeCollapsed}
-              onToggleCollapsed={() => {
-                setTreeCollapsed((prev) => !prev);
-              }}
-            />
+            {designIrState.status === "ready" ? (
+              <ComponentTree
+                screens={treeNodes}
+                selectedId={selectedNodeId}
+                onSelect={handleTreeSelect}
+                collapsed={treeCollapsed}
+                onToggleCollapsed={() => {
+                  setTreeCollapsed((prev) => !prev);
+                }}
+              />
+            ) : (
+              <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-slate-50 p-3">
+                <div
+                  data-testid={`inspector-design-ir-state-${designIrState.status}`}
+                  className="rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                >
+                  {designIrState.status === "loading" ? (
+                    <p className="m-0">Loading design IR…</p>
+                  ) : null}
+                  {designIrState.status === "empty" ? (
+                    <p className="m-0">No component tree data is available for this job.</p>
+                  ) : null}
+                  {designIrState.status === "error" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>Design IR failed to load. Component tree interactions are disabled.</span>
+                      <button
+                        type="button"
+                        data-testid="inspector-retry-design-ir"
+                        onClick={handleRetryDesignIr}
+                        className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -712,8 +1174,13 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
             files={files}
             selectedFile={effectiveSelectedFile}
             onSelectFile={handleSelectFile}
-            fileContent={fileContentQuery.data ?? null}
-            isLoadingContent={fileContentQuery.isLoading}
+            filesState={filesState.status}
+            filesError={filesState.error}
+            onRetryFiles={handleRetryFiles}
+            fileContent={fileContentState.content}
+            fileContentState={fileContentState.status}
+            fileContentError={fileContentState.error}
+            onRetryFileContent={handleRetryFileContent}
             highlightRange={highlightRange}
           />
         </div>
