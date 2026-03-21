@@ -1,0 +1,215 @@
+import { expect, type FrameLocator, type Locator, type Page } from "@playwright/test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+export interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+export interface InspectorLocators {
+  inspectorPanel: Locator;
+  componentTree: Locator;
+  previewFrame: FrameLocator;
+  previewIframe: Locator;
+  codeViewer: Locator;
+  fileSelector: Locator;
+}
+
+const UI_URL = process.env.WORKSPACE_DEV_UI_URL ?? "http://127.0.0.1:19831/workspace/ui";
+const FIXTURE_PATH = path.resolve(
+  fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
+);
+const TERMINAL_STATUS_PATTERN = /^(COMPLETED|FAILED|CANCELED)$/;
+const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
+
+/**
+ * Returns the workspace UI URL used by Playwright E2E tests.
+ */
+export function getWorkspaceUiUrl(): string {
+  return UI_URL;
+}
+
+/**
+ * Installs a clipboard mock so copy actions can be asserted deterministically.
+ */
+export async function installClipboardMock(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const clipboard = {
+      writeText: async (): Promise<void> => {
+        return;
+      }
+    };
+    Object.defineProperty(navigator, "clipboard", {
+      value: clipboard,
+      configurable: true
+    });
+  });
+}
+
+/**
+ * Rewrites submit requests to deterministic local-fixture execution.
+ */
+export async function setupDeterministicSubmitRoute(page: Page): Promise<void> {
+  await page.route("**/workspace/submit", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.continue();
+      return;
+    }
+
+    const rawPayload = request.postDataJSON() as Record<string, unknown>;
+    const rewrittenPayload: Record<string, unknown> = {
+      ...rawPayload,
+      figmaSourceMode: "local_json",
+      figmaJsonPath: FIXTURE_PATH,
+      llmCodegenMode: "deterministic",
+      enableGitPr: false
+    };
+    delete rewrittenPayload.figmaFileKey;
+    delete rewrittenPayload.figmaAccessToken;
+
+    await route.continue({
+      headers: {
+        ...request.headers(),
+        "content-type": "application/json"
+      },
+      postData: JSON.stringify(rewrittenPayload)
+    });
+  });
+}
+
+/**
+ * Removes the deterministic submit route installed by setupDeterministicSubmitRoute.
+ */
+export async function cleanupDeterministicSubmitRoute(page: Page): Promise<void> {
+  await page.unroute("**/workspace/submit");
+}
+
+/**
+ * Opens the workspace UI at a requested viewport and validates the shell heading.
+ */
+export async function openWorkspaceUi(page: Page, viewport: ViewportSize): Promise<void> {
+  await page.setViewportSize(viewport);
+  await page.goto(UI_URL);
+  await expect(page.getByRole("heading", { name: "Workspace Dev" })).toBeVisible();
+}
+
+/**
+ * Triggers a deterministic generation request and asserts that submit responds successfully.
+ */
+export async function triggerDeterministicGeneration(page: Page): Promise<void> {
+  const submitResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith(SUBMIT_ENDPOINT_SUFFIX)
+  );
+
+  await page.getByLabel("Figma file key").fill("fixture-key");
+  await page.getByLabel("Figma access token").fill("fixture-token");
+  await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
+
+  const submitResponse = await submitResponsePromise;
+  expect(
+    submitResponse.ok(),
+    `Expected submit response to be successful, but got HTTP ${submitResponse.status()}`
+  ).toBeTruthy();
+}
+
+/**
+ * Waits until the submit status reaches a terminal state and requires COMPLETED.
+ */
+export async function waitForCompletedSubmitStatus(page: Page): Promise<void> {
+  const submitLine = page.getByTestId("runtime-card").getByText(/^Submit:/);
+
+  const terminalStatus = await expect
+    .poll(
+      async () => {
+        const lineText = (await submitLine.textContent())?.trim() ?? "";
+        const match = lineText.match(/Submit:\s*([A-Z_]+)/);
+        return match?.[1] ?? "";
+      },
+      {
+        timeout: 120_000,
+        intervals: [500, 1_000, 2_000]
+      }
+    )
+    .toMatch(TERMINAL_STATUS_PATTERN)
+    .then(async () => {
+      const lineText = (await submitLine.textContent())?.trim() ?? "";
+      const match = lineText.match(/Submit:\s*([A-Z_]+)/);
+      return match?.[1] ?? "";
+    });
+
+  expect(terminalStatus, `Expected deterministic flow to complete, but terminal status was ${terminalStatus}`).toBe(
+    "COMPLETED"
+  );
+}
+
+/**
+ * Returns common inspector locators used across focused inspector E2E tests.
+ */
+export function getInspectorLocators(page: Page): InspectorLocators {
+  return {
+    inspectorPanel: page.getByTestId("inspector-panel"),
+    componentTree: page.getByTestId("component-tree"),
+    previewFrame: page.frameLocator("iframe[title='Live preview']"),
+    previewIframe: page.getByTitle("Live preview"),
+    codeViewer: page.getByTestId("code-viewer"),
+    fileSelector: page.getByTestId("inspector-file-selector")
+  };
+}
+
+/**
+ * Selects the second generated file option when available and returns its value.
+ */
+export async function selectSecondInspectorFile(fileSelector: Locator): Promise<string | null> {
+  const options = fileSelector.getByRole("option");
+  const optionCount = await options.count();
+  if (optionCount <= 1) {
+    return null;
+  }
+
+  const secondOption = options.nth(1);
+  const secondValue = await secondOption.evaluate((option) => {
+    return (option as HTMLOptionElement).value;
+  });
+  expect(secondValue, "Expected second file selector option to have a value").toBeTruthy();
+
+  await fileSelector.selectOption(secondValue);
+  return secondValue;
+}
+
+/**
+ * Collects all inspectable `data-ir-id` values from the live preview iframe.
+ */
+export async function collectPreviewNodeIds(previewFrame: FrameLocator): Promise<string[]> {
+  return await previewFrame.locator("[data-ir-id]").evaluateAll((elements) => {
+    return elements
+      .map((element) => element.getAttribute("data-ir-id"))
+      .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId.length > 0);
+  });
+}
+
+/**
+ * Finds the first preview node id that is also present in the component tree.
+ */
+export async function findFirstSyncedNodeId(page: Page, previewNodeIds: string[]): Promise<string | null> {
+  for (const nodeId of previewNodeIds) {
+    const treeNode = page.getByTestId(`tree-node-${nodeId}`);
+    if ((await treeNode.count()) > 0) {
+      return nodeId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Clears browser storage to keep each test isolated.
+ */
+export async function resetBrowserStorage(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+}
