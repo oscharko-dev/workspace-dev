@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.16.0
+ * Contract version: 2.17.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -211,7 +211,28 @@ export interface WorkspaceJobArtifacts {
   generationMetricsFile?: string;
   componentManifestFile?: string;
   stageTimingsFile?: string;
+  generationDiffFile?: string;
   reproDir?: string;
+}
+
+/** Describes a modified file in the generation diff report. */
+export interface WorkspaceGenerationDiffModifiedFile {
+  file: string;
+  previousHash: string;
+  currentHash: string;
+}
+
+/** Generation diff report comparing current generation with the previous run. */
+export interface WorkspaceGenerationDiffReport {
+  boardKey: string;
+  currentJobId: string;
+  previousJobId: string | null;
+  generatedAt: string;
+  added: string[];
+  modified: WorkspaceGenerationDiffModifiedFile[];
+  removed: string[];
+  unchanged: string[];
+  summary: string;
 }
 
 export interface WorkspaceGitPrStatus {
@@ -266,6 +287,7 @@ export interface WorkspaceJobStatus {
   };
   queue: WorkspaceJobQueueState;
   cancellation?: WorkspaceJobCancellation;
+  generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -281,6 +303,7 @@ export interface WorkspaceJobResult {
     url?: string;
   };
   cancellation?: WorkspaceJobCancellation;
+  generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -295,4 +318,4 @@ export interface WorkspaceVersionInfo {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.16.0" as const;
+export const CONTRACT_VERSION = "2.17.0" as const;

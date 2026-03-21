@@ -1,5 +1,6 @@
 import type {
   WorkspaceBrandTheme,
+  WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
   WorkspaceJobDiagnostic,
   WorkspaceJobArtifacts,
@@ -51,6 +52,7 @@ export interface JobRecord {
   queue: WorkspaceJobQueueState;
   abortController?: AbortController;
   cancellation?: WorkspaceJobCancellation;
+  generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
