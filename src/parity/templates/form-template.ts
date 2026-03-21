@@ -672,6 +672,19 @@ const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
       default:
         return;
     }
+  }).transform((rawValue) => {
+    const trimmed = rawValue.trim();
+    const validationType = fieldValidationTypes[fieldKey];
+    switch (validationType) {
+      case "number":
+        return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
+      case "iban":
+        return trimmed.length === 0 ? trimmed : trimmed.replace(/\\s+/g, "").toUpperCase();
+      case "credit_card":
+        return trimmed.length === 0 ? trimmed : trimmed.replace(/[\\s-]+/g, "");
+      default:
+        return rawValue;
+    }
   });
 };
 
@@ -679,16 +692,17 @@ const formSchema = z.object({
 ${schemaEntries}
 })${refineChain};
 
-type FormData = z.infer<typeof formSchema>;
+type FormInput = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
 
-const defaultValues: FormData = ${JSON.stringify(initialValues, null, 2)};
+const defaultValues: FormInput = ${JSON.stringify(initialValues, null, 2)};
 
-const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormData>({${useFormModeLine}
+const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormInput>({${useFormModeLine}
   resolver: zodResolver(formSchema),
   defaultValues
 });
 
-const onSubmit = async (values: FormData): Promise<void> => {
+const onSubmit = async (values: FormOutput): Promise<void> => {
   void values;
   // TODO: Replace with actual API call.
   // Example server-side error: setError("fieldKey", { message: "Server error message." });
@@ -735,7 +749,8 @@ export const buildReactHookFormContextFile = ({
   const hookName = toFormContextHookName(screenComponentName);
   const contextVarName = `${screenComponentName}FormContext`;
   const contextValueTypeName = `${screenComponentName}FormContextValue`;
-  const formDataTypeName = `${screenComponentName}FormData`;
+  const formInputTypeName = `${screenComponentName}FormInput`;
+  const formOutputTypeName = `${screenComponentName}FormOutput`;
   const providerPropsTypeName = `${providerName}Props`;
   const refineChain = toCrossFieldRefineChain({ rules: crossFieldRules, indent: "  " });
   const useFormModeLine = validationMode !== "onSubmit" ? `\n    mode: ${literal(validationMode)},` : "";
@@ -748,16 +763,193 @@ import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
+const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
+const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+
+const parseLocalizedNumber = (rawValue: string): number | undefined => {
+  const compact = rawValue.replace(/\\s+/g, "");
+  if (!compact) {
+    return undefined;
+  }
+  const lastDot = compact.lastIndexOf(".");
+  const lastComma = compact.lastIndexOf(",");
+  const decimalIndex = Math.max(lastDot, lastComma);
+  let normalized = compact;
+  if (decimalIndex >= 0) {
+    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
+  } else {
+    normalized = compact.replace(/[.,]/g, "");
+  }
+  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
+  return z.string().superRefine((rawValue, issueContext) => {
+    const trimmed = rawValue.trim();
+    if (requiredFields[fieldKey] && trimmed.length === 0) {
+      issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
+      return;
+    }
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const validationType = fieldValidationTypes[fieldKey];
+    if (!validationType) {
+      return;
+    }
+    const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
+
+    switch (validationType) {
+      case "email":
+        if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "password":
+        if (trimmed.length < 8) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "tel": {
+        const compactTel = trimmed.replace(/\\s+/g, "");
+        const digitCount = (compactTel.match(/\\d/g) ?? []).length;
+        if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "url": {
+        try {
+          const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
+          const parsed = new URL(normalizedUrl);
+          if (!(parsed.hostname && parsed.hostname.includes("."))) {
+            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          }
+        } catch {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "number":
+        if (parseLocalizedNumber(trimmed) === undefined) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      case "date": {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
+        if (![year, month, day].every((segment) => Number.isFinite(segment))) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValidDate =
+          date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+        if (!isValidDate) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "iban": {
+        const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
+        if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        const rearranged = compact.slice(4) + compact.slice(0, 4);
+        const numericStr = Array.from(rearranged).map((ch) => {
+          const code = ch.charCodeAt(0);
+          return code >= 65 && code <= 90 ? String(code - 55) : ch;
+        }).join("");
+        let remainder = "";
+        for (const digit of numericStr) {
+          remainder = String(Number(remainder + digit) % 97);
+        }
+        if (Number(remainder) !== 1) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "plz": {
+        const compact = trimmed.replace(/\\s+/g, "");
+        if (!/^\\d{4,10}$/.test(compact) && !/^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      case "credit_card": {
+        const digits = trimmed.replace(/[\\s-]+/g, "");
+        if (!/^\\d{13,19}$/.test(digits)) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+          return;
+        }
+        let sum = 0;
+        let shouldDouble = false;
+        for (let i = digits.length - 1; i >= 0; i--) {
+          let digit = Number(digits[i]);
+          if (shouldDouble) {
+            digit *= 2;
+            if (digit > 9) {
+              digit -= 9;
+            }
+          }
+          sum += digit;
+          shouldDouble = !shouldDouble;
+        }
+        if (sum % 10 !== 0) {
+          issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  }).transform((rawValue) => {
+    const trimmed = rawValue.trim();
+    const validationType = fieldValidationTypes[fieldKey];
+    switch (validationType) {
+      case "number":
+        return trimmed.length === 0 ? undefined : parseLocalizedNumber(trimmed);
+      case "iban":
+        return trimmed.length === 0 ? trimmed : trimmed.replace(/\\s+/g, "").toUpperCase();
+      case "credit_card":
+        return trimmed.length === 0 ? trimmed : trimmed.replace(/[\\s-]+/g, "");
+      default:
+        return rawValue;
+    }
+  });
+};
+
+const formSchema = z.object({
+${schemaEntries}
+})${refineChain};
+
+export type ${formInputTypeName} = z.input<typeof formSchema>;
+export type ${formOutputTypeName} = z.output<typeof formSchema>;
+
 export interface ${contextValueTypeName} {
   initialVisualErrors: Record<string, string>;
   selectOptions: Record<string, string[]>;
-  control: UseFormReturn<${formDataTypeName}>["control"];
-  handleSubmit: UseFormReturn<${formDataTypeName}>["handleSubmit"];
-  onSubmit: (values: ${formDataTypeName}) => Promise<void>;
+  control: UseFormReturn<${formInputTypeName}>["control"];
+  handleSubmit: UseFormReturn<${formInputTypeName}>["handleSubmit"];
+  onSubmit: (values: ${formOutputTypeName}) => Promise<void>;
   resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
   isSubmitting: boolean;
-  reset: UseFormReturn<${formDataTypeName}>["reset"];
-  setError: UseFormReturn<${formDataTypeName}>["setError"];
+  reset: UseFormReturn<${formInputTypeName}>["reset"];
+  setError: UseFormReturn<${formInputTypeName}>["setError"];
 }
 
 const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
@@ -767,177 +959,14 @@ export interface ${providerPropsTypeName} {
 }
 
 export function ${providerName}({ children }: ${providerPropsTypeName}) {
-  const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-  const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
-  const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
-  const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+  const defaultValues: ${formInputTypeName} = ${JSON.stringify(initialValues, null, 2)};
 
-  const parseLocalizedNumber = (rawValue: string): number | undefined => {
-    const compact = rawValue.replace(/\\s+/g, "");
-    if (!compact) {
-      return undefined;
-    }
-    const lastDot = compact.lastIndexOf(".");
-    const lastComma = compact.lastIndexOf(",");
-    const decimalIndex = Math.max(lastDot, lastComma);
-    let normalized = compact;
-    if (decimalIndex >= 0) {
-      const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
-      const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
-      normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
-    } else {
-      normalized = compact.replace(/[.,]/g, "");
-    }
-    if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(normalized)) {
-      return undefined;
-    }
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  };
-
-  const createFieldSchema = ({ fieldKey }: { fieldKey: string }) => {
-    return z.string().superRefine((rawValue, issueContext) => {
-      const trimmed = rawValue.trim();
-      if (requiredFields[fieldKey] && trimmed.length === 0) {
-        issueContext.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required." });
-        return;
-      }
-      if (trimmed.length === 0) {
-        return;
-      }
-
-      const validationType = fieldValidationTypes[fieldKey];
-      if (!validationType) {
-        return;
-      }
-      const validationMessage = fieldValidationMessages[fieldKey] ?? "Invalid value.";
-
-      switch (validationType) {
-        case "email":
-          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(trimmed)) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        case "password":
-          if (trimmed.length < 8) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        case "tel": {
-          const compactTel = trimmed.replace(/\\s+/g, "");
-          const digitCount = (compactTel.match(/\\d/g) ?? []).length;
-          if (!/^\\+?[0-9().-]{6,24}$/.test(compactTel) || digitCount < 6) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        case "url": {
-          try {
-            const normalizedUrl = /^[a-z]+:\\/\\//i.test(trimmed) ? trimmed : "https://" + trimmed;
-            const parsed = new URL(normalizedUrl);
-            if (!(parsed.hostname && parsed.hostname.includes("."))) {
-              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-            }
-          } catch {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        case "number":
-          if (parseLocalizedNumber(trimmed) === undefined) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        case "date": {
-          if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed)) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-            return;
-          }
-          const [year, month, day] = trimmed.split("-").map((segment) => Number.parseInt(segment, 10));
-          if (![year, month, day].every((segment) => Number.isFinite(segment))) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-            return;
-          }
-          const date = new Date(Date.UTC(year, month - 1, day));
-          const isValidDate =
-            date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
-          if (!isValidDate) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        case "iban": {
-          const compact = trimmed.replace(/\\s+/g, "").toUpperCase();
-          if (!/^[A-Z]{2}\\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-            return;
-          }
-          const rearranged = compact.slice(4) + compact.slice(0, 4);
-          const numericStr = Array.from(rearranged).map((ch) => {
-            const code = ch.charCodeAt(0);
-            return code >= 65 && code <= 90 ? String(code - 55) : ch;
-          }).join("");
-          let remainder = "";
-          for (const digit of numericStr) {
-            remainder = String(Number(remainder + digit) % 97);
-          }
-          if (Number(remainder) !== 1) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        case "plz": {
-          const compact = trimmed.replace(/\\s+/g, "");
-          if (!/^\\d{4,10}$/.test(compact) && !/^[A-Z]{1,2}\\d[A-Z\\d]?\\s?\\d[A-Z]{2}$/i.test(trimmed)) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        case "credit_card": {
-          const digits = trimmed.replace(/[\\s-]+/g, "");
-          if (!/^\\d{13,19}$/.test(digits)) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-            return;
-          }
-          let sum = 0;
-          let shouldDouble = false;
-          for (let i = digits.length - 1; i >= 0; i--) {
-            let digit = Number(digits[i]);
-            if (shouldDouble) {
-              digit *= 2;
-              if (digit > 9) {
-                digit -= 9;
-              }
-            }
-            sum += digit;
-            shouldDouble = !shouldDouble;
-          }
-          if (sum % 10 !== 0) {
-            issueContext.addIssue({ code: z.ZodIssueCode.custom, message: validationMessage });
-          }
-          return;
-        }
-        default:
-          return;
-      }
-    });
-  };
-
-  const formSchema = z.object({
-${schemaEntries}
-  })${refineChain};
-
-  type ${formDataTypeName} = z.infer<typeof formSchema>;
-
-  const defaultValues: ${formDataTypeName} = ${JSON.stringify(initialValues, null, 2)};
-
-  const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<${formDataTypeName}>({${useFormModeLine}
+  const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
     defaultValues
   });
 
-  const onSubmit = async (values: ${formDataTypeName}): Promise<void> => {
+  const onSubmit = async (values: ${formOutputTypeName}): Promise<void> => {
     void values;
     // TODO: Replace with actual API call.
     // Example server-side error: setError("fieldKey", { message: "Server error message." });

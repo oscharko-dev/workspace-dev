@@ -152,9 +152,10 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
   assert.ok(screenContent.includes("<Controller"));
 
-  assert.ok(contextContent.includes("type TypedZodValidationFormFormData = z.infer<typeof formSchema>;"));
-  assert.ok(contextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<TypedZodValidationFormFormData>({"));
-  assert.ok(contextContent.includes("const onSubmit = async (values: TypedZodValidationFormFormData): Promise<void> => {"));
+  assert.ok(contextContent.includes("export type TypedZodValidationFormFormInput = z.input<typeof formSchema>;"));
+  assert.ok(contextContent.includes("export type TypedZodValidationFormFormOutput = z.output<typeof formSchema>;"));
+  assert.ok(contextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<TypedZodValidationFormFormInput>({"));
+  assert.ok(contextContent.includes("const onSubmit = async (values: TypedZodValidationFormFormOutput): Promise<void> => {"));
   assert.ok(contextContent.includes("resolver: zodResolver(formSchema),"));
   assert.ok(contextContent.includes('case "password"'));
   assert.ok(contextContent.includes("if (trimmed.length < 8) {"));
@@ -349,7 +350,7 @@ test("E2E: validation mode — short form (2 fields) defaults to onSubmit (no mo
   const contextPath = path.join(projectDir, "src", "context", "ShortLoginFormFormContext.tsx");
   const contextContent = await readFile(contextPath, "utf8");
 
-  assert.ok(contextContent.includes("useForm<ShortLoginFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes("useForm<ShortLoginFormFormInput>({"), "Expected useForm call");
   assert.ok(contextContent.includes("resolver: zodResolver(formSchema)"), "Expected zodResolver");
   assert.equal(contextContent.includes('mode:'), false, "Short form should NOT have mode: property (defaults to onSubmit)");
 });
@@ -371,7 +372,7 @@ test("E2E: validation mode — form with visual error outline emits mode: onTouc
   const contextPath = path.join(projectDir, "src", "context", "VisualErrorFormFormContext.tsx");
   const contextContent = await readFile(contextPath, "utf8");
 
-  assert.ok(contextContent.includes("useForm<VisualErrorFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes("useForm<VisualErrorFormFormInput>({"), "Expected useForm call");
   assert.ok(contextContent.includes('mode: "onTouched"'), "Expected mode: onTouched for form with visual errors");
 });
 
@@ -392,7 +393,7 @@ test("E2E: validation mode — long form (6 fields) emits mode: onBlur", { skip:
   const contextPath = path.join(projectDir, "src", "context", "LongRegistrationFormFormContext.tsx");
   const contextContent = await readFile(contextPath, "utf8");
 
-  assert.ok(contextContent.includes("useForm<LongRegistrationFormFormData>({"), "Expected useForm call");
+  assert.ok(contextContent.includes("useForm<LongRegistrationFormFormInput>({"), "Expected useForm call");
   assert.ok(contextContent.includes('mode: "onBlur"'), "Expected mode: onBlur for long form (6+ fields)");
 });
 
@@ -454,8 +455,8 @@ test("E2E: cross-field validation — password match .refine() is emitted in gen
     "Expected zodResolver integration"
   );
   assert.ok(
-    contextContent.includes("type CrossFieldValidationFormFormData = z.infer<typeof formSchema>;"),
-    "Expected z.infer type alias"
+    contextContent.includes("export type CrossFieldValidationFormFormInput = z.input<typeof formSchema>;"),
+    "Expected z.input type alias"
   );
 });
 
@@ -540,7 +541,7 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
 
   // --- async onSubmit ---
   assert.ok(
-    contextContent.includes("const onSubmit = async (values: SubmissionLifecycleFormFormData): Promise<void> => {"),
+    contextContent.includes("const onSubmit = async (values: SubmissionLifecycleFormFormOutput): Promise<void> => {"),
     "Expected async onSubmit with Promise<void> return type"
   );
   assert.ok(
@@ -558,11 +559,11 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
     "Expected isSubmitting in context interface"
   );
   assert.ok(
-    contextContent.includes('reset: UseFormReturn<SubmissionLifecycleFormFormData>["reset"];'),
+    contextContent.includes('reset: UseFormReturn<SubmissionLifecycleFormFormInput>["reset"];'),
     "Expected reset in context interface"
   );
   assert.ok(
-    contextContent.includes('setError: UseFormReturn<SubmissionLifecycleFormFormData>["setError"];'),
+    contextContent.includes('setError: UseFormReturn<SubmissionLifecycleFormFormInput>["setError"];'),
     "Expected setError in context interface"
   );
 
@@ -591,5 +592,138 @@ test("E2E: submission lifecycle — useForm destructures formState, reset, setEr
   assert.ok(
     screenContent.includes("isSubmitting"),
     "Expected isSubmitting destructured from context hook"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Zod .transform() and typed output E2E tests
+// ---------------------------------------------------------------------------
+
+const createTransformTypedOutputScreen = (): any => ({
+  id: "transform-typed-output-screen",
+  name: "Transform Typed Output Form",
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  children: [
+    createSemanticInputNode({
+      id: "tto-email",
+      name: "Email Input",
+      label: "Email *",
+      placeholder: "name@example.com"
+    }),
+    createSemanticInputNode({
+      id: "tto-amount",
+      name: "Amount Input",
+      label: "Amount *",
+      placeholder: "1.000,00"
+    }),
+    createSemanticInputNode({
+      id: "tto-iban",
+      name: "IBAN Input",
+      label: "IBAN",
+      placeholder: "DE89 3704 0044 0532 0130 00"
+    }),
+    createSemanticInputNode({
+      id: "tto-card",
+      name: "Credit Card Input",
+      label: "Credit Card Number",
+      placeholder: "4111 1111 1111 1111"
+    }),
+    {
+      id: "tto-submit",
+      name: "Submit",
+      nodeType: "FRAME",
+      type: "button" as const,
+      x: 0,
+      y: 400,
+      width: 220,
+      height: 48,
+      fillColor: "#1976d2",
+      children: [
+        {
+          id: "tto-submit-label",
+          name: "Label",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Submit",
+          fillColor: "#ffffff"
+        }
+      ]
+    }
+  ]
+});
+
+test("E2E: Zod .transform() — typed output with number/iban/credit_card transforms and FormInput/FormOutput split", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const injectedScreen = createTransformTypedOutputScreen();
+  const injectedIr = { ...ir, screens: [...ir.screens, injectedScreen] };
+
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-transform-types-"));
+  await generateArtifacts({
+    projectDir,
+    ir: injectedIr,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  const contextPath = path.join(projectDir, "src", "context", "TransformTypedOutputFormFormContext.tsx");
+  const contextContent = await readFile(contextPath, "utf8");
+
+  // --- FormInput / FormOutput type exports ---
+  assert.ok(
+    contextContent.includes("export type TransformTypedOutputFormFormInput = z.input<typeof formSchema>;"),
+    "Expected FormInput type export using z.input"
+  );
+  assert.ok(
+    contextContent.includes("export type TransformTypedOutputFormFormOutput = z.output<typeof formSchema>;"),
+    "Expected FormOutput type export using z.output"
+  );
+
+  // --- useForm uses FormInput, onSubmit uses FormOutput ---
+  assert.ok(
+    contextContent.includes("useForm<TransformTypedOutputFormFormInput>({"),
+    "Expected useForm to use FormInput type (all strings)"
+  );
+  assert.ok(
+    contextContent.includes("const onSubmit = async (values: TransformTypedOutputFormFormOutput): Promise<void>"),
+    "Expected onSubmit to use FormOutput type (typed values)"
+  );
+
+  // --- .transform() is present ---
+  assert.ok(
+    contextContent.includes(".transform((rawValue)"),
+    "Expected .transform() chain on field schema"
+  );
+
+  // --- number transform uses parseLocalizedNumber ---
+  assert.ok(
+    contextContent.includes("parseLocalizedNumber(trimmed)"),
+    "Expected parseLocalizedNumber in number transform"
+  );
+
+  // --- iban transform normalizes ---
+  assert.ok(
+    contextContent.includes('.replace(/\\s+/g, "").toUpperCase()'),
+    "Expected IBAN normalization in transform"
+  );
+
+  // --- credit_card transform strips formatting ---
+  assert.ok(
+    contextContent.includes('.replace(/[\\s-]+/g, "")'),
+    "Expected credit card normalization in transform"
+  );
+
+  // --- context interface uses correct types ---
+  assert.ok(
+    contextContent.includes('control: UseFormReturn<TransformTypedOutputFormFormInput>["control"]'),
+    "Expected context interface control to use FormInput"
+  );
+  assert.ok(
+    contextContent.includes("onSubmit: (values: TransformTypedOutputFormFormOutput) => Promise<void>"),
+    "Expected context interface onSubmit to use FormOutput"
   );
 });
