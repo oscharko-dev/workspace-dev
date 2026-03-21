@@ -3730,7 +3730,7 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(screenContent.includes("function LoanFormScreenContent() {"));
   assert.ok(
     screenContent.includes(
-      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage } = useLoanFormFormContext();"
+      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting } = useLoanFormFormContext();"
     )
   );
   assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
@@ -3746,8 +3746,8 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(formContextContent.includes('import { z } from "zod";'));
   assert.ok(formContextContent.includes("type LoanFormFormData = z.infer<typeof formSchema>;"));
-  assert.ok(formContextContent.includes("const { control, handleSubmit } = useForm<LoanFormFormData>({"));
-  assert.ok(formContextContent.includes("const onSubmit = (values: LoanFormFormData): void => {"));
+  assert.ok(formContextContent.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<LoanFormFormData>({"));
+  assert.ok(formContextContent.includes("const onSubmit = async (values: LoanFormFormData): Promise<void> => {"));
   assert.equal(formContextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
 });
@@ -4778,7 +4778,7 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(content.includes('import { z } from "zod";'));
   assert.ok(content.includes("type FormData = z.infer<typeof formSchema>;"));
-  assert.ok(content.includes("const { control, handleSubmit } = useForm<FormData>({"));
+  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormData>({"));
   assert.ok(content.includes("<Controller"));
   assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);

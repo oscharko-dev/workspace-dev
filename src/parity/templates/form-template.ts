@@ -683,14 +683,15 @@ type FormData = z.infer<typeof formSchema>;
 
 const defaultValues: FormData = ${JSON.stringify(initialValues, null, 2)};
 
-const { control, handleSubmit } = useForm<FormData>({${useFormModeLine}
+const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<FormData>({${useFormModeLine}
   resolver: zodResolver(formSchema),
   defaultValues
 });
 
-const onSubmit = (values: FormData): void => {
+const onSubmit = async (values: FormData): Promise<void> => {
   void values;
-  // Intentionally no-op in deterministic fallback output.
+  // TODO: Replace with actual API call.
+  // Example server-side error: setError("fieldKey", { message: "Server error message." });
 };
 
 const resolveFieldErrorMessage = ({
@@ -752,8 +753,11 @@ export interface ${contextValueTypeName} {
   selectOptions: Record<string, string[]>;
   control: UseFormReturn<${formDataTypeName}>["control"];
   handleSubmit: UseFormReturn<${formDataTypeName}>["handleSubmit"];
-  onSubmit: (values: ${formDataTypeName}) => void;
+  onSubmit: (values: ${formDataTypeName}) => Promise<void>;
   resolveFieldErrorMessage: (input: { fieldKey: string; isTouched: boolean; fieldError: string | undefined }) => string;
+  isSubmitting: boolean;
+  reset: UseFormReturn<${formDataTypeName}>["reset"];
+  setError: UseFormReturn<${formDataTypeName}>["setError"];
 }
 
 const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(undefined);
@@ -928,14 +932,15 @@ ${schemaEntries}
 
   const defaultValues: ${formDataTypeName} = ${JSON.stringify(initialValues, null, 2)};
 
-  const { control, handleSubmit } = useForm<${formDataTypeName}>({${useFormModeLine}
+  const { control, handleSubmit, formState: { isSubmitting }, reset, setError } = useForm<${formDataTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
     defaultValues
   });
 
-  const onSubmit = (values: ${formDataTypeName}): void => {
+  const onSubmit = async (values: ${formDataTypeName}): Promise<void> => {
     void values;
-    // Intentionally no-op in deterministic fallback output.
+    // TODO: Replace with actual API call.
+    // Example server-side error: setError("fieldKey", { message: "Server error message." });
   };
 
   const resolveFieldErrorMessage = ({
@@ -961,7 +966,10 @@ ${schemaEntries}
         control,
         handleSubmit,
         onSubmit,
-        resolveFieldErrorMessage
+        resolveFieldErrorMessage,
+        isSubmitting,
+        reset,
+        setError
       }}
     >
       {children}
