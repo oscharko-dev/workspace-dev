@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
-export interface InspectHoverInfo {
-  irNodeId: string;
+interface OverlayRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
   irNodeName: string;
-  rect: { x: number; y: number; width: number; height: number };
 }
 
 interface InspectOverlayProps {
@@ -19,7 +21,7 @@ export function InspectOverlay({
   onSelectNode,
   iframeRef
 }: InspectOverlayProps): JSX.Element {
-  const [hoverInfo, setHoverInfo] = useState<InspectHoverInfo | null>(null);
+  const [overlayRect, setOverlayRect] = useState<OverlayRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Send enable/disable messages to the iframe
@@ -34,7 +36,7 @@ export function InspectOverlay({
     );
   }, [inspectEnabled, iframeRef]);
 
-  // Listen for postMessage from the iframe
+  // Listen for postMessage from the iframe — compute overlay rect in the event callback
   useEffect(() => {
     const handler = (event: MessageEvent<unknown>): void => {
       if (!event.data || typeof event.data !== "object") {
@@ -48,11 +50,19 @@ export function InspectOverlay({
       if (data.type === "inspect:hover" && inspectEnabled) {
         const rect = data.rect as { x: number; y: number; width: number; height: number } | undefined;
         if (typeof data.irNodeId === "string" && rect) {
-          setHoverInfo({
-            irNodeId: data.irNodeId,
-            irNodeName: typeof data.irNodeName === "string" ? data.irNodeName : "",
-            rect
-          });
+          const iframe = iframeRef.current;
+          const overlayEl = overlayRef.current;
+          if (iframe && overlayEl) {
+            const iframeRect = iframe.getBoundingClientRect();
+            const containerRect = overlayEl.getBoundingClientRect();
+            setOverlayRect({
+              left: iframeRect.left - containerRect.left + rect.x,
+              top: iframeRect.top - containerRect.top + rect.y,
+              width: rect.width,
+              height: rect.height,
+              irNodeName: typeof data.irNodeName === "string" ? data.irNodeName : ""
+            });
+          }
         }
       }
 
@@ -67,35 +77,10 @@ export function InspectOverlay({
     return () => {
       window.removeEventListener("message", handler);
     };
-  }, [inspectEnabled, onSelectNode]);
+  }, [inspectEnabled, onSelectNode, iframeRef]);
 
-  // Clear hover info when inspect is disabled
-  useEffect(() => {
-    if (!inspectEnabled) {
-      setHoverInfo(null);
-    }
-  }, [inspectEnabled]);
-
-  // Convert iframe-relative coordinates to overlay-relative coordinates
-  const getOverlayRect = useCallback(() => {
-    if (!hoverInfo || !iframeRef.current) {
-      return null;
-    }
-    const iframeRect = iframeRef.current.getBoundingClientRect();
-    const overlayEl = overlayRef.current;
-    if (!overlayEl) {
-      return null;
-    }
-    const containerRect = overlayEl.getBoundingClientRect();
-    return {
-      left: iframeRect.left - containerRect.left + hoverInfo.rect.x,
-      top: iframeRect.top - containerRect.top + hoverInfo.rect.y,
-      width: hoverInfo.rect.width,
-      height: hoverInfo.rect.height
-    };
-  }, [hoverInfo, iframeRef]);
-
-  const overlayRect = getOverlayRect();
+  // Derive effective overlay rect — null when inspect is disabled
+  const effectiveOverlayRect = inspectEnabled ? overlayRect : null;
 
   return (
     <div ref={overlayRef} className="pointer-events-none absolute inset-0" data-testid="inspect-overlay-container">
@@ -131,29 +116,29 @@ export function InspectOverlay({
       </div>
 
       {/* Hover overlay highlight */}
-      {inspectEnabled && overlayRect ? (
+      {effectiveOverlayRect ? (
         <>
           <div
             data-testid="inspect-highlight"
             style={{
               position: "absolute",
-              left: overlayRect.left,
-              top: overlayRect.top,
-              width: overlayRect.width,
-              height: overlayRect.height,
+              left: effectiveOverlayRect.left,
+              top: effectiveOverlayRect.top,
+              width: effectiveOverlayRect.width,
+              height: effectiveOverlayRect.height,
               border: "2px solid rgba(59, 130, 246, 0.8)",
               background: "rgba(59, 130, 246, 0.15)",
               transition: "all 80ms ease",
               pointerEvents: "none"
             }}
           />
-          {hoverInfo?.irNodeName ? (
+          {effectiveOverlayRect.irNodeName ? (
             <div
               data-testid="inspect-tooltip"
               style={{
                 position: "absolute",
-                left: overlayRect.left,
-                top: Math.max(0, overlayRect.top - 22),
+                left: effectiveOverlayRect.left,
+                top: Math.max(0, effectiveOverlayRect.top - 22),
                 background: "#1e293b",
                 color: "#f8fafc",
                 font: "11px/1.3 system-ui, sans-serif",
@@ -163,7 +148,7 @@ export function InspectOverlay({
                 pointerEvents: "none"
               }}
             >
-              {hoverInfo.irNodeName}
+              {effectiveOverlayRect.irNodeName}
             </div>
           ) : null}
         </>

@@ -1,6 +1,25 @@
 import { Box, Container, List, ListItem, ListItemText, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
+import { HomeDesktopPattern1 } from "../components/HomeDesktopPattern1";
+import { HomeDesktopPatternContextProvider, type HomeDesktopPatternContextState } from "../context/HomeDesktopPatternContext";
 
-export default function HomeDesktopScreen() {
+const patternContextInitialState: HomeDesktopPatternContextState = {
+  "HomeDesktopPattern1": {
+    "feature-1": {
+      "featureDescriptionText": "Deploy your apps in seconds with our streamlined pipeline.",
+      "featureTitleText": "Fast Deployment"
+    },
+    "feature-2": {
+      "featureDescriptionText": "Work together in real-time with powerful collaboration tools.",
+      "featureTitleText": "Team Collaboration"
+    },
+    "feature-3": {
+      "featureDescriptionText": "Gain insights with comprehensive analytics and reporting.",
+      "featureTitleText": "Analytics Dashboard"
+    }
+  }
+};
+
+function HomeDesktopScreenContent() {
   return (
     <Container id="main-content" maxWidth="xl" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 724px)", bgcolor: "#ffffff", px: 1.333, py: 1.333, maxWidth: { xs: "390px", sm: "none", lg: "1440px", xl: "none" }, gap: { xs: 1.333, sm: 2 } }}>
       {/* @ir:start hero-desktop Hero Section table */}
@@ -38,5 +57,13 @@ export default function HomeDesktopScreen() {
       </Table>
       {/* @ir:end features-desktop */}
     </Container>
+  );
+}
+
+export default function HomeDesktopScreen() {
+  return (
+      <HomeDesktopPatternContextProvider initialState={patternContextInitialState}>
+      <HomeDesktopScreenContent />
+      </HomeDesktopPatternContextProvider>
   );
 }

@@ -159,7 +159,7 @@ export const createEmptySimplificationStats = (): SimplificationMetrics => {
 
 
 const normalizeSpacingValues = (
-  spacing: ScreenElementIR["margin"] | ScreenElementIR["padding"] | undefined
+  spacing: ScreenElementIR["padding"] | undefined
 ): {
   top: number;
   right: number;

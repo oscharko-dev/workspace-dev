@@ -1035,8 +1035,7 @@ const STACK_HANDLED_SX_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 export const isSimpleFlexContainerForStack = ({
-  element,
-  context
+  element
 }: {
   element: ScreenElementIR;
   context: RenderContext;
@@ -1049,9 +1048,6 @@ export const isSimpleFlexContainerForStack = ({
     return false;
   }
   if ((element.children?.length ?? 0) === 0) {
-    return false;
-  }
-  if (hasResponsiveTopLevelLayoutOverrides({ element, context })) {
     return false;
   }
   return true;
@@ -1071,8 +1067,17 @@ export const toSimpleStackContainerSx = ({
     spacingBase: context.spacingBase,
     tokens: context.tokens,
     generationLocale: context.generationLocale
-  }).filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key));
-  return sxString(baseEntries);
+  });
+  const responsiveEntries = toResponsiveLayoutMediaEntries({
+    baseLayoutMode: element.layoutMode ?? "NONE",
+    overrides: context.responsiveTopLevelLayoutOverrides?.[element.id],
+    spacingBase: context.spacingBase,
+    baseValuesByKey: toSxValueMapFromEntries(baseEntries)
+  });
+  return sxString([
+    ...baseEntries.filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key)),
+    ...responsiveEntries
+  ]);
 };
 
 export const hasInterChildDividerPattern = (children: ScreenElementIR[]): boolean => {
@@ -3272,7 +3277,7 @@ const injectDataIrId = (raw: string, irNodeId: string, irNodeName: string): stri
   // Insert data-ir-id right after the tag name, before any props or self-close.
   const pattern = /^(\s*<[A-Za-z][A-Za-z0-9.]*)/;
   const match = pattern.exec(raw);
-  if (!match || match[0] === undefined) {
+  if (!match) {
     return raw;
   }
   const insertPos = match[0].length;

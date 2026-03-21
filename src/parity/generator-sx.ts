@@ -511,7 +511,7 @@ const normalizeExpressionForSignature = (expression: string): string => {
 
     if (pendingWhitespace && normalized.length > 0) {
       const previousChar = normalized[normalized.length - 1] ?? "";
-      if (/[A-Za-z0-9_$)}\]]/.test(previousChar) && /[A-Za-z0-9_$({\[]/.test(char)) {
+      if (/[A-Za-z0-9_$)}\]]/.test(previousChar) && /[[A-Za-z0-9_$({]/.test(char)) {
         normalized += " ";
       }
     }

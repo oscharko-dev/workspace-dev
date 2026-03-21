@@ -359,7 +359,7 @@ const toTextValueForExtraction = (node: ScreenElementIR | undefined): string | u
   if (!node || node.type !== "text") {
     return undefined;
   }
-  const normalizedText = node.text?.trim();
+  const normalizedText = node.text.trim();
   if (normalizedText && normalizedText.length > 0) {
     return normalizedText;
   }
@@ -586,7 +586,11 @@ const findRootOpeningTagEndIndex = (renderedRoot: string): number | undefined =>
 };
 
 const extractRootSxAnalysisForExtractedComponent = (renderedRoot: string): ExtractedComponentRootSxAnalysis | undefined => {
-  const rootTagMatch = renderedRoot.match(/^\s*<([A-Za-z][A-Za-z0-9_]*)\b/);
+  const rootTagStartIndex = renderedRoot.indexOf("<");
+  if (rootTagStartIndex < 0) {
+    return undefined;
+  }
+  const rootTagMatch = renderedRoot.slice(rootTagStartIndex).match(/^<([A-Za-z][A-Za-z0-9_]*)\b/);
   const rootTagName = rootTagMatch?.[1];
   if (!rootTagName) {
     return undefined;

@@ -274,7 +274,7 @@ export const A11Y_LOADING_STATE_HINTS: readonly string[] = [
  * the element does not appear to be a live region.
  */
 export const inferAriaLiveRegion = (element: ScreenElementIR): "assertive" | "polite" | undefined => {
-  const normalizedName = (element.name ?? "").toLowerCase().replace(/[_./:-]+/g, " ");
+  const normalizedName = element.name.toLowerCase().replace(/[_./:-]+/g, " ");
   if (!A11Y_LIVE_REGION_HINTS.some((hint) => normalizedName.includes(hint))) {
     return undefined;
   }

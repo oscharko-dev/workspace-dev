@@ -18,6 +18,8 @@ Run in this repository root:
 - `pnpm run lint:boundaries`
 - `pnpm run typecheck`
 - `pnpm run test`
+- `pnpm run test:coverage`
+- `pnpm run ui:test:e2e`
 - `pnpm run build`
 - `pnpm run verify:pack`
 - `pnpm run prepublishOnly`
@@ -62,4 +64,5 @@ Run in this repository root:
 ## 6) Notes / caveats
 
 - FIPS smoke can report `skip` when host OpenSSL FIPS module is unavailable (`verify:fips` is designed for this).
+- Known non-blocking caveat: full-file runs of `src/parity/generator-core.test.ts` can hit a file-level timeout/open-handle exit condition after individual tests pass; treat this as pre-existing infra behavior and track separately from release-blocking regressions.
 - `workspace-dev` runtime is intentionally local-only and deterministic-mode locked (`rest` + `deterministic`).

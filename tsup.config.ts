@@ -1,5 +1,7 @@
 import { defineConfig } from "tsup";
 
+const CJS_IMPORT_META_URL_SHIM = "__workspaceDevImportMetaUrl";
+
 export default defineConfig({
   entry: {
     index: "src/index.ts",
@@ -24,6 +26,14 @@ export default defineConfig({
   cjsInterop: true,
   esbuildOptions(options, context) {
     if (context.format === "cjs") {
+      options.define = {
+        ...(options.define ?? {}),
+        "import.meta.url": CJS_IMPORT_META_URL_SHIM
+      };
+      options.banner = {
+        ...(options.banner ?? {}),
+        js: `${options.banner?.js ? `${options.banner.js}\n` : ""}const ${CJS_IMPORT_META_URL_SHIM} = require("node:url").pathToFileURL(__filename).href;`
+      };
       options.logOverride = {
         ...(options.logOverride ?? {}),
         "empty-import-meta": "silent"
