@@ -69,6 +69,15 @@ interface JobCancellationPayload {
   completedAt?: string;
 }
 
+interface JobGenerationDiffPayload {
+  summary?: string;
+  added?: string[];
+  modified?: { file: string }[];
+  removed?: string[];
+  unchanged?: string[];
+  previousJobId?: string | null;
+}
+
 interface JobPayload {
   jobId: string;
   status: string;
@@ -76,6 +85,7 @@ interface JobPayload {
   preview?: JobPreviewPayload;
   queue?: JobQueuePayload;
   cancellation?: JobCancellationPayload;
+  generationDiff?: JobGenerationDiffPayload;
   error?: JobErrorPayload;
 }
 
@@ -892,6 +902,39 @@ export function WorkspacePage(): JSX.Element {
                 );
               })}
             </ul>
+            {jobPayload?.generationDiff?.summary ? (
+              <div data-testid="generation-diff-summary" className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="m-0 text-xs font-bold uppercase tracking-wide text-slate-700">Generation Diff</p>
+                <p className="m-0 mt-1 text-sm text-slate-800">{jobPayload.generationDiff.summary}</p>
+                {jobPayload.generationDiff.previousJobId ? (
+                  <p className="m-0 mt-1 text-xs text-slate-500">
+                    Previous job: {jobPayload.generationDiff.previousJobId}
+                  </p>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  {(jobPayload.generationDiff.added?.length ?? 0) > 0 ? (
+                    <span className="rounded-full border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-emerald-800">
+                      +{jobPayload.generationDiff.added?.length} added
+                    </span>
+                  ) : null}
+                  {(jobPayload.generationDiff.modified?.length ?? 0) > 0 ? (
+                    <span className="rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-amber-800">
+                      ~{jobPayload.generationDiff.modified?.length} modified
+                    </span>
+                  ) : null}
+                  {(jobPayload.generationDiff.removed?.length ?? 0) > 0 ? (
+                    <span className="rounded-full border border-rose-400 bg-rose-50 px-2 py-0.5 text-rose-800">
+                      -{jobPayload.generationDiff.removed?.length} removed
+                    </span>
+                  ) : null}
+                  {(jobPayload.generationDiff.unchanged?.length ?? 0) > 0 ? (
+                    <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
+                      {jobPayload.generationDiff.unchanged?.length} unchanged
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
           <pre data-testid="job-payload" className={`${payloadPreClasses} h-28 shrink-0`}>
             {jobPayloadView}

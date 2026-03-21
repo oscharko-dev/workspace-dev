@@ -23,6 +23,8 @@ import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
 import { fetchFigmaFile } from "./job-engine/figma-source.js";
 import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
+import { runGenerationDiff } from "./job-engine/generation-diff.js";
+import { resolveBoardKey } from "./parity/board-key.js";
 import { runGitPrFlow } from "./job-engine/git-pr.js";
 import { getContentType, normalizePathPart } from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
@@ -1366,6 +1368,34 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         });
       }
 
+      // Generation diff: compare current output with previous run for same board key
+      try {
+        const boardKeySeed = input.figmaFileKey?.trim() || input.figmaJsonPath?.trim() || "local-json";
+        const boardKey = resolveBoardKey(boardKeySeed);
+        const diffReport = await runGenerationDiff({
+          generatedProjectDir,
+          jobDir,
+          outputRoot: resolvedPaths.outputRoot,
+          boardKey,
+          jobId: job.jobId
+        });
+        job.generationDiff = diffReport;
+        job.artifacts.generationDiffFile = path.join(jobDir, "generation-diff.json");
+        pushLog({
+          job,
+          level: "info",
+          stage: "codegen.generate",
+          message: `Generation diff: ${diffReport.summary}`
+        });
+      } catch (error) {
+        pushLog({
+          job,
+          level: "warn",
+          stage: "codegen.generate",
+          message: `Generation diff computation failed: ${getErrorMessage(error)}`
+        });
+      }
+
       await runStage({
         job,
         stage: "validate.project",
@@ -1433,6 +1463,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               generatedProjectDir,
               jobDir,
               commandTimeoutMs: runtime.commandTimeoutMs,
+              ...(job.generationDiff ? { generationDiff: job.generationDiff } : {}),
               onLog: (message) => {
                 pushLog({
                   job,
@@ -1729,6 +1760,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
     if (job.cancellation) {
       result.cancellation = { ...job.cancellation };
+    }
+    if (job.generationDiff) {
+      result.generationDiff = { ...job.generationDiff };
     }
     if (job.gitPr) {
       result.gitPr = { ...job.gitPr };

@@ -23,6 +23,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.17.0] - 2026-03-21
+
+### Generation diff report for design iteration cycles
+
+Added:
+- `WorkspaceGenerationDiffModifiedFile` type for modified file entries in diff report.
+- `WorkspaceGenerationDiffReport` type for full generation diff report.
+- `generationDiffFile?: string` to `WorkspaceJobArtifacts` for the diff report file path.
+- `generationDiff?: WorkspaceGenerationDiffReport` to `WorkspaceJobStatus` for diff in job status.
+- `generationDiff?: WorkspaceGenerationDiffReport` to `WorkspaceJobResult` for diff in job result.
+
 ## [2.16.0] - 2026-03-20
 
 ### Structured pipeline diagnostics on failed jobs
