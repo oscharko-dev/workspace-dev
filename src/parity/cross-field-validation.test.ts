@@ -204,9 +204,14 @@ test("toCrossFieldRefineChain: generates .refine() for date_after rule", () => {
   ];
   const result = toCrossFieldRefineChain({ rules, indent: "" });
   assert.ok(result.includes(".refine("));
-  assert.ok(result.includes("end > start"));
+  assert.ok(result.includes("const toComparableDateString = (value: unknown): string | undefined => {"));
+  assert.ok(result.includes('const startDate = toComparableDateString(data["start"]);'));
+  assert.ok(result.includes('const endDate = toComparableDateString(data["end"]);'));
+  assert.ok(result.includes("endDate > startDate"));
   assert.ok(result.includes("Must be after Start Date."));
   assert.ok(result.includes('path: ["end"]'));
+  assert.equal(result.includes('data["start"].trim()'), false);
+  assert.equal(result.includes('data["end"].trim()'), false);
 });
 
 test("toCrossFieldRefineChain: generates .refine() for numeric_gt rule", () => {
