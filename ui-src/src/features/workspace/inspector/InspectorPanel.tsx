@@ -15,6 +15,7 @@ import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath } from "./component-tree-utils";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { suggestPairedFile } from "./file-pairing";
 import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
@@ -787,6 +788,53 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     return findNodePath(treeNodes, selectedNodeId);
   }, [selectedNodeId, treeNodes]);
 
+  // --- Split view: second file ---
+
+  const [splitFile, setSplitFile] = useState<string | null>(null);
+
+  const suggestedPairedFile = useMemo(() => {
+    if (!effectiveSelectedFile) return null;
+    const filePaths = files.map((f) => f.path);
+    return suggestPairedFile(effectiveSelectedFile, manifest, filePaths);
+  }, [effectiveSelectedFile, manifest, files]);
+
+  const effectiveSplitFile = splitFile ?? suggestedPairedFile;
+
+  const splitFileContentQuery = useQuery({
+    queryKey: ["inspector-split-file-content", jobId, effectiveSplitFile],
+    enabled: Boolean(effectiveSplitFile),
+    queryFn: async (): Promise<FileContentResponse> => {
+      if (!effectiveSplitFile) {
+        return { ok: false, status: 0, content: null, error: "NO_FILE", message: "No file selected." };
+      }
+      try {
+        const response = await fetch(
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSplitFile)}`
+        );
+        const body = await response.text();
+        if (response.ok) {
+          return { ok: true, status: response.status, content: body, error: null, message: null };
+        }
+        return { ok: false, status: response.status, content: null, error: "FETCH_FAILED", message: `Could not load '${effectiveSplitFile}'.` };
+      } catch {
+        return { ok: false, status: 0, content: null, error: "FETCH_FAILED", message: `Could not load '${effectiveSplitFile}'.` };
+      }
+    },
+    staleTime: Infinity
+  });
+
+  const splitFileContent = useMemo<string | null>(() => {
+    if (!effectiveSplitFile || !splitFileContentQuery.data) return null;
+    if (!splitFileContentQuery.data.ok) return null;
+    return splitFileContentQuery.data.content;
+  }, [effectiveSplitFile, splitFileContentQuery.data]);
+
+  const splitFileContentLoading = splitFileContentQuery.isLoading && !splitFileContentQuery.data;
+
+  const handleSelectSplitFile = useCallback((filePath: string) => {
+    setSplitFile(filePath);
+  }, []);
+
   const handleRetryFiles = useCallback(() => {
     void filesQuery.refetch();
   }, [filesQuery.refetch]);
@@ -1298,6 +1346,10 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             previousFileContentLoading={previousFileContentLoading}
             breadcrumbPath={breadcrumbPath}
             onBreadcrumbSelect={handleTreeSelect}
+            splitFile={effectiveSplitFile}
+            splitFileContent={splitFileContent}
+            splitFileContentLoading={splitFileContentLoading}
+            onSelectSplitFile={handleSelectSplitFile}
           />
         </div>
       </div>
