@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type UIEvent } from "react";
 import { filterTree } from "./component-tree-utils";
 
 // ---------------------------------------------------------------------------
@@ -20,17 +20,33 @@ interface ComponentTreeProps {
   onToggleCollapsed: () => void;
 }
 
-interface TreeNodeRowProps {
+interface VisibleTreeRow {
   node: TreeNode;
   depth: number;
+  isScreen: boolean;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  siblingIndex: number;
+  siblingCount: number;
+}
+
+interface TreeRowProps {
+  row: VisibleTreeRow;
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
-  expandedIds: Set<string>;
   onToggleExpand: (nodeId: string) => void;
   focusedId: string | null;
   onFocusNode: (nodeId: string) => void;
-  flatIndex: number;
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const SEARCH_DEBOUNCE_MS = 120;
+const TREE_ROW_HEIGHT_PX = 24;
+const TREE_OVERSCAN_ROWS = 8;
+const DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX = 480;
 
 // ---------------------------------------------------------------------------
 // Element type badge config
@@ -87,228 +103,133 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// Flatten tree for keyboard navigation
+// Helpers
 // ---------------------------------------------------------------------------
 
-function flattenVisible(nodes: TreeNode[], expandedIds: Set<string>): TreeNode[] {
-  const result: TreeNode[] = [];
-  const walk = (list: TreeNode[]) => {
-    for (const node of list) {
-      result.push(node);
-      if (node.children && node.children.length > 0 && expandedIds.has(node.id)) {
-        walk(node.children);
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
+function flattenVisibleRows(nodes: TreeNode[], expandedIds: Set<string>): VisibleTreeRow[] {
+  const rows: VisibleTreeRow[] = [];
+
+  const walk = (list: TreeNode[], depth: number): void => {
+    const siblingCount = list.length;
+    for (let siblingIndex = 0; siblingIndex < list.length; siblingIndex += 1) {
+      const node = list[siblingIndex];
+      if (!node) {
+        continue;
+      }
+
+      const hasChildren = Boolean(node.children && node.children.length > 0);
+      const isExpanded = hasChildren && expandedIds.has(node.id);
+      rows.push({
+        node,
+        depth,
+        isScreen: depth === 0,
+        hasChildren,
+        isExpanded,
+        siblingIndex,
+        siblingCount
+      });
+
+      if (isExpanded && node.children) {
+        walk(node.children, depth + 1);
       }
     }
   };
-  walk(nodes);
-  return result;
+
+  walk(nodes, 0);
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
-// Tree node row
+// Tree row
 // ---------------------------------------------------------------------------
 
-function TreeNodeRow({
-  node,
-  depth,
+function TreeRow({
+  row,
   selectedId,
   onSelect,
-  expandedIds,
-  onToggleExpand,
-  focusedId,
-  onFocusNode,
-  flatIndex
-}: TreeNodeRowProps): JSX.Element {
-  const hasChildren = Boolean(node.children && node.children.length > 0);
-  const isExpanded = expandedIds.has(node.id);
-  const isSelected = selectedId === node.id;
-  const isFocused = focusedId === node.id;
-  const rowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isFocused && rowRef.current) {
-      rowRef.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [isFocused]);
-
-  const paddingLeft = 8 + depth * 16;
-
-  return (
-    <>
-      <div
-        ref={rowRef}
-        role="treeitem"
-        aria-level={depth + 1}
-        aria-setsize={1}
-        aria-posinset={flatIndex + 1}
-        aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-selected={isSelected}
-        tabIndex={isFocused ? 0 : -1}
-        data-testid={`tree-node-${node.id}`}
-        data-node-id={node.id}
-        className={`flex cursor-pointer items-center gap-1 py-[3px] pr-2 text-xs transition-colors select-none ${
-          isSelected
-            ? "bg-emerald-50 font-semibold text-emerald-900"
-            : "text-slate-700 hover:bg-slate-50"
-        } ${isFocused ? "outline-2 -outline-offset-2 outline-emerald-400" : ""}`}
-        style={{ paddingLeft }}
-        onClick={() => {
-          onSelect(node.id);
-          onFocusNode(node.id);
-        }}
-      >
-        {/* Chevron */}
-        {hasChildren ? (
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={isExpanded ? "Collapse" : "Expand"}
-            className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-slate-400 transition hover:text-slate-700"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand(node.id);
-            }}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-              fill="currentColor"
-            >
-              <path d="M6 4l4 4-4 4z" />
-            </svg>
-          </button>
-        ) : (
-          <span className="inline-block h-4 w-4 shrink-0" />
-        )}
-
-        <TypeBadge type={node.type ?? "container"} />
-
-        <span className="min-w-0 truncate">{node.name}</span>
-      </div>
-
-      {/* Render children recursively if expanded */}
-      {hasChildren && isExpanded
-        ? node.children!.map((child, i) => (
-            <TreeNodeRow
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              expandedIds={expandedIds}
-              onToggleExpand={onToggleExpand}
-              focusedId={focusedId}
-              onFocusNode={onFocusNode}
-              flatIndex={flatIndex + i + 1}
-            />
-          ))
-        : null}
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Screen-level tree entry (top level)
-// ---------------------------------------------------------------------------
-
-function ScreenTreeNode({
-  screen,
-  selectedId,
-  onSelect,
-  expandedIds,
   onToggleExpand,
   focusedId,
   onFocusNode
-}: {
-  screen: TreeNode;
-  selectedId: string | null;
-  onSelect: (nodeId: string) => void;
-  expandedIds: Set<string>;
-  onToggleExpand: (nodeId: string) => void;
-  focusedId: string | null;
-  onFocusNode: (nodeId: string) => void;
-}): JSX.Element {
-  const isExpanded = expandedIds.has(screen.id);
-  const isSelected = selectedId === screen.id;
-  const isFocused = focusedId === screen.id;
-  const rowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isFocused && rowRef.current) {
-      rowRef.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [isFocused]);
-
-  const hasChildren = Boolean(screen.children && screen.children.length > 0);
+}: TreeRowProps): JSX.Element {
+  const isSelected = selectedId === row.node.id;
+  const isFocused = focusedId === row.node.id;
+  const paddingLeft = 8 + row.depth * 16;
 
   return (
-    <>
-      <div
-        ref={rowRef}
-        role="treeitem"
-        aria-level={1}
-        aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-selected={isSelected}
-        tabIndex={isFocused ? 0 : -1}
-        data-testid={`tree-screen-${screen.id}`}
-        data-node-id={screen.id}
-        className={`flex cursor-pointer items-center gap-1.5 py-1 pr-2 pl-2 text-xs font-bold transition-colors select-none ${
-          isSelected
-            ? "bg-emerald-50 text-emerald-900"
-            : "text-slate-800 hover:bg-slate-50"
-        } ${isFocused ? "outline-2 -outline-offset-2 outline-emerald-400" : ""}`}
-        onClick={() => {
-          onSelect(screen.id);
-          onFocusNode(screen.id);
-        }}
-      >
-        {hasChildren ? (
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={isExpanded ? "Collapse" : "Expand"}
-            className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-slate-400 transition hover:text-slate-700"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand(screen.id);
-            }}
+    <div
+      role="treeitem"
+      aria-level={row.depth + 1}
+      aria-setsize={row.siblingCount}
+      aria-posinset={row.siblingIndex + 1}
+      aria-expanded={row.hasChildren ? row.isExpanded : undefined}
+      aria-selected={isSelected}
+      tabIndex={isFocused ? 0 : -1}
+      data-testid={row.isScreen ? `tree-screen-${row.node.id}` : `tree-node-${row.node.id}`}
+      data-node-id={row.node.id}
+      className={`flex h-6 cursor-pointer items-center gap-1 py-[3px] pr-2 text-xs transition-colors select-none ${
+        row.isScreen ? "font-bold" : ""
+      } ${
+        isSelected
+          ? "bg-emerald-50 text-emerald-900"
+          : row.isScreen
+            ? "text-slate-800 hover:bg-slate-50"
+            : "text-slate-700 hover:bg-slate-50"
+      } ${isFocused ? "outline-2 -outline-offset-2 outline-emerald-400" : ""}`}
+      style={{ paddingLeft }}
+      onClick={() => {
+        onSelect(row.node.id);
+        onFocusNode(row.node.id);
+      }}
+    >
+      {row.hasChildren ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={row.isExpanded ? "Collapse" : "Expand"}
+          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-slate-400 transition hover:text-slate-700"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleExpand(row.node.id);
+          }}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className={`h-3 w-3 transition-transform ${row.isExpanded ? "rotate-90" : ""}`}
+            fill="currentColor"
           >
-            <svg
-              viewBox="0 0 16 16"
-              className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-              fill="currentColor"
-            >
-              <path d="M6 4l4 4-4 4z" />
-            </svg>
-          </button>
-        ) : (
-          <span className="inline-block h-4 w-4 shrink-0" />
-        )}
+            <path d="M6 4l4 4-4 4z" />
+          </svg>
+        </button>
+      ) : (
+        <span className="inline-block h-4 w-4 shrink-0" />
+      )}
 
+      {row.isScreen ? (
         <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="currentColor">
           <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm1 0v10h10V3H3z" />
         </svg>
+      ) : (
+        <TypeBadge type={row.node.type ?? "container"} />
+      )}
 
-        <span className="min-w-0 truncate">{screen.name}</span>
-      </div>
-
-      {hasChildren && isExpanded
-        ? screen.children!.map((child, i) => (
-            <TreeNodeRow
-              key={child.id}
-              node={child}
-              depth={1}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              expandedIds={expandedIds}
-              onToggleExpand={onToggleExpand}
-              focusedId={focusedId}
-              onFocusNode={onFocusNode}
-              flatIndex={i}
-            />
-          ))
-        : null}
-    </>
+      <span className="min-w-0 truncate">{row.node.name}</span>
+    </div>
   );
 }
 
@@ -324,48 +245,71 @@ export function ComponentTree({
   onToggleCollapsed
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
 
   // Expand all screen-level nodes by default
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
-    for (const s of screens) {
-      initial.add(s.id);
+    for (const screen of screens) {
+      initial.add(screen.id);
     }
     return initial;
   });
-
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [virtualWindow, setVirtualWindow] = useState({
+    scrollTop: 0,
+    viewportHeight: DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
+  });
+  const treeViewportRef = useRef<HTMLDivElement>(null);
 
-  // Filter screens based on search query
-  const filteredScreens = useMemo(
-    () => filterTree(screens, searchQuery),
-    [screens, searchQuery]
-  );
+  // Filter screens based on debounced search query
+  const filteredScreens = useMemo(() => {
+    return filterTree(screens, debouncedSearchQuery);
+  }, [screens, debouncedSearchQuery]);
 
   // When searching, auto-expand all nodes so matches are visible
   const effectiveExpandedIds = useMemo(() => {
-    if (!searchQuery.trim()) {
+    if (!debouncedSearchQuery.trim()) {
       return expandedIds;
     }
-    // Collect all node ids from filteredScreens
     const allIds = new Set<string>();
-    const walk = (nodes: TreeNode[]) => {
-      for (const n of nodes) {
-        allIds.add(n.id);
-        if (n.children) {
-          walk(n.children);
+    const walk = (nodes: TreeNode[]): void => {
+      for (const node of nodes) {
+        allIds.add(node.id);
+        if (node.children) {
+          walk(node.children);
         }
       }
     };
     walk(filteredScreens);
     return allIds;
-  }, [searchQuery, expandedIds, filteredScreens]);
+  }, [debouncedSearchQuery, expandedIds, filteredScreens]);
 
-  // Flatten visible nodes for keyboard navigation
-  const flatNodes = useMemo(
-    () => flattenVisible(filteredScreens, effectiveExpandedIds),
-    [filteredScreens, effectiveExpandedIds]
-  );
+  // Flatten visible nodes for keyboard navigation and virtualization
+  const flatRows = useMemo(() => {
+    return flattenVisibleRows(filteredScreens, effectiveExpandedIds);
+  }, [filteredScreens, effectiveExpandedIds]);
+  const effectiveFocusedId = useMemo(() => {
+    if (focusedId && flatRows.some((row) => row.node.id === focusedId)) {
+      return focusedId;
+    }
+    return flatRows[0]?.node.id ?? null;
+  }, [flatRows, focusedId]);
+  const focusedIndex = useMemo(() => {
+    if (!effectiveFocusedId) {
+      return -1;
+    }
+    return flatRows.findIndex((row) => row.node.id === effectiveFocusedId);
+  }, [effectiveFocusedId, flatRows]);
+
+  const totalRowCount = flatRows.length;
+  const viewportHeight = Math.max(virtualWindow.viewportHeight, DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
+  const startIndex = Math.max(0, Math.floor(virtualWindow.scrollTop / TREE_ROW_HEIGHT_PX) - TREE_OVERSCAN_ROWS);
+  const visibleRowCount = Math.ceil(viewportHeight / TREE_ROW_HEIGHT_PX) + TREE_OVERSCAN_ROWS * 2;
+  const endIndex = Math.min(totalRowCount - 1, startIndex + visibleRowCount - 1);
+  const virtualRows = totalRowCount > 0 ? flatRows.slice(startIndex, endIndex + 1) : [];
+  const topSpacerHeight = totalRowCount > 0 ? startIndex * TREE_ROW_HEIGHT_PX : 0;
+  const bottomSpacerHeight = totalRowCount > 0 ? Math.max(0, (totalRowCount - endIndex - 1) * TREE_ROW_HEIGHT_PX) : 0;
 
   const toggleExpand = useCallback((nodeId: string) => {
     setExpandedIds((prev) => {
@@ -380,58 +324,85 @@ export function ComponentTree({
   }, []);
 
   const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLDivElement>) => {
-      if (!focusedId) {
-        if (flatNodes.length > 0 && flatNodes[0]) {
-          setFocusedId(flatNodes[0].id);
-        }
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!effectiveFocusedId) {
         return;
       }
 
-      const currentIndex = flatNodes.findIndex((n) => n.id === focusedId);
+      const currentIndex = flatRows.findIndex((row) => row.node.id === effectiveFocusedId);
       if (currentIndex < 0) {
         return;
       }
 
-      const current = flatNodes[currentIndex]!;
+      const current = flatRows[currentIndex];
+      if (!current) {
+        return;
+      }
 
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        const next = flatNodes[currentIndex + 1];
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        const next = flatRows[currentIndex + 1];
         if (next) {
-          setFocusedId(next.id);
+          setFocusedId(next.node.id);
         }
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        const prev = flatNodes[currentIndex - 1];
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        const prev = flatRows[currentIndex - 1];
         if (prev) {
-          setFocusedId(prev.id);
+          setFocusedId(prev.node.id);
         }
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        if (current.children && current.children.length > 0) {
-          if (!effectiveExpandedIds.has(current.id)) {
-            toggleExpand(current.id);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (current.hasChildren) {
+          if (!current.isExpanded) {
+            toggleExpand(current.node.id);
           } else {
-            // Move focus to first child
-            const firstChild = current.children[0];
+            const firstChild = current.node.children?.[0];
             if (firstChild) {
               setFocusedId(firstChild.id);
             }
           }
         }
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        if (effectiveExpandedIds.has(current.id) && current.children && current.children.length > 0) {
-          toggleExpand(current.id);
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        if (current.hasChildren && current.isExpanded) {
+          toggleExpand(current.node.id);
         }
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onSelect(current.id);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onSelect(current.node.id);
       }
     },
-    [focusedId, flatNodes, effectiveExpandedIds, toggleExpand, onSelect]
+    [effectiveFocusedId, flatRows, onSelect, toggleExpand]
   );
+
+  const handleTreeScroll = useCallback((event: UIEvent<HTMLDivElement>): void => {
+    const target = event.currentTarget;
+    setVirtualWindow({
+      scrollTop: target.scrollTop,
+      viewportHeight: target.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
+    });
+  }, []);
+
+  useEffect(() => {
+    const viewport = treeViewportRef.current;
+    if (!viewport || focusedIndex < 0) {
+      return;
+    }
+
+    const rowTop = focusedIndex * TREE_ROW_HEIGHT_PX;
+    const rowBottom = rowTop + TREE_ROW_HEIGHT_PX;
+    const viewTop = viewport.scrollTop;
+    const viewBottom = viewTop + (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
+
+    if (rowTop < viewTop) {
+      viewport.scrollTop = rowTop;
+      return;
+    }
+    if (rowBottom > viewBottom) {
+      viewport.scrollTop = rowBottom - (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
+    }
+  }, [focusedIndex]);
 
   if (collapsed) {
     return (
@@ -479,7 +450,9 @@ export function ComponentTree({
           data-testid="tree-search-input"
           placeholder="Search components…"
           value={searchQuery}
-          onChange={(e) => { setSearchQuery(e.target.value); }}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+          }}
           className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none"
           aria-label="Search component tree"
         />
@@ -487,34 +460,47 @@ export function ComponentTree({
 
       {/* Tree */}
       <div
+        ref={treeViewportRef}
         role="tree"
         aria-label="Component tree"
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto py-1"
+        data-testid="component-tree-viewport"
         onKeyDown={handleKeyDown}
-        onFocus={() => {
-          if (!focusedId && flatNodes.length > 0 && flatNodes[0]) {
-            setFocusedId(flatNodes[0].id);
+        onScroll={handleTreeScroll}
+        onFocus={(event) => {
+          setVirtualWindow({
+            scrollTop: event.currentTarget.scrollTop,
+            viewportHeight: event.currentTarget.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
+          });
+          if (!focusedId && flatRows.length > 0 && flatRows[0]) {
+            setFocusedId(flatRows[0].node.id);
           }
         }}
       >
         {filteredScreens.length === 0 ? (
           <p className="px-2 py-4 text-center text-xs text-slate-400">
-            {searchQuery.trim() ? "No matching components" : "No components"}
+            {debouncedSearchQuery.trim() ? "No matching components" : "No components"}
           </p>
         ) : (
-          filteredScreens.map((screen) => (
-            <ScreenTreeNode
-              key={screen.id}
-              screen={screen}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              expandedIds={effectiveExpandedIds}
-              onToggleExpand={toggleExpand}
-              focusedId={focusedId}
-              onFocusNode={setFocusedId}
-            />
-          ))
+          <div data-testid="component-tree-virtual-window">
+            <div style={{ height: topSpacerHeight }} />
+            {virtualRows.map((row) => (
+              <TreeRow
+                key={row.node.id}
+                row={row}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onToggleExpand={toggleExpand}
+                focusedId={effectiveFocusedId}
+                onFocusNode={setFocusedId}
+              />
+            ))}
+            <div style={{ height: bottomSpacerHeight }} />
+            <span data-testid="component-tree-total-count" className="sr-only">
+              {String(totalRowCount)}
+            </span>
+          </div>
         )}
       </div>
     </div>

@@ -7,7 +7,7 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/385
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor, act } from "@testing-library/react";
 import { createElement } from "react";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { filterTree } from "./component-tree-utils";
@@ -15,11 +15,14 @@ import { filterTree } from "./component-tree-utils";
 // jsdom does not implement scrollIntoView
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  vi.useRealTimers();
 });
 
 afterEach(() => {
   cleanup();
 });
+
+const SEARCH_DEBOUNCE_ASSERT_DELAY_MS = 140;
 
 // ---------------------------------------------------------------------------
 // Test data
@@ -60,6 +63,21 @@ function makeScreens(): TreeNode[] {
       children: [
         { id: "detail-title", name: "DetailTitle", type: "text" }
       ]
+    }
+  ];
+}
+
+function makeLargeScreens(nodeCount: number): TreeNode[] {
+  return [
+    {
+      id: "screen-large",
+      name: "Large Screen",
+      type: "screen",
+      children: Array.from({ length: nodeCount }, (_, index) => ({
+        id: `large-node-${String(index + 1)}`,
+        name: `Leaf ${String(index + 1).padStart(4, "0")}`,
+        type: "text"
+      }))
     }
   ];
 }
@@ -172,6 +190,19 @@ describe("ComponentTree", () => {
     expect(screen.getByText("SubmitButton")).toBeInTheDocument();
   });
 
+  it("preserves deterministic pre-order row ordering", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const orderedIds = screen.getAllByRole("treeitem").map((node) => node.getAttribute("data-node-id"));
+    expect(orderedIds.slice(0, 6)).toEqual([
+      "screen-home",
+      "header-bar",
+      "price-card",
+      "submit-btn",
+      "screen-details",
+      "detail-title"
+    ]);
+  });
+
   it("renders type badges on nodes", () => {
     render(createElement(ComponentTree, defaultProps));
     // Check that badge with title "button" exists on SubmitButton's row
@@ -241,42 +272,70 @@ describe("ComponentTree search", () => {
     const searchInput = screen.getByTestId("tree-search-input");
     fireEvent.change(searchInput, { target: { value: "Logo" } });
 
-    // Logo should still be visible
-    expect(screen.getByText("Logo")).toBeInTheDocument();
-    // PriceCard should not be visible (no match)
-    expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
-    // SubmitButton should not be visible
-    expect(screen.queryByText("SubmitButton")).not.toBeInTheDocument();
-    // Details screen should not be visible (no matching children)
-    expect(screen.queryByText("Details")).not.toBeInTheDocument();
+    return waitFor(() => {
+      // Logo should still be visible
+      expect(screen.getByText("Logo")).toBeInTheDocument();
+      // PriceCard should not be visible (no match)
+      expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
+      // SubmitButton should not be visible
+      expect(screen.queryByText("SubmitButton")).not.toBeInTheDocument();
+      // Details screen should not be visible (no matching children)
+      expect(screen.queryByText("Details")).not.toBeInTheDocument();
+    });
   });
 
   it("shows 'No matching components' when search has no results", () => {
     render(createElement(ComponentTree, defaultProps));
     const searchInput = screen.getByTestId("tree-search-input");
     fireEvent.change(searchInput, { target: { value: "zzzzz" } });
-    expect(screen.getByText("No matching components")).toBeInTheDocument();
+    return waitFor(() => {
+      expect(screen.getByText("No matching components")).toBeInTheDocument();
+    });
   });
 
-  it("restores full tree when search is cleared", () => {
+  it("restores full tree when search is cleared", async () => {
     render(createElement(ComponentTree, defaultProps));
     const searchInput = screen.getByTestId("tree-search-input");
 
     // Filter
     fireEvent.change(searchInput, { target: { value: "Logo" } });
-    expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
+    });
 
     // Clear
     fireEvent.change(searchInput, { target: { value: "" } });
     // Screens are expanded by default, so top-level children are visible
-    expect(screen.getByText("PriceCard")).toBeInTheDocument();
-    expect(screen.getByText("HeaderBar")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("PriceCard")).toBeInTheDocument();
+      expect(screen.getByText("HeaderBar")).toBeInTheDocument();
+    });
   });
 
   it("search is case-insensitive", () => {
     render(createElement(ComponentTree, defaultProps));
     const searchInput = screen.getByTestId("tree-search-input");
     fireEvent.change(searchInput, { target: { value: "logo" } });
+    return waitFor(() => {
+      expect(screen.getByText("Logo")).toBeInTheDocument();
+    });
+  });
+
+  it("debounces search input before applying filter", async () => {
+    vi.useFakeTimers();
+    render(createElement(ComponentTree, defaultProps));
+
+    const searchInput = screen.getByTestId("tree-search-input");
+    fireEvent.change(searchInput, { target: { value: "Logo" } });
+
+    // No immediate filter pass before debounce delay.
+    expect(screen.getByText("PriceCard")).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(SEARCH_DEBOUNCE_ASSERT_DELAY_MS);
+    });
+
+    expect(screen.queryByText("PriceCard")).not.toBeInTheDocument();
     expect(screen.getByText("Logo")).toBeInTheDocument();
   });
 });
@@ -318,6 +377,35 @@ describe("ComponentTree keyboard navigation", () => {
     const tree = screen.getByRole("tree");
     fireEvent.focus(tree);
     fireEvent.keyDown(tree, { key: " " });
+
+    expect(onSelect).toHaveBeenCalled();
+  });
+
+  it("virtualizes large trees and keeps keyboard navigation selectable", () => {
+    const onSelect = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        screens: makeLargeScreens(1_500),
+        selectedId: null,
+        onSelect,
+        collapsed: false,
+        onToggleCollapsed: vi.fn()
+      })
+    );
+
+    const totalCount = Number.parseInt(screen.getByTestId("component-tree-total-count").textContent ?? "0", 10);
+    expect(totalCount).toBe(1_501);
+
+    // Virtualization should keep mounted rows far below total node count.
+    const mountedRows = screen.getAllByRole("treeitem").length;
+    expect(mountedRows).toBeLessThan(200);
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+    for (let index = 0; index < 60; index += 1) {
+      fireEvent.keyDown(tree, { key: "ArrowDown" });
+    }
+    fireEvent.keyDown(tree, { key: "Enter" });
 
     expect(onSelect).toHaveBeenCalled();
   });
