@@ -19,6 +19,11 @@ import { ShortcutHelp } from "./ShortcutHelp";
 import { suggestPairedFile } from "./file-pairing";
 import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries";
 import {
+  deriveInspectabilitySummary,
+  type InspectabilityAvailability,
+  type InspectabilityGenerationMetricsPayload
+} from "./inspectability-summary";
+import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
   MIN_PREVIEW_WIDTH_PX,
@@ -106,6 +111,14 @@ interface FileContentResponse {
   message: string | null;
 }
 
+interface GenerationMetricsResponse {
+  ok: boolean;
+  status: number;
+  payload: InspectabilityGenerationMetricsPayload | null;
+  error: string | null;
+  message: string | null;
+}
+
 interface EndpointErrorDetails {
   status: number;
   code: string;
@@ -155,6 +168,10 @@ function isComponentManifestPayload(value: unknown): value is ComponentManifestP
   }
   const rec = value as Record<string, unknown>;
   return typeof rec.jobId === "string" && Array.isArray(rec.screens);
+}
+
+function isGenerationMetricsPayload(value: unknown): value is InspectabilityGenerationMetricsPayload {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -373,6 +390,84 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     staleTime: Infinity
   });
 
+  const generationMetricsQuery = useQuery({
+    queryKey: ["inspector-generation-metrics", jobId],
+    queryFn: async (): Promise<GenerationMetricsResponse> => {
+      try {
+        const response = await fetch(
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent("generation-metrics.json")}`
+        );
+        const body = await response.text();
+
+        if (!response.ok) {
+          let parsedPayload: unknown = null;
+          if (body.trim()) {
+            try {
+              parsedPayload = JSON.parse(body) as unknown;
+            } catch {
+              parsedPayload = null;
+            }
+          }
+
+          const error = toEndpointError({
+            status: response.status,
+            payload: parsedPayload,
+            fallbackCode: "GENERATION_METRICS_NOT_FOUND",
+            fallbackMessage: "generation-metrics.json is unavailable for this job."
+          });
+
+          return {
+            ok: false,
+            status: error.status,
+            payload: null,
+            error: error.code,
+            message: error.message
+          };
+        }
+
+        let payload: unknown;
+        try {
+          payload = JSON.parse(body) as unknown;
+        } catch {
+          return {
+            ok: false,
+            status: response.status,
+            payload: null,
+            error: "GENERATION_METRICS_INVALID_JSON",
+            message: "generation-metrics.json is not valid JSON."
+          };
+        }
+
+        if (!isGenerationMetricsPayload(payload)) {
+          return {
+            ok: false,
+            status: response.status,
+            payload: null,
+            error: "GENERATION_METRICS_INVALID_PAYLOAD",
+            message: "generation-metrics.json payload is invalid."
+          };
+        }
+
+        return {
+          ok: true,
+          status: response.status,
+          payload,
+          error: null,
+          message: null
+        };
+      } catch {
+        return {
+          ok: false,
+          status: 0,
+          payload: null,
+          error: "GENERATION_METRICS_FETCH_FAILED",
+          message: "generation-metrics.json could not be loaded."
+        };
+      }
+    },
+    staleTime: Infinity
+  });
+
   // --- Derived data ---
 
   const filesState = useMemo<{
@@ -539,10 +634,67 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     };
   }, [designIrQuery.data, designIrQuery.isLoading]);
 
+  const generationMetricsState = useMemo<{
+    status: InspectabilityAvailability;
+    metrics: InspectabilityGenerationMetricsPayload | null;
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    if (generationMetricsQuery.isLoading && !generationMetricsQuery.data) {
+      return {
+        status: "loading",
+        metrics: null,
+        error: null
+      };
+    }
+
+    if (!generationMetricsQuery.data) {
+      return {
+        status: "loading",
+        metrics: null,
+        error: null
+      };
+    }
+
+    if (!generationMetricsQuery.data.ok || !generationMetricsQuery.data.payload) {
+      return {
+        status: "unavailable",
+        metrics: null,
+        error: {
+          status: generationMetricsQuery.data.status,
+          code: generationMetricsQuery.data.error ?? "GENERATION_METRICS_FETCH_FAILED",
+          message: generationMetricsQuery.data.message ?? "generation-metrics.json is unavailable for this job."
+        }
+      };
+    }
+
+    return {
+      status: "ready",
+      metrics: generationMetricsQuery.data.payload,
+      error: null
+    };
+  }, [generationMetricsQuery.data, generationMetricsQuery.isLoading]);
+
   const files = filesState.files;
   const manifest = manifestState.manifest;
   const treeNodes = designIrState.treeNodes;
   const irScreens = designIrState.screens;
+  const inspectabilitySummary = useMemo(() => {
+    return deriveInspectabilitySummary({
+      designIrStatus: designIrState.status,
+      designIrScreens: irScreens,
+      manifestStatus: manifestState.status,
+      manifest,
+      metricsStatus: generationMetricsState.status,
+      metrics: generationMetricsState.metrics
+    });
+  }, [
+    designIrState.status,
+    generationMetricsState.metrics,
+    generationMetricsState.status,
+    irScreens,
+    manifest,
+    manifestState.status
+  ]);
 
   const hasTreePane = designIrState.status !== "ready" || treeNodes.length > 0;
   const hasExpandedTree = designIrState.status === "ready" ? hasTreePane && !treeCollapsed : hasTreePane;
@@ -1509,6 +1661,84 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
               {label}: {status}
             </span>
           ))}
+        </div>
+        <div
+          data-testid="inspector-inspectability-summary"
+          className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2"
+        >
+          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            Inspectability Coverage Summary
+          </p>
+          <p data-testid="inspector-summary-aggregate-note" className="m-0 mt-1 text-xs text-slate-600">
+            {inspectabilitySummary.aggregateOnlyNote}
+          </p>
+          <div className="mt-2 grid gap-2 lg:grid-cols-2">
+            <div
+              data-testid="inspector-summary-manifest-coverage"
+              className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
+            >
+              <p className="m-0 font-semibold text-slate-900">Manifest coverage</p>
+              {inspectabilitySummary.manifestCoverage.status === "ready" ? (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <span data-testid="inspector-summary-mapped-count">
+                    Mapped: {String(inspectabilitySummary.manifestCoverage.mappedNodes)}
+                  </span>
+                  <span data-testid="inspector-summary-unmapped-count">
+                    Unmapped: {String(inspectabilitySummary.manifestCoverage.unmappedNodes)}
+                  </span>
+                  <span data-testid="inspector-summary-total-count">
+                    Total IR nodes: {String(inspectabilitySummary.manifestCoverage.totalNodes)}
+                  </span>
+                  <span data-testid="inspector-summary-mapped-percent">
+                    Coverage: {String(inspectabilitySummary.manifestCoverage.mappedPercent)}%
+                  </span>
+                </div>
+              ) : (
+                <p
+                  data-testid={`inspector-summary-manifest-${inspectabilitySummary.manifestCoverage.status}`}
+                  className="m-0 mt-1 text-slate-600"
+                >
+                  {inspectabilitySummary.manifestCoverage.message}
+                </p>
+              )}
+            </div>
+
+            <div
+              data-testid="inspector-summary-design-ir-omissions"
+              className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
+            >
+              <p className="m-0 font-semibold text-slate-900">Design IR cleanup/omission counters</p>
+              {inspectabilitySummary.omissionMetrics.status === "ready" ? (
+                <div className="mt-1 grid gap-1">
+                  <span data-testid="inspector-summary-omission-skipped-hidden">
+                    Hidden nodes skipped: {String(inspectabilitySummary.omissionMetrics.skippedHidden)}
+                  </span>
+                  <span data-testid="inspector-summary-omission-skipped-placeholders">
+                    Placeholder nodes skipped: {String(inspectabilitySummary.omissionMetrics.skippedPlaceholders)}
+                  </span>
+                  <span data-testid="inspector-summary-omission-truncated-by-budget">
+                    Nodes truncated by budget: {String(inspectabilitySummary.omissionMetrics.truncatedByBudget)}
+                  </span>
+                  <span data-testid="inspector-summary-omission-depth-truncated-branches">
+                    Depth-truncated branches: {String(inspectabilitySummary.omissionMetrics.depthTruncatedBranches)}
+                  </span>
+                  <span data-testid="inspector-summary-omission-classification-fallbacks">
+                    Classification fallbacks: {String(inspectabilitySummary.omissionMetrics.classificationFallbacks)}
+                  </span>
+                  <span data-testid="inspector-summary-omission-degraded-geometry">
+                    Degraded geometry nodes: {String(inspectabilitySummary.omissionMetrics.degradedGeometryNodes)}
+                  </span>
+                </div>
+              ) : (
+                <p
+                  data-testid={`inspector-summary-omission-${inspectabilitySummary.omissionMetrics.status}`}
+                  className="m-0 mt-1 text-slate-600"
+                >
+                  {inspectabilitySummary.omissionMetrics.message}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
         {manifestState.status === "empty" ? (
           <p

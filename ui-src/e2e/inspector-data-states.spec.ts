@@ -145,6 +145,11 @@ test.describe("inspector data states deterministic flow", () => {
       page,
       installRoutes: async (targetPage) => {
         await targetPage.route("**/workspace/jobs/*/files/*", async (route) => {
+          const pathname = new URL(route.request().url()).pathname;
+          if (pathname.endsWith("/files/generation-metrics.json")) {
+            await route.continue();
+            return;
+          }
           if (failOnce) {
             failOnce = false;
             await route.fulfill({
@@ -165,6 +170,6 @@ test.describe("inspector data states deterministic flow", () => {
     await page.getByTestId("inspector-retry-file-content").click();
     await expect(page.getByTestId("inspector-state-file-content-error")).toHaveCount(0);
     await expect(page.getByTestId("inspector-source-file-content-ready")).toBeVisible();
-    await expect(page.getByTestId("code-viewer")).toBeVisible();
+    await expect(page.getByTestId("inspector-pane-code")).toBeVisible();
   });
 });
