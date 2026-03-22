@@ -15,11 +15,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
-  highlightCode,
   exceedsMaxSize,
   getPreferredTheme,
   type HighlightResult
 } from "../../../lib/shiki";
+import { highlightCodeWithWorker, isAbortError } from "../../../lib/shiki-worker-client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -252,16 +252,34 @@ export function CodeViewer({
       return;
     }
 
-    let cancelled = false;
+    const abortController = new AbortController();
 
-    void highlightCode(code, filePath, currentTheme).then((result) => {
-      if (!cancelled) {
+    void highlightCodeWithWorker({
+      code,
+      filePath,
+      theme: currentTheme,
+      signal: abortController.signal
+    })
+      .then((result) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
         setHighlightState({ result, forCode: code, forFilePath: filePath, forTheme: currentTheme });
-      }
-    });
+      })
+      .catch((error) => {
+        if (isAbortError(error) || abortController.signal.aborted) {
+          return;
+        }
+        setHighlightState({
+          result: null,
+          forCode: code,
+          forFilePath: filePath,
+          forTheme: currentTheme
+        });
+      });
 
     return () => {
-      cancelled = true;
+      abortController.abort();
     };
   }, [code, filePath, currentTheme, isOversize]);
 
