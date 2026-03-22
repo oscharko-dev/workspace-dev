@@ -22,6 +22,7 @@ import type {
   WorkspaceJobStatus,
   WorkspaceRegenerationAccepted,
   WorkspaceRegenerationInput,
+  WorkspaceStaleDraftCheckResult,
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
 
@@ -153,4 +154,5 @@ export interface JobEngine {
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
   getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;
   resolvePreviewAsset: (jobId: string, previewPath: string) => Promise<{ content: Buffer; contentType: string } | undefined>;
+  checkStaleDraft: (input: { jobId: string; draftNodeIds: string[] }) => Promise<WorkspaceStaleDraftCheckResult>;
 }

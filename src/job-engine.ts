@@ -167,6 +167,21 @@ const toFigmaNodeUrl = ({
   )}`;
 };
 
+/** Recursively collect all node IDs from an IR node tree. */
+const collectNodeIds = (node: unknown, ids: Set<string>): void => {
+  if (!isRecord(node)) {
+    return;
+  }
+  if (typeof node.id === "string") {
+    ids.add(node.id);
+  }
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      collectNodeIds(child, ids);
+    }
+  }
+};
+
 interface RejectedScreenCandidate {
   nodeId: string;
   nodeName: string;
@@ -2559,6 +2574,146 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const findLatestCompletedJobForBoardKey = (boardKey: string, excludeJobId: string): JobRecord | undefined => {
+    let latest: JobRecord | undefined;
+    for (const job of jobs.values()) {
+      if (job.status !== "completed") {
+        continue;
+      }
+      if (job.jobId === excludeJobId) {
+        continue;
+      }
+      const seed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "";
+      if (!seed) {
+        continue;
+      }
+      let candidateBoardKey: string;
+      try {
+        candidateBoardKey = resolveBoardKey(seed);
+      } catch {
+        continue;
+      }
+      if (candidateBoardKey !== boardKey) {
+        continue;
+      }
+      if (!latest || (job.finishedAt && (!latest.finishedAt || job.finishedAt > latest.finishedAt))) {
+        latest = job;
+      }
+    }
+    return latest;
+  };
+
+  const checkStaleDraft: JobEngine["checkStaleDraft"] = async ({
+    jobId,
+    draftNodeIds
+  }) => {
+    const job = jobs.get(jobId);
+    if (!job) {
+      return {
+        stale: false,
+        latestJobId: null,
+        sourceJobId: jobId,
+        boardKey: null,
+        carryForwardAvailable: false,
+        unmappedNodeIds: [],
+        message: `Job '${jobId}' not found.`
+      };
+    }
+
+    const boardKeySeed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "";
+    if (!boardKeySeed) {
+      return {
+        stale: false,
+        latestJobId: null,
+        sourceJobId: jobId,
+        boardKey: null,
+        carryForwardAvailable: false,
+        unmappedNodeIds: [],
+        message: "Cannot determine board key for this job."
+      };
+    }
+
+    let boardKey: string;
+    try {
+      boardKey = resolveBoardKey(boardKeySeed);
+    } catch {
+      return {
+        stale: false,
+        latestJobId: null,
+        sourceJobId: jobId,
+        boardKey: null,
+        carryForwardAvailable: false,
+        unmappedNodeIds: [],
+        message: "Cannot resolve board key for this job."
+      };
+    }
+
+    const latestJob = findLatestCompletedJobForBoardKey(boardKey, jobId);
+    if (!latestJob) {
+      return {
+        stale: false,
+        latestJobId: null,
+        sourceJobId: jobId,
+        boardKey,
+        carryForwardAvailable: false,
+        unmappedNodeIds: [],
+        message: "Draft is up-to-date — no newer job exists for this board."
+      };
+    }
+
+    // Check whether the latest job is actually newer
+    const sourceFinished = job.finishedAt ?? job.submittedAt;
+    const latestFinished = latestJob.finishedAt ?? latestJob.submittedAt;
+    if (latestFinished <= sourceFinished) {
+      return {
+        stale: false,
+        latestJobId: null,
+        sourceJobId: jobId,
+        boardKey,
+        carryForwardAvailable: false,
+        unmappedNodeIds: [],
+        message: "Draft is up-to-date — no newer job exists for this board."
+      };
+    }
+
+    // Draft is stale. Validate carry-forward feasibility using the latest job's design IR.
+    let unmappedNodeIds: string[] = [];
+    let carryForwardAvailable = false;
+
+    if (draftNodeIds.length > 0 && latestJob.artifacts.designIrFile) {
+      try {
+        const irContent = await readFile(latestJob.artifacts.designIrFile, "utf8");
+        const irData = JSON.parse(irContent) as { screens?: Array<{ children?: Array<{ id: string }> }> };
+        const allNodeIds = new Set<string>();
+        if (Array.isArray(irData.screens)) {
+          for (const screen of irData.screens) {
+            collectNodeIds(screen, allNodeIds);
+          }
+        }
+        unmappedNodeIds = draftNodeIds.filter((nodeId) => !allNodeIds.has(nodeId));
+        carryForwardAvailable = unmappedNodeIds.length === 0;
+      } catch {
+        // If IR is unreadable, carry-forward is not available.
+        unmappedNodeIds = [];
+        carryForwardAvailable = false;
+      }
+    }
+
+    return {
+      stale: true,
+      latestJobId: latestJob.jobId,
+      sourceJobId: jobId,
+      boardKey,
+      carryForwardAvailable,
+      unmappedNodeIds,
+      message: carryForwardAvailable
+        ? `A newer job '${latestJob.jobId}' exists for this board. Carry-forward is available — all draft nodes are present in the latest output.`
+        : unmappedNodeIds.length > 0
+          ? `A newer job '${latestJob.jobId}' exists for this board. Carry-forward is not available — ${String(unmappedNodeIds.length)} node(s) could not be resolved in the latest output.`
+          : `A newer job '${latestJob.jobId}' exists for this board.`
+    };
+  };
+
   return {
     submitJob,
     submitRegeneration,
@@ -2569,7 +2724,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     getJob,
     getJobResult,
     getJobRecord,
-    resolvePreviewAsset
+    resolvePreviewAsset,
+    checkStaleDraft
   };
 };
 

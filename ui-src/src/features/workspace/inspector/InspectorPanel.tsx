@@ -74,6 +74,7 @@ import {
 import {
   computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
+  carryForwardDraft,
   getInspectorOverrideEntry,
   getInspectorOverrideValue,
   persistInspectorOverrideDraft,
@@ -82,8 +83,11 @@ import {
   toStructuredInspectorOverridePayload,
   upsertInspectorOverrideEntry,
   type InspectorOverrideDraft,
-  type InspectorOverrideField
+  type InspectorOverrideField,
+  type StaleDraftCheckResult,
+  type StaleDraftDecision
 } from "./inspector-override-draft";
+import { StaleDraftWarning } from "./StaleDraftWarning";
 import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest
@@ -679,6 +683,8 @@ export function InspectorPanel({
   const [overrideDraft, setOverrideDraft] = useState<InspectorOverrideDraft | null>(null);
   const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(null);
   const [draftStale, setDraftStale] = useState(false);
+  const [staleDraftCheckResult, setStaleDraftCheckResult] = useState<StaleDraftCheckResult | null>(null);
+  const [staleDraftCheckPending, setStaleDraftCheckPending] = useState(false);
   const [draftPersistWarning, setDraftPersistWarning] = useState<string | null>(null);
   const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
@@ -1350,6 +1356,45 @@ export function InspectorPanel({
     }
     return computeInspectorDraftBaseFingerprint({ screens: irScreens });
   }, [designIrState.status, irScreens]);
+
+  const handleStaleDraftDecision = useCallback((decision: StaleDraftDecision) => {
+    if (!baseFingerprint) {
+      return;
+    }
+
+    if (decision === "continue") {
+      setStaleDraftCheckResult(null);
+      setDraftStale(false);
+      return;
+    }
+
+    if (decision === "discard") {
+      setStaleDraftCheckResult(null);
+      setDraftStale(false);
+      setDraftRestoreWarning(null);
+      setOverrideDraft(createInspectorOverrideDraft({
+        sourceJobId: jobId,
+        baseFingerprint
+      }));
+      return;
+    }
+
+    if (decision === "carry-forward") {
+      if (!overrideDraft || !staleDraftCheckResult?.latestJobId) {
+        return;
+      }
+      const carried = carryForwardDraft({
+        staleDraft: overrideDraft,
+        newJobId: staleDraftCheckResult.latestJobId,
+        newBaseFingerprint: baseFingerprint
+      });
+      setStaleDraftCheckResult(null);
+      setDraftStale(false);
+      setDraftRestoreWarning(null);
+      setOverrideDraft(carried);
+    }
+  }, [baseFingerprint, jobId, overrideDraft, staleDraftCheckResult]);
+
   const inspectabilitySummary = useMemo(() => {
     return deriveInspectabilitySummary({
       designIrStatus: designIrState.status,
@@ -1505,6 +1550,8 @@ export function InspectorPanel({
       setOverrideDraft(null);
       setDraftRestoreWarning(null);
       setDraftStale(false);
+      setStaleDraftCheckResult(null);
+      setStaleDraftCheckPending(false);
       setDraftPersistWarning(null);
       return;
     }
@@ -1516,8 +1563,70 @@ export function InspectorPanel({
     setDraftRestoreWarning(restored.warning);
     setDraftStale(restored.stale);
     setDraftPersistWarning(null);
+    setStaleDraftCheckResult(null);
+
     if (restored.draft && !restored.stale) {
       setOverrideDraft(restored.draft);
+
+      // Check server-side for newer jobs even when fingerprint matches
+      const draftNodeIds = [...new Set(restored.draft.entries.map((e) => e.nodeId))];
+      if (draftNodeIds.length > 0) {
+        setStaleDraftCheckPending(true);
+        const encodedId = encodeURIComponent(jobId);
+        fetch(`/workspace/jobs/${encodedId}/stale-check`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftNodeIds })
+        })
+          .then((res) => res.json() as Promise<StaleDraftCheckResult>)
+          .then((result) => {
+            if (result.stale) {
+              setStaleDraftCheckResult(result);
+              setDraftStale(true);
+            }
+          })
+          .catch(() => {
+            // Server-side check failure is non-critical; local check stands.
+          })
+          .finally(() => {
+            setStaleDraftCheckPending(false);
+          });
+      }
+
+      return;
+    }
+
+    if (restored.draft && restored.stale) {
+      // Draft exists but fingerprint changed — keep stale draft in memory for carry-forward
+      setOverrideDraft(restored.draft);
+
+      const draftNodeIds = [...new Set(restored.draft.entries.map((e) => e.nodeId))];
+      setStaleDraftCheckPending(true);
+      const encodedId = encodeURIComponent(jobId);
+      fetch(`/workspace/jobs/${encodedId}/stale-check`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draftNodeIds })
+      })
+        .then((res) => res.json() as Promise<StaleDraftCheckResult>)
+        .then((result) => {
+          setStaleDraftCheckResult(result);
+        })
+        .catch(() => {
+          setStaleDraftCheckResult({
+            stale: true,
+            latestJobId: null,
+            sourceJobId: jobId,
+            boardKey: null,
+            carryForwardAvailable: false,
+            unmappedNodeIds: [],
+            message: "Could not verify carry-forward availability."
+          });
+        })
+        .finally(() => {
+          setStaleDraftCheckPending(false);
+        });
+
       return;
     }
 
@@ -2865,13 +2974,22 @@ export function InspectorPanel({
             <p data-testid="inspector-edit-v1-deferred-fields" className="m-0 mt-1 text-indigo-800">
               Deferred in v1: width, height, layoutMode.
             </p>
-            {draftRestoreWarning ? (
+            {draftRestoreWarning && !staleDraftCheckResult ? (
               <p
                 data-testid={draftStale ? "inspector-edit-draft-stale-warning" : "inspector-edit-draft-restore-warning"}
                 className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
               >
                 {draftRestoreWarning}
               </p>
+            ) : null}
+            {staleDraftCheckResult?.stale ? (
+              <div className="mt-2" data-testid="inspector-stale-draft-warning">
+                <StaleDraftWarning
+                  checkResult={staleDraftCheckResult}
+                  onDecision={handleStaleDraftDecision}
+                  disabled={staleDraftCheckPending}
+                />
+              </div>
             ) : null}
             {draftPersistWarning ? (
               <p

@@ -947,8 +947,10 @@ describe("InspectorPanel Edit Studio", () => {
     await waitFor(() => {
       expect(screen.getByTestId("inspector-edit-draft-stale-warning")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("inspector-edit-input-fillColor")).toHaveValue("#112233");
-    expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"overrides\": []");
+    // Stale draft entries are preserved in memory so the user can review
+    // them before deciding to continue, discard, or carry forward.
+    expect(screen.getByTestId("inspector-edit-input-fillColor")).toHaveValue("#ffffff");
+    expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"field\": \"fillColor\"");
   });
 });
 

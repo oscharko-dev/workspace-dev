@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  carryForwardDraft,
   computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
   getInspectorOverrideValue,
@@ -207,5 +208,116 @@ describe("draft persistence", () => {
     expect(result.error).toContain("In-memory draft");
 
     setItemSpy.mockRestore();
+  });
+});
+
+describe("carryForwardDraft", () => {
+  it("creates a new draft for the target job with all entries carried over", () => {
+    let draft = createInspectorOverrideDraft({
+      sourceJobId: "old-job-1",
+      baseFingerprint: "fnv1a64:aaaa"
+    });
+    draft = upsertInspectorOverrideEntry({
+      draft,
+      nodeId: "node-1",
+      field: "fillColor",
+      value: "#ff0000"
+    });
+    draft = upsertInspectorOverrideEntry({
+      draft,
+      nodeId: "node-2",
+      field: "opacity",
+      value: 0.5
+    });
+
+    const carried = carryForwardDraft({
+      staleDraft: draft,
+      newJobId: "new-job-2",
+      newBaseFingerprint: "fnv1a64:bbbb"
+    });
+
+    expect(carried.sourceJobId).toBe("new-job-2");
+    expect(carried.baseFingerprint).toBe("fnv1a64:bbbb");
+    expect(carried.draftId).toContain("new-job-2:");
+    expect(carried.draftId).not.toEqual(draft.draftId);
+    expect(carried.entries).toHaveLength(2);
+    expect(carried.entries[0]!.nodeId).toBe("node-1");
+    expect(carried.entries[0]!.field).toBe("fillColor");
+    expect(carried.entries[0]!.value).toBe("#ff0000");
+    expect(carried.entries[1]!.nodeId).toBe("node-2");
+    expect(carried.entries[1]!.field).toBe("opacity");
+    expect(carried.entries[1]!.value).toBe(0.5);
+  });
+
+  it("produces an empty entries array when the stale draft has no entries", () => {
+    const draft = createInspectorOverrideDraft({
+      sourceJobId: "old-job",
+      baseFingerprint: "fnv1a64:cccc"
+    });
+
+    const carried = carryForwardDraft({
+      staleDraft: draft,
+      newJobId: "new-job",
+      newBaseFingerprint: "fnv1a64:dddd"
+    });
+
+    expect(carried.entries).toHaveLength(0);
+    expect(carried.sourceJobId).toBe("new-job");
+  });
+});
+
+describe("stale draft detection via restorePersistedInspectorOverrideDraft", () => {
+  it("marks draft as stale when fingerprints do not match", () => {
+    const draft = createInspectorOverrideDraft({
+      sourceJobId: "job-stale-1",
+      baseFingerprint: "fnv1a64:1111"
+    });
+
+    window.localStorage.setItem(
+      toInspectorOverrideDraftStorageKey("job-stale-1"),
+      JSON.stringify(draft)
+    );
+
+    const result = restorePersistedInspectorOverrideDraft({
+      jobId: "job-stale-1",
+      currentBaseFingerprint: "fnv1a64:2222"
+    });
+
+    expect(result.stale).toBe(true);
+    expect(result.draft).not.toBeNull();
+    expect(result.warning).toContain("fingerprint");
+  });
+
+  it("returns fresh (not stale) when fingerprints match", () => {
+    const fingerprint = "fnv1a64:aaaa";
+    const draft = createInspectorOverrideDraft({
+      sourceJobId: "job-fresh-1",
+      baseFingerprint: fingerprint
+    });
+
+    window.localStorage.setItem(
+      toInspectorOverrideDraftStorageKey("job-fresh-1"),
+      JSON.stringify(draft)
+    );
+
+    const result = restorePersistedInspectorOverrideDraft({
+      jobId: "job-fresh-1",
+      currentBaseFingerprint: fingerprint
+    });
+
+    expect(result.stale).toBe(false);
+    expect(result.draft).not.toBeNull();
+    expect(result.warning).toBeNull();
+  });
+
+  it("returns no draft and no stale flag when no draft is persisted", () => {
+    const result = restorePersistedInspectorOverrideDraft({
+      jobId: "job-nonexistent",
+      currentBaseFingerprint: "fnv1a64:xxxx"
+    });
+
+    expect(result.stale).toBe(false);
+    expect(result.draft).toBeNull();
+    expect(result.warning).toBeNull();
   });
 });

@@ -135,6 +135,18 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedJobRoute.action === "stale-check") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for stale-check route '/workspace/jobs/${jobId}/stale-check'.`
+            }
+          });
+          return;
+        }
+
         if (parsedJobRoute.action === "design-ir") {
           const record = jobEngine.getJobRecord(jobId);
           if (!record) {
@@ -1002,6 +1014,50 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 200,
           payload: result
+        });
+        return;
+      }
+
+      if (parsedJobRoute?.action === "stale-check") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        const body = rawBody.value as { draftNodeIds?: unknown };
+        const draftNodeIds: string[] = Array.isArray(body.draftNodeIds)
+          ? body.draftNodeIds.filter((v): v is string => typeof v === "string")
+          : [];
+
+        let checkResult: Awaited<ReturnType<JobEngine["checkStaleDraft"]>>;
+        try {
+          checkResult = await jobEngine.checkStaleDraft({ jobId, draftNodeIds });
+        } catch (error) {
+          sendJson({
+            response,
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({ error, fallback: "Could not check draft staleness." })
+            }
+          });
+          return;
+        }
+
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: checkResult
         });
         return;
       }
