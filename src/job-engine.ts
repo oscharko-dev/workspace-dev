@@ -10,7 +10,8 @@ import type {
   WorkspaceJobInput,
   WorkspaceJobResult,
   WorkspaceJobStageName,
-  WorkspaceJobStatus
+  WorkspaceJobStatus,
+  WorkspaceRegenerationInput
 } from "./contracts/index.js";
 import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
 import {
@@ -45,8 +46,10 @@ import { runProjectValidation } from "./job-engine/validation.js";
 import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
+import { applyIrOverrides } from "./job-engine/ir-overrides.js";
 import { buildComponentManifest } from "./parity/component-manifest.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
+import type { DesignIR } from "./parity/types-ir.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
@@ -1672,6 +1675,473 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const runRegenerationJob = async (job: JobRecord, regenInput: WorkspaceRegenerationInput): Promise<void> => {
+    job.status = "running";
+    job.startedAt = nowIso();
+    const jobAbortController = new AbortController();
+    job.abortController = jobAbortController;
+
+    const sourceRecord = jobs.get(regenInput.sourceJobId);
+    if (!sourceRecord) {
+      job.status = "failed";
+      job.finishedAt = nowIso();
+      job.error = {
+        code: "E_REGEN_SOURCE_NOT_FOUND",
+        stage: "figma.source",
+        message: `Source job '${regenInput.sourceJobId}' not found.`
+      };
+      return;
+    }
+
+    const resolvedFormHandlingMode = sourceRecord.request.formHandlingMode;
+    const resolvedGenerationLocale = sourceRecord.request.generationLocale;
+
+    const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
+    const generatedProjectDir = path.join(jobDir, "generated-app");
+    const designIrFile = path.join(jobDir, "design-ir.json");
+    const stageTimingsFile = path.join(jobDir, "stage-timings.json");
+    const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
+    const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
+    const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
+
+    job.artifacts.jobDir = jobDir;
+    job.artifacts.generatedProjectDir = generatedProjectDir;
+    job.artifacts.designIrFile = designIrFile;
+    job.artifacts.stageTimingsFile = stageTimingsFile;
+    if (runtime.previewEnabled) {
+      job.artifacts.reproDir = reproDir;
+      job.preview.url = `${resolveBaseUrl()}/workspace/repros/${job.jobId}/`;
+    }
+
+    let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const persistStageTimings = async (): Promise<void> => {
+      const payload: {
+        jobId: string;
+        status: WorkspaceJobStatus["status"];
+        generatedAt: string;
+        stages: WorkspaceJobStatus["stages"];
+        lineage?: WorkspaceJobStatus["lineage"];
+        diagnostics?: WorkspaceJobDiagnostic[];
+        error?: WorkspaceJobStatus["error"];
+      } = {
+        jobId: job.jobId,
+        status: job.status,
+        generatedAt: nowIso(),
+        stages: job.stages
+      };
+      if (job.lineage) {
+        payload.lineage = job.lineage;
+      }
+      if (collectedDiagnostics && collectedDiagnostics.length > 0) {
+        payload.diagnostics = collectedDiagnostics;
+      }
+      if (job.error) {
+        payload.error = job.error;
+      }
+      await writeFile(stageTimingsFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    };
+
+    try {
+      await mkdir(jobDir, { recursive: true });
+      await mkdir(resolvedPaths.reprosRoot, { recursive: true });
+
+      // Skip figma.source — load IR from source job
+      markStageSkipped({
+        job,
+        stage: "figma.source",
+        message: `Reusing source from job '${regenInput.sourceJobId}'.`
+      });
+
+      // Load and apply overrides to source IR
+      const ir = await runStage({
+        job,
+        stage: "ir.derive",
+        action: async () => {
+          const sourceIrPath = sourceRecord.artifacts.designIrFile;
+          if (!sourceIrPath) {
+            throw createPipelineError({
+              code: "E_REGEN_SOURCE_IR_MISSING",
+              stage: "ir.derive",
+              message: `Source job '${regenInput.sourceJobId}' has no Design IR artifact.`
+            });
+          }
+
+          let rawContent: string;
+          try {
+            rawContent = await readFile(sourceIrPath, "utf8");
+          } catch {
+            throw createPipelineError({
+              code: "E_REGEN_SOURCE_IR_READ",
+              stage: "ir.derive",
+              message: `Could not read Design IR from source job '${regenInput.sourceJobId}'.`
+            });
+          }
+
+          let baseIr: DesignIR;
+          try {
+            baseIr = JSON.parse(rawContent) as DesignIR;
+          } catch {
+            throw createPipelineError({
+              code: "E_REGEN_SOURCE_IR_PARSE",
+              stage: "ir.derive",
+              message: `Could not parse Design IR from source job '${regenInput.sourceJobId}'.`
+            });
+          }
+
+          const overrideResult = applyIrOverrides({
+            ir: baseIr,
+            overrides: regenInput.overrides
+          });
+
+          await writeFile(designIrFile, `${JSON.stringify(overrideResult.ir, null, 2)}\n`, "utf8");
+
+          pushLog({
+            job,
+            level: "info",
+            stage: "ir.derive",
+            message:
+              `Applied ${overrideResult.appliedCount} override(s) to source IR ` +
+              `(${overrideResult.skippedCount} skipped, ${overrideResult.ir.screens.length} screens).`
+          });
+
+          return overrideResult.ir;
+        }
+      });
+
+      await runStage({
+        job,
+        stage: "template.prepare",
+        action: async () => {
+          const templateExists = await pathExists(TEMPLATE_ROOT);
+          if (!templateExists) {
+            throw createPipelineError({
+              code: "E_TEMPLATE_MISSING",
+              stage: "template.prepare",
+              message: `Template not found at ${TEMPLATE_ROOT}`
+            });
+          }
+          await rm(generatedProjectDir, { recursive: true, force: true });
+          await copyDir({
+            sourceDir: TEMPLATE_ROOT,
+            targetDir: generatedProjectDir,
+            filter: TEMPLATE_COPY_FILTER
+          });
+        }
+      });
+
+      const generationSummary = await runStage({
+        job,
+        stage: "codegen.generate",
+        action: async () => {
+          const streamingOnLog = (message: string): void => {
+            pushLog({
+              job,
+              level: "info",
+              stage: "codegen.generate",
+              message
+            });
+          };
+          const generator = generateArtifactsStreaming({
+            projectDir: generatedProjectDir,
+            ir,
+            iconMapFilePath,
+            designSystemFilePath,
+            generationLocale: resolvedGenerationLocale,
+            routerMode: runtime.routerMode,
+            formHandlingMode: resolvedFormHandlingMode,
+            llmModelName: "deterministic",
+            llmCodegenMode: "deterministic",
+            onLog: streamingOnLog
+          });
+          let iterResult = await generator.next();
+          while (!iterResult.done) {
+            const event: StreamingArtifactEvent = iterResult.value;
+            if (event.type === "progress") {
+              pushLog({
+                job,
+                level: "info",
+                stage: "codegen.generate",
+                message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
+              });
+            }
+            iterResult = await generator.next();
+          }
+          return iterResult.value;
+        }
+      });
+
+      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
+        job.artifacts.generationMetricsFile = path.join(generatedProjectDir, "generation-metrics.json");
+      }
+
+      try {
+        const manifest = await buildComponentManifest({
+          projectDir: generatedProjectDir,
+          screens: ir.screens
+        });
+        const manifestPath = path.join(generatedProjectDir, "component-manifest.json");
+        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+        job.artifacts.componentManifestFile = manifestPath;
+      } catch (error) {
+        pushLog({
+          job,
+          level: "warn",
+          stage: "codegen.generate",
+          message: `Component manifest generation failed: ${getErrorMessage(error)}`
+        });
+      }
+
+      try {
+        const boardKeySeed = sourceRecord.request.figmaFileKey ?? "regeneration";
+        const boardKey = resolveBoardKey(boardKeySeed);
+        const diffReport = await runGenerationDiff({
+          generatedProjectDir,
+          jobDir,
+          outputRoot: resolvedPaths.outputRoot,
+          boardKey,
+          jobId: job.jobId
+        });
+        job.generationDiff = diffReport;
+        job.artifacts.generationDiffFile = path.join(jobDir, "generation-diff.json");
+      } catch (error) {
+        pushLog({
+          job,
+          level: "warn",
+          stage: "codegen.generate",
+          message: `Generation diff computation failed: ${getErrorMessage(error)}`
+        });
+      }
+
+      await runStage({
+        job,
+        stage: "validate.project",
+        action: async () => {
+          await runProjectValidation({
+            generatedProjectDir,
+            enableLintAutofix: isLintAutofixEnabled(),
+            enablePerfValidation: isPerfValidationEnabled(),
+            enableUiValidation: runtime.enableUiValidation,
+            enableUnitTestValidation: runtime.enableUnitTestValidation,
+            commandTimeoutMs: runtime.commandTimeoutMs,
+            installPreferOffline: runtime.installPreferOffline,
+            skipInstall: runtime.skipInstall,
+            abortSignal: jobAbortController.signal,
+            onLog: (message) => {
+              pushLog({
+                job,
+                level: "info",
+                stage: "validate.project",
+                message
+              });
+            }
+          });
+        }
+      });
+
+      if (!runtime.previewEnabled) {
+        markStageSkipped({
+          job,
+          stage: "repro.export",
+          message: "Preview disabled by runtime configuration."
+        });
+      } else {
+        await runStage({
+          job,
+          stage: "repro.export",
+          action: async () => {
+            await rm(reproDir, { recursive: true, force: true });
+            await copyDir({
+              sourceDir: path.join(generatedProjectDir, "dist"),
+              targetDir: reproDir
+            });
+          }
+        });
+      }
+
+      // git.pr always skipped for regeneration jobs (per issue #455 scope)
+      job.gitPr = {
+        status: "skipped",
+        reason: "Git/PR flow not applicable for regeneration jobs."
+      };
+      markStageSkipped({
+        job,
+        stage: "git.pr",
+        message: "Git/PR flow not applicable for regeneration jobs."
+      });
+
+      job.status = "completed";
+      job.finishedAt = nowIso();
+      delete job.currentStage;
+      await persistStageTimings();
+      pushLog({
+        job,
+        level: "info",
+        message: `Regeneration job completed. Generated output at ${generatedProjectDir} (${generationSummary.generatedPaths.length} artifacts).`
+      });
+    } catch (error) {
+      if (isJobCancellationError(error)) {
+        job.status = "canceled";
+        job.finishedAt = nowIso();
+        job.currentStage = error.stage;
+        if (!job.cancellation) {
+          job.cancellation = {
+            requestedAt: nowIso(),
+            reason: error.message,
+            requestedBy: "api"
+          };
+        }
+        job.cancellation.completedAt = nowIso();
+        markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
+        try {
+          await persistStageTimings();
+        } catch {
+          // Ignore
+        }
+        pushLog({
+          job,
+          level: "warn",
+          stage: error.stage,
+          message: `Regeneration job canceled: ${error.message}`
+        });
+        return;
+      }
+
+      const typedError = toPipelineError({
+        error,
+        fallbackStage: job.currentStage ?? "ir.derive"
+      });
+      const mergedDiagnostics = mergePipelineDiagnostics({
+        ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
+        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {})
+      });
+      if (mergedDiagnostics) {
+        collectedDiagnostics = mergedDiagnostics;
+      }
+
+      job.status = "failed";
+      job.finishedAt = nowIso();
+      job.error = {
+        code: typedError.code,
+        stage: typedError.stage,
+        message: typedError.message,
+        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
+      };
+      job.currentStage = typedError.stage;
+      try {
+        await persistStageTimings();
+      } catch {
+        // Ignore
+      }
+      pushLog({
+        job,
+        level: "error",
+        stage: typedError.stage,
+        message: `Regeneration job failed: ${typedError.code} ${typedError.message}`
+      });
+    } finally {
+      delete job.abortController;
+    }
+  };
+
+  const executeRegenerationJob = ({ job, input }: { job: JobRecord; input: WorkspaceRegenerationInput }): void => {
+    if (runningJobIds.has(job.jobId)) {
+      return;
+    }
+    runningJobIds.add(job.jobId);
+    refreshQueueSnapshots();
+    queueMicrotask(() => {
+      void runRegenerationJob(job, input).finally(() => {
+        runningJobIds.delete(job.jobId);
+        refreshQueueSnapshots();
+        while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
+          const nextJobId = queuedJobIds.shift();
+          if (!nextJobId) {
+            break;
+          }
+          const nextJob = jobs.get(nextJobId);
+          const nextInput = queuedJobInputs.get(nextJobId);
+          if (!nextJob || !nextInput || nextJob.status !== "queued") {
+            queuedJobInputs.delete(nextJobId);
+            continue;
+          }
+          queuedJobInputs.delete(nextJobId);
+          executeJob({ job: nextJob, input: nextInput });
+        }
+        refreshQueueSnapshots();
+      });
+    });
+  };
+
+  const queuedRegenInputs = new Map<string, WorkspaceRegenerationInput>();
+
+  const submitRegeneration = (input: WorkspaceRegenerationInput) => {
+    // Validate source job exists and is completed
+    const sourceJob = jobs.get(input.sourceJobId);
+    if (!sourceJob) {
+      const err = new Error(`Source job '${input.sourceJobId}' not found.`);
+      (err as Error & { code: string }).code = "E_REGEN_SOURCE_NOT_FOUND";
+      throw err;
+    }
+    if (sourceJob.status !== "completed") {
+      const err = new Error(`Source job '${input.sourceJobId}' has status '${sourceJob.status}' — only completed jobs can be used as regeneration source.`);
+      (err as Error & { code: string }).code = "E_REGEN_SOURCE_NOT_COMPLETED";
+      throw err;
+    }
+
+    if (runningJobIds.size >= runtime.maxConcurrentJobs && queuedJobIds.length >= runtime.maxQueuedJobs) {
+      throw new JobQueueBackpressureError({
+        queue: toQueueSnapshot()
+      });
+    }
+
+    const jobId = randomUUID();
+    const job: JobRecord = {
+      jobId,
+      status: "queued",
+      submittedAt: nowIso(),
+      request: { ...sourceJob.request, enableGitPr: false },
+      stages: createInitialStages(),
+      logs: [],
+      artifacts: {
+        outputRoot: resolvedPaths.outputRoot,
+        jobDir: path.join(resolvedPaths.jobsRoot, jobId)
+      },
+      preview: {
+        enabled: runtime.previewEnabled
+      },
+      queue: toQueueSnapshot({ jobId }),
+      lineage: {
+        sourceJobId: input.sourceJobId,
+        overrideCount: input.overrides.length,
+        ...(input.draftId ? { draftId: input.draftId } : {}),
+        ...(input.baseFingerprint ? { baseFingerprint: input.baseFingerprint } : {})
+      }
+    };
+
+    jobs.set(jobId, job);
+    pushLog({ job, level: "info", message: `Regeneration job accepted (source=${input.sourceJobId}, overrides=${input.overrides.length}).` });
+
+    if (runningJobIds.size < runtime.maxConcurrentJobs) {
+      executeRegenerationJob({ job, input });
+    } else {
+      queuedJobIds.push(jobId);
+      queuedRegenInputs.set(jobId, { ...input });
+      pushLog({
+        job,
+        level: "info",
+        message: `Regeneration job queued with position ${queuedJobIds.length}.`
+      });
+      refreshQueueSnapshots();
+    }
+
+    return {
+      jobId,
+      sourceJobId: input.sourceJobId,
+      status: "queued" as const,
+      acceptedModes: toAcceptedModes({ figmaSourceMode: sourceJob.request.figmaSourceMode })
+    };
+  };
+
   const cancelJob = ({
     jobId,
     reason
@@ -1758,6 +2228,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       artifacts: { ...job.artifacts },
       preview: { ...job.preview }
     };
+    if (job.lineage) {
+      result.lineage = { ...job.lineage };
+    }
     if (job.cancellation) {
       result.cancellation = { ...job.cancellation };
     }
@@ -1829,6 +2302,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   return {
     submitJob,
+    submitRegeneration,
     cancelJob,
     getJob,
     getJobResult,

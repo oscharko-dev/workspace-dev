@@ -7,6 +7,7 @@ import type {
   WorkspaceJobCancellation,
   WorkspaceJobError,
   WorkspaceJobInput,
+  WorkspaceJobLineage,
   WorkspaceJobLog,
   WorkspaceJobQueueState,
   WorkspaceJobResult,
@@ -15,6 +16,8 @@ import type {
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
+  WorkspaceRegenerationAccepted,
+  WorkspaceRegenerationInput,
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
 
@@ -51,6 +54,7 @@ export interface JobRecord {
   };
   queue: WorkspaceJobQueueState;
   abortController?: AbortController;
+  lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
@@ -135,6 +139,7 @@ export interface JobRecordSnapshot {
 
 export interface JobEngine {
   submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
+  submitRegeneration: (input: WorkspaceRegenerationInput) => WorkspaceRegenerationAccepted;
   cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;

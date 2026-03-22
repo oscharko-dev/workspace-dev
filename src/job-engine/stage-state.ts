@@ -145,6 +145,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.finishedAt) {
     status.finishedAt = job.finishedAt;
   }
+  if (job.lineage) {
+    status.lineage = { ...job.lineage };
+  }
   if (job.cancellation) {
     status.cancellation = { ...job.cancellation };
   }
