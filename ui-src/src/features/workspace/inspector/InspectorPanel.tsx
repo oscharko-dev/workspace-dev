@@ -14,6 +14,7 @@ import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath } from "./component-tree-utils";
+import { ShortcutHelp } from "./ShortcutHelp";
 import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
@@ -244,6 +245,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
@@ -557,6 +559,31 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       clearPointerDragListeners();
     };
   }, [clearPointerDragListeners]);
+
+  // --- Shortcut help: toggle on `?` key (skip when text input is focused) ---
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleShortcutKey = (event: KeyboardEvent): void => {
+      if (event.key !== "?") return;
+
+      // Do not trigger when a text input, textarea, or contenteditable is focused
+      const target = event.target as HTMLElement | null;
+      if (target && typeof target.tagName === "string") {
+        const tagName = target.tagName.toLowerCase();
+        if (tagName === "input" || tagName === "textarea" || target.isContentEditable) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      setShortcutHelpOpen((prev) => !prev);
+    };
+
+    window.addEventListener("keydown", handleShortcutKey);
+    return () => { window.removeEventListener("keydown", handleShortcutKey); };
+  }, []);
 
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
@@ -1101,6 +1128,18 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
         <h2 className="m-0 text-xl font-bold text-slate-900">Inspector</h2>
         <p className="m-0 text-sm text-slate-600">Live preview and generated source code</p>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="inspector-shortcut-help-button"
+            onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
+            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+            title="Keyboard shortcuts (?)"
+            aria-label="Show keyboard shortcuts"
+          >
+            ⌨ Shortcuts
+          </button>
+        </div>
         <div className="mt-3 flex flex-wrap gap-2" data-testid="inspector-source-statuses">
           {sourceStatuses.map(({ source, label, status }) => (
             <span
@@ -1262,6 +1301,12 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           />
         </div>
       </div>
+
+      {/* Shortcut help overlay */}
+      <ShortcutHelp
+        open={shortcutHelpOpen}
+        onClose={() => { setShortcutHelpOpen(false); }}
+      />
     </div>
   );
 }
