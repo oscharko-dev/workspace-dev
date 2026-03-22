@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type JSX,
@@ -29,6 +30,12 @@ import {
   toInspectorLayoutStorageKey,
   type InspectorPaneRatios
 } from "./layout-state";
+import {
+  inspectorScopeReducer,
+  INITIAL_INSPECTOR_SCOPE_STATE,
+  selectHasActiveScope,
+  type ManifestMapping
+} from "./inspector-scope-state";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -297,7 +304,9 @@ function findManifestEntry(
 export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [scopeState, scopeDispatch] = useReducer(inspectorScopeReducer, INITIAL_INSPECTOR_SCOPE_STATE);
+  const selectedNodeId = scopeState.selectedNodeId;
+  const hasActiveScope = selectHasActiveScope(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -942,9 +951,63 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     setHighlightRange(null);
   }, []);
 
+  /** Resolve a ManifestMapping for a given node id (null if unmapped). */
+  const resolveMapping = useCallback(
+    (nodeId: string): ManifestMapping | null => {
+      if (!manifest) return null;
+      const match = findManifestEntry(nodeId, manifest);
+      if (!match) return null;
+      if (match.entry) {
+        return {
+          file: match.entry.file,
+          startLine: match.entry.startLine,
+          endLine: match.entry.endLine,
+          ...(match.entry.extractedComponent ? { extractedComponent: true } : {})
+        };
+      }
+      // Screen-level: use the screen file
+      return {
+        file: match.screen.file,
+        startLine: 1,
+        endLine: 1
+      };
+    },
+    [manifest]
+  );
+
+  /** Look up the node name and type from the IR tree. */
+  const resolveNodeMeta = useCallback(
+    (nodeId: string): { name: string; type: string } => {
+      const findInTree = (nodes: TreeNode[]): { name: string; type: string } | null => {
+        for (const node of nodes) {
+          if (node.id === nodeId) return { name: node.name, type: node.type };
+          if (node.children) {
+            const found = findInTree(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      return findInTree(treeNodes) ?? { name: nodeId, type: "unknown" };
+    },
+    [treeNodes]
+  );
+
   const handleSelectTreeNode = useCallback(
     (nodeId: string) => {
-      setSelectedNodeId(nodeId);
+      const mapping = resolveMapping(nodeId);
+      const meta = resolveNodeMeta(nodeId);
+
+      // Dispatch to scope reducer (selection only, not scope entry)
+      scopeDispatch({
+        type: "SELECT_NODE",
+        payload: {
+          nodeId,
+          nodeName: meta.name,
+          nodeType: meta.type,
+          mapping
+        }
+      });
 
       if (!manifest) {
         return;
@@ -975,7 +1038,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
         setHighlightRange(null);
       }
     },
-    [manifest]
+    [manifest, resolveMapping, resolveNodeMeta]
   );
 
   // Also check if the node is a screen directly from IR data (for screens without manifest)
@@ -1002,6 +1065,43 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     },
     [handleTreeSelect]
   );
+
+  /** Explicitly enter scope on a node (separate from selection). */
+  const handleEnterScope = useCallback(
+    (nodeId: string) => {
+      const mapping = resolveMapping(nodeId);
+      const meta = resolveNodeMeta(nodeId);
+
+      scopeDispatch({
+        type: "ENTER_SCOPE",
+        payload: {
+          nodeId,
+          nodeName: meta.name,
+          nodeType: meta.type,
+          mapping
+        }
+      });
+
+      // Also navigate to the node's file if mapped
+      if (mapping) {
+        setSelectedFile(mapping.file);
+        if (mapping.extractedComponent) {
+          setHighlightRange(null);
+        } else {
+          setHighlightRange({
+            startLine: mapping.startLine,
+            endLine: mapping.endLine
+          });
+        }
+      }
+    },
+    [resolveMapping, resolveNodeMeta]
+  );
+
+  /** Exit the current scope level. */
+  const handleExitScope = useCallback(() => {
+    scopeDispatch({ type: "EXIT_SCOPE" });
+  }, []);
 
   const handleToggleInspect = useCallback(() => {
     setInspectEnabled((prev) => !prev);
@@ -1325,6 +1425,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
                 screens={treeNodes}
                 selectedId={selectedNodeId}
                 onSelect={handleTreeSelect}
+                onEnterScope={handleEnterScope}
                 collapsed={treeCollapsed}
                 onToggleCollapsed={() => {
                   setTreeCollapsed((prev) => !prev);
@@ -1427,6 +1528,9 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             previousFileContentLoading={previousFileContentLoading}
             breadcrumbPath={breadcrumbPath}
             onBreadcrumbSelect={handleTreeSelect}
+            hasActiveScope={hasActiveScope}
+            onEnterScope={handleEnterScope}
+            onExitScope={handleExitScope}
             splitFile={effectiveSplitFile}
             splitFileContent={splitFileContent}
             splitFileContentLoading={splitFileContentLoading}
