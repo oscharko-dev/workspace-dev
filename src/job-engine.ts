@@ -6,6 +6,8 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  WorkspaceLocalSyncApplyResult,
+  WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
   WorkspaceJobInput,
   WorkspaceJobResult,
@@ -47,6 +49,7 @@ import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
 import { applyIrOverrides } from "./job-engine/ir-overrides.js";
+import { applyLocalSyncPlan, LocalSyncError, type LocalSyncPlan, planLocalSync } from "./job-engine/local-sync.js";
 import { buildComponentManifest } from "./parity/component-manifest.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 import type { DesignIR } from "./parity/types-ir.js";
@@ -65,6 +68,15 @@ const WORKSPACE_JOB_STAGES: WorkspaceJobStageName[] = [
   "git.pr"
 ];
 const WORKSPACE_JOB_STAGE_SET = new Set<WorkspaceJobStageName>(WORKSPACE_JOB_STAGES);
+const LOCAL_SYNC_CONFIRMATION_TTL_MS = 10 * 60_000;
+
+interface LocalSyncConfirmationRecord {
+  token: string;
+  jobId: string;
+  sourceJobId: string;
+  expiresAtMs: number;
+  plan: LocalSyncPlan;
+}
 
 const isWorkspaceJobStageName = (value: unknown): value is WorkspaceJobStageName => {
   return typeof value === "string" && WORKSPACE_JOB_STAGE_SET.has(value as WorkspaceJobStageName);
@@ -414,10 +426,12 @@ const resolveFormHandlingMode = ({
 
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
   const resolvedPaths = resolveAbsoluteOutputRoot({ outputRoot: paths.outputRoot });
+  const resolvedWorkspaceRoot = path.resolve(paths.workspaceRoot ?? path.resolve(paths.outputRoot, ".."));
   const jobs = new Map<string, JobRecord>();
   const queuedJobIds: string[] = [];
   const queuedJobInputs = new Map<string, WorkspaceJobInput>();
   const runningJobIds = new Set<string>();
+  const localSyncConfirmations = new Map<string, LocalSyncConfirmationRecord>();
 
   const isAbortLikeError = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
@@ -470,6 +484,82 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     for (const [jobId, job] of jobs.entries()) {
       job.queue = toQueueSnapshot({ jobId });
     }
+  };
+
+  const createSyncError = ({
+    code,
+    message
+  }: {
+    code:
+      | "E_SYNC_JOB_NOT_FOUND"
+      | "E_SYNC_JOB_NOT_COMPLETED"
+      | "E_SYNC_REGEN_REQUIRED"
+      | "E_SYNC_CONFIRMATION_REQUIRED"
+      | "E_SYNC_CONFIRMATION_INVALID"
+      | "E_SYNC_CONFIRMATION_EXPIRED";
+    message: string;
+  }): Error & { code: string } => {
+    const error = new Error(message) as Error & { code: string };
+    error.code = code;
+    return error;
+  };
+
+  const pruneExpiredSyncConfirmations = (): void => {
+    const nowMs = Date.now();
+    for (const [token, record] of localSyncConfirmations.entries()) {
+      if (record.expiresAtMs <= nowMs) {
+        localSyncConfirmations.delete(token);
+      }
+    }
+  };
+
+  const resolveSyncContext = ({
+    jobId
+  }: {
+    jobId: string;
+  }): {
+    job: JobRecord;
+    sourceJobId: string;
+    boardKey: string;
+    generatedProjectDir: string;
+  } => {
+    const job = jobs.get(jobId);
+    if (!job) {
+      throw createSyncError({
+        code: "E_SYNC_JOB_NOT_FOUND",
+        message: `Unknown job '${jobId}'.`
+      });
+    }
+
+    if (!job.lineage) {
+      throw createSyncError({
+        code: "E_SYNC_REGEN_REQUIRED",
+        message: `Job '${jobId}' is not a regeneration job; local sync is only available for regenerated output.`
+      });
+    }
+
+    if (job.status !== "completed") {
+      throw createSyncError({
+        code: "E_SYNC_JOB_NOT_COMPLETED",
+        message: `Job '${jobId}' has status '${job.status}' — local sync is only available for completed jobs.`
+      });
+    }
+
+    if (!job.artifacts.generatedProjectDir) {
+      const missingGeneratedDir = new LocalSyncError(
+        "E_SYNC_GENERATED_DIR_MISSING",
+        `Generated project directory not available for job '${jobId}'.`
+      );
+      throw missingGeneratedDir;
+    }
+
+    const boardKeySeed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "regeneration";
+    return {
+      job,
+      sourceJobId: job.lineage.sourceJobId,
+      boardKey: resolveBoardKey(boardKeySeed),
+      generatedProjectDir: job.artifacts.generatedProjectDir
+    };
   };
 
   const markStageSkipped = ({
@@ -2142,6 +2232,104 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const previewLocalSync: JobEngine["previewLocalSync"] = async ({
+    jobId,
+    targetPath
+  }): Promise<WorkspaceLocalSyncDryRunResult> => {
+    pruneExpiredSyncConfirmations();
+    const syncContext = resolveSyncContext({ jobId });
+    const plan = await planLocalSync({
+      generatedProjectDir: syncContext.generatedProjectDir,
+      workspaceRoot: resolvedWorkspaceRoot,
+      targetPath: targetPath ?? syncContext.job.request.targetPath,
+      boardKey: syncContext.boardKey
+    });
+    const token = randomUUID();
+    const expiresAtMs = Date.now() + LOCAL_SYNC_CONFIRMATION_TTL_MS;
+    localSyncConfirmations.set(token, {
+      token,
+      jobId,
+      sourceJobId: syncContext.sourceJobId,
+      expiresAtMs,
+      plan
+    });
+
+    return {
+      jobId,
+      sourceJobId: syncContext.sourceJobId,
+      boardKey: plan.boardKey,
+      targetPath: plan.targetPath,
+      scopePath: plan.scopePath,
+      destinationRoot: plan.destinationRoot,
+      files: plan.files.map((entry) => ({
+        path: entry.relativePath,
+        action: entry.action,
+        sizeBytes: entry.sizeBytes
+      })),
+      summary: { ...plan.summary },
+      confirmationToken: token,
+      confirmationExpiresAt: new Date(expiresAtMs).toISOString()
+    };
+  };
+
+  const applyLocalSync: JobEngine["applyLocalSync"] = async ({
+    jobId,
+    confirmationToken,
+    confirmOverwrite
+  }): Promise<WorkspaceLocalSyncApplyResult> => {
+    pruneExpiredSyncConfirmations();
+    const syncContext = resolveSyncContext({ jobId });
+
+    if (!confirmOverwrite) {
+      throw createSyncError({
+        code: "E_SYNC_CONFIRMATION_REQUIRED",
+        message: "Local sync apply requires explicit overwrite confirmation."
+      });
+    }
+
+    const confirmation = localSyncConfirmations.get(confirmationToken);
+    if (!confirmation) {
+      throw createSyncError({
+        code: "E_SYNC_CONFIRMATION_INVALID",
+        message: "Invalid or unknown local sync confirmation token."
+      });
+    }
+    if (confirmation.expiresAtMs <= Date.now()) {
+      localSyncConfirmations.delete(confirmationToken);
+      throw createSyncError({
+        code: "E_SYNC_CONFIRMATION_EXPIRED",
+        message: "Local sync confirmation token expired. Request a new dry-run preview."
+      });
+    }
+    if (confirmation.jobId !== jobId) {
+      throw createSyncError({
+        code: "E_SYNC_CONFIRMATION_INVALID",
+        message: "Local sync confirmation token does not match the selected job."
+      });
+    }
+
+    await applyLocalSyncPlan({
+      plan: confirmation.plan
+    });
+    localSyncConfirmations.delete(confirmationToken);
+
+    return {
+      jobId,
+      sourceJobId: syncContext.sourceJobId,
+      boardKey: confirmation.plan.boardKey,
+      targetPath: confirmation.plan.targetPath,
+      scopePath: confirmation.plan.scopePath,
+      destinationRoot: confirmation.plan.destinationRoot,
+      files: confirmation.plan.files.map((entry) => ({
+        path: entry.relativePath,
+        action: entry.action,
+        sizeBytes: entry.sizeBytes
+      })),
+      summary: { ...confirmation.plan.summary },
+      appliedAt: nowIso()
+    };
+  };
+
   const cancelJob = ({
     jobId,
     reason
@@ -2303,6 +2491,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   return {
     submitJob,
     submitRegeneration,
+    previewLocalSync,
+    applyLocalSync,
     cancelJob,
     getJob,
     getJobResult,

@@ -9,10 +9,12 @@ import {
 } from "./inspector-override-draft";
 
 const mockUseQuery = vi.fn();
+const mockUseMutation = vi.fn();
 
 vi.mock("@tanstack/react-query", () => {
   return {
-    useQuery: (args: unknown) => mockUseQuery(args)
+    useQuery: (args: unknown) => mockUseQuery(args),
+    useMutation: (args: unknown) => mockUseMutation(args)
   };
 });
 
@@ -163,6 +165,28 @@ function installQueryMock({
   return merged;
 }
 
+function installMutationMock(): void {
+  mockUseMutation.mockImplementation((options: {
+    mutationFn: (variables?: unknown) => Promise<unknown>;
+    onSuccess?: (data: unknown) => void;
+    onError?: (error: unknown) => void;
+  }) => {
+    return {
+      isPending: false,
+      mutate: (variables?: unknown) => {
+        void Promise.resolve()
+          .then(async () => await options.mutationFn(variables))
+          .then((data) => {
+            options.onSuccess?.(data);
+          })
+          .catch((error) => {
+            options.onError?.(error);
+          });
+      }
+    };
+  });
+}
+
 function editableNodeQueryOverrides({
   invalidPadding = false
 }: {
@@ -264,8 +288,10 @@ describe("InspectorPanel splitters", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
     window.sessionStorage.clear();
     installQueryMock();
+    installMutationMock();
   });
 
   it("supports keyboard resizing on the preview-code separator", () => {
@@ -306,8 +332,10 @@ describe("InspectorPanel navigation stack", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
     window.sessionStorage.clear();
     installQueryMock();
+    installMutationMock();
   });
 
   it("replays committed selection states via back and forward controls", async () => {
@@ -384,7 +412,9 @@ describe("InspectorPanel data states", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
     window.sessionStorage.clear();
+    installMutationMock();
   });
 
   it("shows design-ir error state and retries only the design-ir endpoint", () => {
@@ -752,8 +782,10 @@ describe("InspectorPanel Edit Studio", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    installMutationMock();
   });
 
   it("renders scalar controls in edit mode and excludes deferred fields", async () => {
@@ -916,5 +948,145 @@ describe("InspectorPanel Edit Studio", () => {
     });
     expect(screen.getByTestId("inspector-edit-input-fillColor")).toHaveValue("#112233");
     expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"overrides\": []");
+  });
+});
+
+describe("InspectorPanel local sync", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    installQueryMock();
+    installMutationMock();
+  });
+
+  it("previews local sync and requires explicit confirmation before apply", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const rawBody = typeof init?.body === "string" ? init.body : "{}";
+      const parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
+      if (parsedBody.mode === "dry_run") {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-1",
+            sourceJobId: "job-source-1",
+            boardKey: "board-abc",
+            targetPath: "sync-target",
+            scopePath: "sync-target/board-abc",
+            destinationRoot: "/tmp/workspace/sync-target/board-abc",
+            files: [
+              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 123 },
+              { path: "package.json", action: "create", sizeBytes: 64 }
+            ],
+            summary: {
+              totalFiles: 2,
+              createCount: 1,
+              overwriteCount: 1,
+              totalBytes: 187
+            },
+            confirmationToken: "token-123",
+            confirmationExpiresAt: "2026-03-22T12:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (parsedBody.mode === "apply") {
+        expect(parsedBody.confirmationToken).toBe("token-123");
+        expect(parsedBody.confirmOverwrite).toBe(true);
+        return new Response(
+          JSON.stringify({
+            jobId: "job-1",
+            sourceJobId: "job-source-1",
+            boardKey: "board-abc",
+            targetPath: "sync-target",
+            scopePath: "sync-target/board-abc",
+            destinationRoot: "/tmp/workspace/sync-target/board-abc",
+            files: [
+              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 123 },
+              { path: "package.json", action: "create", sizeBytes: 64 }
+            ],
+            summary: {
+              totalFiles: 2,
+              createCount: 1,
+              overwriteCount: 1,
+              totalBytes: 187
+            },
+            appliedAt: "2026-03-22T12:05:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "UNEXPECTED" }), {
+        status: 500,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const applyButton = screen.getByTestId("inspector-sync-apply-button");
+    expect(applyButton).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("inspector-sync-preview-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-sync-preview-summary")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-sync-preview-summary")).toHaveTextContent(
+      "Files: 2 total, 1 create, 1 overwrite"
+    );
+    expect(screen.getByTestId("inspector-sync-apply-button")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("inspector-sync-confirm-overwrite"));
+    expect(screen.getByTestId("inspector-sync-apply-button")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("inspector-sync-apply-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-sync-success")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-sync-success")).toHaveTextContent("Wrote 2 files");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("renders sync error details when preview endpoint fails", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "SYNC_REGEN_REQUIRED",
+          message: "Local sync is only available for regeneration jobs."
+        }),
+        { status: 409, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-sync-preview-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-sync-error")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-sync-error")).toHaveTextContent("SYNC_REGEN_REQUIRED");
+    expect(screen.getByTestId("inspector-sync-apply-button")).toBeDisabled();
+
+    fetchSpy.mockRestore();
   });
 });

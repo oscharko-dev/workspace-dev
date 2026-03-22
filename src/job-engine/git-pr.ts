@@ -4,6 +4,7 @@ import type { WorkspaceGenerationDiffReport, WorkspaceJobInput } from "../contra
 import { resolveBoardKey } from "../parity/board-key.js";
 import { redactValue, runCommand as runCommandImpl } from "./command-runner.js";
 import { formatDiffForPrDescription } from "./generation-diff.js";
+import { sanitizeTargetPath, toScopePath } from "./target-path.js";
 import type { CommandResult, GitPrExecutionResult, JobRecord } from "./types.js";
 
 interface GitPrDeps {
@@ -64,23 +65,6 @@ const toGithubAuthedUrl = ({ repoUrl, token }: { repoUrl: string; token: string 
 const parseDefaultBranchFromSymref = (raw: string): string | undefined => {
   const match = raw.match(/ref:\s+refs\/heads\/([^\s]+)\s+HEAD/);
   return match?.[1];
-};
-
-const sanitizeTargetPath = (rawTargetPath: string | undefined): string => {
-  const candidate = rawTargetPath && rawTargetPath.trim().length > 0 ? rawTargetPath.trim() : "figma-generated";
-  const normalized = path.posix.normalize(candidate.replace(/\\/g, "/"));
-
-  if (
-    normalized === "." ||
-    normalized === ".." ||
-    normalized.startsWith("/") ||
-    normalized.includes("../") ||
-    normalized.includes("..\\")
-  ) {
-    throw new Error(`Invalid targetPath '${candidate}'. Expected a safe relative path.`);
-  }
-
-  return normalized;
 };
 
 const copyGeneratedProjectIntoRepo = async ({
@@ -177,7 +161,7 @@ export const runGitPrFlowWithDeps = async ({
   }
 
   const targetPath = sanitizeTargetPath(input.targetPath);
-  const scopePath = path.posix.join(targetPath, boardKey);
+  const scopePath = toScopePath({ targetPath, boardKey });
   const destinationDir = path.join(repoDir, scopePath);
 
   await copyGeneratedProjectIntoRepo({

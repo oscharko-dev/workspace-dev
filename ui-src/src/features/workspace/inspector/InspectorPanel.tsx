@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
@@ -156,10 +156,58 @@ interface GenerationMetricsResponse {
   message: string | null;
 }
 
+interface LocalSyncFilePlanEntry {
+  path: string;
+  action: "create" | "overwrite";
+  sizeBytes: number;
+}
+
+interface LocalSyncSummary {
+  totalFiles: number;
+  createCount: number;
+  overwriteCount: number;
+  totalBytes: number;
+}
+
+interface LocalSyncDryRunPayload {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: LocalSyncFilePlanEntry[];
+  summary: LocalSyncSummary;
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+}
+
+interface LocalSyncApplyPayload {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: LocalSyncFilePlanEntry[];
+  summary: LocalSyncSummary;
+  appliedAt: string;
+}
+
 interface EndpointErrorDetails {
   status: number;
   code: string;
   message: string;
+}
+
+class SyncMutationError extends Error {
+  details: EndpointErrorDetails;
+
+  constructor(details: EndpointErrorDetails) {
+    super(details.message);
+    this.name = "SyncMutationError";
+    this.details = details;
+  }
 }
 
 type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
@@ -226,6 +274,64 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isLocalSyncFilePlanEntry(value: unknown): value is LocalSyncFilePlanEntry {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.path === "string" &&
+    (value.action === "create" || value.action === "overwrite") &&
+    typeof value.sizeBytes === "number"
+  );
+}
+
+function isLocalSyncSummary(value: unknown): value is LocalSyncSummary {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.totalFiles === "number" &&
+    typeof value.createCount === "number" &&
+    typeof value.overwriteCount === "number" &&
+    typeof value.totalBytes === "number"
+  );
+}
+
+function isLocalSyncDryRunPayload(value: unknown): value is LocalSyncDryRunPayload {
+  if (!isRecord(value) || !Array.isArray(value.files)) {
+    return false;
+  }
+  return (
+    typeof value.jobId === "string" &&
+    typeof value.sourceJobId === "string" &&
+    typeof value.boardKey === "string" &&
+    typeof value.targetPath === "string" &&
+    typeof value.scopePath === "string" &&
+    typeof value.destinationRoot === "string" &&
+    value.files.every((entry) => isLocalSyncFilePlanEntry(entry)) &&
+    isLocalSyncSummary(value.summary) &&
+    typeof value.confirmationToken === "string" &&
+    typeof value.confirmationExpiresAt === "string"
+  );
+}
+
+function isLocalSyncApplyPayload(value: unknown): value is LocalSyncApplyPayload {
+  if (!isRecord(value) || !Array.isArray(value.files)) {
+    return false;
+  }
+  return (
+    typeof value.jobId === "string" &&
+    typeof value.sourceJobId === "string" &&
+    typeof value.boardKey === "string" &&
+    typeof value.targetPath === "string" &&
+    typeof value.scopePath === "string" &&
+    typeof value.destinationRoot === "string" &&
+    value.files.every((entry) => isLocalSyncFilePlanEntry(entry)) &&
+    isLocalSyncSummary(value.summary) &&
+    typeof value.appliedAt === "string"
+  );
+}
+
 function toEndpointError({
   status,
   payload,
@@ -253,6 +359,25 @@ function toEndpointError({
     code: payloadCode,
     message: payloadMessage
   };
+}
+
+function toSyncErrorDetails({
+  error,
+  fallback
+}: {
+  error: unknown;
+  fallback: EndpointErrorDetails;
+}): EndpointErrorDetails {
+  if (error instanceof SyncMutationError) {
+    return error.details;
+  }
+  if (error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0) {
+    return {
+      ...fallback,
+      message: error.message
+    };
+  }
+  return fallback;
 }
 
 function getStatusBadgeClasses(status: InspectorSourceStatus): string {
@@ -481,6 +606,11 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
   const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
   const [formValidationControlInputs, setFormValidationControlInputs] = useState<FormValidationControlInputState>({});
+  const [syncTargetPathInput, setSyncTargetPathInput] = useState("");
+  const [syncConfirmationChecked, setSyncConfirmationChecked] = useState(false);
+  const [syncPreviewPlan, setSyncPreviewPlan] = useState<LocalSyncDryRunPayload | null>(null);
+  const [syncApplyResult, setSyncApplyResult] = useState<LocalSyncApplyPayload | null>(null);
+  const [syncError, setSyncError] = useState<EndpointErrorDetails | null>(null);
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -607,6 +737,140 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     },
     staleTime: Infinity
   });
+
+  const previewSyncMutation = useMutation({
+    mutationFn: async ({
+      targetPath
+    }: {
+      targetPath: string;
+    }): Promise<LocalSyncDryRunPayload> => {
+      const normalizedTargetPath = targetPath.trim();
+      const response = await fetchJson<LocalSyncDryRunPayload>({
+        url: `/workspace/jobs/${encodedJobId}/sync`,
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            mode: "dry_run",
+            ...(normalizedTargetPath.length > 0 ? { targetPath: normalizedTargetPath } : {})
+          })
+        }
+      });
+
+      if (!response.ok) {
+        throw new SyncMutationError(
+          toEndpointError({
+            status: response.status,
+            payload: response.payload,
+            fallbackCode: "SYNC_PREVIEW_FAILED",
+            fallbackMessage: "Could not generate sync preview."
+          })
+        );
+      }
+
+      if (!isLocalSyncDryRunPayload(response.payload)) {
+        throw new SyncMutationError({
+          status: response.status,
+          code: "SYNC_PREVIEW_INVALID_PAYLOAD",
+          message: "Local sync preview payload is invalid."
+        });
+      }
+
+      return response.payload;
+    },
+    onSuccess: (payload) => {
+      setSyncPreviewPlan(payload);
+      setSyncApplyResult(null);
+      setSyncConfirmationChecked(false);
+      setSyncError(null);
+    },
+    onError: (error) => {
+      setSyncError(
+        toSyncErrorDetails({
+          error,
+          fallback: {
+            status: 500,
+            code: "SYNC_PREVIEW_FAILED",
+            message: "Could not generate sync preview."
+          }
+        })
+      );
+    }
+  });
+
+  const applySyncMutation = useMutation({
+    mutationFn: async (): Promise<LocalSyncApplyPayload> => {
+      if (!syncPreviewPlan) {
+        throw new SyncMutationError({
+          status: 409,
+          code: "SYNC_PREVIEW_REQUIRED",
+          message: "Preview the sync plan before apply."
+        });
+      }
+
+      const response = await fetchJson<LocalSyncApplyPayload>({
+        url: `/workspace/jobs/${encodedJobId}/sync`,
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            mode: "apply",
+            confirmationToken: syncPreviewPlan.confirmationToken,
+            confirmOverwrite: true
+          })
+        }
+      });
+
+      if (!response.ok) {
+        throw new SyncMutationError(
+          toEndpointError({
+            status: response.status,
+            payload: response.payload,
+            fallbackCode: "SYNC_APPLY_FAILED",
+            fallbackMessage: "Could not apply local sync."
+          })
+        );
+      }
+
+      if (!isLocalSyncApplyPayload(response.payload)) {
+        throw new SyncMutationError({
+          status: response.status,
+          code: "SYNC_APPLY_INVALID_PAYLOAD",
+          message: "Local sync apply payload is invalid."
+        });
+      }
+
+      return response.payload;
+    },
+    onSuccess: (payload) => {
+      setSyncApplyResult(payload);
+      setSyncError(null);
+    },
+    onError: (error) => {
+      setSyncError(
+        toSyncErrorDetails({
+          error,
+          fallback: {
+            status: 500,
+            code: "SYNC_APPLY_FAILED",
+            message: "Could not apply local sync."
+          }
+        })
+      );
+    }
+  });
+
+  useEffect(() => {
+    setSyncTargetPathInput("");
+    setSyncConfirmationChecked(false);
+    setSyncPreviewPlan(null);
+    setSyncApplyResult(null);
+    setSyncError(null);
+  }, [jobId]);
 
   // --- Derived data ---
 
@@ -2198,6 +2462,27 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     manifestState.error
   ]);
 
+  const handlePreviewLocalSync = useCallback(() => {
+    setSyncError(null);
+    previewSyncMutation.mutate({
+      targetPath: syncTargetPathInput
+    });
+  }, [previewSyncMutation, syncTargetPathInput]);
+
+  const handleApplyLocalSync = useCallback(() => {
+    if (!syncPreviewPlan || !syncConfirmationChecked) {
+      return;
+    }
+    setSyncError(null);
+    applySyncMutation.mutate();
+  }, [applySyncMutation, syncConfirmationChecked, syncPreviewPlan]);
+
+  const syncApplyDisabled =
+    !syncPreviewPlan ||
+    !syncConfirmationChecked ||
+    previewSyncMutation.isPending ||
+    applySyncMutation.isPending;
+
   return (
     <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
@@ -2717,6 +3002,96 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             )}
           </div>
         ) : null}
+        <div
+          data-testid="inspector-sync-panel"
+          className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950"
+        >
+          <p className="m-0 font-semibold">Local Sync (Regeneration Jobs)</p>
+          <p className="m-0 mt-1">
+            Run a dry-run first, then explicitly confirm overwrite before applying local sync.
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+              <span className="font-semibold text-emerald-900">Target path override (optional)</span>
+              <input
+                type="text"
+                data-testid="inspector-sync-target-path"
+                value={syncTargetPathInput}
+                onChange={(event) => {
+                  setSyncTargetPathInput(event.currentTarget.value);
+                }}
+                placeholder="apps/generated"
+                className="rounded border border-emerald-300 bg-white px-2 py-1 text-xs text-slate-900"
+              />
+            </label>
+            <button
+              type="button"
+              data-testid="inspector-sync-preview-button"
+              disabled={previewSyncMutation.isPending || applySyncMutation.isPending}
+              onClick={handlePreviewLocalSync}
+              className="cursor-pointer rounded border border-emerald-400 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-default disabled:opacity-40"
+            >
+              {previewSyncMutation.isPending ? "Previewing..." : "Preview Sync Plan"}
+            </button>
+          </div>
+          {syncPreviewPlan ? (
+            <div
+              data-testid="inspector-sync-preview-summary"
+              className="mt-2 rounded border border-emerald-300 bg-white px-2 py-1.5 text-slate-800"
+            >
+              <p className="m-0 font-semibold text-slate-900">Dry-run summary</p>
+              <p className="m-0 mt-1">
+                Destination: <code>{syncPreviewPlan.destinationRoot}</code>
+              </p>
+              <p className="m-0 mt-1">
+                Files: {String(syncPreviewPlan.summary.totalFiles)} total, {String(syncPreviewPlan.summary.createCount)} create, {String(syncPreviewPlan.summary.overwriteCount)} overwrite ({String(syncPreviewPlan.summary.totalBytes)} bytes)
+              </p>
+              <p className="m-0 mt-1">
+                Confirmation expires: {syncPreviewPlan.confirmationExpiresAt}
+              </p>
+            </div>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-slate-800">
+              <input
+                type="checkbox"
+                data-testid="inspector-sync-confirm-overwrite"
+                checked={syncConfirmationChecked}
+                disabled={!syncPreviewPlan || previewSyncMutation.isPending || applySyncMutation.isPending}
+                onChange={(event) => {
+                  setSyncConfirmationChecked(event.currentTarget.checked);
+                }}
+                className="h-4 w-4 rounded border-emerald-400"
+              />
+              <span>Confirm overwrite and apply sync</span>
+            </label>
+            <button
+              type="button"
+              data-testid="inspector-sync-apply-button"
+              disabled={syncApplyDisabled}
+              onClick={handleApplyLocalSync}
+              className="cursor-pointer rounded border border-emerald-500 bg-emerald-500 px-2 py-1 text-[11px] font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-default disabled:opacity-40"
+            >
+              {applySyncMutation.isPending ? "Applying..." : "Apply Sync"}
+            </button>
+          </div>
+          {syncApplyResult ? (
+            <p
+              data-testid="inspector-sync-success"
+              className="m-0 mt-2 rounded border border-emerald-300 bg-emerald-100 px-2 py-1 text-emerald-900"
+            >
+              Local sync applied at {syncApplyResult.appliedAt}. Wrote {String(syncApplyResult.summary.totalFiles)} files to <code>{syncApplyResult.destinationRoot}</code>.
+            </p>
+          ) : null}
+          {syncError ? (
+            <p
+              data-testid="inspector-sync-error"
+              className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
+            >
+              [{syncError.code}] {syncError.message} (HTTP {String(syncError.status)})
+            </p>
+          ) : null}
+        </div>
         <div
           data-testid="inspector-inspectability-summary"
           className="mt-3 max-h-40 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2"

@@ -8,7 +8,7 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/455
  */
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -104,6 +104,8 @@ const pollForTerminal = async ({
 
 test("e2e: regeneration flow via HTTP server with local_json source", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-e2e-"));
+  const workspaceRoot = path.join(tempRoot, "workspace-root");
+  await mkdir(workspaceRoot, { recursive: true });
   const port = getPort();
   const host = "127.0.0.1";
   const baseUrl = `http://${host}:${port}`;
@@ -113,7 +115,8 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
   const paths = {
     outputRoot: tempRoot,
     jobsRoot: path.join(tempRoot, "jobs"),
-    reprosRoot: path.join(tempRoot, "repros")
+    reprosRoot: path.join(tempRoot, "repros"),
+    workspaceRoot
   };
 
   const runtimeSettings = resolveRuntimeSettings({
@@ -256,18 +259,110 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(resultResult.status, 200);
     assert.ok((resultResult.body as Record<string, unknown>).lineage);
 
-    // 11. GET on /regenerate returns 405
+    // 11. Local sync dry-run returns plan + confirmation token without writing files yet
+    const dryRunResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "dry_run",
+        targetPath: "local-sync-target"
+      })
+    });
+    assert.equal(dryRunResult.status, 200);
+    const dryRunBody = dryRunResult.body as Record<string, unknown>;
+    assert.equal(dryRunBody.jobId, regenJobId);
+    assert.equal(dryRunBody.sourceJobId, sourceJobId);
+    assert.equal(dryRunBody.targetPath, "local-sync-target");
+    assert.equal(typeof dryRunBody.confirmationToken, "string");
+
+    const dryRunFiles = dryRunBody.files as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(dryRunFiles) && dryRunFiles.length > 0);
+    const dryRunSummary = dryRunBody.summary as Record<string, unknown>;
+    assert.equal(dryRunSummary.totalFiles, dryRunFiles.length);
+
+    const destinationRoot = dryRunBody.destinationRoot as string;
+    const firstFile = dryRunFiles[0];
+    const firstFilePath = path.join(destinationRoot, ...String(firstFile?.path ?? "").split("/"));
+    await assert.rejects(
+      () => stat(firstFilePath),
+      (error: Error & { code?: string }) => error.code === "ENOENT"
+    );
+
+    // 12. Apply requires explicit confirmOverwrite=true (schema-level validation)
+    const missingConfirmResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "apply",
+        confirmationToken: dryRunBody.confirmationToken,
+        confirmOverwrite: false
+      })
+    });
+    assert.equal(missingConfirmResult.status, 400);
+    assert.equal((missingConfirmResult.body as Record<string, unknown>).error, "VALIDATION_ERROR");
+
+    // 13. Apply sync writes generated output into destination scope
+    const applyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "apply",
+        confirmationToken: dryRunBody.confirmationToken,
+        confirmOverwrite: true
+      })
+    });
+    assert.equal(applyResult.status, 200);
+    const applyBody = applyResult.body as Record<string, unknown>;
+    assert.equal(applyBody.scopePath, dryRunBody.scopePath);
+    assert.equal(
+      (applyBody.summary as Record<string, unknown>).totalFiles,
+      (dryRunBody.summary as Record<string, unknown>).totalFiles
+    );
+    const syncedContent = await readFile(firstFilePath, "utf8");
+    assert.ok(syncedContent.length > 0);
+
+    // 14. Token is one-time use
+    const replayResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "apply",
+        confirmationToken: dryRunBody.confirmationToken,
+        confirmOverwrite: true
+      })
+    });
+    assert.equal(replayResult.status, 409);
+    assert.equal((replayResult.body as Record<string, unknown>).error, "SYNC_CONFIRMATION_INVALID");
+
+    // 15. Sync is only available for regeneration jobs
+    const sourceSyncResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "dry_run"
+      })
+    });
+    assert.equal(sourceSyncResult.status, 409);
+    assert.equal((sourceSyncResult.body as Record<string, unknown>).error, "SYNC_REGEN_REQUIRED");
+
+    // 16. GET on /sync returns 405
+    const getSyncResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`);
+    assert.equal(getSyncResult.status, 405);
+
+    // 17. Sync validation catches malformed payloads
+    const badSyncBodyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({ mode: "unexpected" })
+    });
+    assert.equal(badSyncBodyResult.status, 400);
+
+    // 18. GET on /regenerate returns 405
     const getResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`);
     assert.equal(getResult.status, 405);
 
-    // 12. Regeneration of non-existent source returns 404
+    // 19. Regeneration of non-existent source returns 404
     const missingResult = await jsonFetch(`${baseUrl}/workspace/jobs/nonexistent-id/regenerate`, {
       method: "POST",
       body: JSON.stringify({ overrides: [] })
     });
     assert.equal(missingResult.status, 404);
 
-    // 13. Regeneration with invalid body returns 400
+    // 20. Regeneration with invalid body returns 400
     const badBodyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`, {
       method: "POST",
       body: JSON.stringify({ invalid: "payload" })
@@ -292,6 +387,8 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
   }
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-e2e-figma-"));
+  const workspaceRoot = path.join(tempRoot, "workspace-root");
+  await mkdir(workspaceRoot, { recursive: true });
   const port = getPort();
   const host = "127.0.0.1";
   const baseUrl = `http://${host}:${port}`;
@@ -299,7 +396,8 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
   const paths = {
     outputRoot: tempRoot,
     jobsRoot: path.join(tempRoot, "jobs"),
-    reprosRoot: path.join(tempRoot, "repros")
+    reprosRoot: path.join(tempRoot, "repros"),
+    workspaceRoot
   };
 
   const runtimeSettings = resolveRuntimeSettings({
@@ -429,6 +527,42 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
 
     if (regenStatus === "completed") {
       assert.equal(stages.find((s) => s.name === "codegen.generate")?.status, "completed");
+      const liveDryRunResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "dry_run",
+          targetPath: "live-sync-target"
+        })
+      });
+      assert.equal(liveDryRunResult.status, 200);
+      const liveDryRunBody = liveDryRunResult.body as Record<string, unknown>;
+      const liveToken = liveDryRunBody.confirmationToken as string;
+      assert.ok(liveToken.length > 0);
+      const liveFiles = liveDryRunBody.files as Array<Record<string, unknown>>;
+      assert.ok(liveFiles.length > 0);
+      const liveDestinationRoot = liveDryRunBody.destinationRoot as string;
+      const liveFirstFilePath = path.join(liveDestinationRoot, ...String(liveFiles[0]?.path ?? "").split("/"));
+
+      const liveApplyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "apply",
+          confirmationToken: liveToken,
+          confirmOverwrite: true
+        })
+      });
+      assert.equal(liveApplyResult.status, 200);
+      const syncedContent = await readFile(liveFirstFilePath, "utf8");
+      assert.ok(syncedContent.length > 0);
+    } else {
+      const failedSyncResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "dry_run"
+        })
+      });
+      assert.equal(failedSyncResult.status, 409);
+      assert.equal((failedSyncResult.body as Record<string, unknown>).error, "SYNC_JOB_NOT_COMPLETED");
     }
   } finally {
     server.close();

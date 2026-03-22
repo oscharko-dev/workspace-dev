@@ -23,6 +23,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.19.0] - 2026-03-22
+
+### Regenerated local sync dry-run/apply contract
+
+Added:
+
+- `WorkspaceLocalSyncMode = "dry_run" | "apply"`
+- `WorkspaceLocalSyncDryRunRequest`
+- `WorkspaceLocalSyncApplyRequest`
+- `WorkspaceLocalSyncRequest`
+- `WorkspaceLocalSyncFilePlanEntry`
+- `WorkspaceLocalSyncSummary`
+- `WorkspaceLocalSyncDryRunResult`
+- `WorkspaceLocalSyncApplyResult`
+
 ## [2.17.0] - 2026-03-21
 
 ### Generation diff report for design iteration cycles

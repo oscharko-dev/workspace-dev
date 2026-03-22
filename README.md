@@ -113,7 +113,22 @@ With `enableGitPr=false`, generation is local-only.
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
 - `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
+- `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job
+- `POST /workspace/jobs/:id/sync` - local sync flow for completed regeneration jobs (`mode: dry_run` then `mode: apply`)
 - `GET /workspace/repros/:id/` - generated local preview
+
+### Local sync flow
+
+`POST /workspace/jobs/:id/sync` supports two request modes:
+
+- Dry-run:
+  - `{"mode":"dry_run","targetPath"?:string}`
+  - Returns per-file plan, summary, destination metadata, and a short-lived `confirmationToken`.
+- Apply:
+  - `{"mode":"apply","confirmationToken":string,"confirmOverwrite":true}`
+  - Requires explicit confirmation and a valid dry-run token; performs writes and returns applied summary.
+
+Sync writes to `<workspaceRoot>/<targetPath>/<boardKey>/...` and is rejected for non-regeneration jobs or non-completed jobs.
 
 ## Output layout
 
