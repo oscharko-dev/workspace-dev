@@ -10,11 +10,23 @@ interface OverlayRect {
 
 interface InspectOverlayProps {
   inspectEnabled: boolean;
+  activeScopeNodeId: string | null;
   onToggleInspect: () => void;
   onSelectNode: (irNodeId: string) => void;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   iframeLoadVersion: number;
 }
+
+type InspectBridgeControlMessage =
+  | {
+      type: "inspect:enable" | "inspect:disable" | "inspect:scope:clear";
+      sessionToken: string;
+    }
+  | {
+      type: "inspect:scope:set";
+      sessionToken: string;
+      irNodeId: string;
+    };
 
 function createInspectSessionToken(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -56,6 +68,7 @@ function isHoverRect(value: unknown): value is { x: number; y: number; width: nu
 
 export function InspectOverlay({
   inspectEnabled,
+  activeScopeNodeId,
   onToggleInspect,
   onSelectNode,
   iframeRef,
@@ -79,21 +92,14 @@ export function InspectOverlay({
   }, [iframeRef]);
 
   const postInspectControlMessage = useCallback(
-    (type: "inspect:enable" | "inspect:disable"): void => {
+    (message: InspectBridgeControlMessage): void => {
       const iframe = iframeRef.current;
       const targetWindow = iframe?.contentWindow;
-      const sessionToken = sessionTokenRef.current;
-      if (!targetWindow || !sessionToken) {
+      if (!targetWindow) {
         return;
       }
       const previewOrigin = resolvePreviewOrigin();
-      targetWindow.postMessage(
-        {
-          type,
-          sessionToken
-        },
-        previewOrigin ?? "*"
-      );
+      targetWindow.postMessage(message, previewOrigin ?? "*");
     },
     [iframeRef, resolvePreviewOrigin]
   );
@@ -101,8 +107,12 @@ export function InspectOverlay({
   // Send enable/disable messages to the iframe (also re-send on iframe load)
   useEffect(() => {
     if (!inspectEnabled) {
-      if (sessionTokenRef.current) {
-        postInspectControlMessage("inspect:disable");
+      const activeSessionToken = sessionTokenRef.current;
+      if (activeSessionToken) {
+        postInspectControlMessage({
+          type: "inspect:disable",
+          sessionToken: activeSessionToken
+        });
       }
       sessionTokenRef.current = null;
       expectedPreviewOriginRef.current = null;
@@ -113,8 +123,34 @@ export function InspectOverlay({
     if (!sessionTokenRef.current) {
       sessionTokenRef.current = createInspectSessionToken();
     }
-    postInspectControlMessage("inspect:enable");
+    postInspectControlMessage({
+      type: "inspect:enable",
+      sessionToken: sessionTokenRef.current
+    });
   }, [inspectEnabled, iframeLoadVersion, postInspectControlMessage]);
+
+  // Keep preview scope spotlight synchronized with Inspector scope state.
+  useEffect(() => {
+    if (!inspectEnabled) {
+      return;
+    }
+    const activeSessionToken = sessionTokenRef.current;
+    if (!activeSessionToken) {
+      return;
+    }
+    if (typeof activeScopeNodeId === "string" && activeScopeNodeId.length > 0) {
+      postInspectControlMessage({
+        type: "inspect:scope:set",
+        sessionToken: activeSessionToken,
+        irNodeId: activeScopeNodeId
+      });
+      return;
+    }
+    postInspectControlMessage({
+      type: "inspect:scope:clear",
+      sessionToken: activeSessionToken
+    });
+  }, [activeScopeNodeId, inspectEnabled, iframeLoadVersion, postInspectControlMessage]);
 
   // Listen for postMessage from the iframe — compute overlay rect in the event callback
   useEffect(() => {

@@ -442,6 +442,9 @@ test("inspector endpoints: completed jobs expose expected payloads and files sec
     assert.equal(previewHtml.includes("data-workspace-dev-inspect"), true);
     assert.equal(previewHtml.includes("sessionToken"), true);
     assert.equal(previewHtml.includes("allowedParentOrigin"), true);
+    assert.equal(previewHtml.includes("inspect:scope:set"), true);
+    assert.equal(previewHtml.includes("inspect:scope:clear"), true);
+    assert.equal(previewHtml.includes("data-workspace-dev-inspect-scope"), true);
 
     const designScreenIds = new Set(designIr.screens.map((screen) => screen.id));
     for (const screen of manifest.screens) {

@@ -33,6 +33,7 @@ import {
 import {
   inspectorScopeReducer,
   INITIAL_INSPECTOR_SCOPE_STATE,
+  selectActiveScope,
   selectHasActiveScope,
   type ManifestMapping
 } from "./inspector-scope-state";
@@ -306,6 +307,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
   const [scopeState, scopeDispatch] = useReducer(inspectorScopeReducer, INITIAL_INSPECTOR_SCOPE_STATE);
   const selectedNodeId = scopeState.selectedNodeId;
+  const activeScopeNodeId = selectActiveScope(scopeState)?.nodeId ?? null;
   const hasActiveScope = selectHasActiveScope(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
@@ -1485,6 +1487,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           <PreviewPane
             previewUrl={previewUrl}
             inspectEnabled={inspectEnabled}
+            activeScopeNodeId={activeScopeNodeId}
             onToggleInspect={handleToggleInspect}
             onInspectSelect={handleInspectSelect}
           />
