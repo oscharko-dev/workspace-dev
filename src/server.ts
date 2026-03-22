@@ -125,6 +125,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const jobEngine = createJobEngine({
     resolveBaseUrl: () => `http://${host}:${resolvedPort}`,
     paths: {
+      workspaceRoot: path.resolve(workDir),
       outputRoot: absoluteOutputRoot,
       jobsRoot: path.join(absoluteOutputRoot, "jobs"),
       reprosRoot: path.join(absoluteOutputRoot, "repros")

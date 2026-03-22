@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ErrorResponseSchema,
   SubmitRequestSchema,
+  SyncRequestSchema,
   WorkspaceStatusSchema,
   formatZodError
 } from "./schemas.js";
@@ -263,4 +264,28 @@ test("schema: formatZodError maps root-level paths correctly", () => {
     issues: [{ path: [], message: "root issue" }]
   });
   assert.equal(formatted.issues[0]?.path, "(root)");
+});
+
+test("schema: sync dry_run parses with optional targetPath", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "dry_run",
+    targetPath: "apps/generated"
+  });
+  assert.equal(result.success, true);
+});
+
+test("schema: sync apply requires token and explicit confirmation", () => {
+  const invalid = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "",
+    confirmOverwrite: false
+  });
+  assert.equal(invalid.success, false);
+
+  const valid = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true
+  });
+  assert.equal(valid.success, true);
 });

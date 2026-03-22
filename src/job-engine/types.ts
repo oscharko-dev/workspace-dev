@@ -2,6 +2,8 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
+  WorkspaceLocalSyncApplyResult,
+  WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
   WorkspaceJobArtifacts,
   WorkspaceJobCancellation,
@@ -68,6 +70,7 @@ export interface WorkspacePipelineError extends Error {
 }
 
 export interface JobEnginePaths {
+  workspaceRoot?: string;
   outputRoot: string;
   jobsRoot: string;
   reprosRoot: string;
@@ -140,6 +143,8 @@ export interface JobRecordSnapshot {
 export interface JobEngine {
   submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
   submitRegeneration: (input: WorkspaceRegenerationInput) => WorkspaceRegenerationAccepted;
+  previewLocalSync: (input: { jobId: string; targetPath?: string }) => Promise<WorkspaceLocalSyncDryRunResult>;
+  applyLocalSync: (input: { jobId: string; confirmationToken: string; confirmOverwrite: boolean }) => Promise<WorkspaceLocalSyncApplyResult>;
   cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;

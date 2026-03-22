@@ -350,8 +350,61 @@ export interface WorkspaceJobLineage {
   overrideCount: number;
 }
 
+export type WorkspaceLocalSyncMode = "dry_run" | "apply";
+
+export interface WorkspaceLocalSyncDryRunRequest {
+  mode: "dry_run";
+  targetPath?: string;
+}
+
+export interface WorkspaceLocalSyncApplyRequest {
+  mode: "apply";
+  confirmationToken: string;
+  confirmOverwrite: boolean;
+}
+
+export type WorkspaceLocalSyncRequest = WorkspaceLocalSyncDryRunRequest | WorkspaceLocalSyncApplyRequest;
+
+export interface WorkspaceLocalSyncFilePlanEntry {
+  path: string;
+  action: "create" | "overwrite";
+  sizeBytes: number;
+}
+
+export interface WorkspaceLocalSyncSummary {
+  totalFiles: number;
+  createCount: number;
+  overwriteCount: number;
+  totalBytes: number;
+}
+
+export interface WorkspaceLocalSyncDryRunResult {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: WorkspaceLocalSyncFilePlanEntry[];
+  summary: WorkspaceLocalSyncSummary;
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+}
+
+export interface WorkspaceLocalSyncApplyResult {
+  jobId: string;
+  sourceJobId: string;
+  boardKey: string;
+  targetPath: string;
+  scopePath: string;
+  destinationRoot: string;
+  files: WorkspaceLocalSyncFilePlanEntry[];
+  summary: WorkspaceLocalSyncSummary;
+  appliedAt: string;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.18.0" as const;
+export const CONTRACT_VERSION = "2.19.0" as const;

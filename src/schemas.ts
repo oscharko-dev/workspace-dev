@@ -10,6 +10,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceJobInput,
+  WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
 } from "./contracts/index.js";
@@ -525,6 +526,77 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
 
 export const RegenerationRequestSchema: RuntimeSchema<RegenerationRequestData> = {
   safeParse: parseRegenerationRequest
+};
+
+function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRequest> {
+  const issues: ValidationIssue[] = [];
+
+  if (!isRecord(input)) {
+    pushIssue(issues, [], "Expected an object body.");
+    return { success: false, error: { issues } };
+  }
+
+  const mode = input.mode;
+  if (mode !== "dry_run" && mode !== "apply") {
+    pushIssue(issues, ["mode"], "mode must be one of: dry_run, apply.");
+    return { success: false, error: { issues } };
+  }
+
+  if (mode === "dry_run") {
+    const allowedKeys = new Set(["mode", "targetPath"]);
+    for (const key of Object.keys(input)) {
+      if (!allowedKeys.has(key)) {
+        pushIssue(issues, [key], `Unexpected property '${key}'.`);
+      }
+    }
+
+    if (input.targetPath !== undefined && (typeof input.targetPath !== "string" || input.targetPath.trim().length === 0)) {
+      pushIssue(issues, ["targetPath"], "targetPath must be a non-empty string when provided.");
+    }
+
+    if (issues.length > 0) {
+      return { success: false, error: { issues } };
+    }
+
+    return {
+      success: true,
+      data: {
+        mode: "dry_run",
+        ...(typeof input.targetPath === "string" ? { targetPath: input.targetPath } : {})
+      }
+    };
+  }
+
+  const allowedKeys = new Set(["mode", "confirmationToken", "confirmOverwrite"]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      pushIssue(issues, [key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  if (typeof input.confirmationToken !== "string" || input.confirmationToken.trim().length === 0) {
+    pushIssue(issues, ["confirmationToken"], "confirmationToken must be a non-empty string.");
+  }
+  if (input.confirmOverwrite !== true) {
+    pushIssue(issues, ["confirmOverwrite"], "confirmOverwrite must be true for apply mode.");
+  }
+
+  if (issues.length > 0) {
+    return { success: false, error: { issues } };
+  }
+
+  return {
+    success: true,
+    data: {
+      mode: "apply",
+      confirmationToken: input.confirmationToken as string,
+      confirmOverwrite: true
+    }
+  };
+}
+
+export const SyncRequestSchema: RuntimeSchema<WorkspaceLocalSyncRequest> = {
+  safeParse: parseSyncRequest
 };
 
 /**

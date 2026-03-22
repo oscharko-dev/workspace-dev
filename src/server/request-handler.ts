@@ -4,10 +4,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
+import { LocalSyncError } from "../job-engine/local-sync.js";
 import { enforceModeLock } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
-import { RegenerationRequestSchema, SubmitRequestSchema, formatZodError } from "../schemas.js";
+import { RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
@@ -105,6 +106,18 @@ export function createWorkspaceRequestHandler({
             payload: {
               error: "METHOD_NOT_ALLOWED",
               message: `Use POST for regeneration route '/workspace/jobs/${jobId}/regenerate'.`
+            }
+          });
+          return;
+        }
+
+        if (parsedJobRoute.action === "sync") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for local sync route '/workspace/jobs/${jobId}/sync'.`
             }
           });
           return;
@@ -636,6 +649,166 @@ export function createWorkspaceRequestHandler({
           payload: canceledJob
         });
         return;
+      }
+
+      if (parsedJobRoute?.action === "sync") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        const parsed = SyncRequestSchema.safeParse(rawBody.value);
+        if (!parsed.success) {
+          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          return;
+        }
+
+        try {
+          if (parsed.data.mode === "dry_run") {
+            const preview = await jobEngine.previewLocalSync({
+              jobId,
+              ...(parsed.data.targetPath ? { targetPath: parsed.data.targetPath } : {})
+            });
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: preview
+            });
+            return;
+          }
+
+          const applied = await jobEngine.applyLocalSync({
+            jobId,
+            confirmationToken: parsed.data.confirmationToken,
+            confirmOverwrite: parsed.data.confirmOverwrite
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: applied
+          });
+          return;
+        } catch (error) {
+          if (error instanceof Error && "code" in error) {
+            const code = (error as { code?: string }).code;
+            if (code === "E_SYNC_JOB_NOT_FOUND") {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: sanitizeErrorMessage({ error, fallback: `Unknown job '${jobId}'.` })
+                }
+              });
+              return;
+            }
+            if (code === "E_SYNC_JOB_NOT_COMPLETED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "SYNC_JOB_NOT_COMPLETED",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for completed jobs." })
+                }
+              });
+              return;
+            }
+            if (code === "E_SYNC_REGEN_REQUIRED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "SYNC_REGEN_REQUIRED",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for regeneration jobs." })
+                }
+              });
+              return;
+            }
+            if (code === "E_SYNC_CONFIRMATION_REQUIRED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "SYNC_CONFIRMATION_REQUIRED",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync apply requires explicit confirmation." })
+                }
+              });
+              return;
+            }
+            if (code === "E_SYNC_CONFIRMATION_INVALID" || code === "E_SYNC_CONFIRMATION_EXPIRED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: code === "E_SYNC_CONFIRMATION_EXPIRED" ? "SYNC_CONFIRMATION_EXPIRED" : "SYNC_CONFIRMATION_INVALID",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync confirmation token is invalid." })
+                }
+              });
+              return;
+            }
+          }
+
+          if (error instanceof LocalSyncError) {
+            if (error.code === "E_SYNC_TARGET_PATH_INVALID") {
+              sendJson({
+                response,
+                statusCode: 400,
+                payload: {
+                  error: "INVALID_TARGET_PATH",
+                  message: sanitizeErrorMessage({ error, fallback: "targetPath is invalid." })
+                }
+              });
+              return;
+            }
+            if (error.code === "E_SYNC_GENERATED_DIR_MISSING") {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "SYNC_GENERATED_OUTPUT_NOT_FOUND",
+                  message: sanitizeErrorMessage({ error, fallback: "Generated output was not found." })
+                }
+              });
+              return;
+            }
+            if (
+              error.code === "E_SYNC_DESTINATION_UNSAFE" ||
+              error.code === "E_SYNC_DESTINATION_SYMLINK" ||
+              error.code === "E_SYNC_DESTINATION_CONFLICT" ||
+              error.code === "E_SYNC_SOURCE_SYMLINK"
+            ) {
+              sendJson({
+                response,
+                statusCode: 400,
+                payload: {
+                  error: "SYNC_DESTINATION_UNSAFE",
+                  message: sanitizeErrorMessage({ error, fallback: "Sync destination is not safe for writes." })
+                }
+              });
+              return;
+            }
+          }
+
+          sendJson({
+            response,
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({ error, fallback: "Could not perform local sync." })
+            }
+          });
+          return;
+        }
       }
 
       if (parsedJobRoute?.action === "regenerate") {
