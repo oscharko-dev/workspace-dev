@@ -591,7 +591,7 @@ describe("RESET", () => {
 const editableCapability: EditCapabilityResult = {
   editable: true,
   reason: null,
-  editableFields: ["text", "fillColor"]
+  editableFields: ["fontSize", "fillColor"]
 };
 
 const notEditableCapability: EditCapabilityResult = {
