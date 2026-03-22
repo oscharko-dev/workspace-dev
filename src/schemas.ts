@@ -7,6 +7,7 @@
 
 import type {
   WorkspaceBrandTheme,
+  WorkspaceCreatePrInput,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceJobInput,
@@ -597,6 +598,53 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
 
 export const SyncRequestSchema: RuntimeSchema<WorkspaceLocalSyncRequest> = {
   safeParse: parseSyncRequest
+};
+
+function parseCreatePrRequest(input: unknown): ValidationResult<WorkspaceCreatePrInput> {
+  const issues: ValidationIssue[] = [];
+
+  if (!isRecord(input)) {
+    pushIssue(issues, [], "Expected an object body.");
+    return { success: false, error: { issues } };
+  }
+
+  const allowedKeys = new Set(["repoUrl", "repoToken", "targetPath"]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      pushIssue(issues, [key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  if (typeof input.repoUrl !== "string" || input.repoUrl.trim().length === 0) {
+    pushIssue(issues, ["repoUrl"], "repoUrl must be a non-empty string.");
+  }
+  if (typeof input.repoToken !== "string" || input.repoToken.trim().length === 0) {
+    pushIssue(issues, ["repoToken"], "repoToken must be a non-empty string.");
+  }
+
+  if (input.targetPath !== undefined) {
+    if (typeof input.targetPath !== "string" || input.targetPath.trim().length === 0) {
+      pushIssue(issues, ["targetPath"], "targetPath must be a non-empty string when provided.");
+    }
+  }
+
+  if (issues.length > 0) {
+    return { success: false, error: { issues } };
+  }
+
+  const data: WorkspaceCreatePrInput = {
+    repoUrl: input.repoUrl as string,
+    repoToken: input.repoToken as string
+  };
+  if (typeof input.targetPath === "string") {
+    data.targetPath = input.targetPath;
+  }
+
+  return { success: true, data };
+}
+
+export const CreatePrRequestSchema: RuntimeSchema<WorkspaceCreatePrInput> = {
+  safeParse: parseCreatePrRequest
 };
 
 /**

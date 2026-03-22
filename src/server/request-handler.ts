@@ -8,7 +8,7 @@ import { LocalSyncError } from "../job-engine/local-sync.js";
 import { enforceModeLock } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
-import { RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
+import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
@@ -118,6 +118,18 @@ export function createWorkspaceRequestHandler({
             payload: {
               error: "METHOD_NOT_ALLOWED",
               message: `Use POST for local sync route '/workspace/jobs/${jobId}/sync'.`
+            }
+          });
+          return;
+        }
+
+        if (parsedJobRoute.action === "create-pr") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for PR creation route '/workspace/jobs/${jobId}/create-pr'.`
             }
           });
           return;
@@ -895,6 +907,101 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 202,
           payload: accepted
+        });
+        return;
+      }
+
+      if (parsedJobRoute?.action === "create-pr") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        const parsed = CreatePrRequestSchema.safeParse(rawBody.value);
+        if (!parsed.success) {
+          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          return;
+        }
+
+        let result: Awaited<ReturnType<JobEngine["createPrFromJob"]>>;
+        try {
+          result = await jobEngine.createPrFromJob({
+            jobId,
+            prInput: parsed.data
+          });
+        } catch (error) {
+          if (error instanceof Error && "code" in error) {
+            const code = (error as { code?: string }).code;
+            if (code === "E_PR_JOB_NOT_FOUND") {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Job '${jobId}' not found.`
+                }
+              });
+              return;
+            }
+            if (code === "E_PR_JOB_NOT_COMPLETED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "JOB_NOT_COMPLETED",
+                  message: sanitizeErrorMessage({ error, fallback: "Job is not completed." })
+                }
+              });
+              return;
+            }
+            if (code === "E_PR_NOT_REGENERATION_JOB") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "NOT_REGENERATION_JOB",
+                  message: sanitizeErrorMessage({ error, fallback: "Only regeneration jobs support PR creation." })
+                }
+              });
+              return;
+            }
+            if (code === "E_PR_NO_GENERATED_PROJECT") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "NO_GENERATED_PROJECT",
+                  message: sanitizeErrorMessage({ error, fallback: "Job has no generated project." })
+                }
+              });
+              return;
+            }
+          }
+          sendJson({
+            response,
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({ error, fallback: "Could not create PR." })
+            }
+          });
+          return;
+        }
+
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: result
         });
         return;
       }

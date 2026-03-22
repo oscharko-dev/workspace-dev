@@ -200,6 +200,42 @@ interface EndpointErrorDetails {
   message: string;
 }
 
+interface CreatePrPayload {
+  jobId: string;
+  sourceJobId: string;
+  gitPr: {
+    status: "executed" | "skipped";
+    reason?: string;
+    prUrl?: string;
+    branchName?: string;
+    scopePath?: string;
+    changedFiles?: string[];
+  };
+}
+
+function isCreatePrPayload(value: unknown): value is CreatePrPayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.jobId === "string" &&
+    typeof record.sourceJobId === "string" &&
+    typeof record.gitPr === "object" &&
+    record.gitPr !== null
+  );
+}
+
+class PrMutationError extends Error {
+  details: EndpointErrorDetails;
+
+  constructor(details: EndpointErrorDetails) {
+    super(details.message);
+    this.name = "PrMutationError";
+    this.details = details;
+  }
+}
+
 class SyncMutationError extends Error {
   details: EndpointErrorDetails;
 
@@ -611,6 +647,11 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [syncPreviewPlan, setSyncPreviewPlan] = useState<LocalSyncDryRunPayload | null>(null);
   const [syncApplyResult, setSyncApplyResult] = useState<LocalSyncApplyPayload | null>(null);
   const [syncError, setSyncError] = useState<EndpointErrorDetails | null>(null);
+  const [prRepoUrlInput, setPrRepoUrlInput] = useState("");
+  const [prRepoTokenInput, setPrRepoTokenInput] = useState("");
+  const [prTargetPathInput, setPrTargetPathInput] = useState("");
+  const [prResult, setPrResult] = useState<CreatePrPayload | null>(null);
+  const [prError, setPrError] = useState<EndpointErrorDetails | null>(null);
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -864,12 +905,82 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     }
   });
 
+  const createPrMutation = useMutation({
+    mutationFn: async (): Promise<CreatePrPayload> => {
+      if (!prRepoUrlInput.trim() || !prRepoTokenInput.trim()) {
+        throw new PrMutationError({
+          status: 0,
+          code: "PR_PREREQUISITES_MISSING",
+          message: "Repository URL and token are required to create a PR."
+        });
+      }
+
+      const body: Record<string, string> = {
+        repoUrl: prRepoUrlInput.trim(),
+        repoToken: prRepoTokenInput.trim()
+      };
+      if (prTargetPathInput.trim()) {
+        body.targetPath = prTargetPathInput.trim();
+      }
+
+      const response = await fetchJson<CreatePrPayload>({
+        url: `/workspace/jobs/${encodedJobId}/create-pr`,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }
+      });
+
+      if (!response.ok) {
+        throw new PrMutationError(
+          toEndpointError({
+            status: response.status,
+            payload: response.payload,
+            fallbackCode: "PR_CREATE_FAILED",
+            fallbackMessage: "Could not create PR."
+          })
+        );
+      }
+
+      if (!isCreatePrPayload(response.payload)) {
+        throw new PrMutationError({
+          status: response.status,
+          code: "PR_CREATE_INVALID_PAYLOAD",
+          message: "PR creation payload is invalid."
+        });
+      }
+
+      return response.payload;
+    },
+    onSuccess: (payload) => {
+      setPrResult(payload);
+      setPrError(null);
+    },
+    onError: (error) => {
+      if (error instanceof PrMutationError) {
+        setPrError(error.details);
+      } else {
+        setPrError({
+          status: 500,
+          code: "PR_CREATE_FAILED",
+          message: error instanceof Error ? error.message : "Could not create PR."
+        });
+      }
+    }
+  });
+
   useEffect(() => {
     setSyncTargetPathInput("");
     setSyncConfirmationChecked(false);
     setSyncPreviewPlan(null);
     setSyncApplyResult(null);
     setSyncError(null);
+    setPrRepoUrlInput("");
+    setPrRepoTokenInput("");
+    setPrTargetPathInput("");
+    setPrResult(null);
+    setPrError(null);
   }, [jobId]);
 
   // --- Derived data ---
@@ -2483,6 +2594,17 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     previewSyncMutation.isPending ||
     applySyncMutation.isPending;
 
+  const handleCreatePr = useCallback(() => {
+    setPrError(null);
+    setPrResult(null);
+    createPrMutation.mutate();
+  }, [createPrMutation]);
+
+  const prCreateDisabled =
+    !prRepoUrlInput.trim() ||
+    !prRepoTokenInput.trim() ||
+    createPrMutation.isPending;
+
   return (
     <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
@@ -3089,6 +3211,103 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
               className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
             >
               [{syncError.code}] {syncError.message} (HTTP {String(syncError.status)})
+            </p>
+          ) : null}
+        </div>
+        <div
+          data-testid="inspector-pr-panel"
+          className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950"
+        >
+          <p className="m-0 font-semibold">Create PR (Regeneration Jobs)</p>
+          <p className="m-0 mt-1">
+            Create a GitHub Pull Request from regenerated output. Requires a GitHub repository URL and access token.
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+              <span className="font-semibold text-indigo-900">Repository URL</span>
+              <input
+                type="text"
+                data-testid="inspector-pr-repo-url"
+                value={prRepoUrlInput}
+                onChange={(event) => {
+                  setPrRepoUrlInput(event.currentTarget.value);
+                }}
+                placeholder="https://github.com/owner/repo"
+                className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs text-slate-900"
+              />
+            </label>
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+              <span className="font-semibold text-indigo-900">Access Token</span>
+              <input
+                type="password"
+                data-testid="inspector-pr-repo-token"
+                value={prRepoTokenInput}
+                onChange={(event) => {
+                  setPrRepoTokenInput(event.currentTarget.value);
+                }}
+                placeholder="ghp_..."
+                className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs text-slate-900"
+              />
+            </label>
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+              <span className="font-semibold text-indigo-900">Target path (optional)</span>
+              <input
+                type="text"
+                data-testid="inspector-pr-target-path"
+                value={prTargetPathInput}
+                onChange={(event) => {
+                  setPrTargetPathInput(event.currentTarget.value);
+                }}
+                placeholder="generated"
+                className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs text-slate-900"
+              />
+            </label>
+          </div>
+          <div className="mt-2">
+            <button
+              type="button"
+              data-testid="inspector-pr-create-button"
+              disabled={prCreateDisabled}
+              onClick={handleCreatePr}
+              className="cursor-pointer rounded border border-indigo-500 bg-indigo-500 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-default disabled:opacity-40"
+            >
+              {createPrMutation.isPending ? "Creating PR..." : "Create PR"}
+            </button>
+          </div>
+          {prResult ? (
+            <div
+              data-testid="inspector-pr-success"
+              className="m-0 mt-2 rounded border border-indigo-300 bg-indigo-100 px-2 py-1 text-indigo-900"
+            >
+              <p className="m-0 font-semibold">PR created successfully</p>
+              {prResult.gitPr.prUrl ? (
+                <p className="m-0 mt-1">
+                  PR URL:{" "}
+                  <a
+                    href={prResult.gitPr.prUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-700 underline"
+                    data-testid="inspector-pr-url-link"
+                  >
+                    {prResult.gitPr.prUrl}
+                  </a>
+                </p>
+              ) : null}
+              {prResult.gitPr.branchName ? (
+                <p className="m-0 mt-1">Branch: <code>{prResult.gitPr.branchName}</code></p>
+              ) : null}
+              {prResult.gitPr.changedFiles && prResult.gitPr.changedFiles.length > 0 ? (
+                <p className="m-0 mt-1">Changed files: {String(prResult.gitPr.changedFiles.length)}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {prError ? (
+            <p
+              data-testid="inspector-pr-error"
+              className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
+            >
+              [{prError.code}] {prError.message} (HTTP {String(prError.status)})
             </p>
           ) : null}
         </div>
