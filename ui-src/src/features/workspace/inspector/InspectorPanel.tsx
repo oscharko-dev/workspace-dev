@@ -84,6 +84,10 @@ import {
   type InspectorOverrideDraft,
   type InspectorOverrideField
 } from "./inspector-override-draft";
+import {
+  deriveInspectorImpactReviewModel,
+  type InspectorImpactReviewManifest
+} from "./inspector-impact-review";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -213,6 +217,12 @@ interface CreatePrPayload {
   };
 }
 
+interface RegenerationAcceptedPayload {
+  jobId: string;
+  sourceJobId: string;
+  status: "queued";
+}
+
 function isCreatePrPayload(value: unknown): value is CreatePrPayload {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -223,6 +233,18 @@ function isCreatePrPayload(value: unknown): value is CreatePrPayload {
     typeof record.sourceJobId === "string" &&
     typeof record.gitPr === "object" &&
     record.gitPr !== null
+  );
+}
+
+function isRegenerationAcceptedPayload(value: unknown): value is RegenerationAcceptedPayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.jobId === "string" &&
+    typeof record.sourceJobId === "string" &&
+    record.status === "queued"
   );
 }
 
@@ -246,6 +268,16 @@ class SyncMutationError extends Error {
   }
 }
 
+class RegenerationMutationError extends Error {
+  details: EndpointErrorDetails;
+
+  constructor(details: EndpointErrorDetails) {
+    super(details.message);
+    this.name = "RegenerationMutationError";
+    this.details = details;
+  }
+}
+
 type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
 
 interface InspectorPanelProps {
@@ -253,6 +285,10 @@ interface InspectorPanelProps {
   previewUrl: string;
   /** Previous job ID for diff comparison. `null` when no prior job exists. */
   previousJobId?: string | null;
+  /** Whether the active job has regeneration lineage metadata. */
+  isRegenerationJob?: boolean;
+  /** Callback invoked when regeneration is accepted and returns a new job ID. */
+  onRegenerationAccepted?: (jobId: string) => void;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -614,7 +650,13 @@ function fieldLabel(field: InspectorOverrideField): string {
 // InspectorPanel
 // ---------------------------------------------------------------------------
 
-export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPanelProps): JSX.Element {
+export function InspectorPanel({
+  jobId,
+  previewUrl,
+  previousJobId,
+  isRegenerationJob = false,
+  onRegenerationAccepted
+}: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
   const [scopeState, scopeDispatch] = useReducer(inspectorScopeReducer, INITIAL_INSPECTOR_SCOPE_STATE);
@@ -642,6 +684,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
   const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
   const [formValidationControlInputs, setFormValidationControlInputs] = useState<FormValidationControlInputState>({});
+  const [regenerationAccepted, setRegenerationAccepted] = useState<RegenerationAcceptedPayload | null>(null);
+  const [regenerationError, setRegenerationError] = useState<EndpointErrorDetails | null>(null);
   const [syncTargetPathInput, setSyncTargetPathInput] = useState("");
   const [syncConfirmationChecked, setSyncConfirmationChecked] = useState(false);
   const [syncPreviewPlan, setSyncPreviewPlan] = useState<LocalSyncDryRunPayload | null>(null);
@@ -777,6 +821,71 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       }
     },
     staleTime: Infinity
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: async (): Promise<RegenerationAcceptedPayload> => {
+      if (!overrideDraft) {
+        throw new RegenerationMutationError({
+          status: 409,
+          code: "REGEN_DRAFT_UNAVAILABLE",
+          message: "Override draft is not ready yet."
+        });
+      }
+
+      const structuredPayload = toStructuredInspectorOverridePayload(overrideDraft);
+      const response = await fetchJson<RegenerationAcceptedPayload>({
+        url: `/workspace/jobs/${encodedJobId}/regenerate`,
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            overrides: structuredPayload.overrides,
+            draftId: structuredPayload.draftId,
+            baseFingerprint: structuredPayload.baseFingerprint
+          })
+        }
+      });
+
+      if (!response.ok) {
+        throw new RegenerationMutationError(
+          toEndpointError({
+            status: response.status,
+            payload: response.payload,
+            fallbackCode: "REGEN_SUBMIT_FAILED",
+            fallbackMessage: "Could not submit regeneration job."
+          })
+        );
+      }
+
+      if (!isRegenerationAcceptedPayload(response.payload)) {
+        throw new RegenerationMutationError({
+          status: response.status,
+          code: "REGEN_INVALID_PAYLOAD",
+          message: "Regeneration acceptance payload is invalid."
+        });
+      }
+
+      return response.payload;
+    },
+    onSuccess: (payload) => {
+      setRegenerationAccepted(payload);
+      setRegenerationError(null);
+      onRegenerationAccepted?.(payload.jobId);
+    },
+    onError: (error) => {
+      if (error instanceof RegenerationMutationError) {
+        setRegenerationError(error.details);
+        return;
+      }
+      setRegenerationError({
+        status: 500,
+        code: "REGEN_SUBMIT_FAILED",
+        message: error instanceof Error ? error.message : "Could not submit regeneration job."
+      });
+    }
   });
 
   const previewSyncMutation = useMutation({
@@ -971,6 +1080,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   });
 
   useEffect(() => {
+    setRegenerationAccepted(null);
+    setRegenerationError(null);
     setSyncTargetPathInput("");
     setSyncConfirmationChecked(false);
     setSyncPreviewPlan(null);
@@ -1853,6 +1964,25 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     return toStructuredInspectorOverridePayload(overrideDraft);
   }, [overrideDraft]);
 
+  const impactReviewModel = useMemo(() => {
+    return deriveInspectorImpactReviewModel({
+      entries: overrideDraft?.entries ?? [],
+      manifest: (manifest as InspectorImpactReviewManifest | null)
+    });
+  }, [manifest, overrideDraft]);
+
+  const canSubmitRegeneration =
+    impactReviewModel.summary.totalOverrides > 0 && !regenerateMutation.isPending;
+
+  const handleSubmitRegeneration = useCallback(() => {
+    if (!canSubmitRegeneration) {
+      return;
+    }
+    setRegenerationError(null);
+    setRegenerationAccepted(null);
+    regenerateMutation.mutate();
+  }, [canSubmitRegeneration, regenerateMutation]);
+
   const hasScalarFieldOverride = useCallback((field: ScalarOverrideField): boolean => {
     if (!overrideDraft || !selectedNodeId) {
       return false;
@@ -2574,36 +2704,52 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   ]);
 
   const handlePreviewLocalSync = useCallback(() => {
+    if (!isRegenerationJob) {
+      return;
+    }
     setSyncError(null);
     previewSyncMutation.mutate({
       targetPath: syncTargetPathInput
     });
-  }, [previewSyncMutation, syncTargetPathInput]);
+  }, [isRegenerationJob, previewSyncMutation, syncTargetPathInput]);
 
   const handleApplyLocalSync = useCallback(() => {
-    if (!syncPreviewPlan || !syncConfirmationChecked) {
+    if (!isRegenerationJob || !syncPreviewPlan || !syncConfirmationChecked) {
       return;
     }
     setSyncError(null);
     applySyncMutation.mutate();
-  }, [applySyncMutation, syncConfirmationChecked, syncPreviewPlan]);
+  }, [applySyncMutation, isRegenerationJob, syncConfirmationChecked, syncPreviewPlan]);
+
+  const syncPreviewDisabled =
+    !isRegenerationJob ||
+    previewSyncMutation.isPending ||
+    applySyncMutation.isPending ||
+    regenerateMutation.isPending;
 
   const syncApplyDisabled =
+    !isRegenerationJob ||
     !syncPreviewPlan ||
     !syncConfirmationChecked ||
     previewSyncMutation.isPending ||
-    applySyncMutation.isPending;
+    applySyncMutation.isPending ||
+    regenerateMutation.isPending;
 
   const handleCreatePr = useCallback(() => {
+    if (!isRegenerationJob) {
+      return;
+    }
     setPrError(null);
     setPrResult(null);
     createPrMutation.mutate();
-  }, [createPrMutation]);
+  }, [createPrMutation, isRegenerationJob]);
 
   const prCreateDisabled =
+    !isRegenerationJob ||
     !prRepoUrlInput.trim() ||
     !prRepoTokenInput.trim() ||
-    createPrMutation.isPending;
+    createPrMutation.isPending ||
+    regenerateMutation.isPending;
 
   return (
     <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -3125,6 +3271,138 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           </div>
         ) : null}
         <div
+          data-testid="inspector-impact-review-panel"
+          className="mt-3 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950"
+        >
+          <p className="m-0 font-semibold">Pre-Apply Review</p>
+          <p className="m-0 mt-1">
+            Review grouped file-level blast radius before creating a regeneration job.
+          </p>
+          <p data-testid="inspector-impact-review-diff-guidance" className="m-0 mt-1 text-sky-900">
+            After regeneration, use the existing code pane and diff controls for detailed code review.
+          </p>
+          {impactReviewModel.empty ? (
+            <p
+              data-testid="inspector-impact-review-empty"
+              className="m-0 mt-2 rounded border border-sky-200 bg-white px-2 py-1 text-slate-700"
+            >
+              No pending overrides. Add overrides in Edit Studio to prepare a regeneration review.
+            </p>
+          ) : (
+            <>
+              <div
+                data-testid="inspector-impact-review-summary"
+                className="mt-2 rounded border border-sky-200 bg-white px-2 py-1.5 text-slate-800"
+              >
+                <p className="m-0 font-semibold text-slate-900">Blast radius summary</p>
+                <p data-testid="inspector-impact-review-summary-total" className="m-0 mt-1">
+                  Total overrides: {String(impactReviewModel.summary.totalOverrides)}
+                </p>
+                <p data-testid="inspector-impact-review-summary-files" className="m-0 mt-1">
+                  Affected files: {String(impactReviewModel.summary.affectedFiles)}
+                </p>
+                <p data-testid="inspector-impact-review-summary-mapped" className="m-0 mt-1">
+                  Mapped overrides: {String(impactReviewModel.summary.mappedOverrides)}
+                </p>
+                <p data-testid="inspector-impact-review-summary-unmapped" className="m-0 mt-1">
+                  Unmapped overrides: {String(impactReviewModel.summary.unmappedOverrides)}
+                </p>
+                <p data-testid="inspector-impact-review-summary-categories" className="m-0 mt-1">
+                  Categories: {String(impactReviewModel.summary.categories.visual)} visual,{" "}
+                  {String(impactReviewModel.summary.categories.validation)} validation,{" "}
+                  {String(impactReviewModel.summary.categories.other)} other
+                </p>
+              </div>
+              <div data-testid="inspector-impact-review-file-list" className="mt-2 grid gap-2">
+                {impactReviewModel.files.map((fileReview, index) => (
+                  <div
+                    key={fileReview.filePath}
+                    data-testid={`inspector-impact-review-file-${String(index)}`}
+                    className="rounded border border-sky-200 bg-white px-2 py-1.5 text-slate-800"
+                  >
+                    <p className="m-0 font-semibold text-slate-900">
+                      <code>{fileReview.filePath}</code>
+                    </p>
+                    <p className="m-0 mt-1">
+                      Overrides: {String(fileReview.overrideCount)} ({String(fileReview.categories.visual)} visual,{" "}
+                      {String(fileReview.categories.validation)} validation, {String(fileReview.categories.other)}{" "}
+                      other)
+                    </p>
+                    <ul className="m-0 mt-1 list-disc pl-4 text-[11px]">
+                      {fileReview.overrides.map((entry) => (
+                        <li
+                          key={`${entry.nodeId}:${entry.field}`}
+                          data-testid={`inspector-impact-review-override-${entry.nodeId}-${entry.field}`}
+                        >
+                          {entry.nodeName} ({entry.nodeType}) → {entry.field} [{entry.category}]
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              {impactReviewModel.unmapped.length > 0 ? (
+                <div
+                  data-testid="inspector-impact-review-unmapped-list"
+                  className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900"
+                >
+                  <p className="m-0 font-semibold">Unmapped overrides</p>
+                  <ul className="m-0 mt-1 list-disc pl-4">
+                    {impactReviewModel.unmapped.map((entry) => (
+                      <li key={`${entry.nodeId}:${entry.field}`}>
+                        {entry.nodeId} → {entry.field} [{entry.category}]
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="inspector-impact-review-regenerate-button"
+              disabled={!canSubmitRegeneration}
+              onClick={handleSubmitRegeneration}
+              className="cursor-pointer rounded border border-sky-500 bg-sky-500 px-2 py-1 text-[11px] font-semibold text-sky-950 transition hover:bg-sky-400 disabled:cursor-default disabled:opacity-40"
+            >
+              {regenerateMutation.isPending ? "Submitting regeneration..." : "Regenerate From Overrides"}
+            </button>
+            {!isRegenerationJob ? (
+              <span
+                data-testid="inspector-impact-review-regeneration-required"
+                className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-900"
+              >
+                Regenerate first to enable Local Sync and PR actions.
+              </span>
+            ) : (
+              <span
+                data-testid="inspector-impact-review-regeneration-active"
+                className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-900"
+              >
+                Regeneration job active. Continue review in code/diff.
+              </span>
+            )}
+          </div>
+          {regenerationAccepted ? (
+            <p
+              data-testid="inspector-impact-review-regeneration-accepted"
+              className="m-0 mt-2 rounded border border-emerald-300 bg-emerald-100 px-2 py-1 text-emerald-900"
+            >
+              Regeneration accepted as job <code>{regenerationAccepted.jobId}</code>. Inspector switches to the new job
+              automatically.
+            </p>
+          ) : null}
+          {regenerationError ? (
+            <p
+              data-testid="inspector-impact-review-regeneration-error"
+              className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
+            >
+              [{regenerationError.code}] {regenerationError.message} (HTTP {String(regenerationError.status)})
+            </p>
+          ) : null}
+        </div>
+        <div
           data-testid="inspector-sync-panel"
           className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950"
         >
@@ -3132,6 +3410,14 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           <p className="m-0 mt-1">
             Run a dry-run first, then explicitly confirm overwrite before applying local sync.
           </p>
+          {!isRegenerationJob ? (
+            <p
+              data-testid="inspector-sync-regeneration-required"
+              className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+            >
+              Local sync is disabled for non-regeneration jobs. Create and open a regeneration job first.
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
               <span className="font-semibold text-emerald-900">Target path override (optional)</span>
@@ -3149,7 +3435,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             <button
               type="button"
               data-testid="inspector-sync-preview-button"
-              disabled={previewSyncMutation.isPending || applySyncMutation.isPending}
+              disabled={syncPreviewDisabled}
               onClick={handlePreviewLocalSync}
               className="cursor-pointer rounded border border-emerald-400 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-default disabled:opacity-40"
             >
@@ -3179,7 +3465,13 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
                 type="checkbox"
                 data-testid="inspector-sync-confirm-overwrite"
                 checked={syncConfirmationChecked}
-                disabled={!syncPreviewPlan || previewSyncMutation.isPending || applySyncMutation.isPending}
+                disabled={
+                  !isRegenerationJob ||
+                  !syncPreviewPlan ||
+                  previewSyncMutation.isPending ||
+                  applySyncMutation.isPending ||
+                  regenerateMutation.isPending
+                }
                 onChange={(event) => {
                   setSyncConfirmationChecked(event.currentTarget.checked);
                 }}
@@ -3222,6 +3514,14 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           <p className="m-0 mt-1">
             Create a GitHub Pull Request from regenerated output. Requires a GitHub repository URL and access token.
           </p>
+          {!isRegenerationJob ? (
+            <p
+              data-testid="inspector-pr-regeneration-required"
+              className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+            >
+              PR creation is disabled for non-regeneration jobs. Regenerate first from the review panel.
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-col gap-2">
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
               <span className="font-semibold text-indigo-900">Repository URL</span>

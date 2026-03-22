@@ -6,7 +6,7 @@
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/456
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   openWorkspaceUi,
@@ -18,14 +18,56 @@ import {
 
 const syncViewport = { width: 1920, height: 1080 } as const;
 
+async function setupRegenerationLineageRoute(page: Page): Promise<void> {
+  await page.route("**/workspace/jobs/*", async (route) => {
+    const request = route.request();
+    if (request.method() !== "GET") {
+      await route.continue();
+      return;
+    }
+
+    const response = await route.fetch();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      await route.fulfill({ response });
+      return;
+    }
+
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      await route.fulfill({ response });
+      return;
+    }
+
+    const record = payload as Record<string, unknown>;
+    if (typeof record.jobId !== "string") {
+      await route.fulfill({ response });
+      return;
+    }
+
+    await route.fulfill({
+      response,
+      json: {
+        ...record,
+        lineage: {
+          sourceJobId: "job-source-1"
+        }
+      }
+    });
+  });
+}
+
 test.describe("inspector local sync controls", () => {
   test.beforeEach(async ({ page }) => {
     await setupDeterministicSubmitRoute(page);
+    await setupRegenerationLineageRoute(page);
   });
 
   test.afterEach(async ({ page }) => {
     await cleanupDeterministicSubmitRoute(page);
     await page.unroute("**/workspace/jobs/*/sync");
+    await page.unroute("**/workspace/jobs/*");
     await resetBrowserStorage(page);
   });
 
