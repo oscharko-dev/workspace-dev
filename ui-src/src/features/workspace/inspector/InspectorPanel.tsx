@@ -13,6 +13,7 @@ import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
+import { findNodePath } from "./component-tree-utils";
 import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
@@ -752,6 +753,13 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
 
   const previousFileContentLoading = previousFileContentQuery.isLoading && !previousFileContentQuery.data;
 
+  // --- Breadcrumb path derivation ---
+
+  const breadcrumbPath = useMemo(() => {
+    if (!selectedNodeId || treeNodes.length === 0) return [];
+    return findNodePath(treeNodes, selectedNodeId);
+  }, [selectedNodeId, treeNodes]);
+
   const handleRetryFiles = useCallback(() => {
     void filesQuery.refetch();
   }, [filesQuery.refetch]);
@@ -1249,6 +1257,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             previousJobId={previousJobId}
             previousFileContent={previousFileContent}
             previousFileContentLoading={previousFileContentLoading}
+            breadcrumbPath={breadcrumbPath}
+            onBreadcrumbSelect={handleTreeSelect}
           />
         </div>
       </div>

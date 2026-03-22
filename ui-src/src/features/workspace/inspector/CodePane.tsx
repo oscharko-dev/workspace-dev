@@ -1,6 +1,8 @@
 import { useState, type JSX } from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
+import { Breadcrumb } from "./Breadcrumb";
+import type { BreadcrumbSegment } from "./component-tree-utils";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -30,6 +32,10 @@ interface CodePaneProps {
   previousFileContent?: string | null;
   /** Loading state for the previous file content fetch. */
   previousFileContentLoading?: boolean;
+  /** Breadcrumb path from root screen to selected node. Empty when no node selected. */
+  breadcrumbPath?: BreadcrumbSegment[];
+  /** Callback when user clicks a breadcrumb segment to navigate to an ancestor. */
+  onBreadcrumbSelect?: (nodeId: string) => void;
 }
 
 export function CodePane({
@@ -46,7 +52,9 @@ export function CodePane({
   highlightRange,
   previousJobId,
   previousFileContent,
-  previousFileContentLoading
+  previousFileContentLoading,
+  breadcrumbPath,
+  onBreadcrumbSelect
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -154,6 +162,11 @@ export function CodePane({
           </div>
         ) : null}
       </div>
+
+      {/* Breadcrumb navigation — visible only when a node is selected */}
+      {breadcrumbPath && breadcrumbPath.length > 0 && onBreadcrumbSelect ? (
+        <Breadcrumb path={breadcrumbPath} onSelect={onBreadcrumbSelect} />
+      ) : null}
 
       {/* Code viewer or diff viewer or loading/empty state */}
       <div className="min-h-0 flex-1">

@@ -1,5 +1,44 @@
 import type { TreeNode } from "./component-tree";
 
+export interface BreadcrumbSegment {
+  id: string;
+  name: string;
+  type: string;
+}
+
+/**
+ * Find the path from the root of the tree to the node with the given `targetId`.
+ *
+ * Returns an array of `BreadcrumbSegment` objects representing each ancestor
+ * from the root screen down to (and including) the target node.
+ * Returns an empty array if the target is not found.
+ */
+export function findNodePath(nodes: TreeNode[], targetId: string): BreadcrumbSegment[] {
+  const path: BreadcrumbSegment[] = [];
+
+  function walk(list: TreeNode[]): boolean {
+    for (const node of list) {
+      path.push({ id: node.id, name: node.name, type: node.type });
+
+      if (node.id === targetId) {
+        return true;
+      }
+
+      if (node.children && node.children.length > 0) {
+        if (walk(node.children)) {
+          return true;
+        }
+      }
+
+      path.pop();
+    }
+    return false;
+  }
+
+  walk(nodes);
+  return path;
+}
+
 /**
  * Filter tree nodes, keeping parent paths when a descendant matches.
  */
