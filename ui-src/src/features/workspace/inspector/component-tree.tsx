@@ -17,6 +17,8 @@ interface ComponentTreeProps {
   screens: TreeNode[];
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
+  /** Callback for explicit scope entry (double-click). */
+  onEnterScope?: (nodeId: string) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -35,6 +37,7 @@ interface TreeRowProps {
   row: VisibleTreeRow;
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
+  onEnterScope?: (nodeId: string) => void;
   onToggleExpand: (nodeId: string) => void;
   focusedId: string | null;
   onFocusNode: (nodeId: string) => void;
@@ -112,6 +115,7 @@ function TreeRow({
   row,
   selectedId,
   onSelect,
+  onEnterScope,
   onToggleExpand,
   focusedId,
   onFocusNode
@@ -144,6 +148,11 @@ function TreeRow({
       onClick={() => {
         onSelect(row.node.id);
         onFocusNode(row.node.id);
+      }}
+      onDoubleClick={() => {
+        if (onEnterScope) {
+          onEnterScope(row.node.id);
+        }
       }}
     >
       {row.hasChildren ? (
@@ -190,6 +199,7 @@ export function ComponentTree({
   screens,
   selectedId,
   onSelect,
+  onEnterScope,
   collapsed,
   onToggleCollapsed
 }: ComponentTreeProps): JSX.Element {
@@ -440,6 +450,7 @@ export function ComponentTree({
                 row={row}
                 selectedId={selectedId}
                 onSelect={onSelect}
+                onEnterScope={onEnterScope}
                 onToggleExpand={toggleExpand}
                 focusedId={effectiveFocusedId}
                 onFocusNode={setFocusedId}

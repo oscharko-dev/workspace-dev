@@ -32,6 +32,12 @@ interface CodePaneProps {
   previousFileContentLoading?: boolean;
   breadcrumbPath?: BreadcrumbSegment[];
   onBreadcrumbSelect?: (nodeId: string) => void;
+  /** Whether a hierarchical drilldown scope is currently active. */
+  hasActiveScope?: boolean;
+  /** Callback to enter scope on a breadcrumb node. */
+  onEnterScope?: (nodeId: string) => void;
+  /** Callback to exit the current scope level. */
+  onExitScope?: () => void;
   /** Split view: suggested/selected second file path. */
   splitFile?: string | null;
   /** Split view: content of the second file. */
@@ -67,6 +73,9 @@ export function CodePane({
   previousFileContentLoading,
   breadcrumbPath,
   onBreadcrumbSelect,
+  hasActiveScope,
+  onEnterScope,
+  onExitScope,
   splitFile,
   splitFileContent,
   splitFileContentLoading,
@@ -244,7 +253,13 @@ export function CodePane({
 
       {/* Breadcrumb navigation */}
       {breadcrumbPath && breadcrumbPath.length > 0 && onBreadcrumbSelect ? (
-        <Breadcrumb path={breadcrumbPath} onSelect={onBreadcrumbSelect} />
+        <Breadcrumb
+          path={breadcrumbPath}
+          onSelect={onBreadcrumbSelect}
+          hasActiveScope={hasActiveScope}
+          onEnterScope={onEnterScope}
+          onExitScope={onExitScope}
+        />
       ) : null}
 
       {/* Code viewer / diff viewer / split view */}

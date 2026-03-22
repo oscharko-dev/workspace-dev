@@ -25,13 +25,19 @@ interface BreadcrumbProps {
   path: BreadcrumbSegment[];
   /** Callback when the user clicks a segment to navigate. */
   onSelect: (nodeId: string) => void;
+  /** Whether a hierarchical drilldown scope is currently active. */
+  hasActiveScope?: boolean;
+  /** Callback to enter scope on a node (explicit drilldown). */
+  onEnterScope?: (nodeId: string) => void;
+  /** Callback to exit the current scope level. */
+  onExitScope?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function Breadcrumb({ path, onSelect }: BreadcrumbProps): JSX.Element | null {
+export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExitScope }: BreadcrumbProps): JSX.Element | null {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
   const focusedIndexRef = useRef(0);
@@ -105,6 +111,16 @@ export function Breadcrumb({ path, onSelect }: BreadcrumbProps): JSX.Element | n
       className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-3 py-1.5"
       onKeyDown={handleKeyDown}
     >
+      {/* Scope indicator badge */}
+      {hasActiveScope ? (
+        <span
+          data-testid="breadcrumb-scope-badge"
+          className="mr-1 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
+        >
+          Scoped
+        </span>
+      ) : null}
+
       {visibleSegments.map((segment, i) => {
         const isLast = !needsOverflow
           ? i === visibleSegments.length - 1
@@ -200,6 +216,38 @@ export function Breadcrumb({ path, onSelect }: BreadcrumbProps): JSX.Element | n
           </span>
         );
       })}
+
+      {/* Scope action buttons */}
+      <span className="ml-auto flex items-center gap-1">
+        {/* Enter scope button — shown for the last (selected) segment when not already scoped to it */}
+        {onEnterScope && path.length > 0 ? (
+          <button
+            type="button"
+            data-testid="breadcrumb-enter-scope"
+            onClick={() => {
+              const last = path[path.length - 1];
+              if (last) onEnterScope(last.id);
+            }}
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            title="Enter scope (drill down into this component)"
+          >
+            Enter scope
+          </button>
+        ) : null}
+
+        {/* Exit scope button — shown when a scope is active */}
+        {hasActiveScope && onExitScope ? (
+          <button
+            type="button"
+            data-testid="breadcrumb-exit-scope"
+            onClick={onExitScope}
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
+            title="Exit scope (go back up one level)"
+          >
+            Exit scope
+          </button>
+        ) : null}
+      </span>
     </nav>
   );
 }
