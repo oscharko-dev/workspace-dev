@@ -7,7 +7,7 @@ import type { JobEngine } from "../job-engine.js";
 import { enforceModeLock } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
-import { SubmitRequestSchema, formatZodError } from "../schemas.js";
+import { RegenerationRequestSchema, SubmitRequestSchema, formatZodError } from "../schemas.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
@@ -93,6 +93,18 @@ export function createWorkspaceRequestHandler({
             payload: {
               error: "METHOD_NOT_ALLOWED",
               message: `Use POST for cancellation route '/workspace/jobs/${jobId}/cancel'.`
+            }
+          });
+          return;
+        }
+
+        if (parsedJobRoute.action === "regenerate") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for regeneration route '/workspace/jobs/${jobId}/regenerate'.`
             }
           });
           return;
@@ -622,6 +634,94 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 202,
           payload: canceledJob
+        });
+        return;
+      }
+
+      if (parsedJobRoute?.action === "regenerate") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        const parsed = RegenerationRequestSchema.safeParse(rawBody.value);
+        if (!parsed.success) {
+          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          return;
+        }
+
+        let accepted: ReturnType<JobEngine["submitRegeneration"]>;
+        try {
+          accepted = jobEngine.submitRegeneration({
+            sourceJobId: jobId,
+            overrides: parsed.data.overrides,
+            ...(parsed.data.draftId ? { draftId: parsed.data.draftId } : {}),
+            ...(parsed.data.baseFingerprint ? { baseFingerprint: parsed.data.baseFingerprint } : {})
+          });
+        } catch (error) {
+          if (error instanceof Error && "code" in error) {
+            const code = (error as { code?: string }).code;
+            if (code === "E_JOB_QUEUE_FULL") {
+              const queueValue = (error as { queue?: unknown }).queue;
+              sendJson({
+                response,
+                statusCode: 429,
+                payload: {
+                  error: "QUEUE_BACKPRESSURE",
+                  message: sanitizeErrorMessage({ error, fallback: "Job queue limit reached." }),
+                  queue: typeof queueValue === "object" && queueValue !== null ? queueValue : undefined
+                }
+              });
+              return;
+            }
+            if (code === "E_REGEN_SOURCE_NOT_FOUND") {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "SOURCE_JOB_NOT_FOUND",
+                  message: `Source job '${jobId}' not found.`
+                }
+              });
+              return;
+            }
+            if (code === "E_REGEN_SOURCE_NOT_COMPLETED") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "SOURCE_JOB_NOT_COMPLETED",
+                  message: sanitizeErrorMessage({ error, fallback: "Source job is not completed." })
+                }
+              });
+              return;
+            }
+          }
+          sendJson({
+            response,
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({ error, fallback: "Could not submit regeneration job." })
+            }
+          });
+          return;
+        }
+
+        sendJson({
+          response,
+          statusCode: 202,
+          payload: accepted
         });
         return;
       }

@@ -10,6 +10,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceJobInput,
+  WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
 } from "./contracts/index.js";
 
@@ -419,6 +420,111 @@ export const WorkspaceStatusSchema: RuntimeSchema<WorkspaceStatus> = {
 
 export const ErrorResponseSchema: RuntimeSchema<{ error: string; message: string }> = {
   safeParse: parseErrorResponse
+};
+
+interface RegenerationRequestData {
+  overrides: WorkspaceRegenerationOverrideEntry[];
+  draftId?: string;
+  baseFingerprint?: string;
+}
+
+function isOverrideValue(value: unknown): value is WorkspaceRegenerationOverrideEntry["value"] {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return (
+      typeof record.top === "number" &&
+      typeof record.right === "number" &&
+      typeof record.bottom === "number" &&
+      typeof record.left === "number"
+    );
+  }
+  return false;
+}
+
+function parseRegenerationRequest(input: unknown): ValidationResult<RegenerationRequestData> {
+  const issues: ValidationIssue[] = [];
+
+  if (!isRecord(input)) {
+    pushIssue(issues, [], "Expected an object body.");
+    return { success: false, error: { issues } };
+  }
+
+  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint"]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      pushIssue(issues, [key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  if (!Array.isArray(input.overrides)) {
+    pushIssue(issues, ["overrides"], "overrides must be an array.");
+    return { success: false, error: { issues } };
+  }
+
+  const overrides: WorkspaceRegenerationOverrideEntry[] = [];
+  for (let i = 0; i < input.overrides.length; i++) {
+    const entry = input.overrides[i] as unknown;
+    if (!isRecord(entry)) {
+      pushIssue(issues, ["overrides", i], "Each override entry must be an object.");
+      continue;
+    }
+    if (typeof entry.nodeId !== "string" || entry.nodeId.trim().length === 0) {
+      pushIssue(issues, ["overrides", i, "nodeId"], "nodeId must be a non-empty string.");
+      continue;
+    }
+    if (typeof entry.field !== "string" || entry.field.trim().length === 0) {
+      pushIssue(issues, ["overrides", i, "field"], "field must be a non-empty string.");
+      continue;
+    }
+    if (!isOverrideValue(entry.value)) {
+      pushIssue(issues, ["overrides", i, "value"], "value must be a string, number, boolean, or padding object.");
+      continue;
+    }
+    overrides.push({
+      nodeId: entry.nodeId,
+      field: entry.field,
+      value: entry.value
+    });
+  }
+
+  let draftId: string | undefined;
+  if (input.draftId !== undefined) {
+    if (typeof input.draftId !== "string" || input.draftId.trim().length === 0) {
+      pushIssue(issues, ["draftId"], "draftId must be a non-empty string when provided.");
+    } else {
+      draftId = input.draftId;
+    }
+  }
+
+  let baseFingerprint: string | undefined;
+  if (input.baseFingerprint !== undefined) {
+    if (typeof input.baseFingerprint !== "string" || input.baseFingerprint.trim().length === 0) {
+      pushIssue(issues, ["baseFingerprint"], "baseFingerprint must be a non-empty string when provided.");
+    } else {
+      baseFingerprint = input.baseFingerprint;
+    }
+  }
+
+  if (issues.length > 0) {
+    return { success: false, error: { issues } };
+  }
+
+  const data: RegenerationRequestData = { overrides };
+  if (draftId !== undefined) {
+    data.draftId = draftId;
+  }
+  if (baseFingerprint !== undefined) {
+    data.baseFingerprint = baseFingerprint;
+  }
+
+  return { success: true, data };
+}
+
+export const RegenerationRequestSchema: RuntimeSchema<RegenerationRequestData> = {
+  safeParse: parseRegenerationRequest
 };
 
 /**

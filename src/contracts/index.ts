@@ -287,6 +287,7 @@ export interface WorkspaceJobStatus {
   };
   queue: WorkspaceJobQueueState;
   cancellation?: WorkspaceJobCancellation;
+  lineage?: WorkspaceJobLineage;
   generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
@@ -302,6 +303,7 @@ export interface WorkspaceJobResult {
     enabled: boolean;
     url?: string;
   };
+  lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
   gitPr?: WorkspaceGitPrStatus;
@@ -314,8 +316,42 @@ export interface WorkspaceVersionInfo {
   contractVersion: string;
 }
 
+/** Structured override entry for regeneration from Inspector drafts. */
+export interface WorkspaceRegenerationOverrideEntry {
+  nodeId: string;
+  field: string;
+  value: string | number | boolean | { top: number; right: number; bottom: number; left: number };
+}
+
+/** Submission payload for regeneration from a completed source job with IR overrides. */
+export interface WorkspaceRegenerationInput {
+  sourceJobId: string;
+  overrides: WorkspaceRegenerationOverrideEntry[];
+  draftId?: string;
+  baseFingerprint?: string;
+}
+
+/** Submit response for accepted regeneration jobs. */
+export interface WorkspaceRegenerationAccepted {
+  jobId: string;
+  sourceJobId: string;
+  status: "queued";
+  acceptedModes: {
+    figmaSourceMode: WorkspaceFigmaSourceMode;
+    llmCodegenMode: WorkspaceLlmCodegenMode;
+  };
+}
+
+/** Lineage metadata linking a regeneration job to its source. */
+export interface WorkspaceJobLineage {
+  sourceJobId: string;
+  draftId?: string;
+  baseFingerprint?: string;
+  overrideCount: number;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.17.0" as const;
+export const CONTRACT_VERSION = "2.18.0" as const;
