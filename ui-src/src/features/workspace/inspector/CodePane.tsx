@@ -66,6 +66,10 @@ interface CodePaneProps {
   isNodeMapped?: boolean;
   /** Manifest range for the previous job's version of this node (for diff mode). */
   previousManifestRange?: ManifestRange | null;
+  /** Parent file path when viewing a cross-file extracted component. */
+  parentFile?: string | null;
+  /** Callback to return to the parent file context. */
+  onReturnToParentFile?: () => void;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -102,7 +106,9 @@ export function CodePane({
   onBoundarySelect,
   activeManifestRange,
   isNodeMapped = false,
-  previousManifestRange
+  previousManifestRange,
+  parentFile,
+  onReturnToParentFile
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -300,6 +306,8 @@ export function CodePane({
           hasActiveScope={hasActiveScope}
           onEnterScope={onEnterScope}
           onExitScope={onExitScope}
+          parentFile={parentFile}
+          onReturnToParentFile={onReturnToParentFile}
         />
       ) : null}
 
@@ -443,6 +451,28 @@ export function CodePane({
               lineOffset={scopedCode?.lineOffset}
             />
           )
+        ) : !isNodeMapped && selectedFile ? (
+          <div
+            data-testid="inspector-unmapped-fallback"
+            className="flex flex-col items-center justify-center gap-2 p-6 text-center"
+          >
+            <p className="m-0 text-xs font-semibold text-amber-800">
+              This component has no file mapping
+            </p>
+            <p className="m-0 text-[11px] text-slate-500">
+              The selected node is not mapped to a specific location in the generated source. The current file is displayed as context.
+            </p>
+            {parentFile && onReturnToParentFile ? (
+              <button
+                type="button"
+                data-testid="inspector-unmapped-return-parent"
+                onClick={onReturnToParentFile}
+                className="mt-1 cursor-pointer rounded border border-sky-300 bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100"
+              >
+                ← Return to {parentFile.split("/").pop() ?? parentFile}
+              </button>
+            ) : null}
+          </div>
         ) : filesState === "empty" ? (
           <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-slate-500">
             No source file content is available yet.

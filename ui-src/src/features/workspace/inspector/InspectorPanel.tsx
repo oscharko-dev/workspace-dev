@@ -37,7 +37,9 @@ import {
   selectCanNavigateBack,
   selectCanNavigateForward,
   selectCanLevelUp,
+  selectCanReturnToParentFile,
   selectHasActiveScope,
+  selectParentFile,
   type ManifestMapping
 } from "./inspector-scope-state";
 
@@ -315,6 +317,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const canNavigateBack = selectCanNavigateBack(scopeState);
   const canNavigateForward = selectCanNavigateForward(scopeState);
   const canLevelUp = selectCanLevelUp(scopeState);
+  const canReturnToParentFile = selectCanReturnToParentFile(scopeState);
+  const parentFile = selectParentFile(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -1176,6 +1180,17 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     handleLevelUp();
   }, [handleLevelUp]);
 
+  /** Return to parent file context without unwinding scope. */
+  const handleReturnToParentFile = useCallback(() => {
+    const nextScopeState = inspectorScopeReducer(scopeState, { type: "RETURN_TO_PARENT_FILE" });
+    if (nextScopeState === scopeState) {
+      return;
+    }
+
+    scopeDispatch({ type: "RETURN_TO_PARENT_FILE" });
+    applyNavigationVisualState(nextScopeState);
+  }, [applyNavigationVisualState, scopeState]);
+
   const handleNavigateBack = useCallback(() => {
     const nextScopeState = inspectorScopeReducer(scopeState, { type: "NAVIGATE_BACK" });
     if (nextScopeState === scopeState) {
@@ -1658,6 +1673,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             onBoundarySelect={handleTreeSelect}
             activeManifestRange={activeManifestRange}
             isNodeMapped={isNodeMapped}
+            parentFile={canReturnToParentFile ? parentFile : null}
+            onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
           />
         </div>
       </div>
