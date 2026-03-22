@@ -50,6 +50,8 @@ interface CodeViewerProps {
   onBoundariesEnabledChange?: (enabled: boolean) => void;
   /** Called when a boundary marker is clicked */
   onBoundarySelect?: (irNodeId: string) => void;
+  /** 1-based offset for line numbers when displaying a code snippet. */
+  lineOffset?: number;
 }
 
 interface SearchMatch {
@@ -184,7 +186,8 @@ export function CodeViewer({
   boundaries = [],
   boundariesEnabled,
   onBoundariesEnabledChange,
-  onBoundarySelect
+  onBoundarySelect,
+  lineOffset = 1
 }: CodeViewerProps): JSX.Element {
   const [highlightState, setHighlightState] = useState<{
     result: HighlightResult | null;
@@ -665,6 +668,7 @@ export function CodeViewer({
           <div className="min-w-0">
             {lines.map((line, i) => {
               const lineNum = i + 1;
+              const displayLineNum = i + lineOffset;
               const hasSearchMatch = searchMatchedLineSet.has(lineNum);
               const isActiveMatchLine = activeMatch?.line === lineNum;
               const isJumpTargetLine = jumpTargetLine === lineNum;
@@ -808,7 +812,7 @@ export function CodeViewer({
                         ) : null}
                       </span>
                     ) : null}
-                    <span className="inline-block w-full text-right">{lineNum}</span>
+                    <span className="inline-block w-full text-right">{displayLineNum}</span>
                   </span>
 
                   {/* Code content */}
