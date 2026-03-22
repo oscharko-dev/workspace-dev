@@ -1,5 +1,6 @@
 import { useState, type JSX } from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
+import { DiffViewer } from "./DiffViewer";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -23,6 +24,12 @@ interface CodePaneProps {
   fileContentError: EndpointErrorDetails | null;
   onRetryFileContent: () => void;
   highlightRange?: HighlightRange | null;
+  /** Previous job ID for diff comparison. `null` when no prior job exists. */
+  previousJobId?: string | null;
+  /** Content of the selected file from the previous job. `null` while loading or unavailable. */
+  previousFileContent?: string | null;
+  /** Loading state for the previous file content fetch. */
+  previousFileContentLoading?: boolean;
 }
 
 export function CodePane({
@@ -36,9 +43,13 @@ export function CodePane({
   fileContentState,
   fileContentError,
   onRetryFileContent,
-  highlightRange
+  highlightRange,
+  previousJobId,
+  previousFileContent,
+  previousFileContentLoading
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
+  const [diffEnabled, setDiffEnabled] = useState(false);
 
   const codeFiles = files.filter(
     (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts") || (jsonVisible && f.path.endsWith(".json"))
@@ -48,6 +59,17 @@ export function CodePane({
   const hasJsonFiles = jsonFiles.length > 0;
   const hasCodeFiles = codeFiles.length > 0;
   const isFileSelectorDisabled = filesState === "loading" || filesState === "error" || !hasCodeFiles;
+
+  const canDiff = Boolean(previousJobId) && fileContent !== null && previousFileContent !== null && !previousFileContentLoading;
+  const isDiffActive = diffEnabled && canDiff;
+
+  const diffTooltip = !previousJobId
+    ? "No previous job available for comparison"
+    : previousFileContentLoading
+      ? "Loading previous file…"
+      : previousFileContent === null
+        ? "Previous file not available"
+        : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -85,6 +107,22 @@ export function CodePane({
             {jsonVisible ? "Hide JSON" : "Show JSON"}
           </button>
         ) : null}
+        {/* Diff toggle */}
+        <button
+          type="button"
+          data-testid="inspector-diff-toggle"
+          disabled={!canDiff && !diffEnabled}
+          title={diffTooltip}
+          onClick={() => { setDiffEnabled((v) => !v); }}
+          className="shrink-0 cursor-pointer rounded border px-2 py-1 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-40"
+          style={{
+            borderColor: isDiffActive ? "#6366f1" : undefined,
+            backgroundColor: isDiffActive ? "#eef2ff" : undefined,
+            color: isDiffActive ? "#4338ca" : undefined
+          }}
+        >
+          {isDiffActive ? "Diff: On" : "Diff"}
+        </button>
       </div>
       <div className="shrink-0 px-3 py-2">
         {filesState === "loading" ? (
@@ -117,7 +155,7 @@ export function CodePane({
         ) : null}
       </div>
 
-      {/* Code viewer or loading/empty state */}
+      {/* Code viewer or diff viewer or loading/empty state */}
       <div className="min-h-0 flex-1">
         {fileContentState === "loading" ? (
           <p data-testid="inspector-state-file-content-loading" className="m-0 p-3 text-xs text-slate-500">
@@ -141,11 +179,20 @@ export function CodePane({
             </button>
           </div>
         ) : fileContent !== null && selectedFile ? (
-          <CodeViewer
-            code={fileContent}
-            filePath={selectedFile}
-            highlightRange={highlightRange}
-          />
+          isDiffActive && typeof previousFileContent === "string" && typeof previousJobId === "string" ? (
+            <DiffViewer
+              oldCode={previousFileContent}
+              newCode={fileContent}
+              filePath={selectedFile}
+              previousJobId={previousJobId}
+            />
+          ) : (
+            <CodeViewer
+              code={fileContent}
+              filePath={selectedFile}
+              highlightRange={highlightRange}
+            />
+          )
         ) : filesState === "empty" ? (
           <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-slate-500">
             No source file content is available yet.

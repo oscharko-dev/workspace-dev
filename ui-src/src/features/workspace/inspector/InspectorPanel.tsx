@@ -100,6 +100,8 @@ type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
 interface InspectorPanelProps {
   jobId: string;
   previewUrl: string;
+  /** Previous job ID for diff comparison. `null` when no prior job exists. */
+  previousJobId?: string | null;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -235,7 +237,7 @@ function findManifestEntry(
 // InspectorPanel
 // ---------------------------------------------------------------------------
 
-export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.Element {
+export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -687,6 +689,68 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
       error: null
     };
   }, [effectiveSelectedFile, fileContentQuery.data, fileContentQuery.isLoading]);
+
+  // --- Previous file content for diff comparison ---
+
+  const encodedPreviousJobId = previousJobId ? encodeURIComponent(previousJobId) : null;
+
+  const previousFileContentQuery = useQuery({
+    queryKey: ["inspector-prev-file-content", previousJobId, effectiveSelectedFile],
+    enabled: Boolean(previousJobId) && Boolean(effectiveSelectedFile),
+    queryFn: async (): Promise<FileContentResponse> => {
+      if (!effectiveSelectedFile || !encodedPreviousJobId) {
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "NO_PREVIOUS_JOB",
+          message: "No previous job selected."
+        };
+      }
+      try {
+        const response = await fetch(
+          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
+        );
+        const body = await response.text();
+        if (response.ok) {
+          return {
+            ok: true,
+            status: response.status,
+            content: body,
+            error: null,
+            message: null
+          };
+        }
+
+        // File may not exist in the previous job — that's fine, treat as empty
+        return {
+          ok: true,
+          status: response.status,
+          content: "",
+          error: null,
+          message: null
+        };
+      } catch {
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "PREV_FILE_FETCH_FAILED",
+          message: `Could not load previous version of '${effectiveSelectedFile}'.`
+        };
+      }
+    },
+    staleTime: Infinity
+  });
+
+  const previousFileContent = useMemo<string | null>(() => {
+    if (!previousJobId || !effectiveSelectedFile) return null;
+    if (!previousFileContentQuery.data) return null;
+    if (!previousFileContentQuery.data.ok) return null;
+    return previousFileContentQuery.data.content;
+  }, [previousJobId, effectiveSelectedFile, previousFileContentQuery.data]);
+
+  const previousFileContentLoading = previousFileContentQuery.isLoading && !previousFileContentQuery.data;
 
   const handleRetryFiles = useCallback(() => {
     void filesQuery.refetch();
@@ -1182,6 +1246,9 @@ export function InspectorPanel({ jobId, previewUrl }: InspectorPanelProps): JSX.
             fileContentError={fileContentState.error}
             onRetryFileContent={handleRetryFileContent}
             highlightRange={highlightRange}
+            previousJobId={previousJobId}
+            previousFileContent={previousFileContent}
+            previousFileContentLoading={previousFileContentLoading}
           />
         </div>
       </div>
