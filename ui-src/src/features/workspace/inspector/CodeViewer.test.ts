@@ -8,18 +8,22 @@ import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/re
 import { createElement } from "react";
 import { CodeViewer } from "./CodeViewer";
 import * as shikiLib from "../../../lib/shiki";
+import * as workerClientLib from "../../../lib/shiki-worker-client";
 
 // ---------------------------------------------------------------------------
 // Mock shiki lib to avoid loading WASM in unit tests
 // ---------------------------------------------------------------------------
 
 vi.mock("../../../lib/shiki", () => ({
-  highlightCode: vi.fn(),
   exceedsMaxSize: vi.fn().mockReturnValue(false),
   getPreferredTheme: vi.fn().mockReturnValue("github-light")
 }));
+vi.mock("../../../lib/shiki-worker-client", () => ({
+  highlightCodeWithWorker: vi.fn(),
+  isAbortError: (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+}));
 
-const mockHighlightCode = vi.mocked(shikiLib.highlightCode);
+const mockHighlightCodeWithWorker = vi.mocked(workerClientLib.highlightCodeWithWorker);
 const mockExceedsMaxSize = vi.mocked(shikiLib.exceedsMaxSize);
 
 afterEach(() => {
@@ -29,6 +33,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockExceedsMaxSize.mockReturnValue(false);
+  mockHighlightCodeWithWorker.mockResolvedValue(null);
 
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
@@ -58,8 +63,6 @@ beforeEach(() => {
 
 describe("CodeViewer", () => {
   it("renders line numbers in gutter", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "line1\nline2\nline3",
@@ -77,8 +80,6 @@ describe("CodeViewer", () => {
   });
 
   it("renders file path in header", () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "const x = 1;",
@@ -90,8 +91,6 @@ describe("CodeViewer", () => {
   });
 
   it("highlights specified line range", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "line1\nline2\nline3\nline4\nline5",
@@ -108,7 +107,6 @@ describe("CodeViewer", () => {
 
   it("shows oversize warning for files > 500 KB", () => {
     mockExceedsMaxSize.mockReturnValue(true);
-    mockHighlightCode.mockResolvedValue(null);
 
     render(
       createElement(CodeViewer, {
@@ -123,7 +121,7 @@ describe("CodeViewer", () => {
   });
 
   it("renders highlighted HTML when Shiki returns a result", async () => {
-    mockHighlightCode.mockResolvedValue({
+    mockHighlightCodeWithWorker.mockResolvedValue({
       html: '<pre class="shiki github-light" style="background-color:#fff"><code><span class="line"><span style="color:#CF222E">import</span></span>\n<span class="line"><span style="color:#0550AE">React</span></span></code></pre>',
       theme: "github-light"
     });
@@ -143,8 +141,6 @@ describe("CodeViewer", () => {
   });
 
   it("toggles word wrap", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "const x = 1;",
@@ -163,8 +159,6 @@ describe("CodeViewer", () => {
   });
 
   it("focuses find input on Ctrl+F shortcut", () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "const x = 1;",
@@ -180,8 +174,6 @@ describe("CodeViewer", () => {
   });
 
   it("updates search count and navigates matches with Enter and Shift+Enter", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "alpha alpha\nalpha\nomega",
@@ -210,7 +202,6 @@ describe("CodeViewer", () => {
   });
 
   it("jumps to clamped line using :line input", async () => {
-    mockHighlightCode.mockResolvedValue(null);
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
 
@@ -231,8 +222,6 @@ describe("CodeViewer", () => {
   });
 
   it("preserves IR highlight range while using find and line jump", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "line1\nline2\nline3\nline4",
@@ -257,8 +246,6 @@ describe("CodeViewer", () => {
   });
 
   it("copy button is present and labeled correctly", () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "const x = 1;",
@@ -271,8 +258,6 @@ describe("CodeViewer", () => {
   });
 
   it("copy button shows 'Copy Range' when highlight range is set", () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "line1\nline2\nline3",
@@ -286,7 +271,6 @@ describe("CodeViewer", () => {
   });
 
   it("copy button writes full file content to clipboard", async () => {
-    mockHighlightCode.mockResolvedValue(null);
     const writeText = vi.mocked(navigator.clipboard.writeText);
 
     render(
@@ -304,7 +288,6 @@ describe("CodeViewer", () => {
   });
 
   it("copy button writes only highlighted range to clipboard", async () => {
-    mockHighlightCode.mockResolvedValue(null);
     const writeText = vi.mocked(navigator.clipboard.writeText);
 
     render(
@@ -323,7 +306,6 @@ describe("CodeViewer", () => {
   });
 
   it("scrolls highlighted range into view", async () => {
-    mockHighlightCode.mockResolvedValue(null);
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
 
@@ -341,8 +323,6 @@ describe("CodeViewer", () => {
   });
 
   it("falls back to plain text when no highlight result", async () => {
-    mockHighlightCode.mockResolvedValue(null);
-
     render(
       createElement(CodeViewer, {
         code: "const x = 1;",
@@ -353,6 +333,60 @@ describe("CodeViewer", () => {
     await waitFor(() => {
       const codeContent = screen.getByTestId("code-content");
       expect(codeContent).toHaveTextContent("const x = 1;");
+    });
+  });
+
+  it("aborts stale highlight jobs and applies only the latest highlighted output", async () => {
+    const firstResult = {
+      html: '<pre class="shiki github-light"><code><span class="line"><span style="color:#CF222E">stale</span></span></code></pre>',
+      theme: "github-light" as const
+    };
+    const secondResult = {
+      html: '<pre class="shiki github-light"><code><span class="line"><span style="color:#0550AE">fresh</span></span></code></pre>',
+      theme: "github-light" as const
+    };
+
+    let firstSignal: AbortSignal | undefined;
+    let resolveFirst!: (value: typeof firstResult | null) => void;
+    const firstPromise = new Promise<typeof firstResult | null>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    mockHighlightCodeWithWorker
+      .mockImplementationOnce(async ({ signal }) => {
+        firstSignal = signal;
+        return await firstPromise;
+      })
+      .mockResolvedValueOnce(secondResult);
+
+    const { rerender } = render(
+      createElement(CodeViewer, {
+        code: "const staleValue = 1;",
+        filePath: "src/stale.tsx"
+      })
+    );
+
+    rerender(
+      createElement(CodeViewer, {
+        code: "const freshValue = 2;",
+        filePath: "src/fresh.tsx"
+      })
+    );
+
+    await waitFor(() => {
+      expect(firstSignal?.aborted).toBe(true);
+    });
+
+    await waitFor(() => {
+      const codeContent = screen.getByTestId("code-content");
+      expect(codeContent.innerHTML).toContain("fresh");
+    });
+
+    resolveFirst(firstResult);
+
+    await waitFor(() => {
+      const codeContent = screen.getByTestId("code-content");
+      expect(codeContent.innerHTML).not.toContain("stale");
     });
   });
 });
