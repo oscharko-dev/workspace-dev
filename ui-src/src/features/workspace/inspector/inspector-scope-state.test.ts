@@ -2,11 +2,13 @@
  * Unit tests for the Inspector drilldown navigation reducer.
  *
  * Covers selection/scope commits, back/forward/level-up traversal,
- * history truncation when branching, bounded history size, and selectors.
+ * history truncation when branching, bounded history size, selectors,
+ * and edit-mode entry/exit behavior.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
  * @see https://github.com/oscharko-dev/workspace-dev/issues/445
  * @see https://github.com/oscharko-dev/workspace-dev/issues/446
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/451
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +20,9 @@ import {
   selectCanNavigateBack,
   selectCanNavigateForward,
   selectCanReturnToParentFile,
+  selectEditModeActive,
+  selectEditCapability,
+  selectCanEnterEditMode,
   selectFileContextStack,
   selectHasActiveScope,
   selectParentFile,
@@ -27,6 +32,7 @@ import {
   type InspectorScopeState,
   type ManifestMapping
 } from "./inspector-scope-state";
+import type { EditCapabilityResult } from "./edit-capability-detection";
 
 function dispatch(state: InspectorScopeState, action: InspectorScopeAction): InspectorScopeState {
   return inspectorScopeReducer(state, action);
@@ -575,5 +581,193 @@ describe("RESET", () => {
     const reset = dispatch(modified, { type: "RESET" });
 
     expect(reset).toEqual(INITIAL_INSPECTOR_SCOPE_STATE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edit mode (issue #451)
+// ---------------------------------------------------------------------------
+
+const editableCapability: EditCapabilityResult = {
+  editable: true,
+  reason: null,
+  editableFields: ["text", "fillColor"]
+};
+
+const notEditableCapability: EditCapabilityResult = {
+  editable: false,
+  reason: "Node is not editable.",
+  editableFields: []
+};
+
+describe("ENTER_EDIT_MODE and EXIT_EDIT_MODE", () => {
+  it("initial state has edit mode inactive", () => {
+    expect(INITIAL_INSPECTOR_SCOPE_STATE.editModeActive).toBe(false);
+    expect(INITIAL_INSPECTOR_SCOPE_STATE.editCapability).toBeNull();
+  });
+
+  it("ENTER_EDIT_MODE activates edit mode", () => {
+    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "ENTER_EDIT_MODE" });
+
+    expect(state.editModeActive).toBe(true);
+    expect(selectEditModeActive(state)).toBe(true);
+  });
+
+  it("EXIT_EDIT_MODE deactivates edit mode", () => {
+    let state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "ENTER_EDIT_MODE" });
+    state = dispatch(state, { type: "EXIT_EDIT_MODE" });
+
+    expect(state.editModeActive).toBe(false);
+    expect(selectEditModeActive(state)).toBe(false);
+  });
+
+  it("ENTER_EDIT_MODE is idempotent when already active", () => {
+    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "ENTER_EDIT_MODE" });
+    const again = dispatch(state, { type: "ENTER_EDIT_MODE" });
+
+    expect(again).toBe(state); // Reference equality — no change
+  });
+
+  it("EXIT_EDIT_MODE is idempotent when already inactive", () => {
+    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "EXIT_EDIT_MODE" });
+
+    expect(state).toBe(INITIAL_INSPECTOR_SCOPE_STATE);
+  });
+});
+
+describe("SET_EDIT_CAPABILITY", () => {
+  it("stores the capability result in state", () => {
+    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: editableCapability }
+    });
+
+    expect(state.editCapability).toEqual(editableCapability);
+    expect(selectEditCapability(state)).toEqual(editableCapability);
+    expect(selectCanEnterEditMode(state)).toBe(true);
+  });
+
+  it("returns false for selectCanEnterEditMode when not editable", () => {
+    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: notEditableCapability }
+    });
+
+    expect(selectCanEnterEditMode(state)).toBe(false);
+  });
+
+  it("returns false for selectCanEnterEditMode when capability is null", () => {
+    expect(selectCanEnterEditMode(INITIAL_INSPECTOR_SCOPE_STATE)).toBe(false);
+  });
+});
+
+describe("edit mode exits on navigation", () => {
+  function enterEditMode(state: InspectorScopeState): InspectorScopeState {
+    return dispatch(state, { type: "ENTER_EDIT_MODE" });
+  }
+
+  it("exits edit mode on SELECT_NODE", () => {
+    let state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SELECT_NODE",
+      payload: { nodeId: "node-1", nodeName: "A", nodeType: "button", mapping: mappedNode }
+    });
+    state = enterEditMode(state);
+    expect(state.editModeActive).toBe(true);
+
+    state = dispatch(state, {
+      type: "SELECT_NODE",
+      payload: { nodeId: "node-2", nodeName: "B", nodeType: "card", mapping: mappedNode }
+    });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toBeNull();
+  });
+
+  it("exits edit mode on ENTER_SCOPE", () => {
+    let state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SELECT_NODE",
+      payload: { nodeId: "node-1", nodeName: "A", nodeType: "button", mapping: mappedNode }
+    });
+    state = enterEditMode(state);
+
+    state = dispatch(state, {
+      type: "ENTER_SCOPE",
+      payload: { nodeId: "card-1", nodeName: "Card", nodeType: "card", mapping: mappedNode }
+    });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toBeNull();
+  });
+
+  it("exits edit mode on EXIT_SCOPE / LEVEL_UP", () => {
+    let state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "card-1", nodeName: "Card", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: mappedNode }
+      }
+    ]);
+    state = enterEditMode(state);
+    expect(state.editModeActive).toBe(true);
+
+    state = dispatch(state, { type: "LEVEL_UP" });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toBeNull();
+  });
+
+  it("exits edit mode on NAVIGATE_BACK", () => {
+    let state = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "A", nodeType: "button", mapping: mappedNode }
+      },
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-2", nodeName: "B", nodeType: "card", mapping: mappedNode }
+      }
+    ]);
+    state = enterEditMode(state);
+
+    state = dispatch(state, { type: "NAVIGATE_BACK" });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toBeNull();
+  });
+
+  it("exits edit mode on NAVIGATE_FORWARD", () => {
+    let state = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "A", nodeType: "button", mapping: mappedNode }
+      },
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-2", nodeName: "B", nodeType: "card", mapping: mappedNode }
+      }
+    ]);
+    state = dispatch(state, { type: "NAVIGATE_BACK" });
+    state = enterEditMode(state);
+    expect(state.editModeActive).toBe(true);
+
+    state = dispatch(state, { type: "NAVIGATE_FORWARD" });
+
+    expect(state.editModeActive).toBe(false);
+  });
+
+  it("RESET clears edit mode", () => {
+    let state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "ENTER_EDIT_MODE" });
+    state = dispatch(state, {
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: editableCapability }
+    });
+
+    state = dispatch(state, { type: "RESET" });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toBeNull();
   });
 });
