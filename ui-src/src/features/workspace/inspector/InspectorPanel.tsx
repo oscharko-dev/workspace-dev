@@ -24,6 +24,11 @@ import {
   type InspectabilityGenerationMetricsPayload
 } from "./inspectability-summary";
 import {
+  resolveNodeDiffMapping,
+  nodeDiffUnavailableReason,
+  type ManifestPayload as NodeDiffManifestPayload
+} from "./node-diff-resolution";
+import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
   MIN_PREVIEW_WIDTH_PX,
@@ -1147,6 +1152,99 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
 
   const isNodeMapped = activeManifestRange !== null;
 
+  // --- Previous job manifest for node-scoped diff ---
+
+  const previousManifestQuery = useQuery({
+    queryKey: ["inspector-prev-manifest", previousJobId],
+    enabled: Boolean(previousJobId),
+    queryFn: async () => {
+      if (!encodedPreviousJobId) {
+        throw new Error("No previous job ID");
+      }
+      return await fetchJson<ComponentManifestPayload>({
+        url: `/workspace/jobs/${encodedPreviousJobId}/component-manifest`
+      });
+    },
+    staleTime: Infinity
+  });
+
+  const previousManifest = useMemo<NodeDiffManifestPayload | null>(() => {
+    if (!previousJobId) return null;
+    if (!previousManifestQuery.data?.ok) return null;
+    const payload = previousManifestQuery.data.payload;
+    if (!isComponentManifestPayload(payload)) return null;
+    return { jobId: previousJobId, screens: payload.screens };
+  }, [previousJobId, previousManifestQuery.data]);
+
+  // Resolve the node-scoped diff mapping for the selected node
+  const nodeDiffResult = useMemo(() => {
+    if (!selectedNodeId || !previousJobId) return null;
+    return resolveNodeDiffMapping(
+      selectedNodeId,
+      activeManifestRange?.file ?? null,
+      previousManifest
+    );
+  }, [selectedNodeId, previousJobId, activeManifestRange, previousManifest]);
+
+  // Determine previous manifest range for scoped diff
+  const previousManifestRange = useMemo(() => {
+    if (!nodeDiffResult?.previousMapping) return null;
+    return {
+      file: nodeDiffResult.previousMapping.file,
+      startLine: nodeDiffResult.previousMapping.startLine,
+      endLine: nodeDiffResult.previousMapping.endLine
+    };
+  }, [nodeDiffResult]);
+
+  // If the node moved to a different file in the previous job, fetch that file
+  const previousDiffFile = useMemo<string | null>(() => {
+    if (!nodeDiffResult?.fileChanged || !nodeDiffResult.previousMapping) return null;
+    return nodeDiffResult.previousMapping.file;
+  }, [nodeDiffResult]);
+
+  const previousDiffFileContentQuery = useQuery({
+    queryKey: ["inspector-prev-diff-file-content", previousJobId, previousDiffFile],
+    enabled: Boolean(previousJobId) && Boolean(previousDiffFile),
+    queryFn: async (): Promise<FileContentResponse> => {
+      if (!previousDiffFile || !encodedPreviousJobId) {
+        return { ok: false, status: 0, content: null, error: "NO_FILE", message: "No file." };
+      }
+      try {
+        const response = await fetch(
+          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(previousDiffFile)}`
+        );
+        const body = await response.text();
+        if (response.ok) {
+          return { ok: true, status: response.status, content: body, error: null, message: null };
+        }
+        return { ok: true, status: response.status, content: "", error: null, message: null };
+      } catch {
+        return { ok: false, status: 0, content: null, error: "FETCH_FAILED", message: `Could not load '${previousDiffFile}'.` };
+      }
+    },
+    staleTime: Infinity
+  });
+
+  // Effective previous file content: use cross-file content when the node moved files
+  const effectivePreviousFileContent = useMemo<string | null>(() => {
+    if (nodeDiffResult?.fileChanged && previousDiffFile) {
+      if (!previousDiffFileContentQuery.data) return null;
+      if (!previousDiffFileContentQuery.data.ok) return null;
+      return previousDiffFileContentQuery.data.content;
+    }
+    return previousFileContent;
+  }, [nodeDiffResult, previousDiffFile, previousDiffFileContentQuery.data, previousFileContent]);
+
+  const effectivePreviousFileContentLoading = nodeDiffResult?.fileChanged
+    ? previousDiffFileContentQuery.isLoading && !previousDiffFileContentQuery.data
+    : previousFileContentLoading;
+
+  // Node-scoped diff unavailability reason (null when available)
+  const nodeDiffFallbackReason = useMemo<string | null>(() => {
+    if (!nodeDiffResult) return null;
+    return nodeDiffUnavailableReason(nodeDiffResult.status);
+  }, [nodeDiffResult]);
+
   /** Look up the node name and type from the IR tree. */
   const resolveNodeMeta = useCallback(
     (nodeId: string): { name: string; type: string } => {
@@ -1885,8 +1983,10 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             onRetryFileContent={handleRetryFileContent}
             highlightRange={highlightRange}
             previousJobId={previousJobId}
-            previousFileContent={previousFileContent}
-            previousFileContentLoading={previousFileContentLoading}
+            previousFileContent={effectivePreviousFileContent}
+            previousFileContentLoading={effectivePreviousFileContentLoading}
+            previousManifestRange={previousManifestRange}
+            nodeDiffFallbackReason={nodeDiffFallbackReason}
             breadcrumbPath={breadcrumbPath}
             onBreadcrumbSelect={handleTreeSelect}
             hasActiveScope={hasActiveScope}

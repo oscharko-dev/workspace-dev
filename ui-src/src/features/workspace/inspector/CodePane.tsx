@@ -66,6 +66,8 @@ interface CodePaneProps {
   isNodeMapped?: boolean;
   /** Manifest range for the previous job's version of this node (for diff mode). */
   previousManifestRange?: ManifestRange | null;
+  /** Reason why node-scoped diff is unavailable (null when available). */
+  nodeDiffFallbackReason?: string | null;
   /** Parent file path when viewing a cross-file extracted component. */
   parentFile?: string | null;
   /** Callback to return to the parent file context. */
@@ -107,6 +109,7 @@ export function CodePane({
   activeManifestRange,
   isNodeMapped = false,
   previousManifestRange,
+  nodeDiffFallbackReason,
   parentFile,
   onReturnToParentFile
 }: CodePaneProps): JSX.Element {
@@ -355,6 +358,8 @@ export function CodePane({
               oldFocusRange={scopedDiffRanges.oldFocusRange}
               newFocusRange={scopedDiffRanges.newFocusRange}
               scopedMode={scopedMode}
+              isNodeScoped={!nodeDiffFallbackReason && isNodeMapped}
+              nodeDiffFallbackReason={nodeDiffFallbackReason}
             />
           ) : isSplitActive ? (
             <div
