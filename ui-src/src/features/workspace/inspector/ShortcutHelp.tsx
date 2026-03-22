@@ -78,6 +78,14 @@ function buildShortcutData(): ShortcutCategory[] {
       ]
     },
     {
+      title: "Edit History",
+      entries: [
+        { keys: [`${mod}+Z`], description: "Undo edit action" },
+        { keys: [`${mod}+Shift+Z`], description: "Redo edit action" },
+        { keys: [`${mod}+Shift+S`], description: "Create draft snapshot" }
+      ]
+    },
+    {
       title: "Inspector Tool",
       entries: [
         { keys: ["?"], description: "Toggle this shortcut help" }
