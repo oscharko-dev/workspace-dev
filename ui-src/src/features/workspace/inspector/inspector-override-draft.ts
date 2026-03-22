@@ -394,6 +394,42 @@ export function persistInspectorOverrideDraft({
   }
 }
 
+export type StaleDraftDecision = "continue" | "discard" | "carry-forward";
+
+export interface StaleDraftCheckResult {
+  stale: boolean;
+  latestJobId: string | null;
+  sourceJobId: string;
+  boardKey: string | null;
+  carryForwardAvailable: boolean;
+  unmappedNodeIds: string[];
+  message: string;
+}
+
+export function carryForwardDraft({
+  staleDraft,
+  newJobId,
+  newBaseFingerprint
+}: {
+  staleDraft: InspectorOverrideDraft;
+  newJobId: string;
+  newBaseFingerprint: string;
+}): InspectorOverrideDraft {
+  const now = nowIso();
+  return {
+    version: INSPECTOR_OVERRIDE_DRAFT_VERSION,
+    draftId: createDraftId(newJobId),
+    sourceJobId: newJobId,
+    baseFingerprint: newBaseFingerprint,
+    createdAt: now,
+    updatedAt: now,
+    entries: sortEntries(staleDraft.entries.map((entry) => ({
+      ...entry,
+      updatedAt: now
+    })))
+  };
+}
+
 export function restorePersistedInspectorOverrideDraft({
   jobId,
   currentBaseFingerprint

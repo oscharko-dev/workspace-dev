@@ -60,6 +60,10 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
     jobId: "job-1",
     action: "create-pr"
   });
+  assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/stale-check"), {
+    jobId: "job-1",
+    action: "stale-check"
+  });
   assert.equal(parseJobRoute("/workspace/jobs/job-1/extra"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//result"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//cancel"), undefined);
@@ -67,6 +71,7 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
   assert.equal(parseJobRoute("/workspace/jobs//component-manifest"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//sync"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//create-pr"), undefined);
+  assert.equal(parseJobRoute("/workspace/jobs//stale-check"), undefined);
 });
 
 test("parseReproRoute parses preview paths with safe index fallback", () => {

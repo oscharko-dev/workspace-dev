@@ -423,8 +423,29 @@ export interface WorkspaceGitPrPrerequisites {
   missing: string[];
 }
 
+/** User decision for handling a stale draft. */
+export type WorkspaceStaleDraftDecision = "continue" | "discard" | "carry-forward";
+
+/** Result of a stale-draft check for a given job. */
+export interface WorkspaceStaleDraftCheckResult {
+  /** Whether the draft's source job is stale (a newer completed job exists for the same board key). */
+  stale: boolean;
+  /** The job ID of the latest completed job for the same board key (if stale). */
+  latestJobId: string | null;
+  /** The job ID the draft was created from. */
+  sourceJobId: string;
+  /** Board key shared by source and latest jobs. */
+  boardKey: string | null;
+  /** Whether carry-forward is available (all draft node IDs exist in the latest job's IR). */
+  carryForwardAvailable: boolean;
+  /** Node IDs from the draft that could not be resolved in the latest job's IR. */
+  unmappedNodeIds: string[];
+  /** Human-readable explanation of the stale state. */
+  message: string;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.20.0" as const;
+export const CONTRACT_VERSION = "2.21.0" as const;

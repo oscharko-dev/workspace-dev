@@ -23,6 +23,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.21.0] - 2026-03-22
+
+### Stale draft detection and carry-forward
+
+Added:
+
+- `WorkspaceStaleDraftDecision` — User decision type for handling a stale draft (`"continue" | "discard" | "carry-forward"`).
+- `WorkspaceStaleDraftCheckResult` — Result of a stale-draft check for a given job.
+- `POST /workspace/jobs/{jobId}/stale-check` — Endpoint to check whether a draft's source job has been superseded by a newer completed job for the same board key, with carry-forward validation.
+
+---
+
 ## [2.20.0] - 2026-03-22
 
 ### PR creation from regenerated jobs
