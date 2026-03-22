@@ -12,6 +12,11 @@ import {
   extractSupportedScalarOverrideFields,
   type ScalarOverrideField
 } from "./scalar-override-translators";
+import {
+  FORM_VALIDATION_OVERRIDE_FIELDS,
+  extractSupportedFormValidationOverrideFields,
+  type FormValidationOverrideField
+} from "./form-validation-override-translators";
 
 // ---------------------------------------------------------------------------
 // Supported override translator registry
@@ -22,10 +27,16 @@ import {
  * These are the real field names from BaseElementIR / TextElementIR in
  * `src/parity/types-ir.ts`. Only nodes possessing at least one of these
  * fields are candidates for structured editing.
+ *
+ * Includes both scalar visual overrides and form validation overrides.
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/453
  */
-export const SUPPORTED_OVERRIDE_FIELDS = SCALAR_OVERRIDE_FIELDS;
+export const SUPPORTED_OVERRIDE_FIELDS: readonly SupportedOverrideField[] = [
+  ...SCALAR_OVERRIDE_FIELDS,
+  ...FORM_VALIDATION_OVERRIDE_FIELDS
+];
 
-export type SupportedOverrideField = ScalarOverrideField;
+export type SupportedOverrideField = ScalarOverrideField | FormValidationOverrideField;
 
 // ---------------------------------------------------------------------------
 // Element types eligible for edit mode
@@ -159,5 +170,8 @@ export function detectEditCapability(node: EditCapabilityNode): EditCapabilityRe
 export function extractPresentFields(
   nodeData: Readonly<Record<string, unknown>>
 ): string[] {
-  return extractSupportedScalarOverrideFields(nodeData);
+  return [
+    ...extractSupportedScalarOverrideFields(nodeData),
+    ...extractSupportedFormValidationOverrideFields(nodeData)
+  ];
 }

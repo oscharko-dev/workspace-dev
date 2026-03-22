@@ -3,8 +3,23 @@ import type {
   ScalarOverrideValue,
   ScalarOverrideValueByField
 } from "./scalar-override-translators";
+import {
+  FORM_VALIDATION_OVERRIDE_FIELDS,
+  SUPPORTED_VALIDATION_TYPES,
+  type FormValidationOverrideField,
+  type FormValidationOverrideValue,
+  type FormValidationOverrideValueByField
+} from "./form-validation-override-translators";
 
-export const INSPECTOR_OVERRIDE_DRAFT_VERSION = 1;
+// ---------------------------------------------------------------------------
+// Unified override field types (scalar + form validation)
+// ---------------------------------------------------------------------------
+
+export type InspectorOverrideField = ScalarOverrideField | FormValidationOverrideField;
+export type InspectorOverrideValue = ScalarOverrideValue | FormValidationOverrideValue;
+export type InspectorOverrideValueByField = ScalarOverrideValueByField & FormValidationOverrideValueByField;
+
+export const INSPECTOR_OVERRIDE_DRAFT_VERSION = 2;
 const INSPECTOR_OVERRIDE_DRAFT_STORAGE_VERSION = 1;
 
 export function toInspectorOverrideDraftStorageKey(jobId: string): string {
@@ -14,8 +29,8 @@ export function toInspectorOverrideDraftStorageKey(jobId: string): string {
 export interface InspectorScalarOverrideEntry {
   id: string;
   nodeId: string;
-  field: ScalarOverrideField;
-  value: ScalarOverrideValue;
+  field: InspectorOverrideField;
+  value: InspectorOverrideValue;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +82,15 @@ function isScalarOverrideField(value: unknown): value is ScalarOverrideField {
     || value === "gap";
 }
 
+function isFormValidationOverrideField(value: unknown): value is FormValidationOverrideField {
+  return typeof value === "string"
+    && (FORM_VALIDATION_OVERRIDE_FIELDS as readonly string[]).includes(value);
+}
+
+function isInspectorOverrideField(value: unknown): value is InspectorOverrideField {
+  return isScalarOverrideField(value) || isFormValidationOverrideField(value);
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -95,6 +119,28 @@ function isScalarOverrideValue(field: ScalarOverrideField, value: unknown): valu
   return isFiniteNumber(value);
 }
 
+function isFormValidationOverrideValue(field: FormValidationOverrideField, value: unknown): value is FormValidationOverrideValue {
+  if (field === "required") {
+    return typeof value === "boolean";
+  }
+  if (field === "validationType") {
+    return typeof value === "string"
+      && (SUPPORTED_VALIDATION_TYPES as readonly string[]).includes(value);
+  }
+  // validationMessage
+  return typeof value === "string" && value.length > 0;
+}
+
+function isInspectorOverrideValue(field: InspectorOverrideField, value: unknown): value is InspectorOverrideValue {
+  if (isScalarOverrideField(field)) {
+    return isScalarOverrideValue(field, value);
+  }
+  if (isFormValidationOverrideField(field)) {
+    return isFormValidationOverrideValue(field, value);
+  }
+  return false;
+}
+
 function isInspectorScalarOverrideEntry(value: unknown): value is InspectorScalarOverrideEntry {
   if (!isRecord(value)) {
     return false;
@@ -104,11 +150,11 @@ function isInspectorScalarOverrideEntry(value: unknown): value is InspectorScala
     return false;
   }
 
-  if (!isScalarOverrideField(value.field)) {
+  if (!isInspectorOverrideField(value.field)) {
     return false;
   }
 
-  if (!isScalarOverrideValue(value.field, value.value)) {
+  if (!isInspectorOverrideValue(value.field, value.value)) {
     return false;
   }
 
@@ -176,12 +222,12 @@ export function getInspectorOverrideEntry({
 }: {
   draft: InspectorOverrideDraft;
   nodeId: string;
-  field: ScalarOverrideField;
+  field: InspectorOverrideField;
 }): InspectorScalarOverrideEntry | null {
   return draft.entries.find((entry) => entry.nodeId === nodeId && entry.field === field) ?? null;
 }
 
-export function getInspectorOverrideValue<TField extends ScalarOverrideField>({
+export function getInspectorOverrideValue<TField extends InspectorOverrideField>({
   draft,
   nodeId,
   field
@@ -189,12 +235,12 @@ export function getInspectorOverrideValue<TField extends ScalarOverrideField>({
   draft: InspectorOverrideDraft;
   nodeId: string;
   field: TField;
-}): ScalarOverrideValueByField[TField] | null {
+}): InspectorOverrideValueByField[TField] | null {
   const entry = getInspectorOverrideEntry({ draft, nodeId, field });
   if (!entry) {
     return null;
   }
-  return entry.value as ScalarOverrideValueByField[TField];
+  return entry.value as InspectorOverrideValueByField[TField];
 }
 
 export function listInspectorOverrideEntriesForNode({
@@ -215,8 +261,8 @@ export function upsertInspectorOverrideEntry({
 }: {
   draft: InspectorOverrideDraft;
   nodeId: string;
-  field: ScalarOverrideField;
-  value: ScalarOverrideValue;
+  field: InspectorOverrideField;
+  value: InspectorOverrideValue;
 }): InspectorOverrideDraft {
   const existing = getInspectorOverrideEntry({ draft, nodeId, field });
   const updatedAt = nowIso();
@@ -245,7 +291,7 @@ export function removeInspectorOverrideEntry({
 }: {
   draft: InspectorOverrideDraft;
   nodeId: string;
-  field: ScalarOverrideField;
+  field: InspectorOverrideField;
 }): InspectorOverrideDraft {
   const nextEntries = draft.entries.filter((entry) => !(entry.nodeId === nodeId && entry.field === field));
   if (nextEntries.length === draft.entries.length) {
@@ -303,8 +349,8 @@ export function toStructuredInspectorOverridePayload(draft: InspectorOverrideDra
   version: number;
   overrides: Array<{
     nodeId: string;
-    field: ScalarOverrideField;
-    value: ScalarOverrideValue;
+    field: InspectorOverrideField;
+    value: InspectorOverrideValue;
   }>;
 } {
   return {
@@ -401,7 +447,8 @@ export function restorePersistedInspectorOverrideDraft({
     };
   }
 
-  if (parsed.version !== INSPECTOR_OVERRIDE_DRAFT_VERSION) {
+  // Accept current version and v1 drafts (v1 only had scalar overrides, still valid)
+  if (parsed.version !== INSPECTOR_OVERRIDE_DRAFT_VERSION && parsed.version !== 1) {
     return {
       draft: null,
       stale: false,
