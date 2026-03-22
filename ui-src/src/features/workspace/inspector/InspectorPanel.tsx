@@ -66,6 +66,12 @@ import {
   type ScalarOverrideField
 } from "./scalar-override-translators";
 import {
+  deriveFormValidationOverrideFieldSupport,
+  translateFormValidationOverrideInput,
+  SUPPORTED_VALIDATION_TYPES,
+  type FormValidationOverrideField
+} from "./form-validation-override-translators";
+import {
   computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
   getInspectorOverrideEntry,
@@ -75,7 +81,8 @@ import {
   restorePersistedInspectorOverrideDraft,
   toStructuredInspectorOverridePayload,
   upsertInspectorOverrideEntry,
-  type InspectorOverrideDraft
+  type InspectorOverrideDraft,
+  type InspectorOverrideField
 } from "./inspector-override-draft";
 
 // ---------------------------------------------------------------------------
@@ -174,9 +181,14 @@ const BOUNDARIES_SESSION_STORAGE_KEY = "workspace-dev:inspector-boundaries:v1";
 const PADDING_SIDES = ["top", "right", "bottom", "left"] as const;
 
 type PaddingSide = (typeof PADDING_SIDES)[number];
-type FieldValidationErrors = Partial<Record<ScalarOverrideField, string | null>>;
+type FieldValidationErrors = Partial<Record<InspectorOverrideField, string | null>>;
 type ScalarControlInputState = Partial<Record<Exclude<ScalarOverrideField, "padding">, string>>;
 type PaddingControlInputState = Partial<Record<PaddingSide, string>>;
+type FormValidationControlInputState = {
+  required?: boolean;
+  validationType?: string;
+  validationMessage?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Guards
@@ -408,7 +420,7 @@ function toPaddingControlInputValue(value: unknown): PaddingControlInputState {
   };
 }
 
-function fieldLabel(field: ScalarOverrideField): string {
+function fieldLabel(field: InspectorOverrideField): string {
   switch (field) {
     case "fillColor":
       return "Fill color";
@@ -426,6 +438,12 @@ function fieldLabel(field: ScalarOverrideField): string {
       return "Padding";
     case "gap":
       return "Gap";
+    case "required":
+      return "Required";
+    case "validationType":
+      return "Validation type";
+    case "validationMessage":
+      return "Validation message";
     default:
       return field;
   }
@@ -462,6 +480,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
   const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
+  const [formValidationControlInputs, setFormValidationControlInputs] = useState<FormValidationControlInputState>({});
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -825,6 +844,20 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const unsupportedScalarFields = useMemo(() => {
     return scalarFieldSupport.filter((entry) => !entry.supported);
   }, [scalarFieldSupport]);
+  const formValidationFieldSupport = useMemo(() => {
+    if (!selectedIrNodeData) {
+      return [];
+    }
+    return deriveFormValidationOverrideFieldSupport(selectedIrNodeData);
+  }, [selectedIrNodeData]);
+  const editableFormValidationFields = useMemo(() => {
+    return formValidationFieldSupport
+      .filter((entry) => entry.supported)
+      .map((entry) => entry.field);
+  }, [formValidationFieldSupport]);
+  const unsupportedFormValidationFields = useMemo(() => {
+    return formValidationFieldSupport.filter((entry) => !entry.supported);
+  }, [formValidationFieldSupport]);
   const baseFingerprint = useMemo(() => {
     if (designIrState.status !== "ready") {
       return null;
@@ -1023,6 +1056,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     if (!selectedNodeId || !selectedIrNodeData || !overrideDraft) {
       setScalarControlInputs({});
       setPaddingControlInputs({});
+      setFormValidationControlInputs({});
       setFieldValidationErrors({});
       return;
     }
@@ -1050,10 +1084,28 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       nextScalarControlInputs[field] = toScalarControlInputValue(value);
     }
 
+    const nextFormValidationControlInputs: FormValidationControlInputState = {};
+    for (const field of editableFormValidationFields) {
+      const overrideValue = getInspectorOverrideValue({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field
+      });
+      const effectiveValue = overrideValue ?? selectedIrNodeData[field];
+      if (field === "required") {
+        nextFormValidationControlInputs.required = effectiveValue === true;
+      } else if (field === "validationType") {
+        nextFormValidationControlInputs.validationType = typeof effectiveValue === "string" ? effectiveValue : "";
+      } else if (field === "validationMessage") {
+        nextFormValidationControlInputs.validationMessage = typeof effectiveValue === "string" ? effectiveValue : "";
+      }
+    }
+
     setScalarControlInputs(nextScalarControlInputs);
     setPaddingControlInputs(nextPaddingControlInputs);
+    setFormValidationControlInputs(nextFormValidationControlInputs);
     setFieldValidationErrors({});
-  }, [editableScalarFields, overrideDraft, selectedIrNodeData, selectedNodeId]);
+  }, [editableScalarFields, editableFormValidationFields, overrideDraft, selectedIrNodeData, selectedNodeId]);
 
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
@@ -1427,6 +1479,79 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   }, [overrideDraft]);
 
   const hasScalarFieldOverride = useCallback((field: ScalarOverrideField): boolean => {
+    if (!overrideDraft || !selectedNodeId) {
+      return false;
+    }
+    return Boolean(getInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    }));
+  }, [overrideDraft, selectedNodeId]);
+
+  const applyFormValidationOverrideInput = useCallback(({
+    field,
+    rawValue
+  }: {
+    field: FormValidationOverrideField;
+    rawValue: unknown;
+  }) => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    const result = translateFormValidationOverrideInput({
+      field,
+      rawValue
+    });
+
+    if (!result.ok) {
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: result.error
+      }));
+      return;
+    }
+
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+
+    setOverrideDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return upsertInspectorOverrideEntry({
+        draft: current,
+        nodeId: selectedNodeId,
+        field: result.field,
+        value: result.value
+      });
+    });
+  }, [selectedNodeId]);
+
+  const handleResetFormValidationOverride = useCallback((field: FormValidationOverrideField) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    setOverrideDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return removeInspectorOverrideEntry({
+        draft: current,
+        nodeId: selectedNodeId,
+        field
+      });
+    });
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+  }, [selectedNodeId]);
+
+  const hasFormValidationFieldOverride = useCallback((field: FormValidationOverrideField): boolean => {
     if (!overrideDraft || !selectedNodeId) {
       return false;
     }
@@ -2351,6 +2476,221 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
                       <p
                         key={entry.field}
                         data-testid={`inspector-edit-unsupported-${entry.field}`}
+                        className="m-0 mt-1"
+                      >
+                        {entry.field}: {entry.reason ?? "Not supported."}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {editableFormValidationFields.length > 0 ? (
+                  <div
+                    data-testid="inspector-edit-form-validation-panel"
+                    className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950"
+                  >
+                    <p className="m-0 font-semibold">Form Validation Settings</p>
+                    <p className="m-0 mt-1">
+                      Per-field validation primitives consumed by the form-generation pipeline.
+                    </p>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      {editableFormValidationFields.map((field) => {
+                        if (field === "required") {
+                          return (
+                            <div
+                              key={field}
+                              data-testid="inspector-edit-field-required"
+                              className="rounded border border-emerald-200 bg-white px-2 py-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-required">
+                                  {fieldLabel(field)}
+                                </label>
+                                {hasFormValidationFieldOverride(field) ? (
+                                  <button
+                                    type="button"
+                                    data-testid="inspector-edit-reset-required"
+                                    onClick={() => {
+                                      handleResetFormValidationOverride(field);
+                                    }}
+                                    className="cursor-pointer rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                  >
+                                    Reset
+                                  </button>
+                                ) : null}
+                              </div>
+                              <div className="mt-1 flex items-center gap-2">
+                                <input
+                                  id="inspector-edit-input-required"
+                                  data-testid="inspector-edit-input-required"
+                                  type="checkbox"
+                                  checked={formValidationControlInputs.required ?? false}
+                                  onChange={(event) => {
+                                    const checked = event.currentTarget.checked;
+                                    setFormValidationControlInputs((current) => ({
+                                      ...current,
+                                      required: checked
+                                    }));
+                                    applyFormValidationOverrideInput({
+                                      field: "required",
+                                      rawValue: checked
+                                    });
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300"
+                                />
+                                <span className="text-xs text-slate-700">
+                                  {formValidationControlInputs.required ? "Yes" : "No"}
+                                </span>
+                              </div>
+                              {fieldValidationErrors.required ? (
+                                <p data-testid="inspector-edit-error-required" className="m-0 mt-1 text-[11px] text-rose-700">
+                                  {fieldValidationErrors.required}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        }
+
+                        if (field === "validationType") {
+                          return (
+                            <div
+                              key={field}
+                              data-testid="inspector-edit-field-validationType"
+                              className="rounded border border-emerald-200 bg-white px-2 py-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-validationType">
+                                  {fieldLabel(field)}
+                                </label>
+                                {hasFormValidationFieldOverride(field) ? (
+                                  <button
+                                    type="button"
+                                    data-testid="inspector-edit-reset-validationType"
+                                    onClick={() => {
+                                      handleResetFormValidationOverride(field);
+                                    }}
+                                    className="cursor-pointer rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                  >
+                                    Reset
+                                  </button>
+                                ) : null}
+                              </div>
+                              <select
+                                id="inspector-edit-input-validationType"
+                                data-testid="inspector-edit-input-validationType"
+                                value={formValidationControlInputs.validationType ?? ""}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setFormValidationControlInputs((current) => ({
+                                    ...current,
+                                    validationType: value
+                                  }));
+                                  setFieldValidationErrors((current) => ({
+                                    ...current,
+                                    validationType: null
+                                  }));
+                                  if (value) {
+                                    applyFormValidationOverrideInput({
+                                      field: "validationType",
+                                      rawValue: value
+                                    });
+                                  }
+                                }}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                              >
+                                <option value="">— select —</option>
+                                {SUPPORTED_VALIDATION_TYPES.map((vType) => (
+                                  <option key={vType} value={vType}>
+                                    {vType}
+                                  </option>
+                                ))}
+                              </select>
+                              {fieldValidationErrors.validationType ? (
+                                <p data-testid="inspector-edit-error-validationType" className="m-0 mt-1 text-[11px] text-rose-700">
+                                  {fieldValidationErrors.validationType}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        }
+
+                        // validationMessage
+                        return (
+                          <div
+                            key={field}
+                            data-testid="inspector-edit-field-validationMessage"
+                            className="rounded border border-emerald-200 bg-white px-2 py-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-validationMessage">
+                                {fieldLabel(field)}
+                              </label>
+                              {hasFormValidationFieldOverride(field) ? (
+                                <button
+                                  type="button"
+                                  data-testid="inspector-edit-reset-validationMessage"
+                                  onClick={() => {
+                                    handleResetFormValidationOverride(field);
+                                  }}
+                                  className="cursor-pointer rounded border border-emerald-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                                >
+                                  Reset
+                                </button>
+                              ) : null}
+                            </div>
+                            <input
+                              id="inspector-edit-input-validationMessage"
+                              data-testid="inspector-edit-input-validationMessage"
+                              type="text"
+                              value={formValidationControlInputs.validationMessage ?? ""}
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setFormValidationControlInputs((current) => ({
+                                  ...current,
+                                  validationMessage: value
+                                }));
+                                setFieldValidationErrors((current) => ({
+                                  ...current,
+                                  validationMessage: null
+                                }));
+                              }}
+                              onBlur={(event) => {
+                                const value = event.currentTarget.value.trim();
+                                if (value) {
+                                  applyFormValidationOverrideInput({
+                                    field: "validationMessage",
+                                    rawValue: event.currentTarget.value
+                                  });
+                                }
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                              placeholder="Enter validation message..."
+                              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                            />
+                            {fieldValidationErrors.validationMessage ? (
+                              <p data-testid="inspector-edit-error-validationMessage" className="m-0 mt-1 text-[11px] text-rose-700">
+                                {fieldValidationErrors.validationMessage}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                {unsupportedFormValidationFields.length > 0 ? (
+                  <div
+                    data-testid="inspector-edit-unsupported-validation-fields"
+                    className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
+                  >
+                    <p className="m-0 font-semibold text-slate-900">Unsupported validation properties</p>
+                    {unsupportedFormValidationFields.map((entry) => (
+                      <p
+                        key={entry.field}
+                        data-testid={`inspector-edit-unsupported-validation-${entry.field}`}
                         className="m-0 mt-1"
                       >
                         {entry.field}: {entry.reason ?? "Not supported."}

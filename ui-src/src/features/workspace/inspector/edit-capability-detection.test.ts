@@ -223,9 +223,17 @@ describe("extractPresentFields", () => {
   it("extracts all supported fields when present", () => {
     const allFields: Record<string, unknown> = {};
     for (const field of SUPPORTED_OVERRIDE_FIELDS) {
-      allFields[field] = field === "padding"
-        ? { top: 4, right: 4, bottom: 4, left: 4 }
-        : "value";
+      if (field === "padding") {
+        allFields[field] = { top: 4, right: 4, bottom: 4, left: 4 };
+      } else if (field === "required") {
+        allFields[field] = true;
+      } else if (field === "validationType") {
+        allFields[field] = "email";
+      } else if (field === "validationMessage") {
+        allFields[field] = "Invalid value.";
+      } else {
+        allFields[field] = "value";
+      }
     }
 
     const fields = extractPresentFields(allFields);
