@@ -2,6 +2,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { InspectorPanel } from "./InspectorPanel";
+import {
+  createInspectorOverrideDraft,
+  toInspectorOverrideDraftStorageKey,
+  upsertInspectorOverrideEntry
+} from "./inspector-override-draft";
 
 const mockUseQuery = vi.fn();
 
@@ -156,6 +161,82 @@ function installQueryMock({
   });
 
   return merged;
+}
+
+function editableNodeQueryOverrides({
+  invalidPadding = false
+}: {
+  invalidPadding?: boolean;
+} = {}): Partial<Record<MockQueryKey, Partial<MockQueryResult>>> {
+  return {
+    "inspector-manifest": {
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          jobId: "job-1",
+          screens: [
+            {
+              screenId: "screen-home",
+              screenName: "Home",
+              file: "src/screens/Home.tsx",
+              components: [
+                {
+                  irNodeId: "node-editable",
+                  irNodeName: "Editable Node",
+                  irNodeType: "text",
+                  file: "src/screens/Home.tsx",
+                  startLine: 1,
+                  endLine: 6
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "inspector-design-ir": {
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          jobId: "job-1",
+          screens: [
+            {
+              id: "screen-home",
+              name: "Home",
+              generatedFile: "src/screens/Home.tsx",
+              children: [
+                {
+                  id: "node-editable",
+                  name: "Editable Node",
+                  type: "text",
+                  fillColor: "#112233",
+                  opacity: 0.5,
+                  fontSize: 16,
+                  fontWeight: 400,
+                  fontFamily: "Inter",
+                  padding: invalidPadding
+                    ? "bad-padding-shape"
+                    : {
+                        top: 8,
+                        right: 10,
+                        bottom: 8,
+                        left: 10
+                      },
+                  gap: 12,
+                  width: 360,
+                  height: 48,
+                  layoutMode: "row",
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  };
 }
 
 beforeAll(() => {
@@ -661,5 +742,179 @@ describe("InspectorPanel data states", () => {
     );
 
     expect(screen.getByTestId("code-viewer-boundaries-toggle")).toHaveTextContent("Boundaries: On");
+  });
+});
+
+describe("InspectorPanel Edit Studio", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it("renders scalar controls in edit mode and excludes deferred fields", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("inspector-edit-input-fillColor")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-opacity")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-fontSize")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-fontWeight")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-fontFamily")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-padding-top")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-gap")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-edit-input-width")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-edit-input-height")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-edit-input-layoutMode")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-v1-deferred-fields")).toHaveTextContent(
+      "Deferred in v1: width, height, layoutMode."
+    );
+  });
+
+  it("shows unsupported reasons and translator validation errors while keeping exact IR field names in payload", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides({ invalidPadding: true })
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("inspector-edit-unsupported-padding")).toHaveTextContent(
+      "padding is present but has an unsupported shape."
+    );
+
+    const opacityInput = screen.getByTestId("inspector-edit-input-opacity");
+    fireEvent.change(opacityInput, { target: { value: "1.5" } });
+    fireEvent.blur(opacityInput);
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-error-opacity")).toHaveTextContent(
+        "opacity must be a finite number between 0 and 1."
+      );
+    });
+
+    const fillColorInput = screen.getByTestId("inspector-edit-input-fillColor");
+    fireEvent.change(fillColorInput, { target: { value: "#abc" } });
+    fireEvent.blur(fillColorInput);
+    await waitFor(() => {
+      expect(screen.queryByTestId("inspector-edit-error-fillColor")).not.toBeInTheDocument();
+    });
+
+    const payloadText = screen.getByTestId("inspector-edit-payload-preview").textContent ?? "";
+    expect(payloadText).toContain("\"field\": \"fillColor\"");
+    expect(payloadText).toContain("\"value\": \"#aabbcc\"");
+    expect(payloadText).not.toContain("\"backgroundColor\"");
+  });
+
+  it("restores persisted draft for matching fingerprint after remount", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    const { unmount } = render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    const fillColorInput = screen.getByTestId("inspector-edit-input-fillColor");
+    fireEvent.change(fillColorInput, { target: { value: "#ff0000" } });
+    fireEvent.blur(fillColorInput);
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"value\": \"#ff0000\"");
+    });
+
+    unmount();
+
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-input-fillColor")).toHaveValue("#ff0000");
+    });
+    expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"field\": \"fillColor\"");
+  });
+
+  it("flags stale persisted drafts and keeps edit studio usable", async () => {
+    const staleDraft = upsertInspectorOverrideEntry({
+      draft: createInspectorOverrideDraft({
+        sourceJobId: "job-1",
+        baseFingerprint: "fnv1a64:stale"
+      }),
+      nodeId: "node-editable",
+      field: "fillColor",
+      value: "#ffffff"
+    });
+    window.localStorage.setItem(
+      toInspectorOverrideDraftStorageKey("job-1"),
+      JSON.stringify(staleDraft)
+    );
+
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-draft-stale-warning")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-edit-input-fillColor")).toHaveValue("#112233");
+    expect(screen.getByTestId("inspector-edit-payload-preview")).toHaveTextContent("\"overrides\": []");
   });
 });

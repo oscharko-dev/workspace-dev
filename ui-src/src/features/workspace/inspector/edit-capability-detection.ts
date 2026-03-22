@@ -7,6 +7,11 @@
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/451
  */
+import {
+  SCALAR_OVERRIDE_FIELDS,
+  extractSupportedScalarOverrideFields,
+  type ScalarOverrideField
+} from "./scalar-override-translators";
 
 // ---------------------------------------------------------------------------
 // Supported override translator registry
@@ -18,25 +23,9 @@
  * `src/parity/types-ir.ts`. Only nodes possessing at least one of these
  * fields are candidates for structured editing.
  */
-export const SUPPORTED_OVERRIDE_FIELDS = [
-  "text",
-  "fillColor",
-  "fontSize",
-  "fontWeight",
-  "fontFamily",
-  "opacity",
-  "cornerRadius",
-  "strokeColor",
-  "strokeWidth",
-  "padding",
-  "gap",
-  "layoutMode",
-  "width",
-  "height",
-  "elevation"
-] as const;
+export const SUPPORTED_OVERRIDE_FIELDS = SCALAR_OVERRIDE_FIELDS;
 
-export type SupportedOverrideField = (typeof SUPPORTED_OVERRIDE_FIELDS)[number];
+export type SupportedOverrideField = ScalarOverrideField;
 
 // ---------------------------------------------------------------------------
 // Element types eligible for edit mode
@@ -170,11 +159,5 @@ export function detectEditCapability(node: EditCapabilityNode): EditCapabilityRe
 export function extractPresentFields(
   nodeData: Readonly<Record<string, unknown>>
 ): string[] {
-  const fields: string[] = [];
-  for (const field of SUPPORTED_OVERRIDE_FIELDS) {
-    if (field in nodeData && nodeData[field] !== undefined && nodeData[field] !== null) {
-      fields.push(field);
-    }
-  }
-  return fields;
+  return extractSupportedScalarOverrideFields(nodeData);
 }

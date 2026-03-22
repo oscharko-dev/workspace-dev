@@ -59,6 +59,24 @@ import {
   detectEditCapability,
   extractPresentFields
 } from "./edit-capability-detection";
+import {
+  deriveScalarOverrideFieldSupport,
+  isScalarPaddingValue,
+  translateScalarOverrideInput,
+  type ScalarOverrideField
+} from "./scalar-override-translators";
+import {
+  computeInspectorDraftBaseFingerprint,
+  createInspectorOverrideDraft,
+  getInspectorOverrideEntry,
+  getInspectorOverrideValue,
+  persistInspectorOverrideDraft,
+  removeInspectorOverrideEntry,
+  restorePersistedInspectorOverrideDraft,
+  toStructuredInspectorOverridePayload,
+  upsertInspectorOverrideEntry,
+  type InspectorOverrideDraft
+} from "./inspector-override-draft";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -153,6 +171,12 @@ const KEYBOARD_STEP_PX = 24;
 const KEYBOARD_STEP_LARGE_PX = 72;
 const KEYBOARD_EXTREME_DELTA_PX = 100_000;
 const BOUNDARIES_SESSION_STORAGE_KEY = "workspace-dev:inspector-boundaries:v1";
+const PADDING_SIDES = ["top", "right", "bottom", "left"] as const;
+
+type PaddingSide = (typeof PADDING_SIDES)[number];
+type FieldValidationErrors = Partial<Record<ScalarOverrideField, string | null>>;
+type ScalarControlInputState = Partial<Record<Exclude<ScalarOverrideField, "padding">, string>>;
+type PaddingControlInputState = Partial<Record<PaddingSide, string>>;
 
 // ---------------------------------------------------------------------------
 // Guards
@@ -362,6 +386,51 @@ function findManifestEntry(
   return null;
 }
 
+function toScalarControlInputValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return "";
+}
+
+function toPaddingControlInputValue(value: unknown): PaddingControlInputState {
+  if (!isScalarPaddingValue(value)) {
+    return {};
+  }
+  return {
+    top: String(value.top),
+    right: String(value.right),
+    bottom: String(value.bottom),
+    left: String(value.left)
+  };
+}
+
+function fieldLabel(field: ScalarOverrideField): string {
+  switch (field) {
+    case "fillColor":
+      return "Fill color";
+    case "opacity":
+      return "Opacity";
+    case "cornerRadius":
+      return "Corner radius";
+    case "fontSize":
+      return "Font size";
+    case "fontWeight":
+      return "Font weight";
+    case "fontFamily":
+      return "Font family";
+    case "padding":
+      return "Padding";
+    case "gap":
+      return "Gap";
+    default:
+      return field;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // InspectorPanel
 // ---------------------------------------------------------------------------
@@ -386,6 +455,13 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(loadBoundariesEnabledPreference);
   const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
+  const [overrideDraft, setOverrideDraft] = useState<InspectorOverrideDraft | null>(null);
+  const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(null);
+  const [draftStale, setDraftStale] = useState(false);
+  const [draftPersistWarning, setDraftPersistWarning] = useState<string | null>(null);
+  const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
+  const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
+  const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -723,6 +799,38 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const manifest = manifestState.manifest;
   const treeNodes = designIrState.treeNodes;
   const irScreens = designIrState.screens;
+  const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
+    if (!selectedNodeId) {
+      return null;
+    }
+    return findIrElementNode(irScreens, selectedNodeId);
+  }, [irScreens, selectedNodeId]);
+  const selectedIrNodeData = useMemo<Readonly<Record<string, unknown>> | null>(() => {
+    if (!selectedIrNode) {
+      return null;
+    }
+    return selectedIrNode as unknown as Readonly<Record<string, unknown>>;
+  }, [selectedIrNode]);
+  const scalarFieldSupport = useMemo(() => {
+    if (!selectedIrNodeData) {
+      return [];
+    }
+    return deriveScalarOverrideFieldSupport(selectedIrNodeData);
+  }, [selectedIrNodeData]);
+  const editableScalarFields = useMemo(() => {
+    return scalarFieldSupport
+      .filter((entry) => entry.supported)
+      .map((entry) => entry.field);
+  }, [scalarFieldSupport]);
+  const unsupportedScalarFields = useMemo(() => {
+    return scalarFieldSupport.filter((entry) => !entry.supported);
+  }, [scalarFieldSupport]);
+  const baseFingerprint = useMemo(() => {
+    if (designIrState.status !== "ready") {
+      return null;
+    }
+    return computeInspectorDraftBaseFingerprint({ screens: irScreens });
+  }, [designIrState.status, irScreens]);
   const inspectabilitySummary = useMemo(() => {
     return deriveInspectabilitySummary({
       designIrStatus: designIrState.status,
@@ -872,6 +980,80 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       // Session storage can be unavailable in restricted browser contexts.
     }
   }, [boundariesEnabled]);
+
+  useEffect(() => {
+    if (!baseFingerprint) {
+      setOverrideDraft(null);
+      setDraftRestoreWarning(null);
+      setDraftStale(false);
+      setDraftPersistWarning(null);
+      return;
+    }
+
+    const restored = restorePersistedInspectorOverrideDraft({
+      jobId,
+      currentBaseFingerprint: baseFingerprint
+    });
+    setDraftRestoreWarning(restored.warning);
+    setDraftStale(restored.stale);
+    setDraftPersistWarning(null);
+    if (restored.draft && !restored.stale) {
+      setOverrideDraft(restored.draft);
+      return;
+    }
+
+    setOverrideDraft(createInspectorOverrideDraft({
+      sourceJobId: jobId,
+      baseFingerprint
+    }));
+  }, [baseFingerprint, jobId]);
+
+  useEffect(() => {
+    if (!overrideDraft) {
+      return;
+    }
+    const result = persistInspectorOverrideDraft({
+      jobId,
+      draft: overrideDraft
+    });
+    setDraftPersistWarning(result.error);
+  }, [jobId, overrideDraft]);
+
+  useEffect(() => {
+    if (!selectedNodeId || !selectedIrNodeData || !overrideDraft) {
+      setScalarControlInputs({});
+      setPaddingControlInputs({});
+      setFieldValidationErrors({});
+      return;
+    }
+
+    const nextScalarControlInputs: ScalarControlInputState = {};
+    let nextPaddingControlInputs: PaddingControlInputState = {};
+
+    for (const field of editableScalarFields) {
+      if (field === "padding") {
+        const value = getInspectorOverrideValue({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field
+        }) ?? selectedIrNodeData.padding;
+        nextPaddingControlInputs = toPaddingControlInputValue(value);
+        continue;
+      }
+
+      const value = getInspectorOverrideValue({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field
+      }) ?? selectedIrNodeData[field];
+
+      nextScalarControlInputs[field] = toScalarControlInputValue(value);
+    }
+
+    setScalarControlInputs(nextScalarControlInputs);
+    setPaddingControlInputs(nextPaddingControlInputs);
+    setFieldValidationErrors({});
+  }, [editableScalarFields, overrideDraft, selectedIrNodeData, selectedNodeId]);
 
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
@@ -1152,6 +1334,108 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     }
     void fileContentQuery.refetch();
   }, [effectiveSelectedFile, fileContentQuery.refetch]);
+
+  const applyScalarOverrideInput = useCallback(({
+    field,
+    rawValue
+  }: {
+    field: ScalarOverrideField;
+    rawValue: unknown;
+  }) => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    const result = translateScalarOverrideInput({
+      field,
+      rawValue
+    });
+
+    if (!result.ok) {
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: result.error
+      }));
+      return;
+    }
+
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+
+    setOverrideDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return upsertInspectorOverrideEntry({
+        draft: current,
+        nodeId: selectedNodeId,
+        field: result.field,
+        value: result.value
+      });
+    });
+  }, [selectedNodeId]);
+
+  const handleScalarInputChange = useCallback((field: Exclude<ScalarOverrideField, "padding">, value: string) => {
+    setScalarControlInputs((current) => ({
+      ...current,
+      [field]: value
+    }));
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+  }, []);
+
+  const handlePaddingInputChange = useCallback((side: PaddingSide, value: string) => {
+    setPaddingControlInputs((current) => ({
+      ...current,
+      [side]: value
+    }));
+    setFieldValidationErrors((current) => ({
+      ...current,
+      padding: null
+    }));
+  }, []);
+
+  const handleResetScalarOverride = useCallback((field: ScalarOverrideField) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    setOverrideDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return removeInspectorOverrideEntry({
+        draft: current,
+        nodeId: selectedNodeId,
+        field
+      });
+    });
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+  }, [selectedNodeId]);
+
+  const structuredOverridePayload = useMemo(() => {
+    if (!overrideDraft) {
+      return null;
+    }
+    return toStructuredInspectorOverridePayload(overrideDraft);
+  }, [overrideDraft]);
+
+  const hasScalarFieldOverride = useCallback((field: ScalarOverrideField): boolean => {
+    if (!overrideDraft || !selectedNodeId) {
+      return false;
+    }
+    return Boolean(getInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    }));
+  }, [overrideDraft, selectedNodeId]);
 
   // --- Handlers ---
 
@@ -1889,6 +2173,208 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
                 Edit mode is active
               </p>
             ) : null}
+          </div>
+        ) : null}
+        {editModeActive && selectedNodeId ? (
+          <div
+            data-testid="inspector-edit-studio-panel"
+            className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950"
+          >
+            <p className="m-0 font-semibold">Edit Studio</p>
+            <p className="m-0 mt-1">
+              Scalar override controls are limited to the v1 lane and use exact IR field names in payload output.
+            </p>
+            <p data-testid="inspector-edit-v1-deferred-fields" className="m-0 mt-1 text-indigo-800">
+              Deferred in v1: width, height, layoutMode.
+            </p>
+            {draftRestoreWarning ? (
+              <p
+                data-testid={draftStale ? "inspector-edit-draft-stale-warning" : "inspector-edit-draft-restore-warning"}
+                className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+              >
+                {draftRestoreWarning}
+              </p>
+            ) : null}
+            {draftPersistWarning ? (
+              <p
+                data-testid="inspector-edit-draft-persist-warning"
+                className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+              >
+                {draftPersistWarning}
+              </p>
+            ) : null}
+            {selectedIrNodeData ? (
+              <>
+                {editableScalarFields.length > 0 ? (
+                  <div className="mt-2 grid gap-2 md:grid-cols-2">
+                    {editableScalarFields.map((field) => {
+                      if (field === "padding") {
+                        return (
+                          <div
+                            key={field}
+                            data-testid="inspector-edit-field-padding"
+                            className="rounded border border-indigo-200 bg-white px-2 py-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="font-semibold text-indigo-900" htmlFor="inspector-edit-input-padding-top">
+                                {fieldLabel(field)}
+                              </label>
+                              {hasScalarFieldOverride(field) ? (
+                                <button
+                                  type="button"
+                                  data-testid="inspector-edit-reset-padding"
+                                  onClick={() => {
+                                    handleResetScalarOverride(field);
+                                  }}
+                                  className="cursor-pointer rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                                >
+                                  Reset
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 grid grid-cols-2 gap-1">
+                              {PADDING_SIDES.map((side) => (
+                                <label key={side} className="flex flex-col gap-0.5 text-[11px] text-slate-700">
+                                  <span className="font-medium capitalize">{side}</span>
+                                  <input
+                                    id={`inspector-edit-input-padding-${side}`}
+                                    data-testid={`inspector-edit-input-padding-${side}`}
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    value={paddingControlInputs[side] ?? ""}
+                                    onChange={(event) => {
+                                      handlePaddingInputChange(side, event.currentTarget.value);
+                                    }}
+                                    onBlur={() => {
+                                      applyScalarOverrideInput({
+                                        field,
+                                        rawValue: {
+                                          top: paddingControlInputs.top ?? "",
+                                          right: paddingControlInputs.right ?? "",
+                                          bottom: paddingControlInputs.bottom ?? "",
+                                          left: paddingControlInputs.left ?? ""
+                                        }
+                                      });
+                                    }}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            {fieldValidationErrors.padding ? (
+                              <p data-testid="inspector-edit-error-padding" className="m-0 mt-1 text-[11px] text-rose-700">
+                                {fieldValidationErrors.padding}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      }
+
+                      const inputType = field === "fontFamily" || field === "fillColor" ? "text" : "number";
+                      const inputStep = field === "opacity" ? 0.01 : (field === "fontWeight" ? 100 : 0.1);
+                      const inputMin = field === "opacity" || field === "cornerRadius" || field === "fontSize" || field === "gap"
+                        ? 0
+                        : (field === "fontWeight" ? 100 : undefined);
+                      const inputMax = field === "opacity" ? 1 : (field === "fontWeight" ? 900 : undefined);
+                      return (
+                        <div
+                          key={field}
+                          data-testid={`inspector-edit-field-${field}`}
+                          className="rounded border border-indigo-200 bg-white px-2 py-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="font-semibold text-indigo-900" htmlFor={`inspector-edit-input-${field}`}>
+                              {fieldLabel(field)}
+                            </label>
+                            {hasScalarFieldOverride(field) ? (
+                              <button
+                                type="button"
+                                data-testid={`inspector-edit-reset-${field}`}
+                                onClick={() => {
+                                  handleResetScalarOverride(field);
+                                }}
+                                className="cursor-pointer rounded border border-indigo-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                              >
+                                Reset
+                              </button>
+                            ) : null}
+                          </div>
+                          <input
+                            id={`inspector-edit-input-${field}`}
+                            data-testid={`inspector-edit-input-${field}`}
+                            type={inputType}
+                            step={inputStep}
+                            min={inputMin}
+                            max={inputMax}
+                            value={scalarControlInputs[field] ?? ""}
+                            onChange={(event) => {
+                              handleScalarInputChange(field, event.currentTarget.value);
+                            }}
+                            onBlur={(event) => {
+                              applyScalarOverrideInput({
+                                field,
+                                rawValue: event.currentTarget.value
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                          />
+                          {fieldValidationErrors[field] ? (
+                            <p
+                              data-testid={`inspector-edit-error-${field}`}
+                              className="m-0 mt-1 text-[11px] text-rose-700"
+                            >
+                              {fieldValidationErrors[field]}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p data-testid="inspector-edit-no-supported-fields" className="m-0 mt-2 text-indigo-900">
+                    No scalar overrides are supported for the selected node.
+                  </p>
+                )}
+                {unsupportedScalarFields.length > 0 ? (
+                  <div
+                    data-testid="inspector-edit-unsupported-fields"
+                    className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
+                  >
+                    <p className="m-0 font-semibold text-slate-900">Unsupported scalar properties</p>
+                    {unsupportedScalarFields.map((entry) => (
+                      <p
+                        key={entry.field}
+                        data-testid={`inspector-edit-unsupported-${entry.field}`}
+                        className="m-0 mt-1"
+                      >
+                        {entry.field}: {entry.reason ?? "Not supported."}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {structuredOverridePayload ? (
+                  <div className="mt-2">
+                    <p className="m-0 font-semibold text-slate-900">Structured override payload</p>
+                    <pre
+                      data-testid="inspector-edit-payload-preview"
+                      className="m-0 mt-1 max-h-48 overflow-auto rounded border border-slate-300 bg-white p-2 text-[11px] text-slate-900"
+                    >
+                      {JSON.stringify(structuredOverridePayload, null, 2)}
+                    </pre>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p data-testid="inspector-edit-node-missing" className="m-0 mt-2 text-indigo-900">
+                Selected node details are not available in design IR.
+              </p>
+            )}
           </div>
         ) : null}
         <div

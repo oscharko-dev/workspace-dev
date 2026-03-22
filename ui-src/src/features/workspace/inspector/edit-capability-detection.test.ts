@@ -25,7 +25,7 @@ function makeNode(overrides: Partial<EditCapabilityNode> = {}): EditCapabilityNo
     name: "TestNode",
     type: "button",
     mapped: true,
-    presentFields: ["text", "fillColor", "cornerRadius"],
+    presentFields: ["fillColor", "cornerRadius"],
     ...overrides
   };
 }
@@ -41,27 +41,27 @@ describe("detectEditCapability", () => {
 
       expect(result.editable).toBe(true);
       expect(result.reason).toBeNull();
-      expect(result.editableFields).toEqual(["text", "fillColor", "cornerRadius"]);
+      expect(result.editableFields).toEqual(["fillColor", "cornerRadius"]);
     });
 
-    it("returns editable for text element with text field", () => {
+    it("returns editable for text element with typography fields", () => {
       const result = detectEditCapability(makeNode({
         type: "text",
-        presentFields: ["text", "fontSize", "fontWeight"]
+        presentFields: ["fillColor", "fontSize", "fontWeight", "fontFamily"]
       }));
 
       expect(result.editable).toBe(true);
-      expect(result.editableFields).toEqual(["text", "fontSize", "fontWeight"]);
+      expect(result.editableFields).toEqual(["fillColor", "fontSize", "fontWeight", "fontFamily"]);
     });
 
     it("returns editable for container with layout fields", () => {
       const result = detectEditCapability(makeNode({
         type: "container",
-        presentFields: ["padding", "gap", "layoutMode"]
+        presentFields: ["padding", "gap"]
       }));
 
       expect(result.editable).toBe(true);
-      expect(result.editableFields).toEqual(["padding", "gap", "layoutMode"]);
+      expect(result.editableFields).toEqual(["padding", "gap"]);
     });
   });
 
@@ -162,20 +162,20 @@ describe("detectEditCapability", () => {
   describe("field filtering", () => {
     it("only includes fields in SUPPORTED_OVERRIDE_FIELDS", () => {
       const result = detectEditCapability(makeNode({
-        presentFields: ["text", "unknownField", "fillColor", "vectorPaths", "opacity"]
+        presentFields: ["unknownField", "fillColor", "vectorPaths", "opacity"]
       }));
 
       expect(result.editable).toBe(true);
-      expect(result.editableFields).toEqual(["text", "fillColor", "opacity"]);
+      expect(result.editableFields).toEqual(["fillColor", "opacity"]);
     });
 
     it("preserves field order from SUPPORTED_OVERRIDE_FIELDS", () => {
       const result = detectEditCapability(makeNode({
-        presentFields: ["opacity", "text", "fillColor"]
+        presentFields: ["opacity", "fillColor"]
       }));
 
       // Order follows SUPPORTED_OVERRIDE_FIELDS, not input order
-      expect(result.editableFields).toEqual(["text", "fillColor", "opacity"]);
+      expect(result.editableFields).toEqual(["fillColor", "opacity"]);
     });
   });
 });
@@ -190,7 +190,6 @@ describe("extractPresentFields", () => {
       id: "node-1",
       name: "Test",
       type: "button",
-      text: "Click me",
       fillColor: "#ff0000",
       cornerRadius: 8,
       opacity: 1.0,
@@ -201,7 +200,6 @@ describe("extractPresentFields", () => {
 
     const fields = extractPresentFields(nodeData);
 
-    expect(fields).toContain("text");
     expect(fields).toContain("fillColor");
     expect(fields).toContain("cornerRadius");
     expect(fields).toContain("opacity");
@@ -225,7 +223,9 @@ describe("extractPresentFields", () => {
   it("extracts all supported fields when present", () => {
     const allFields: Record<string, unknown> = {};
     for (const field of SUPPORTED_OVERRIDE_FIELDS) {
-      allFields[field] = "value";
+      allFields[field] = field === "padding"
+        ? { top: 4, right: 4, bottom: 4, left: 4 }
+        : "value";
     }
 
     const fields = extractPresentFields(allFields);
@@ -250,12 +250,10 @@ describe("extractPresentFields", () => {
 
   it("handles empty string as a present value", () => {
     const nodeData: Record<string, unknown> = {
-      text: "",
       fillColor: ""
     };
 
     const fields = extractPresentFields(nodeData);
-    expect(fields).toContain("text");
     expect(fields).toContain("fillColor");
   });
 });
