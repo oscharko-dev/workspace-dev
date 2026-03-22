@@ -6,6 +6,7 @@
  * intentionally separate actions.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/445
  */
 
 // ---------------------------------------------------------------------------
@@ -20,12 +21,15 @@ export interface ManifestMapping {
   extractedComponent?: true;
 }
 
-/** A committed history entry representing a previous scope navigation. */
+/** Hard cap for committed drilldown snapshots retained in memory. */
+export const MAX_NAV_ENTRIES = 100;
+
+/** A committed history snapshot representing a full drilldown navigation state. */
 export interface ScopeHistoryEntry {
-  nodeId: string;
-  nodeName: string;
-  nodeType: string;
-  file: string | null;
+  selectedNodeId: string | null;
+  selectedNodeMapped: boolean;
+  scopeStack: ScopeStackEntry[];
+  effectiveFileTarget: string | null;
 }
 
 /** A scope stack entry representing an active scope level. */
@@ -33,6 +37,8 @@ export interface ScopeStackEntry {
   nodeId: string;
   nodeName: string;
   nodeType: string;
+  mapped: boolean;
+  file: string | null;
 }
 
 /** Full inspector scope state. */
@@ -43,8 +49,11 @@ export interface InspectorScopeState {
   /** Active scope stack — the chain of explicitly entered scopes. */
   scopeStack: ScopeStackEntry[];
 
-  /** Committed navigation history entries. */
+  /** Committed navigation snapshots. */
   history: ScopeHistoryEntry[];
+
+  /** Index of the currently active snapshot in `history`. */
+  historyIndex: number;
 
   /**
    * Effective file target derived from the current scope/selection.
@@ -88,6 +97,18 @@ export interface ExitScopeAction {
   type: "EXIT_SCOPE";
 }
 
+export interface NavigateBackAction {
+  type: "NAVIGATE_BACK";
+}
+
+export interface NavigateForwardAction {
+  type: "NAVIGATE_FORWARD";
+}
+
+export interface LevelUpAction {
+  type: "LEVEL_UP";
+}
+
 export interface ResetAction {
   type: "RESET";
 }
@@ -96,18 +117,33 @@ export type InspectorScopeAction =
   | SelectNodeAction
   | EnterScopeAction
   | ExitScopeAction
+  | NavigateBackAction
+  | NavigateForwardAction
+  | LevelUpAction
   | ResetAction;
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
-export const INITIAL_INSPECTOR_SCOPE_STATE: InspectorScopeState = {
+interface ScopeCoreState {
+  selectedNodeId: string | null;
+  selectedNodeMapped: boolean;
+  scopeStack: ScopeStackEntry[];
+  effectiveFileTarget: string | null;
+}
+
+const INITIAL_SCOPE_CORE_STATE: ScopeCoreState = {
   selectedNodeId: null,
+  selectedNodeMapped: false,
   scopeStack: [],
-  history: [],
-  effectiveFileTarget: null,
-  selectedNodeMapped: false
+  effectiveFileTarget: null
+};
+
+export const INITIAL_INSPECTOR_SCOPE_STATE: InspectorScopeState = {
+  ...INITIAL_SCOPE_CORE_STATE,
+  history: [toSnapshot(INITIAL_SCOPE_CORE_STATE)],
+  historyIndex: 0
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +153,119 @@ export const INITIAL_INSPECTOR_SCOPE_STATE: InspectorScopeState = {
 function fileFromMapping(mapping: ManifestMapping | null): string | null {
   if (!mapping) return null;
   return mapping.file;
+}
+
+function cloneScopeStack(stack: readonly ScopeStackEntry[]): ScopeStackEntry[] {
+  return stack.map((entry) => ({ ...entry }));
+}
+
+function toScopeCoreState(state: InspectorScopeState): ScopeCoreState {
+  return {
+    selectedNodeId: state.selectedNodeId,
+    selectedNodeMapped: state.selectedNodeMapped,
+    scopeStack: cloneScopeStack(state.scopeStack),
+    effectiveFileTarget: state.effectiveFileTarget
+  };
+}
+
+function toSnapshot(state: ScopeCoreState): ScopeHistoryEntry {
+  return {
+    selectedNodeId: state.selectedNodeId,
+    selectedNodeMapped: state.selectedNodeMapped,
+    scopeStack: cloneScopeStack(state.scopeStack),
+    effectiveFileTarget: state.effectiveFileTarget
+  };
+}
+
+function areScopeEntriesEqual(a: ScopeStackEntry, b: ScopeStackEntry): boolean {
+  return a.nodeId === b.nodeId
+    && a.nodeName === b.nodeName
+    && a.nodeType === b.nodeType
+    && a.mapped === b.mapped
+    && a.file === b.file;
+}
+
+function areScopeStacksEqual(a: readonly ScopeStackEntry[], b: readonly ScopeStackEntry[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let idx = 0; idx < a.length; idx += 1) {
+    const entryA = a[idx];
+    const entryB = b[idx];
+    if (!entryA || !entryB || !areScopeEntriesEqual(entryA, entryB)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areSnapshotsEqual(a: ScopeHistoryEntry, b: ScopeHistoryEntry): boolean {
+  return a.selectedNodeId === b.selectedNodeId
+    && a.selectedNodeMapped === b.selectedNodeMapped
+    && a.effectiveFileTarget === b.effectiveFileTarget
+    && areScopeStacksEqual(a.scopeStack, b.scopeStack);
+}
+
+function areScopeCoreStatesEqual(a: ScopeCoreState, b: ScopeCoreState): boolean {
+  return a.selectedNodeId === b.selectedNodeId
+    && a.selectedNodeMapped === b.selectedNodeMapped
+    && a.effectiveFileTarget === b.effectiveFileTarget
+    && areScopeStacksEqual(a.scopeStack, b.scopeStack);
+}
+
+function commitNavigationState(
+  state: InspectorScopeState,
+  nextCoreState: ScopeCoreState
+): InspectorScopeState {
+  if (areScopeCoreStatesEqual(toScopeCoreState(state), nextCoreState)) {
+    return state;
+  }
+
+  const truncatedHistory = state.history.slice(0, state.historyIndex + 1);
+  const nextSnapshot = toSnapshot(nextCoreState);
+  const tailSnapshot = truncatedHistory[truncatedHistory.length - 1];
+
+  if (tailSnapshot && areSnapshotsEqual(tailSnapshot, nextSnapshot)) {
+    return {
+      ...state,
+      ...nextCoreState,
+      history: truncatedHistory,
+      historyIndex: truncatedHistory.length - 1
+    };
+  }
+
+  const withAppendedSnapshot = [...truncatedHistory, nextSnapshot];
+  const boundedHistory = withAppendedSnapshot.length > MAX_NAV_ENTRIES
+    ? withAppendedSnapshot.slice(withAppendedSnapshot.length - MAX_NAV_ENTRIES)
+    : withAppendedSnapshot;
+
+  return {
+    ...state,
+    ...nextCoreState,
+    history: boundedHistory,
+    historyIndex: boundedHistory.length - 1
+  };
+}
+
+function restoreSnapshotAtIndex(
+  state: InspectorScopeState,
+  nextHistoryIndex: number
+): InspectorScopeState {
+  const snapshot = state.history[nextHistoryIndex];
+  if (!snapshot) {
+    return state;
+  }
+
+  return {
+    ...state,
+    selectedNodeId: snapshot.selectedNodeId,
+    selectedNodeMapped: snapshot.selectedNodeMapped,
+    scopeStack: cloneScopeStack(snapshot.scopeStack),
+    effectiveFileTarget: snapshot.effectiveFileTarget,
+    historyIndex: nextHistoryIndex
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,12 +279,14 @@ export function inspectorScopeReducer(
   switch (action.type) {
     case "SELECT_NODE": {
       const { nodeId, mapping } = action.payload;
-      return {
-        ...state,
+      const nextCoreState: ScopeCoreState = {
         selectedNodeId: nodeId,
         selectedNodeMapped: mapping !== null,
+        scopeStack: state.scopeStack,
         effectiveFileTarget: fileFromMapping(mapping) ?? state.effectiveFileTarget
       };
+
+      return commitNavigationState(state, nextCoreState);
     }
 
     case "ENTER_SCOPE": {
@@ -149,33 +300,26 @@ export function inspectorScopeReducer(
         return state;
       }
 
-      // Commit current scope top to history if there is one
-      const nextHistory = [...state.history];
-      if (topScope) {
-        nextHistory.push({
-          nodeId: topScope.nodeId,
-          nodeName: topScope.nodeName,
-          nodeType: topScope.nodeType,
-          file: state.effectiveFileTarget
-        });
-      }
-
       const effectiveFile = fileFromMapping(mapping) ?? state.effectiveFileTarget;
-
-      return {
-        ...state,
+      const nextScopeEntry: ScopeStackEntry = {
+        nodeId,
+        nodeName,
+        nodeType,
+        mapped: mapping !== null,
+        file: effectiveFile
+      };
+      const nextCoreState: ScopeCoreState = {
         selectedNodeId: nodeId,
         selectedNodeMapped: mapping !== null,
-        scopeStack: [
-          ...state.scopeStack,
-          { nodeId, nodeName, nodeType }
-        ],
-        history: nextHistory,
+        scopeStack: [...state.scopeStack, nextScopeEntry],
         effectiveFileTarget: effectiveFile
       };
+
+      return commitNavigationState(state, nextCoreState);
     }
 
-    case "EXIT_SCOPE": {
+    case "EXIT_SCOPE":
+    case "LEVEL_UP": {
       if (state.scopeStack.length === 0) {
         return state;
       }
@@ -184,19 +328,30 @@ export function inspectorScopeReducer(
       const newTop = nextStack.length > 0
         ? nextStack[nextStack.length - 1]
         : null;
-
-      // Pop the most recent history entry to restore file target
-      const nextHistory = [...state.history];
-      const restoredEntry = nextHistory.pop();
-
-      return {
-        ...state,
+      const nextCoreState: ScopeCoreState = {
         selectedNodeId: newTop?.nodeId ?? null,
-        selectedNodeMapped: newTop !== null,
+        selectedNodeMapped: newTop?.mapped ?? false,
         scopeStack: nextStack,
-        history: nextHistory,
-        effectiveFileTarget: restoredEntry?.file ?? null
+        effectiveFileTarget: newTop?.file ?? null
       };
+
+      return commitNavigationState(state, nextCoreState);
+    }
+
+    case "NAVIGATE_BACK": {
+      if (state.historyIndex <= 0) {
+        return state;
+      }
+
+      return restoreSnapshotAtIndex(state, state.historyIndex - 1);
+    }
+
+    case "NAVIGATE_FORWARD": {
+      if (state.historyIndex >= state.history.length - 1) {
+        return state;
+      }
+
+      return restoreSnapshotAtIndex(state, state.historyIndex + 1);
     }
 
     case "RESET": {
@@ -231,4 +386,19 @@ export function selectHasActiveScope(state: InspectorScopeState): boolean {
 /** Returns the full scope stack (for breadcrumb rendering). */
 export function selectScopeStack(state: InspectorScopeState): readonly ScopeStackEntry[] {
   return state.scopeStack;
+}
+
+/** Returns whether a committed drilldown snapshot exists behind the cursor. */
+export function selectCanNavigateBack(state: InspectorScopeState): boolean {
+  return state.historyIndex > 0;
+}
+
+/** Returns whether a committed drilldown snapshot exists ahead of the cursor. */
+export function selectCanNavigateForward(state: InspectorScopeState): boolean {
+  return state.historyIndex < state.history.length - 1;
+}
+
+/** Returns whether an explicit level-up action can be applied. */
+export function selectCanLevelUp(state: InspectorScopeState): boolean {
+  return state.scopeStack.length > 0;
 }

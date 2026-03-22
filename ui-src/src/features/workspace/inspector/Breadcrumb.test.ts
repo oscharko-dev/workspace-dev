@@ -121,6 +121,8 @@ describe("findNodePath", () => {
 
 describe("Breadcrumb", () => {
   const mockOnSelect = vi.fn();
+  const mockOnEnterScope = vi.fn();
+  const mockOnExitScope = vi.fn();
 
   it("returns null when path is empty", () => {
     const { container } = render(createElement(Breadcrumb, { path: [], onSelect: mockOnSelect }));
@@ -238,5 +240,51 @@ describe("Breadcrumb", () => {
     const segment = screen.getByTestId("breadcrumb-segment-b1");
     expect(segment.textContent).toContain("B");
     expect(segment.textContent).toContain("MyButton");
+  });
+
+  it("renders and triggers enter scope for the last segment", () => {
+    const path: BreadcrumbSegment[] = [
+      { id: "s1", name: "Screen", type: "screen" },
+      { id: "b1", name: "Button", type: "button" }
+    ];
+    render(createElement(Breadcrumb, { path, onSelect: mockOnSelect, onEnterScope: mockOnEnterScope }));
+
+    const button = screen.getByTestId("breadcrumb-enter-scope");
+    expect(button.textContent).toBe("Enter scope");
+    fireEvent.click(button);
+    expect(mockOnEnterScope).toHaveBeenCalledWith("b1");
+  });
+
+  it("renders level-up button when scope is active", () => {
+    const path: BreadcrumbSegment[] = [
+      { id: "s1", name: "Screen", type: "screen" },
+      { id: "b1", name: "Button", type: "button" }
+    ];
+    render(createElement(Breadcrumb, {
+      path,
+      onSelect: mockOnSelect,
+      hasActiveScope: true,
+      onExitScope: mockOnExitScope
+    }));
+
+    const button = screen.getByTestId("breadcrumb-exit-scope");
+    expect(button.textContent).toBe("Level up");
+    fireEvent.click(button);
+    expect(mockOnExitScope).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides level-up button when no scope is active", () => {
+    const path: BreadcrumbSegment[] = [
+      { id: "s1", name: "Screen", type: "screen" },
+      { id: "b1", name: "Button", type: "button" }
+    ];
+    render(createElement(Breadcrumb, {
+      path,
+      onSelect: mockOnSelect,
+      hasActiveScope: false,
+      onExitScope: mockOnExitScope
+    }));
+
+    expect(screen.queryByTestId("breadcrumb-exit-scope")).toBeNull();
   });
 });

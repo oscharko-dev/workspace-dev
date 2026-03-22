@@ -34,6 +34,9 @@ import {
   inspectorScopeReducer,
   INITIAL_INSPECTOR_SCOPE_STATE,
   selectActiveScope,
+  selectCanNavigateBack,
+  selectCanNavigateForward,
+  selectCanLevelUp,
   selectHasActiveScope,
   type ManifestMapping
 } from "./inspector-scope-state";
@@ -309,6 +312,9 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const selectedNodeId = scopeState.selectedNodeId;
   const activeScopeNodeId = selectActiveScope(scopeState)?.nodeId ?? null;
   const hasActiveScope = selectHasActiveScope(scopeState);
+  const canNavigateBack = selectCanNavigateBack(scopeState);
+  const canNavigateForward = selectCanNavigateForward(scopeState);
+  const canLevelUp = selectCanLevelUp(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -1003,6 +1009,53 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     [treeNodes]
   );
 
+  const applyNavigationVisualState = useCallback(
+    (nextScopeState: { selectedNodeId: string | null; effectiveFileTarget: string | null }) => {
+      const nodeId = nextScopeState.selectedNodeId;
+
+      if (!nodeId) {
+        setSelectedFile(null);
+        setHighlightRange(null);
+        return;
+      }
+
+      if (manifest) {
+        const match = findManifestEntry(nodeId, manifest);
+        if (match?.entry) {
+          setSelectedFile(match.entry.file);
+          if (match.entry.extractedComponent) {
+            setHighlightRange(null);
+          } else {
+            setHighlightRange({
+              startLine: match.entry.startLine,
+              endLine: match.entry.endLine
+            });
+          }
+          return;
+        }
+
+        if (match) {
+          setSelectedFile(match.screen.file);
+          setHighlightRange(null);
+          return;
+        }
+      }
+
+      const irScreen = irScreens.find((screen) => screen.id === nodeId);
+      if (irScreen?.generatedFile) {
+        setSelectedFile(irScreen.generatedFile);
+        setHighlightRange(null);
+        return;
+      }
+
+      if (nextScopeState.effectiveFileTarget) {
+        setSelectedFile(nextScopeState.effectiveFileTarget);
+        setHighlightRange(null);
+      }
+    },
+    [irScreens, manifest]
+  );
+
   const handleSelectTreeNode = useCallback(
     (nodeId: string) => {
       const mapping = resolveMapping(nodeId);
@@ -1108,10 +1161,40 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     [resolveMapping, resolveNodeMeta]
   );
 
-  /** Exit the current scope level. */
+  const handleLevelUp = useCallback(() => {
+    const nextScopeState = inspectorScopeReducer(scopeState, { type: "LEVEL_UP" });
+    if (nextScopeState === scopeState) {
+      return;
+    }
+
+    scopeDispatch({ type: "LEVEL_UP" });
+    applyNavigationVisualState(nextScopeState);
+  }, [applyNavigationVisualState, scopeState]);
+
+  /** Exit scope remains as a compatibility alias for level-up navigation. */
   const handleExitScope = useCallback(() => {
-    scopeDispatch({ type: "EXIT_SCOPE" });
-  }, []);
+    handleLevelUp();
+  }, [handleLevelUp]);
+
+  const handleNavigateBack = useCallback(() => {
+    const nextScopeState = inspectorScopeReducer(scopeState, { type: "NAVIGATE_BACK" });
+    if (nextScopeState === scopeState) {
+      return;
+    }
+
+    scopeDispatch({ type: "NAVIGATE_BACK" });
+    applyNavigationVisualState(nextScopeState);
+  }, [applyNavigationVisualState, scopeState]);
+
+  const handleNavigateForward = useCallback(() => {
+    const nextScopeState = inspectorScopeReducer(scopeState, { type: "NAVIGATE_FORWARD" });
+    if (nextScopeState === scopeState) {
+      return;
+    }
+
+    scopeDispatch({ type: "NAVIGATE_FORWARD" });
+    applyNavigationVisualState(nextScopeState);
+  }, [applyNavigationVisualState, scopeState]);
 
   const handleToggleInspect = useCallback(() => {
     setInspectEnabled((prev) => !prev);
@@ -1367,7 +1450,29 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
       <div className="shrink-0 border-b border-slate-200 px-4 py-3">
         <h2 className="m-0 text-xl font-bold text-slate-900">Inspector</h2>
         <p className="m-0 text-sm text-slate-600">Live preview and generated source code</p>
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-testid="inspector-nav-back"
+            disabled={!canNavigateBack}
+            onClick={handleNavigateBack}
+            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+            title="Back to previous committed drilldown state"
+            aria-label="Navigate back in inspector drilldown history"
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            data-testid="inspector-nav-forward"
+            disabled={!canNavigateForward}
+            onClick={handleNavigateForward}
+            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+            title="Forward to next committed drilldown state"
+            aria-label="Navigate forward in inspector drilldown history"
+          >
+            Forward →
+          </button>
           <button
             type="button"
             data-testid="inspector-shortcut-help-button"
@@ -1541,7 +1646,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             onBreadcrumbSelect={handleTreeSelect}
             hasActiveScope={hasActiveScope}
             onEnterScope={handleEnterScope}
-            onExitScope={handleExitScope}
+            onExitScope={canLevelUp ? handleExitScope : undefined}
             splitFile={effectiveSplitFile}
             splitFileContent={splitFileContent}
             splitFileContentLoading={splitFileContentLoading}
