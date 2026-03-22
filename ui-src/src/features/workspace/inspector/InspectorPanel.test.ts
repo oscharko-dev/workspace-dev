@@ -15,7 +15,8 @@ type MockQueryKey =
   | "inspector-files"
   | "inspector-manifest"
   | "inspector-design-ir"
-  | "inspector-file-content";
+  | "inspector-file-content"
+  | "inspector-generation-metrics";
 
 interface MockQueryResult {
   data: unknown;
@@ -85,6 +86,29 @@ function createDefaultQueryResults(): Record<MockQueryKey, MockQueryResult> {
       },
       isLoading: false,
       refetch: vi.fn()
+    },
+    "inspector-generation-metrics": {
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          skippedHidden: 2,
+          skippedPlaceholders: 1,
+          truncatedScreens: [
+            {
+              originalElements: 10,
+              retainedElements: 7
+            }
+          ],
+          depthTruncatedScreens: [{ truncatedBranchCount: 2 }],
+          classificationFallbacks: [{ nodeId: "node-1" }],
+          degradedGeometryNodes: ["1:1"]
+        },
+        error: null,
+        message: null
+      },
+      isLoading: false,
+      refetch: vi.fn()
     }
   };
 }
@@ -99,7 +123,11 @@ function installQueryMock({
     "inspector-files": { ...base["inspector-files"], ...(overrides?.["inspector-files"] ?? {}) },
     "inspector-manifest": { ...base["inspector-manifest"], ...(overrides?.["inspector-manifest"] ?? {}) },
     "inspector-design-ir": { ...base["inspector-design-ir"], ...(overrides?.["inspector-design-ir"] ?? {}) },
-    "inspector-file-content": { ...base["inspector-file-content"], ...(overrides?.["inspector-file-content"] ?? {}) }
+    "inspector-file-content": { ...base["inspector-file-content"], ...(overrides?.["inspector-file-content"] ?? {}) },
+    "inspector-generation-metrics": {
+      ...base["inspector-generation-metrics"],
+      ...(overrides?.["inspector-generation-metrics"] ?? {})
+    }
   } satisfies Record<MockQueryKey, MockQueryResult>;
 
   mockUseQuery.mockImplementation((input: { queryKey?: unknown[] }) => {
@@ -115,6 +143,9 @@ function installQueryMock({
     }
     if (key === "inspector-file-content") {
       return merged["inspector-file-content"];
+    }
+    if (key === "inspector-generation-metrics") {
+      return merged["inspector-generation-metrics"];
     }
 
     return {
@@ -370,6 +401,163 @@ describe("InspectorPanel data states", () => {
 
     fireEvent.click(screen.getByTestId("inspector-retry-file-content"));
     expect(fileContentRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders aggregate inspectability summary with manifest coverage and omission counters", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-design-ir": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  id: "screen-home",
+                  name: "Home",
+                  generatedFile: "src/screens/Home.tsx",
+                  children: [
+                    {
+                      id: "node-a",
+                      name: "A",
+                      type: "container",
+                      children: []
+                    },
+                    {
+                      id: "node-b",
+                      name: "B",
+                      type: "text",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "inspector-manifest": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  screenId: "screen-home",
+                  screenName: "Home",
+                  file: "src/screens/Home.tsx",
+                  components: [
+                    {
+                      irNodeId: "node-a",
+                      irNodeName: "A",
+                      irNodeType: "container",
+                      file: "src/screens/Home.tsx",
+                      startLine: 1,
+                      endLine: 4
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "inspector-generation-metrics": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              skippedHidden: 2,
+              skippedPlaceholders: 3,
+              truncatedScreens: [{ originalElements: 9, retainedElements: 5 }],
+              depthTruncatedScreens: [{ truncatedBranchCount: 2 }],
+              classificationFallbacks: [{ nodeId: "x" }, { nodeId: "y" }],
+              degradedGeometryNodes: ["1:1"]
+            },
+            error: null,
+            message: null
+          }
+        }
+      }
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-inspectability-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-summary-manifest-coverage")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-summary-design-ir-omissions")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-summary-mapped-count")).toHaveTextContent("Mapped: 2");
+    expect(screen.getByTestId("inspector-summary-unmapped-count")).toHaveTextContent("Unmapped: 1");
+    expect(screen.getByTestId("inspector-summary-total-count")).toHaveTextContent("Total IR nodes: 3");
+    expect(screen.getByTestId("inspector-summary-mapped-percent")).toHaveTextContent("Coverage: 66.7%");
+    expect(screen.getByTestId("inspector-summary-omission-skipped-hidden")).toHaveTextContent(
+      "Hidden nodes skipped: 2"
+    );
+    expect(screen.getByTestId("inspector-summary-omission-truncated-by-budget")).toHaveTextContent(
+      "Nodes truncated by budget: 4"
+    );
+    expect(screen.getByTestId("inspector-summary-aggregate-note")).toHaveTextContent("Aggregate-only summary");
+    expect(screen.queryByText(/node-level badge/i)).not.toBeInTheDocument();
+  });
+
+  it("shows manifest summary fallback when manifest data is unavailable", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-manifest": {
+          data: {
+            ok: false,
+            status: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: "Injected manifest failure"
+            }
+          }
+        }
+      }
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-summary-manifest-unavailable")).toHaveTextContent(
+      "component manifest data is not ready"
+    );
+  });
+
+  it("shows omission summary fallback when generation metrics are unavailable", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-generation-metrics": {
+          data: {
+            ok: false,
+            status: 404,
+            payload: null,
+            error: "GENERATION_METRICS_NOT_FOUND",
+            message: "generation-metrics.json is unavailable for this job."
+          }
+        }
+      }
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-summary-omission-unavailable")).toHaveTextContent(
+      "omission counters are unavailable"
+    );
   });
 
   it("persists boundary toggle state and syncs boundary clicks to tree selection", async () => {
