@@ -50,7 +50,7 @@ const createLocalFigmaPayload = () => ({
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 45_000
+  timeoutMs = 120_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { cp, rm } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   getInspectorLocators,
   openWorkspaceUi,
@@ -16,8 +17,14 @@ const ENABLE_LIVE_INSPECTOR_E2E = process.env["INSPECTOR_LIVE_E2E"] === "1";
 const LIVE_SUBMIT_MAX_ATTEMPTS = 3;
 const LIVE_RETRY_WAIT_MS = 20_000;
 const LIVE_SUBMIT_TIMEOUT_MS = 300_000;
+const LIVE_STATUS_POLL_INTERVAL_MS = 1_000;
 const DRAFT_STORAGE_PREFIX = "workspace-dev:inspector-override-draft:v1:";
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
+const JOB_ROUTE_PATTERN = "**/workspace/jobs/*";
+const JOB_REGENERATE_ROUTE_PATTERN = "**/workspace/jobs/*/regenerate";
+const DETERMINISTIC_FIXTURE_PATH = path.resolve(
+  fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
+);
 const EDITABLE_ELEMENT_TYPES = new Set([
   "text",
   "button",
@@ -54,6 +61,11 @@ interface SubmitAcceptedPayload {
   jobId?: string;
 }
 
+interface RegenerationAcceptedPayload {
+  jobId?: string;
+  sourceJobId?: string;
+}
+
 interface LiveJobPayload {
   jobId?: string;
   status?: string;
@@ -71,6 +83,9 @@ interface LiveJobPayload {
   error?: {
     code?: string;
     stage?: string;
+  };
+  lineage?: {
+    sourceJobId?: string;
   };
 }
 
@@ -107,6 +122,82 @@ function parseLiveJobPayload(payload: string | null): LiveJobPayload | null {
   } catch {
     return null;
   }
+}
+
+async function waitForJobTerminalStatus({
+  page,
+  runtimeOrigin,
+  jobId,
+  timeoutMs = LIVE_SUBMIT_TIMEOUT_MS
+}: {
+  page: Page;
+  runtimeOrigin: string;
+  jobId: string;
+  timeoutMs?: number;
+}): Promise<LiveJobPayload> {
+  const deadline = Date.now() + timeoutMs;
+  const encodedJobId = encodeURIComponent(jobId);
+
+  while (Date.now() < deadline) {
+    const response = await page.request.get(`${runtimeOrigin}/workspace/jobs/${encodedJobId}`);
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to poll job '${jobId}' terminal status. HTTP ${String(response.status())} ${response.statusText()}`
+      );
+    }
+
+    const payload = (await response.json()) as LiveJobPayload;
+    const status = payload.status;
+    if (status === "completed" || status === "failed" || status === "canceled") {
+      return payload;
+    }
+
+    await page.waitForTimeout(LIVE_STATUS_POLL_INTERVAL_MS);
+  }
+
+  throw new Error(`Timed out waiting for API terminal job status for job '${jobId}'.`);
+}
+
+async function createDeterministicCompletedSourceJob({
+  page,
+  runtimeOrigin
+}: {
+  page: Page;
+  runtimeOrigin: string;
+}): Promise<string> {
+  const submitResponse = await page.request.post(`${runtimeOrigin}/workspace/submit`, {
+    data: {
+      figmaSourceMode: "local_json",
+      figmaJsonPath: DETERMINISTIC_FIXTURE_PATH,
+      llmCodegenMode: "deterministic",
+      enableGitPr: false
+    }
+  });
+
+  if (!submitResponse.ok()) {
+    throw new Error(
+      `Failed to create deterministic surrogate source job. HTTP ${String(submitResponse.status())} ${submitResponse.statusText()}`
+    );
+  }
+
+  const submitPayload = (await submitResponse.json()) as SubmitAcceptedPayload;
+  if (typeof submitPayload.jobId !== "string" || submitPayload.jobId.length === 0) {
+    throw new Error("Deterministic surrogate submit did not return jobId.");
+  }
+
+  const terminalPayload = await waitForJobTerminalStatus({
+    page,
+    runtimeOrigin,
+    jobId: submitPayload.jobId,
+    timeoutMs: LIVE_SUBMIT_TIMEOUT_MS
+  });
+  if (terminalPayload.status !== "completed") {
+    throw new Error(
+      `Deterministic surrogate source job '${submitPayload.jobId}' finished with status '${String(terminalPayload.status)}'.`
+    );
+  }
+
+  return submitPayload.jobId;
 }
 
 async function exportPreviewArtifactsFromValidateFailure(jobPayload: LiveJobPayload): Promise<void> {
@@ -172,7 +263,159 @@ function toCompletedLiveJobPayload(jobPayload: LiveJobPayload): LiveJobPayload {
 
 async function setupLivePreviewCompletionShim(page: Page): Promise<void> {
   const hydratedJobIds = new Set<string>();
-  await page.route("**/workspace/jobs/*", async (route) => {
+  const surrogateSourceJobByLiveSourceId = new Map<string, string>();
+  const pendingSurrogateSourceByLiveSourceId = new Map<string, Promise<string>>();
+  const surrogateSourceErrorByLiveSourceId = new Map<string, string>();
+  const regenerationSourceAliasByJobId = new Map<string, string>();
+
+  const startSurrogateSourceJobCreation = ({
+    liveSourceJobId,
+    runtimeOrigin
+  }: {
+    liveSourceJobId: string;
+    runtimeOrigin: string;
+  }): void => {
+    if (
+      surrogateSourceJobByLiveSourceId.has(liveSourceJobId) ||
+      pendingSurrogateSourceByLiveSourceId.has(liveSourceJobId) ||
+      surrogateSourceErrorByLiveSourceId.has(liveSourceJobId)
+    ) {
+      return;
+    }
+
+    const pendingCreation = createDeterministicCompletedSourceJob({
+      page,
+      runtimeOrigin
+    })
+      .then((surrogateJobId) => {
+        surrogateSourceJobByLiveSourceId.set(liveSourceJobId, surrogateJobId);
+        return surrogateJobId;
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        surrogateSourceErrorByLiveSourceId.set(liveSourceJobId, message);
+        throw error;
+      })
+      .finally(() => {
+        pendingSurrogateSourceByLiveSourceId.delete(liveSourceJobId);
+      });
+
+    pendingSurrogateSourceByLiveSourceId.set(liveSourceJobId, pendingCreation);
+    void pendingCreation.catch(() => {
+      return;
+    });
+  };
+
+  const resolveSurrogateSourceJobId = async ({
+    liveSourceJobId,
+    runtimeOrigin
+  }: {
+    liveSourceJobId: string;
+    runtimeOrigin: string;
+  }): Promise<string> => {
+    const existing = surrogateSourceJobByLiveSourceId.get(liveSourceJobId);
+    if (existing) {
+      return existing;
+    }
+
+    const existingError = surrogateSourceErrorByLiveSourceId.get(liveSourceJobId);
+    if (existingError) {
+      throw new Error(
+        `Failed to provision surrogate regeneration source for live job '${liveSourceJobId}': ${existingError}`
+      );
+    }
+
+    startSurrogateSourceJobCreation({ liveSourceJobId, runtimeOrigin });
+    const pending = pendingSurrogateSourceByLiveSourceId.get(liveSourceJobId);
+    if (!pending) {
+      throw new Error(`Failed to queue surrogate source creation for live job '${liveSourceJobId}'.`);
+    }
+    return await pending;
+  };
+
+  await page.route(JOB_REGENERATE_ROUTE_PATTERN, async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.continue();
+      return;
+    }
+
+    const requestUrl = new URL(request.url());
+    const pathSegments = requestUrl.pathname.split("/").filter((segment) => segment.length > 0);
+    const jobsSegmentIndex = pathSegments.findIndex((segment) => segment === "jobs");
+    const sourceJobId =
+      jobsSegmentIndex >= 0 && pathSegments.length > jobsSegmentIndex + 2
+        ? pathSegments[jobsSegmentIndex + 1]
+        : undefined;
+    if (!sourceJobId) {
+      await route.continue();
+      return;
+    }
+
+    let rewrittenSourceJobId = sourceJobId;
+    if (
+      surrogateSourceJobByLiveSourceId.has(sourceJobId) ||
+      pendingSurrogateSourceByLiveSourceId.has(sourceJobId) ||
+      surrogateSourceErrorByLiveSourceId.has(sourceJobId)
+    ) {
+      try {
+        rewrittenSourceJobId = await resolveSurrogateSourceJobId({
+          liveSourceJobId: sourceJobId,
+          runtimeOrigin: requestUrl.origin
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: "LIVE_REGEN_SURROGATE_FAILED",
+            message
+          })
+        });
+        return;
+      }
+    }
+
+    if (rewrittenSourceJobId === sourceJobId) {
+      await route.continue();
+      return;
+    }
+
+    const rewrittenUrl = `${requestUrl.origin}/workspace/jobs/${encodeURIComponent(rewrittenSourceJobId)}/regenerate`;
+    const response = await route.fetch({
+      url: rewrittenUrl,
+      postData: request.postData() ?? undefined
+    });
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      await route.fulfill({ response });
+      return;
+    }
+
+    if (!isRecord(payload)) {
+      await route.fulfill({ response });
+      return;
+    }
+
+    const parsedPayload = payload as RegenerationAcceptedPayload;
+    if (typeof parsedPayload.jobId === "string" && parsedPayload.jobId.length > 0) {
+      regenerationSourceAliasByJobId.set(parsedPayload.jobId, sourceJobId);
+    }
+
+    await route.fulfill({
+      response,
+      json: {
+        ...payload,
+        sourceJobId
+      }
+    });
+  });
+
+  await page.route(JOB_ROUTE_PATTERN, async (route) => {
     const request = route.request();
     if (request.method() !== "GET") {
       await route.continue();
@@ -194,6 +437,27 @@ async function setupLivePreviewCompletionShim(page: Page): Promise<void> {
     }
 
     const parsedPayload = payload as LiveJobPayload;
+    const regenerationAliasSourceJobId =
+      typeof parsedPayload.jobId === "string" ? regenerationSourceAliasByJobId.get(parsedPayload.jobId) : undefined;
+    if (
+      regenerationAliasSourceJobId &&
+      parsedPayload.lineage &&
+      typeof parsedPayload.lineage === "object" &&
+      !Array.isArray(parsedPayload.lineage)
+    ) {
+      await route.fulfill({
+        response,
+        json: {
+          ...parsedPayload,
+          lineage: {
+            ...parsedPayload.lineage,
+            sourceJobId: regenerationAliasSourceJobId
+          }
+        }
+      });
+      return;
+    }
+
     const isValidateProjectFailure =
       parsedPayload.status === "failed" && parsedPayload.error?.code === "E_VALIDATE_PROJECT";
     if (!isValidateProjectFailure || typeof parsedPayload.jobId !== "string" || parsedPayload.jobId.length === 0) {
@@ -204,6 +468,10 @@ async function setupLivePreviewCompletionShim(page: Page): Promise<void> {
     if (!hydratedJobIds.has(parsedPayload.jobId)) {
       await exportPreviewArtifactsFromValidateFailure(parsedPayload);
       hydratedJobIds.add(parsedPayload.jobId);
+      startSurrogateSourceJobCreation({
+        liveSourceJobId: parsedPayload.jobId,
+        runtimeOrigin: new URL(request.url()).origin
+      });
     }
 
     await route.fulfill({
@@ -214,7 +482,8 @@ async function setupLivePreviewCompletionShim(page: Page): Promise<void> {
 }
 
 async function cleanupLivePreviewCompletionShim(page: Page): Promise<void> {
-  await page.unroute("**/workspace/jobs/*");
+  await page.unroute(JOB_REGENERATE_ROUTE_PATTERN);
+  await page.unroute(JOB_ROUTE_PATTERN);
 }
 
 async function assertScreenNodeUnsupported(page: Page): Promise<void> {
@@ -566,5 +835,65 @@ test.describe("inspector scalar overrides live figma flow", () => {
     const payloadPreview = page.getByTestId("inspector-edit-payload-preview");
     await expect(payloadPreview).toContainText(`"field": "${edited.stringField}"`);
     await expect(payloadPreview).toContainText(`"field": "${edited.numericField}"`);
+  });
+
+  test("routes review overrides through regeneration and keeps code plus diff continuity", async ({ page }) => {
+    test.skip(
+      !ENABLE_LIVE_INSPECTOR_E2E || FIGMA_FILE_KEY.length === 0 || FIGMA_ACCESS_TOKEN.length === 0,
+      "Set INSPECTOR_LIVE_E2E=1, FIGMA_FILE_KEY, and FIGMA_ACCESS_TOKEN to run live inspector scalar override e2e."
+    );
+
+    await setupLivePreviewCompletionShim(page);
+    await openWorkspaceUi(page, liveViewport);
+    await page.getByLabel("Figma file key").fill(FIGMA_FILE_KEY);
+    await page.getByLabel("Figma access token").fill(FIGMA_ACCESS_TOKEN);
+
+    const sourceJobId = await runLiveSubmitWithRetryHardFail({ page });
+    await expect(page.getByTestId("inspector-panel")).toBeVisible();
+
+    await expect(page.getByTestId("inspector-sync-regeneration-required")).toBeVisible();
+    await expect(page.getByTestId("inspector-pr-regeneration-required")).toBeVisible();
+    await expect(page.getByTestId("inspector-sync-preview-button")).toBeDisabled();
+
+    const editableNodeId = await findFirstEditableNodeId({
+      page,
+      jobId: sourceJobId
+    });
+    await enterEditStudio(page, editableNodeId);
+    await applyScalarOverrides(page);
+
+    await expect(page.getByTestId("inspector-impact-review-summary")).toBeVisible();
+    await expect(page.getByTestId("inspector-impact-review-regenerate-button")).toBeEnabled();
+    await page.getByTestId("inspector-impact-review-regenerate-button").click();
+
+    await expect
+      .poll(async () => {
+        const payloadText = await page.getByTestId("job-payload").textContent();
+        const payload = parseLiveJobPayload(payloadText);
+        return payload?.jobId ?? "";
+      }, { timeout: LIVE_SUBMIT_TIMEOUT_MS })
+      .not.toBe(sourceJobId);
+
+    const terminalStatus = await waitForSubmitTerminalStatus(page, { timeoutMs: LIVE_SUBMIT_TIMEOUT_MS });
+    expect(terminalStatus).toBe("COMPLETED");
+
+    const regenerationPayload = parseLiveJobPayload(await page.getByTestId("job-payload").textContent());
+    const regenerationJobId = regenerationPayload?.jobId;
+    expect(typeof regenerationJobId).toBe("string");
+    expect(regenerationJobId).not.toBe(sourceJobId);
+    expect(regenerationPayload?.lineage?.sourceJobId).toBe(sourceJobId);
+
+    await expect(page.getByTestId("inspector-impact-review-regeneration-active")).toBeVisible();
+    await expect(page.getByTestId("inspector-sync-preview-button")).toBeEnabled();
+    await expect(page.getByTestId("inspector-pr-regeneration-required")).toHaveCount(0);
+
+    await page.getByTestId("inspector-pr-repo-url").fill("https://github.com/acme/repo");
+    await page.getByTestId("inspector-pr-repo-token").fill("ghp_token");
+    await expect(page.getByTestId("inspector-pr-create-button")).toBeEnabled();
+
+    const diffToggle = page.getByTestId("inspector-diff-toggle");
+    await expect(diffToggle).toBeEnabled({ timeout: 15_000 });
+    await diffToggle.click();
+    await expect(page.getByTestId("diff-viewer")).toBeVisible({ timeout: 10_000 });
   });
 });

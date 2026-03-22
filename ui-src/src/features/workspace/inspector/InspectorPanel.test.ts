@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { InspectorPanel } from "./InspectorPanel";
 import {
+  computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
   toInspectorOverrideDraftStorageKey,
   upsertInspectorOverrideEntry
@@ -951,6 +952,197 @@ describe("InspectorPanel Edit Studio", () => {
   });
 });
 
+describe("InspectorPanel pre-apply review and regeneration", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    installMutationMock();
+  });
+
+  it("shows empty pre-apply review state when there are no pending overrides", () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-impact-review-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-impact-review-empty")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-impact-review-regenerate-button")).toBeDisabled();
+  });
+
+  it("renders grouped review summary with mapped and unmapped overrides from restored draft", async () => {
+    const queryOverrides = editableNodeQueryOverrides();
+    const designIrPayload = (queryOverrides["inspector-design-ir"]?.data as {
+      payload?: { screens?: Array<Record<string, unknown>> };
+    }).payload;
+    const screens = designIrPayload?.screens ?? [];
+    const baseFingerprint = computeInspectorDraftBaseFingerprint({
+      screens: screens as Array<{
+        id: string;
+        name: string;
+        generatedFile?: string;
+        children: Array<Record<string, unknown>>;
+      }>
+    });
+
+    let restoredDraft = createInspectorOverrideDraft({
+      sourceJobId: "job-1",
+      baseFingerprint
+    });
+    restoredDraft = upsertInspectorOverrideEntry({
+      draft: restoredDraft,
+      nodeId: "node-editable",
+      field: "fillColor",
+      value: "#00aa44"
+    });
+    restoredDraft = upsertInspectorOverrideEntry({
+      draft: restoredDraft,
+      nodeId: "node-unmapped",
+      field: "required",
+      value: true
+    });
+    window.localStorage.setItem(
+      toInspectorOverrideDraftStorageKey("job-1"),
+      JSON.stringify(restoredDraft)
+    );
+
+    installQueryMock({
+      overrides: queryOverrides
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-impact-review-summary")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-impact-review-summary-total")).toHaveTextContent("Total overrides: 2");
+    expect(screen.getByTestId("inspector-impact-review-summary-files")).toHaveTextContent("Affected files: 1");
+    expect(screen.getByTestId("inspector-impact-review-summary-unmapped")).toHaveTextContent("Unmapped overrides: 1");
+    expect(screen.getByTestId("inspector-impact-review-summary-categories")).toHaveTextContent(
+      "Categories: 1 visual, 1 validation, 0 other"
+    );
+    expect(screen.getByTestId("inspector-impact-review-file-list")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-impact-review-unmapped-list")).toBeInTheDocument();
+  });
+
+  it("submits regeneration and invokes parent handoff callback with accepted job id", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+    const onRegenerationAccepted = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jobId: "job-regen-accepted",
+          sourceJobId: "job-1",
+          status: "queued"
+        }),
+        { status: 202, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/",
+        onRegenerationAccepted
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+    const fillColorInput = screen.getByTestId("inspector-edit-input-fillColor");
+    fireEvent.change(fillColorInput, { target: { value: "#aa2255" } });
+    fireEvent.blur(fillColorInput);
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-impact-review-regenerate-button")).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-impact-review-regenerate-button"));
+
+    await waitFor(() => {
+      expect(onRegenerationAccepted).toHaveBeenCalledWith("job-regen-accepted");
+    });
+    expect(screen.getByTestId("inspector-impact-review-regeneration-accepted")).toBeInTheDocument();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const firstCall = fetchSpy.mock.calls[0];
+    const requestBody = typeof firstCall?.[1]?.body === "string"
+      ? JSON.parse(firstCall[1].body) as Record<string, unknown>
+      : {};
+    expect(requestBody).toHaveProperty("overrides");
+    expect(requestBody).toHaveProperty("draftId");
+    expect(requestBody).toHaveProperty("baseFingerprint");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("renders regeneration errors from API response payload", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "REGEN_INVALID_OVERRIDE",
+          message: "Override payload is invalid."
+        }),
+        { status: 409, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+    const fillColorInput = screen.getByTestId("inspector-edit-input-fillColor");
+    fireEvent.change(fillColorInput, { target: { value: "#117799" } });
+    fireEvent.blur(fillColorInput);
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-impact-review-regenerate-button")).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-impact-review-regenerate-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-impact-review-regeneration-error")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-impact-review-regeneration-error")).toHaveTextContent(
+      "REGEN_INVALID_OVERRIDE"
+    );
+
+    fetchSpy.mockRestore();
+  });
+});
+
 describe("InspectorPanel local sync", () => {
   afterEach(() => {
     cleanup();
@@ -1031,7 +1223,8 @@ describe("InspectorPanel local sync", () => {
     render(
       createElement(InspectorPanel, {
         jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
+        previewUrl: "/workspace/repros/job-1/",
+        isRegenerationJob: true
       })
     );
 
@@ -1061,7 +1254,26 @@ describe("InspectorPanel local sync", () => {
     fetchSpy.mockRestore();
   });
 
-  it("renders sync error details when preview endpoint fails", async () => {
+  it("keeps sync controls disabled with explicit hint for non-regeneration jobs", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-sync-regeneration-required")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-sync-preview-button")).toBeDisabled();
+    expect(screen.getByTestId("inspector-sync-apply-button")).toBeDisabled();
+    expect(screen.getByTestId("inspector-sync-confirm-overwrite")).toBeDisabled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it("renders sync error details when preview endpoint fails for regeneration jobs", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1075,7 +1287,8 @@ describe("InspectorPanel local sync", () => {
     render(
       createElement(InspectorPanel, {
         jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
+        previewUrl: "/workspace/repros/job-1/",
+        isRegenerationJob: true
       })
     );
 
@@ -1086,6 +1299,87 @@ describe("InspectorPanel local sync", () => {
     });
     expect(screen.getByTestId("inspector-sync-error")).toHaveTextContent("SYNC_REGEN_REQUIRED");
     expect(screen.getByTestId("inspector-sync-apply-button")).toBeDisabled();
+
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("InspectorPanel create PR", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    installQueryMock();
+    installMutationMock();
+  });
+
+  it("shows non-regeneration hint and keeps PR action disabled", () => {
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("inspector-pr-regeneration-required")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-pr-create-button")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("inspector-pr-repo-url"), {
+      target: { value: "https://github.com/acme/repo" }
+    });
+    fireEvent.change(screen.getByTestId("inspector-pr-repo-token"), {
+      target: { value: "ghp_token" }
+    });
+    expect(screen.getByTestId("inspector-pr-create-button")).toBeDisabled();
+  });
+
+  it("creates PR for regeneration jobs when prerequisites are provided", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jobId: "job-regen-1",
+          sourceJobId: "job-1",
+          gitPr: {
+            status: "executed",
+            prUrl: "https://github.com/acme/repo/pull/42",
+            branchName: "auto/figma/board",
+            scopePath: "generated/board",
+            changedFiles: ["src/screens/Home.tsx"]
+          }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-regen-1",
+        previewUrl: "/workspace/repros/job-regen-1/",
+        isRegenerationJob: true
+      })
+    );
+
+    fireEvent.change(screen.getByTestId("inspector-pr-repo-url"), {
+      target: { value: "https://github.com/acme/repo" }
+    });
+    fireEvent.change(screen.getByTestId("inspector-pr-repo-token"), {
+      target: { value: "ghp_token" }
+    });
+    fireEvent.click(screen.getByTestId("inspector-pr-create-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-pr-success")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-pr-url-link")).toHaveAttribute(
+      "href",
+      "https://github.com/acme/repo/pull/42"
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     fetchSpy.mockRestore();
   });
