@@ -30,7 +30,12 @@ async function installInspectControlCapture(previewFrame: FrameLocator): Promise
         return;
       }
       const data = payload as { type?: unknown };
-      if (data.type === "inspect:enable" || data.type === "inspect:disable") {
+      if (
+        data.type === "inspect:enable" ||
+        data.type === "inspect:disable" ||
+        data.type === "inspect:scope:set" ||
+        data.type === "inspect:scope:clear"
+      ) {
         scope.__workspaceDevInspectControlMessages?.push(payload);
       }
     });
@@ -69,6 +74,24 @@ async function waitForInspectSessionToken({
   }
 
   throw new Error("Timed out waiting for inspect session token.");
+}
+
+async function getInspectControlMessageTypes(previewFrame: FrameLocator): Promise<string[]> {
+  return await previewFrame.locator("body").evaluate(() => {
+    const scope = window as typeof window & {
+      __workspaceDevInspectControlMessages?: unknown[];
+    };
+    const messages = scope.__workspaceDevInspectControlMessages ?? [];
+    return messages
+      .map((message) => {
+        if (!message || typeof message !== "object") {
+          return "";
+        }
+        const candidate = message as { type?: unknown };
+        return typeof candidate.type === "string" ? candidate.type : "";
+      })
+      .filter((type) => type.length > 0);
+  });
 }
 
 test.describe("inspector postMessage channel guards deterministic flow", () => {
@@ -226,5 +249,92 @@ test.describe("inspector postMessage channel guards deterministic flow", () => {
         return await previewFrame.locator("body").evaluate(() => document.body.style.cursor || "");
       })
       .toBe("");
+  });
+
+  test("scope bridge spotlights active subtree, constrains inspect, and fails open for unmapped scope", async ({ page }) => {
+    const { previewFrame, previewIframe } = getInspectorLocators(page);
+    const inspectToggle = page.getByTestId("inspect-toggle");
+
+    await installInspectControlCapture(previewFrame);
+    await inspectToggle.click();
+    await expect(inspectToggle).toHaveAttribute("aria-pressed", "true");
+
+    const sessionToken = await waitForInspectSessionToken({ page, previewFrame });
+    const previewOrigin = await previewIframe.evaluate((iframe) => {
+      if (!(iframe instanceof HTMLIFrameElement)) {
+        throw new Error("Preview iframe element is unavailable.");
+      }
+      return new URL(iframe.src, window.location.href).origin;
+    });
+
+    const scopeTreeNode = page.getByTestId("tree-node-nav-button");
+    const outsideTreeNode = page.getByTestId("tree-node-home-title");
+    await expect(scopeTreeNode).toBeVisible();
+    await expect(outsideTreeNode).toBeVisible();
+
+    await installInspectControlCapture(previewFrame);
+    await scopeTreeNode.click();
+    await expect(scopeTreeNode).toHaveAttribute("aria-selected", "true");
+    await page.getByTestId("breadcrumb-enter-scope").click();
+    await expect(page.getByTestId("breadcrumb-scope-badge")).toBeVisible();
+
+    await expect
+      .poll(
+        async () => {
+          const types = await getInspectControlMessageTypes(previewFrame);
+          return types.includes("inspect:scope:set");
+        },
+        { timeout: 40_000 }
+      )
+      .toBe(true);
+
+    const scopeSpotlight = previewFrame.locator("[data-workspace-dev-inspect-scope]");
+    await expect(scopeSpotlight).toBeVisible();
+
+    await previewFrame.locator("[data-ir-id='home-title']").first().click({ force: true });
+    await expect(scopeTreeNode).toHaveAttribute("aria-selected", "true");
+
+    await previewFrame.locator("[data-ir-id='nav-button']").first().click({ force: true });
+    await expect(outsideTreeNode).not.toHaveAttribute("aria-selected", "true");
+
+    await page.getByTestId("breadcrumb-exit-scope").click();
+    await expect(page.getByTestId("breadcrumb-scope-badge")).not.toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          const types = await getInspectControlMessageTypes(previewFrame);
+          return types.includes("inspect:scope:clear");
+        },
+        { timeout: 40_000 }
+      )
+      .toBe(true);
+    await expect(scopeSpotlight).not.toBeVisible();
+
+    await previewFrame.locator("[data-ir-id='home-title']").first().click({ force: true });
+    await expect(outsideTreeNode).toHaveAttribute("aria-selected", "true");
+
+    await page.evaluate(
+      ({ origin, validSessionToken }) => {
+        const iframe = document.querySelector("iframe[title='Live preview']");
+        if (!(iframe instanceof HTMLIFrameElement) || !iframe.contentWindow) {
+          throw new Error("Preview iframe contentWindow is unavailable.");
+        }
+        iframe.contentWindow.postMessage(
+          {
+            type: "inspect:scope:set",
+            sessionToken: validSessionToken,
+            irNodeId: "missing-scope-node-443"
+          },
+          origin
+        );
+      },
+      { origin: previewOrigin, validSessionToken: sessionToken }
+    );
+    await expect(scopeSpotlight).not.toBeVisible();
+
+    await scopeTreeNode.click();
+    await expect(scopeTreeNode).toHaveAttribute("aria-selected", "true");
+    await previewFrame.locator("[data-ir-id='home-title']").first().click({ force: true });
+    await expect(outsideTreeNode).toHaveAttribute("aria-selected", "true");
   });
 });

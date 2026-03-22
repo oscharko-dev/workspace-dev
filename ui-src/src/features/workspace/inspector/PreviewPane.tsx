@@ -4,6 +4,7 @@ import { InspectOverlay } from "./InspectOverlay";
 interface PreviewPaneProps {
   previewUrl: string;
   inspectEnabled: boolean;
+  activeScopeNodeId: string | null;
   onToggleInspect: () => void;
   onInspectSelect: (irNodeId: string) => void;
 }
@@ -11,6 +12,7 @@ interface PreviewPaneProps {
 export function PreviewPane({
   previewUrl,
   inspectEnabled,
+  activeScopeNodeId,
   onToggleInspect,
   onInspectSelect
 }: PreviewPaneProps): JSX.Element {
@@ -38,6 +40,7 @@ export function PreviewPane({
       />
       <InspectOverlay
         inspectEnabled={inspectEnabled}
+        activeScopeNodeId={activeScopeNodeId}
         onToggleInspect={onToggleInspect}
         onSelectNode={onInspectSelect}
         iframeRef={iframeRef}

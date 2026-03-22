@@ -9,6 +9,7 @@ const PREVIEW_URL = `${PREVIEW_ORIGIN}/workspace/repros/job-1/`;
 describe("InspectOverlay", () => {
   const onToggleInspect = vi.fn();
   const onSelectNode = vi.fn();
+  const defaultActiveScopeNodeId = null;
 
   const createIframeRef = (): {
     iframeRef: React.RefObject<HTMLIFrameElement | null>;
@@ -69,6 +70,23 @@ describe("InspectOverlay", () => {
     return token;
   };
 
+  const getLastMessageByType = ({
+    postMessage,
+    type
+  }: {
+    postMessage: ReturnType<typeof vi.fn>;
+    type: string;
+  }): Record<string, unknown> | null => {
+    const calls = [...postMessage.mock.calls].reverse();
+    const match = calls.find(([message]) => {
+      return Boolean(message) && typeof message === "object" && (message as { type?: string }).type === type;
+    });
+    if (!match || typeof match[0] !== "object" || !match[0]) {
+      return null;
+    }
+    return match[0] as Record<string, unknown>;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -77,12 +95,13 @@ describe("InspectOverlay", () => {
     cleanup();
   });
 
-  it("posts inspect:enable/disable with session token and explicit preview origin", () => {
+  it("posts inspect:enable/scope:clear/disable with session token and explicit preview origin", () => {
     const { iframeRef, postMessage } = createIframeRef();
 
     const { rerender } = render(
       createElement(InspectOverlay, {
         inspectEnabled: false,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -95,6 +114,7 @@ describe("InspectOverlay", () => {
     rerender(
       createElement(InspectOverlay, {
         inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -103,14 +123,19 @@ describe("InspectOverlay", () => {
     );
 
     const sessionToken = getLastEnableSessionToken({ postMessage });
-    expect(postMessage).toHaveBeenLastCalledWith(
+    expect(postMessage).toHaveBeenCalledWith(
       { type: "inspect:enable", sessionToken },
+      PREVIEW_ORIGIN
+    );
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: "inspect:scope:clear", sessionToken },
       PREVIEW_ORIGIN
     );
 
     rerender(
       createElement(InspectOverlay, {
         inspectEnabled: false,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -124,12 +149,59 @@ describe("InspectOverlay", () => {
     );
   });
 
+  it("posts inspect:scope:set and inspect:scope:clear for scope transitions", () => {
+    const { iframeRef, postMessage } = createIframeRef();
+    const { rerender } = render(
+      createElement(InspectOverlay, {
+        inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
+        onToggleInspect,
+        onSelectNode,
+        iframeRef,
+        iframeLoadVersion: 0
+      })
+    );
+
+    const sessionToken = getLastEnableSessionToken({ postMessage });
+
+    rerender(
+      createElement(InspectOverlay, {
+        inspectEnabled: true,
+        activeScopeNodeId: "nav-button",
+        onToggleInspect,
+        onSelectNode,
+        iframeRef,
+        iframeLoadVersion: 0
+      })
+    );
+
+    expect(postMessage).toHaveBeenLastCalledWith(
+      { type: "inspect:scope:set", sessionToken, irNodeId: "nav-button" },
+      PREVIEW_ORIGIN
+    );
+
+    rerender(
+      createElement(InspectOverlay, {
+        inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
+        onToggleInspect,
+        onSelectNode,
+        iframeRef,
+        iframeLoadVersion: 0
+      })
+    );
+
+    const lastScopeClear = getLastMessageByType({ postMessage, type: "inspect:scope:clear" });
+    expect(lastScopeClear).toEqual({ type: "inspect:scope:clear", sessionToken });
+  });
+
   it("renders hover highlight and tooltip from validated inspect:hover postMessage", async () => {
     const { iframeRef, postMessage, iframeContentWindow } = createIframeRef();
 
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -192,6 +264,7 @@ describe("InspectOverlay", () => {
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -249,6 +322,7 @@ describe("InspectOverlay", () => {
     render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -285,6 +359,7 @@ describe("InspectOverlay", () => {
     const { rerender } = render(
       createElement(InspectOverlay, {
         inspectEnabled: true,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -335,6 +410,7 @@ describe("InspectOverlay", () => {
     rerender(
       createElement(InspectOverlay, {
         inspectEnabled: false,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,
@@ -353,6 +429,7 @@ describe("InspectOverlay", () => {
     render(
       createElement(InspectOverlay, {
         inspectEnabled: false,
+        activeScopeNodeId: defaultActiveScopeNodeId,
         onToggleInspect,
         onSelectNode,
         iframeRef,

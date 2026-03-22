@@ -822,25 +822,36 @@ async function collectSourceFiles(
  */
 const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
 (function(){
-  var enabled=false,overlay=null,tooltip=null,activeSessionToken=null,allowedParentOrigin=null;
-  function getIrTarget(el){
-    var cur=el;
-    while(cur&&cur!==document.body){
-      if(cur.dataset&&cur.dataset.irId)return cur;
-      cur=cur.parentElement;
+  var enabled=false,overlay=null,tooltip=null,scopeSpotlight=null,activeSessionToken=null,allowedParentOrigin=null,activeScopeNodeId=null,activeScopeRoot=null;
+  function findElementByIrId(nodeId){
+    if(typeof nodeId!=="string"||nodeId.length===0)return null;
+    var nodes=document.querySelectorAll("[data-ir-id]");
+    for(var i=0;i<nodes.length;i++){
+      var node=nodes[i];
+      if(node&&node.dataset&&node.dataset.irId===nodeId)return node;
     }
     return null;
   }
   function ensureOverlay(){
     if(!overlay){
       overlay=document.createElement("div");
+      overlay.setAttribute("data-workspace-dev-inspect-hover","");
       overlay.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid rgba(59,130,246,0.8);background:rgba(59,130,246,0.15);transition:all 80ms ease;display:none;";
       document.body.appendChild(overlay);
     }
     if(!tooltip){
       tooltip=document.createElement("div");
+      tooltip.setAttribute("data-workspace-dev-inspect-tooltip","");
       tooltip.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;background:#1e293b;color:#f8fafc;font:11px/1.3 system-ui,sans-serif;padding:2px 6px;border-radius:3px;white-space:nowrap;display:none;";
       document.body.appendChild(tooltip);
+    }
+  }
+  function ensureScopeSpotlight(){
+    if(!scopeSpotlight){
+      scopeSpotlight=document.createElement("div");
+      scopeSpotlight.setAttribute("data-workspace-dev-inspect-scope","");
+      scopeSpotlight.style.cssText="position:fixed;pointer-events:none;z-index:2147483646;border:1px solid rgba(16,185,129,0.65);background:rgba(16,185,129,0.08);box-shadow:0 0 0 99999px rgba(15,23,42,0.45);display:none;transition:all 80ms ease;";
+      document.body.appendChild(scopeSpotlight);
     }
   }
   function showOverlay(target){
@@ -855,16 +866,64 @@ const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
     tooltip.style.top=Math.max(0,r.top-20)+"px";
     tooltip.style.display="block";
   }
+  function showScopeSpotlight(target){
+    ensureScopeSpotlight();
+    var r=target.getBoundingClientRect();
+    scopeSpotlight.style.left=r.left+"px";scopeSpotlight.style.top=r.top+"px";
+    scopeSpotlight.style.width=r.width+"px";scopeSpotlight.style.height=r.height+"px";
+    scopeSpotlight.style.display="block";
+  }
   function hideOverlay(){
     if(overlay)overlay.style.display="none";
     if(tooltip)tooltip.style.display="none";
+  }
+  function hideScopeSpotlight(){
+    if(scopeSpotlight)scopeSpotlight.style.display="none";
   }
   function postToParent(payload){
     if(!allowedParentOrigin)return;
     window.parent.postMessage(payload,allowedParentOrigin);
   }
+  function isWithinScope(target){
+    if(!activeScopeRoot)return true;
+    var cur=target;
+    while(cur&&cur!==document.body){
+      if(cur===activeScopeRoot)return true;
+      cur=cur.parentElement;
+    }
+    return false;
+  }
+  function getIrTarget(el){
+    var cur=el;
+    while(cur&&cur!==document.body){
+      if(cur.dataset&&cur.dataset.irId){
+        if(!isWithinScope(cur))return null;
+        return cur;
+      }
+      cur=cur.parentElement;
+    }
+    return null;
+  }
+  function syncScopeRoot(){
+    if(!activeScopeNodeId){
+      activeScopeRoot=null;
+      hideScopeSpotlight();
+      return null;
+    }
+    var resolved=findElementByIrId(activeScopeNodeId);
+    if(!resolved){
+      activeScopeNodeId=null;
+      activeScopeRoot=null;
+      hideScopeSpotlight();
+      return null;
+    }
+    activeScopeRoot=resolved;
+    showScopeSpotlight(resolved);
+    return resolved;
+  }
   function onMouseMove(e){
     if(!enabled||!activeSessionToken)return;
+    if(activeScopeNodeId)syncScopeRoot();
     var t=getIrTarget(e.target);
     if(t){
       showOverlay(t);
@@ -876,6 +935,7 @@ const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
   }
   function onClick(e){
     if(!enabled||!activeSessionToken)return;
+    if(activeScopeNodeId)syncScopeRoot();
     var t=getIrTarget(e.target);
     if(t){
       e.preventDefault();e.stopPropagation();
@@ -902,8 +962,28 @@ const INSPECT_BRIDGE_SCRIPT = `<script data-workspace-dev-inspect>
       enabled=false;
       activeSessionToken=null;
       allowedParentOrigin=null;
+      activeScopeNodeId=null;
+      activeScopeRoot=null;
       document.body.style.cursor="";
       hideOverlay();
+      hideScopeSpotlight();
+      return;
+    }
+    if(data.type==="inspect:scope:set"){
+      if(!enabled||typeof data.sessionToken!=="string"||typeof data.irNodeId!=="string"||data.irNodeId.length===0)return;
+      if(e.origin!==allowedParentOrigin)return;
+      if(data.sessionToken!==activeSessionToken)return;
+      activeScopeNodeId=data.irNodeId;
+      syncScopeRoot();
+      return;
+    }
+    if(data.type==="inspect:scope:clear"){
+      if(!enabled||typeof data.sessionToken!=="string")return;
+      if(e.origin!==allowedParentOrigin)return;
+      if(data.sessionToken!==activeSessionToken)return;
+      activeScopeNodeId=null;
+      activeScopeRoot=null;
+      hideScopeSpotlight();
     }
   });
   document.addEventListener("mousemove",onMouseMove,true);
