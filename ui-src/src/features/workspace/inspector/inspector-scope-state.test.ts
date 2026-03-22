@@ -6,6 +6,7 @@
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
  * @see https://github.com/oscharko-dev/workspace-dev/issues/445
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/446
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -16,7 +17,10 @@ import {
   selectCanLevelUp,
   selectCanNavigateBack,
   selectCanNavigateForward,
+  selectCanReturnToParentFile,
+  selectFileContextStack,
   selectHasActiveScope,
+  selectParentFile,
   selectScopeDepth,
   selectScopeStack,
   type InspectorScopeAction,
@@ -57,7 +61,8 @@ describe("initial state", () => {
       selectedNodeId: null,
       selectedNodeMapped: false,
       scopeStack: [],
-      effectiveFileTarget: null
+      effectiveFileTarget: null,
+      fileContextStack: []
     });
   });
 });
@@ -371,6 +376,187 @@ describe("derived selectors", () => {
 
     expect(selectCanNavigateBack(afterBack)).toBe(true);
     expect(selectCanNavigateForward(afterBack)).toBe(true);
+  });
+});
+
+describe("cross-file drilldown continuity", () => {
+  const homeFileMapping: ManifestMapping = {
+    file: "src/pages/Home.tsx",
+    startLine: 10,
+    endLine: 25
+  };
+
+  const extractedButtonMapping: ManifestMapping = {
+    file: "src/components/Button.tsx",
+    startLine: 1,
+    endLine: 30,
+    extractedComponent: true
+  };
+
+  const extractedIconMapping: ManifestMapping = {
+    file: "src/components/Icon.tsx",
+    startLine: 1,
+    endLine: 15,
+    extractedComponent: true
+  };
+
+  it("pushes file context when entering scope crosses file boundary", () => {
+    const state = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      }
+    ]);
+
+    expect(state.fileContextStack).toHaveLength(1);
+    expect(state.fileContextStack[0]).toEqual({
+      parentFile: "src/pages/Home.tsx",
+      triggerNodeId: "btn-1",
+      triggerNodeName: "Button"
+    });
+    expect(state.effectiveFileTarget).toBe("src/components/Button.tsx");
+    expect(selectCanReturnToParentFile(state)).toBe(true);
+    expect(selectParentFile(state)).toBe("src/pages/Home.tsx");
+  });
+
+  it("does not push file context for same-file scope entry", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "card-1", nodeName: "Card", nodeType: "card", mapping: homeFileMapping }
+      }
+    ]);
+
+    expect(state.fileContextStack).toHaveLength(0);
+    expect(selectCanReturnToParentFile(state)).toBe(false);
+  });
+
+  it("stacks multiple cross-file boundary crossings", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "icon-1", nodeName: "Icon", nodeType: "icon", mapping: extractedIconMapping }
+      }
+    ]);
+
+    expect(state.fileContextStack).toHaveLength(2);
+    expect(state.fileContextStack[0]?.parentFile).toBe("src/pages/Home.tsx");
+    expect(state.fileContextStack[1]?.parentFile).toBe("src/components/Button.tsx");
+    expect(state.effectiveFileTarget).toBe("src/components/Icon.tsx");
+    expect(selectParentFile(state)).toBe("src/components/Button.tsx");
+  });
+
+  it("pops file context when level-up crosses back over file boundary", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      },
+      { type: "LEVEL_UP" }
+    ]);
+
+    expect(state.fileContextStack).toHaveLength(0);
+    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(selectCanReturnToParentFile(state)).toBe(false);
+  });
+
+  it("RETURN_TO_PARENT_FILE restores parent file without unwinding scope", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      }
+    ]);
+
+    const returned = dispatch(state, { type: "RETURN_TO_PARENT_FILE" });
+
+    expect(returned.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(returned.scopeStack).toHaveLength(2);
+    expect(returned.fileContextStack).toHaveLength(0);
+    expect(selectCanReturnToParentFile(returned)).toBe(false);
+  });
+
+  it("RETURN_TO_PARENT_FILE is a no-op when file context stack is empty", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      }
+    ]);
+
+    const returned = dispatch(state, { type: "RETURN_TO_PARENT_FILE" });
+    expect(returned).toBe(state);
+  });
+
+  it("preserves file context stack in history snapshots", () => {
+    const committed = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      }
+    ]);
+
+    const back = dispatch(committed, { type: "NAVIGATE_BACK" });
+    expect(back.fileContextStack).toHaveLength(0);
+    expect(back.effectiveFileTarget).toBe("src/pages/Home.tsx");
+
+    const forward = dispatch(back, { type: "NAVIGATE_FORWARD" });
+    expect(forward.fileContextStack).toHaveLength(1);
+    expect(forward.effectiveFileTarget).toBe("src/components/Button.tsx");
+  });
+
+  it("selectFileContextStack returns the full file context stack", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "home-1", nodeName: "Home", nodeType: "screen", mapping: homeFileMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "btn-1", nodeName: "Button", nodeType: "button", mapping: extractedButtonMapping }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "icon-1", nodeName: "Icon", nodeType: "icon", mapping: extractedIconMapping }
+      }
+    ]);
+
+    const stack = selectFileContextStack(state);
+    expect(stack).toHaveLength(2);
+    expect(stack[0]?.parentFile).toBe("src/pages/Home.tsx");
+    expect(stack[1]?.parentFile).toBe("src/components/Button.tsx");
   });
 });
 

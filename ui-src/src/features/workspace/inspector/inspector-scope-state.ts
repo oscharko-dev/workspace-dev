@@ -2,11 +2,13 @@
  * Durable Inspector state model for hierarchical drilldown scope.
  *
  * Represents selected node, active scope stack, effective file target,
- * and committed navigation history. Selection and scope entry are
+ * file context ancestry for cross-file drilldown continuity, and
+ * committed navigation history. Selection and scope entry are
  * intentionally separate actions.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
  * @see https://github.com/oscharko-dev/workspace-dev/issues/445
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/446
  */
 
 // ---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ export interface ScopeHistoryEntry {
   selectedNodeMapped: boolean;
   scopeStack: ScopeStackEntry[];
   effectiveFileTarget: string | null;
+  fileContextStack: FileContextEntry[];
 }
 
 /** A scope stack entry representing an active scope level. */
@@ -39,6 +42,19 @@ export interface ScopeStackEntry {
   nodeType: string;
   mapped: boolean;
   file: string | null;
+}
+
+/**
+ * Tracks a file boundary crossing during cross-file drilldown.
+ * Preserves the parent file context so the user can return to it.
+ */
+export interface FileContextEntry {
+  /** File path the user came from. */
+  parentFile: string;
+  /** Node whose scope entry caused the file boundary crossing. */
+  triggerNodeId: string;
+  /** Human-readable name of the trigger node (for breadcrumb display). */
+  triggerNodeName: string;
 }
 
 /** Full inspector scope state. */
@@ -66,6 +82,13 @@ export interface InspectorScopeState {
    * When false, code-specific affordances should show a fallback.
    */
   selectedNodeMapped: boolean;
+
+  /**
+   * Stack of parent file contexts accumulated during cross-file drilldown.
+   * Each entry represents a file boundary crossing where the Inspector
+   * followed an extracted component into a different generated file.
+   */
+  fileContextStack: FileContextEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +132,10 @@ export interface LevelUpAction {
   type: "LEVEL_UP";
 }
 
+export interface ReturnToParentFileAction {
+  type: "RETURN_TO_PARENT_FILE";
+}
+
 export interface ResetAction {
   type: "RESET";
 }
@@ -120,6 +147,7 @@ export type InspectorScopeAction =
   | NavigateBackAction
   | NavigateForwardAction
   | LevelUpAction
+  | ReturnToParentFileAction
   | ResetAction;
 
 // ---------------------------------------------------------------------------
@@ -131,13 +159,15 @@ interface ScopeCoreState {
   selectedNodeMapped: boolean;
   scopeStack: ScopeStackEntry[];
   effectiveFileTarget: string | null;
+  fileContextStack: FileContextEntry[];
 }
 
 const INITIAL_SCOPE_CORE_STATE: ScopeCoreState = {
   selectedNodeId: null,
   selectedNodeMapped: false,
   scopeStack: [],
-  effectiveFileTarget: null
+  effectiveFileTarget: null,
+  fileContextStack: []
 };
 
 export const INITIAL_INSPECTOR_SCOPE_STATE: InspectorScopeState = {
@@ -159,12 +189,17 @@ function cloneScopeStack(stack: readonly ScopeStackEntry[]): ScopeStackEntry[] {
   return stack.map((entry) => ({ ...entry }));
 }
 
+function cloneFileContextStack(stack: readonly FileContextEntry[]): FileContextEntry[] {
+  return stack.map((entry) => ({ ...entry }));
+}
+
 function toScopeCoreState(state: InspectorScopeState): ScopeCoreState {
   return {
     selectedNodeId: state.selectedNodeId,
     selectedNodeMapped: state.selectedNodeMapped,
     scopeStack: cloneScopeStack(state.scopeStack),
-    effectiveFileTarget: state.effectiveFileTarget
+    effectiveFileTarget: state.effectiveFileTarget,
+    fileContextStack: cloneFileContextStack(state.fileContextStack)
   };
 }
 
@@ -173,7 +208,8 @@ function toSnapshot(state: ScopeCoreState): ScopeHistoryEntry {
     selectedNodeId: state.selectedNodeId,
     selectedNodeMapped: state.selectedNodeMapped,
     scopeStack: cloneScopeStack(state.scopeStack),
-    effectiveFileTarget: state.effectiveFileTarget
+    effectiveFileTarget: state.effectiveFileTarget,
+    fileContextStack: cloneFileContextStack(state.fileContextStack)
   };
 }
 
@@ -201,18 +237,38 @@ function areScopeStacksEqual(a: readonly ScopeStackEntry[], b: readonly ScopeSta
   return true;
 }
 
+function areFileContextEntriesEqual(a: FileContextEntry, b: FileContextEntry): boolean {
+  return a.parentFile === b.parentFile
+    && a.triggerNodeId === b.triggerNodeId
+    && a.triggerNodeName === b.triggerNodeName;
+}
+
+function areFileContextStacksEqual(a: readonly FileContextEntry[], b: readonly FileContextEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let idx = 0; idx < a.length; idx += 1) {
+    const entryA = a[idx];
+    const entryB = b[idx];
+    if (!entryA || !entryB || !areFileContextEntriesEqual(entryA, entryB)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function areSnapshotsEqual(a: ScopeHistoryEntry, b: ScopeHistoryEntry): boolean {
   return a.selectedNodeId === b.selectedNodeId
     && a.selectedNodeMapped === b.selectedNodeMapped
     && a.effectiveFileTarget === b.effectiveFileTarget
-    && areScopeStacksEqual(a.scopeStack, b.scopeStack);
+    && areScopeStacksEqual(a.scopeStack, b.scopeStack)
+    && areFileContextStacksEqual(a.fileContextStack, b.fileContextStack);
 }
 
 function areScopeCoreStatesEqual(a: ScopeCoreState, b: ScopeCoreState): boolean {
   return a.selectedNodeId === b.selectedNodeId
     && a.selectedNodeMapped === b.selectedNodeMapped
     && a.effectiveFileTarget === b.effectiveFileTarget
-    && areScopeStacksEqual(a.scopeStack, b.scopeStack);
+    && areScopeStacksEqual(a.scopeStack, b.scopeStack)
+    && areFileContextStacksEqual(a.fileContextStack, b.fileContextStack);
 }
 
 function commitNavigationState(
@@ -264,6 +320,7 @@ function restoreSnapshotAtIndex(
     selectedNodeMapped: snapshot.selectedNodeMapped,
     scopeStack: cloneScopeStack(snapshot.scopeStack),
     effectiveFileTarget: snapshot.effectiveFileTarget,
+    fileContextStack: cloneFileContextStack(snapshot.fileContextStack),
     historyIndex: nextHistoryIndex
   };
 }
@@ -283,7 +340,8 @@ export function inspectorScopeReducer(
         selectedNodeId: nodeId,
         selectedNodeMapped: mapping !== null,
         scopeStack: state.scopeStack,
-        effectiveFileTarget: fileFromMapping(mapping) ?? state.effectiveFileTarget
+        effectiveFileTarget: fileFromMapping(mapping) ?? state.effectiveFileTarget,
+        fileContextStack: state.fileContextStack
       };
 
       return commitNavigationState(state, nextCoreState);
@@ -308,11 +366,27 @@ export function inspectorScopeReducer(
         mapped: mapping !== null,
         file: effectiveFile
       };
+
+      // Detect cross-file boundary: push parent file context when file changes
+      let nextFileContextStack = state.fileContextStack;
+      const currentFile = state.effectiveFileTarget;
+      if (currentFile && effectiveFile && currentFile !== effectiveFile) {
+        nextFileContextStack = [
+          ...state.fileContextStack,
+          {
+            parentFile: currentFile,
+            triggerNodeId: nodeId,
+            triggerNodeName: nodeName
+          }
+        ];
+      }
+
       const nextCoreState: ScopeCoreState = {
         selectedNodeId: nodeId,
         selectedNodeMapped: mapping !== null,
         scopeStack: [...state.scopeStack, nextScopeEntry],
-        effectiveFileTarget: effectiveFile
+        effectiveFileTarget: effectiveFile,
+        fileContextStack: nextFileContextStack
       };
 
       return commitNavigationState(state, nextCoreState);
@@ -324,15 +398,45 @@ export function inspectorScopeReducer(
         return state;
       }
 
+      const poppedEntry = state.scopeStack[state.scopeStack.length - 1];
       const nextStack = state.scopeStack.slice(0, -1);
       const newTop = nextStack.length > 0
         ? nextStack[nextStack.length - 1]
         : null;
+
+      // Pop file context if we're crossing back over a file boundary
+      let nextFileContextStack = state.fileContextStack;
+      const poppedFile = poppedEntry?.file ?? null;
+      const parentFile = newTop?.file ?? null;
+      if (poppedFile && parentFile && poppedFile !== parentFile && nextFileContextStack.length > 0) {
+        nextFileContextStack = nextFileContextStack.slice(0, -1);
+      }
+
       const nextCoreState: ScopeCoreState = {
         selectedNodeId: newTop?.nodeId ?? null,
         selectedNodeMapped: newTop?.mapped ?? false,
         scopeStack: nextStack,
-        effectiveFileTarget: newTop?.file ?? null
+        effectiveFileTarget: newTop?.file ?? null,
+        fileContextStack: nextFileContextStack
+      };
+
+      return commitNavigationState(state, nextCoreState);
+    }
+
+    case "RETURN_TO_PARENT_FILE": {
+      if (state.fileContextStack.length === 0) {
+        return state;
+      }
+
+      const parentContext = state.fileContextStack[state.fileContextStack.length - 1]!;
+      const nextFileContextStack = state.fileContextStack.slice(0, -1);
+
+      const nextCoreState: ScopeCoreState = {
+        selectedNodeId: state.selectedNodeId,
+        selectedNodeMapped: state.selectedNodeMapped,
+        scopeStack: state.scopeStack,
+        effectiveFileTarget: parentContext.parentFile,
+        fileContextStack: nextFileContextStack
       };
 
       return commitNavigationState(state, nextCoreState);
@@ -401,4 +505,20 @@ export function selectCanNavigateForward(state: InspectorScopeState): boolean {
 /** Returns whether an explicit level-up action can be applied. */
 export function selectCanLevelUp(state: InspectorScopeState): boolean {
   return state.scopeStack.length > 0;
+}
+
+/** Returns the file context stack for cross-file drilldown breadcrumb display. */
+export function selectFileContextStack(state: InspectorScopeState): readonly FileContextEntry[] {
+  return state.fileContextStack;
+}
+
+/** Returns whether the user can return to a parent file context. */
+export function selectCanReturnToParentFile(state: InspectorScopeState): boolean {
+  return state.fileContextStack.length > 0;
+}
+
+/** Returns the parent file path at the top of the file context stack, or null. */
+export function selectParentFile(state: InspectorScopeState): string | null {
+  if (state.fileContextStack.length === 0) return null;
+  return state.fileContextStack[state.fileContextStack.length - 1]?.parentFile ?? null;
 }

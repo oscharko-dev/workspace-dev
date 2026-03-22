@@ -1,9 +1,11 @@
 /**
  * Breadcrumb navigation showing the path from root screen to the selected
- * component tree node. Provides click navigation to ancestor nodes and
- * overflow handling with an ellipsis dropdown for long paths.
+ * component tree node. Provides click navigation to ancestor nodes,
+ * overflow handling with an ellipsis dropdown for long paths, and
+ * cross-file drilldown context with a return-to-parent-file action.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/435
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/446
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { BreadcrumbSegment } from "./component-tree-utils";
@@ -31,13 +33,17 @@ interface BreadcrumbProps {
   onEnterScope?: (nodeId: string) => void;
   /** Callback to move up exactly one scope level. */
   onExitScope?: () => void;
+  /** The parent file path when viewing a cross-file extracted component (null when none). */
+  parentFile?: string | null;
+  /** Callback to return to the parent file context without unwinding scope. */
+  onReturnToParentFile?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExitScope }: BreadcrumbProps): JSX.Element | null {
+export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExitScope, parentFile, onReturnToParentFile }: BreadcrumbProps): JSX.Element | null {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
   const focusedIndexRef = useRef(0);
@@ -118,6 +124,18 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
           className="mr-1 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
         >
           Scoped
+        </span>
+      ) : null}
+
+      {/* Cross-file context indicator */}
+      {parentFile ? (
+        <span
+          data-testid="breadcrumb-cross-file-indicator"
+          className="mr-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
+          title={`Viewing extracted component — parent file: ${parentFile}`}
+        >
+          <span aria-hidden="true">↗</span>
+          <span className="max-w-[100px] truncate">{parentFile.split("/").pop() ?? parentFile}</span>
         </span>
       ) : null}
 
@@ -246,6 +264,20 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
             aria-label="Level up one scope level"
           >
             Level up
+          </button>
+        ) : null}
+
+        {/* Return to parent file — shown during cross-file drilldown */}
+        {parentFile && onReturnToParentFile ? (
+          <button
+            type="button"
+            data-testid="breadcrumb-return-parent-file"
+            onClick={onReturnToParentFile}
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 transition hover:bg-sky-100"
+            title={`Return to parent file: ${parentFile}`}
+            aria-label={`Return to parent file ${parentFile}`}
+          >
+            ← Parent file
           </button>
         ) : null}
       </span>

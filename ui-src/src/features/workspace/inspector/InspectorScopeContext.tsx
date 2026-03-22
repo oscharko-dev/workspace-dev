@@ -20,7 +20,9 @@ import {
   inspectorScopeReducer,
   INITIAL_INSPECTOR_SCOPE_STATE,
   selectActiveScope,
+  selectCanReturnToParentFile,
   selectHasActiveScope,
+  selectParentFile,
   selectScopeDepth,
   type InspectorScopeState,
   type InspectorScopeAction,
@@ -39,6 +41,8 @@ export interface InspectorScopeContextValue {
   activeScope: ScopeStackEntry | null;
   hasActiveScope: boolean;
   scopeDepth: number;
+  canReturnToParentFile: boolean;
+  parentFile: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +67,9 @@ export function InspectorScopeProvider({ children }: InspectorScopeProviderProps
     dispatch,
     activeScope: selectActiveScope(state),
     hasActiveScope: selectHasActiveScope(state),
-    scopeDepth: selectScopeDepth(state)
+    scopeDepth: selectScopeDepth(state),
+    canReturnToParentFile: selectCanReturnToParentFile(state),
+    parentFile: selectParentFile(state)
   }), [state]);
 
   return (
