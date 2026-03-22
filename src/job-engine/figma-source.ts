@@ -422,6 +422,12 @@ const executeFigmaRequest = async ({
       if (allowTooLargeFallback && isTooLargeParseError(error)) {
         throw new FigmaTooLargeError(`Figma response exceeded parser limits (${requestLabel}).`);
       }
+      if (isTimeoutError(error) && attempt < maxRetries) {
+        const delayMs = toRetryDelay({ attempt });
+        onLog(`Figma response parse timed out (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`);
+        await waitFor(delayMs);
+        continue;
+      }
       throw createPipelineError({
         code: "E_FIGMA_PARSE",
         stage: "figma.source",
@@ -1578,6 +1584,7 @@ export const fetchFigmaFile = async ({
       return;
     }
 
+    let fallbackReason: "oversized" | "timeout" | null = null;
     try {
       const payload = await executeFigmaRequest({
         url: buildNodesUrl({ fileKey, ids, includeGeometry: true }),
@@ -1600,7 +1607,11 @@ export const fetchFigmaFile = async ({
       }
       return;
     } catch (error) {
-      if (!(error instanceof FigmaTooLargeError)) {
+      if (error instanceof FigmaTooLargeError) {
+        fallbackReason = "oversized";
+      } else if (isTimeoutError(error)) {
+        fallbackReason = "timeout";
+      } else {
         throw error;
       }
 
@@ -1612,7 +1623,7 @@ export const fetchFigmaFile = async ({
           oversizedBatchCount = 0;
           if (dynamicNodeBatchSize !== previousBatchSize) {
             onLog(
-              `Adaptive staged fetch reduced node batch size from ${previousBatchSize} to ${dynamicNodeBatchSize} after oversized responses.`
+              `Adaptive staged fetch reduced node batch size from ${previousBatchSize} to ${dynamicNodeBatchSize} after oversized/timeout responses.`
             );
           }
         }
@@ -1630,7 +1641,11 @@ export const fetchFigmaFile = async ({
     if (!nodeId) {
       return;
     }
-    onLog(`Node '${nodeId}' is too large with geometry; retrying without geometry.`);
+    onLog(
+      fallbackReason === "timeout"
+        ? `Node '${nodeId}' timed out with geometry; retrying without geometry.`
+        : `Node '${nodeId}' is too large with geometry; retrying without geometry.`
+    );
 
     try {
       const payload = await executeFigmaRequest({

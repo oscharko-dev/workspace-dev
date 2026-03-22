@@ -169,6 +169,62 @@ test("fetchFigmaFile retries with Bearer header when PAT is rejected", async () 
   assert.equal(Object.prototype.hasOwnProperty.call(headersSeen[1], "Authorization"), true);
 });
 
+test("fetchFigmaFile retries timed-out response parsing before succeeding", async () => {
+  let call = 0;
+  const logs: string[] = [];
+
+  const fetchImpl: typeof fetch = async () => {
+    call += 1;
+    if (call === 1) {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("The operation was aborted due to timeout"));
+        }
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    return jsonResponse({
+      name: "Recovered After Parse Timeout",
+      document: { id: "0:0", type: "DOCUMENT", children: [] }
+    });
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.file.name, "Recovered After Parse Timeout");
+  assert.equal(call, 2);
+  assert.equal(logs.some((entry) => entry.includes("response parse timed out")), true);
+});
+
+test("fetchFigmaFile does not retry true malformed JSON parse errors", async () => {
+  let call = 0;
+
+  await assert.rejects(
+    () =>
+      fetchFigmaFile(
+        createRequest(async () => {
+          call += 1;
+          return new Response("{not valid json", {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          });
+        })
+      ),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_PARSE"
+  );
+
+  assert.equal(call, 1);
+});
+
 test("fetchFigmaFile falls back to staged fetch when direct request is too large", async () => {
   const fetchImpl: typeof fetch = async (url) => {
     const asString = String(url);
@@ -277,6 +333,69 @@ test("fetchFigmaFile bisects oversized node batches and falls back to single-nod
   assert.equal(result.diagnostics.sourceMode, "staged-nodes");
   assert.equal(result.diagnostics.fetchedNodes, 2);
   assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+});
+
+test("fetchFigmaFile bisects timeout node batches and falls back to single-node no-geometry", async () => {
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    const asString = String(url);
+    if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+      return new Response("Request too large", { status: 413 });
+    }
+    if (asString.includes("?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (asString.includes("/nodes?ids=1%3A1,1%3A2&geometry=paths")) {
+      throw new Error("The operation was aborted due to timeout");
+    }
+    if (asString.includes("/nodes?ids=1%3A1&geometry=paths")) {
+      throw new Error("The operation was aborted due to timeout");
+    }
+    if (asString.includes("/nodes?ids=1%3A1") && !asString.includes("geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A (No Geometry)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (asString.includes("/nodes?ids=1%3A2&geometry=paths")) {
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B (Geometry)",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${asString}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeBatchSize: 2,
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(result.diagnostics.fetchedNodes, 2);
+  assert.deepEqual(result.diagnostics.degradedGeometryNodes, ["1:1"]);
+  assert.equal(logs.some((entry) => entry.includes("timed out with geometry")), true);
 });
 
 test("fetchFigmaFile treats parser overflow as too-large and switches to staged fetch", async () => {
