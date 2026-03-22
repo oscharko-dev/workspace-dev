@@ -2,14 +2,17 @@
  * Durable Inspector state model for hierarchical drilldown scope.
  *
  * Represents selected node, active scope stack, effective file target,
- * file context ancestry for cross-file drilldown continuity, and
- * committed navigation history. Selection and scope entry are
+ * file context ancestry for cross-file drilldown continuity, edit mode,
+ * and committed navigation history. Selection and scope entry are
  * intentionally separate actions.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
  * @see https://github.com/oscharko-dev/workspace-dev/issues/445
  * @see https://github.com/oscharko-dev/workspace-dev/issues/446
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/451
  */
+
+import type { EditCapabilityResult } from "./edit-capability-detection";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +92,19 @@ export interface InspectorScopeState {
    * followed an extracted component into a different generated file.
    */
   fileContextStack: FileContextEntry[];
+
+  /**
+   * Whether the Inspector is currently in edit mode.
+   * Edit mode composes with the drilldown scope — it does not replace it.
+   * @see https://github.com/oscharko-dev/workspace-dev/issues/451
+   */
+  editModeActive: boolean;
+
+  /**
+   * The last computed edit-capability result for the currently selected node.
+   * null when no node is selected or capability has not been computed.
+   */
+  editCapability: EditCapabilityResult | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +156,21 @@ export interface ResetAction {
   type: "RESET";
 }
 
+export interface EnterEditModeAction {
+  type: "ENTER_EDIT_MODE";
+}
+
+export interface ExitEditModeAction {
+  type: "EXIT_EDIT_MODE";
+}
+
+export interface SetEditCapabilityAction {
+  type: "SET_EDIT_CAPABILITY";
+  payload: {
+    capability: EditCapabilityResult;
+  };
+}
+
 export type InspectorScopeAction =
   | SelectNodeAction
   | EnterScopeAction
@@ -148,7 +179,10 @@ export type InspectorScopeAction =
   | NavigateForwardAction
   | LevelUpAction
   | ReturnToParentFileAction
-  | ResetAction;
+  | ResetAction
+  | EnterEditModeAction
+  | ExitEditModeAction
+  | SetEditCapabilityAction;
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -173,7 +207,9 @@ const INITIAL_SCOPE_CORE_STATE: ScopeCoreState = {
 export const INITIAL_INSPECTOR_SCOPE_STATE: InspectorScopeState = {
   ...INITIAL_SCOPE_CORE_STATE,
   history: [toSnapshot(INITIAL_SCOPE_CORE_STATE)],
-  historyIndex: 0
+  historyIndex: 0,
+  editModeActive: false,
+  editCapability: null
 };
 
 // ---------------------------------------------------------------------------
@@ -344,7 +380,12 @@ export function inspectorScopeReducer(
         fileContextStack: state.fileContextStack
       };
 
-      return commitNavigationState(state, nextCoreState);
+      const next = commitNavigationState(state, nextCoreState);
+      // Exit edit mode when selection changes — stale edit state is invalid
+      if (next.editModeActive) {
+        return { ...next, editModeActive: false, editCapability: null };
+      }
+      return next;
     }
 
     case "ENTER_SCOPE": {
@@ -389,7 +430,11 @@ export function inspectorScopeReducer(
         fileContextStack: nextFileContextStack
       };
 
-      return commitNavigationState(state, nextCoreState);
+      const next = commitNavigationState(state, nextCoreState);
+      if (next.editModeActive) {
+        return { ...next, editModeActive: false, editCapability: null };
+      }
+      return next;
     }
 
     case "EXIT_SCOPE":
@@ -420,7 +465,11 @@ export function inspectorScopeReducer(
         fileContextStack: nextFileContextStack
       };
 
-      return commitNavigationState(state, nextCoreState);
+      const next = commitNavigationState(state, nextCoreState);
+      if (next.editModeActive) {
+        return { ...next, editModeActive: false, editCapability: null };
+      }
+      return next;
     }
 
     case "RETURN_TO_PARENT_FILE": {
@@ -447,7 +496,11 @@ export function inspectorScopeReducer(
         return state;
       }
 
-      return restoreSnapshotAtIndex(state, state.historyIndex - 1);
+      const next = restoreSnapshotAtIndex(state, state.historyIndex - 1);
+      if (next.editModeActive) {
+        return { ...next, editModeActive: false, editCapability: null };
+      }
+      return next;
     }
 
     case "NAVIGATE_FORWARD": {
@@ -455,7 +508,29 @@ export function inspectorScopeReducer(
         return state;
       }
 
-      return restoreSnapshotAtIndex(state, state.historyIndex + 1);
+      const next = restoreSnapshotAtIndex(state, state.historyIndex + 1);
+      if (next.editModeActive) {
+        return { ...next, editModeActive: false, editCapability: null };
+      }
+      return next;
+    }
+
+    case "ENTER_EDIT_MODE": {
+      if (state.editModeActive) {
+        return state;
+      }
+      return { ...state, editModeActive: true };
+    }
+
+    case "EXIT_EDIT_MODE": {
+      if (!state.editModeActive) {
+        return state;
+      }
+      return { ...state, editModeActive: false };
+    }
+
+    case "SET_EDIT_CAPABILITY": {
+      return { ...state, editCapability: action.payload.capability };
     }
 
     case "RESET": {
@@ -521,4 +596,19 @@ export function selectCanReturnToParentFile(state: InspectorScopeState): boolean
 export function selectParentFile(state: InspectorScopeState): string | null {
   if (state.fileContextStack.length === 0) return null;
   return state.fileContextStack[state.fileContextStack.length - 1]?.parentFile ?? null;
+}
+
+/** Returns whether edit mode is currently active. */
+export function selectEditModeActive(state: InspectorScopeState): boolean {
+  return state.editModeActive;
+}
+
+/** Returns the current edit capability result, or null. */
+export function selectEditCapability(state: InspectorScopeState): EditCapabilityResult | null {
+  return state.editCapability;
+}
+
+/** Returns whether the current node can enter edit mode based on capability. */
+export function selectCanEnterEditMode(state: InspectorScopeState): boolean {
+  return state.editCapability !== null && state.editCapability.editable;
 }

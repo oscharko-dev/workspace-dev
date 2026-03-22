@@ -50,8 +50,15 @@ import {
   selectCanReturnToParentFile,
   selectHasActiveScope,
   selectParentFile,
+  selectEditModeActive,
+  selectEditCapability,
+  selectCanEnterEditMode,
   type ManifestMapping
 } from "./inspector-scope-state";
+import {
+  detectEditCapability,
+  extractPresentFields
+} from "./edit-capability-detection";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -278,6 +285,36 @@ function toBoundariesForFile({
 }
 
 // ---------------------------------------------------------------------------
+// Helpers: look up a raw IR element node by id (for field-level inspection)
+// ---------------------------------------------------------------------------
+
+function findIrElementNode(
+  screens: DesignIrScreen[],
+  nodeId: string
+): DesignIrElementNode | null {
+  const searchChildren = (nodes: DesignIrElementNode[]): DesignIrElementNode | null => {
+    for (const node of nodes) {
+      if (node.id === nodeId) return node;
+      if (node.children) {
+        const found = searchChildren(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  for (const screen of screens) {
+    if (screen.id === nodeId) {
+      // Screen-level nodes are not element nodes — return a synthetic shape
+      return { id: screen.id, name: screen.name, type: "screen" };
+    }
+    const found = searchChildren(screen.children);
+    if (found) return found;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers: convert IR screens to TreeNode[]
 // ---------------------------------------------------------------------------
 
@@ -341,6 +378,9 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const canLevelUp = selectCanLevelUp(scopeState);
   const canReturnToParentFile = selectCanReturnToParentFile(scopeState);
   const parentFile = selectParentFile(scopeState);
+  const editModeActive = selectEditModeActive(scopeState);
+  const editCapability = selectEditCapability(scopeState);
+  const canEnterEditMode = selectCanEnterEditMode(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -1263,6 +1303,45 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     [treeNodes]
   );
 
+  // --- Edit capability: recompute when selected node changes ---
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: { editable: false, reason: "No node selected.", editableFields: [] } } });
+      return;
+    }
+
+    const isMapped = isNodeMapped;
+    const irNode = findIrElementNode(irScreens, selectedNodeId);
+    const nodeType = irNode?.type ?? "unknown";
+    const nodeName = irNode?.name ?? selectedNodeId;
+
+    // Extract present fields from the raw IR node (the JSON contains all fields)
+    const presentFields = irNode
+      ? extractPresentFields(irNode as unknown as Readonly<Record<string, unknown>>)
+      : [];
+
+    const capability = detectEditCapability({
+      id: selectedNodeId,
+      name: nodeName,
+      type: nodeType,
+      mapped: isMapped,
+      presentFields
+    });
+
+    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability } });
+  }, [selectedNodeId, isNodeMapped, irScreens]);
+
+  const handleEnterEditMode = useCallback(() => {
+    if (canEnterEditMode) {
+      scopeDispatch({ type: "ENTER_EDIT_MODE" });
+    }
+  }, [canEnterEditMode]);
+
+  const handleExitEditMode = useCallback(() => {
+    scopeDispatch({ type: "EXIT_EDIT_MODE" });
+  }, []);
+
   const applyNavigationVisualState = useCallback(
     (nextScopeState: { selectedNodeId: string | null; effectiveFileTarget: string | null }) => {
       const nodeId = nextScopeState.selectedNodeId;
@@ -1748,6 +1827,30 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
           >
             ⌨ Shortcuts
           </button>
+          {editModeActive ? (
+            <button
+              type="button"
+              data-testid="inspector-exit-edit-mode"
+              onClick={handleExitEditMode}
+              className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100"
+              title="Exit edit mode"
+              aria-label="Exit edit mode"
+            >
+              Exit Edit Mode
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="inspector-enter-edit-mode"
+              disabled={!canEnterEditMode}
+              onClick={handleEnterEditMode}
+              className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+              title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
+              aria-label="Enter edit mode"
+            >
+              Edit Mode
+            </button>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap gap-2" data-testid="inspector-source-statuses">
           {sourceStatuses.map(({ source, label, status }) => (
@@ -1760,6 +1863,34 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             </span>
           ))}
         </div>
+        {selectedNodeId && editCapability ? (
+          <div
+            data-testid="inspector-edit-capability"
+            className={`mt-3 rounded border px-3 py-2 text-xs ${
+              editCapability.editable
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            <p className="m-0 font-semibold">
+              Edit Capability: {editCapability.editable ? "Supported" : "Not supported"}
+            </p>
+            {editCapability.editable ? (
+              <p data-testid="inspector-edit-capability-fields" className="m-0 mt-1">
+                Editable fields: {editCapability.editableFields.join(", ")}
+              </p>
+            ) : (
+              <p data-testid="inspector-edit-capability-reason" className="m-0 mt-1">
+                {editCapability.reason}
+              </p>
+            )}
+            {editModeActive ? (
+              <p data-testid="inspector-edit-mode-active-indicator" className="m-0 mt-1 font-semibold text-amber-700">
+                Edit mode is active
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div
           data-testid="inspector-inspectability-summary"
           className="mt-3 max-h-40 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2"
