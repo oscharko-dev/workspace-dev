@@ -943,7 +943,7 @@ export function WorkspacePage(): JSX.Element {
 
         {jobStatus === "completed" && previewUrl && activeJobId ? (
           <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
-            <InspectorPanel jobId={activeJobId} previewUrl={previewUrl} />
+            <InspectorPanel jobId={activeJobId} previewUrl={previewUrl} previousJobId={jobPayload?.generationDiff?.previousJobId} />
           </section>
         ) : (
           <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
