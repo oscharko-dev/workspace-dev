@@ -403,8 +403,28 @@ export interface WorkspaceLocalSyncApplyResult {
   appliedAt: string;
 }
 
+/** Input payload for creating a PR from a completed regeneration job. */
+export interface WorkspaceCreatePrInput {
+  repoUrl: string;
+  repoToken: string;
+  targetPath?: string;
+}
+
+/** Result payload returned after PR creation from a regenerated job. */
+export interface WorkspaceCreatePrResult {
+  jobId: string;
+  sourceJobId: string;
+  gitPr: WorkspaceGitPrStatus;
+}
+
+/** Prerequisites check result for PR creation from a regenerated job. */
+export interface WorkspaceGitPrPrerequisites {
+  available: boolean;
+  missing: string[];
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.19.0" as const;
+export const CONTRACT_VERSION = "2.20.0" as const;

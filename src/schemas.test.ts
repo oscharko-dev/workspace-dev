@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CreatePrRequestSchema,
   ErrorResponseSchema,
   SubmitRequestSchema,
   SyncRequestSchema,
@@ -288,4 +289,51 @@ test("schema: sync apply requires token and explicit confirmation", () => {
     confirmOverwrite: true
   });
   assert.equal(valid.success, true);
+});
+
+// ---------------------------------------------------------------------------
+// CreatePrRequestSchema
+// ---------------------------------------------------------------------------
+
+test("schema: create-pr requires repoUrl and repoToken", () => {
+  const missing = CreatePrRequestSchema.safeParse({});
+  assert.equal(missing.success, false);
+
+  const emptyUrl = CreatePrRequestSchema.safeParse({ repoUrl: "", repoToken: "tok" });
+  assert.equal(emptyUrl.success, false);
+
+  const emptyToken = CreatePrRequestSchema.safeParse({ repoUrl: "https://github.com/acme/repo", repoToken: "" });
+  assert.equal(emptyToken.success, false);
+});
+
+test("schema: create-pr parses valid input with optional targetPath", () => {
+  const result = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "ghp_abc123"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.repoUrl, "https://github.com/acme/repo");
+    assert.equal(result.data.repoToken, "ghp_abc123");
+    assert.equal(result.data.targetPath, undefined);
+  }
+
+  const withTarget = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "ghp_abc123",
+    targetPath: "generated"
+  });
+  assert.equal(withTarget.success, true);
+  if (withTarget.success) {
+    assert.equal(withTarget.data.targetPath, "generated");
+  }
+});
+
+test("schema: create-pr rejects unexpected properties", () => {
+  const result = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "tok",
+    extraField: "nope"
+  });
+  assert.equal(result.success, false);
 });

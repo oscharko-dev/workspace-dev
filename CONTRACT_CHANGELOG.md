@@ -23,6 +23,19 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.20.0] - 2026-03-22
+
+### PR creation from regenerated jobs
+
+Added:
+
+- `WorkspaceCreatePrInput` — Input payload for creating a PR from a completed regeneration job.
+- `WorkspaceCreatePrResult` — Result payload returned after PR creation.
+- `WorkspaceGitPrPrerequisites` — Prerequisites check result for PR creation.
+- `POST /workspace/jobs/{jobId}/create-pr` — Endpoint to create a GitHub PR from regenerated output.
+
+---
+
 ## [2.19.0] - 2026-03-22
 
 ### Regenerated local sync dry-run/apply contract

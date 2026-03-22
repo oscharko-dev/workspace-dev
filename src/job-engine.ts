@@ -2488,9 +2488,81 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const createPrFromJob: JobEngine["createPrFromJob"] = async ({ jobId, prInput }) => {
+    const job = jobs.get(jobId);
+    if (!job) {
+      const err = new Error(`Job '${jobId}' not found.`);
+      (err as Error & { code: string }).code = "E_PR_JOB_NOT_FOUND";
+      throw err;
+    }
+    if (job.status !== "completed") {
+      const err = new Error(`Job '${jobId}' has status '${job.status}' — only completed jobs support PR creation.`);
+      (err as Error & { code: string }).code = "E_PR_JOB_NOT_COMPLETED";
+      throw err;
+    }
+    if (!job.lineage) {
+      const err = new Error(`Job '${jobId}' is not a regeneration job — PR creation is only supported for regenerated output.`);
+      (err as Error & { code: string }).code = "E_PR_NOT_REGENERATION_JOB";
+      throw err;
+    }
+
+    const generatedProjectDir = job.artifacts.generatedProjectDir;
+    if (!generatedProjectDir) {
+      const err = new Error(`Job '${jobId}' has no generated project directory.`);
+      (err as Error & { code: string }).code = "E_PR_NO_GENERATED_PROJECT";
+      throw err;
+    }
+
+    const jobDir = job.artifacts.jobDir;
+    const input: WorkspaceJobInput = {
+      ...job.request,
+      repoUrl: prInput.repoUrl,
+      repoToken: prInput.repoToken,
+      enableGitPr: true,
+      ...(prInput.targetPath !== undefined ? { targetPath: prInput.targetPath } : {})
+    };
+
+    const prResult = await runGitPrFlow({
+      input,
+      job,
+      generatedProjectDir,
+      jobDir,
+      onLog: (message) => {
+        pushLog({ job, level: "info", stage: "git.pr", message });
+      },
+      commandTimeoutMs: runtime.commandTimeoutMs,
+      ...(job.generationDiff ? { generationDiff: job.generationDiff } : {})
+    });
+
+    job.gitPr = {
+      status: "executed",
+      ...(prResult.prUrl ? { prUrl: prResult.prUrl } : {}),
+      branchName: prResult.branchName,
+      scopePath: prResult.scopePath,
+      changedFiles: prResult.changedFiles
+    };
+
+    // Update the git.pr stage to completed
+    const gitPrStage = job.stages.find((s) => s.name === "git.pr");
+    if (gitPrStage) {
+      gitPrStage.status = "completed";
+      gitPrStage.completedAt = nowIso();
+      gitPrStage.message = prResult.prUrl
+        ? `PR created: ${prResult.prUrl}`
+        : `Branch pushed: ${prResult.branchName}`;
+    }
+
+    return {
+      jobId,
+      sourceJobId: job.lineage.sourceJobId,
+      gitPr: job.gitPr
+    };
+  };
+
   return {
     submitJob,
     submitRegeneration,
+    createPrFromJob,
     previewLocalSync,
     applyLocalSync,
     cancelJob,
