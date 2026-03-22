@@ -1762,7 +1762,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
         </div>
         <div
           data-testid="inspector-inspectability-summary"
-          className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2"
+          className="mt-3 max-h-40 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2"
         >
           <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
             Inspectability Coverage Summary
@@ -1874,7 +1874,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
         ) : null}
       </div>
 
-      <div ref={layoutContainerRef} className="flex min-h-0 flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
+      <div ref={layoutContainerRef} className="flex min-h-[220px] flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
         {/* Left: Component Tree sidebar */}
         {hasTreePane ? (
           <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0" style={treePaneStyle}>
