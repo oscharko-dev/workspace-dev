@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { InspectorPanel } from "./InspectorPanel";
 
 const mockUseQuery = vi.fn();
@@ -152,6 +152,7 @@ describe("InspectorPanel splitters", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    window.sessionStorage.clear();
     installQueryMock();
   });
 
@@ -193,6 +194,7 @@ describe("InspectorPanel data states", () => {
 
   beforeEach(() => {
     mockUseQuery.mockReset();
+    window.sessionStorage.clear();
   });
 
   it("shows design-ir error state and retries only the design-ir endpoint", () => {
@@ -290,5 +292,108 @@ describe("InspectorPanel data states", () => {
 
     fireEvent.click(screen.getByTestId("inspector-retry-file-content"));
     expect(fileContentRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists boundary toggle state and syncs boundary clicks to tree selection", async () => {
+    installQueryMock({
+      overrides: {
+        "inspector-manifest": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  screenId: "screen-home",
+                  screenName: "Home",
+                  file: "src/screens/Home.tsx",
+                  components: [
+                    {
+                      irNodeId: "node-1",
+                      irNodeName: "Header",
+                      irNodeType: "container",
+                      file: "src/screens/Home.tsx",
+                      startLine: 1,
+                      endLine: 2
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "inspector-design-ir": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  id: "screen-home",
+                  name: "Home",
+                  generatedFile: "src/screens/Home.tsx",
+                  children: [
+                    {
+                      id: "node-1",
+                      name: "Header",
+                      type: "container",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "inspector-file-content": {
+          data: {
+            ok: true,
+            status: 200,
+            content: "line1\\nline2\\nline3",
+            error: null,
+            message: null
+          }
+        }
+      }
+    });
+
+    const { unmount } = render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const toggle = screen.getByTestId("code-viewer-boundaries-toggle");
+    expect(toggle).toHaveTextContent("Boundaries: Off");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Boundaries: On");
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("code-boundary-marker-node-1").length).toBeGreaterThan(0);
+    });
+
+    const marker = screen.getAllByTestId("code-boundary-marker-node-1")[0];
+    if (!marker) {
+      throw new Error("Expected boundary marker.");
+    }
+    fireEvent.click(marker);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tree-node-node-1")).toHaveAttribute("aria-selected", "true");
+    });
+
+    unmount();
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    expect(screen.getByTestId("code-viewer-boundaries-toggle")).toHaveTextContent("Boundaries: On");
   });
 });

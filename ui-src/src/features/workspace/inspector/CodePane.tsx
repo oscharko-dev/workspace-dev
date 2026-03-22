@@ -3,6 +3,7 @@ import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
 import type { BreadcrumbSegment } from "./component-tree-utils";
+import type { CodeBoundaryEntry } from "./code-boundaries";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -39,6 +40,11 @@ interface CodePaneProps {
   splitFileContentLoading?: boolean;
   /** Split view: callback to change second file selection. */
   onSelectSplitFile?: (filePath: string) => void;
+  boundariesEnabled?: boolean;
+  onBoundariesEnabledChange?: (enabled: boolean) => void;
+  fileBoundaries?: CodeBoundaryEntry[];
+  splitFileBoundaries?: CodeBoundaryEntry[];
+  onBoundarySelect?: (nodeId: string) => void;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -64,7 +70,12 @@ export function CodePane({
   splitFile,
   splitFileContent,
   splitFileContentLoading,
-  onSelectSplitFile
+  onSelectSplitFile,
+  boundariesEnabled,
+  onBoundariesEnabledChange,
+  fileBoundaries = [],
+  splitFileBoundaries = [],
+  onBoundarySelect
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -283,6 +294,10 @@ export function CodePane({
                   code={fileContent}
                   filePath={selectedFile}
                   highlightRange={highlightRange}
+                  boundariesEnabled={boundariesEnabled}
+                  onBoundariesEnabledChange={onBoundariesEnabledChange}
+                  boundaries={fileBoundaries}
+                  onBoundarySelect={onBoundarySelect}
                 />
               </div>
 
@@ -332,6 +347,10 @@ export function CodePane({
                     <CodeViewer
                       code={splitFileContent}
                       filePath={splitFile}
+                      boundariesEnabled={boundariesEnabled}
+                      onBoundariesEnabledChange={onBoundariesEnabledChange}
+                      boundaries={splitFileBoundaries}
+                      onBoundarySelect={onBoundarySelect}
                     />
                   ) : (
                     <p data-testid="inspector-split-empty" className="m-0 p-3 text-xs text-slate-500">
@@ -346,6 +365,10 @@ export function CodePane({
               code={fileContent}
               filePath={selectedFile}
               highlightRange={highlightRange}
+              boundariesEnabled={boundariesEnabled}
+              onBoundariesEnabledChange={onBoundariesEnabledChange}
+              boundaries={fileBoundaries}
+              onBoundarySelect={onBoundarySelect}
             />
           )
         ) : filesState === "empty" ? (

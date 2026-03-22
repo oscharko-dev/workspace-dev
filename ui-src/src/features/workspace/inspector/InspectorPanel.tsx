@@ -16,6 +16,7 @@ import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath } from "./component-tree-utils";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { suggestPairedFile } from "./file-pairing";
+import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries";
 import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
@@ -113,6 +114,7 @@ const DESKTOP_LAYOUT_MEDIA_QUERY = "(min-width: 1280px)";
 const KEYBOARD_STEP_PX = 24;
 const KEYBOARD_STEP_LARGE_PX = 72;
 const KEYBOARD_EXTREME_DELTA_PX = 100_000;
+const BOUNDARIES_SESSION_STORAGE_KEY = "workspace-dev:inspector-boundaries:v1";
 
 // ---------------------------------------------------------------------------
 // Guards
@@ -188,6 +190,58 @@ function getStatusBadgeClasses(status: InspectorSourceStatus): string {
   return "border-rose-200 bg-rose-50 text-rose-900";
 }
 
+function loadBoundariesEnabledPreference(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.sessionStorage.getItem(BOUNDARIES_SESSION_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function toBoundariesForFile({
+  manifest,
+  filePath
+}: {
+  manifest: ComponentManifestPayload | null;
+  filePath: string | null;
+}): GutterBoundaryEntry[] {
+  if (!manifest || !filePath) {
+    return [];
+  }
+
+  const deduped = new Map<string, GutterBoundaryEntry>();
+  for (const screen of manifest.screens) {
+    for (const entry of screen.components) {
+      if (entry.file !== filePath) {
+        continue;
+      }
+      const key = `${entry.irNodeId}:${String(entry.startLine)}:${String(entry.endLine)}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, {
+          irNodeId: entry.irNodeId,
+          irNodeName: entry.irNodeName,
+          irNodeType: entry.irNodeType,
+          startLine: entry.startLine,
+          endLine: entry.endLine
+        });
+      }
+    }
+  }
+
+  return Array.from(deduped.values()).sort((left, right) => {
+    if (left.startLine !== right.startLine) {
+      return left.startLine - right.startLine;
+    }
+    if (left.endLine !== right.endLine) {
+      return left.endLine - right.endLine;
+    }
+    return left.irNodeId.localeCompare(right.irNodeId);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers: convert IR screens to TreeNode[]
 // ---------------------------------------------------------------------------
@@ -247,6 +301,7 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(loadBoundariesEnabledPreference);
   const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
@@ -586,6 +641,20 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     return () => { window.removeEventListener("keydown", handleShortcutKey); };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(
+        BOUNDARIES_SESSION_STORAGE_KEY,
+        boundariesEnabled ? "1" : "0"
+      );
+    } catch {
+      // Session storage can be unavailable in restricted browser contexts.
+    }
+  }, [boundariesEnabled]);
+
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
     if (manifest?.screens?.length) {
@@ -606,6 +675,12 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   }, [files, manifest]);
 
   const effectiveSelectedFile = selectedFile ?? defaultFile;
+  const selectedFileBoundaries = useMemo(() => {
+    return toBoundariesForFile({
+      manifest,
+      filePath: effectiveSelectedFile
+    });
+  }, [effectiveSelectedFile, manifest]);
 
   const fileContentQuery = useQuery({
     queryKey: ["inspector-file-content", jobId, effectiveSelectedFile],
@@ -799,6 +874,12 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
   }, [effectiveSelectedFile, manifest, files]);
 
   const effectiveSplitFile = splitFile ?? suggestedPairedFile;
+  const splitFileBoundaries = useMemo(() => {
+    return toBoundariesForFile({
+      manifest,
+      filePath: effectiveSplitFile
+    });
+  }, [effectiveSplitFile, manifest]);
 
   const splitFileContentQuery = useQuery({
     queryKey: ["inspector-split-file-content", jobId, effectiveSplitFile],
@@ -1350,6 +1431,11 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             splitFileContent={splitFileContent}
             splitFileContentLoading={splitFileContentLoading}
             onSelectSplitFile={handleSelectSplitFile}
+            boundariesEnabled={boundariesEnabled}
+            onBoundariesEnabledChange={setBoundariesEnabled}
+            fileBoundaries={selectedFileBoundaries}
+            splitFileBoundaries={splitFileBoundaries}
+            onBoundarySelect={handleTreeSelect}
           />
         </div>
       </div>
