@@ -187,6 +187,84 @@ describe("InspectorPanel splitters", () => {
   });
 });
 
+describe("InspectorPanel navigation stack", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    window.sessionStorage.clear();
+    installQueryMock();
+  });
+
+  it("replays committed selection states via back and forward controls", async () => {
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const backButton = screen.getByTestId("inspector-nav-back");
+    const forwardButton = screen.getByTestId("inspector-nav-forward");
+    const screenNode = screen.getByTestId("tree-screen-screen-home");
+
+    expect(backButton).toBeDisabled();
+    expect(forwardButton).toBeDisabled();
+    expect(screenNode).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.click(screenNode);
+    await waitFor(() => {
+      expect(screenNode).toHaveAttribute("aria-selected", "true");
+    });
+    expect(backButton).toBeEnabled();
+    expect(forwardButton).toBeDisabled();
+
+    fireEvent.click(backButton);
+    await waitFor(() => {
+      expect(screenNode).toHaveAttribute("aria-selected", "false");
+    });
+    expect(backButton).toBeDisabled();
+    expect(forwardButton).toBeEnabled();
+
+    fireEvent.click(forwardButton);
+    await waitFor(() => {
+      expect(screenNode).toHaveAttribute("aria-selected", "true");
+    });
+    expect(backButton).toBeEnabled();
+  });
+
+  it("exposes level-up in breadcrumb and applies one-scope-level pop", async () => {
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const screenNode = screen.getByTestId("tree-screen-screen-home");
+    fireEvent.click(screenNode);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-breadcrumb")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("breadcrumb-enter-scope"));
+    await waitFor(() => {
+      expect(screen.getByTestId("breadcrumb-scope-badge")).toBeInTheDocument();
+    });
+
+    const levelUpButton = screen.getByTestId("breadcrumb-exit-scope");
+    expect(levelUpButton).toHaveTextContent("Level up");
+    fireEvent.click(levelUpButton);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("breadcrumb-scope-badge")).not.toBeInTheDocument();
+    });
+  });
+});
+
 describe("InspectorPanel data states", () => {
   afterEach(() => {
     cleanup();

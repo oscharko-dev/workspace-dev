@@ -1,27 +1,28 @@
 /**
- * Unit tests for the Inspector hierarchical drilldown scope reducer.
+ * Unit tests for the Inspector drilldown navigation reducer.
  *
- * Covers: SELECT_NODE, ENTER_SCOPE, EXIT_SCOPE, RESET, derived selectors,
- * and fallback behavior for unmapped nodes.
+ * Covers selection/scope commits, back/forward/level-up traversal,
+ * history truncation when branching, bounded history size, and selectors.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
+ * @see https://github.com/oscharko-dev/workspace-dev/issues/445
  */
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   inspectorScopeReducer,
   INITIAL_INSPECTOR_SCOPE_STATE,
-  selectScopeDepth,
+  MAX_NAV_ENTRIES,
   selectActiveScope,
+  selectCanLevelUp,
+  selectCanNavigateBack,
+  selectCanNavigateForward,
   selectHasActiveScope,
+  selectScopeDepth,
   selectScopeStack,
-  type InspectorScopeState,
   type InspectorScopeAction,
+  type InspectorScopeState,
   type ManifestMapping
 } from "./inspector-scope-state";
-
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
 
 function dispatch(state: InspectorScopeState, action: InspectorScopeAction): InspectorScopeState {
   return inspectorScopeReducer(state, action);
@@ -48,12 +49,21 @@ const extractedMapping: ManifestMapping = {
   extractedComponent: true
 };
 
-// ---------------------------------------------------------------------------
-// SELECT_NODE
-// ---------------------------------------------------------------------------
+describe("initial state", () => {
+  it("starts with a committed root snapshot", () => {
+    expect(INITIAL_INSPECTOR_SCOPE_STATE.history).toHaveLength(1);
+    expect(INITIAL_INSPECTOR_SCOPE_STATE.historyIndex).toBe(0);
+    expect(INITIAL_INSPECTOR_SCOPE_STATE.history[0]).toEqual({
+      selectedNodeId: null,
+      selectedNodeMapped: false,
+      scopeStack: [],
+      effectiveFileTarget: null
+    });
+  });
+});
 
 describe("SELECT_NODE", () => {
-  it("sets the selected node id", () => {
+  it("commits selected node and mapping state", () => {
     const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
       type: "SELECT_NODE",
       payload: {
@@ -65,187 +75,50 @@ describe("SELECT_NODE", () => {
     });
 
     expect(state.selectedNodeId).toBe("node-1");
-  });
-
-  it("marks selectedNodeMapped true when mapping is provided", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "node-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: mappedNode
-      }
-    });
-
     expect(state.selectedNodeMapped).toBe(true);
-  });
-
-  it("marks selectedNodeMapped false when mapping is null (unmapped node)", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "unmapped-1",
-        nodeName: "Decorative",
-        nodeType: "container",
-        mapping: null
-      }
-    });
-
-    expect(state.selectedNodeMapped).toBe(false);
-  });
-
-  it("updates effectiveFileTarget from mapping", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "node-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: mappedNode
-      }
-    });
-
     expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(state.history).toHaveLength(2);
+    expect(state.historyIndex).toBe(1);
   });
 
-  it("preserves previous effectiveFileTarget when mapping is null", () => {
-    const withFile = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "node-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: mappedNode
-      }
-    });
-
-    const afterUnmapped = dispatch(withFile, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "unmapped-1",
-        nodeName: "Decorative",
-        nodeType: "container",
-        mapping: null
-      }
-    });
-
-    expect(afterUnmapped.effectiveFileTarget).toBe("src/pages/Home.tsx");
-  });
-
-  it("does not alter scope stack", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "node-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: mappedNode
-      }
-    });
-
-    expect(state.scopeStack).toHaveLength(0);
-  });
-
-  it("does not alter history", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "SELECT_NODE",
-      payload: {
-        nodeId: "node-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: mappedNode
-      }
-    });
-
-    expect(state.history).toHaveLength(0);
-  });
-
-  it("allows changing selection multiple times", () => {
+  it("does not commit duplicate state when selecting the same node twice", () => {
     const state = dispatchAll([
       {
         type: "SELECT_NODE",
-        payload: { nodeId: "a", nodeName: "A", nodeType: "text", mapping: mappedNode }
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
       },
       {
         type: "SELECT_NODE",
-        payload: { nodeId: "b", nodeName: "B", nodeType: "button", mapping: null }
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
       }
     ]);
 
-    expect(state.selectedNodeId).toBe("b");
-    expect(state.scopeStack).toHaveLength(0);
+    expect(state.history).toHaveLength(2);
+    expect(state.historyIndex).toBe(1);
+  });
+
+  it("preserves effectiveFileTarget when selecting an unmapped node", () => {
+    const state = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
+      },
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "unmapped-1", nodeName: "Decorative", nodeType: "container", mapping: null }
+      }
+    ]);
+
+    expect(state.selectedNodeId).toBe("unmapped-1");
+    expect(state.selectedNodeMapped).toBe(false);
+    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(state.history).toHaveLength(3);
+    expect(state.historyIndex).toBe(2);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ENTER_SCOPE
-// ---------------------------------------------------------------------------
-
-describe("ENTER_SCOPE", () => {
-  it("pushes a scope entry onto the stack", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: {
-        nodeId: "card-1",
-        nodeName: "PriceCard",
-        nodeType: "card",
-        mapping: mappedNode
-      }
-    });
-
-    expect(state.scopeStack).toHaveLength(1);
-    expect(state.scopeStack[0]).toEqual({
-      nodeId: "card-1",
-      nodeName: "PriceCard",
-      nodeType: "card"
-    });
-  });
-
-  it("also sets selectedNodeId to the scoped node", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: {
-        nodeId: "card-1",
-        nodeName: "PriceCard",
-        nodeType: "card",
-        mapping: mappedNode
-      }
-    });
-
-    expect(state.selectedNodeId).toBe("card-1");
-  });
-
-  it("updates effectiveFileTarget from mapping", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: {
-        nodeId: "header-1",
-        nodeName: "HeaderBar",
-        nodeType: "appbar",
-        mapping: extractedMapping
-      }
-    });
-
-    expect(state.effectiveFileTarget).toBe("src/components/HeaderBar.tsx");
-  });
-
-  it("does not push duplicate when already at top of scope stack", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      }
-    ]);
-
-    expect(state.scopeStack).toHaveLength(1);
-  });
-
-  it("supports nested scope entry (multi-level drilldown)", () => {
+describe("ENTER_SCOPE and level-up", () => {
+  it("commits nested scope entries with mapped metadata", () => {
     const state = dispatchAll([
       {
         type: "ENTER_SCOPE",
@@ -258,54 +131,61 @@ describe("ENTER_SCOPE", () => {
     ]);
 
     expect(state.scopeStack).toHaveLength(2);
-    expect(state.scopeStack[0]?.nodeId).toBe("card-1");
-    expect(state.scopeStack[1]?.nodeId).toBe("button-1");
-  });
-
-  it("commits previous scope top to history on nested entry", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
-      }
-    ]);
-
-    expect(state.history).toHaveLength(1);
-    expect(state.history[0]).toEqual({
+    expect(state.scopeStack[0]).toEqual({
       nodeId: "card-1",
       nodeName: "PriceCard",
       nodeType: "card",
+      mapped: true,
       file: "src/pages/Home.tsx"
     });
-  });
-
-  it("works with unmapped nodes (mapping=null)", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: {
-        nodeId: "decorative-1",
-        nodeName: "Ornament",
-        nodeType: "container",
-        mapping: null
-      }
+    expect(state.scopeStack[1]).toEqual({
+      nodeId: "button-1",
+      nodeName: "BuyButton",
+      nodeType: "button",
+      mapped: true,
+      file: "src/components/HeaderBar.tsx"
     });
+    expect(state.history).toHaveLength(3);
+    expect(state.historyIndex).toBe(2);
+  });
+
+  it("does not push duplicate scope entry when entering the current top scope", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
+      }
+    ]);
 
     expect(state.scopeStack).toHaveLength(1);
-    expect(state.selectedNodeMapped).toBe(false);
-    expect(state.effectiveFileTarget).toBeNull();
+    expect(state.history).toHaveLength(2);
   });
-});
 
-// ---------------------------------------------------------------------------
-// EXIT_SCOPE
-// ---------------------------------------------------------------------------
+  it("LEVEL_UP commits one scope-level pop", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
+      },
+      { type: "LEVEL_UP" }
+    ]);
 
-describe("EXIT_SCOPE", () => {
-  it("pops the top scope entry", () => {
+    expect(state.scopeStack).toHaveLength(1);
+    expect(state.selectedNodeId).toBe("card-1");
+    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(state.history).toHaveLength(4);
+    expect(state.historyIndex).toBe(3);
+  });
+
+  it("EXIT_SCOPE remains an alias of one-level-up behavior", () => {
     const state = dispatchAll([
       {
         type: "ENTER_SCOPE",
@@ -319,113 +199,142 @@ describe("EXIT_SCOPE", () => {
     ]);
 
     expect(state.scopeStack).toHaveLength(1);
-    expect(state.scopeStack[0]?.nodeId).toBe("card-1");
-  });
-
-  it("sets selectedNodeId to the new top of the stack", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
-      },
-      { type: "EXIT_SCOPE" }
-    ]);
-
     expect(state.selectedNodeId).toBe("card-1");
   });
-
-  it("restores effectiveFileTarget from history", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
-      },
-      { type: "EXIT_SCOPE" }
-    ]);
-
-    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
-  });
-
-  it("clears selectedNodeId when exiting the last scope", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      { type: "EXIT_SCOPE" }
-    ]);
-
-    expect(state.selectedNodeId).toBeNull();
-    expect(state.scopeStack).toHaveLength(0);
-  });
-
-  it("is a no-op when scope stack is empty", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "EXIT_SCOPE" });
-
-    expect(state).toBe(INITIAL_INSPECTOR_SCOPE_STATE);
-  });
-
-  it("handles full cycle: enter → enter → exit → exit", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
-      },
-      { type: "EXIT_SCOPE" },
-      { type: "EXIT_SCOPE" }
-    ]);
-
-    expect(state.scopeStack).toHaveLength(0);
-    expect(state.selectedNodeId).toBeNull();
-    expect(state.history).toHaveLength(0);
-    expect(state.effectiveFileTarget).toBeNull();
-  });
 });
 
-// ---------------------------------------------------------------------------
-// RESET
-// ---------------------------------------------------------------------------
-
-describe("RESET", () => {
-  it("returns to initial state from any state", () => {
-    const modified = dispatchAll([
+describe("NAVIGATE_BACK and NAVIGATE_FORWARD", () => {
+  it("moves cursor backward and forward across committed snapshots", () => {
+    const committed = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
+      },
       {
         type: "ENTER_SCOPE",
         payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "button-1", nodeName: "BuyButton", nodeType: "button", mapping: extractedMapping }
+      }
+    ]);
+
+    const backOnce = dispatch(committed, { type: "NAVIGATE_BACK" });
+    const backTwice = dispatch(backOnce, { type: "NAVIGATE_BACK" });
+    const forward = dispatch(backTwice, { type: "NAVIGATE_FORWARD" });
+
+    expect(backOnce.selectedNodeId).toBe("card-1");
+    expect(backOnce.historyIndex).toBe(committed.historyIndex - 1);
+    expect(backTwice.selectedNodeId).toBe("node-1");
+    expect(forward.selectedNodeId).toBe("card-1");
+    expect(forward.scopeStack).toHaveLength(1);
+    expect(forward.history).toHaveLength(committed.history.length);
+  });
+
+  it("is a no-op when navigating beyond cursor bounds", () => {
+    const atStart = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "NAVIGATE_BACK" });
+    const committed = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SELECT_NODE",
+      payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
+    });
+    const atEnd = dispatch(committed, { type: "NAVIGATE_FORWARD" });
+
+    expect(atStart).toBe(INITIAL_INSPECTOR_SCOPE_STATE);
+    expect(atEnd).toBe(committed);
+  });
+
+  it("truncates forward branch when a new commit happens after going back", () => {
+    const committed = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-a", nodeName: "A", nodeType: "text", mapping: mappedNode }
       },
       {
         type: "SELECT_NODE",
-        payload: { nodeId: "node-2", nodeName: "Title", nodeType: "text", mapping: extractedMapping }
+        payload: { nodeId: "node-b", nodeName: "B", nodeType: "button", mapping: extractedMapping }
+      },
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-c", nodeName: "C", nodeType: "image", mapping: mappedNode }
       }
     ]);
+    const back = dispatch(committed, { type: "NAVIGATE_BACK" });
+    const branchCommit = dispatch(back, {
+      type: "SELECT_NODE",
+      payload: { nodeId: "node-d", nodeName: "D", nodeType: "chip", mapping: mappedNode }
+    });
 
-    const state = dispatch(modified, { type: "RESET" });
-    expect(state).toEqual(INITIAL_INSPECTOR_SCOPE_STATE);
+    expect(branchCommit.historyIndex).toBe(branchCommit.history.length - 1);
+    expect(selectCanNavigateForward(branchCommit)).toBe(false);
+    expect(branchCommit.selectedNodeId).toBe("node-d");
+    expect(branchCommit.history.some((entry) => entry.selectedNodeId === "node-c")).toBe(false);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Derived selectors
-// ---------------------------------------------------------------------------
+describe("bounded history", () => {
+  it("caps committed snapshots to MAX_NAV_ENTRIES", () => {
+    let state = INITIAL_INSPECTOR_SCOPE_STATE;
+    for (let idx = 0; idx < MAX_NAV_ENTRIES + 25; idx += 1) {
+      state = dispatch(state, {
+        type: "SELECT_NODE",
+        payload: {
+          nodeId: `node-${String(idx)}`,
+          nodeName: `Node ${String(idx)}`,
+          nodeType: "container",
+          mapping: mappedNode
+        }
+      });
+    }
 
-describe("selectScopeDepth", () => {
-  it("returns 0 for initial state", () => {
-    expect(selectScopeDepth(INITIAL_INSPECTOR_SCOPE_STATE)).toBe(0);
+    expect(state.history).toHaveLength(MAX_NAV_ENTRIES);
+    expect(state.historyIndex).toBe(MAX_NAV_ENTRIES - 1);
+    expect(state.history[0]?.selectedNodeId).not.toBeNull();
+    expect(state.history[MAX_NAV_ENTRIES - 1]?.selectedNodeId).toBe(`node-${String(MAX_NAV_ENTRIES + 24)}`);
+  });
+});
+
+describe("fallback/unmapped behavior", () => {
+  it("preserves unmapped scope metadata and restores mapped parent after level-up", () => {
+    const state = dispatchAll([
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "mapped-1", nodeName: "Mapped", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "ENTER_SCOPE",
+        payload: { nodeId: "unmapped-1", nodeName: "Unmapped", nodeType: "container", mapping: null }
+      },
+      { type: "LEVEL_UP" }
+    ]);
+
+    expect(state.selectedNodeId).toBe("mapped-1");
+    expect(state.selectedNodeMapped).toBe(true);
+    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
   });
 
-  it("returns the scope stack length", () => {
+  it("restores unmapped snapshot correctly with back navigation", () => {
+    const committed = dispatchAll([
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "mapped-1", nodeName: "Mapped", nodeType: "card", mapping: mappedNode }
+      },
+      {
+        type: "SELECT_NODE",
+        payload: { nodeId: "unmapped-1", nodeName: "Unmapped", nodeType: "container", mapping: null }
+      }
+    ]);
+    const back = dispatch(committed, { type: "NAVIGATE_BACK" });
+    const forward = dispatch(back, { type: "NAVIGATE_FORWARD" });
+
+    expect(forward.selectedNodeId).toBe("unmapped-1");
+    expect(forward.selectedNodeMapped).toBe(false);
+    expect(forward.effectiveFileTarget).toBe("src/pages/Home.tsx");
+  });
+});
+
+describe("derived selectors", () => {
+  it("returns scope depth and active scope", () => {
     const state = dispatchAll([
       {
         type: "ENTER_SCOPE",
@@ -438,121 +347,47 @@ describe("selectScopeDepth", () => {
     ]);
 
     expect(selectScopeDepth(state)).toBe(2);
-  });
-});
-
-describe("selectActiveScope", () => {
-  it("returns null when no scope is active", () => {
-    expect(selectActiveScope(INITIAL_INSPECTOR_SCOPE_STATE)).toBeNull();
-  });
-
-  it("returns the top scope entry", () => {
-    const state = dispatchAll([
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "a", nodeName: "A", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "b", nodeName: "B", nodeType: "button", mapping: extractedMapping }
-      }
-    ]);
-
-    expect(selectActiveScope(state)).toEqual({
-      nodeId: "b",
-      nodeName: "B",
-      nodeType: "button"
-    });
-  });
-});
-
-describe("selectHasActiveScope", () => {
-  it("returns false for initial state", () => {
-    expect(selectHasActiveScope(INITIAL_INSPECTOR_SCOPE_STATE)).toBe(false);
-  });
-
-  it("returns true when scope is active", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: { nodeId: "a", nodeName: "A", nodeType: "card", mapping: mappedNode }
-    });
-
     expect(selectHasActiveScope(state)).toBe(true);
-  });
-});
-
-describe("selectScopeStack", () => {
-  it("returns empty array for initial state", () => {
-    expect(selectScopeStack(INITIAL_INSPECTOR_SCOPE_STATE)).toEqual([]);
+    expect(selectActiveScope(state)?.nodeId).toBe("b");
+    expect(selectScopeStack(state)).toHaveLength(2);
   });
 
-  it("returns the full scope stack", () => {
-    const state = dispatchAll([
+  it("returns back/forward/level-up capabilities from cursor and stack", () => {
+    const committed = dispatchAll([
       {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "a", nodeName: "A", nodeType: "card", mapping: mappedNode }
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
       },
-      {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "b", nodeName: "B", nodeType: "button", mapping: null }
-      }
-    ]);
-
-    const stack = selectScopeStack(state);
-    expect(stack).toHaveLength(2);
-    expect(stack[0]?.nodeId).toBe("a");
-    expect(stack[1]?.nodeId).toBe("b");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Fallback behavior (unmapped nodes)
-// ---------------------------------------------------------------------------
-
-describe("fallback for unmapped nodes", () => {
-  it("supports selection of unmapped nodes while preserving scope state", () => {
-    const state = dispatchAll([
       {
         type: "ENTER_SCOPE",
         payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
-      },
-      {
-        type: "SELECT_NODE",
-        payload: { nodeId: "unmapped-1", nodeName: "Decorative", nodeType: "container", mapping: null }
       }
     ]);
+    const afterBack = dispatch(committed, { type: "NAVIGATE_BACK" });
 
-    expect(state.selectedNodeId).toBe("unmapped-1");
-    expect(state.selectedNodeMapped).toBe(false);
-    expect(state.scopeStack).toHaveLength(1);
-    expect(state.effectiveFileTarget).toBe("src/pages/Home.tsx");
+    expect(selectCanNavigateBack(committed)).toBe(true);
+    expect(selectCanNavigateForward(committed)).toBe(false);
+    expect(selectCanLevelUp(committed)).toBe(true);
+
+    expect(selectCanNavigateBack(afterBack)).toBe(true);
+    expect(selectCanNavigateForward(afterBack)).toBe(true);
   });
+});
 
-  it("supports entering scope on unmapped nodes", () => {
-    const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
-      type: "ENTER_SCOPE",
-      payload: { nodeId: "unmapped-1", nodeName: "Decorative", nodeType: "container", mapping: null }
-    });
-
-    expect(state.scopeStack).toHaveLength(1);
-    expect(state.scopeStack[0]?.nodeId).toBe("unmapped-1");
-    expect(state.selectedNodeMapped).toBe(false);
-  });
-
-  it("can exit scope from an unmapped node", () => {
-    const state = dispatchAll([
+describe("RESET", () => {
+  it("returns the canonical initial state", () => {
+    const modified = dispatchAll([
       {
-        type: "ENTER_SCOPE",
-        payload: { nodeId: "mapped-1", nodeName: "Card", nodeType: "card", mapping: mappedNode }
+        type: "SELECT_NODE",
+        payload: { nodeId: "node-1", nodeName: "HeaderBar", nodeType: "appbar", mapping: mappedNode }
       },
       {
         type: "ENTER_SCOPE",
-        payload: { nodeId: "unmapped-1", nodeName: "Decorative", nodeType: "container", mapping: null }
-      },
-      { type: "EXIT_SCOPE" }
+        payload: { nodeId: "card-1", nodeName: "PriceCard", nodeType: "card", mapping: mappedNode }
+      }
     ]);
+    const reset = dispatch(modified, { type: "RESET" });
 
-    expect(state.scopeStack).toHaveLength(1);
-    expect(state.selectedNodeId).toBe("mapped-1");
+    expect(reset).toEqual(INITIAL_INSPECTOR_SCOPE_STATE);
   });
 });

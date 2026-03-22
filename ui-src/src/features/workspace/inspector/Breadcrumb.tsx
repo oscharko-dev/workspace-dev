@@ -29,7 +29,7 @@ interface BreadcrumbProps {
   hasActiveScope?: boolean;
   /** Callback to enter scope on a node (explicit drilldown). */
   onEnterScope?: (nodeId: string) => void;
-  /** Callback to exit the current scope level. */
+  /** Callback to move up exactly one scope level. */
   onExitScope?: () => void;
 }
 
@@ -235,16 +235,17 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
           </button>
         ) : null}
 
-        {/* Exit scope button — shown when a scope is active */}
+        {/* Level-up button — shown when a scope is active */}
         {hasActiveScope && onExitScope ? (
           <button
             type="button"
             data-testid="breadcrumb-exit-scope"
             onClick={onExitScope}
             className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
-            title="Exit scope (go back up one level)"
+            title="Level up (go back up one scope level)"
+            aria-label="Level up one scope level"
           >
-            Exit scope
+            Level up
           </button>
         ) : null}
       </span>
