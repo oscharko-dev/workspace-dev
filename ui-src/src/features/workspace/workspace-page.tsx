@@ -709,7 +709,7 @@ export function WorkspacePage(): JSX.Element {
         Runtime mode is hard-locked to <code>figmaSourceMode=rest</code> + <code>llmCodegenMode=deterministic</code>.
       </p>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto px-4 py-4 lg:px-6 xl:grid-cols-12 xl:grid-rows-2 xl:overflow-hidden xl:px-8">
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto px-4 py-4 lg:px-6 xl:grid-cols-12 xl:[grid-template-rows:0.55fr_1.45fr] xl:px-8">
         <section data-testid="input-card" className={`${topRowCardClasses} xl:col-span-6`}>
           <div className="mb-3">
             <h2 className="m-0 text-xl font-bold text-slate-900">Input</h2>
@@ -942,11 +942,11 @@ export function WorkspacePage(): JSX.Element {
         </section>
 
         {jobStatus === "completed" && previewUrl && activeJobId ? (
-          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
+          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6 xl:min-h-[420px]`}>
             <InspectorPanel jobId={activeJobId} previewUrl={previewUrl} previousJobId={jobPayload?.generationDiff?.previousJobId} />
           </section>
         ) : (
-          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
+          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6 xl:min-h-[420px]`}>
             <div className="mb-3">
               <h2 className="m-0 text-xl font-bold text-slate-900">Result / Preview</h2>
               <p className="m-0 text-sm text-slate-600">Generated output for the latest job</p>
