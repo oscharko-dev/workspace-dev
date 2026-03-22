@@ -45,6 +45,10 @@ interface DiffViewerProps {
   newFocusRange?: ManifestRange | null;
   /** Active scoped code mode. */
   scopedMode?: ScopedCodeMode;
+  /** Whether the diff is scoped to a specific node. */
+  isNodeScoped?: boolean;
+  /** Reason why node-scoped diff is unavailable (null when available). */
+  nodeDiffFallbackReason?: string | null;
 }
 
 interface DiffSearchMatch {
@@ -63,7 +67,9 @@ export function DiffViewer({
   previousJobId,
   oldFocusRange,
   newFocusRange,
-  scopedMode
+  scopedMode,
+  isNodeScoped,
+  nodeDiffFallbackReason
 }: DiffViewerProps): JSX.Element {
   const [wordWrap, setWordWrap] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -263,6 +269,19 @@ export function DiffViewer({
           <span className="ml-2 text-[10px] opacity-60">
             vs {previousJobId.slice(0, 8)}…
           </span>
+          {isNodeScoped ? (
+            <span
+              data-testid="diff-viewer-node-scoped-badge"
+              className="ml-2 rounded-full border px-1.5 py-0 text-[9px] font-bold tracking-wide"
+              style={{
+                borderColor: isDark ? "#388bfd" : "#0969da",
+                backgroundColor: isDark ? "rgba(56, 139, 253, 0.15)" : "rgba(9, 105, 218, 0.08)",
+                color: isDark ? "#58a6ff" : "#0969da"
+              }}
+            >
+              NODE
+            </span>
+          ) : null}
         </span>
 
         {/* Find input */}
@@ -350,6 +369,21 @@ export function DiffViewer({
           {copied ? "Copied!" : "Copy"}
         </button>
       </div>
+
+      {/* Node-scoped diff fallback banner */}
+      {nodeDiffFallbackReason ? (
+        <div
+          data-testid="inspector-node-diff-fallback"
+          className="shrink-0 border-b px-3 py-1.5 text-[11px]"
+          style={{
+            backgroundColor: isDark ? "rgba(187, 128, 9, 0.15)" : "#fffbeb",
+            borderColor: isDark ? "#bb8009" : "#fbbf24",
+            color: isDark ? "#e3b341" : "#92400e"
+          }}
+        >
+          {nodeDiffFallbackReason}
+        </div>
+      ) : null}
 
       {/* Summary bar */}
       <div
