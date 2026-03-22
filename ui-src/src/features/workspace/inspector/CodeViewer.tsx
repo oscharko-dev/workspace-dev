@@ -20,6 +20,11 @@ import {
   type HighlightResult
 } from "../../../lib/shiki";
 import { highlightCodeWithWorker, isAbortError } from "../../../lib/shiki-worker-client";
+import {
+  buildCodeBoundaryLayout,
+  type CodeBoundaryEntry,
+  type CodeBoundaryWithLane
+} from "./code-boundaries";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +42,14 @@ interface CodeViewerProps {
   filePath: string;
   /** Optional line range to highlight and scroll to */
   highlightRange?: HighlightRange | null;
+  /** Optional IR code boundaries for the displayed file */
+  boundaries?: CodeBoundaryEntry[];
+  /** Controls whether boundary gutters are visible */
+  boundariesEnabled?: boolean;
+  /** Called when boundary visibility toggle changes */
+  onBoundariesEnabledChange?: (enabled: boolean) => void;
+  /** Called when a boundary marker is clicked */
+  onBoundarySelect?: (irNodeId: string) => void;
 }
 
 interface SearchMatch {
@@ -167,7 +180,11 @@ function findOccurrences({
 export function CodeViewer({
   code,
   filePath,
-  highlightRange
+  highlightRange,
+  boundaries = [],
+  boundariesEnabled,
+  onBoundariesEnabledChange,
+  onBoundarySelect
 }: CodeViewerProps): JSX.Element {
   const [highlightState, setHighlightState] = useState<{
     result: HighlightResult | null;
@@ -182,6 +199,12 @@ export function CodeViewer({
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [jumpTargetLine, setJumpTargetLine] = useState<number | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [internalBoundariesEnabled, setInternalBoundariesEnabled] = useState(false);
+  const [hoveredBoundary, setHoveredBoundary] = useState<{
+    boundary: CodeBoundaryWithLane;
+    x: number;
+    y: number;
+  } | null>(null);
   const codeViewerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -364,6 +387,7 @@ export function CodeViewer({
   }, [effectiveHighlightResult]);
 
   const isDark = currentTheme === "github-dark";
+  const effectiveBoundariesEnabled = boundariesEnabled ?? internalBoundariesEnabled;
 
   // Copy handler
   const handleCopy = useCallback(async () => {
@@ -386,6 +410,19 @@ export function CodeViewer({
   // Determine lines to render
   const lines = highlightedLines ?? rawLines;
   const useHighlighted = highlightedLines !== null;
+  const boundaryLayout = useMemo<ReturnType<typeof buildCodeBoundaryLayout>>(() => {
+    if (!effectiveBoundariesEnabled || boundaries.length === 0) {
+      return {
+        boundaries: [],
+        byLine: new Map<number, { visible: CodeBoundaryWithLane[]; overflowCount: number }>()
+      };
+    }
+    return buildCodeBoundaryLayout({
+      entries: boundaries,
+      totalLines: lines.length,
+      isDark
+    });
+  }, [boundaries, effectiveBoundariesEnabled, isDark, lines.length]);
   const findCountText = useMemo(() => {
     if (searchMode.kind !== "find") {
       return "0";
@@ -442,6 +479,21 @@ export function CodeViewer({
     },
     [handleApplyLineJump, handleNavigateMatches, searchMode.kind]
   );
+
+  const handleBoundariesToggle = useCallback(() => {
+    const nextEnabled = !effectiveBoundariesEnabled;
+    if (onBoundariesEnabledChange) {
+      onBoundariesEnabledChange(nextEnabled);
+      return;
+    }
+    setInternalBoundariesEnabled(nextEnabled);
+  }, [effectiveBoundariesEnabled, onBoundariesEnabledChange]);
+
+  useEffect(() => {
+    if (!effectiveBoundariesEnabled || boundaries.length === 0) {
+      setHoveredBoundary(null);
+    }
+  }, [boundaries.length, effectiveBoundariesEnabled]);
 
   return (
     <div
@@ -549,6 +601,21 @@ export function CodeViewer({
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
 
+        {/* Boundary toggle */}
+        <button
+          type="button"
+          data-testid="code-viewer-boundaries-toggle"
+          onClick={handleBoundariesToggle}
+          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
+          style={{
+            borderColor: isDark ? "#30363d" : "#d0d7de",
+            backgroundColor: effectiveBoundariesEnabled ? (isDark ? "#164e63" : "#cffafe") : (isDark ? "#21262d" : "#ffffff"),
+            color: effectiveBoundariesEnabled ? (isDark ? "#a5f3fc" : "#0e7490") : (isDark ? "#c9d1d9" : "#24292f")
+          }}
+        >
+          {effectiveBoundariesEnabled ? "Boundaries: On" : "Boundaries: Off"}
+        </button>
+
         {/* Copy button */}
         <button
           type="button"
@@ -605,6 +672,10 @@ export function CodeViewer({
                 highlightRange != null &&
                 lineNum >= highlightRange.startLine &&
                 lineNum <= highlightRange.endLine;
+              const lineBoundaryDisplay = boundaryLayout.byLine.get(lineNum);
+              const visibleBoundaries = lineBoundaryDisplay?.visible ?? [];
+              const overflowCount = lineBoundaryDisplay?.overflowCount ?? 0;
+              const hasBoundaryMarkers = visibleBoundaries.length > 0 || overflowCount > 0;
 
               const rangeBg = isDark ? "rgba(56, 139, 253, 0.15)" : "rgba(16, 185, 129, 0.1)";
               const searchBg = isDark ? "rgba(251, 191, 36, 0.12)" : "rgba(245, 158, 11, 0.14)";
@@ -660,10 +731,84 @@ export function CodeViewer({
                   {/* Line number gutter */}
                   <span
                     data-testid="line-number"
-                    className="inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
+                    className="relative inline-flex w-14 shrink-0 pr-2 text-right select-none font-mono"
                     style={{ color: isDark ? "#484f58" : "#8c959f" }}
                   >
-                    {lineNum}
+                    {effectiveBoundariesEnabled && hasBoundaryMarkers ? (
+                      <span
+                        className="absolute inset-y-0 left-0 flex items-stretch gap-px"
+                        data-testid={`code-boundary-lanes-${String(lineNum)}`}
+                      >
+                        {visibleBoundaries.map((boundary) => {
+                          const isStart = lineNum === boundary.startLine;
+                          const isEnd = lineNum === boundary.endLine;
+                          return (
+                            <button
+                              key={`${boundary.entry.irNodeId}:${String(lineNum)}:${String(boundary.lane)}`}
+                              type="button"
+                              data-testid={`code-boundary-marker-${boundary.entry.irNodeId}`}
+                              data-boundary-node-id={boundary.entry.irNodeId}
+                              aria-label={`Select ${boundary.entry.irNodeName}`}
+                              className="h-full w-1 cursor-pointer border-0 p-0"
+                              style={{
+                                backgroundColor: boundary.color,
+                                borderTopLeftRadius: isStart ? 2 : 0,
+                                borderTopRightRadius: isStart ? 2 : 0,
+                                borderBottomLeftRadius: isEnd ? 2 : 0,
+                                borderBottomRightRadius: isEnd ? 2 : 0
+                              }}
+                              onMouseEnter={(event) => {
+                                const rect = event.currentTarget.getBoundingClientRect();
+                                setHoveredBoundary({
+                                  boundary,
+                                  x: rect.left,
+                                  y: rect.top
+                                });
+                              }}
+                              onMouseLeave={() => {
+                                setHoveredBoundary((current) => {
+                                  if (!current || current.boundary.entry.irNodeId !== boundary.entry.irNodeId) {
+                                    return current;
+                                  }
+                                  return null;
+                                });
+                              }}
+                              onFocus={(event) => {
+                                const rect = event.currentTarget.getBoundingClientRect();
+                                setHoveredBoundary({
+                                  boundary,
+                                  x: rect.left,
+                                  y: rect.top
+                                });
+                              }}
+                              onBlur={() => {
+                                setHoveredBoundary((current) => {
+                                  if (!current || current.boundary.entry.irNodeId !== boundary.entry.irNodeId) {
+                                    return current;
+                                  }
+                                  return null;
+                                });
+                              }}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onBoundarySelect?.(boundary.entry.irNodeId);
+                              }}
+                            />
+                          );
+                        })}
+                        {overflowCount > 0 ? (
+                          <span
+                            data-testid={`code-boundary-overflow-indicator-${String(lineNum)}`}
+                            className="inline-flex items-center px-0.5 text-[8px] font-bold leading-none"
+                            style={{ color: isDark ? "#9ca3af" : "#475569" }}
+                            title={`${String(overflowCount)} more overlapping boundaries`}
+                          >
+                            +{String(overflowCount)}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    <span className="inline-block w-full text-right">{lineNum}</span>
                   </span>
 
                   {/* Code content */}
@@ -686,6 +831,45 @@ export function CodeViewer({
           </div>
         )}
       </div>
+      {hoveredBoundary ? (
+        <div
+          role="tooltip"
+          data-testid="code-boundary-tooltip"
+          className="pointer-events-none fixed z-30 min-w-40 rounded border px-2 py-1 text-[10px] shadow-lg"
+          style={{
+            left: Math.max(
+              8,
+              Math.min(
+                (typeof window === "undefined" ? 1024 : window.innerWidth) - 260,
+                hoveredBoundary.x + 10
+              )
+            ),
+            top: Math.max(8, hoveredBoundary.y - 36),
+            borderColor: isDark ? "#1e293b" : "#cbd5e1",
+            backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+            color: isDark ? "#e2e8f0" : "#0f172a"
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span
+              data-testid="code-boundary-tooltip-type"
+              className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase"
+              style={{
+                backgroundColor: isDark ? "#1e293b" : "#e2e8f0",
+                color: isDark ? "#93c5fd" : "#1d4ed8"
+              }}
+            >
+              {hoveredBoundary.boundary.entry.irNodeType}
+            </span>
+            <span data-testid="code-boundary-tooltip-name" className="truncate font-semibold">
+              {hoveredBoundary.boundary.entry.irNodeName}
+            </span>
+          </div>
+          <div data-testid="code-boundary-tooltip-range" className="mt-0.5 text-[9px]">
+            Lines {String(hoveredBoundary.boundary.startLine)}-{String(hoveredBoundary.boundary.endLine)}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

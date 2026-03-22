@@ -25,6 +25,15 @@ vi.mock("../../../lib/shiki-worker-client", () => ({
 
 const mockHighlightCodeWithWorker = vi.mocked(workerClientLib.highlightCodeWithWorker);
 const mockExceedsMaxSize = vi.mocked(shikiLib.exceedsMaxSize);
+const sampleBoundaries = [
+  {
+    irNodeId: "node-a",
+    irNodeName: "Header",
+    irNodeType: "container",
+    startLine: 2,
+    endLine: 4
+  }
+];
 
 afterEach(() => {
   cleanup();
@@ -156,6 +165,78 @@ describe("CodeViewer", () => {
 
     fireEvent.click(wrapBtn);
     expect(wrapBtn).toHaveTextContent("Wrap: Off");
+  });
+
+  it("toggles boundary markers from the toolbar", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4\nline5",
+        filePath: "src/App.tsx",
+        boundaries: sampleBoundaries
+      })
+    );
+
+    const boundaryToggle = screen.getByTestId("code-viewer-boundaries-toggle");
+    expect(boundaryToggle).toHaveTextContent("Boundaries: Off");
+    expect(screen.queryByTestId("code-boundary-marker-node-a")).not.toBeInTheDocument();
+
+    fireEvent.click(boundaryToggle);
+    expect(boundaryToggle).toHaveTextContent("Boundaries: On");
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("renders overflow indicator when more than three boundaries overlap", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4\nline5",
+        filePath: "src/App.tsx",
+        boundariesEnabled: true,
+        boundaries: [
+          { irNodeId: "node-1", irNodeName: "One", irNodeType: "container", startLine: 2, endLine: 4 },
+          { irNodeId: "node-2", irNodeName: "Two", irNodeType: "text", startLine: 2, endLine: 4 },
+          { irNodeId: "node-3", irNodeName: "Three", irNodeType: "button", startLine: 2, endLine: 4 },
+          { irNodeId: "node-4", irNodeName: "Four", irNodeType: "image", startLine: 2, endLine: 4 }
+        ]
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-boundary-overflow-indicator-2")).toHaveTextContent("+1");
+    });
+  });
+
+  it("shows tooltip details and calls onBoundarySelect when a marker is clicked", async () => {
+    const onBoundarySelect = vi.fn();
+
+    render(
+      createElement(CodeViewer, {
+        code: "line1\nline2\nline3\nline4\nline5",
+        filePath: "src/App.tsx",
+        boundariesEnabled: true,
+        boundaries: sampleBoundaries,
+        onBoundarySelect
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
+    });
+
+    const marker = screen.getAllByTestId("code-boundary-marker-node-a")[0];
+    if (!marker) {
+      throw new Error("Expected boundary marker to exist.");
+    }
+
+    fireEvent.mouseEnter(marker);
+    expect(screen.getByTestId("code-boundary-tooltip-name")).toHaveTextContent("Header");
+    expect(screen.getByTestId("code-boundary-tooltip-type")).toHaveTextContent("container");
+    expect(screen.getByTestId("code-boundary-tooltip-range")).toHaveTextContent("Lines 2-4");
+
+    fireEvent.click(marker);
+    expect(onBoundarySelect).toHaveBeenCalledWith("node-a");
   });
 
   it("focuses find input on Ctrl+F shortcut", () => {
