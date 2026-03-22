@@ -92,6 +92,20 @@ import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest
 } from "./inspector-impact-review";
+import {
+  canRedo,
+  canUndo,
+  createEditHistory,
+  pushEditHistory,
+  redoEditHistory,
+  undoEditHistory,
+  type InspectorEditHistory
+} from "./inspector-edit-history";
+import {
+  createDraftSnapshot,
+  createDraftSnapshotStore,
+  type DraftSnapshotStore
+} from "./inspector-draft-snapshot";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -681,6 +695,8 @@ export function InspectorPanel({
   const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(loadBoundariesEnabledPreference);
   const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
   const [overrideDraft, setOverrideDraft] = useState<InspectorOverrideDraft | null>(null);
+  const [_editHistory, setEditHistory] = useState<InspectorEditHistory>(() => createEditHistory());
+  const [_snapshotStore, setSnapshotStore] = useState<DraftSnapshotStore>(() => createDraftSnapshotStore());
   const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(null);
   const [draftStale, setDraftStale] = useState(false);
   const [staleDraftCheckResult, setStaleDraftCheckResult] = useState<StaleDraftCheckResult | null>(null);
@@ -1506,30 +1522,105 @@ export function InspectorPanel({
     };
   }, [clearPointerDragListeners]);
 
+  // --- Edit history: push draft state on every edit mutation ---
+
+  const commitDraftEdit = useCallback((nextDraft: InspectorOverrideDraft) => {
+    setOverrideDraft(nextDraft);
+    setEditHistory((current) => pushEditHistory(current, nextDraft));
+  }, []);
+
+  const handleEditUndo = useCallback(() => {
+    setEditHistory((current) => {
+      if (!canUndo(current)) {
+        return current;
+      }
+      const result = undoEditHistory(current);
+      if (result.draft) {
+        setOverrideDraft(result.draft);
+      }
+      return result.history;
+    });
+  }, []);
+
+  const handleEditRedo = useCallback(() => {
+    setEditHistory((current) => {
+      if (!canRedo(current)) {
+        return current;
+      }
+      const result = redoEditHistory(current);
+      if (result.draft) {
+        setOverrideDraft(result.draft);
+      }
+      return result.history;
+    });
+  }, []);
+
+  const handleCreateSnapshot = useCallback((label?: string) => {
+    if (!overrideDraft) {
+      return;
+    }
+    setSnapshotStore((current) => {
+      const result = createDraftSnapshot(current, overrideDraft, label);
+      return result.store;
+    });
+  }, [overrideDraft]);
+
+
   // --- Shortcut help: toggle on `?` key (skip when text input is focused) ---
+  // --- Edit history shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Shift+S ---
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const handleShortcutKey = (event: KeyboardEvent): void => {
-      if (event.key !== "?") return;
-
       // Do not trigger when a text input, textarea, or contenteditable is focused
       const target = event.target as HTMLElement | null;
-      if (target && typeof target.tagName === "string") {
-        const tagName = target.tagName.toLowerCase();
-        if (tagName === "input" || tagName === "textarea" || target.isContentEditable) {
-          return;
-        }
+      const isTextInput = target != null
+        && typeof target.tagName === "string"
+        && (target.tagName.toLowerCase() === "input"
+          || target.tagName.toLowerCase() === "textarea"
+          || target.isContentEditable);
+
+      // `?` toggles shortcut help — only outside text inputs
+      if (event.key === "?" && !isTextInput) {
+        event.preventDefault();
+        setShortcutHelpOpen((prev) => !prev);
+        return;
       }
 
-      event.preventDefault();
-      setShortcutHelpOpen((prev) => !prev);
+      // Edit history shortcuts — only outside text inputs so native undo/redo
+      // in text fields remains intact.
+      if (isTextInput) {
+        return;
+      }
+
+      const isModKey = event.metaKey || event.ctrlKey;
+
+      // Ctrl/Cmd+Z — undo
+      if (isModKey && !event.shiftKey && event.key === "z") {
+        event.preventDefault();
+        handleEditUndo();
+        return;
+      }
+
+      // Ctrl/Cmd+Shift+Z — redo
+      if (isModKey && event.shiftKey && (event.key === "z" || event.key === "Z")) {
+        event.preventDefault();
+        handleEditRedo();
+        return;
+      }
+
+      // Ctrl/Cmd+Shift+S — create snapshot
+      if (isModKey && event.shiftKey && (event.key === "s" || event.key === "S")) {
+        event.preventDefault();
+        handleCreateSnapshot();
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleShortcutKey);
     return () => { window.removeEventListener("keydown", handleShortcutKey); };
-  }, []);
+  }, [handleEditUndo, handleEditRedo, handleCreateSnapshot]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1635,6 +1726,20 @@ export function InspectorPanel({
       baseFingerprint
     }));
   }, [baseFingerprint, jobId]);
+
+  // Reset edit history and snapshots when the draft identity changes
+  // (creation, restore, carry-forward — NOT on edit mutations which keep draftId stable).
+  const draftId = overrideDraft?.draftId ?? null;
+  useEffect(() => {
+    if (!overrideDraft) {
+      setEditHistory(createEditHistory());
+      setSnapshotStore(createDraftSnapshotStore());
+      return;
+    }
+    setEditHistory(createEditHistory({ initialDraft: overrideDraft }));
+    setSnapshotStore(createDraftSnapshotStore());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed on draftId change only
+  }, [draftId]);
 
   useEffect(() => {
     if (!overrideDraft) {
@@ -2011,18 +2116,15 @@ export function InspectorPanel({
       [field]: null
     }));
 
-    setOverrideDraft((current) => {
-      if (!current) {
-        return current;
-      }
-      return upsertInspectorOverrideEntry({
-        draft: current,
+    if (overrideDraft) {
+      commitDraftEdit(upsertInspectorOverrideEntry({
+        draft: overrideDraft,
         nodeId: selectedNodeId,
         field: result.field,
         value: result.value
-      });
-    });
-  }, [selectedNodeId]);
+      }));
+    }
+  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
 
   const handleScalarInputChange = useCallback((field: Exclude<ScalarOverrideField, "padding">, value: string) => {
     setScalarControlInputs((current) => ({
@@ -2047,24 +2149,19 @@ export function InspectorPanel({
   }, []);
 
   const handleResetScalarOverride = useCallback((field: ScalarOverrideField) => {
-    if (!selectedNodeId) {
+    if (!selectedNodeId || !overrideDraft) {
       return;
     }
-    setOverrideDraft((current) => {
-      if (!current) {
-        return current;
-      }
-      return removeInspectorOverrideEntry({
-        draft: current,
-        nodeId: selectedNodeId,
-        field
-      });
-    });
+    commitDraftEdit(removeInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    }));
     setFieldValidationErrors((current) => ({
       ...current,
       [field]: null
     }));
-  }, [selectedNodeId]);
+  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
 
   const structuredOverridePayload = useMemo(() => {
     if (!overrideDraft) {
@@ -2132,38 +2229,30 @@ export function InspectorPanel({
       [field]: null
     }));
 
-    setOverrideDraft((current) => {
-      if (!current) {
-        return current;
-      }
-      return upsertInspectorOverrideEntry({
-        draft: current,
+    if (overrideDraft) {
+      commitDraftEdit(upsertInspectorOverrideEntry({
+        draft: overrideDraft,
         nodeId: selectedNodeId,
         field: result.field,
         value: result.value
-      });
-    });
-  }, [selectedNodeId]);
+      }));
+    }
+  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
 
   const handleResetFormValidationOverride = useCallback((field: FormValidationOverrideField) => {
-    if (!selectedNodeId) {
+    if (!selectedNodeId || !overrideDraft) {
       return;
     }
-    setOverrideDraft((current) => {
-      if (!current) {
-        return current;
-      }
-      return removeInspectorOverrideEntry({
-        draft: current,
-        nodeId: selectedNodeId,
-        field
-      });
-    });
+    commitDraftEdit(removeInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    }));
     setFieldValidationErrors((current) => ({
       ...current,
       [field]: null
     }));
-  }, [selectedNodeId]);
+  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
 
   const hasFormValidationFieldOverride = useCallback((field: FormValidationOverrideField): boolean => {
     if (!overrideDraft || !selectedNodeId) {

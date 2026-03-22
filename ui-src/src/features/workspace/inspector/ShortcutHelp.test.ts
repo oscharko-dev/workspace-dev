@@ -62,11 +62,12 @@ describe("ShortcutHelp", () => {
     expect(overlay.getAttribute("aria-label")).toBe("Keyboard shortcuts");
   });
 
-  it("renders all four shortcut categories", () => {
+  it("renders all five shortcut categories", () => {
     render(createElement(ShortcutHelp, { open: true, onClose: mockOnClose }));
     expect(screen.getByTestId("shortcut-category-component-tree")).toBeTruthy();
     expect(screen.getByTestId("shortcut-category-code-viewer")).toBeTruthy();
     expect(screen.getByTestId("shortcut-category-pane-layout")).toBeTruthy();
+    expect(screen.getByTestId("shortcut-category-edit-history")).toBeTruthy();
     expect(screen.getByTestId("shortcut-category-inspector-tool")).toBeTruthy();
   });
 
@@ -109,6 +110,9 @@ describe("ShortcutHelp", () => {
     expect(screen.getByText("Navigate between nodes")).toBeTruthy();
     expect(screen.getByText("Open find in file")).toBeTruthy();
     expect(screen.getByText("Resize pane (24 px)")).toBeTruthy();
+    expect(screen.getByText("Undo edit action")).toBeTruthy();
+    expect(screen.getByText("Redo edit action")).toBeTruthy();
+    expect(screen.getByText("Create draft snapshot")).toBeTruthy();
     expect(screen.getByText("Toggle this shortcut help")).toBeTruthy();
   });
 
