@@ -977,6 +977,14 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
     [manifest]
   );
 
+  // Derive the active manifest range for the currently selected node
+  const activeManifestRange = useMemo<ManifestMapping | null>(() => {
+    if (!selectedNodeId) return null;
+    return resolveMapping(selectedNodeId);
+  }, [selectedNodeId, resolveMapping]);
+
+  const isNodeMapped = activeManifestRange !== null;
+
   /** Look up the node name and type from the IR tree. */
   const resolveNodeMeta = useCallback(
     (nodeId: string): { name: string; type: string } => {
@@ -1543,6 +1551,8 @@ export function InspectorPanel({ jobId, previewUrl, previousJobId }: InspectorPa
             fileBoundaries={selectedFileBoundaries}
             splitFileBoundaries={splitFileBoundaries}
             onBoundarySelect={handleTreeSelect}
+            activeManifestRange={activeManifestRange}
+            isNodeMapped={isNodeMapped}
           />
         </div>
       </div>

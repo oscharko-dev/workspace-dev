@@ -1,9 +1,18 @@
-import { useCallback, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
+import { ScopedCodeModeSelector } from "./ScopedCodeModeSelector";
 import type { BreadcrumbSegment } from "./component-tree-utils";
 import type { CodeBoundaryEntry } from "./code-boundaries";
+import {
+  defaultMappedMode,
+  deriveScopedCode,
+  deriveScopedDiffRanges,
+  fallbackMode,
+  type ManifestRange,
+  type ScopedCodeMode
+} from "./scoped-code-ranges";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -51,6 +60,12 @@ interface CodePaneProps {
   fileBoundaries?: CodeBoundaryEntry[];
   splitFileBoundaries?: CodeBoundaryEntry[];
   onBoundarySelect?: (nodeId: string) => void;
+  /** Manifest range for the currently selected node (null if unmapped). */
+  activeManifestRange?: ManifestRange | null;
+  /** Whether the currently selected node has a manifest mapping. */
+  isNodeMapped?: boolean;
+  /** Manifest range for the previous job's version of this node (for diff mode). */
+  previousManifestRange?: ManifestRange | null;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -84,12 +99,38 @@ export function CodePane({
   onBoundariesEnabledChange,
   fileBoundaries = [],
   splitFileBoundaries = [],
-  onBoundarySelect
+  onBoundarySelect,
+  activeManifestRange,
+  isNodeMapped = false,
+  previousManifestRange
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitRatio, setSplitRatio] = useState(50); // percentage for left pane
+  const [scopedMode, setScopedMode] = useState<ScopedCodeMode>(
+    isNodeMapped ? defaultMappedMode() : fallbackMode()
+  );
+
+  // Reset scoped mode when mapping status changes
+  useEffect(() => {
+    setScopedMode(isNodeMapped ? defaultMappedMode() : fallbackMode());
+  }, [isNodeMapped]);
+
+  // Derive scoped code for the current file
+  const scopedCode = useMemo(() => {
+    if (fileContent === null) return null;
+    return deriveScopedCode(fileContent, scopedMode, activeManifestRange ?? null);
+  }, [fileContent, scopedMode, activeManifestRange]);
+
+  // Derive scoped diff ranges (independent old/new offsets)
+  const scopedDiffRanges = useMemo(() => {
+    return deriveScopedDiffRanges(
+      scopedMode,
+      activeManifestRange ?? null,
+      previousManifestRange ?? null
+    );
+  }, [scopedMode, activeManifestRange, previousManifestRange]);
 
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startRatio: number } | null>(null);
@@ -262,6 +303,17 @@ export function CodePane({
         />
       ) : null}
 
+      {/* Scoped code mode selector — shown when a node is selected */}
+      {selectedFile && fileContent !== null ? (
+        <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
+          <ScopedCodeModeSelector
+            activeMode={scopedMode}
+            onModeChange={setScopedMode}
+            isMapped={isNodeMapped}
+          />
+        </div>
+      ) : null}
+
       {/* Code viewer / diff viewer / split view */}
       <div className="min-h-0 flex-1">
         {fileContentState === "loading" ? (
@@ -289,9 +341,12 @@ export function CodePane({
           isDiffActive && typeof previousFileContent === "string" && typeof previousJobId === "string" ? (
             <DiffViewer
               oldCode={previousFileContent}
-              newCode={fileContent}
+              newCode={scopedCode?.code ?? fileContent}
               filePath={selectedFile}
               previousJobId={previousJobId}
+              oldFocusRange={scopedDiffRanges.oldFocusRange}
+              newFocusRange={scopedDiffRanges.newFocusRange}
+              scopedMode={scopedMode}
             />
           ) : isSplitActive ? (
             <div
@@ -306,13 +361,14 @@ export function CodePane({
                 style={{ flexBasis: `${String(splitRatio.toFixed(2))}%`, flexGrow: 0, flexShrink: 0 }}
               >
                 <CodeViewer
-                  code={fileContent}
+                  code={scopedCode?.code ?? fileContent}
                   filePath={selectedFile}
-                  highlightRange={highlightRange}
+                  highlightRange={scopedCode?.highlightRange ?? highlightRange}
                   boundariesEnabled={boundariesEnabled}
                   onBoundariesEnabledChange={onBoundariesEnabledChange}
                   boundaries={fileBoundaries}
                   onBoundarySelect={onBoundarySelect}
+                  lineOffset={scopedCode?.lineOffset}
                 />
               </div>
 
@@ -377,13 +433,14 @@ export function CodePane({
             </div>
           ) : (
             <CodeViewer
-              code={fileContent}
+              code={scopedCode?.code ?? fileContent}
               filePath={selectedFile}
-              highlightRange={highlightRange}
+              highlightRange={scopedCode?.highlightRange ?? highlightRange}
               boundariesEnabled={boundariesEnabled}
               onBoundariesEnabledChange={onBoundariesEnabledChange}
               boundaries={fileBoundaries}
               onBoundarySelect={onBoundarySelect}
+              lineOffset={scopedCode?.lineOffset}
             />
           )
         ) : filesState === "empty" ? (

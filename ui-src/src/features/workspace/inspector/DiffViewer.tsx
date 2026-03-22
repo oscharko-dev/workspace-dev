@@ -24,6 +24,7 @@ import {
 } from "react";
 import { computeUnifiedDiff, type DiffLine, type DiffResult } from "../../../lib/diff";
 import { getPreferredTheme } from "../../../lib/shiki";
+import type { ManifestRange, ScopedCodeMode } from "./scoped-code-ranges";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +39,12 @@ interface DiffViewerProps {
   filePath: string;
   /** Previous job ID shown in the toolbar. */
   previousJobId: string;
+  /** Focus range for the old (previous) side. Null = no range focus. */
+  oldFocusRange?: ManifestRange | null;
+  /** Focus range for the new (current) side. Null = no range focus. */
+  newFocusRange?: ManifestRange | null;
+  /** Active scoped code mode. */
+  scopedMode?: ScopedCodeMode;
 }
 
 interface DiffSearchMatch {
@@ -53,7 +60,10 @@ export function DiffViewer({
   oldCode,
   newCode,
   filePath,
-  previousJobId
+  previousJobId,
+  oldFocusRange,
+  newFocusRange,
+  scopedMode
 }: DiffViewerProps): JSX.Element {
   const [wordWrap, setWordWrap] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -207,6 +217,28 @@ export function DiffViewer({
 
   const searchBg = isDark ? "rgba(251, 191, 36, 0.12)" : "rgba(245, 158, 11, 0.14)";
   const activeBg = isDark ? "rgba(251, 191, 36, 0.28)" : "rgba(245, 158, 11, 0.24)";
+  const focusBg = isDark ? "rgba(56, 139, 253, 0.10)" : "rgba(16, 185, 129, 0.07)";
+
+  /** Check if a diff line falls within a scoped focus range. */
+  const isInFocusRange = useCallback((diffLine: DiffLine): boolean => {
+    if (!scopedMode || scopedMode === "full") return false;
+    if (diffLine.kind === "removed" && oldFocusRange) {
+      const lineNum = diffLine.oldLineNumber;
+      return lineNum != null && lineNum >= oldFocusRange.startLine && lineNum <= oldFocusRange.endLine;
+    }
+    if (diffLine.kind === "added" && newFocusRange) {
+      const lineNum = diffLine.newLineNumber;
+      return lineNum != null && lineNum >= newFocusRange.startLine && lineNum <= newFocusRange.endLine;
+    }
+    if (diffLine.kind === "context") {
+      const inOld = oldFocusRange && diffLine.oldLineNumber != null
+        && diffLine.oldLineNumber >= oldFocusRange.startLine && diffLine.oldLineNumber <= oldFocusRange.endLine;
+      const inNew = newFocusRange && diffLine.newLineNumber != null
+        && diffLine.newLineNumber >= newFocusRange.startLine && diffLine.newLineNumber <= newFocusRange.endLine;
+      return Boolean(inOld) || Boolean(inNew);
+    }
+    return false;
+  }, [oldFocusRange, newFocusRange, scopedMode]);
 
   return (
     <div
@@ -345,8 +377,10 @@ export function DiffViewer({
             const colors = lineColors[diffLine.kind];
             const hasSearchMatch = searchMatchedLineSet.has(i);
             const isActiveMatchLine = activeMatch?.lineIndex === i;
+            const inFocus = isInFocusRange(diffLine);
 
             let lineBg = colors.bg;
+            if (inFocus && !colors.bg) lineBg = focusBg;
             if (hasSearchMatch) lineBg = searchBg;
             if (isActiveMatchLine) lineBg = activeBg;
 
@@ -360,6 +394,7 @@ export function DiffViewer({
                   else lineRefs.current.delete(i);
                 }}
                 data-testid={`diff-line-${diffLine.kind}`}
+                data-in-focus={inFocus ? "true" : undefined}
                 className="flex text-xs leading-relaxed"
                 style={{
                   backgroundColor: lineBg,
