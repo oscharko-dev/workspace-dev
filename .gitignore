@@ -1,4 +1,5 @@
 # Local and CI-generated content
+.DS_Store
 node_modules/
 dist/
 artifacts/
