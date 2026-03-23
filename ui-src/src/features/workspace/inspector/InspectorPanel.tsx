@@ -39,6 +39,7 @@ import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
   MIN_CODE_WIDTH_PX,
   MIN_PREVIEW_WIDTH_PX,
+  MIN_TREE_WIDTH_PX,
   getContainerWidthPx,
   loadInspectorPaneRatios,
   resizePreviewCodePanes,
@@ -3283,9 +3284,10 @@ export function InspectorPanel({
     }
 
     return {
-      flexBasis: `${String((paneRatios.tree * 100).toFixed(4))}%`,
-      flexGrow: 0,
-      flexShrink: 0
+      flexBasis: "0%",
+      flexGrow: paneRatios.tree,
+      flexShrink: 1,
+      minWidth: `${String(MIN_TREE_WIDTH_PX)}px`
     };
   }, [hasExpandedTree, isDesktopLayout, paneRatios.tree]);
 
