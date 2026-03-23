@@ -885,6 +885,7 @@ export function InspectorPanel({
   const dragStateRef = useRef<{
     separator: PaneSeparator;
     startX: number;
+    startWidthPx: number;
     startRatios: InspectorPaneRatios;
   } | null>(null);
   const pointerMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
@@ -1799,13 +1800,15 @@ export function InspectorPanel({
   const applyResizeDelta = useCallback(({
     separator,
     deltaPx,
-    sourceRatios
+    sourceRatios,
+    widthPxOverride
   }: {
     separator: PaneSeparator;
     deltaPx: number;
     sourceRatios: InspectorPaneRatios;
+    widthPxOverride?: number;
   }): InspectorPaneRatios => {
-    const widthPx = getLayoutContainerWidth();
+    const widthPx = widthPxOverride ?? getLayoutContainerWidth();
 
     if (separator === "tree-preview") {
       if (!hasExpandedTree) {
@@ -3168,6 +3171,7 @@ export function InspectorPanel({
       dragStateRef.current = {
         separator,
         startX: event.clientX,
+        startWidthPx: getLayoutContainerWidth(),
         startRatios: paneRatios
       };
 
@@ -3180,7 +3184,8 @@ export function InspectorPanel({
         const next = applyResizeDelta({
           separator: state.separator,
           deltaPx: moveEvent.clientX - state.startX,
-          sourceRatios: state.startRatios
+          sourceRatios: state.startRatios,
+          widthPxOverride: state.startWidthPx
         });
         setPaneRatios(next);
       };
@@ -3195,7 +3200,8 @@ export function InspectorPanel({
         const next = applyResizeDelta({
           separator: state.separator,
           deltaPx: upEvent.clientX - state.startX,
-          sourceRatios: state.startRatios
+          sourceRatios: state.startRatios,
+          widthPxOverride: state.startWidthPx
         });
 
         setPaneRatios(next);
