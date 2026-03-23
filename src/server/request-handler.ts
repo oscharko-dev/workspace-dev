@@ -714,7 +714,8 @@ export function createWorkspaceRequestHandler({
           const applied = await jobEngine.applyLocalSync({
             jobId,
             confirmationToken: parsed.data.confirmationToken,
-            confirmOverwrite: parsed.data.confirmOverwrite
+            confirmOverwrite: parsed.data.confirmOverwrite,
+            fileDecisions: parsed.data.fileDecisions
           });
           sendJson({
             response,
@@ -780,6 +781,17 @@ export function createWorkspaceRequestHandler({
               });
               return;
             }
+            if (code === "E_SYNC_PREVIEW_STALE") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "SYNC_PREVIEW_STALE",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync preview is stale. Request a new dry-run preview." })
+                }
+              });
+              return;
+            }
           }
 
           if (error instanceof LocalSyncError) {
@@ -817,6 +829,17 @@ export function createWorkspaceRequestHandler({
                 payload: {
                   error: "SYNC_DESTINATION_UNSAFE",
                   message: sanitizeErrorMessage({ error, fallback: "Sync destination is not safe for writes." })
+                }
+              });
+              return;
+            }
+            if (error.code === "E_SYNC_FILE_DECISIONS_INVALID") {
+              sendJson({
+                response,
+                statusCode: 400,
+                payload: {
+                  error: "SYNC_FILE_DECISIONS_INVALID",
+                  message: sanitizeErrorMessage({ error, fallback: "Local sync file decisions are invalid." })
                 }
               });
               return;

@@ -1273,14 +1273,47 @@ describe("InspectorPanel local sync", () => {
             scopePath: "sync-target/board-abc",
             destinationRoot: "/tmp/workspace/sync-target/board-abc",
             files: [
-              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 123 },
-              { path: "package.json", action: "create", sizeBytes: 64 }
+              {
+                path: "src/screens/Home.tsx",
+                action: "overwrite",
+                status: "overwrite",
+                reason: "managed_destination_unchanged",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 123,
+                message: "Destination matches the last synced baseline and can be overwritten safely."
+              },
+              {
+                path: "package.json",
+                action: "create",
+                status: "create",
+                reason: "new_file",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 64,
+                message: "File will be created in the destination tree."
+              },
+              {
+                path: "src/legacy.tsx",
+                action: "overwrite",
+                status: "conflict",
+                reason: "destination_modified_since_sync",
+                decision: "skip",
+                selectedByDefault: false,
+                sizeBytes: 88,
+                message: "Destination was modified after the last sync. Review before overwriting it."
+              }
             ],
             summary: {
-              totalFiles: 2,
+              totalFiles: 3,
+              selectedFiles: 2,
               createCount: 1,
               overwriteCount: 1,
-              totalBytes: 187
+              conflictCount: 1,
+              untrackedCount: 0,
+              unchangedCount: 0,
+              totalBytes: 275,
+              selectedBytes: 187
             },
             confirmationToken: "token-123",
             confirmationExpiresAt: "2026-03-22T12:00:00.000Z"
@@ -1292,6 +1325,11 @@ describe("InspectorPanel local sync", () => {
       if (parsedBody.mode === "apply") {
         expect(parsedBody.confirmationToken).toBe("token-123");
         expect(parsedBody.confirmOverwrite).toBe(true);
+        expect(parsedBody.fileDecisions).toEqual([
+          { path: "src/screens/Home.tsx", decision: "write" },
+          { path: "package.json", decision: "write" },
+          { path: "src/legacy.tsx", decision: "write" }
+        ]);
         return new Response(
           JSON.stringify({
             jobId: "job-1",
@@ -1301,14 +1339,47 @@ describe("InspectorPanel local sync", () => {
             scopePath: "sync-target/board-abc",
             destinationRoot: "/tmp/workspace/sync-target/board-abc",
             files: [
-              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 123 },
-              { path: "package.json", action: "create", sizeBytes: 64 }
+              {
+                path: "src/screens/Home.tsx",
+                action: "overwrite",
+                status: "overwrite",
+                reason: "managed_destination_unchanged",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 123,
+                message: "Destination matches the last synced baseline and can be overwritten safely."
+              },
+              {
+                path: "package.json",
+                action: "create",
+                status: "create",
+                reason: "new_file",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 64,
+                message: "File will be created in the destination tree."
+              },
+              {
+                path: "src/legacy.tsx",
+                action: "overwrite",
+                status: "conflict",
+                reason: "destination_modified_since_sync",
+                decision: "write",
+                selectedByDefault: false,
+                sizeBytes: 88,
+                message: "Destination was modified after the last sync. Review before overwriting it."
+              }
             ],
             summary: {
-              totalFiles: 2,
+              totalFiles: 3,
+              selectedFiles: 3,
               createCount: 1,
               overwriteCount: 1,
-              totalBytes: 187
+              conflictCount: 1,
+              untrackedCount: 0,
+              unchangedCount: 0,
+              totalBytes: 275,
+              selectedBytes: 275
             },
             appliedAt: "2026-03-22T12:05:00.000Z"
           }),
@@ -1339,10 +1410,14 @@ describe("InspectorPanel local sync", () => {
       expect(screen.getByTestId("inspector-sync-preview-summary")).toBeInTheDocument();
     });
     expect(screen.getByTestId("inspector-sync-preview-summary")).toHaveTextContent(
-      "Files: 2 total, 1 create, 1 overwrite"
+      "Files: 3 total, 1 create, 1 managed overwrite, 1 conflict, 0 untracked, 0 unchanged"
     );
+    expect(screen.getByTestId("inspector-sync-selected-summary")).toHaveTextContent("Selected: 2 files");
+    expect(screen.getByTestId("inspector-sync-attention-banner")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-sync-apply-button")).toBeDisabled();
 
+    fireEvent.click(screen.getByTestId("inspector-sync-file-toggle-2"));
+    expect(screen.getByTestId("inspector-sync-selected-summary")).toHaveTextContent("Selected: 3 files");
     fireEvent.click(screen.getByTestId("inspector-sync-confirm-overwrite"));
     expect(screen.getByTestId("inspector-sync-apply-button")).toBeEnabled();
     fireEvent.click(screen.getByTestId("inspector-sync-apply-button"));
@@ -1350,7 +1425,7 @@ describe("InspectorPanel local sync", () => {
     await waitFor(() => {
       expect(screen.getByTestId("inspector-sync-success")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("inspector-sync-success")).toHaveTextContent("Wrote 2 files");
+    expect(screen.getByTestId("inspector-sync-success")).toHaveTextContent("Wrote 3 files");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     fetchSpy.mockRestore();

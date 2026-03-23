@@ -335,8 +335,11 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
 
     const dryRunFiles = dryRunBody.files as Array<Record<string, unknown>>;
     assert.ok(Array.isArray(dryRunFiles) && dryRunFiles.length > 0);
+    assert.equal(dryRunFiles[0]?.status, "create");
+    assert.equal(dryRunFiles[0]?.decision, "write");
     const dryRunSummary = dryRunBody.summary as Record<string, unknown>;
     assert.equal(dryRunSummary.totalFiles, dryRunFiles.length);
+    assert.ok(typeof dryRunSummary.selectedFiles === "number");
 
     const destinationRoot = dryRunBody.destinationRoot as string;
     const firstFile = dryRunFiles[0];
@@ -352,7 +355,11 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
       body: JSON.stringify({
         mode: "apply",
         confirmationToken: dryRunBody.confirmationToken,
-        confirmOverwrite: false
+        confirmOverwrite: false,
+        fileDecisions: dryRunFiles.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
       })
     });
     assert.equal(missingConfirmResult.status, 400);
@@ -364,7 +371,11 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
       body: JSON.stringify({
         mode: "apply",
         confirmationToken: dryRunBody.confirmationToken,
-        confirmOverwrite: true
+        confirmOverwrite: true,
+        fileDecisions: dryRunFiles.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
       })
     });
     assert.equal(applyResult.status, 200);
@@ -383,7 +394,11 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
       body: JSON.stringify({
         mode: "apply",
         confirmationToken: dryRunBody.confirmationToken,
-        confirmOverwrite: true
+        confirmOverwrite: true,
+        fileDecisions: dryRunFiles.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
       })
     });
     assert.equal(replayResult.status, 409);
@@ -639,7 +654,11 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
         body: JSON.stringify({
           mode: "apply",
           confirmationToken: liveToken,
-          confirmOverwrite: true
+          confirmOverwrite: true,
+          fileDecisions: liveFiles.map((entry) => ({
+            path: entry.path,
+            decision: entry.decision
+          }))
         })
       });
       assert.equal(liveApplyResult.status, 200);

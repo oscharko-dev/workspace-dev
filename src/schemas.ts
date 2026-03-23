@@ -554,7 +554,7 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
     };
   }
 
-  const allowedKeys = new Set(["mode", "confirmationToken", "confirmOverwrite"]);
+  const allowedKeys = new Set(["mode", "confirmationToken", "confirmOverwrite", "fileDecisions"]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
@@ -567,6 +567,45 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
   if (input.confirmOverwrite !== true) {
     pushIssue(issues, ["confirmOverwrite"], "confirmOverwrite must be true for apply mode.");
   }
+  if (!Array.isArray(input.fileDecisions) || input.fileDecisions.length === 0) {
+    pushIssue(issues, ["fileDecisions"], "fileDecisions must be a non-empty array.");
+  }
+
+  const fileDecisions = Array.isArray(input.fileDecisions) ? input.fileDecisions : [];
+  const seenPaths = new Set<string>();
+  const parsedFileDecisions: Array<{ path: string; decision: "write" | "skip" }> = [];
+  for (let index = 0; index < fileDecisions.length; index += 1) {
+    const candidate = fileDecisions[index];
+    if (!isRecord(candidate)) {
+      pushIssue(issues, ["fileDecisions", index], "Each fileDecisions entry must be an object.");
+      continue;
+    }
+
+    const rawPath = candidate.path;
+    if (typeof rawPath !== "string" || rawPath.trim().length === 0) {
+      pushIssue(issues, ["fileDecisions", index, "path"], "path must be a non-empty string.");
+    }
+
+    const rawDecision = candidate.decision;
+    if (rawDecision !== "write" && rawDecision !== "skip") {
+      pushIssue(issues, ["fileDecisions", index, "decision"], "decision must be one of: write, skip.");
+    }
+
+    if (typeof rawPath === "string" && rawPath.trim().length > 0) {
+      const normalizedPath = rawPath.trim();
+      if (seenPaths.has(normalizedPath)) {
+        pushIssue(issues, ["fileDecisions", index, "path"], `Duplicate decision for '${normalizedPath}'.`);
+      } else {
+        seenPaths.add(normalizedPath);
+        if (rawDecision === "write" || rawDecision === "skip") {
+          parsedFileDecisions.push({
+            path: normalizedPath,
+            decision: rawDecision
+          });
+        }
+      }
+    }
+  }
 
   if (issues.length > 0) {
     return { success: false, error: { issues } };
@@ -577,7 +616,8 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
     data: {
       mode: "apply",
       confirmationToken: input.confirmationToken as string,
-      confirmOverwrite: true
+      confirmOverwrite: true,
+      fileDecisions: parsedFileDecisions
     }
   };
 }

@@ -327,14 +327,21 @@ test("schema: sync apply requires token and explicit confirmation", () => {
   const invalid = SyncRequestSchema.safeParse({
     mode: "apply",
     confirmationToken: "",
-    confirmOverwrite: false
+    confirmOverwrite: false,
+    fileDecisions: []
   });
   assert.equal(invalid.success, false);
 
   const valid = SyncRequestSchema.safeParse({
     mode: "apply",
     confirmationToken: "token-123",
-    confirmOverwrite: true
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "src/App.tsx",
+        decision: "write"
+      }
+    ]
   });
   assert.equal(valid.success, true);
 });

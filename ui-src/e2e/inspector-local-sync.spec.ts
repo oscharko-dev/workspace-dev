@@ -1,8 +1,8 @@
 /**
  * E2E tests for Inspector local sync controls.
  *
- * Verifies preview/apply control flow, explicit overwrite confirmation gating,
- * and success rendering for the local sync panel.
+ * Verifies preview/apply control flow, per-file decisions, explicit overwrite
+ * confirmation gating, and success rendering for the local sync panel.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/456
  */
@@ -86,14 +86,47 @@ test.describe("inspector local sync controls", () => {
             scopePath: "sync-target/board-key-1",
             destinationRoot: "/tmp/workspace/sync-target/board-key-1",
             files: [
-              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 120 },
-              { path: "package.json", action: "create", sizeBytes: 44 }
+              {
+                path: "src/screens/Home.tsx",
+                action: "overwrite",
+                status: "overwrite",
+                reason: "managed_destination_unchanged",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 120,
+                message: "Destination matches the last synced baseline and can be overwritten safely."
+              },
+              {
+                path: "package.json",
+                action: "create",
+                status: "create",
+                reason: "new_file",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 44,
+                message: "File will be created in the destination tree."
+              },
+              {
+                path: "src/legacy.tsx",
+                action: "overwrite",
+                status: "conflict",
+                reason: "destination_modified_since_sync",
+                decision: "skip",
+                selectedByDefault: false,
+                sizeBytes: 19,
+                message: "Destination was modified after the last sync. Review before overwriting it."
+              }
             ],
             summary: {
-              totalFiles: 2,
+              totalFiles: 3,
+              selectedFiles: 2,
               createCount: 1,
               overwriteCount: 1,
-              totalBytes: 164
+              conflictCount: 1,
+              untrackedCount: 0,
+              unchangedCount: 0,
+              totalBytes: 183,
+              selectedBytes: 164
             },
             confirmationToken: "sync-token-123",
             confirmationExpiresAt: "2026-03-22T12:00:00.000Z"
@@ -105,6 +138,11 @@ test.describe("inspector local sync controls", () => {
       if (body.mode === "apply") {
         expect(body.confirmationToken).toBe("sync-token-123");
         expect(body.confirmOverwrite).toBe(true);
+        expect(body.fileDecisions).toEqual([
+          { path: "src/screens/Home.tsx", decision: "write" },
+          { path: "package.json", decision: "write" },
+          { path: "src/legacy.tsx", decision: "write" }
+        ]);
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -116,14 +154,47 @@ test.describe("inspector local sync controls", () => {
             scopePath: "sync-target/board-key-1",
             destinationRoot: "/tmp/workspace/sync-target/board-key-1",
             files: [
-              { path: "src/screens/Home.tsx", action: "overwrite", sizeBytes: 120 },
-              { path: "package.json", action: "create", sizeBytes: 44 }
+              {
+                path: "src/screens/Home.tsx",
+                action: "overwrite",
+                status: "overwrite",
+                reason: "managed_destination_unchanged",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 120,
+                message: "Destination matches the last synced baseline and can be overwritten safely."
+              },
+              {
+                path: "package.json",
+                action: "create",
+                status: "create",
+                reason: "new_file",
+                decision: "write",
+                selectedByDefault: true,
+                sizeBytes: 44,
+                message: "File will be created in the destination tree."
+              },
+              {
+                path: "src/legacy.tsx",
+                action: "overwrite",
+                status: "conflict",
+                reason: "destination_modified_since_sync",
+                decision: "write",
+                selectedByDefault: false,
+                sizeBytes: 19,
+                message: "Destination was modified after the last sync. Review before overwriting it."
+              }
             ],
             summary: {
-              totalFiles: 2,
+              totalFiles: 3,
+              selectedFiles: 3,
               createCount: 1,
               overwriteCount: 1,
-              totalBytes: 164
+              conflictCount: 1,
+              untrackedCount: 0,
+              unchangedCount: 0,
+              totalBytes: 183,
+              selectedBytes: 183
             },
             appliedAt: "2026-03-22T12:02:00.000Z"
           })
@@ -155,14 +226,20 @@ test.describe("inspector local sync controls", () => {
 
     await previewButton.click();
     await expect(page.getByTestId("inspector-sync-preview-summary")).toBeVisible();
-    await expect(page.getByTestId("inspector-sync-preview-summary")).toContainText("Files: 2 total, 1 create, 1 overwrite");
+    await expect(page.getByTestId("inspector-sync-preview-summary")).toContainText(
+      "Files: 3 total, 1 create, 1 managed overwrite, 1 conflict"
+    );
+    await expect(page.getByTestId("inspector-sync-attention-banner")).toBeVisible();
+    await expect(page.getByTestId("inspector-sync-selected-summary")).toContainText("Selected: 2 files");
     await expect(applyButton).toBeDisabled();
 
+    await page.getByTestId("inspector-sync-file-toggle-2").click();
+    await expect(page.getByTestId("inspector-sync-selected-summary")).toContainText("Selected: 3 files");
     await confirmCheckbox.click();
     await expect(applyButton).toBeEnabled();
 
     await applyButton.click();
     await expect(page.getByTestId("inspector-sync-success")).toBeVisible();
-    await expect(page.getByTestId("inspector-sync-success")).toContainText("Wrote 2 files");
+    await expect(page.getByTestId("inspector-sync-success")).toContainText("Wrote 3 files");
   });
 });
