@@ -2,7 +2,7 @@
  * Syntax-highlighted code viewer using Shiki.
  *
  * Features:
- * - Syntax highlighting for tsx, typescript, json via Shiki
+ * - Syntax highlighting for tsx, TypeScript, JSON via Shiki
  * - Line numbers in gutter
  * - Highlight range with smooth scroll
  * - Copy button (full file or highlighted range)

@@ -13,6 +13,7 @@ import path from "node:path";
 import test from "node:test";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 import { createDeterministicScreenFile, generateArtifacts } from "./generator-core.js";
+import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import {
   HEADING_FONT_SIZE_MIN,
   HEADING_FONT_WEIGHT_MIN,
@@ -208,6 +209,13 @@ test("E2E: generated screen files contain valid React component structure", { sk
       !content.includes("undefined undefined"),
       `Screen '${screen.name}' must not have doubled undefined tokens`
     );
+    validateGeneratedSourceFile({
+      filePath: file.path,
+      content,
+      context: {
+        screenName: screen.name
+      }
+    });
 
     for (const pattern of DEPRECATED_MUI_PROP_PATTERNS) {
       assert.equal(

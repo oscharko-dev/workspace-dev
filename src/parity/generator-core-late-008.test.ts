@@ -14,6 +14,7 @@ import {
   isDeepIconImport,
   extractSharedSxConstantsFromScreenContent
 } from "./generator-core.js";
+import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
@@ -831,5 +832,8 @@ test("deterministic screen rendering maps top-level table header patterns to App
   assert.ok(content.includes("<AppBar "));
   assert.ok(content.includes('role="banner"'));
   assert.equal(content.includes("<Table size=\"small\""), false);
+  validateGeneratedSourceFile({
+    filePath: "src/screens/TopLevelTableAppBar.tsx",
+    content
+  });
 });
-

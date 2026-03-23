@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import ts from "typescript";
 import {
   createDeterministicAppFile,
   createDeterministicScreenFile,
@@ -15,6 +14,7 @@ import {
   isDeepIconImport,
   extractSharedSxConstantsFromScreenContent
 } from "./generator-core.js";
+import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
@@ -77,15 +77,10 @@ const assertValidTsx = ({
   content: string;
   filePath: string;
 }): void => {
-  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const parseDiagnostics = sourceFile.parseDiagnostics.map((diagnostic) =>
-    `${diagnostic.start ?? 0}:${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`
-  );
-  assert.equal(
-    parseDiagnostics.length,
-    0,
-    `Expected generated TSX to parse without syntax errors for ${filePath}, got: ${parseDiagnostics.join("; ")}`
-  );
+  validateGeneratedSourceFile({
+    filePath,
+    content
+  });
 };
 
 const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for("workspace-dev.parity.generateArtifacts.runtimeAdapters");
@@ -3028,6 +3023,10 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
   assert.ok(screenContent.includes("<PrimaryButton"));
   assert.ok(screenContent.includes("appearance="));
   assert.equal(screenContent.includes('import { Button } from "@mui/material";'), false);
+  validateGeneratedSourceFile({
+    filePath: path.join(projectDir, toDeterministicScreenPath("Design System")),
+    content: screenContent
+  });
 
   const patternContent = await readFile(path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"), "utf8");
   assert.ok(patternContent.includes('import { ContentCard } from "@acme/ui";'));
@@ -3035,6 +3034,10 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
   assert.equal(/<Card(?=[\s>])/.test(patternContent), false);
   assert.equal(patternContent.includes("theme.unstable_sx("), false);
   assert.ok(patternContent.includes("sx={[{"));
+  validateGeneratedSourceFile({
+    filePath: path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"),
+    content: patternContent
+  });
 });
 
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {

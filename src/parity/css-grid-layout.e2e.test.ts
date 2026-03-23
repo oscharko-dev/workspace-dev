@@ -11,6 +11,7 @@ import {
   toNearestClusterIndex,
   createDeterministicScreenFile
 } from "./generator-core.js";
+import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import type { ScreenElementIR, ScreenIR } from "./types.js";
 
 const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? "xZkvYk9KOezMsi9LmPEFGX";
@@ -356,12 +357,13 @@ test("E2E: generated screen files contain valid JSX with CSS Grid when applicabl
     const generated = createDeterministicScreenFile(screen);
     assert.ok(generated.path.endsWith(".tsx"), `Generated file ${generated.path} should be a TSX file`);
     assert.ok(generated.content.length > 0, `Generated file ${generated.path} should have content`);
-
-    // Verify the generated code is syntactically valid
-    // Basic checks: balanced braces, no broken JSX
-    const openBraces = (generated.content.match(/{/g) ?? []).length;
-    const closeBraces = (generated.content.match(/}/g) ?? []).length;
-    assert.equal(openBraces, closeBraces, `Balanced braces in ${generated.path}`);
+    validateGeneratedSourceFile({
+      filePath: generated.path,
+      content: generated.content,
+      context: {
+        screenName: screen.name
+      }
+    });
 
     // If CSS Grid is used, verify the required properties
     if (generated.content.includes('display: "grid"')) {
