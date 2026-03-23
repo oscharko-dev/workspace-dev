@@ -209,7 +209,7 @@ function editableNodeQueryOverrides({
                 {
                   irNodeId: "node-editable",
                   irNodeName: "Editable Node",
-                  irNodeType: "text",
+                  irNodeType: "container",
                   file: "src/screens/Home.tsx",
                   startLine: 1,
                   endLine: 6
@@ -235,7 +235,7 @@ function editableNodeQueryOverrides({
                 {
                   id: "node-editable",
                   name: "Editable Node",
-                  type: "text",
+                  type: "container",
                   fillColor: "#112233",
                   opacity: 0.5,
                   fontSize: 16,
@@ -252,8 +252,16 @@ function editableNodeQueryOverrides({
                   gap: 12,
                   width: 360,
                   height: 48,
-                  layoutMode: "row",
-                  children: []
+                  layoutMode: "HORIZONTAL",
+                  primaryAxisAlignItems: "CENTER",
+                  counterAxisAlignItems: "MAX",
+                  children: [
+                    {
+                      id: "node-editable-child",
+                      name: "Child",
+                      type: "text"
+                    }
+                  ]
                 }
               ]
             }
@@ -788,7 +796,7 @@ describe("InspectorPanel Edit Studio", () => {
     installMutationMock();
   });
 
-  it("renders scalar controls in edit mode and excludes deferred fields", async () => {
+  it("renders scalar and layout controls in edit mode while keeping deferred fields hidden", async () => {
     installQueryMock({
       overrides: editableNodeQueryOverrides()
     });
@@ -814,11 +822,16 @@ describe("InspectorPanel Edit Studio", () => {
     expect(screen.getByTestId("inspector-edit-input-fontFamily")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-edit-input-padding-top")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-edit-input-gap")).toBeInTheDocument();
-    expect(screen.queryByTestId("inspector-edit-input-width")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("inspector-edit-input-height")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("inspector-edit-input-layoutMode")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-layout-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-width")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-height")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-layoutMode")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-primaryAxisAlignItems")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-input-counterAxisAlignItems")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-edit-input-x")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-edit-input-maxWidth")).not.toBeInTheDocument();
     expect(screen.getByTestId("inspector-edit-v1-deferred-fields")).toHaveTextContent(
-      "Deferred in v1: width, height, layoutMode."
+      "Deferred: x, y, minWidth, maxWidth, maxHeight, responsive breakpoints, and screen-root layout editing."
     );
   });
 
@@ -865,6 +878,43 @@ describe("InspectorPanel Edit Studio", () => {
     expect(payloadText).toContain("\"field\": \"fillColor\"");
     expect(payloadText).toContain("\"value\": \"#aabbcc\"");
     expect(payloadText).not.toContain("\"backgroundColor\"");
+  });
+
+  it("updates layout fields, hides alignment controls for NONE, and keeps exact IR field names in payload", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    const widthInput = screen.getByTestId("inspector-edit-input-width");
+    fireEvent.change(widthInput, { target: { value: "420" } });
+    fireEvent.blur(widthInput);
+
+    const layoutModeSelect = screen.getByTestId("inspector-edit-input-layoutMode");
+    fireEvent.change(layoutModeSelect, { target: { value: "NONE" } });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("inspector-edit-input-primaryAxisAlignItems")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("inspector-edit-input-counterAxisAlignItems")).not.toBeInTheDocument();
+    });
+
+    const payloadText = screen.getByTestId("inspector-edit-payload-preview").textContent ?? "";
+    expect(payloadText).toContain("\"field\": \"width\"");
+    expect(payloadText).toContain("\"field\": \"layoutMode\"");
+    expect(payloadText).toContain("\"value\": \"NONE\"");
   });
 
   it("restores persisted draft for matching fingerprint after remount", async () => {
@@ -1037,10 +1087,61 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
     expect(screen.getByTestId("inspector-impact-review-summary-files")).toHaveTextContent("Affected files: 1");
     expect(screen.getByTestId("inspector-impact-review-summary-unmapped")).toHaveTextContent("Unmapped overrides: 1");
     expect(screen.getByTestId("inspector-impact-review-summary-categories")).toHaveTextContent(
-      "Categories: 1 visual, 1 validation, 0 other"
+      "Categories: 1 visual, 0 layout, 1 validation, 0 other"
     );
     expect(screen.getByTestId("inspector-impact-review-file-list")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-impact-review-unmapped-list")).toBeInTheDocument();
+  });
+
+  it("shows layout blast radius callout when pending overrides include layout fields", async () => {
+    const queryOverrides = editableNodeQueryOverrides();
+    const designIrPayload = (queryOverrides["inspector-design-ir"]?.data as {
+      payload?: { screens?: Array<Record<string, unknown>> };
+    }).payload;
+    const screens = designIrPayload?.screens ?? [];
+    const baseFingerprint = computeInspectorDraftBaseFingerprint({
+      screens: screens as Array<{
+        id: string;
+        name: string;
+        generatedFile?: string;
+        children: Array<Record<string, unknown>>;
+      }>
+    });
+
+    let restoredDraft = createInspectorOverrideDraft({
+      sourceJobId: "job-1",
+      baseFingerprint
+    });
+    restoredDraft = upsertInspectorOverrideEntry({
+      draft: restoredDraft,
+      nodeId: "node-editable",
+      field: "width",
+      value: 420
+    });
+
+    window.localStorage.setItem(
+      toInspectorOverrideDraftStorageKey("job-1"),
+      JSON.stringify(restoredDraft)
+    );
+
+    installQueryMock({
+      overrides: queryOverrides
+    });
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-impact-review-summary")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("inspector-impact-review-summary-categories")).toHaveTextContent(
+      "Categories: 0 visual, 1 layout, 0 validation, 0 other"
+    );
+    expect(screen.getByTestId("inspector-impact-review-layout-risk")).toBeInTheDocument();
   });
 
   it("submits regeneration and invokes parent handoff callback with accepted job id", async () => {

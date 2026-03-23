@@ -25,6 +25,7 @@ describe("deriveInspectorImpactReviewModel", () => {
       unmappedOverrides: 0,
       categories: {
         visual: 0,
+        layout: 0,
         validation: 0,
         other: 0
       }
@@ -33,12 +34,13 @@ describe("deriveInspectorImpactReviewModel", () => {
     expect(model.unmapped).toEqual([]);
   });
 
-  it("groups mixed scalar + validation overrides at file level and tracks unmapped entries", () => {
+  it("groups mixed visual, layout, and validation overrides at file level and tracks unmapped entries", () => {
     const model = deriveInspectorImpactReviewModel({
       entries: [
         { nodeId: "node-a", field: "fillColor" },
         { nodeId: "node-a", field: "validationMessage" },
         { nodeId: "screen-home", field: "gap" },
+        { nodeId: "node-a", field: "width" },
         { nodeId: "node-missing", field: "opacity" }
       ],
       manifest: {
@@ -62,12 +64,13 @@ describe("deriveInspectorImpactReviewModel", () => {
 
     expect(model.empty).toBe(false);
     expect(model.summary).toEqual({
-      totalOverrides: 4,
+      totalOverrides: 5,
       affectedFiles: 1,
-      mappedOverrides: 3,
+      mappedOverrides: 4,
       unmappedOverrides: 1,
       categories: {
-        visual: 3,
+        visual: 2,
+        layout: 2,
         validation: 1,
         other: 0
       }
@@ -75,9 +78,10 @@ describe("deriveInspectorImpactReviewModel", () => {
     expect(model.files).toHaveLength(1);
     expect(model.files[0]).toEqual({
       filePath: "src/screens/Home.tsx",
-      overrideCount: 3,
+      overrideCount: 4,
       categories: {
-        visual: 2,
+        visual: 1,
+        layout: 2,
         validation: 1,
         other: 0
       },
@@ -97,11 +101,18 @@ describe("deriveInspectorImpactReviewModel", () => {
           category: "validation"
         },
         {
+          nodeId: "node-a",
+          nodeName: "Title",
+          nodeType: "text",
+          field: "width",
+          category: "layout"
+        },
+        {
           nodeId: "screen-home",
           nodeName: "Home",
           nodeType: "screen",
           field: "gap",
-          category: "visual"
+          category: "layout"
         }
       ]
     });
@@ -176,6 +187,7 @@ describe("deriveInspectorImpactReviewModel", () => {
     ]);
     expect(model.summary.categories).toEqual({
       visual: 3,
+      layout: 0,
       validation: 1,
       other: 1
     });

@@ -66,6 +66,49 @@ const createLocalFigmaPayload = () => ({
   }
 });
 
+function findNodeById(
+  children: Array<Record<string, unknown>>,
+  nodeId: string
+): Record<string, unknown> | null {
+  for (const child of children) {
+    if (child.id === nodeId) {
+      return child;
+    }
+    const nestedChildren = Array.isArray(child.children)
+      ? child.children as Array<Record<string, unknown>>
+      : [];
+    const nested = findNodeById(nestedChildren, nodeId);
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function findFirstLayoutOverrideCandidate(
+  children: Array<Record<string, unknown>>
+): Record<string, unknown> | null {
+  for (const child of children) {
+    const hasChildren = Array.isArray(child.children) && child.children.length > 0;
+    if (
+      typeof child.id === "string" &&
+      child.type !== "text" &&
+      hasChildren &&
+      typeof child.width === "number"
+    ) {
+      return child;
+    }
+
+    const nested = findFirstLayoutOverrideCandidate(
+      Array.isArray(child.children) ? child.children as Array<Record<string, unknown>> : []
+    );
+    if (nested) {
+      return nested;
+    }
+  }
+  return null;
+}
+
 const getPort = (): number => 20_000 + Math.floor(Math.random() * 10_000);
 
 const jsonFetch = async (url: string, options?: RequestInit): Promise<{ status: number; body: unknown }> => {
@@ -204,7 +247,9 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
         overrides: [
           { nodeId: "card-1", field: "fillColor", value: "#0000ff" },
           { nodeId: "card-1", field: "cornerRadius", value: 24 },
-          { nodeId: "heading-1", field: "fontSize", value: 48 }
+          { nodeId: "heading-1", field: "fontSize", value: 48 },
+          { nodeId: "card-1", field: "width", value: 440 },
+          { nodeId: "card-1", field: "layoutMode", value: "horizontal" }
         ],
         draftId: "e2e-draft-001",
         baseFingerprint: "fnv1a64:e2etest123"
@@ -232,7 +277,7 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const lineage = regenTerminal.body.lineage as Record<string, unknown>;
     assert.ok(lineage);
     assert.equal(lineage.sourceJobId, sourceJobId);
-    assert.equal(lineage.overrideCount, 3);
+    assert.equal(lineage.overrideCount, 5);
     assert.equal(lineage.draftId, "e2e-draft-001");
     assert.equal(lineage.baseFingerprint, "fnv1a64:e2etest123");
 
@@ -258,6 +303,20 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const resultResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/result`);
     assert.equal(resultResult.status, 200);
     assert.ok((resultResult.body as Record<string, unknown>).lineage);
+
+    const regenIrResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/design-ir`);
+    assert.equal(regenIrResult.status, 200);
+    const regenIrBody = regenIrResult.body as Record<string, unknown>;
+    const regenScreens = regenIrBody.screens as Array<Record<string, unknown>>;
+    const regenCard = findNodeById(
+      (regenScreens[0]?.children as Array<Record<string, unknown>> | undefined) ?? [],
+      "card-1"
+    );
+    assert.ok(regenCard);
+    assert.equal(regenCard?.fillColor, "#0000ff");
+    assert.equal(regenCard?.cornerRadius, 24);
+    assert.equal(regenCard?.width, 440);
+    assert.equal(regenCard?.layoutMode, "HORIZONTAL");
 
     // 11. Local sync dry-run returns plan + confirmation token without writing files yet
     const dryRunResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
@@ -369,6 +428,15 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     });
     assert.equal(badBodyResult.status, 400);
 
+    const invalidLayoutBodyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`, {
+      method: "POST",
+      body: JSON.stringify({
+        overrides: [{ nodeId: "card-1", field: "layoutMode", value: "row" }]
+      })
+    });
+    assert.equal(invalidLayoutBodyResult.status, 400);
+    assert.equal((invalidLayoutBodyResult.body as Record<string, unknown>).error, "VALIDATION_ERROR");
+
     // 14. Regeneration of running (non-completed) source returns 409
     // (sourceJob is already completed, so test with regen job which is also completed — skip this as it's covered by unit tests)
 
@@ -462,7 +530,7 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
     const sourceJobId = (submitResult.body as Record<string, unknown>).jobId as string;
 
     // 2. Wait for source job — may fail due to lint but that's ok, we check for IR availability
-    const sourceTerminal = await pollForTerminal({ baseUrl, jobId: sourceJobId, timeoutMs: 120_000 });
+    const sourceTerminal = await pollForTerminal({ baseUrl, jobId: sourceJobId, timeoutMs: 300_000 });
     const sourceStatus = sourceTerminal.body.status as string;
 
     // The job might fail at validate.project due to lint errors from this particular board.
@@ -498,11 +566,21 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
     }
 
     // Source completed — run full regeneration
-    const firstScreenId = screens[0]?.id as string;
+    const layoutCandidate = findFirstLayoutOverrideCandidate(
+      ((screens[0]?.children as Array<Record<string, unknown>> | undefined) ?? [])
+    );
+    if (!layoutCandidate || typeof layoutCandidate.id !== "string") {
+      assert.ok(true, "Live board did not expose a mapped layout candidate for width/layoutMode overrides.");
+      return;
+    }
+
     const regenResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`, {
       method: "POST",
       body: JSON.stringify({
-        overrides: [{ nodeId: firstScreenId, field: "gap", value: 20 }],
+        overrides: [
+          { nodeId: layoutCandidate.id, field: "width", value: Number(layoutCandidate.width) + 40 },
+          { nodeId: layoutCandidate.id, field: "layoutMode", value: "HORIZONTAL" }
+        ],
         draftId: "live-figma-test"
       })
     });
@@ -511,7 +589,7 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
     const regenJobId = (regenResult.body as Record<string, unknown>).jobId as string;
 
     // 4. Wait for regeneration
-    const regenTerminal = await pollForTerminal({ baseUrl, jobId: regenJobId, timeoutMs: 120_000 });
+    const regenTerminal = await pollForTerminal({ baseUrl, jobId: regenJobId, timeoutMs: 300_000 });
 
     // Regen may also fail at validate due to same lint issues, but the flow is correct
     const regenStatus = regenTerminal.body.status as string;
@@ -519,6 +597,7 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
     assert.ok(regenLineage, "Regeneration job should always have lineage");
     assert.equal(regenLineage.sourceJobId, sourceJobId);
     assert.equal(regenLineage.draftId, "live-figma-test");
+    assert.equal(regenLineage.overrideCount, 2);
 
     // Verify figma.source was skipped
     const stages = regenTerminal.body.stages as Array<Record<string, unknown>>;
@@ -527,6 +606,18 @@ test("e2e: regeneration with REST Figma source (live board)", async () => {
 
     if (regenStatus === "completed") {
       assert.equal(stages.find((s) => s.name === "codegen.generate")?.status, "completed");
+      const regenIrResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/design-ir`);
+      assert.equal(regenIrResult.status, 200);
+      const regenIrBody = regenIrResult.body as Record<string, unknown>;
+      const regenScreens = regenIrBody.screens as Array<Record<string, unknown>>;
+      const updatedCandidate = findNodeById(
+        ((regenScreens[0]?.children as Array<Record<string, unknown>> | undefined) ?? []),
+        layoutCandidate.id
+      );
+      assert.ok(updatedCandidate);
+      assert.equal(updatedCandidate?.width, Number(layoutCandidate.width) + 40);
+      assert.equal(updatedCandidate?.layoutMode, "HORIZONTAL");
+
       const liveDryRunResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
         method: "POST",
         body: JSON.stringify({

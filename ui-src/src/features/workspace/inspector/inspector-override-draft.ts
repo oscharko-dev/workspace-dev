@@ -10,14 +10,30 @@ import {
   type FormValidationOverrideValue,
   type FormValidationOverrideValueByField
 } from "./form-validation-override-translators";
+import {
+  LAYOUT_OVERRIDE_FIELDS,
+  type LayoutOverrideField,
+  type LayoutOverrideValue,
+  type LayoutOverrideValueByField,
+  isLayoutOverrideValue
+} from "./layout-override-translators";
 
 // ---------------------------------------------------------------------------
-// Unified override field types (scalar + form validation)
+// Unified override field types (scalar + layout + form validation)
 // ---------------------------------------------------------------------------
 
-export type InspectorOverrideField = ScalarOverrideField | FormValidationOverrideField;
-export type InspectorOverrideValue = ScalarOverrideValue | FormValidationOverrideValue;
-export type InspectorOverrideValueByField = ScalarOverrideValueByField & FormValidationOverrideValueByField;
+export type InspectorOverrideField =
+  | ScalarOverrideField
+  | LayoutOverrideField
+  | FormValidationOverrideField;
+export type InspectorOverrideValue =
+  | ScalarOverrideValue
+  | LayoutOverrideValue
+  | FormValidationOverrideValue;
+export type InspectorOverrideValueByField =
+  ScalarOverrideValueByField
+  & LayoutOverrideValueByField
+  & FormValidationOverrideValueByField;
 
 export const INSPECTOR_OVERRIDE_DRAFT_VERSION = 2;
 const INSPECTOR_OVERRIDE_DRAFT_STORAGE_VERSION = 1;
@@ -87,8 +103,13 @@ function isFormValidationOverrideField(value: unknown): value is FormValidationO
     && (FORM_VALIDATION_OVERRIDE_FIELDS as readonly string[]).includes(value);
 }
 
+function isLayoutOverrideField(value: unknown): value is LayoutOverrideField {
+  return typeof value === "string"
+    && (LAYOUT_OVERRIDE_FIELDS as readonly string[]).includes(value);
+}
+
 function isInspectorOverrideField(value: unknown): value is InspectorOverrideField {
-  return isScalarOverrideField(value) || isFormValidationOverrideField(value);
+  return isScalarOverrideField(value) || isLayoutOverrideField(value) || isFormValidationOverrideField(value);
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -134,6 +155,9 @@ function isFormValidationOverrideValue(field: FormValidationOverrideField, value
 function isInspectorOverrideValue(field: InspectorOverrideField, value: unknown): value is InspectorOverrideValue {
   if (isScalarOverrideField(field)) {
     return isScalarOverrideValue(field, value);
+  }
+  if (isLayoutOverrideField(field)) {
+    return isLayoutOverrideValue(field, value);
   }
   if (isFormValidationOverrideField(field)) {
     return isFormValidationOverrideValue(field, value);

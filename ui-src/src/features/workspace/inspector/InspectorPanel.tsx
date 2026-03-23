@@ -78,6 +78,16 @@ import {
   type FormValidationOverrideField
 } from "./form-validation-override-translators";
 import {
+  COUNTER_AXIS_ALIGN_ITEMS,
+  LAYOUT_MODE_VALUES,
+  PRIMARY_AXIS_ALIGN_ITEMS,
+  deriveLayoutOverrideFieldSupport,
+  resolveLayoutModeValue,
+  translateLayoutOverrideInput,
+  type LayoutModeOverrideValue,
+  type LayoutOverrideField
+} from "./layout-override-translators";
+import {
   computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
   carryForwardDraft,
@@ -328,6 +338,7 @@ type PaddingSide = (typeof PADDING_SIDES)[number];
 type FieldValidationErrors = Partial<Record<InspectorOverrideField, string | null>>;
 type ScalarControlInputState = Partial<Record<Exclude<ScalarOverrideField, "padding">, string>>;
 type PaddingControlInputState = Partial<Record<PaddingSide, string>>;
+type LayoutControlInputState = Partial<Record<LayoutOverrideField, string>>;
 type FormValidationControlInputState = {
   required?: boolean;
   validationType?: string;
@@ -641,6 +652,13 @@ function toPaddingControlInputValue(value: unknown): PaddingControlInputState {
   };
 }
 
+function toLayoutControlInputValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return toScalarControlInputValue(value);
+}
+
 function fieldLabel(field: InspectorOverrideField): string {
   switch (field) {
     case "fillColor":
@@ -659,6 +677,16 @@ function fieldLabel(field: InspectorOverrideField): string {
       return "Padding";
     case "gap":
       return "Gap";
+    case "width":
+      return "Width";
+    case "height":
+      return "Height";
+    case "layoutMode":
+      return "Layout mode";
+    case "primaryAxisAlignItems":
+      return "Primary axis align";
+    case "counterAxisAlignItems":
+      return "Counter axis align";
     case "required":
       return "Required";
     case "validationType":
@@ -711,6 +739,7 @@ export function InspectorPanel({
   const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
   const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
+  const [layoutControlInputs, setLayoutControlInputs] = useState<LayoutControlInputState>({});
   const [formValidationControlInputs, setFormValidationControlInputs] = useState<FormValidationControlInputState>({});
   const [regenerationAccepted, setRegenerationAccepted] = useState<RegenerationAcceptedPayload | null>(null);
   const [regenerationError, setRegenerationError] = useState<EndpointErrorDetails | null>(null);
@@ -1358,6 +1387,45 @@ export function InspectorPanel({
   const unsupportedScalarFields = useMemo(() => {
     return scalarFieldSupport.filter((entry) => !entry.supported);
   }, [scalarFieldSupport]);
+  const effectiveLayoutMode = useMemo<LayoutModeOverrideValue>(() => {
+    if (!selectedNodeId || !selectedIrNodeData) {
+      return "NONE";
+    }
+    const overrideValue = overrideDraft
+      ? getInspectorOverrideValue({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field: "layoutMode"
+      })
+      : null;
+    return resolveLayoutModeValue(overrideValue ?? selectedIrNodeData.layoutMode) ?? "NONE";
+  }, [overrideDraft, selectedIrNodeData, selectedNodeId]);
+  const layoutFieldSupport = useMemo(() => {
+    if (!selectedIrNodeData) {
+      return [];
+    }
+    return deriveLayoutOverrideFieldSupport({
+      nodeData: selectedIrNodeData,
+      effectiveLayoutMode
+    });
+  }, [effectiveLayoutMode, selectedIrNodeData]);
+  const editableLayoutFields = useMemo(() => {
+    return layoutFieldSupport
+      .filter((entry) => entry.supported)
+      .map((entry) => entry.field);
+  }, [layoutFieldSupport]);
+  const unsupportedLayoutFields = useMemo(() => {
+    return layoutFieldSupport.filter((entry) => {
+      if (entry.supported) {
+        return false;
+      }
+      if (effectiveLayoutMode === "NONE"
+        && (entry.field === "primaryAxisAlignItems" || entry.field === "counterAxisAlignItems")) {
+        return false;
+      }
+      return true;
+    });
+  }, [effectiveLayoutMode, layoutFieldSupport]);
   const formValidationFieldSupport = useMemo(() => {
     if (!selectedIrNodeData) {
       return [];
@@ -1781,6 +1849,7 @@ export function InspectorPanel({
     if (!selectedNodeId || !selectedIrNodeData || !overrideDraft) {
       setScalarControlInputs({});
       setPaddingControlInputs({});
+      setLayoutControlInputs({});
       setFormValidationControlInputs({});
       setFieldValidationErrors({});
       return;
@@ -1809,6 +1878,19 @@ export function InspectorPanel({
       nextScalarControlInputs[field] = toScalarControlInputValue(value);
     }
 
+    const nextLayoutControlInputs: LayoutControlInputState = {};
+    for (const field of editableLayoutFields) {
+      const overrideValue = getInspectorOverrideValue({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field
+      });
+      const fallbackValue = field === "layoutMode"
+        ? effectiveLayoutMode
+        : selectedIrNodeData[field];
+      nextLayoutControlInputs[field] = toLayoutControlInputValue(overrideValue ?? fallbackValue);
+    }
+
     const nextFormValidationControlInputs: FormValidationControlInputState = {};
     for (const field of editableFormValidationFields) {
       const overrideValue = getInspectorOverrideValue({
@@ -1828,9 +1910,18 @@ export function InspectorPanel({
 
     setScalarControlInputs(nextScalarControlInputs);
     setPaddingControlInputs(nextPaddingControlInputs);
+    setLayoutControlInputs(nextLayoutControlInputs);
     setFormValidationControlInputs(nextFormValidationControlInputs);
     setFieldValidationErrors({});
-  }, [editableScalarFields, editableFormValidationFields, overrideDraft, selectedIrNodeData, selectedNodeId]);
+  }, [
+    editableFormValidationFields,
+    editableLayoutFields,
+    editableScalarFields,
+    effectiveLayoutMode,
+    overrideDraft,
+    selectedIrNodeData,
+    selectedNodeId
+  ]);
 
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
@@ -2188,6 +2279,121 @@ export function InspectorPanel({
     }));
   }, [selectedNodeId, overrideDraft, commitDraftEdit]);
 
+  const applyLayoutOverrideInput = useCallback(({
+    field,
+    rawValue
+  }: {
+    field: LayoutOverrideField;
+    rawValue: unknown;
+  }) => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    const result = translateLayoutOverrideInput({
+      field,
+      rawValue,
+      effectiveLayoutMode
+    });
+
+    if (!result.ok) {
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: result.error
+      }));
+      return;
+    }
+
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+
+    if (overrideDraft) {
+      let nextDraft = upsertInspectorOverrideEntry({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field: result.field,
+        value: result.value
+      });
+
+      if (field === "layoutMode" && result.value === "NONE") {
+        nextDraft = removeInspectorOverrideEntry({
+          draft: nextDraft,
+          nodeId: selectedNodeId,
+          field: "primaryAxisAlignItems"
+        });
+        nextDraft = removeInspectorOverrideEntry({
+          draft: nextDraft,
+          nodeId: selectedNodeId,
+          field: "counterAxisAlignItems"
+        });
+        setLayoutControlInputs((current) => ({
+          ...current,
+          primaryAxisAlignItems: "",
+          counterAxisAlignItems: ""
+        }));
+        setFieldValidationErrors((current) => ({
+          ...current,
+          primaryAxisAlignItems: null,
+          counterAxisAlignItems: null
+        }));
+      }
+
+      commitDraftEdit(nextDraft);
+    }
+  }, [selectedNodeId, effectiveLayoutMode, overrideDraft, commitDraftEdit]);
+
+  const handleLayoutInputChange = useCallback((field: LayoutOverrideField, value: string) => {
+    setLayoutControlInputs((current) => ({
+      ...current,
+      [field]: value
+    }));
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+  }, []);
+
+  const handleResetLayoutOverride = useCallback((field: LayoutOverrideField) => {
+    if (!selectedNodeId || !overrideDraft) {
+      return;
+    }
+
+    let nextDraft = removeInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    });
+
+    if (field === "layoutMode") {
+      const resetLayoutMode = resolveLayoutModeValue(selectedIrNodeData?.layoutMode) ?? "NONE";
+      if (resetLayoutMode === "NONE") {
+        nextDraft = removeInspectorOverrideEntry({
+          draft: nextDraft,
+          nodeId: selectedNodeId,
+          field: "primaryAxisAlignItems"
+        });
+        nextDraft = removeInspectorOverrideEntry({
+          draft: nextDraft,
+          nodeId: selectedNodeId,
+          field: "counterAxisAlignItems"
+        });
+        setLayoutControlInputs((current) => ({
+          ...current,
+          primaryAxisAlignItems: "",
+          counterAxisAlignItems: ""
+        }));
+      }
+    }
+
+    commitDraftEdit(nextDraft);
+    setFieldValidationErrors((current) => ({
+      ...current,
+      [field]: null
+    }));
+  }, [selectedIrNodeData, selectedNodeId, overrideDraft, commitDraftEdit]);
+
   const structuredOverridePayload = useMemo(() => {
     if (!overrideDraft) {
       return null;
@@ -2215,6 +2421,17 @@ export function InspectorPanel({
   }, [canSubmitRegeneration, regenerateMutation]);
 
   const hasScalarFieldOverride = useCallback((field: ScalarOverrideField): boolean => {
+    if (!overrideDraft || !selectedNodeId) {
+      return false;
+    }
+    return Boolean(getInspectorOverrideEntry({
+      draft: overrideDraft,
+      nodeId: selectedNodeId,
+      field
+    }));
+  }, [overrideDraft, selectedNodeId]);
+
+  const hasLayoutFieldOverride = useCallback((field: LayoutOverrideField): boolean => {
     if (!overrideDraft || !selectedNodeId) {
       return false;
     }
@@ -3083,10 +3300,13 @@ export function InspectorPanel({
           >
             <p className="m-0 font-semibold">Edit Studio</p>
             <p className="m-0 mt-1">
-              Scalar override controls are limited to the v1 lane and use exact IR field names in payload output.
+              Structured overrides use exact IR field names in payload output and persist as a single draft.
+            </p>
+            <p data-testid="inspector-edit-supported-layout-fields" className="m-0 mt-1 text-indigo-900">
+              Supported layout overrides: width, height, layoutMode, primaryAxisAlignItems, counterAxisAlignItems.
             </p>
             <p data-testid="inspector-edit-v1-deferred-fields" className="m-0 mt-1 text-indigo-800">
-              Deferred in v1: width, height, layoutMode.
+              Deferred: x, y, minWidth, maxWidth, maxHeight, responsive breakpoints, and screen-root layout editing.
             </p>
             {draftRestoreWarning && !staleDraftCheckResult ? (
               <p
@@ -3261,6 +3481,203 @@ export function InspectorPanel({
                       <p
                         key={entry.field}
                         data-testid={`inspector-edit-unsupported-${entry.field}`}
+                        className="m-0 mt-1"
+                      >
+                        {entry.field}: {entry.reason ?? "Not supported."}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {editableLayoutFields.length > 0 ? (
+                  <div
+                    data-testid="inspector-edit-layout-panel"
+                    className="mt-3 rounded border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-950"
+                  >
+                    <p className="m-0 font-semibold">Layout &amp; Dimensions</p>
+                    <p className="m-0 mt-1">
+                      Generator-aware node-level layout controls for base IR regeneration.
+                    </p>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      {editableLayoutFields.map((field) => {
+                        if (field === "layoutMode") {
+                          return (
+                            <div
+                              key={field}
+                              data-testid="inspector-edit-field-layoutMode"
+                              className="rounded border border-cyan-200 bg-white px-2 py-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="font-semibold text-cyan-900" htmlFor="inspector-edit-input-layoutMode">
+                                  {fieldLabel(field)}
+                                </label>
+                                {hasLayoutFieldOverride(field) ? (
+                                  <button
+                                    type="button"
+                                    data-testid="inspector-edit-reset-layoutMode"
+                                    onClick={() => {
+                                      handleResetLayoutOverride(field);
+                                    }}
+                                    className="cursor-pointer rounded border border-cyan-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 transition hover:bg-cyan-100"
+                                  >
+                                    Reset
+                                  </button>
+                                ) : null}
+                              </div>
+                              <select
+                                id="inspector-edit-input-layoutMode"
+                                data-testid="inspector-edit-input-layoutMode"
+                                value={layoutControlInputs.layoutMode ?? effectiveLayoutMode}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  handleLayoutInputChange(field, value);
+                                  applyLayoutOverrideInput({
+                                    field,
+                                    rawValue: value
+                                  });
+                                }}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                              >
+                                {LAYOUT_MODE_VALUES.map((layoutValue) => (
+                                  <option key={layoutValue} value={layoutValue}>
+                                    {layoutValue}
+                                  </option>
+                                ))}
+                              </select>
+                              {fieldValidationErrors.layoutMode ? (
+                                <p data-testid="inspector-edit-error-layoutMode" className="m-0 mt-1 text-[11px] text-rose-700">
+                                  {fieldValidationErrors.layoutMode}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        }
+
+                        if (field === "primaryAxisAlignItems" || field === "counterAxisAlignItems") {
+                          const values = field === "primaryAxisAlignItems"
+                            ? PRIMARY_AXIS_ALIGN_ITEMS
+                            : COUNTER_AXIS_ALIGN_ITEMS;
+                          return (
+                            <div
+                              key={field}
+                              data-testid={`inspector-edit-field-${field}`}
+                              className="rounded border border-cyan-200 bg-white px-2 py-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="font-semibold text-cyan-900" htmlFor={`inspector-edit-input-${field}`}>
+                                  {fieldLabel(field)}
+                                </label>
+                                {hasLayoutFieldOverride(field) ? (
+                                  <button
+                                    type="button"
+                                    data-testid={`inspector-edit-reset-${field}`}
+                                    onClick={() => {
+                                      handleResetLayoutOverride(field);
+                                    }}
+                                    className="cursor-pointer rounded border border-cyan-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 transition hover:bg-cyan-100"
+                                  >
+                                    Reset
+                                  </button>
+                                ) : null}
+                              </div>
+                              <select
+                                id={`inspector-edit-input-${field}`}
+                                data-testid={`inspector-edit-input-${field}`}
+                                value={layoutControlInputs[field] ?? ""}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  handleLayoutInputChange(field, value);
+                                  if (value) {
+                                    applyLayoutOverrideInput({
+                                      field,
+                                      rawValue: value
+                                    });
+                                  }
+                                }}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                              >
+                                <option value="">— select —</option>
+                                {values.map((optionValue) => (
+                                  <option key={optionValue} value={optionValue}>
+                                    {optionValue}
+                                  </option>
+                                ))}
+                              </select>
+                              {fieldValidationErrors[field] ? (
+                                <p data-testid={`inspector-edit-error-${field}`} className="m-0 mt-1 text-[11px] text-rose-700">
+                                  {fieldValidationErrors[field]}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={field}
+                            data-testid={`inspector-edit-field-${field}`}
+                            className="rounded border border-cyan-200 bg-white px-2 py-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="font-semibold text-cyan-900" htmlFor={`inspector-edit-input-${field}`}>
+                                {fieldLabel(field)}
+                              </label>
+                              {hasLayoutFieldOverride(field) ? (
+                                <button
+                                  type="button"
+                                  data-testid={`inspector-edit-reset-${field}`}
+                                  onClick={() => {
+                                    handleResetLayoutOverride(field);
+                                  }}
+                                  className="cursor-pointer rounded border border-cyan-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 transition hover:bg-cyan-100"
+                                >
+                                  Reset
+                                </button>
+                              ) : null}
+                            </div>
+                            <input
+                              id={`inspector-edit-input-${field}`}
+                              data-testid={`inspector-edit-input-${field}`}
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={layoutControlInputs[field] ?? ""}
+                              onChange={(event) => {
+                                handleLayoutInputChange(field, event.currentTarget.value);
+                              }}
+                              onBlur={(event) => {
+                                applyLayoutOverrideInput({
+                                  field,
+                                  rawValue: event.currentTarget.value
+                                });
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
+                            />
+                            {fieldValidationErrors[field] ? (
+                              <p data-testid={`inspector-edit-error-${field}`} className="m-0 mt-1 text-[11px] text-rose-700">
+                                {fieldValidationErrors[field]}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                {unsupportedLayoutFields.length > 0 ? (
+                  <div
+                    data-testid="inspector-edit-unsupported-layout-fields"
+                    className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
+                  >
+                    <p className="m-0 font-semibold text-slate-900">Unsupported layout properties</p>
+                    {unsupportedLayoutFields.map((entry) => (
+                      <p
+                        key={entry.field}
+                        data-testid={`inspector-edit-unsupported-layout-${entry.field}`}
                         className="m-0 mt-1"
                       >
                         {entry.field}: {entry.reason ?? "Not supported."}
@@ -3541,10 +3958,19 @@ export function InspectorPanel({
                 </p>
                 <p data-testid="inspector-impact-review-summary-categories" className="m-0 mt-1">
                   Categories: {String(impactReviewModel.summary.categories.visual)} visual,{" "}
+                  {String(impactReviewModel.summary.categories.layout)} layout,{" "}
                   {String(impactReviewModel.summary.categories.validation)} validation,{" "}
                   {String(impactReviewModel.summary.categories.other)} other
                 </p>
               </div>
+              {impactReviewModel.summary.categories.layout > 0 ? (
+                <p
+                  data-testid="inspector-impact-review-layout-risk"
+                  className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+                >
+                  Layout overrides can affect sibling flow, spacing, and wrapping across every mapped file listed below.
+                </p>
+              ) : null}
               <div data-testid="inspector-impact-review-file-list" className="mt-2 grid gap-2">
                 {impactReviewModel.files.map((fileReview, index) => (
                   <div
@@ -3557,8 +3983,8 @@ export function InspectorPanel({
                     </p>
                     <p className="m-0 mt-1">
                       Overrides: {String(fileReview.overrideCount)} ({String(fileReview.categories.visual)} visual,{" "}
-                      {String(fileReview.categories.validation)} validation, {String(fileReview.categories.other)}{" "}
-                      other)
+                      {String(fileReview.categories.layout)} layout, {String(fileReview.categories.validation)} validation,{" "}
+                      {String(fileReview.categories.other)} other)
                     </p>
                     <ul className="m-0 mt-1 list-disc pl-4 text-[11px]">
                       {fileReview.overrides.map((entry) => (

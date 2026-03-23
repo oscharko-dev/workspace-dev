@@ -153,6 +153,92 @@ test("applyIrOverrides applies fontFamily override", () => {
   assert.equal(result.ir.screens[0]?.children[0]?.fontFamily, "Inter");
 });
 
+test("applyIrOverrides applies supported layout and dimension overrides to container elements", () => {
+  const ir = createTestIr([
+    createTestScreen({
+      id: "s1",
+      name: "Screen 1",
+      children: [
+        createTestElement({
+          id: "e1",
+          name: "Stack",
+          width: 360,
+          height: 240,
+          layoutMode: "VERTICAL",
+          primaryAxisAlignItems: "MIN",
+          counterAxisAlignItems: "CENTER",
+          children: [createTestElement({ id: "e1-child", name: "Child" })]
+        })
+      ]
+    })
+  ]);
+
+  const result = applyIrOverrides({
+    ir,
+    overrides: [
+      { nodeId: "e1", field: "width", value: 420 },
+      { nodeId: "e1", field: "height", value: 300 },
+      { nodeId: "e1", field: "layoutMode", value: "HORIZONTAL" },
+      { nodeId: "e1", field: "primaryAxisAlignItems", value: "SPACE_BETWEEN" },
+      { nodeId: "e1", field: "counterAxisAlignItems", value: "MAX" }
+    ]
+  });
+
+  assert.equal(result.appliedCount, 5);
+  const element = result.ir.screens[0]?.children[0] as ScreenElementIR | undefined;
+  assert.equal(element?.width, 420);
+  assert.equal(element?.height, 300);
+  assert.equal(element?.layoutMode, "HORIZONTAL");
+  assert.equal(element?.primaryAxisAlignItems, "SPACE_BETWEEN");
+  assert.equal(element?.counterAxisAlignItems, "MAX");
+});
+
+test("applyIrOverrides clears alignment fields after layoutMode NONE and skips incompatible layout overrides", () => {
+  const ir = createTestIr([
+    createTestScreen({
+      id: "s1",
+      name: "Screen 1",
+      children: [
+        createTestElement({
+          id: "container-1",
+          name: "Container",
+          layoutMode: "VERTICAL",
+          primaryAxisAlignItems: "CENTER",
+          counterAxisAlignItems: "MAX",
+          children: [createTestElement({ id: "child-1", name: "Child" })]
+        }),
+        {
+          id: "text-1",
+          name: "Heading",
+          type: "text",
+          nodeType: "TEXT",
+          width: 240,
+          height: 40,
+          text: "Welcome"
+        } as ScreenElementIR
+      ]
+    })
+  ]);
+
+  const result = applyIrOverrides({
+    ir,
+    overrides: [
+      { nodeId: "container-1", field: "layoutMode", value: "NONE" },
+      { nodeId: "container-1", field: "primaryAxisAlignItems", value: "SPACE_BETWEEN" },
+      { nodeId: "text-1", field: "width", value: 320 }
+    ]
+  });
+
+  assert.equal(result.appliedCount, 1);
+  assert.equal(result.skippedCount, 2);
+  const container = result.ir.screens[0]?.children[0] as ScreenElementIR | undefined;
+  assert.equal(container?.layoutMode, "NONE");
+  assert.equal(container?.primaryAxisAlignItems, undefined);
+  assert.equal(container?.counterAxisAlignItems, undefined);
+  const text = result.ir.screens[0]?.children[1] as ScreenElementIR | undefined;
+  assert.equal(text?.width, 240);
+});
+
 test("applyIrOverrides applies padding override to element", () => {
   const ir = createTestIr([
     createTestScreen({
@@ -256,6 +342,27 @@ test("applyIrOverrides skips override when node not found", () => {
 
   assert.equal(result.appliedCount, 0);
   assert.equal(result.skippedCount, 1);
+});
+
+test("applyIrOverrides skips invalid override payloads defensively", () => {
+  const ir = createTestIr([
+    createTestScreen({
+      id: "s1",
+      name: "Screen 1",
+      children: [createTestElement({ id: "e1", name: "Box", width: 200, children: [createTestElement({ id: "c1", name: "Child" })] })]
+    })
+  ]);
+
+  const result = applyIrOverrides({
+    ir,
+    overrides: [
+      { nodeId: "e1", field: "layoutMode", value: "row" },
+      { nodeId: "e1", field: "unknownField", value: "x" }
+    ]
+  });
+
+  assert.equal(result.appliedCount, 0);
+  assert.equal(result.skippedCount, 2);
 });
 
 test("applyIrOverrides finds deeply nested elements", () => {

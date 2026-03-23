@@ -17,6 +17,11 @@ import {
   extractSupportedFormValidationOverrideFields,
   type FormValidationOverrideField
 } from "./form-validation-override-translators";
+import {
+  LAYOUT_OVERRIDE_FIELDS,
+  extractSupportedLayoutOverrideFields,
+  type LayoutOverrideField
+} from "./layout-override-translators";
 
 // ---------------------------------------------------------------------------
 // Supported override translator registry
@@ -28,15 +33,20 @@ import {
  * `src/parity/types-ir.ts`. Only nodes possessing at least one of these
  * fields are candidates for structured editing.
  *
- * Includes both scalar visual overrides and form validation overrides.
+ * Includes scalar visual overrides, layout/dimension overrides,
+ * and form validation overrides.
  * @see https://github.com/oscharko-dev/workspace-dev/issues/453
  */
 export const SUPPORTED_OVERRIDE_FIELDS: readonly SupportedOverrideField[] = [
   ...SCALAR_OVERRIDE_FIELDS,
+  ...LAYOUT_OVERRIDE_FIELDS,
   ...FORM_VALIDATION_OVERRIDE_FIELDS
 ];
 
-export type SupportedOverrideField = ScalarOverrideField | FormValidationOverrideField;
+export type SupportedOverrideField =
+  | ScalarOverrideField
+  | LayoutOverrideField
+  | FormValidationOverrideField;
 
 // ---------------------------------------------------------------------------
 // Element types eligible for edit mode
@@ -164,7 +174,7 @@ export function detectEditCapability(node: EditCapabilityNode): EditCapabilityRe
 // ---------------------------------------------------------------------------
 
 /**
- * Extracts the set of known IR field names from a flat design-IR element node.
+ * Extracts the set of supported IR field names from a flat design-IR element node.
  * This is used to build the `presentFields` input for `detectEditCapability`.
  */
 export function extractPresentFields(
@@ -172,6 +182,7 @@ export function extractPresentFields(
 ): string[] {
   return [
     ...extractSupportedScalarOverrideFields(nodeData),
+    ...extractSupportedLayoutOverrideFields(nodeData),
     ...extractSupportedFormValidationOverrideFields(nodeData)
   ];
 }
