@@ -317,7 +317,15 @@
         "depth": 0
       }
     ],
-    "degradedGeometryNodes": []
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": [
+      {
+        "nodeId": "decorative-instance",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'INSTANCE'.",
+        "screenId": "screen-home"
+      }
+    ]
   },
   "themeAnalysis": {
     "darkModeDetected": false,

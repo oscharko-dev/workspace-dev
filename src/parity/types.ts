@@ -76,6 +76,8 @@ export type {
   DesignTokens,
   GeneratedFile,
   GenerationMetrics,
+  NodeDiagnosticCategory,
+  NodeDiagnosticEntry,
   PrimaryAxisAlignItems,
   ElementPrototypeNavigationIR,
   ElementSpacingIR,

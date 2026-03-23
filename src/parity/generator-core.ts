@@ -544,7 +544,8 @@ const initializeGenerateArtifactsStatePhase = ({
     prototypeNavigationDetected: ir.metrics?.prototypeNavigationDetected ?? 0,
     prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
     prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
-    prototypeNavigationRendered: 0
+    prototypeNavigationRendered: 0,
+    ...(ir.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] } : {})
   };
   const truncationByScreenId = new Map(
     generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)

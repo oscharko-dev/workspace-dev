@@ -726,7 +726,15 @@
         "depth": 2
       }
     ],
-    "degradedGeometryNodes": []
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": [
+      {
+        "nodeId": "dialog-cancel",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'FRAME'.",
+        "screenId": "screen-settings"
+      }
+    ]
   },
   "themeAnalysis": {
     "darkModeDetected": false,

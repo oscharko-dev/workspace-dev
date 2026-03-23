@@ -315,7 +315,8 @@ export const createGeneratorContext = (input: CreateGeneratorContextInput): Gene
         prototypeNavigationDetected: ir.metrics?.prototypeNavigationDetected ?? 0,
         prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
         prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
-        prototypeNavigationRendered: 0
+        prototypeNavigationRendered: 0,
+        ...(ir.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] } : {})
       },
       simplificationByScreen: [],
       aggregatedSimplificationStats: {

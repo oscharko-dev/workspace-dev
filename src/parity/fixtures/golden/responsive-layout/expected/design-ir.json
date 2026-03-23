@@ -598,7 +598,8 @@
     "truncatedScreens": [],
     "depthTruncatedScreens": [],
     "classificationFallbacks": [],
-    "degradedGeometryNodes": []
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
   },
   "themeAnalysis": {
     "darkModeDetected": false,

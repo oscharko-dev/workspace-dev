@@ -1195,6 +1195,12 @@ export const appendBaseCandidateMetrics = ({
         ? { droppedTypeCounts: baseCandidate.droppedTypeCounts }
         : {})
     });
+    metrics.nodeDiagnostics.push({
+      nodeId: baseCandidate.sourceNode.id,
+      category: "truncated",
+      reason: `Screen exceeded element budget (${String(screenElementBudget)}). ${String(baseCandidate.originalElements - baseCandidate.retainedCount)} element(s) dropped.`,
+      screenId: baseCandidate.sourceNode.id
+    });
   }
   if (baseCandidate.depthTruncatedBranchCount > 0) {
     metrics.depthTruncatedScreens.push({
@@ -1203,6 +1209,12 @@ export const appendBaseCandidateMetrics = ({
       maxDepth: screenElementMaxDepth,
       firstTruncatedDepth: baseCandidate.firstTruncatedDepth ?? screenElementMaxDepth + 1,
       truncatedBranchCount: baseCandidate.depthTruncatedBranchCount
+    });
+    metrics.nodeDiagnostics.push({
+      nodeId: baseCandidate.sourceNode.id,
+      category: "depth-truncated",
+      reason: `${String(baseCandidate.depthTruncatedBranchCount)} branch(es) truncated at depth ${String(screenElementMaxDepth)}.`,
+      screenId: baseCandidate.sourceNode.id
     });
   }
 };

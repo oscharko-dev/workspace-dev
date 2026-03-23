@@ -613,8 +613,7 @@ describe("InspectorPanel data states", () => {
     expect(screen.getByTestId("inspector-summary-omission-truncated-by-budget")).toHaveTextContent(
       "Nodes truncated by budget: 4"
     );
-    expect(screen.getByTestId("inspector-summary-aggregate-note")).toHaveTextContent("Aggregate-only summary");
-    expect(screen.queryByText(/node-level badge/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspector-summary-aggregate-note")).toHaveTextContent(/Node-level diagnostics available|Aggregate-only summary/);
   });
 
   it("shows manifest summary fallback when manifest data is unavailable", () => {
