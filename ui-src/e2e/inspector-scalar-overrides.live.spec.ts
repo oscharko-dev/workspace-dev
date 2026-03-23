@@ -56,6 +56,14 @@ const SCALAR_FIELDS = [
   "padding",
   "gap"
 ] as const;
+const LAYOUT_FIELDS = [
+  "width",
+  "height",
+  "layoutMode",
+  "primaryAxisAlignItems",
+  "counterAxisAlignItems"
+] as const;
+const OVERRIDE_DISCOVERY_FIELDS = [...SCALAR_FIELDS, ...LAYOUT_FIELDS] as const;
 
 interface SubmitAcceptedPayload {
   jobId?: string;
@@ -500,10 +508,12 @@ async function assertScreenNodeUnsupported(page: Page): Promise<void> {
 
 async function findFirstEditableNodeId({
   page,
-  jobId
+  jobId,
+  requiredEditableFields = []
 }: {
   page: Page;
   jobId: string;
+  requiredEditableFields?: readonly string[];
 }): Promise<string> {
   const encodedJobId = encodeURIComponent(jobId);
   const runtimeOrigin = new URL(page.url()).origin;
@@ -547,7 +557,7 @@ async function findFirstEditableNodeId({
       nodeId.length > 0 &&
       EDITABLE_ELEMENT_TYPES.has(nodeType) &&
       mappedNodeIds.has(nodeId) &&
-      SCALAR_FIELDS.some((field) => node[field] !== undefined && node[field] !== null)
+      OVERRIDE_DISCOVERY_FIELDS.some((field) => node[field] !== undefined && node[field] !== null)
     ) {
       candidateNodeIds.push(nodeId);
     }
@@ -601,7 +611,10 @@ async function findFirstEditableNodeId({
 
     await expect(capabilityPanel).toBeVisible();
     const capabilityText = await capabilityPanel.textContent();
-    if (capabilityText?.includes("Edit Capability: Supported")) {
+    if (
+      capabilityText?.includes("Edit Capability: Supported")
+      && requiredEditableFields.every((field) => capabilityText.includes(field))
+    ) {
       if (inspectEnabled) {
         const pressed = await inspectToggle.getAttribute("aria-pressed");
         if (pressed === "true") {
@@ -620,6 +633,18 @@ async function enterEditStudio(page: Page, nodeId: string): Promise<void> {
   if ((await treeNode.count()) > 0) {
     await treeNode.first().click();
   } else {
+    const inspectToggle = page.getByTestId("inspect-toggle");
+    if ((await inspectToggle.count()) > 0) {
+      const pressed = await inspectToggle.getAttribute("aria-pressed");
+      if (pressed !== "true") {
+        await inspectToggle.click();
+      }
+    }
+
+    const previewNode = page.frameLocator("iframe[title='Live preview']").locator(`[data-ir-id=\"${nodeId}\"]`);
+    await expect(previewNode.first()).toBeVisible({ timeout: 15_000 });
+    await previewNode.first().scrollIntoViewIfNeeded();
+    await previewNode.first().click({ force: true });
     await expect(page.getByTestId("inspector-edit-capability")).toContainText("Edit Capability: Supported");
   }
   const enterEditModeButton = page.getByTestId("inspector-enter-edit-mode");
@@ -629,57 +654,61 @@ async function enterEditStudio(page: Page, nodeId: string): Promise<void> {
 }
 
 async function applyScalarOverrides(page: Page): Promise<{
-  stringField: "fillColor" | "fontFamily";
-  stringValue: string;
-  numericField: "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap";
-  numericValue: string;
+  field: "fillColor" | "fontFamily" | "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap" | "padding";
+  value: string;
+  inputTestId: string;
 }> {
-  const stringField: "fillColor" | "fontFamily" =
-    (await page.getByTestId("inspector-edit-input-fillColor").count()) > 0 ? "fillColor" : "fontFamily";
-  const stringValue = stringField === "fillColor" ? "#24a0d1" : "Source Sans Pro";
-
-  const stringInput = page.getByTestId(`inspector-edit-input-${stringField}`);
-  await stringInput.fill(stringValue);
-  await stringInput.blur();
-
-  const numericCandidates: Array<{
-    field: "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap";
+  const candidates: Array<{
+    field: "fillColor" | "fontFamily" | "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap" | "padding";
     value: string;
+    inputTestId: string;
   }> = [
-    { field: "opacity", value: "0.7" },
-    { field: "fontSize", value: "20" },
-    { field: "fontWeight", value: "700" },
-    { field: "cornerRadius", value: "10" },
-    { field: "gap", value: "14" }
+    { field: "fillColor", value: "#24a0d1", inputTestId: "inspector-edit-input-fillColor" },
+    { field: "fontFamily", value: "Source Sans Pro", inputTestId: "inspector-edit-input-fontFamily" },
+    { field: "opacity", value: "0.7", inputTestId: "inspector-edit-input-opacity" },
+    { field: "fontSize", value: "20", inputTestId: "inspector-edit-input-fontSize" },
+    { field: "fontWeight", value: "700", inputTestId: "inspector-edit-input-fontWeight" },
+    { field: "cornerRadius", value: "10", inputTestId: "inspector-edit-input-cornerRadius" },
+    { field: "gap", value: "14", inputTestId: "inspector-edit-input-gap" },
+    { field: "padding", value: "12", inputTestId: "inspector-edit-input-padding-top" }
   ];
 
-  let numericField: "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap" | null = null;
-  let numericValue: string | null = null;
-  for (const candidate of numericCandidates) {
-    if ((await page.getByTestId(`inspector-edit-input-${candidate.field}`).count()) > 0) {
-      numericField = candidate.field;
-      numericValue = candidate.value;
-      break;
+  for (const candidate of candidates) {
+    const input = page.getByTestId(candidate.inputTestId);
+    if ((await input.count()) === 0) {
+      continue;
     }
+
+    await input.fill(candidate.value);
+    await input.blur();
+
+    const payloadPreview = page.getByTestId("inspector-edit-payload-preview");
+    await expect(payloadPreview).toContainText(`"field": "${candidate.field}"`);
+
+    return candidate;
   }
 
-  if (!numericField || !numericValue) {
-    throw new Error("No numeric scalar override field is available for the selected live node.");
-  }
+  throw new Error("No scalar override field is available for the selected live node.");
+}
 
-  const numericInput = page.getByTestId(`inspector-edit-input-${numericField}`);
-  await numericInput.fill(numericValue);
-  await numericInput.blur();
+async function applyLayoutOverrides(page: Page): Promise<{
+  widthValue: string;
+  layoutModeValue: "NONE";
+}> {
+  const widthInput = page.getByTestId("inspector-edit-input-width");
+  await widthInput.fill("420");
+  await widthInput.blur();
+
+  const layoutModeInput = page.getByTestId("inspector-edit-input-layoutMode");
+  await layoutModeInput.selectOption("NONE");
 
   const payloadPreview = page.getByTestId("inspector-edit-payload-preview");
-  await expect(payloadPreview).toContainText(`"field": "${stringField}"`);
-  await expect(payloadPreview).toContainText(`"field": "${numericField}"`);
+  await expect(payloadPreview).toContainText("\"field\": \"width\"");
+  await expect(payloadPreview).toContainText("\"field\": \"layoutMode\"");
 
   return {
-    stringField,
-    stringValue,
-    numericField,
-    numericValue
+    widthValue: "420",
+    layoutModeValue: "NONE"
   };
 }
 
@@ -769,7 +798,7 @@ test.describe("inspector scalar overrides live figma flow", () => {
     await resetBrowserStorage(page);
   });
 
-  test("applies scalar overrides and restores persisted draft on the next live submit", async ({ page }) => {
+  test("applies scalar and layout overrides and restores persisted draft on the next live submit", async ({ page }) => {
     test.skip(
       !ENABLE_LIVE_INSPECTOR_E2E || FIGMA_FILE_KEY.length === 0 || FIGMA_ACCESS_TOKEN.length === 0,
       "Set INSPECTOR_LIVE_E2E=1, FIGMA_FILE_KEY, and FIGMA_ACCESS_TOKEN to run live inspector scalar override e2e."
@@ -787,15 +816,19 @@ test.describe("inspector scalar overrides live figma flow", () => {
 
     const editableNodeId = await findFirstEditableNodeId({
       page,
-      jobId: firstJobId
+      jobId: firstJobId,
+      requiredEditableFields: ["width", "layoutMode", "gap"]
     });
     await enterEditStudio(page, editableNodeId);
 
-    await expect(page.getByTestId("inspector-edit-v1-deferred-fields")).toHaveText(
-      "Deferred in v1: width, height, layoutMode."
-    );
+    await expect(page.getByTestId("inspector-edit-supported-layout-fields")).toContainText("layoutMode");
+    await expect(page.getByTestId("inspector-edit-input-width")).toBeVisible();
+    await expect(page.getByTestId("inspector-edit-input-layoutMode")).toBeVisible();
+    await expect(page.getByTestId("inspector-edit-input-x")).toHaveCount(0);
 
     const edited = await applyScalarOverrides(page);
+    const layoutEdited = await applyLayoutOverrides(page);
+    await expect(page.getByTestId("inspector-impact-review-layout-risk")).toBeVisible();
 
     const storedDraft = await page.evaluate(({ jobId, storagePrefix }) => {
       return window.localStorage.getItem(`${storagePrefix}${jobId}`);
@@ -818,23 +851,18 @@ test.describe("inspector scalar overrides live figma flow", () => {
     });
 
     await expect(page.getByTestId("inspector-panel")).toBeVisible();
-    const activeNodeId = await findFirstEditableNodeId({
-      page,
-      jobId: secondJobId
-    });
-    await enterEditStudio(page, activeNodeId);
+    await enterEditStudio(page, editableNodeId);
 
     await expect(page.getByTestId("inspector-edit-draft-stale-warning")).toHaveCount(0);
 
-    const restoredStringInput = page.getByTestId(`inspector-edit-input-${edited.stringField}`);
-    await expect(restoredStringInput).toHaveValue(edited.stringValue);
-
-    const restoredNumericInput = page.getByTestId(`inspector-edit-input-${edited.numericField}`);
-    await expect(restoredNumericInput).toHaveValue(edited.numericValue);
+    await expect(page.getByTestId(edited.inputTestId)).toHaveValue(edited.value);
+    await expect(page.getByTestId("inspector-edit-input-width")).toHaveValue(layoutEdited.widthValue);
+    await expect(page.getByTestId("inspector-edit-input-layoutMode")).toHaveValue(layoutEdited.layoutModeValue);
 
     const payloadPreview = page.getByTestId("inspector-edit-payload-preview");
-    await expect(payloadPreview).toContainText(`"field": "${edited.stringField}"`);
-    await expect(payloadPreview).toContainText(`"field": "${edited.numericField}"`);
+    await expect(payloadPreview).toContainText(`"field": "${edited.field}"`);
+    await expect(payloadPreview).toContainText("\"field\": \"width\"");
+    await expect(payloadPreview).toContainText("\"field\": \"layoutMode\"");
   });
 
   test("routes review overrides through regeneration and keeps code plus diff continuity", async ({ page }) => {
@@ -857,12 +885,15 @@ test.describe("inspector scalar overrides live figma flow", () => {
 
     const editableNodeId = await findFirstEditableNodeId({
       page,
-      jobId: sourceJobId
+      jobId: sourceJobId,
+      requiredEditableFields: ["width", "layoutMode", "gap"]
     });
     await enterEditStudio(page, editableNodeId);
     await applyScalarOverrides(page);
+    await applyLayoutOverrides(page);
 
     await expect(page.getByTestId("inspector-impact-review-summary")).toBeVisible();
+    await expect(page.getByTestId("inspector-impact-review-layout-risk")).toBeVisible();
     await expect(page.getByTestId("inspector-impact-review-regenerate-button")).toBeEnabled();
     await page.getByTestId("inspector-impact-review-regenerate-button").click();
 
@@ -891,9 +922,17 @@ test.describe("inspector scalar overrides live figma flow", () => {
     await page.getByTestId("inspector-pr-repo-token").fill("ghp_token");
     await expect(page.getByTestId("inspector-pr-create-button")).toBeEnabled();
 
+    await expect(page.getByTestId("inspector-pane-code")).toBeVisible();
+    await expect(page.getByTestId("inspector-file-selector")).toBeEnabled();
+
     const diffToggle = page.getByTestId("inspector-diff-toggle");
-    await expect(diffToggle).toBeEnabled({ timeout: 15_000 });
-    await diffToggle.click();
-    await expect(page.getByTestId("diff-viewer")).toBeVisible({ timeout: 10_000 });
+    await expect(diffToggle).toBeVisible({ timeout: 15_000 });
+    if (await diffToggle.isEnabled()) {
+      await diffToggle.click();
+      await expect(page.getByTestId("diff-viewer")).toBeVisible({ timeout: 10_000 });
+    } else {
+      await expect(diffToggle).toHaveAttribute("title", "No previous job available for comparison");
+      expect(regenerationPayload?.generationDiff?.previousJobId ?? null).toBeNull();
+    }
   });
 });

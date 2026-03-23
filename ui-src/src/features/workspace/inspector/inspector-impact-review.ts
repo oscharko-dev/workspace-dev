@@ -1,9 +1,10 @@
 import type { InspectorOverrideDraft } from "./inspector-override-draft";
 
-export type InspectorImpactChangeCategory = "visual" | "validation" | "other";
+export type InspectorImpactChangeCategory = "visual" | "layout" | "validation" | "other";
 
 export interface InspectorImpactCategoryCounts {
   visual: number;
+  layout: number;
   validation: number;
   other: number;
 }
@@ -73,9 +74,17 @@ const VISUAL_FIELDS = new Set([
   "cornerRadius",
   "fontSize",
   "fontWeight",
-  "fontFamily",
+  "fontFamily"
+]);
+
+const LAYOUT_FIELDS = new Set([
   "padding",
-  "gap"
+  "gap",
+  "width",
+  "height",
+  "layoutMode",
+  "primaryAxisAlignItems",
+  "counterAxisAlignItems"
 ]);
 
 const VALIDATION_FIELDS = new Set([
@@ -87,6 +96,7 @@ const VALIDATION_FIELDS = new Set([
 function toEmptyCategoryCounts(): InspectorImpactCategoryCounts {
   return {
     visual: 0,
+    layout: 0,
     validation: 0,
     other: 0
   };
@@ -103,6 +113,10 @@ function incrementCategoryCount({
     target.visual += 1;
     return;
   }
+  if (category === "layout") {
+    target.layout += 1;
+    return;
+  }
   if (category === "validation") {
     target.validation += 1;
     return;
@@ -113,6 +127,9 @@ function incrementCategoryCount({
 function classifyImpactCategory(field: string): InspectorImpactChangeCategory {
   if (VALIDATION_FIELDS.has(field)) {
     return "validation";
+  }
+  if (LAYOUT_FIELDS.has(field)) {
+    return "layout";
   }
   if (VISUAL_FIELDS.has(field)) {
     return "visual";
@@ -220,6 +237,7 @@ export function deriveInspectorImpactReviewModel({
       overrideCount: 1,
       categories: {
         visual: category === "visual" ? 1 : 0,
+        layout: category === "layout" ? 1 : 0,
         validation: category === "validation" ? 1 : 0,
         other: category === "other" ? 1 : 0
       },

@@ -54,7 +54,7 @@ describe("detectEditCapability", () => {
       expect(result.editableFields).toEqual(["fillColor", "fontSize", "fontWeight", "fontFamily"]);
     });
 
-    it("returns editable for container with layout fields", () => {
+    it("returns editable for container with scalar layout spacing fields", () => {
       const result = detectEditCapability(makeNode({
         type: "container",
         presentFields: ["padding", "gap"]
@@ -62,6 +62,22 @@ describe("detectEditCapability", () => {
 
       expect(result.editable).toBe(true);
       expect(result.editableFields).toEqual(["padding", "gap"]);
+    });
+
+    it("returns editable for container with advanced layout fields", () => {
+      const result = detectEditCapability(makeNode({
+        type: "container",
+        presentFields: ["width", "height", "layoutMode", "primaryAxisAlignItems", "counterAxisAlignItems"]
+      }));
+
+      expect(result.editable).toBe(true);
+      expect(result.editableFields).toEqual([
+        "width",
+        "height",
+        "layoutMode",
+        "primaryAxisAlignItems",
+        "counterAxisAlignItems"
+      ]);
     });
   });
 
@@ -189,12 +205,18 @@ describe("extractPresentFields", () => {
     const nodeData: Record<string, unknown> = {
       id: "node-1",
       name: "Test",
-      type: "button",
+      type: "container",
       fillColor: "#ff0000",
       cornerRadius: 8,
       opacity: 1.0,
+      width: 320,
+      height: 120,
+      layoutMode: "VERTICAL",
+      primaryAxisAlignItems: "CENTER",
+      counterAxisAlignItems: "BASELINE",
       fontSize: null,
       fontWeight: undefined,
+      children: [{ id: "child-1" }],
       vectorPaths: ["M0 0"]
     };
 
@@ -203,6 +225,9 @@ describe("extractPresentFields", () => {
     expect(fields).toContain("fillColor");
     expect(fields).toContain("cornerRadius");
     expect(fields).toContain("opacity");
+    expect(fields).toContain("width");
+    expect(fields).toContain("height");
+    expect(fields).toContain("layoutMode");
     expect(fields).not.toContain("fontSize"); // null
     expect(fields).not.toContain("fontWeight"); // undefined
     expect(fields).not.toContain("vectorPaths"); // not in SUPPORTED_OVERRIDE_FIELDS
@@ -221,10 +246,21 @@ describe("extractPresentFields", () => {
   });
 
   it("extracts all supported fields when present", () => {
-    const allFields: Record<string, unknown> = {};
+    const allFields: Record<string, unknown> = {
+      type: "container",
+      children: [{ id: "child-1" }]
+    };
     for (const field of SUPPORTED_OVERRIDE_FIELDS) {
       if (field === "padding") {
         allFields[field] = { top: 4, right: 4, bottom: 4, left: 4 };
+      } else if (field === "width" || field === "height") {
+        allFields[field] = 120;
+      } else if (field === "layoutMode") {
+        allFields[field] = "VERTICAL";
+      } else if (field === "primaryAxisAlignItems") {
+        allFields[field] = "CENTER";
+      } else if (field === "counterAxisAlignItems") {
+        allFields[field] = "BASELINE";
       } else if (field === "required") {
         allFields[field] = true;
       } else if (field === "validationType") {
@@ -241,6 +277,19 @@ describe("extractPresentFields", () => {
     for (const field of SUPPORTED_OVERRIDE_FIELDS) {
       expect(fields).toContain(field);
     }
+  });
+
+  it("does not expose text width and height even when those fields exist in IR", () => {
+    const fields = extractPresentFields({
+      type: "text",
+      width: 240,
+      height: 48,
+      fillColor: "#112233"
+    });
+
+    expect(fields).toContain("fillColor");
+    expect(fields).not.toContain("width");
+    expect(fields).not.toContain("height");
   });
 
   it("handles numeric zero as a present value", () => {

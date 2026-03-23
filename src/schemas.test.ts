@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   CreatePrRequestSchema,
   ErrorResponseSchema,
+  RegenerationRequestSchema,
   SubmitRequestSchema,
   SyncRequestSchema,
   WorkspaceStatusSchema,
@@ -240,6 +241,53 @@ test("schema: error envelope requires message and error strings", () => {
 
   const notObject = ErrorResponseSchema.safeParse(undefined);
   assert.equal(notObject.success, false);
+});
+
+// ---------------------------------------------------------------------------
+// RegenerationRequestSchema
+// ---------------------------------------------------------------------------
+
+test("schema: valid regeneration request accepts layout overrides", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [
+      { nodeId: "node-1", field: "width", value: 420 },
+      { nodeId: "node-1", field: "layoutMode", value: "horizontal" },
+      { nodeId: "node-1", field: "primaryAxisAlignItems", value: "space_between" }
+    ],
+    draftId: "draft-1",
+    baseFingerprint: "fp-1"
+  });
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.overrides, [
+      { nodeId: "node-1", field: "width", value: 420 },
+      { nodeId: "node-1", field: "layoutMode", value: "HORIZONTAL" },
+      { nodeId: "node-1", field: "primaryAxisAlignItems", value: "SPACE_BETWEEN" }
+    ]);
+  }
+});
+
+test("schema: regeneration request rejects unsupported layout fields", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [
+      { nodeId: "node-1", field: "maxWidth", value: 480 }
+    ]
+  });
+
+  assert.equal(result.success, false);
+});
+
+test("schema: regeneration request rejects invalid layout values", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [
+      { nodeId: "node-1", field: "width", value: 0 },
+      { nodeId: "node-1", field: "layoutMode", value: "row" },
+      { nodeId: "node-1", field: "counterAxisAlignItems", value: "stretch" }
+    ]
+  });
+
+  assert.equal(result.success, false);
 });
 
 // ---------------------------------------------------------------------------

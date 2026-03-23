@@ -15,6 +15,7 @@ import type {
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
 } from "./contracts/index.js";
+import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
 
 type PathSegment = string | number;
 
@@ -430,22 +431,6 @@ interface RegenerationRequestData {
   baseFingerprint?: string;
 }
 
-function isOverrideValue(value: unknown): value is WorkspaceRegenerationOverrideEntry["value"] {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return true;
-  }
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    return (
-      typeof record.top === "number" &&
-      typeof record.right === "number" &&
-      typeof record.bottom === "number" &&
-      typeof record.left === "number"
-    );
-  }
-  return false;
-}
-
 function parseRegenerationRequest(input: unknown): ValidationResult<RegenerationRequestData> {
   const issues: ValidationIssue[] = [];
 
@@ -481,15 +466,16 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
       pushIssue(issues, ["overrides", i, "field"], "field must be a non-empty string.");
       continue;
     }
-    if (!isOverrideValue(entry.value)) {
-      pushIssue(issues, ["overrides", i, "value"], "value must be a string, number, boolean, or padding object.");
-      continue;
-    }
-    overrides.push({
+    const validationResult = validateRegenerationOverrideEntry({
       nodeId: entry.nodeId,
       field: entry.field,
-      value: entry.value
+      value: entry.value as WorkspaceRegenerationOverrideEntry["value"]
     });
+    if (!validationResult.ok) {
+      pushIssue(issues, ["overrides", i, validationResult.path], validationResult.message);
+      continue;
+    }
+    overrides.push(validationResult.entry);
   }
 
   let draftId: string | undefined;
