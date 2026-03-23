@@ -39,6 +39,14 @@ interface BreadcrumbProps {
   onReturnToParentFile?: () => void;
 }
 
+function ScreenIcon(): JSX.Element {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3 text-[#4eba87]">
+      <path d="M2.75 3A1.75 1.75 0 0 0 1 4.75v5.5C1 11.216 1.784 12 2.75 12h3.5v1H4.5a.75.75 0 0 0 0 1.5h7a.75.75 0 0 0 0-1.5H9.75v-1h3.5A1.75 1.75 0 0 0 15 10.25v-5.5A1.75 1.75 0 0 0 13.25 3h-10.5Zm-.25 1.75c0-.138.112-.25.25-.25h10.5c.138 0 .25.112.25.25v5.5a.25.25 0 0 1-.25.25H2.75a.25.25 0 0 1-.25-.25v-5.5Z" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -114,14 +122,14 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
     <nav
       aria-label="Component path"
       data-testid="inspector-breadcrumb"
-      className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-slate-200 bg-slate-50/80 px-3 py-1.5"
+      className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-[#000000] bg-[#1f1f1f] px-3 py-1.5"
       onKeyDown={handleKeyDown}
     >
       {/* Scope indicator badge */}
       {hasActiveScope ? (
         <span
           data-testid="breadcrumb-scope-badge"
-          className="mr-1 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
+          className="mr-1 inline-flex items-center rounded-full border border-[#4eba87]/30 bg-[#4eba87]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#4eba87]"
         >
           Scoped
         </span>
@@ -131,7 +139,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
       {parentFile ? (
         <span
           data-testid="breadcrumb-cross-file-indicator"
-          className="mr-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
+          className="mr-1 inline-flex items-center gap-1 rounded-full border border-sky-400/25 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-200"
           title={`Viewing extracted component — parent file: ${parentFile}`}
         >
           <span aria-hidden="true">↗</span>
@@ -154,13 +162,13 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
           <span key={segment.id} className="flex items-center gap-0.5">
             {/* Separator before this segment (not before the first) */}
             {!isFirst && !showOverflowBefore ? (
-              <span className="mx-0.5 text-[10px] text-slate-400 select-none" aria-hidden="true">/</span>
+              <span className="mx-0.5 select-none text-[10px] text-white/25" aria-hidden="true">/</span>
             ) : null}
 
             {/* Overflow button */}
             {showOverflowBefore ? (
               <>
-                <span className="mx-0.5 text-[10px] text-slate-400 select-none" aria-hidden="true">/</span>
+                <span className="mx-0.5 select-none text-[10px] text-white/25" aria-hidden="true">/</span>
                 <div className="relative" ref={overflowRef}>
                   <button
                     type="button"
@@ -173,7 +181,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
                       refIndex = currentRefIndex + 1;
                     }}
                     onClick={() => { setOverflowOpen((v) => !v); }}
-                    className="cursor-pointer rounded px-1 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                    className="cursor-pointer rounded border border-transparent px-1 py-0.5 text-[11px] font-semibold text-white/55 transition hover:border-white/10 hover:bg-[#000000] hover:text-white"
                     aria-expanded={overflowOpen}
                     aria-haspopup="menu"
                     title={`${String(collapsedSegments.length)} hidden segments`}
@@ -184,7 +192,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
                     <div
                       data-testid="breadcrumb-overflow-menu"
                       role="menu"
-                      className="absolute left-0 top-full z-20 mt-1 min-w-[160px] rounded border border-slate-200 bg-white py-1 shadow-lg"
+                      className="absolute left-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-[#000000] bg-[#1b1b1b] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.45)]"
                     >
                       {collapsedSegments.map((seg) => (
                         <button
@@ -193,7 +201,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
                           role="menuitem"
                           data-testid={`breadcrumb-overflow-item-${seg.id}`}
                           onClick={() => { handleSegmentClick(seg.id); }}
-                          className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-left text-xs text-slate-700 transition hover:bg-slate-100"
+                          className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-left text-xs text-white/75 transition hover:bg-[#000000] hover:text-white"
                         >
                           <TypeBadge type={seg.type} />
                           <span className="truncate">{seg.name}</span>
@@ -202,7 +210,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
                     </div>
                   ) : null}
                 </div>
-                <span className="mx-0.5 text-[10px] text-slate-400 select-none" aria-hidden="true">/</span>
+                <span className="mx-0.5 select-none text-[10px] text-white/25" aria-hidden="true">/</span>
               </>
             ) : null}
 
@@ -218,16 +226,16 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
               data-testid={`breadcrumb-segment-${segment.id}`}
               onClick={() => { handleSegmentClick(segment.id); }}
               aria-current={isLast ? "location" : undefined}
-              className={`flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition hover:bg-slate-200 ${
+              className={`flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition hover:bg-[#000000] ${
                 isLast
-                  ? "font-semibold text-slate-900"
-                  : "text-slate-600 hover:text-slate-800"
+                  ? "border border-[#4eba87]/25 bg-[#000000] font-semibold text-white"
+                  : "border border-transparent text-white/65 hover:text-white"
               }`}
             >
               {segment.type !== "screen" ? (
                 <TypeBadge type={segment.type} />
               ) : (
-                <span className="text-[10px]" aria-hidden="true">🖥</span>
+                <ScreenIcon />
               )}
               <span className="max-w-[120px] truncate">{segment.name}</span>
             </button>
@@ -246,7 +254,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
               const last = path[path.length - 1];
               if (last) onEnterScope(last.id);
             }}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            className="cursor-pointer rounded border border-[#4eba87]/30 bg-[#4eba87]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#4eba87] transition hover:bg-[#4eba87]/15"
             title="Enter scope (drill down into this component)"
           >
             Enter scope
@@ -259,7 +267,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
             type="button"
             data-testid="breadcrumb-exit-scope"
             onClick={onExitScope}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
+            className="cursor-pointer rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-white/70 transition hover:bg-[#000000] hover:text-white"
             title="Level up (go back up one scope level)"
             aria-label="Level up one scope level"
           >
@@ -273,7 +281,7 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
             type="button"
             data-testid="breadcrumb-return-parent-file"
             onClick={onReturnToParentFile}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 transition hover:bg-sky-100"
+            className="cursor-pointer rounded border border-sky-400/25 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-200 transition hover:bg-sky-400/15"
             title={`Return to parent file: ${parentFile}`}
             aria-label={`Return to parent file ${parentFile}`}
           >

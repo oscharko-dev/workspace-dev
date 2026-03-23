@@ -366,6 +366,17 @@ interface InspectorPanelProps {
 
 type PaneSeparator = "tree-preview" | "preview-code";
 
+interface SplitterDragState {
+  element: HTMLDivElement;
+  pointerId: number;
+  separator: PaneSeparator;
+  startX: number;
+  lastClientX: number;
+  startWidthPx: number;
+  startRatios: InspectorPaneRatios;
+  unlockDocument: () => void;
+}
+
 const DESKTOP_LAYOUT_MEDIA_QUERY = "(min-width: 1280px)";
 const KEYBOARD_STEP_PX = 24;
 const KEYBOARD_STEP_LARGE_PX = 72;
@@ -604,15 +615,15 @@ function toSyncErrorDetails({
 
 function getStatusBadgeClasses(status: InspectorSourceStatus): string {
   if (status === "ready") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+    return "border border-[#4eba87]/30 bg-[#4eba87]/10 text-[#4eba87]";
   }
   if (status === "loading") {
-    return "border-slate-300 bg-slate-100 text-slate-700";
+    return "border border-white/10 bg-[#242424] text-white/70";
   }
   if (status === "empty") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
+    return "border border-amber-400/25 bg-amber-400/10 text-amber-300";
   }
-  return "border-rose-200 bg-rose-50 text-rose-900";
+  return "border border-rose-400/25 bg-rose-500/10 text-rose-300";
 }
 
 function loadBoundariesEnabledPreference(): boolean {
@@ -882,14 +893,7 @@ export function InspectorPanel({
 
   const encodedJobId = encodeURIComponent(jobId);
   const layoutContainerRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<{
-    separator: PaneSeparator;
-    startX: number;
-    startWidthPx: number;
-    startRatios: InspectorPaneRatios;
-  } | null>(null);
-  const pointerMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
-  const pointerEndHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
+  const dragStateRef = useRef<SplitterDragState | null>(null);
 
   // --- Queries ---
 
@@ -1830,17 +1834,61 @@ export function InspectorPanel({
     });
   }, [getLayoutContainerWidth, hasExpandedTree]);
 
-  const clearPointerDragListeners = useCallback(() => {
-    if (pointerMoveHandlerRef.current) {
-      window.removeEventListener("pointermove", pointerMoveHandlerRef.current);
-      pointerMoveHandlerRef.current = null;
+  const lockDocumentForSplitterDrag = useCallback((): (() => void) => {
+    if (typeof document === "undefined") {
+      return () => {};
     }
-    if (pointerEndHandlerRef.current) {
-      window.removeEventListener("pointerup", pointerEndHandlerRef.current);
-      window.removeEventListener("pointercancel", pointerEndHandlerRef.current);
-      pointerEndHandlerRef.current = null;
+
+    const root = document.documentElement;
+    const body = document.body;
+    const previousRootCursor = root.style.cursor;
+    const previousBodyCursor = body.style.cursor;
+    const previousBodyUserSelect = body.style.userSelect;
+
+    root.style.cursor = "col-resize";
+    body.style.cursor = "col-resize";
+    body.style.userSelect = "none";
+
+    return () => {
+      root.style.cursor = previousRootCursor;
+      body.style.cursor = previousBodyCursor;
+      body.style.userSelect = previousBodyUserSelect;
+    };
+  }, []);
+
+  const clearActiveSplitterDrag = useCallback(({ releaseCapture }: { releaseCapture: boolean }) => {
+    const state = dragStateRef.current;
+    if (!state) {
+      return;
+    }
+
+    dragStateRef.current = null;
+    state.unlockDocument();
+
+    if (!releaseCapture || typeof state.element.releasePointerCapture !== "function") {
+      return;
+    }
+
+    try {
+      if (
+        typeof state.element.hasPointerCapture !== "function" ||
+        state.element.hasPointerCapture(state.pointerId)
+      ) {
+        state.element.releasePointerCapture(state.pointerId);
+      }
+    } catch {
+      // The browser may already have released capture; cleanup has already happened.
     }
   }, []);
+
+  const resolveDragResizeRatios = useCallback((state: SplitterDragState, clientX: number): InspectorPaneRatios => {
+    return applyResizeDelta({
+      separator: state.separator,
+      deltaPx: clientX - state.startX,
+      sourceRatios: state.startRatios,
+      widthPxOverride: state.startWidthPx
+    });
+  }, [applyResizeDelta]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1870,9 +1918,9 @@ export function InspectorPanel({
 
   useEffect(() => {
     return () => {
-      clearPointerDragListeners();
+      clearActiveSplitterDrag({ releaseCapture: false });
     };
-  }, [clearPointerDragListeners]);
+  }, [clearActiveSplitterDrag]);
 
   // --- Edit history: push draft state on every edit mutation ---
 
@@ -3157,6 +3205,39 @@ export function InspectorPanel({
     setInspectEnabled((prev) => !prev);
   }, []);
 
+  const handleSplitterPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = dragStateRef.current;
+    if (!state || state.pointerId !== event.pointerId || state.element !== event.currentTarget) {
+      return;
+    }
+
+    state.lastClientX = event.clientX;
+    setPaneRatios(resolveDragResizeRatios(state, event.clientX));
+  }, [resolveDragResizeRatios]);
+
+  const finalizeSplitterDrag = useCallback(({
+    event,
+    fallbackClientX,
+    releaseCapture
+  }: {
+    event: ReactPointerEvent<HTMLDivElement>;
+    fallbackClientX?: number;
+    releaseCapture: boolean;
+  }) => {
+    const state = dragStateRef.current;
+    if (!state || state.pointerId !== event.pointerId || state.element !== event.currentTarget) {
+      return;
+    }
+
+    const finalClientX = fallbackClientX ?? (Number.isFinite(event.clientX) ? event.clientX : state.lastClientX);
+    state.lastClientX = finalClientX;
+
+    const next = resolveDragResizeRatios(state, finalClientX);
+    setPaneRatios(next);
+    persistPaneLayout(next);
+    clearActiveSplitterDrag({ releaseCapture });
+  }, [clearActiveSplitterDrag, persistPaneLayout, resolveDragResizeRatios]);
+
   const handleSplitterPointerDown = useCallback(
     (separator: PaneSeparator) => (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!isDesktopLayout) {
@@ -3167,65 +3248,59 @@ export function InspectorPanel({
       }
 
       event.preventDefault();
+      clearActiveSplitterDrag({ releaseCapture: false });
 
       dragStateRef.current = {
+        element: event.currentTarget,
+        pointerId: event.pointerId,
         separator,
         startX: event.clientX,
+        lastClientX: event.clientX,
         startWidthPx: getLayoutContainerWidth(),
-        startRatios: paneRatios
+        startRatios: paneRatios,
+        unlockDocument: lockDocumentForSplitterDrag()
       };
 
-      const onPointerMove = (moveEvent: PointerEvent): void => {
-        const state = dragStateRef.current;
-        if (!state) {
-          return;
+      if (typeof event.currentTarget.setPointerCapture === "function") {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // The drag still works when browsers refuse capture for synthetic or stale pointers.
         }
-
-        const next = applyResizeDelta({
-          separator: state.separator,
-          deltaPx: moveEvent.clientX - state.startX,
-          sourceRatios: state.startRatios,
-          widthPxOverride: state.startWidthPx
-        });
-        setPaneRatios(next);
-      };
-
-      const onPointerEnd = (upEvent: PointerEvent): void => {
-        const state = dragStateRef.current;
-        if (!state) {
-          clearPointerDragListeners();
-          return;
-        }
-
-        const next = applyResizeDelta({
-          separator: state.separator,
-          deltaPx: upEvent.clientX - state.startX,
-          sourceRatios: state.startRatios,
-          widthPxOverride: state.startWidthPx
-        });
-
-        setPaneRatios(next);
-        persistPaneLayout(next);
-        dragStateRef.current = null;
-        clearPointerDragListeners();
-      };
-
-      pointerMoveHandlerRef.current = onPointerMove;
-      pointerEndHandlerRef.current = onPointerEnd;
-
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", onPointerEnd);
-      window.addEventListener("pointercancel", onPointerEnd);
+      }
     },
     [
-      applyResizeDelta,
-      clearPointerDragListeners,
+      clearActiveSplitterDrag,
+      getLayoutContainerWidth,
       hasExpandedTree,
       isDesktopLayout,
+      lockDocumentForSplitterDrag,
       paneRatios,
-      persistPaneLayout
     ]
   );
+
+  const handleSplitterPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    finalizeSplitterDrag({
+      event,
+      releaseCapture: true
+    });
+  }, [finalizeSplitterDrag]);
+
+  const handleSplitterPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    finalizeSplitterDrag({
+      event,
+      fallbackClientX: dragStateRef.current?.lastClientX,
+      releaseCapture: true
+    });
+  }, [finalizeSplitterDrag]);
+
+  const handleSplitterLostPointerCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    finalizeSplitterDrag({
+      event,
+      fallbackClientX: dragStateRef.current?.lastClientX,
+      releaseCapture: false
+    });
+  }, [finalizeSplitterDrag]);
 
   const handleSplitterKeyDown = useCallback(
     (separator: PaneSeparator) => (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -3468,16 +3543,16 @@ export function InspectorPanel({
   }, [onCloseDialog]);
 
   return (
-    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-[#1e1e2e]">
+    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-[#141414] text-white">
       {/* Compact toolbar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[#2a2a3d] bg-[#252536] px-3 py-1.5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[#000000] bg-[#1d1d1d] px-3 py-1.5">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             data-testid="inspector-nav-back"
             disabled={!canNavigateBack}
             onClick={handleNavigateBack}
-            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
+            className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
             title="Back to previous committed drilldown state"
             aria-label="Navigate back in inspector drilldown history"
           >
@@ -3488,7 +3563,7 @@ export function InspectorPanel({
             data-testid="inspector-nav-forward"
             disabled={!canNavigateForward}
             onClick={handleNavigateForward}
-            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
+            className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
             title="Forward to next committed drilldown state"
             aria-label="Navigate forward in inspector drilldown history"
           >
@@ -3498,7 +3573,7 @@ export function InspectorPanel({
             type="button"
             data-testid="inspector-shortcut-help-button"
             onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
-            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
+            className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-white/45 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
             title="Keyboard shortcuts (?)"
             aria-label="Show keyboard shortcuts"
           >
@@ -3509,7 +3584,7 @@ export function InspectorPanel({
               type="button"
               data-testid="inspector-exit-edit-mode"
               onClick={handleExitEditMode}
-              className="cursor-pointer rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400 transition hover:bg-amber-500/20"
+              className="cursor-pointer rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-300 transition hover:bg-amber-400/15"
               title="Exit edit mode"
               aria-label="Exit edit mode"
             >
@@ -3521,7 +3596,7 @@ export function InspectorPanel({
               data-testid="inspector-enter-edit-mode"
               disabled={!canEnterEditMode}
               onClick={handleEnterEditMode}
-              className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-2 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
+              className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
               title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
               aria-label="Enter edit mode"
             >
@@ -3529,7 +3604,7 @@ export function InspectorPanel({
             </button>
           )}
         </div>
-        <div className="h-3 w-px bg-[#3a3a50]" />
+        <div className="h-3 w-px bg-[#333333]" />
         <div className="flex flex-wrap gap-1" data-testid="inspector-source-statuses">
           {sourceStatuses.map(({ source, label, status }) => (
             <span
@@ -3542,15 +3617,15 @@ export function InspectorPanel({
           ))}
         </div>
         {selectedNodeId && editCapability ? (
-          <div className="h-3 w-px bg-[#3a3a50]" />
+          <div className="h-3 w-px bg-[#333333]" />
         ) : null}
         {selectedNodeId && editCapability ? (
           <span
             data-testid="inspector-edit-capability"
             className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
               editCapability.editable
-                ? "bg-emerald-500/10 text-emerald-400"
-                : "bg-slate-700/50 text-slate-500"
+                ? "border border-[#4eba87]/30 bg-[#4eba87]/10 text-[#4eba87]"
+                : "border border-white/10 bg-[#262626] text-white/45"
             }`}
           >
             {editCapability.editable ? `Edit: ${editCapability.editableFields.length} fields` : "Not editable"}
@@ -4202,7 +4277,7 @@ export function InspectorPanel({
 
       {/* Error banners — compact strip */}
       {sourceErrorBanners.length > 0 ? (
-        <div className="flex shrink-0 flex-wrap gap-2 border-b border-[#2a2a3d] bg-[#2a1a1a] px-4 py-1.5" data-testid="inspector-error-banners">
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-[#000000] bg-[#241414] px-4 py-1.5" data-testid="inspector-error-banners">
           {sourceErrorBanners.map((banner) => (
             <div
               key={banner.source}
@@ -4229,7 +4304,7 @@ export function InspectorPanel({
       ) : null}
 
       {manifestState.status === "empty" ? (
-        <div className="shrink-0 border-b border-[#2a2a3d] bg-[#2a2a1a] px-4 py-1">
+        <div className="shrink-0 border-b border-[#000000] bg-[#242014] px-4 py-1">
           <p
             data-testid="inspector-manifest-empty-warning"
             className="m-0 text-[11px] text-amber-400"
@@ -4243,7 +4318,7 @@ export function InspectorPanel({
       <div ref={layoutContainerRef} className="flex min-h-0 flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
         {/* Left: Component Tree sidebar */}
         {hasTreePane ? (
-          <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0 border-r border-[#2a2a3d]" style={treePaneStyle}>
+          <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0 border-r border-[#000000]" style={treePaneStyle}>
             {designIrState.status === "ready" ? (
               <ComponentTree
                 screens={treeNodes}
@@ -4257,10 +4332,10 @@ export function InspectorPanel({
                 diagnosticsMap={nodeDiagnosticsMap}
               />
             ) : (
-              <div className="flex h-full min-h-0 flex-col bg-[#1a1a2a] p-3">
+              <div className="flex h-full min-h-0 flex-col bg-[#191919] p-3">
                 <div
                   data-testid={`inspector-design-ir-state-${designIrState.status}`}
-                  className="rounded border border-[#3a3a50] bg-[#252536] px-3 py-2 text-xs text-slate-400"
+                  className="rounded border border-[#333333] bg-[#232323] px-3 py-2 text-xs text-white/65"
                 >
                   {designIrState.status === "loading" ? (
                     <p className="m-0">Loading design IR…</p>
@@ -4275,7 +4350,7 @@ export function InspectorPanel({
                         type="button"
                         data-testid="inspector-retry-design-ir"
                         onClick={handleRetryDesignIr}
-                        className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-2 py-0.5 text-[11px] font-semibold text-slate-400 transition hover:bg-white/5"
+                        className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[11px] font-semibold text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
                       >
                         Retry
                       </button>
@@ -4298,15 +4373,24 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="hidden shrink-0 cursor-col-resize bg-[#2a2a3d] transition-colors hover:bg-emerald-500/40 focus:bg-emerald-500/40 focus:outline-none xl:block xl:w-px"
+            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
             style={{ touchAction: "none" }}
             onPointerDown={handleSplitterPointerDown("tree-preview")}
+            onPointerMove={handleSplitterPointerMove}
+            onPointerUp={handleSplitterPointerUp}
+            onPointerCancel={handleSplitterPointerCancel}
+            onLostPointerCapture={handleSplitterLostPointerCapture}
             onKeyDown={handleSplitterKeyDown("tree-preview")}
-          />
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none h-full w-px bg-[#000000] transition-colors group-hover:bg-[#4eba87] group-focus:bg-[#4eba87]"
+            />
+          </div>
         ) : null}
 
         {/* Center: Preview pane */}
-        <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 border-r border-[#2a2a3d] lg:min-h-0" style={previewPaneStyle}>
+        <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0" style={previewPaneStyle}>
           <PreviewPane
             previewUrl={previewUrl}
             inspectEnabled={inspectEnabled}
@@ -4317,7 +4401,7 @@ export function InspectorPanel({
         </div>
 
         {/* Horizontal divider for stacked layout */}
-        <div className="h-px shrink-0 bg-[#2a2a3d] xl:hidden" />
+        <div className="h-px shrink-0 bg-[#000000] xl:hidden" />
 
         {/* Resizable divider: preview ↔ code (desktop) */}
         <div
@@ -4329,11 +4413,20 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="hidden shrink-0 cursor-col-resize bg-[#2a2a3d] transition-colors hover:bg-emerald-500/40 focus:bg-emerald-500/40 focus:outline-none xl:block xl:w-px"
+          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
           style={{ touchAction: "none" }}
           onPointerDown={handleSplitterPointerDown("preview-code")}
+          onPointerMove={handleSplitterPointerMove}
+          onPointerUp={handleSplitterPointerUp}
+          onPointerCancel={handleSplitterPointerCancel}
+          onLostPointerCapture={handleSplitterLostPointerCapture}
           onKeyDown={handleSplitterKeyDown("preview-code")}
-        />
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none h-full w-px bg-[#000000] transition-colors group-hover:bg-[#4eba87] group-focus:bg-[#4eba87]"
+          />
+        </div>
 
         {/* Right: Code pane */}
         <div data-testid="inspector-pane-code" className="min-h-[200px] flex-1 lg:min-h-0" style={codePaneStyle}>

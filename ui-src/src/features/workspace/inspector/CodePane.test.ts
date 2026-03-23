@@ -4,7 +4,7 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/444
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { CodePane } from "./CodePane";
 import * as shikiLib from "../../../lib/shiki";
@@ -31,6 +31,15 @@ const mockExceedsMaxSize = vi.mocked(shikiLib.exceedsMaxSize);
 // ---------------------------------------------------------------------------
 
 const sampleCode = Array.from({ length: 20 }, (_, i) => `line ${String(i + 1)}`).join("\n");
+const jsxSampleCode = [
+  "export function EmptyState() {",
+  "  return (",
+  "    <section className=\"hero\">",
+  "      <h1>Title</h1>",
+  "    </section>",
+  "  );",
+  "}"
+].join("\n");
 const sampleFiles = [
   { path: "src/screens/Home.tsx", sizeBytes: 500 },
   { path: "src/screens/About.tsx", sizeBytes: 300 }
@@ -163,5 +172,36 @@ describe("CodePane scoped code modes", () => {
     fireEvent.click(screen.getByTestId("scoped-mode-full"));
     expect(screen.getByTestId("scoped-mode-full").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("renders complete JSX tokens for a mapped snippet when Shiki returns nested spans", async () => {
+    mockHighlightCodeWithWorker.mockResolvedValue({
+      html: '<pre class="shiki github-light"><code><span class="line"><span style="color:#24292f">  return (</span></span>\n<span class="line"><span style="color:#24292f">    &#x3C;</span><span style="color:#0550AE">section</span><span style="color:#8250df"> className</span><span style="color:#cf222e">=</span><span style="color:#0a3069">"hero"</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">      &#x3C;</span><span style="color:#0550AE">h1</span><span style="color:#24292f">>Title&#x3C;/</span><span style="color:#0550AE">h1</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">    &#x3C;/</span><span style="color:#0550AE">section</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">  );</span></span></code></pre>',
+      theme: "github-light"
+    });
+
+    renderCodePane({
+      fileContent: jsxSampleCode,
+      isNodeMapped: true,
+      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 3, endLine: 5 }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent('<section className="hero">');
+      expect(screen.getByTestId("code-content")).toHaveTextContent("<h1>Title</h1>");
+    });
+  });
+
+  it("falls back to full file content when the active manifest range belongs to a different file", async () => {
+    renderCodePane({
+      fileContent: sampleCode,
+      isNodeMapped: true,
+      activeManifestRange: { file: "src/screens/About.tsx", startLine: 10, endLine: 12 }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("line 1");
+      expect(screen.getByTestId("code-content")).toHaveTextContent("line 20");
+    });
   });
 });

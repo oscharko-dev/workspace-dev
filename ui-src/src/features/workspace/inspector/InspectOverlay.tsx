@@ -239,8 +239,8 @@ export function InspectOverlay({
           onClick={onToggleInspect}
           className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors ${
             inspectEnabled
-              ? "border-blue-400 bg-blue-50 text-blue-700"
-              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              ? "border-[#4eba87] bg-[#000000]/85 text-[#4eba87]"
+              : "border-[#333333] bg-[#000000]/85 text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87]"
           }`}
           aria-pressed={inspectEnabled}
           title={inspectEnabled ? "Disable inspect mode" : "Enable inspect mode"}
