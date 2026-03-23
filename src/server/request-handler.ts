@@ -147,6 +147,18 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedJobRoute.action === "remap-suggest") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for remap-suggest route '/workspace/jobs/${jobId}/remap-suggest'.`
+            }
+          });
+          return;
+        }
+
         if (parsedJobRoute.action === "design-ir") {
           const record = jobEngine.getJobRecord(jobId);
           if (!record) {
@@ -1081,6 +1093,73 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 200,
           payload: checkResult
+        });
+        return;
+      }
+
+      if (parsedJobRoute?.action === "remap-suggest") {
+        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const rawBody = await readJsonBody(request);
+        if (!rawBody.ok) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "Request validation failed.",
+              issues: [{ path: "(root)", message: rawBody.error }]
+            }
+          });
+          return;
+        }
+
+        const body = rawBody.value as {
+          sourceJobId?: unknown;
+          latestJobId?: unknown;
+          unmappedNodeIds?: unknown;
+        };
+
+        const sourceJobId = typeof body.sourceJobId === "string" ? body.sourceJobId : jobId;
+        const latestJobId = typeof body.latestJobId === "string" ? body.latestJobId : "";
+        const unmappedNodeIds: string[] = Array.isArray(body.unmappedNodeIds)
+          ? body.unmappedNodeIds.filter((v): v is string => typeof v === "string")
+          : [];
+
+        if (!latestJobId) {
+          sendJson({
+            response,
+            statusCode: 400,
+            payload: {
+              error: "VALIDATION_ERROR",
+              message: "latestJobId is required."
+            }
+          });
+          return;
+        }
+
+        let remapResult: Awaited<ReturnType<JobEngine["suggestRemaps"]>>;
+        try {
+          remapResult = await jobEngine.suggestRemaps({
+            sourceJobId,
+            latestJobId,
+            unmappedNodeIds
+          });
+        } catch (error) {
+          sendJson({
+            response,
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({ error, fallback: "Could not generate remap suggestions." })
+            }
+          });
+          return;
+        }
+
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: remapResult
         });
         return;
       }
