@@ -7,6 +7,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceLocalSyncApplyResult,
+  WorkspaceLocalSyncFileDecisionEntry,
   WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
   WorkspaceJobInput,
@@ -49,7 +50,13 @@ import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
 import { applyIrOverrides } from "./job-engine/ir-overrides.js";
-import { applyLocalSyncPlan, LocalSyncError, type LocalSyncPlan, planLocalSync } from "./job-engine/local-sync.js";
+import {
+  applyLocalSyncPlan,
+  computeLocalSyncPlanFingerprint,
+  LocalSyncError,
+  type LocalSyncPlan,
+  planLocalSync
+} from "./job-engine/local-sync.js";
 import { buildComponentManifest } from "./parity/component-manifest.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 import type { DesignIR } from "./parity/types-ir.js";
@@ -76,6 +83,7 @@ interface LocalSyncConfirmationRecord {
   sourceJobId: string;
   expiresAtMs: number;
   plan: LocalSyncPlan;
+  planFingerprint: string;
 }
 
 const isWorkspaceJobStageName = (value: unknown): value is WorkspaceJobStageName => {
@@ -511,7 +519,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       | "E_SYNC_REGEN_REQUIRED"
       | "E_SYNC_CONFIRMATION_REQUIRED"
       | "E_SYNC_CONFIRMATION_INVALID"
-      | "E_SYNC_CONFIRMATION_EXPIRED";
+      | "E_SYNC_CONFIRMATION_EXPIRED"
+      | "E_SYNC_PREVIEW_STALE";
     message: string;
   }): Error & { code: string } => {
     const error = new Error(message) as Error & { code: string };
@@ -2256,17 +2265,20 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const plan = await planLocalSync({
       generatedProjectDir: syncContext.generatedProjectDir,
       workspaceRoot: resolvedWorkspaceRoot,
+      outputRoot: resolvedPaths.outputRoot,
       targetPath: targetPath ?? syncContext.job.request.targetPath,
       boardKey: syncContext.boardKey
     });
     const token = randomUUID();
     const expiresAtMs = Date.now() + LOCAL_SYNC_CONFIRMATION_TTL_MS;
+    const planFingerprint = computeLocalSyncPlanFingerprint({ plan });
     localSyncConfirmations.set(token, {
       token,
       jobId,
       sourceJobId: syncContext.sourceJobId,
       expiresAtMs,
-      plan
+      plan,
+      planFingerprint
     });
 
     return {
@@ -2279,7 +2291,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       files: plan.files.map((entry) => ({
         path: entry.relativePath,
         action: entry.action,
-        sizeBytes: entry.sizeBytes
+        status: entry.status,
+        reason: entry.reason,
+        decision: entry.decision,
+        selectedByDefault: entry.selectedByDefault,
+        sizeBytes: entry.sizeBytes,
+        message: entry.message
       })),
       summary: { ...plan.summary },
       confirmationToken: token,
@@ -2290,7 +2307,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const applyLocalSync: JobEngine["applyLocalSync"] = async ({
     jobId,
     confirmationToken,
-    confirmOverwrite
+    confirmOverwrite,
+    fileDecisions
   }): Promise<WorkspaceLocalSyncApplyResult> => {
     pruneExpiredSyncConfirmations();
     const syncContext = resolveSyncContext({ jobId });
@@ -2323,24 +2341,48 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       });
     }
 
-    await applyLocalSyncPlan({
-      plan: confirmation.plan
+    const currentPlan = await planLocalSync({
+      generatedProjectDir: syncContext.generatedProjectDir,
+      workspaceRoot: resolvedWorkspaceRoot,
+      outputRoot: resolvedPaths.outputRoot,
+      targetPath: confirmation.plan.targetPath,
+      boardKey: syncContext.boardKey
+    });
+    const currentFingerprint = computeLocalSyncPlanFingerprint({ plan: currentPlan });
+    if (currentFingerprint !== confirmation.planFingerprint) {
+      localSyncConfirmations.delete(confirmationToken);
+      throw createSyncError({
+        code: "E_SYNC_PREVIEW_STALE",
+        message: "Local sync preview is stale. Request a new dry-run preview before applying."
+      });
+    }
+
+    const appliedPlan = await applyLocalSyncPlan({
+      plan: currentPlan,
+      fileDecisions: fileDecisions as WorkspaceLocalSyncFileDecisionEntry[],
+      jobId,
+      sourceJobId: syncContext.sourceJobId
     });
     localSyncConfirmations.delete(confirmationToken);
 
     return {
       jobId,
       sourceJobId: syncContext.sourceJobId,
-      boardKey: confirmation.plan.boardKey,
-      targetPath: confirmation.plan.targetPath,
-      scopePath: confirmation.plan.scopePath,
-      destinationRoot: confirmation.plan.destinationRoot,
-      files: confirmation.plan.files.map((entry) => ({
+      boardKey: appliedPlan.boardKey,
+      targetPath: appliedPlan.targetPath,
+      scopePath: appliedPlan.scopePath,
+      destinationRoot: appliedPlan.destinationRoot,
+      files: appliedPlan.files.map((entry) => ({
         path: entry.relativePath,
         action: entry.action,
-        sizeBytes: entry.sizeBytes
+        status: entry.status,
+        reason: entry.reason,
+        decision: entry.decision,
+        selectedByDefault: entry.selectedByDefault,
+        sizeBytes: entry.sizeBytes,
+        message: entry.message
       })),
-      summary: { ...confirmation.plan.summary },
+      summary: { ...appliedPlan.summary },
       appliedAt: nowIso()
     };
   };

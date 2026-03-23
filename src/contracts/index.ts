@@ -352,30 +352,57 @@ export interface WorkspaceJobLineage {
 
 export type WorkspaceLocalSyncMode = "dry_run" | "apply";
 
+export type WorkspaceLocalSyncFileAction = "create" | "overwrite" | "none";
+export type WorkspaceLocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
+export type WorkspaceLocalSyncFileReason =
+  | "new_file"
+  | "managed_destination_unchanged"
+  | "destination_modified_since_sync"
+  | "destination_deleted_since_sync"
+  | "existing_without_baseline"
+  | "already_matches_generated";
+export type WorkspaceLocalSyncFileDecision = "write" | "skip";
+
 export interface WorkspaceLocalSyncDryRunRequest {
   mode: "dry_run";
   targetPath?: string;
+}
+
+export interface WorkspaceLocalSyncFileDecisionEntry {
+  path: string;
+  decision: WorkspaceLocalSyncFileDecision;
 }
 
 export interface WorkspaceLocalSyncApplyRequest {
   mode: "apply";
   confirmationToken: string;
   confirmOverwrite: boolean;
+  fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
 }
 
 export type WorkspaceLocalSyncRequest = WorkspaceLocalSyncDryRunRequest | WorkspaceLocalSyncApplyRequest;
 
 export interface WorkspaceLocalSyncFilePlanEntry {
   path: string;
-  action: "create" | "overwrite";
+  action: WorkspaceLocalSyncFileAction;
+  status: WorkspaceLocalSyncFileStatus;
+  reason: WorkspaceLocalSyncFileReason;
+  decision: WorkspaceLocalSyncFileDecision;
+  selectedByDefault: boolean;
   sizeBytes: number;
+  message: string;
 }
 
 export interface WorkspaceLocalSyncSummary {
   totalFiles: number;
+  selectedFiles: number;
   createCount: number;
   overwriteCount: number;
+  conflictCount: number;
+  untrackedCount: number;
+  unchangedCount: number;
   totalBytes: number;
+  selectedBytes: number;
 }
 
 export interface WorkspaceLocalSyncDryRunResult {

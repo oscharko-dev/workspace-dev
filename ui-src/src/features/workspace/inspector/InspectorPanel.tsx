@@ -194,17 +194,43 @@ interface GenerationMetricsResponse {
   message: string | null;
 }
 
+type LocalSyncFileAction = "create" | "overwrite" | "none";
+type LocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
+type LocalSyncFileReason =
+  | "new_file"
+  | "managed_destination_unchanged"
+  | "destination_modified_since_sync"
+  | "destination_deleted_since_sync"
+  | "existing_without_baseline"
+  | "already_matches_generated";
+type LocalSyncFileDecision = "write" | "skip";
+
+interface LocalSyncFileDecisionEntry {
+  path: string;
+  decision: LocalSyncFileDecision;
+}
+
 interface LocalSyncFilePlanEntry {
   path: string;
-  action: "create" | "overwrite";
+  action: LocalSyncFileAction;
+  status: LocalSyncFileStatus;
+  reason: LocalSyncFileReason;
+  decision: LocalSyncFileDecision;
+  selectedByDefault: boolean;
   sizeBytes: number;
+  message: string;
 }
 
 interface LocalSyncSummary {
   totalFiles: number;
+  selectedFiles: number;
   createCount: number;
   overwriteCount: number;
+  conflictCount: number;
+  untrackedCount: number;
+  unchangedCount: number;
   totalBytes: number;
+  selectedBytes: number;
 }
 
 interface LocalSyncDryRunPayload {
@@ -387,8 +413,22 @@ function isLocalSyncFilePlanEntry(value: unknown): value is LocalSyncFilePlanEnt
   }
   return (
     typeof value.path === "string" &&
-    (value.action === "create" || value.action === "overwrite") &&
-    typeof value.sizeBytes === "number"
+    (value.action === "create" || value.action === "overwrite" || value.action === "none") &&
+    (value.status === "create" ||
+      value.status === "overwrite" ||
+      value.status === "conflict" ||
+      value.status === "untracked" ||
+      value.status === "unchanged") &&
+    (value.reason === "new_file" ||
+      value.reason === "managed_destination_unchanged" ||
+      value.reason === "destination_modified_since_sync" ||
+      value.reason === "destination_deleted_since_sync" ||
+      value.reason === "existing_without_baseline" ||
+      value.reason === "already_matches_generated") &&
+    (value.decision === "write" || value.decision === "skip") &&
+    typeof value.selectedByDefault === "boolean" &&
+    typeof value.sizeBytes === "number" &&
+    typeof value.message === "string"
   );
 }
 
@@ -398,9 +438,14 @@ function isLocalSyncSummary(value: unknown): value is LocalSyncSummary {
   }
   return (
     typeof value.totalFiles === "number" &&
+    typeof value.selectedFiles === "number" &&
     typeof value.createCount === "number" &&
     typeof value.overwriteCount === "number" &&
+    typeof value.conflictCount === "number" &&
+    typeof value.untrackedCount === "number" &&
+    typeof value.unchangedCount === "number" &&
     typeof value.totalBytes === "number"
+    && typeof value.selectedBytes === "number"
   );
 }
 
@@ -437,6 +482,63 @@ function isLocalSyncApplyPayload(value: unknown): value is LocalSyncApplyPayload
     isLocalSyncSummary(value.summary) &&
     typeof value.appliedAt === "string"
   );
+}
+
+function canWriteLocalSyncEntry(entry: LocalSyncFilePlanEntry): boolean {
+  return entry.action !== "none";
+}
+
+function isAttentionSyncEntry(entry: LocalSyncFilePlanEntry): boolean {
+  return entry.status === "conflict" || entry.status === "untracked";
+}
+
+function toLocalSyncStatusLabel(status: LocalSyncFileStatus): string {
+  if (status === "create") {
+    return "Create";
+  }
+  if (status === "overwrite") {
+    return "Managed overwrite";
+  }
+  if (status === "conflict") {
+    return "Conflict";
+  }
+  if (status === "untracked") {
+    return "Untracked";
+  }
+  return "Up to date";
+}
+
+function toLocalSyncActionLabel(action: LocalSyncFileAction): string {
+  if (action === "create") {
+    return "Will create";
+  }
+  if (action === "overwrite") {
+    return "Will overwrite";
+  }
+  return "No write needed";
+}
+
+function getLocalSyncStatusClasses(status: LocalSyncFileStatus): string {
+  if (status === "create") {
+    return "border-emerald-300 bg-emerald-100 text-emerald-900";
+  }
+  if (status === "overwrite") {
+    return "border-sky-300 bg-sky-100 text-sky-900";
+  }
+  if (status === "conflict") {
+    return "border-rose-300 bg-rose-100 text-rose-900";
+  }
+  if (status === "untracked") {
+    return "border-amber-300 bg-amber-100 text-amber-900";
+  }
+  return "border-slate-300 bg-slate-100 text-slate-700";
+}
+
+function createLocalSyncDecisionMap(files: LocalSyncFilePlanEntry[]): Record<string, LocalSyncFileDecision> {
+  return files.reduce<Record<string, LocalSyncFileDecision>>((accumulator, entry) => {
+    accumulator[entry.path] = entry.decision;
+    return accumulator;
+  }, {});
 }
 
 function toEndpointError({
@@ -745,6 +847,7 @@ export function InspectorPanel({
   const [regenerationError, setRegenerationError] = useState<EndpointErrorDetails | null>(null);
   const [syncTargetPathInput, setSyncTargetPathInput] = useState("");
   const [syncConfirmationChecked, setSyncConfirmationChecked] = useState(false);
+  const [syncFileDecisions, setSyncFileDecisions] = useState<Record<string, LocalSyncFileDecision>>({});
   const [syncPreviewPlan, setSyncPreviewPlan] = useState<LocalSyncDryRunPayload | null>(null);
   const [syncApplyResult, setSyncApplyResult] = useState<LocalSyncApplyPayload | null>(null);
   const [syncError, setSyncError] = useState<EndpointErrorDetails | null>(null);
@@ -989,6 +1092,7 @@ export function InspectorPanel({
     },
     onSuccess: (payload) => {
       setSyncPreviewPlan(payload);
+      setSyncFileDecisions(createLocalSyncDecisionMap(payload.files));
       setSyncApplyResult(null);
       setSyncConfirmationChecked(false);
       setSyncError(null);
@@ -1017,6 +1121,11 @@ export function InspectorPanel({
         });
       }
 
+      const fileDecisions: LocalSyncFileDecisionEntry[] = syncPreviewPlan.files.map((entry) => ({
+        path: entry.path,
+        decision: syncFileDecisions[entry.path] ?? entry.decision
+      }));
+
       const response = await fetchJson<LocalSyncApplyPayload>({
         url: `/workspace/jobs/${encodedJobId}/sync`,
         init: {
@@ -1027,7 +1136,8 @@ export function InspectorPanel({
           body: JSON.stringify({
             mode: "apply",
             confirmationToken: syncPreviewPlan.confirmationToken,
-            confirmOverwrite: true
+            confirmOverwrite: true,
+            fileDecisions
           })
         }
       });
@@ -1055,6 +1165,9 @@ export function InspectorPanel({
     },
     onSuccess: (payload) => {
       setSyncApplyResult(payload);
+      setSyncPreviewPlan(null);
+      setSyncFileDecisions({});
+      setSyncConfirmationChecked(false);
       setSyncError(null);
     },
     onError: (error) => {
@@ -1070,6 +1183,57 @@ export function InspectorPanel({
       );
     }
   });
+
+  const effectiveSyncPreviewFiles = useMemo(() => {
+    if (!syncPreviewPlan) {
+      return [];
+    }
+
+    return syncPreviewPlan.files.map((entry) => ({
+      ...entry,
+      decision: syncFileDecisions[entry.path] ?? entry.decision
+    }));
+  }, [syncFileDecisions, syncPreviewPlan]);
+
+  const effectiveSyncSummary = useMemo<LocalSyncSummary | null>(() => {
+    if (!syncPreviewPlan) {
+      return null;
+    }
+
+    return effectiveSyncPreviewFiles.reduce<LocalSyncSummary>(
+      (summary, entry) => {
+        summary.totalFiles += 1;
+        summary.totalBytes += entry.sizeBytes;
+        if (entry.decision === "write") {
+          summary.selectedFiles += 1;
+          summary.selectedBytes += entry.sizeBytes;
+        }
+        if (entry.status === "create") {
+          summary.createCount += 1;
+        } else if (entry.status === "overwrite") {
+          summary.overwriteCount += 1;
+        } else if (entry.status === "conflict") {
+          summary.conflictCount += 1;
+        } else if (entry.status === "untracked") {
+          summary.untrackedCount += 1;
+        } else if (entry.status === "unchanged") {
+          summary.unchangedCount += 1;
+        }
+        return summary;
+      },
+      {
+        totalFiles: 0,
+        selectedFiles: 0,
+        createCount: 0,
+        overwriteCount: 0,
+        conflictCount: 0,
+        untrackedCount: 0,
+        unchangedCount: 0,
+        totalBytes: 0,
+        selectedBytes: 0
+      }
+    );
+  }, [effectiveSyncPreviewFiles, syncPreviewPlan]);
 
   const createPrMutation = useMutation({
     mutationFn: async (): Promise<CreatePrPayload> => {
@@ -3153,13 +3317,20 @@ export function InspectorPanel({
     });
   }, [isRegenerationJob, previewSyncMutation, syncTargetPathInput]);
 
+  const handleToggleLocalSyncFile = useCallback((path: string, checked: boolean) => {
+    setSyncFileDecisions((current) => ({
+      ...current,
+      [path]: checked ? "write" : "skip"
+    }));
+  }, []);
+
   const handleApplyLocalSync = useCallback(() => {
-    if (!isRegenerationJob || !syncPreviewPlan || !syncConfirmationChecked) {
+    if (!isRegenerationJob || !syncPreviewPlan || !syncConfirmationChecked || !effectiveSyncSummary || effectiveSyncSummary.selectedFiles === 0) {
       return;
     }
     setSyncError(null);
     applySyncMutation.mutate();
-  }, [applySyncMutation, isRegenerationJob, syncConfirmationChecked, syncPreviewPlan]);
+  }, [applySyncMutation, effectiveSyncSummary, isRegenerationJob, syncConfirmationChecked, syncPreviewPlan]);
 
   const syncPreviewDisabled =
     !isRegenerationJob ||
@@ -3170,6 +3341,8 @@ export function InspectorPanel({
   const syncApplyDisabled =
     !isRegenerationJob ||
     !syncPreviewPlan ||
+    !effectiveSyncSummary ||
+    effectiveSyncSummary.selectedFiles === 0 ||
     !syncConfirmationChecked ||
     previewSyncMutation.isPending ||
     applySyncMutation.isPending ||
@@ -4066,7 +4239,7 @@ export function InspectorPanel({
         >
           <p className="m-0 font-semibold">Local Sync (Regeneration Jobs)</p>
           <p className="m-0 mt-1">
-            Run a dry-run first, then explicitly confirm overwrite before applying local sync.
+            Run a dry-run first, review the file-by-file write plan, then explicitly confirm overwrite before applying local sync.
           </p>
           {!isRegenerationJob ? (
             <p
@@ -4100,7 +4273,7 @@ export function InspectorPanel({
               {previewSyncMutation.isPending ? "Previewing..." : "Preview Sync Plan"}
             </button>
           </div>
-          {syncPreviewPlan ? (
+          {syncPreviewPlan && effectiveSyncSummary ? (
             <div
               data-testid="inspector-sync-preview-summary"
               className="mt-2 rounded border border-emerald-300 bg-white px-2 py-1.5 text-slate-800"
@@ -4110,11 +4283,75 @@ export function InspectorPanel({
                 Destination: <code>{syncPreviewPlan.destinationRoot}</code>
               </p>
               <p className="m-0 mt-1">
-                Files: {String(syncPreviewPlan.summary.totalFiles)} total, {String(syncPreviewPlan.summary.createCount)} create, {String(syncPreviewPlan.summary.overwriteCount)} overwrite ({String(syncPreviewPlan.summary.totalBytes)} bytes)
+                Files: {String(effectiveSyncSummary.totalFiles)} total, {String(effectiveSyncSummary.createCount)} create,{" "}
+                {String(effectiveSyncSummary.overwriteCount)} managed overwrite, {String(effectiveSyncSummary.conflictCount)} conflict,{" "}
+                {String(effectiveSyncSummary.untrackedCount)} untracked, {String(effectiveSyncSummary.unchangedCount)} unchanged
+              </p>
+              <p className="m-0 mt-1" data-testid="inspector-sync-selected-summary">
+                Selected: {String(effectiveSyncSummary.selectedFiles)} files ({String(effectiveSyncSummary.selectedBytes)} bytes)
               </p>
               <p className="m-0 mt-1">
                 Confirmation expires: {syncPreviewPlan.confirmationExpiresAt}
               </p>
+            </div>
+          ) : null}
+          {effectiveSyncSummary && effectiveSyncSummary.conflictCount + effectiveSyncSummary.untrackedCount > 0 ? (
+            <p
+              data-testid="inspector-sync-attention-banner"
+              className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
+            >
+              Conflicts and untracked files default to skip until you explicitly choose to write them.
+            </p>
+          ) : null}
+          {effectiveSyncPreviewFiles.length > 0 ? (
+            <div data-testid="inspector-sync-file-list" className="mt-2 grid max-h-64 gap-2 overflow-auto">
+              {effectiveSyncPreviewFiles.map((entry, index) => {
+                const checked = entry.decision === "write";
+                const disabled = !canWriteLocalSyncEntry(entry) || previewSyncMutation.isPending || applySyncMutation.isPending || regenerateMutation.isPending;
+                return (
+                  <div
+                    key={entry.path}
+                    data-testid={`inspector-sync-file-${String(index)}`}
+                    className={`rounded border px-2 py-1.5 ${
+                      isAttentionSyncEntry(entry) ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <label className="flex min-w-0 flex-1 items-start gap-2 text-slate-900">
+                        <input
+                          type="checkbox"
+                          data-testid={`inspector-sync-file-toggle-${String(index)}`}
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={(event) => {
+                            handleToggleLocalSyncFile(entry.path, event.currentTarget.checked);
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-emerald-400"
+                        />
+                        <span className="min-w-0">
+                          <code className="break-all">{entry.path}</code>
+                        </span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                        <span
+                          data-testid={`inspector-sync-file-status-${String(index)}`}
+                          className={`rounded border px-1.5 py-0.5 font-semibold ${getLocalSyncStatusClasses(entry.status)}`}
+                        >
+                          {toLocalSyncStatusLabel(entry.status)}
+                        </span>
+                        <span className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-slate-700">
+                          {toLocalSyncActionLabel(entry.action)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="m-0 mt-1 text-slate-700">{entry.message}</p>
+                    <p className="m-0 mt-1 text-[11px] text-slate-600">
+                      Size: {String(entry.sizeBytes)} bytes
+                      {entry.selectedByDefault ? " • default write" : " • default skip"}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -4152,7 +4389,7 @@ export function InspectorPanel({
               data-testid="inspector-sync-success"
               className="m-0 mt-2 rounded border border-emerald-300 bg-emerald-100 px-2 py-1 text-emerald-900"
             >
-              Local sync applied at {syncApplyResult.appliedAt}. Wrote {String(syncApplyResult.summary.totalFiles)} files to <code>{syncApplyResult.destinationRoot}</code>.
+              Local sync applied at {syncApplyResult.appliedAt}. Wrote {String(syncApplyResult.summary.selectedFiles)} files to <code>{syncApplyResult.destinationRoot}</code>.
             </p>
           ) : null}
           {syncError ? (

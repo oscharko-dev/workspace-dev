@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -47,6 +48,53 @@ const createLocalFigmaPayload = () => ({
   }
 });
 
+const sha256 = (content: string): string => {
+  return createHash("sha256").update(content).digest("hex");
+};
+
+const writeLocalSyncBaseline = async ({
+  outputRoot,
+  scopePath,
+  boardKey,
+  targetPath,
+  destinationRoot,
+  files
+}: {
+  outputRoot: string;
+  scopePath: string;
+  boardKey: string;
+  targetPath: string;
+  destinationRoot: string;
+  files: Array<{ path: string; content: string; sourceJobId?: string; jobId?: string }>;
+}): Promise<void> => {
+  const baselinePath = path.join(outputRoot, "local-sync-baselines", ...scopePath.split("/"), "baseline.json");
+  await mkdir(path.dirname(baselinePath), { recursive: true });
+  await writeFile(
+    baselinePath,
+    `${JSON.stringify(
+      {
+        version: 1,
+        boardKey,
+        targetPath,
+        scopePath,
+        destinationRoot,
+        updatedAt: "2026-03-23T10:00:00.000Z",
+        files: files.map((entry) => ({
+          path: entry.path,
+          sha256: sha256(entry.content),
+          sizeBytes: Buffer.byteLength(entry.content),
+          syncedAt: "2026-03-23T10:00:00.000Z",
+          jobId: entry.jobId ?? "job-prev",
+          sourceJobId: entry.sourceJobId ?? "job-source-prev"
+        }))
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+};
+
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
@@ -69,6 +117,7 @@ const waitForTerminalStatus = async ({
 
 test("planLocalSync rejects unsafe targetPath traversal", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-invalid-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
   const sourceRoot = path.join(tempRoot, "generated-project");
   await mkdir(sourceRoot, { recursive: true });
   await writeFile(path.join(sourceRoot, "App.tsx"), "export default function App() { return null; }\n", "utf8");
@@ -78,6 +127,7 @@ test("planLocalSync rejects unsafe targetPath traversal", async () => {
       planLocalSync({
         generatedProjectDir: sourceRoot,
         workspaceRoot: tempRoot,
+        outputRoot,
         targetPath: "../escape",
         boardKey: "board-unsafe"
       }),
@@ -87,8 +137,9 @@ test("planLocalSync rejects unsafe targetPath traversal", async () => {
   );
 });
 
-test("planLocalSync computes create/overwrite write plan under scoped destination", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-"));
+test("planLocalSync marks existing unmanaged files as untracked until a baseline exists", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-untracked-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
   const sourceRoot = path.join(tempRoot, "generated-project");
   await mkdir(path.join(sourceRoot, "src"), { recursive: true });
   await writeFile(path.join(sourceRoot, "README.md"), "# Generated\n", "utf8");
@@ -96,11 +147,12 @@ test("planLocalSync computes create/overwrite write plan under scoped destinatio
 
   const existingDestination = path.join(tempRoot, "sync-target", "board-123", "src");
   await mkdir(existingDestination, { recursive: true });
-  await writeFile(path.join(existingDestination, "App.tsx"), "old-content\n", "utf8");
+  await writeFile(path.join(existingDestination, "App.tsx"), "manual-existing-content\n", "utf8");
 
   const plan = await planLocalSync({
     generatedProjectDir: sourceRoot,
     workspaceRoot: tempRoot,
+    outputRoot,
     targetPath: "sync-target",
     boardKey: "board-123"
   });
@@ -108,41 +160,136 @@ test("planLocalSync computes create/overwrite write plan under scoped destinatio
   assert.equal(plan.scopePath, "sync-target/board-123");
   assert.equal(plan.destinationRoot, path.join(tempRoot, "sync-target", "board-123"));
   assert.equal(plan.summary.totalFiles, 2);
+  assert.equal(plan.summary.selectedFiles, 1);
   assert.equal(plan.summary.createCount, 1);
-  assert.equal(plan.summary.overwriteCount, 1);
-  assert.ok(plan.summary.totalBytes > 0);
+  assert.equal(plan.summary.overwriteCount, 0);
+  assert.equal(plan.summary.untrackedCount, 1);
+  assert.equal(plan.summary.conflictCount, 0);
 
   const appEntry = plan.files.find((entry) => entry.relativePath === "src/App.tsx");
   const readmeEntry = plan.files.find((entry) => entry.relativePath === "README.md");
+  assert.equal(appEntry?.status, "untracked");
+  assert.equal(appEntry?.reason, "existing_without_baseline");
+  assert.equal(appEntry?.decision, "skip");
   assert.equal(appEntry?.action, "overwrite");
-  assert.equal(readmeEntry?.action, "create");
+  assert.equal(readmeEntry?.status, "create");
+  assert.equal(readmeEntry?.decision, "write");
 });
 
-test("applyLocalSyncPlan writes planned files only when apply is executed", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-apply-"));
+test("planLocalSync uses baseline tracking to distinguish safe overwrites from conflicts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-conflict-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
   const sourceRoot = path.join(tempRoot, "generated-project");
+  const targetPath = "sync-target";
+  const boardKey = "board-conflict";
+  const scopePath = `${targetPath}/${boardKey}`;
+  const destinationRoot = path.join(tempRoot, scopePath);
+
   await mkdir(path.join(sourceRoot, "src"), { recursive: true });
-  await writeFile(path.join(sourceRoot, "src", "App.tsx"), "export const App = () => null;\n", "utf8");
+  await writeFile(path.join(sourceRoot, "src", "App.tsx"), "export const App = () => <div>new</div>;\n", "utf8");
+  await writeFile(path.join(sourceRoot, "src", "Card.tsx"), "export const Card = () => <section>new</section>;\n", "utf8");
+
+  await mkdir(path.join(destinationRoot, "src"), { recursive: true });
+  await writeFile(path.join(destinationRoot, "src", "App.tsx"), "export const App = () => <div>old</div>;\n", "utf8");
+  await writeFile(path.join(destinationRoot, "src", "Card.tsx"), "export const Card = () => <section>manual-edit</section>;\n", "utf8");
+
+  await writeLocalSyncBaseline({
+    outputRoot,
+    scopePath,
+    boardKey,
+    targetPath,
+    destinationRoot,
+    files: [
+      { path: "src/App.tsx", content: "export const App = () => <div>old</div>;\n" },
+      { path: "src/Card.tsx", content: "export const Card = () => <section>old</section>;\n" }
+    ]
+  });
 
   const plan = await planLocalSync({
     generatedProjectDir: sourceRoot,
     workspaceRoot: tempRoot,
-    targetPath: "sync-target",
-    boardKey: "board-apply"
+    outputRoot,
+    targetPath,
+    boardKey
   });
 
-  const destinationPath = path.join(plan.destinationRoot, "src", "App.tsx");
+  assert.equal(plan.summary.overwriteCount, 1);
+  assert.equal(plan.summary.conflictCount, 1);
+  assert.equal(plan.summary.selectedFiles, 1);
 
-  await assert.rejects(() => stat(destinationPath), (error: Error & { code?: string }) => error.code === "ENOENT");
-
-  await applyLocalSyncPlan({ plan });
-
-  const written = await readFile(destinationPath, "utf8");
-  assert.equal(written, "export const App = () => null;\n");
+  const appEntry = plan.files.find((entry) => entry.relativePath === "src/App.tsx");
+  const cardEntry = plan.files.find((entry) => entry.relativePath === "src/Card.tsx");
+  assert.equal(appEntry?.status, "overwrite");
+  assert.equal(appEntry?.decision, "write");
+  assert.equal(cardEntry?.status, "conflict");
+  assert.equal(cardEntry?.reason, "destination_modified_since_sync");
+  assert.equal(cardEntry?.decision, "skip");
 });
 
-test("job-engine local sync enforces regeneration-only + tokened apply confirmation", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-engine-"));
+test("applyLocalSyncPlan writes only selected files and updates baseline for written files", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-apply-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
+  const sourceRoot = path.join(tempRoot, "generated-project");
+  const targetPath = "sync-target";
+  const boardKey = "board-apply";
+  const scopePath = `${targetPath}/${boardKey}`;
+  const destinationRoot = path.join(tempRoot, scopePath);
+
+  await mkdir(path.join(sourceRoot, "src"), { recursive: true });
+  await writeFile(path.join(sourceRoot, "src", "App.tsx"), "export const App = () => <div>new</div>;\n", "utf8");
+  await writeFile(path.join(sourceRoot, "README.md"), "# New Readme\n", "utf8");
+
+  await mkdir(path.join(destinationRoot, "src"), { recursive: true });
+  await writeFile(path.join(destinationRoot, "src", "App.tsx"), "export const App = () => <div>old</div>;\n", "utf8");
+
+  await writeLocalSyncBaseline({
+    outputRoot,
+    scopePath,
+    boardKey,
+    targetPath,
+    destinationRoot,
+    files: [{ path: "src/App.tsx", content: "export const App = () => <div>old</div>;\n" }]
+  });
+
+  const plan = await planLocalSync({
+    generatedProjectDir: sourceRoot,
+    workspaceRoot: tempRoot,
+    outputRoot,
+    targetPath,
+    boardKey
+  });
+
+  const appliedPlan = await applyLocalSyncPlan({
+    plan,
+    jobId: "job-apply-1",
+    sourceJobId: "job-source-1",
+    fileDecisions: plan.files.map((entry) => ({
+      path: entry.relativePath,
+      decision: entry.relativePath === "src/App.tsx" ? "write" : "skip"
+    }))
+  });
+
+  const appContent = await readFile(path.join(destinationRoot, "src", "App.tsx"), "utf8");
+  assert.equal(appContent, "export const App = () => <div>new</div>;\n");
+  await assert.rejects(
+    () => stat(path.join(destinationRoot, "README.md")),
+    (error: Error & { code?: string }) => error.code === "ENOENT"
+  );
+
+  assert.equal(appliedPlan.summary.selectedFiles, 1);
+  const baselinePath = path.join(outputRoot, "local-sync-baselines", ...scopePath.split("/"), "baseline.json");
+  const baselinePayload = JSON.parse(await readFile(baselinePath, "utf8")) as {
+    files: Array<{ path: string; sha256: string }>;
+  };
+  assert.deepEqual(
+    baselinePayload.files.map((entry) => entry.path),
+    ["src/App.tsx"]
+  );
+  assert.equal(baselinePayload.files[0]?.sha256, sha256("export const App = () => <div>new</div>;\n"));
+});
+
+test("job-engine local sync persists a baseline and surfaces manual edits as conflicts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-engine-baseline-"));
   const outputRoot = path.join(tempRoot, "runtime-output");
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
@@ -176,10 +323,82 @@ test("job-engine local sync enforces regeneration-only + tokened apply confirmat
   });
   assert.equal(sourceStatus.status, "completed");
 
-  await assert.rejects(
-    () => engine.previewLocalSync({ jobId: sourceAccepted.jobId }),
-    (error: Error & { code?: string }) => error.code === "E_SYNC_REGEN_REQUIRED"
-  );
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "card-1", field: "cornerRadius", value: 16 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed");
+
+  const firstPreview = await engine.previewLocalSync({
+    jobId: regenAccepted.jobId,
+    targetPath: "sync-output"
+  });
+  assert.ok(firstPreview.files.length > 0);
+  assert.ok(firstPreview.files.every((entry) => entry.status === "create"));
+
+  await engine.applyLocalSync({
+    jobId: regenAccepted.jobId,
+    confirmationToken: firstPreview.confirmationToken,
+    confirmOverwrite: true,
+    fileDecisions: firstPreview.files.map((entry) => ({
+      path: entry.path,
+      decision: entry.decision
+    }))
+  });
+
+  const managedFile = firstPreview.files[0];
+  assert.ok(managedFile);
+  const managedDestinationPath = path.join(firstPreview.destinationRoot, ...managedFile.path.split("/"));
+  await writeFile(managedDestinationPath, "manual-edit-after-sync\n", "utf8");
+
+  const secondPreview = await engine.previewLocalSync({
+    jobId: regenAccepted.jobId,
+    targetPath: "sync-output"
+  });
+  const conflictingEntry = secondPreview.files.find((entry) => entry.path === managedFile.path);
+  assert.equal(conflictingEntry?.status, "conflict");
+  assert.equal(conflictingEntry?.reason, "destination_modified_since_sync");
+  assert.equal(conflictingEntry?.decision, "skip");
+});
+
+test("job-engine local sync rejects apply when the preview becomes stale", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-engine-stale-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
+  const workspaceRoot = path.join(tempRoot, "workspace-root");
+  await mkdir(workspaceRoot, { recursive: true });
+
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros"),
+      workspaceRoot
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+      installPreferOffline: true
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
 
   const regenAccepted = engine.submitRegeneration({
     sourceJobId: sourceAccepted.jobId,
@@ -195,47 +414,23 @@ test("job-engine local sync enforces regeneration-only + tokened apply confirmat
     jobId: regenAccepted.jobId,
     targetPath: "sync-output"
   });
-  assert.equal(preview.jobId, regenAccepted.jobId);
-  assert.equal(preview.sourceJobId, sourceAccepted.jobId);
-  assert.ok(preview.confirmationToken.length > 0);
-  assert.ok(preview.summary.totalFiles > 0);
-  assert.ok(preview.files.length > 0);
-
-  const firstPreviewFile = preview.files[0];
+  const firstPreviewFile = preview.files.find((entry) => entry.decision === "write");
   assert.ok(firstPreviewFile);
-  const destinationPath = path.join(preview.destinationRoot, ...(firstPreviewFile.path.split("/")));
-  await assert.rejects(() => stat(destinationPath), (error: Error & { code?: string }) => error.code === "ENOENT");
+  const destinationPath = path.join(preview.destinationRoot, ...(firstPreviewFile?.path.split("/") ?? []));
+  await mkdir(path.dirname(destinationPath), { recursive: true });
+  await writeFile(destinationPath, "manual-conflicting-file\n", "utf8");
 
   await assert.rejects(
     () =>
       engine.applyLocalSync({
         jobId: regenAccepted.jobId,
         confirmationToken: preview.confirmationToken,
-        confirmOverwrite: false
+        confirmOverwrite: true,
+        fileDecisions: preview.files.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
       }),
-    (error: Error & { code?: string }) => error.code === "E_SYNC_CONFIRMATION_REQUIRED"
-  );
-
-  const applyResult = await engine.applyLocalSync({
-    jobId: regenAccepted.jobId,
-    confirmationToken: preview.confirmationToken,
-    confirmOverwrite: true
-  });
-  assert.equal(applyResult.jobId, regenAccepted.jobId);
-  assert.equal(applyResult.scopePath, preview.scopePath);
-  assert.equal(applyResult.summary.totalFiles, preview.summary.totalFiles);
-  assert.ok(typeof applyResult.appliedAt === "string" && applyResult.appliedAt.length > 0);
-
-  const writtenStat = await stat(destinationPath);
-  assert.ok(writtenStat.isFile());
-
-  await assert.rejects(
-    () =>
-      engine.applyLocalSync({
-        jobId: regenAccepted.jobId,
-        confirmationToken: preview.confirmationToken,
-        confirmOverwrite: true
-      }),
-    (error: Error & { code?: string }) => error.code === "E_SYNC_CONFIRMATION_INVALID"
+    (error: Error & { code?: string }) => error.code === "E_SYNC_PREVIEW_STALE"
   );
 });

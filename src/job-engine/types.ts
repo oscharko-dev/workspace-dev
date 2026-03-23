@@ -2,6 +2,7 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceCreatePrInput,
   WorkspaceCreatePrResult,
+  WorkspaceLocalSyncFileDecisionEntry,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
   WorkspaceLocalSyncApplyResult,
@@ -148,7 +149,12 @@ export interface JobEngine {
   submitRegeneration: (input: WorkspaceRegenerationInput) => WorkspaceRegenerationAccepted;
   createPrFromJob: (input: { jobId: string; prInput: WorkspaceCreatePrInput }) => Promise<WorkspaceCreatePrResult>;
   previewLocalSync: (input: { jobId: string; targetPath?: string }) => Promise<WorkspaceLocalSyncDryRunResult>;
-  applyLocalSync: (input: { jobId: string; confirmationToken: string; confirmOverwrite: boolean }) => Promise<WorkspaceLocalSyncApplyResult>;
+  applyLocalSync: (input: {
+    jobId: string;
+    confirmationToken: string;
+    confirmOverwrite: boolean;
+    fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
+  }) => Promise<WorkspaceLocalSyncApplyResult>;
   cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;

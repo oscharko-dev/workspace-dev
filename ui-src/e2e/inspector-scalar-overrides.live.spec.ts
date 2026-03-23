@@ -918,6 +918,19 @@ test.describe("inspector scalar overrides live figma flow", () => {
     await expect(page.getByTestId("inspector-sync-preview-button")).toBeEnabled();
     await expect(page.getByTestId("inspector-pr-regeneration-required")).toHaveCount(0);
 
+    const liveSyncTargetPath = `artifacts/inspector-live-sync-${Date.now()}`;
+    await page.getByTestId("inspector-sync-target-path").fill(liveSyncTargetPath);
+    await page.getByTestId("inspector-sync-preview-button").click();
+    await expect(page.getByTestId("inspector-sync-preview-summary")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("inspector-sync-selected-summary")).toContainText("Selected:");
+    const selectedSummaryText = (await page.getByTestId("inspector-sync-selected-summary").textContent()) ?? "";
+    expect(selectedSummaryText).not.toContain("Selected: 0 files");
+    await page.getByTestId("inspector-sync-confirm-overwrite").click();
+    await expect(page.getByTestId("inspector-sync-apply-button")).toBeEnabled();
+    await page.getByTestId("inspector-sync-apply-button").click();
+    await expect(page.getByTestId("inspector-sync-success")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("inspector-sync-success")).toContainText("Wrote");
+
     await page.getByTestId("inspector-pr-repo-url").fill("https://github.com/acme/repo");
     await page.getByTestId("inspector-pr-repo-token").fill("ghp_token");
     await expect(page.getByTestId("inspector-pr-create-button")).toBeEnabled();
