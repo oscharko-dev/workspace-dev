@@ -56,13 +56,13 @@ export function InspectorPage(): JSX.Element {
 
   if (!hasRequiredParams) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-white">
-        <p className="text-lg font-medium text-[#333]">No job data available.</p>
-        <p className="mt-2 text-sm text-[#666]">Navigate back to the workspace to start a generation.</p>
+      <div className="flex h-screen flex-col items-center justify-center bg-[#111111] text-white">
+        <p className="text-lg font-medium text-white">No job data available.</p>
+        <p className="mt-2 text-sm text-white/55">Navigate back to the workspace to start a generation.</p>
         <button
           type="button"
           onClick={() => { void navigate("/workspace/ui"); }}
-          className="mt-4 cursor-pointer rounded-md bg-[#4eba87] px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-600"
+          className="mt-4 cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-4 py-2 text-sm font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18"
         >
           Back to Workspace
         </button>
@@ -71,25 +71,25 @@ export function InspectorPage(): JSX.Element {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#1e1e2e]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#101010] text-white">
       {/* Inspector Header */}
-      <header className="shrink-0 border-b border-[#2a2a3d] bg-[#1e1e2e]">
-        <div className="flex w-full items-center justify-between px-4 py-2">
+      <header className="shrink-0 border-b border-[#000000] bg-[#171717]">
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-2">
           {/* Left: Back + Logo */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => { void navigate("/workspace/ui"); }}
-              className="flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent p-0 text-xs font-medium text-slate-400 hover:text-emerald-400"
+              className="flex cursor-pointer items-center gap-1 rounded-md border border-transparent px-2 py-1 text-xs font-medium text-white/60 transition hover:border-white/10 hover:bg-[#000000] hover:text-[#4eba87]"
             >
               <BackIcon />
               Back
             </button>
 
-            <div className="h-4 w-px bg-slate-700" />
+            <div className="h-4 w-px bg-[#333333]" />
 
             <div className="flex items-center gap-2">
-              <div className="grid size-6 place-items-center rounded bg-emerald-500/15">
+              <div className="grid size-8 place-items-center rounded border border-[#000000] bg-[#333333]">
                 <img
                   src="/workspace/ui/logo-keiko.svg"
                   alt=""
@@ -97,8 +97,8 @@ export function InspectorPage(): JSX.Element {
                 />
               </div>
               <div className="flex items-baseline gap-2">
-                <h1 className="m-0 text-sm font-semibold tracking-tight text-slate-200">Inspector</h1>
-                <span className="text-[10px] text-slate-500">workspace-dev</span>
+                <h1 className="m-0 text-sm font-semibold tracking-tight text-white">Inspector</h1>
+                <span className="text-[10px] uppercase tracking-[0.22em] text-white/35">workspace-dev</span>
               </div>
             </div>
           </div>
@@ -112,8 +112,8 @@ export function InspectorPage(): JSX.Element {
                 onClick={() => { setOpenDialog(btn.key); }}
                 className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
                   openDialog === btn.key
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                    : "border-transparent bg-transparent text-slate-400 hover:bg-white/5 hover:text-slate-300"
+                    ? "border-[#4eba87] bg-[#4eba87]/12 text-[#4eba87]"
+                    : "border-transparent bg-transparent text-white/55 hover:border-white/10 hover:bg-[#000000] hover:text-white"
                 }`}
               >
                 <SettingsIcon />
@@ -124,7 +124,7 @@ export function InspectorPage(): JSX.Element {
 
           {/* Right: Info + Actions */}
           <div className="flex items-center gap-2">
-            <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-mono text-slate-500">
+            <span className="rounded border border-[#000000] bg-[#222222] px-2 py-0.5 text-[10px] font-mono text-white/45">
               rest + deterministic
             </span>
             {activePreviewUrl ? (
@@ -132,7 +132,7 @@ export function InspectorPage(): JSX.Element {
                 href={activePreviewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-md border border-slate-700 bg-transparent px-2 py-1 text-[11px] font-medium text-slate-400 no-underline transition hover:border-slate-600 hover:text-slate-300"
+                className="flex items-center gap-1.5 rounded-md border border-[#333333] bg-transparent px-2 py-1 text-[11px] font-medium text-white/60 no-underline transition hover:border-[#4eba87]/40 hover:text-[#4eba87]"
               >
                 <ExternalLinkIcon />
                 Preview

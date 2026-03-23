@@ -23,7 +23,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
 import { computeUnifiedDiff, type DiffLine, type DiffResult } from "../../../lib/diff";
-import { getPreferredTheme } from "../../../lib/shiki";
+import { getPreferredTheme, type HighlightResult } from "../../../lib/shiki";
 import type { ManifestRange, ScopedCodeMode } from "./scoped-code-ranges";
 
 // ---------------------------------------------------------------------------
@@ -49,11 +49,20 @@ interface DiffViewerProps {
   isNodeScoped?: boolean;
   /** Reason why node-scoped diff is unavailable (null when available). */
   nodeDiffFallbackReason?: string | null;
+  /** Force a viewer theme instead of following the system preference. */
+  themeMode?: "system" | "dark";
 }
 
 interface DiffSearchMatch {
   lineIndex: number;
   column: number;
+}
+
+function resolveViewerTheme(themeMode: "system" | "dark"): HighlightResult["theme"] {
+  if (themeMode === "dark") {
+    return "github-dark";
+  }
+  return getPreferredTheme();
 }
 
 // ---------------------------------------------------------------------------
@@ -69,14 +78,15 @@ export function DiffViewer({
   newFocusRange,
   scopedMode,
   isNodeScoped,
-  nodeDiffFallbackReason
+  nodeDiffFallbackReason,
+  themeMode = "system"
 }: DiffViewerProps): JSX.Element {
   const [wordWrap, setWordWrap] = useState(false);
   const [copied, setCopied] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState(getPreferredTheme);
+  const [currentTheme, setCurrentTheme] = useState<HighlightResult["theme"]>(() => resolveViewerTheme(themeMode));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -86,12 +96,18 @@ export function DiffViewer({
 
   // Theme listener
   useEffect(() => {
+    setCurrentTheme(resolveViewerTheme(themeMode));
+  }, [themeMode]);
+
+  // Theme listener
+  useEffect(() => {
+    if (themeMode !== "system") return;
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (): void => { setCurrentTheme(getPreferredTheme()); };
     mq.addEventListener("change", handler);
     return () => { mq.removeEventListener("change", handler); };
-  }, []);
+  }, [themeMode]);
 
   // Compute diff
   const diffResult: DiffResult = useMemo(

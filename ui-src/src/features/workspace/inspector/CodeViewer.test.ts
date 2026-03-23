@@ -149,6 +149,24 @@ describe("CodeViewer", () => {
     });
   });
 
+  it("renders full TSX tokens from nested Shiki spans instead of truncating at the first closing span", async () => {
+    mockHighlightCodeWithWorker.mockResolvedValue({
+      html: '<pre class="shiki github-light" style="background-color:#fff"><code><span class="line"><span style="color:#24292f">export function Example() {</span></span>\n<span class="line"><span style="color:#24292f">  return (</span></span>\n<span class="line"><span style="color:#24292f">    &#x3C;</span><span style="color:#0550AE">div</span><span style="color:#8250df"> className</span><span style="color:#cf222e">=</span><span style="color:#0a3069">"foo"</span><span style="color:#24292f">>Hello&#x3C;/</span><span style="color:#0550AE">div</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">  );</span></span>\n<span class="line"><span style="color:#24292f">}</span></span></code></pre>',
+      theme: "github-light"
+    });
+
+    render(
+      createElement(CodeViewer, {
+        code: 'export function Example() {\n  return (\n    <div className="foo">Hello</div>\n  );\n}',
+        filePath: "src/screens/Empty_State.tsx"
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent('<div className="foo">Hello</div>');
+    });
+  });
+
   it("toggles word wrap", async () => {
     render(
       createElement(CodeViewer, {

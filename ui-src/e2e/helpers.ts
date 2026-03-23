@@ -21,7 +21,10 @@ const FIXTURE_PATH = path.resolve(
   fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
 );
 const TERMINAL_STATUS_PATTERN = /^(COMPLETED|FAILED|CANCELED)$/;
-const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)/;
+const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)(?=\s|$)/i;
+const JOB_COMPLETED_PATTERN = /completed successfully/i;
+const JOB_FAILED_PATTERN = /\bfailed\b/i;
+const JOB_CANCELED_PATTERN = /\bcanceled\b/i;
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
 
 /**
@@ -125,18 +128,34 @@ export async function waitForSubmitTerminalStatus(
   options?: { timeoutMs?: number }
 ): Promise<string> {
   const timeoutMs = options?.timeoutMs ?? 120_000;
-  const submitLine = page.getByTestId("runtime-card").getByText(/^Submit:/);
+  const runtimeCard = page.getByTestId("runtime-card");
   const intervalsMs = [500, 1_000, 2_000] as const;
   const startedAt = Date.now();
   let intervalIndex = 0;
 
   while (Date.now() - startedAt <= timeoutMs) {
-    const lineText = (await submitLine.textContent())?.trim() ?? "";
-    const match = lineText.match(TERMINAL_STATUS_CAPTURE_PATTERN);
-    const status = match?.[1] ?? "";
+    const runtimeCardText = (await runtimeCard.textContent())?.replace(/\s+/g, " ").trim() ?? "";
+    const match = runtimeCardText.match(TERMINAL_STATUS_CAPTURE_PATTERN);
+    const status = match?.[1]?.toUpperCase() ?? "";
 
     if (TERMINAL_STATUS_PATTERN.test(status)) {
       return status;
+    }
+
+    const openInspectorButton = page.getByRole("button", { name: "Open Inspector" });
+    if ((await openInspectorButton.count()) > 0 && await openInspectorButton.isVisible().catch(() => false)) {
+      return "COMPLETED";
+    }
+
+    const jobStatusText = (await page.getByTestId("job-status-card").textContent())?.replace(/\s+/g, " ").trim() ?? "";
+    if (JOB_COMPLETED_PATTERN.test(jobStatusText)) {
+      return "COMPLETED";
+    }
+    if (JOB_FAILED_PATTERN.test(jobStatusText)) {
+      return "FAILED";
+    }
+    if (JOB_CANCELED_PATTERN.test(jobStatusText)) {
+      return "CANCELED";
     }
 
     const waitMs = intervalsMs[Math.min(intervalIndex, intervalsMs.length - 1)] ?? 2_000;

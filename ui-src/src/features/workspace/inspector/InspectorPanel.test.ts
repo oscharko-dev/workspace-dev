@@ -8,6 +8,7 @@ import {
   toInspectorOverrideDraftStorageKey,
   upsertInspectorOverrideEntry
 } from "./inspector-override-draft";
+import { toInspectorLayoutStorageKey } from "./layout-state";
 
 const mockUseQuery = vi.fn();
 const mockUseMutation = vi.fn();
@@ -290,6 +291,39 @@ beforeAll(() => {
   });
 });
 
+function installPointerCaptureMock(element: HTMLElement): {
+  releasePointerCapture: ReturnType<typeof vi.fn>;
+  setPointerCapture: ReturnType<typeof vi.fn>;
+} {
+  let capturedPointerId: number | null = null;
+  const setPointerCapture = vi.fn((pointerId: number) => {
+    capturedPointerId = pointerId;
+  });
+  const releasePointerCapture = vi.fn((pointerId: number) => {
+    if (capturedPointerId === pointerId) {
+      capturedPointerId = null;
+    }
+  });
+
+  Object.defineProperty(element, "setPointerCapture", {
+    configurable: true,
+    value: setPointerCapture
+  });
+  Object.defineProperty(element, "releasePointerCapture", {
+    configurable: true,
+    value: releasePointerCapture
+  });
+  Object.defineProperty(element, "hasPointerCapture", {
+    configurable: true,
+    value: (pointerId: number) => capturedPointerId === pointerId
+  });
+
+  return {
+    releasePointerCapture,
+    setPointerCapture
+  };
+}
+
 describe("InspectorPanel splitters", () => {
   afterEach(() => {
     cleanup();
@@ -298,6 +332,7 @@ describe("InspectorPanel splitters", () => {
   beforeEach(() => {
     mockUseQuery.mockReset();
     mockUseMutation.mockReset();
+    window.localStorage.clear();
     window.sessionStorage.clear();
     installQueryMock();
     installMutationMock();
@@ -331,6 +366,131 @@ describe("InspectorPanel splitters", () => {
 
     expect(screen.getByTestId("inspector-splitter-tree-preview")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-splitter-preview-code")).toBeInTheDocument();
+  });
+
+  it("supports pointer resizing on the preview-code separator and persists layout on pointerup", () => {
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const separator = screen.getByTestId("inspector-splitter-preview-code");
+    const { releasePointerCapture, setPointerCapture } = installPointerCaptureMock(separator);
+
+    const before = Number(separator.getAttribute("aria-valuenow"));
+    fireEvent.pointerDown(separator, {
+      pointerId: 7,
+      clientX: 600,
+      buttons: 1
+    });
+    fireEvent.pointerMove(separator, {
+      pointerId: 7,
+      clientX: 480,
+      buttons: 1
+    });
+
+    const mid = Number(separator.getAttribute("aria-valuenow"));
+    expect(mid).toBeLessThan(before);
+    expect(document.body.style.userSelect).toBe("none");
+    expect(document.body.style.cursor).toBe("col-resize");
+    expect(document.documentElement.style.cursor).toBe("col-resize");
+
+    fireEvent.pointerUp(separator, {
+      pointerId: 7,
+      clientX: 480
+    });
+
+    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(mid);
+    expect(window.localStorage.getItem(toInspectorLayoutStorageKey("job-1"))).toBeTruthy();
+    expect(document.body.style.userSelect).toBe("");
+    expect(document.body.style.cursor).toBe("");
+    expect(document.documentElement.style.cursor).toBe("");
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("persists the last known drag position when pointer capture is lost", () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const separator = screen.getByTestId("inspector-splitter-tree-preview");
+    installPointerCaptureMock(separator);
+
+    fireEvent.pointerDown(separator, {
+      pointerId: 9,
+      clientX: 400,
+      buttons: 1
+    });
+    fireEvent.pointerMove(separator, {
+      pointerId: 9,
+      clientX: 520,
+      buttons: 1
+    });
+
+    const movedValue = Number(separator.getAttribute("aria-valuenow"));
+    const setItemCallsBeforeLostCapture = setItemSpy.mock.calls.length;
+
+    fireEvent(
+      separator,
+      new PointerEvent("lostpointercapture", {
+        bubbles: true,
+        pointerId: 9,
+        clientX: 0
+      })
+    );
+
+    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(movedValue);
+    expect(window.localStorage.getItem(toInspectorLayoutStorageKey("job-1"))).toBeTruthy();
+    expect(document.body.style.userSelect).toBe("");
+    expect(setItemSpy.mock.calls.length - setItemCallsBeforeLostCapture).toBe(1);
+
+    setItemSpy.mockRestore();
+  });
+
+  it("restores the tree pane width after collapse and re-expand", () => {
+    render(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/"
+      })
+    );
+
+    const separator = screen.getByTestId("inspector-splitter-tree-preview");
+    installPointerCaptureMock(separator);
+
+    const before = Number(separator.getAttribute("aria-valuenow"));
+    fireEvent.pointerDown(separator, {
+      pointerId: 11,
+      clientX: 360,
+      buttons: 1
+    });
+    fireEvent.pointerMove(separator, {
+      pointerId: 11,
+      clientX: 500,
+      buttons: 1
+    });
+    fireEvent.pointerUp(separator, {
+      pointerId: 11,
+      clientX: 500
+    });
+
+    const resizedValue = Number(screen.getByTestId("inspector-splitter-tree-preview").getAttribute("aria-valuenow"));
+    expect(resizedValue).toBeGreaterThan(before);
+
+    fireEvent.click(screen.getByTestId("tree-collapse-button"));
+    expect(screen.queryByTestId("inspector-splitter-tree-preview")).not.toBeInTheDocument();
+    expect(screen.getByTestId("tree-expand-button")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("tree-expand-button"));
+    expect(Number(screen.getByTestId("inspector-splitter-tree-preview").getAttribute("aria-valuenow"))).toBe(resizedValue);
   });
 });
 

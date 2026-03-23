@@ -52,6 +52,8 @@ interface CodeViewerProps {
   onBoundarySelect?: (irNodeId: string) => void;
   /** 1-based offset for line numbers when displaying a code snippet. */
   lineOffset?: number;
+  /** Force a viewer theme instead of following the system preference. */
+  themeMode?: "system" | "dark";
 }
 
 interface SearchMatch {
@@ -73,26 +75,31 @@ type SearchMode =
  * Shiki wraps output in `<pre class="shiki ..."><code>` with each line
  * as `<span class="line">...</span>`.
  */
-function parseShikiLines(html: string): string[] {
-  // Extract inner content of <code>...</code>
-  const codeMatch = /<code[^>]*>([\s\S]*?)<\/code>/.exec(html);
-  if (!codeMatch?.[1]) return [];
-
-  const inner = codeMatch[1];
-  const lines: string[] = [];
-  const lineRegex = /<span class="line">([\s\S]*?)<\/span>/g;
-  let match = lineRegex.exec(inner);
-  while (match) {
-    lines.push(match[1] ?? "");
-    match = lineRegex.exec(inner);
+function parseShikiLines(html: string): string[] | null {
+  if (typeof document === "undefined") {
+    return null;
   }
 
-  // If no line spans found, split by newline (fallback)
-  if (lines.length === 0) {
-    return inner.split("\n");
-  }
+  try {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const codeElement = template.content.querySelector("code");
+    if (!codeElement) {
+      return null;
+    }
 
-  return lines;
+    const lineElements = Array.from(codeElement.children).filter((child): child is HTMLSpanElement => {
+      return child instanceof HTMLSpanElement && child.classList.contains("line");
+    });
+
+    if (lineElements.length === 0) {
+      return null;
+    }
+
+    return lineElements.map((lineElement) => lineElement.innerHTML);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -175,6 +182,13 @@ function findOccurrences({
   return matches;
 }
 
+function resolveViewerTheme(themeMode: "system" | "dark"): HighlightResult["theme"] {
+  if (themeMode === "dark") {
+    return "github-dark";
+  }
+  return getPreferredTheme();
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -187,7 +201,8 @@ export function CodeViewer({
   boundariesEnabled,
   onBoundariesEnabledChange,
   onBoundarySelect,
-  lineOffset = 1
+  lineOffset = 1,
+  themeMode = "system"
 }: CodeViewerProps): JSX.Element {
   const [highlightState, setHighlightState] = useState<{
     result: HighlightResult | null;
@@ -212,7 +227,7 @@ export function CodeViewer({
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [currentTheme, setCurrentTheme] = useState(getPreferredTheme);
+  const [currentTheme, setCurrentTheme] = useState(() => resolveViewerTheme(themeMode));
 
   const isOversize = exceedsMaxSize(code);
   const rawLines = useMemo(() => code.split("\n"), [code]);
@@ -259,8 +274,15 @@ export function CodeViewer({
     input.select();
   }, []);
 
+  useEffect(() => {
+    setCurrentTheme(resolveViewerTheme(themeMode));
+  }, [themeMode]);
+
   // Listen for system theme changes
   useEffect(() => {
+    if (themeMode !== "system") {
+      return;
+    }
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (): void => {
@@ -270,7 +292,7 @@ export function CodeViewer({
     return () => {
       mq.removeEventListener("change", handler);
     };
-  }, []);
+  }, [themeMode]);
 
   // Run Shiki highlighting
   useEffect(() => {
