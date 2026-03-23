@@ -119,6 +119,7 @@
     "eslint-plugin-react-refresh": "^0.4.26",
     "fast-check": "^4.6.0",
     "jsdom": "^28.1.0",
+    "prettier": "^3.8.1",
     "publint": "^0.3.15",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

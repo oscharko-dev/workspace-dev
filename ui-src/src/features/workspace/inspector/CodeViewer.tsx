@@ -14,7 +14,9 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/384
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { Plugin } from "prettier";
 import {
+  detectLanguage,
   exceedsMaxSize,
   getPreferredTheme,
   type HighlightResult
@@ -48,8 +50,10 @@ interface CodeViewerProps {
   boundariesEnabled?: boolean;
   /** Called when boundary visibility toggle changes */
   onBoundariesEnabledChange?: (enabled: boolean) => void;
-  /** Called when a boundary marker is clicked */
+  /** Called when boundary marker is clicked */
   onBoundarySelect?: (irNodeId: string) => void;
+  /** Active IR node id used to remap overlays after formatting. */
+  selectedIrNodeId?: string | null;
   /** 1-based offset for line numbers when displaying a code snippet. */
   lineOffset?: number;
   /** Force a viewer theme instead of following the system preference. */
@@ -65,6 +69,41 @@ type SearchMode =
   | { kind: "empty" }
   | { kind: "find"; query: string }
   | { kind: "jump"; requestedLine: number };
+
+type ViewerTheme = HighlightResult["theme"];
+type ViewerLanguage = ReturnType<typeof detectLanguage>;
+type FormatParser = "typescript" | "json";
+type FormatStatus =
+  | { kind: "idle"; message: null }
+  | { kind: "formatting"; message: null }
+  | { kind: "success"; message: null }
+  | { kind: "error"; message: string };
+
+interface RainbowDecoration {
+  color: string;
+  depth: number;
+}
+
+interface PrettierModules {
+  format: typeof import("prettier/standalone").format;
+  typescriptPlugin: Plugin;
+  babelPlugin: Plugin;
+  estreePlugin: Plugin;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const IR_START_PATTERN = /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
+const IR_END_PATTERN = /\{\/\* @ir:end (\S+) \*\/\}/;
+const FORMAT_SUCCESS_TIMEOUT_MS = 1500;
+const FORMAT_ERROR_TIMEOUT_MS = 3000;
+const RAINBOW_BRACKET_ATTRIBUTE = "data-rainbow-bracket";
+const LIGHT_RAINBOW_COLORS = ["#d1242f", "#8250df", "#0969da", "#0a7f50", "#9a6700", "#bc4c00"] as const;
+const DARK_RAINBOW_COLORS = ["#ff7b72", "#d2a8ff", "#79c0ff", "#7ee787", "#f2cc60", "#ffa657"] as const;
+
+let prettierModulesPromise: Promise<PrettierModules> | null = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -182,11 +221,360 @@ function findOccurrences({
   return matches;
 }
 
-function resolveViewerTheme(themeMode: "system" | "dark"): HighlightResult["theme"] {
+function resolveViewerTheme(themeMode: "system" | "dark"): ViewerTheme {
   if (themeMode === "dark") {
     return "github-dark";
   }
   return getPreferredTheme();
+}
+
+function compareBoundaries(left: CodeBoundaryEntry, right: CodeBoundaryEntry): number {
+  if (left.startLine !== right.startLine) {
+    return left.startLine - right.startLine;
+  }
+  if (left.endLine !== right.endLine) {
+    return left.endLine - right.endLine;
+  }
+  return left.irNodeId.localeCompare(right.irNodeId);
+}
+
+function parseIrMarkersFromDisplayedCode({
+  code
+}: {
+  code: string;
+}): CodeBoundaryEntry[] {
+  const lines = code.split("\n");
+  const entries: CodeBoundaryEntry[] = [];
+  const openStack: Array<{
+    irNodeId: string;
+    irNodeName: string;
+    irNodeType: string;
+    startLine: number;
+  }> = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const startMatch = IR_START_PATTERN.exec(line);
+    if (startMatch) {
+      openStack.push({
+        irNodeId: startMatch[1]!,
+        irNodeName: startMatch[2]!,
+        irNodeType: startMatch[3]!,
+        startLine: index + 1
+      });
+      continue;
+    }
+
+    const endMatch = IR_END_PATTERN.exec(line);
+    if (!endMatch) {
+      continue;
+    }
+
+    const targetNodeId = endMatch[1]!;
+    for (let stackIndex = openStack.length - 1; stackIndex >= 0; stackIndex -= 1) {
+      const candidate = openStack[stackIndex];
+      if (!candidate || candidate.irNodeId !== targetNodeId) {
+        continue;
+      }
+      openStack.splice(stackIndex, 1);
+      entries.push({
+        irNodeId: candidate.irNodeId,
+        irNodeName: candidate.irNodeName,
+        irNodeType: candidate.irNodeType,
+        startLine: candidate.startLine,
+        endLine: index + 1
+      });
+      break;
+    }
+  }
+
+  return entries.sort(compareBoundaries).map((entry) => ({
+    ...entry,
+    irNodeName: entry.irNodeName,
+    irNodeType: entry.irNodeType
+  }));
+}
+
+function projectBoundariesToDisplay({
+  boundaries,
+  lineOffset,
+  totalLines
+}: {
+  boundaries: CodeBoundaryEntry[];
+  lineOffset: number;
+  totalLines: number;
+}): CodeBoundaryEntry[] {
+  if (boundaries.length === 0 || totalLines <= 0) {
+    return [];
+  }
+
+  const projected: CodeBoundaryEntry[] = [];
+  for (const entry of boundaries) {
+    const startLine = entry.startLine - lineOffset + 1;
+    const endLine = entry.endLine - lineOffset + 1;
+    const lower = Math.min(startLine, endLine);
+    const upper = Math.max(startLine, endLine);
+    if (upper < 1 || lower > totalLines) {
+      continue;
+    }
+    projected.push({
+      ...entry,
+      startLine: Math.max(1, lower),
+      endLine: Math.min(totalLines, upper)
+    });
+  }
+
+  return projected.sort(compareBoundaries);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function normalizeRenderableLineHtml(lineHtml: string): string {
+  return lineHtml.length > 0 ? lineHtml : "&nbsp;";
+}
+
+function isJsxLikeLanguage(language: ViewerLanguage, filePath: string): boolean {
+  return language === "tsx" || filePath.endsWith(".jsx");
+}
+
+function shouldTreatAsJsxTagStart(line: string, index: number): boolean {
+  const after = line.slice(index + 1);
+  const trimmedAfter = after.trimStart();
+  const next = trimmedAfter[0] ?? "";
+  if (!next || !(next === ">" || next === "/" || /[A-Za-z]/.test(next))) {
+    return false;
+  }
+
+  const before = line.slice(0, index);
+  const trimmedBefore = before.trimEnd();
+  const prev = trimmedBefore.at(-1) ?? "";
+  if (trimmedBefore.length === 0) {
+    return true;
+  }
+
+  if ("=({[,!?:;>".includes(prev)) {
+    return true;
+  }
+
+  if (trimmedBefore.endsWith("=>")) {
+    return true;
+  }
+
+  return /\b(return|case|throw|else)$/.test(trimmedBefore);
+}
+
+function buildRainbowDecorations({
+  lines,
+  palette,
+  allowAngleBrackets
+}: {
+  lines: string[];
+  palette: readonly string[];
+  allowAngleBrackets: boolean;
+}): Array<Map<number, RainbowDecoration>> {
+  const decorations = lines.map(() => new Map<number, RainbowDecoration>());
+  const stack: Array<{ closer: string; decoration: RainbowDecoration }> = [];
+
+  const openers = new Map<string, string>([
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"]
+  ]);
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex] ?? "";
+    const lineDecorations = decorations[lineIndex]!;
+
+    for (let charIndex = 0; charIndex < line.length; charIndex += 1) {
+      const char = line[charIndex] ?? "";
+
+      if (openers.has(char)) {
+        const depth = stack.length;
+        const decoration = {
+          color: palette[depth % palette.length]!,
+          depth
+        };
+        lineDecorations.set(charIndex, decoration);
+        stack.push({
+          closer: openers.get(char)!,
+          decoration
+        });
+        continue;
+      }
+
+      if (allowAngleBrackets && char === "<" && shouldTreatAsJsxTagStart(line, charIndex)) {
+        const depth = stack.length;
+        const decoration = {
+          color: palette[depth % palette.length]!,
+          depth
+        };
+        lineDecorations.set(charIndex, decoration);
+        stack.push({
+          closer: ">",
+          decoration
+        });
+        continue;
+      }
+
+      if (char === ")" || char === "]" || char === "}" || char === ">") {
+        const top = stack[stack.length - 1];
+        if (!top || top.closer !== char) {
+          continue;
+        }
+        lineDecorations.set(charIndex, top.decoration);
+        stack.pop();
+      }
+    }
+  }
+
+  return decorations;
+}
+
+function applyRainbowDecorationsToLineHtml({
+  lineHtml,
+  decorations
+}: {
+  lineHtml: string;
+  decorations: Map<number, RainbowDecoration>;
+}): string {
+  if (decorations.size === 0 || typeof document === "undefined") {
+    return normalizeRenderableLineHtml(lineHtml);
+  }
+
+  const template = document.createElement("template");
+  template.innerHTML = `<span data-rainbow-root="true">${normalizeRenderableLineHtml(lineHtml)}</span>`;
+  const root = template.content.firstElementChild;
+  if (!(root instanceof HTMLSpanElement)) {
+    return normalizeRenderableLineHtml(lineHtml);
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let cursor = 0;
+  const textNodes: Text[] = [];
+  while (walker.nextNode()) {
+    const current = walker.currentNode;
+    if (current instanceof Text) {
+      textNodes.push(current);
+    }
+  }
+
+  for (const textNode of textNodes) {
+    const value = textNode.data;
+    if (value.length === 0) {
+      continue;
+    }
+
+    let needsReplacement = false;
+    for (let index = 0; index < value.length; index += 1) {
+      if (decorations.has(cursor + index)) {
+        needsReplacement = true;
+        break;
+      }
+    }
+
+    if (!needsReplacement) {
+      cursor += value.length;
+      continue;
+    }
+
+    const fragment = document.createDocumentFragment();
+    let segmentStart = 0;
+
+    for (let index = 0; index < value.length; index += 1) {
+      const decoration = decorations.get(cursor + index);
+      if (!decoration) {
+        continue;
+      }
+
+      if (index > segmentStart) {
+        fragment.append(document.createTextNode(value.slice(segmentStart, index)));
+      }
+
+      const bracket = document.createElement("span");
+      bracket.setAttribute(RAINBOW_BRACKET_ATTRIBUTE, "true");
+      bracket.dataset.rainbowDepth = String(decoration.depth);
+      bracket.style.color = decoration.color;
+      bracket.textContent = value[index] ?? "";
+      fragment.append(bracket);
+      segmentStart = index + 1;
+    }
+
+    if (segmentStart < value.length) {
+      fragment.append(document.createTextNode(value.slice(segmentStart)));
+    }
+
+    textNode.replaceWith(fragment);
+    cursor += value.length;
+  }
+
+  return root.innerHTML.length > 0 ? root.innerHTML : "&nbsp;";
+}
+
+function formatPlainTextLineHtml(line: string): string {
+  return normalizeRenderableLineHtml(escapeHtml(line));
+}
+
+async function loadPrettierModules(): Promise<PrettierModules> {
+  if (!prettierModulesPromise) {
+    prettierModulesPromise = Promise.all([
+      import("prettier/standalone"),
+      import("prettier/plugins/typescript"),
+      import("prettier/plugins/babel"),
+      import("prettier/plugins/estree")
+    ]).then(([prettier, typescriptPlugin, babelPlugin, estreePlugin]) => ({
+      format: prettier.format,
+      typescriptPlugin,
+      babelPlugin,
+      estreePlugin
+    }));
+  }
+
+  return await prettierModulesPromise;
+}
+
+function resolveFormatParser(language: ViewerLanguage): FormatParser | null {
+  if (language === "tsx" || language === "typescript") {
+    return "typescript";
+  }
+  if (language === "json") {
+    return "json";
+  }
+  return null;
+}
+
+async function formatCodeForViewer({
+  code,
+  filePath,
+  language
+}: {
+  code: string;
+  filePath: string;
+  language: ViewerLanguage;
+}): Promise<string> {
+  const parser = resolveFormatParser(language);
+  if (!parser) {
+    throw new Error("Formatting is unavailable for this file type.");
+  }
+
+  const { format, typescriptPlugin, babelPlugin, estreePlugin } = await loadPrettierModules();
+  const plugins = parser === "json"
+    ? [babelPlugin, estreePlugin]
+    : [typescriptPlugin, estreePlugin];
+
+  const formatted = await format(code, {
+    parser,
+    plugins,
+    filepath: filePath
+  });
+
+  return formatted.replace(/\n$/, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +589,7 @@ export function CodeViewer({
   boundariesEnabled,
   onBoundariesEnabledChange,
   onBoundarySelect,
+  selectedIrNodeId = null,
   lineOffset = 1,
   themeMode = "system"
 }: CodeViewerProps): JSX.Element {
@@ -223,14 +612,20 @@ export function CodeViewer({
     x: number;
     y: number;
   } | null>(null);
+  const [formattedCode, setFormattedCode] = useState<string | null>(null);
+  const [formatStatus, setFormatStatus] = useState<FormatStatus>({ kind: "idle", message: null });
+  const [rainbowBracketsEnabled, setRainbowBracketsEnabled] = useState(false);
   const codeViewerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentTheme, setCurrentTheme] = useState(() => resolveViewerTheme(themeMode));
 
-  const isOversize = exceedsMaxSize(code);
-  const rawLines = useMemo(() => code.split("\n"), [code]);
+  const displayCode = formattedCode ?? code;
+  const detectedLanguage = useMemo<ViewerLanguage>(() => detectLanguage(filePath), [filePath]);
+  const isOversize = exceedsMaxSize(displayCode);
+  const rawLines = useMemo(() => displayCode.split("\n"), [displayCode]);
   const searchMode = useMemo<SearchMode>(() => parseSearchInput(searchInput), [searchInput]);
   const searchMatches = useMemo(() => {
     if (searchMode.kind !== "find") {
@@ -247,6 +642,21 @@ export function CodeViewer({
     }
     return searchMatches[activeMatchIndex] ?? null;
   }, [activeMatchIndex, searchMatches]);
+
+  const clearFormatFeedbackTimeout = useCallback(() => {
+    if (formatFeedbackTimeoutRef.current !== null) {
+      clearTimeout(formatFeedbackTimeoutRef.current);
+      formatFeedbackTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleFormatStatusReset = useCallback((delayMs: number) => {
+    clearFormatFeedbackTimeout();
+    formatFeedbackTimeoutRef.current = setTimeout(() => {
+      setFormatStatus({ kind: "idle", message: null });
+      formatFeedbackTimeoutRef.current = null;
+    }, delayMs);
+  }, [clearFormatFeedbackTimeout]);
 
   const scrollToLine = useCallback(
     ({
@@ -278,12 +688,26 @@ export function CodeViewer({
     setCurrentTheme(resolveViewerTheme(themeMode));
   }, [themeMode]);
 
+  useEffect(() => {
+    setFormattedCode(null);
+    clearFormatFeedbackTimeout();
+    setFormatStatus({ kind: "idle", message: null });
+  }, [clearFormatFeedbackTimeout, code, filePath]);
+
+  useEffect(() => {
+    return () => {
+      clearFormatFeedbackTimeout();
+    };
+  }, [clearFormatFeedbackTimeout]);
+
   // Listen for system theme changes
   useEffect(() => {
     if (themeMode !== "system") {
       return;
     }
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (): void => {
       setCurrentTheme(getPreferredTheme());
@@ -303,7 +727,7 @@ export function CodeViewer({
     const abortController = new AbortController();
 
     void highlightCodeWithWorker({
-      code,
+      code: displayCode,
       filePath,
       theme: currentTheme,
       signal: abortController.signal
@@ -312,7 +736,12 @@ export function CodeViewer({
         if (abortController.signal.aborted) {
           return;
         }
-        setHighlightState({ result, forCode: code, forFilePath: filePath, forTheme: currentTheme });
+        setHighlightState({
+          result,
+          forCode: displayCode,
+          forFilePath: filePath,
+          forTheme: currentTheme
+        });
       })
       .catch((error) => {
         if (isAbortError(error) || abortController.signal.aborted) {
@@ -320,7 +749,7 @@ export function CodeViewer({
         }
         setHighlightState({
           result: null,
-          forCode: code,
+          forCode: displayCode,
           forFilePath: filePath,
           forTheme: currentTheme
         });
@@ -329,11 +758,11 @@ export function CodeViewer({
     return () => {
       abortController.abort();
     };
-  }, [code, filePath, currentTheme, isOversize]);
+  }, [currentTheme, displayCode, filePath, isOversize]);
 
   useEffect(() => {
     lineRefs.current.clear();
-  }, [code, filePath]);
+  }, [displayCode, filePath]);
 
   useEffect(() => {
     if (searchMode.kind !== "find" || searchMatches.length === 0) {
@@ -358,21 +787,56 @@ export function CodeViewer({
 
   // Determine if the current highlight state matches the current inputs
   const isFresh = highlightState !== null
-    && highlightState.forCode === code
+    && highlightState.forCode === displayCode
     && highlightState.forFilePath === filePath
     && highlightState.forTheme === currentTheme;
   const isHighlighting = !isOversize && !isFresh;
   const effectiveHighlightResult = isOversize || !isFresh ? null : highlightState.result;
 
+  const parsedDisplayBoundaries = useMemo(() => {
+    return parseIrMarkersFromDisplayedCode({
+      code: displayCode
+    });
+  }, [displayCode]);
+
+  const projectedBoundaries = useMemo(() => {
+    return projectBoundariesToDisplay({
+      boundaries,
+      lineOffset,
+      totalLines: rawLines.length
+    });
+  }, [boundaries, lineOffset, rawLines.length]);
+
+  const effectiveViewerBoundaries = useMemo(() => {
+    return parsedDisplayBoundaries.length > 0 ? parsedDisplayBoundaries : projectedBoundaries;
+  }, [parsedDisplayBoundaries, projectedBoundaries]);
+
+  const selectedBoundary = useMemo(() => {
+    if (!selectedIrNodeId) {
+      return null;
+    }
+    return effectiveViewerBoundaries.find((entry) => entry.irNodeId === selectedIrNodeId) ?? null;
+  }, [effectiveViewerBoundaries, selectedIrNodeId]);
+
+  const effectiveHighlightRange = useMemo<HighlightRange | null>(() => {
+    if (selectedBoundary) {
+      return {
+        startLine: selectedBoundary.startLine,
+        endLine: selectedBoundary.endLine
+      };
+    }
+    return highlightRange ?? null;
+  }, [highlightRange, selectedBoundary]);
+
   // Scroll to highlighted range once highlighting settles
   useEffect(() => {
-    if (isFresh && highlightRange) {
+    if (isFresh && effectiveHighlightRange) {
       scrollToLine({
-        lineNumber: highlightRange.startLine,
+        lineNumber: effectiveHighlightRange.startLine,
         behavior: "smooth"
       });
     }
-  }, [highlightRange, isFresh, scrollToLine]);
+  }, [effectiveHighlightRange, isFresh, scrollToLine]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -402,52 +866,62 @@ export function CodeViewer({
 
   // Parse highlighted lines
   const highlightedLines = useMemo(() => {
-    if (!effectiveHighlightResult) return null;
+    if (!effectiveHighlightResult) {
+      return null;
+    }
     return parseShikiLines(effectiveHighlightResult.html);
   }, [effectiveHighlightResult]);
 
   const bgColor = useMemo(() => {
-    if (!effectiveHighlightResult) return null;
+    if (!effectiveHighlightResult) {
+      return null;
+    }
     return extractBgColor(effectiveHighlightResult.html);
   }, [effectiveHighlightResult]);
 
   const isDark = currentTheme === "github-dark";
   const effectiveBoundariesEnabled = boundariesEnabled ?? internalBoundariesEnabled;
-
-  // Copy handler
-  const handleCopy = useCallback(async () => {
-    let textToCopy = code;
-    if (highlightRange) {
-      const lines = code.split("\n");
-      textToCopy = lines.slice(highlightRange.startLine - 1, highlightRange.endLine).join("\n");
+  const rainbowPalette = isDark ? DARK_RAINBOW_COLORS : LIGHT_RAINBOW_COLORS;
+  const baseLineHtmls = useMemo(() => {
+    if (highlightedLines) {
+      return highlightedLines.map(normalizeRenderableLineHtml);
     }
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch {
-      // Clipboard API may not be available
-    }
-  }, [code, highlightRange]);
+    return rawLines.map(formatPlainTextLineHtml);
+  }, [highlightedLines, rawLines]);
 
-  // Determine lines to render
-  const lines = highlightedLines ?? rawLines;
-  const useHighlighted = highlightedLines !== null;
+  const renderedLineHtmls = useMemo(() => {
+    if (!rainbowBracketsEnabled || isOversize) {
+      return baseLineHtmls;
+    }
+
+    const decorations = buildRainbowDecorations({
+      lines: rawLines,
+      palette: rainbowPalette,
+      allowAngleBrackets: isJsxLikeLanguage(detectedLanguage, filePath)
+    });
+
+    return baseLineHtmls.map((lineHtml, index) => {
+      return applyRainbowDecorationsToLineHtml({
+        lineHtml,
+        decorations: decorations[index] ?? new Map<number, RainbowDecoration>()
+      });
+    });
+  }, [baseLineHtmls, detectedLanguage, filePath, isOversize, rainbowBracketsEnabled, rainbowPalette, rawLines]);
+
   const boundaryLayout = useMemo<ReturnType<typeof buildCodeBoundaryLayout>>(() => {
-    if (!effectiveBoundariesEnabled || boundaries.length === 0) {
+    if (!effectiveBoundariesEnabled || effectiveViewerBoundaries.length === 0) {
       return {
         boundaries: [],
         byLine: new Map<number, { visible: CodeBoundaryWithLane[]; overflowCount: number }>()
       };
     }
     return buildCodeBoundaryLayout({
-      entries: boundaries,
-      totalLines: lines.length,
+      entries: effectiveViewerBoundaries,
+      totalLines: rawLines.length,
       isDark
     });
-  }, [boundaries, effectiveBoundariesEnabled, isDark, lines.length]);
+  }, [effectiveBoundariesEnabled, effectiveViewerBoundaries, isDark, rawLines.length]);
+
   const findCountText = useMemo(() => {
     if (searchMode.kind !== "find") {
       return "0";
@@ -480,12 +954,12 @@ export function CodeViewer({
     }
     const clamped = clampLineNumber({
       line: searchMode.requestedLine,
-      maxLines: lines.length
+      maxLines: rawLines.length
     });
     setJumpTargetLine(clamped);
     setActiveMatchIndex(-1);
     scrollToLine({ lineNumber: clamped, behavior: "smooth" });
-  }, [lines.length, scrollToLine, searchMode]);
+  }, [rawLines.length, scrollToLine, searchMode]);
 
   const handleSearchInputKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -514,11 +988,60 @@ export function CodeViewer({
     setInternalBoundariesEnabled(nextEnabled);
   }, [effectiveBoundariesEnabled, onBoundariesEnabledChange]);
 
+  const handleCopy = useCallback(async () => {
+    let textToCopy = displayCode;
+    if (effectiveHighlightRange) {
+      const lines = displayCode.split("\n");
+      textToCopy = lines.slice(effectiveHighlightRange.startLine - 1, effectiveHighlightRange.endLine).join("\n");
+    }
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+      }, 1500);
+    } catch {
+      // Clipboard API may not be available
+    }
+  }, [displayCode, effectiveHighlightRange]);
+
+  const handleFormat = useCallback(async () => {
+    setFormatStatus({ kind: "formatting", message: null });
+    clearFormatFeedbackTimeout();
+
+    try {
+      const formatted = await formatCodeForViewer({
+        code: displayCode,
+        filePath,
+        language: detectedLanguage
+      });
+      setFormattedCode(formatted);
+      setFormatStatus({ kind: "success", message: null });
+      scheduleFormatStatusReset(FORMAT_SUCCESS_TIMEOUT_MS);
+    } catch (error) {
+      const message = error instanceof Error && error.message.length > 0
+        ? error.message
+        : "Formatting failed.";
+      setFormatStatus({ kind: "error", message });
+      scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
+    }
+  }, [clearFormatFeedbackTimeout, detectedLanguage, displayCode, filePath, scheduleFormatStatusReset]);
+
   useEffect(() => {
-    if (!effectiveBoundariesEnabled || boundaries.length === 0) {
+    if (!effectiveBoundariesEnabled || effectiveViewerBoundaries.length === 0) {
       setHoveredBoundary(null);
     }
-  }, [boundaries.length, effectiveBoundariesEnabled]);
+  }, [effectiveBoundariesEnabled, effectiveViewerBoundaries.length]);
+
+  const formatButtonLabel = useMemo(() => {
+    if (formatStatus.kind === "formatting") {
+      return "Formatting…";
+    }
+    if (formatStatus.kind === "success") {
+      return "Formatted!";
+    }
+    return "Format";
+  }, [formatStatus.kind]);
 
   return (
     <div
@@ -611,7 +1134,6 @@ export function CodeViewer({
           </span>
         </div>
 
-        {/* Word wrap toggle */}
         <button
           type="button"
           data-testid="code-viewer-wrap-toggle"
@@ -626,7 +1148,20 @@ export function CodeViewer({
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
 
-        {/* Boundary toggle */}
+        <button
+          type="button"
+          data-testid="code-viewer-rainbow-toggle"
+          onClick={() => { setRainbowBracketsEnabled((enabled) => !enabled); }}
+          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
+          style={{
+            borderColor: isDark ? "#30363d" : "#d0d7de",
+            backgroundColor: rainbowBracketsEnabled ? (isDark ? "#312e81" : "#ede9fe") : (isDark ? "#21262d" : "#ffffff"),
+            color: rainbowBracketsEnabled ? (isDark ? "#c4b5fd" : "#6d28d9") : (isDark ? "#c9d1d9" : "#24292f")
+          }}
+        >
+          {rainbowBracketsEnabled ? "Rainbow: On" : "Rainbow: Off"}
+        </button>
+
         <button
           type="button"
           data-testid="code-viewer-boundaries-toggle"
@@ -641,7 +1176,35 @@ export function CodeViewer({
           {effectiveBoundariesEnabled ? "Boundaries: On" : "Boundaries: Off"}
         </button>
 
-        {/* Copy button */}
+        <button
+          type="button"
+          data-testid="code-viewer-format-button"
+          onClick={() => { void handleFormat(); }}
+          disabled={formatStatus.kind === "formatting"}
+          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-70"
+          style={{
+            borderColor: isDark ? "#30363d" : "#d0d7de",
+            backgroundColor: formatStatus.kind === "success"
+              ? (isDark ? "#14532d" : "#dcfce7")
+              : (isDark ? "#21262d" : "#ffffff"),
+            color: formatStatus.kind === "success"
+              ? (isDark ? "#86efac" : "#166534")
+              : (isDark ? "#c9d1d9" : "#24292f")
+          }}
+        >
+          {formatButtonLabel}
+        </button>
+
+        {formatStatus.kind === "error" ? (
+          <span
+            data-testid="code-viewer-format-status"
+            className="shrink-0 text-[10px] font-semibold"
+            style={{ color: isDark ? "#fda4af" : "#be123c" }}
+          >
+            {formatStatus.message}
+          </span>
+        ) : null}
+
         <button
           type="button"
           data-testid="inspector-copy-button"
@@ -653,11 +1216,10 @@ export function CodeViewer({
             color: isDark ? "#c9d1d9" : "#24292f"
           }}
         >
-          {copied ? "Copied!" : highlightRange ? "Copy Range" : "Copy"}
+          {copied ? "Copied!" : effectiveHighlightRange ? "Copy Range" : "Copy"}
         </button>
       </div>
 
-      {/* Oversize warning */}
       {isOversize ? (
         <div
           className="shrink-0 border-b px-3 py-1.5 text-xs font-medium"
@@ -672,7 +1234,6 @@ export function CodeViewer({
         </div>
       ) : null}
 
-      {/* Code area */}
       <div
         ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-auto p-0"
@@ -688,16 +1249,16 @@ export function CodeViewer({
           </p>
         ) : (
           <div className="min-w-0">
-            {lines.map((line, i) => {
-              const lineNum = i + 1;
-              const displayLineNum = i + lineOffset;
+            {renderedLineHtmls.map((lineHtml, index) => {
+              const lineNum = index + 1;
+              const displayLineNum = index + lineOffset;
               const hasSearchMatch = searchMatchedLineSet.has(lineNum);
               const isActiveMatchLine = activeMatch?.line === lineNum;
               const isJumpTargetLine = jumpTargetLine === lineNum;
               const isInRange =
-                highlightRange != null &&
-                lineNum >= highlightRange.startLine &&
-                lineNum <= highlightRange.endLine;
+                effectiveHighlightRange != null &&
+                lineNum >= effectiveHighlightRange.startLine &&
+                lineNum <= effectiveHighlightRange.endLine;
               const lineBoundaryDisplay = boundaryLayout.byLine.get(lineNum);
               const visibleBoundaries = lineBoundaryDisplay?.visible ?? [];
               const overflowCount = lineBoundaryDisplay?.overflowCount ?? 0;
@@ -726,7 +1287,7 @@ export function CodeViewer({
 
               return (
                 <div
-                  key={i}
+                  key={index}
                   ref={(node) => {
                     if (node) {
                       lineRefs.current.set(lineNum, node);
@@ -754,7 +1315,6 @@ export function CodeViewer({
                     </span>
                   ) : null}
 
-                  {/* Line number gutter */}
                   <span
                     data-testid="line-number"
                     className="relative inline-flex w-14 shrink-0 pr-2 text-right select-none font-mono"
@@ -837,20 +1397,11 @@ export function CodeViewer({
                     <span className="inline-block w-full text-right">{displayLineNum}</span>
                   </span>
 
-                  {/* Code content */}
-                  {useHighlighted ? (
-                    <span
-                      className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                      dangerouslySetInnerHTML={{ __html: line }}
-                    />
-                  ) : (
-                    <pre
-                      className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                      style={{ color: isDark ? "#c9d1d9" : "#24292f" }}
-                    >
-                      {line}
-                    </pre>
-                  )}
+                  <span
+                    className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                    style={{ color: highlightedLines ? undefined : (isDark ? "#c9d1d9" : "#24292f") }}
+                    dangerouslySetInnerHTML={{ __html: lineHtml }}
+                  />
                 </div>
               );
             })}
@@ -892,7 +1443,7 @@ export function CodeViewer({
             </span>
           </div>
           <div data-testid="code-boundary-tooltip-range" className="mt-0.5 text-[9px]">
-            Lines {String(hoveredBoundary.boundary.startLine)}-{String(hoveredBoundary.boundary.endLine)}
+            Lines {String(hoveredBoundary.boundary.startLine + lineOffset - 1)}-{String(hoveredBoundary.boundary.endLine + lineOffset - 1)}
           </div>
         </div>
       ) : null}
