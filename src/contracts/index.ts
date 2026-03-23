@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.17.0
+ * Contract version: 2.22.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -448,4 +448,4 @@ export interface WorkspaceStaleDraftCheckResult {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.21.0" as const;
+export const CONTRACT_VERSION = "2.22.0" as const;

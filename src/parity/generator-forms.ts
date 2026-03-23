@@ -48,6 +48,18 @@ export interface CrossFieldRule {
   message: string;
 }
 
+// ---------------------------------------------------------------------------
+// Advanced validation rule DSL (issue #464)
+// ---------------------------------------------------------------------------
+
+export type ValidationRuleType = "min" | "max" | "minLength" | "maxLength" | "pattern";
+
+export interface ValidationRule {
+  type: ValidationRuleType;
+  value: number | string;
+  message: string;
+}
+
 export interface FormContextFileSpec {
   file: GeneratedFile;
   providerName: string;
@@ -80,6 +92,7 @@ export interface InteractiveFieldModel {
   validationType?: ValidationFieldType | undefined;
   validationMessage?: string | undefined;
   hasVisualErrorExample?: boolean | undefined;
+  validationRules?: ValidationRule[] | undefined;
   suffixText?: string | undefined;
   labelFontFamily?: string | undefined;
   labelColor?: string | undefined;

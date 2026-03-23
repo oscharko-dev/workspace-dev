@@ -23,6 +23,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.22.0] - 2026-03-23
+
+### Advanced validation rule DSL and cross-field editor
+
+Added:
+
+- `validationMin`, `validationMax`, `validationMinLength`, `validationMaxLength`, `validationPattern` — Five new optional override fields for `WorkspaceRegenerationOverrideEntry` enabling advanced per-field validation rules (min/max numeric bounds, string length constraints, regex pattern matching).
+- `ValidationRule` / `ValidationRuleType` — New types in `generator-forms.ts` defining the advanced validation rule DSL.
+- `validationRules` — New optional field on `InteractiveFieldModel` carrying an array of `ValidationRule` entries.
+
+---
+
 ## [2.21.0] - 2026-03-22
 
 ### Stale draft detection and carry-forward

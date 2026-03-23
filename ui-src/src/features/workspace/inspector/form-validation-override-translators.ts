@@ -14,7 +14,12 @@
 export const FORM_VALIDATION_OVERRIDE_FIELDS = [
   "required",
   "validationType",
-  "validationMessage"
+  "validationMessage",
+  "validationMin",
+  "validationMax",
+  "validationMinLength",
+  "validationMaxLength",
+  "validationPattern"
 ] as const;
 
 export type FormValidationOverrideField = (typeof FORM_VALIDATION_OVERRIDE_FIELDS)[number];
@@ -46,6 +51,11 @@ export interface FormValidationOverrideValueByField {
   required: boolean;
   validationType: SupportedValidationType;
   validationMessage: string;
+  validationMin: number;
+  validationMax: number;
+  validationMinLength: number;
+  validationMaxLength: number;
+  validationPattern: string;
 }
 
 export type FormValidationOverrideValue = FormValidationOverrideValueByField[FormValidationOverrideField];
@@ -136,6 +146,70 @@ export function translateFormValidationOverrideInput<TField extends FormValidati
     };
   }
 
+  if (field === "validationMin" || field === "validationMax") {
+    const num = typeof rawValue === "number" ? rawValue : typeof rawValue === "string" ? Number(rawValue) : NaN;
+    if (!Number.isFinite(num)) {
+      return {
+        ok: false,
+        field,
+        error: `${field} must be a finite number.`
+      };
+    }
+    return {
+      ok: true,
+      field,
+      value: num as FormValidationOverrideValueByField[TField]
+    };
+  }
+
+  if (field === "validationMinLength" || field === "validationMaxLength") {
+    const num = typeof rawValue === "number" ? rawValue : typeof rawValue === "string" ? Number(rawValue) : NaN;
+    if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0) {
+      return {
+        ok: false,
+        field,
+        error: `${field} must be a non-negative integer.`
+      };
+    }
+    return {
+      ok: true,
+      field,
+      value: num as FormValidationOverrideValueByField[TField]
+    };
+  }
+
+  if (field === "validationPattern") {
+    if (typeof rawValue !== "string") {
+      return {
+        ok: false,
+        field,
+        error: "validationPattern must be a non-empty string."
+      };
+    }
+    const trimmedPattern = rawValue.trim();
+    if (trimmedPattern.length === 0) {
+      return {
+        ok: false,
+        field,
+        error: "validationPattern must be a non-empty string."
+      };
+    }
+    try {
+      new RegExp(trimmedPattern);
+    } catch {
+      return {
+        ok: false,
+        field,
+        error: "validationPattern must be a valid regular expression."
+      };
+    }
+    return {
+      ok: true,
+      field,
+      value: trimmedPattern as FormValidationOverrideValueByField[TField]
+    };
+  }
+
   // validationMessage
   if (typeof rawValue !== "string") {
     return {
@@ -172,6 +246,15 @@ function hasNonNullField(nodeData: Readonly<Record<string, unknown>>, field: str
  * A field is supported when the node already carries the corresponding
  * property (i.e. the generator inferred it from the design).
  */
+/** Advanced validation fields that are supported when the node has a validationType. */
+const ADVANCED_VALIDATION_FIELDS = new Set<FormValidationOverrideField>([
+  "validationMin",
+  "validationMax",
+  "validationMinLength",
+  "validationMaxLength",
+  "validationPattern"
+]);
+
 export function deriveFormValidationOverrideFieldSupport(
   nodeData: Readonly<Record<string, unknown>>
 ): FormValidationOverrideFieldSupport[] {
@@ -186,6 +269,19 @@ export function deriveFormValidationOverrideFieldSupport(
         field,
         supported: false,
         reason: "validationMessage requires validationType to be present on the node."
+      };
+    }
+
+    // Advanced validation fields are supported when validationType is present
+    // (they extend the per-field validation beyond just required/type/message).
+    if (ADVANCED_VALIDATION_FIELDS.has(field)) {
+      if (hasNonNullField(nodeData, "validationType") || hasNonNullField(nodeData, field)) {
+        return { field, supported: true, reason: null };
+      }
+      return {
+        field,
+        supported: false,
+        reason: `${field} requires validationType to be present on the node.`
       };
     }
 

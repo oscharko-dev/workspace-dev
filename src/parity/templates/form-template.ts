@@ -10,6 +10,7 @@ import {
 } from "../generator-core.js";
 import type {
   ValidationFieldType,
+  ValidationRule,
   FormContextFileSpec,
   CrossFieldRule,
   RhfValidationMode
@@ -23,7 +24,8 @@ export const buildInlineLegacyFormStateBlock = ({
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
-  initialValues
+  initialValues,
+  validationRulesMap = {}
 }: {
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
@@ -32,14 +34,18 @@ export const buildInlineLegacyFormStateBlock = ({
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
   initialValues: Record<string, string>;
+  validationRulesMap?: Record<string, ValidationRule[]>;
 }): string => {
   const selectOptionsDeclaration = hasSelectField
     ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
     : "";
+  const validationRulesDeclaration = Object.keys(validationRulesMap).length > 0
+    ? `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = ${JSON.stringify(validationRulesMap, null, 2)};\n`
+    : `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = {};\n`;
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
 const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
 const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};${validationRulesDeclaration}
 
 const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
 const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
@@ -160,8 +166,54 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
       return sum % 10 === 0 ? "" : validationMessage;
     }
     default:
-      return "";
+      break;
   }
+
+  // Advanced validation rules (min, max, minLength, maxLength, pattern)
+  const rules = fieldValidationRules[fieldKey];
+  if (rules && rules.length > 0) {
+    for (const rule of rules) {
+      switch (rule.type) {
+        case "minLength":
+          if (typeof rule.value === "number" && trimmed.length < rule.value) {
+            return rule.message;
+          }
+          break;
+        case "maxLength":
+          if (typeof rule.value === "number" && trimmed.length > rule.value) {
+            return rule.message;
+          }
+          break;
+        case "min": {
+          const parsed = parseLocalizedNumber(trimmed);
+          if (typeof rule.value === "number" && parsed !== undefined && parsed < rule.value) {
+            return rule.message;
+          }
+          break;
+        }
+        case "max": {
+          const parsed = parseLocalizedNumber(trimmed);
+          if (typeof rule.value === "number" && parsed !== undefined && parsed > rule.value) {
+            return rule.message;
+          }
+          break;
+        }
+        case "pattern":
+          if (typeof rule.value === "string") {
+            try {
+              const regex = new RegExp(rule.value);
+              if (!regex.test(trimmed)) {
+                return rule.message;
+              }
+            } catch {
+              // Invalid regex — skip rule at runtime.
+            }
+          }
+          break;
+      }
+    }
+  }
+  return "";
 };
 
 const validateForm = (values: Record<string, string>): Record<string, string> => {
@@ -473,13 +525,15 @@ const toReactHookFormFieldSchemaSpecsLiteral = ({
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
-  selectOptionsMap
+  selectOptionsMap,
+  validationRulesMap = {}
 }: {
   initialValues: Record<string, string>;
   requiredFieldMap: Record<string, boolean>;
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
   selectOptionsMap: Record<string, string[]>;
+  validationRulesMap?: Record<string, ValidationRule[]>;
 }): string => {
   const fieldKeys = Object.keys(initialValues).sort((left, right) => left.localeCompare(right));
   const specs: Record<
@@ -490,16 +544,19 @@ const toReactHookFormFieldSchemaSpecsLiteral = ({
       validationMessage: string;
       selectOptions: string[];
       selectValidationMessage: string;
+      validationRules?: ValidationRule[];
     }
   > = {};
   for (const fieldKey of fieldKeys) {
     const validationType = validationTypeMap[fieldKey];
+    const rules = validationRulesMap[fieldKey];
     specs[fieldKey] = {
       required: requiredFieldMap[fieldKey] ?? false,
       ...(validationType ? { validationType } : {}),
       validationMessage: validationMessageMap[fieldKey] ?? "Invalid value.",
       selectOptions: selectOptionsMap[fieldKey] ?? [],
-      selectValidationMessage: validationMessageMap[fieldKey] ?? "Please select a valid option."
+      selectValidationMessage: validationMessageMap[fieldKey] ?? "Please select a valid option.",
+      ...(rules && rules.length > 0 ? { validationRules: rules } : {})
     };
   }
   return JSON.stringify(specs, null, 2);
@@ -540,7 +597,8 @@ export const buildInlineReactHookFormStateBlock = ({
   validationMessageMap,
   initialValues,
   crossFieldRules = [],
-  validationMode = "onSubmit"
+  validationMode = "onSubmit",
+  validationRulesMap = {}
 }: {
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
@@ -551,6 +609,7 @@ export const buildInlineReactHookFormStateBlock = ({
   initialValues: Record<string, string>;
   crossFieldRules?: readonly CrossFieldRule[];
   validationMode?: RhfValidationMode;
+  validationRulesMap?: Record<string, ValidationRule[]>;
 }): string => {
   const selectOptionsDeclaration = hasSelectField
     ? `const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};\n\n`
@@ -566,7 +625,8 @@ export const buildInlineReactHookFormStateBlock = ({
     requiredFieldMap,
     validationTypeMap,
     validationMessageMap,
-    selectOptionsMap
+    selectOptionsMap,
+    validationRulesMap
   });
   const selectMembershipValidationBlock = hasSelectField
     ? `    const selectFieldOptions = spec.selectOptions;
@@ -617,12 +677,19 @@ type FieldValidationType =
   | "plz"
   | "credit_card";
 
+type ValidationRuleSpec = {
+  type: "min" | "max" | "minLength" | "maxLength" | "pattern";
+  value: number | string;
+  message: string;
+};
+
 type FieldSchemaSpec = {
   required: boolean;
   validationType?: FieldValidationType;
   validationMessage: string;
   selectOptions: readonly string[];
   selectValidationMessage: string;
+  validationRules?: readonly ValidationRuleSpec[];
 };
 
 type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;
@@ -758,6 +825,51 @@ ${selectMembershipValidationBlock}    const validationType = spec.validationType
       default:
         return;
     }
+
+    // Advanced validation rules (min, max, minLength, maxLength, pattern)
+    const rules = spec.validationRules;
+    if (rules && rules.length > 0) {
+      for (const rule of rules) {
+        switch (rule.type) {
+          case "minLength":
+            if (typeof rule.value === "number" && trimmed.length < rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          case "maxLength":
+            if (typeof rule.value === "number" && trimmed.length > rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          case "min": {
+            const parsed = parseLocalizedNumber(trimmed);
+            if (typeof rule.value === "number" && parsed !== undefined && parsed < rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          }
+          case "max": {
+            const parsed = parseLocalizedNumber(trimmed);
+            if (typeof rule.value === "number" && parsed !== undefined && parsed > rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          }
+          case "pattern":
+            if (typeof rule.value === "string") {
+              try {
+                const regex = new RegExp(rule.value);
+                if (!regex.test(trimmed)) {
+                  issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+                }
+              } catch {
+                // Invalid regex — skip rule at runtime.
+              }
+            }
+            break;
+        }
+      }
+    }
   }).transform((rawValue) => {
     const trimmed = rawValue.trim();
     const validationType = spec.validationType;
@@ -823,7 +935,8 @@ export const buildReactHookFormContextFile = ({
   initialVisualErrorsMap,
   selectOptionsMap,
   crossFieldRules = [],
-  validationMode = "onSubmit"
+  validationMode = "onSubmit",
+  validationRulesMap = {}
 }: {
   screenComponentName: string;
   initialValues: Record<string, string>;
@@ -834,6 +947,7 @@ export const buildReactHookFormContextFile = ({
   selectOptionsMap: Record<string, string[]>;
   crossFieldRules?: readonly CrossFieldRule[];
   validationMode?: RhfValidationMode;
+  validationRulesMap?: Record<string, ValidationRule[]>;
 }): FormContextFileSpec => {
   const providerName = toFormContextProviderName(screenComponentName);
   const hookName = toFormContextHookName(screenComponentName);
@@ -853,7 +967,8 @@ export const buildReactHookFormContextFile = ({
     requiredFieldMap,
     validationTypeMap,
     validationMessageMap,
-    selectOptionsMap
+    selectOptionsMap,
+    validationRulesMap
   });
   const contextSource = `import { createContext, useContext, type ReactNode } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
@@ -899,12 +1014,19 @@ type FieldValidationType =
   | "plz"
   | "credit_card";
 
+type ValidationRuleSpec = {
+  type: "min" | "max" | "minLength" | "maxLength" | "pattern";
+  value: number | string;
+  message: string;
+};
+
 type FieldSchemaSpec = {
   required: boolean;
   validationType?: FieldValidationType;
   validationMessage: string;
   selectOptions: readonly string[];
   selectValidationMessage: string;
+  validationRules?: readonly ValidationRuleSpec[];
 };
 
 type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;
@@ -1047,6 +1169,51 @@ const createFieldSchema = <TSpec extends FieldSchemaSpec>({
       }
       default:
         return;
+    }
+
+    // Advanced validation rules (min, max, minLength, maxLength, pattern)
+    const rules = spec.validationRules;
+    if (rules && rules.length > 0) {
+      for (const rule of rules) {
+        switch (rule.type) {
+          case "minLength":
+            if (typeof rule.value === "number" && trimmed.length < rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          case "maxLength":
+            if (typeof rule.value === "number" && trimmed.length > rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          case "min": {
+            const parsed = parseLocalizedNumber(trimmed);
+            if (typeof rule.value === "number" && parsed !== undefined && parsed < rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          }
+          case "max": {
+            const parsed = parseLocalizedNumber(trimmed);
+            if (typeof rule.value === "number" && parsed !== undefined && parsed > rule.value) {
+              issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+            }
+            break;
+          }
+          case "pattern":
+            if (typeof rule.value === "string") {
+              try {
+                const regex = new RegExp(rule.value);
+                if (!regex.test(trimmed)) {
+                  issueContext.addIssue({ code: z.ZodIssueCode.custom, message: rule.message });
+                }
+              } catch {
+                // Invalid regex — skip rule at runtime.
+              }
+            }
+            break;
+        }
+      }
     }
   }).transform((rawValue) => {
     const trimmed = rawValue.trim();

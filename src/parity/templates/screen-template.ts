@@ -4062,11 +4062,16 @@ export const assembleFallbackDependencies = ({
     validationMode: inferValidationMode({
       fields,
       hasVisualErrors: fields.some((field) => field.hasVisualErrorExample === true)
-    })
+    }),
+    validationRulesMap: Object.fromEntries(
+      fields
+        .filter((field) => field.validationRules && field.validationRules.length > 0)
+        .map((field) => [field.key, field.validationRules!])
+    )
   });
 
   const allFieldMaps = buildFieldMaps(renderContext.fields);
-  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap, crossFieldRules, validationMode } = allFieldMaps;
+  const { initialValues, requiredFieldMap, validationTypeMap, validationMessageMap, initialVisualErrorsMap, selectOptionsMap, crossFieldRules, validationMode, validationRulesMap } = allFieldMaps;
 
   const initialAccordionState = Object.fromEntries(
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
@@ -4119,7 +4124,8 @@ export const assembleFallbackDependencies = ({
           initialVisualErrorsMap,
           selectOptionsMap,
           crossFieldRules,
-          validationMode
+          validationMode,
+          validationRulesMap
         })
       : buildLegacyFormContextFile({
           screenComponentName: componentName,
@@ -4166,7 +4172,8 @@ export const assembleFallbackDependencies = ({
             validationMessageMap,
             initialValues,
             crossFieldRules,
-            validationMode
+            validationMode,
+            validationRulesMap
           })
         : buildInlineLegacyFormStateBlock({
             hasSelectField,
@@ -4175,7 +4182,8 @@ export const assembleFallbackDependencies = ({
             requiredFieldMap,
             validationTypeMap,
             validationMessageMap,
-            initialValues
+            initialValues,
+            validationRulesMap
           })
       : "";
   const accordionStateBlock = hasInteractiveAccordions

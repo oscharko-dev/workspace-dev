@@ -18,7 +18,12 @@ export const SUPPORTED_REGENERATION_OVERRIDE_FIELDS = [
   "counterAxisAlignItems",
   "required",
   "validationType",
-  "validationMessage"
+  "validationMessage",
+  "validationMin",
+  "validationMax",
+  "validationMinLength",
+  "validationMaxLength",
+  "validationPattern"
 ] as const;
 
 export type SupportedRegenerationOverrideField = (typeof SUPPORTED_REGENERATION_OVERRIDE_FIELDS)[number];
@@ -243,6 +248,33 @@ export function validateRegenerationOverrideEntry(
     return normalized
       ? { ok: true, entry: { ...entry, field, value: normalized } }
       : { ok: false, path: "value", message: `validationType must be one of: ${SUPPORTED_VALIDATION_TYPES.join(", ")}.` };
+  }
+
+  if (field === "validationMin" || field === "validationMax") {
+    const normalized = normalizeFiniteNumber(entry.value);
+    return normalized !== null
+      ? { ok: true, entry: { ...entry, field, value: normalized } }
+      : { ok: false, path: "value", message: `${field} must be a finite number.` };
+  }
+
+  if (field === "validationMinLength" || field === "validationMaxLength") {
+    const normalized = normalizeFiniteNumber(entry.value);
+    return normalized !== null && Number.isInteger(normalized) && normalized >= 0
+      ? { ok: true, entry: { ...entry, field, value: normalized } }
+      : { ok: false, path: "value", message: `${field} must be a non-negative integer.` };
+  }
+
+  if (field === "validationPattern") {
+    const normalized = normalizeNonEmptyString(entry.value);
+    if (!normalized) {
+      return { ok: false, path: "value", message: "validationPattern must be a non-empty string." };
+    }
+    try {
+      new RegExp(normalized);
+    } catch {
+      return { ok: false, path: "value", message: "validationPattern must be a valid regular expression." };
+    }
+    return { ok: true, entry: { ...entry, field, value: normalized } };
   }
 
   return {

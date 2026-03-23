@@ -127,6 +127,8 @@ export {
 } from "./generator-forms.js";
 export type {
   ValidationFieldType,
+  ValidationRuleType,
+  ValidationRule,
   CrossFieldRuleType,
   CrossFieldRule,
   RhfValidationMode,
