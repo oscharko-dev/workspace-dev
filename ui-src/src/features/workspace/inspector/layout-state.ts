@@ -6,14 +6,14 @@ export interface InspectorPaneRatios {
 
 export const INSPECTOR_LAYOUT_STORAGE_VERSION = 1;
 export const MIN_TREE_WIDTH_PX = 180;
-export const MAX_TREE_WIDTH_PX = 420;
+export const MAX_TREE_WIDTH_PX = 9999;
 export const MIN_PREVIEW_WIDTH_PX = 280;
 export const MIN_CODE_WIDTH_PX = 280;
 
 export const DEFAULT_INSPECTOR_PANE_RATIOS: InspectorPaneRatios = {
-  tree: 0.24,
-  preview: 0.38,
-  code: 0.38
+  tree: 0.3333,
+  preview: 0.3333,
+  code: 0.3334
 };
 
 const EPSILON = 0.0001;
