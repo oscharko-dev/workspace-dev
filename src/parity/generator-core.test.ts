@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import {
   createDeterministicAppFile,
   createDeterministicScreenFile,
@@ -68,6 +69,24 @@ const extractThemeHex = ({
 };
 
 const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
+
+const assertValidTsx = ({
+  content,
+  filePath
+}: {
+  content: string;
+  filePath: string;
+}): void => {
+  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const parseDiagnostics = sourceFile.parseDiagnostics.map((diagnostic) =>
+    `${diagnostic.start ?? 0}:${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`
+  );
+  assert.equal(
+    parseDiagnostics.length,
+    0,
+    `Expected generated TSX to parse without syntax errors for ${filePath}, got: ${parseDiagnostics.join("; ")}`
+  );
+};
 
 const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for("workspace-dev.parity.generateArtifacts.runtimeAdapters");
 
@@ -2454,6 +2473,11 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.match(componentContent, /<OffersPattern1Root\b[^>]*\bsx=\{sx\}[^>]*>/);
   assert.equal(componentContent.includes("sx={[{"), false);
   assert.equal(componentContent.includes("/images/offer-a.png"), false);
+  assert.ok(componentContent.includes("return (\n    <>"));
+  assertValidTsx({
+    content: componentContent,
+    filePath: path.join(projectDir, "src", "components", "OffersPattern1.tsx")
+  });
 
   const patternContextContent = await readFile(path.join(projectDir, "src", "context", "OffersPatternContext.tsx"), "utf8");
   assert.ok(patternContextContent.includes("export interface OffersPattern1State"));
@@ -3564,6 +3588,11 @@ test("generateArtifacts keeps merged sx fallback for extracted patterns with few
   assert.equal(patternContent.includes("theme.unstable_sx("), false);
   assert.equal(patternContent.includes("Root = styled("), false);
   assert.ok(patternContent.includes("sx={[{"));
+  assert.ok(patternContent.includes("return (\n    <>"));
+  assertValidTsx({
+    content: patternContent,
+    filePath: path.join(projectDir, patternComponentPath ?? "")
+  });
 });
 
 test("generateArtifacts skips extraction when structure similarity threshold is not met", async () => {

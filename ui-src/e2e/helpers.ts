@@ -223,15 +223,7 @@ export async function findFirstSyncedNodeId(page: Page, previewNodeIds: string[]
  */
 export async function resetBrowserStorage(page: Page): Promise<void> {
   await page.evaluate(() => {
-    try {
-      window.localStorage.clear();
-    } catch {
-      // Some transient documents do not expose storage access during teardown.
-    }
-    try {
-      window.sessionStorage.clear();
-    } catch {
-      // Some transient documents do not expose storage access during teardown.
-    }
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 }

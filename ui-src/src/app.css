@@ -2,30 +2,6 @@
 
 :root {
   color-scheme: light;
-  --workspace-brand: #10b981;
-  --workspace-brand-strong: #059669;
-  --workspace-brand-soft: #ecfdf5;
-  --workspace-brand-border: #6ee7b7;
-  --workspace-surface: #ffffff;
-  --workspace-surface-muted: #f8fafc;
-  --workspace-surface-strong: #e2e8f0;
-  --workspace-border: #cbd5e1;
-  --workspace-border-strong: #94a3b8;
-  --workspace-text: #0f172a;
-  --workspace-text-muted: #475569;
-  --workspace-text-soft: #64748b;
-  --workspace-danger: #dc2626;
-  --workspace-warning: #d97706;
-  --workspace-ide-bg: #1e1e1e;
-  --workspace-ide-panel: #252526;
-  --workspace-ide-panel-elevated: #2d2d30;
-  --workspace-ide-border: #3f3f46;
-  --workspace-ide-border-strong: #52525b;
-  --workspace-ide-text: #e5e7eb;
-  --workspace-ide-text-muted: #a1a1aa;
-  --workspace-ide-text-soft: #71717a;
-  --workspace-ide-selection: rgba(16, 185, 129, 0.16);
-  --workspace-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
 }
 
 html,
@@ -38,30 +14,7 @@ body,
 body {
   margin: 0;
   font-family: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0) 36%),
-    radial-gradient(circle at 85% -10%, rgba(148, 163, 184, 0.16) 0%, rgba(148, 163, 184, 0) 26%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  color: var(--workspace-text);
+  background: radial-gradient(circle at 0% -30%, #edf8f3 0%, #ffffff 45%, #ffffff 100%);
+  color: #000000;
   line-height: 1.4;
-  text-rendering: optimizeLegibility;
-}
-
-::selection {
-  background: rgba(16, 185, 129, 0.22);
-}
-
-button,
-input,
-select,
-summary,
-a {
-  transition-property: background-color, border-color, color, box-shadow, opacity;
-  transition-duration: 140ms;
-  transition-timing-function: ease;
-}
-
-:where(button, input, select, summary, a):focus-visible {
-  outline: 2px solid var(--workspace-brand-strong);
-  outline-offset: 2px;
 }

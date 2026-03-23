@@ -21,10 +21,10 @@ export function PreviewPane({
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col bg-[#1e1e1e]">
+    <div className="relative flex h-full min-h-0 flex-col">
       {isLoading ? (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#1e1e1e]">
-          <span className="text-sm text-zinc-400">Loading preview…</span>
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+          <span className="text-sm text-slate-500">Loading preview…</span>
         </div>
       ) : null}
       <iframe

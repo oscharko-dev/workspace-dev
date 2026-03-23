@@ -14,7 +14,6 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/384
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { type BundledTheme } from "shiki";
 import {
   exceedsMaxSize,
   getPreferredTheme,
@@ -41,8 +40,6 @@ interface CodeViewerProps {
   code: string;
   /** File path — used for language detection and display */
   filePath: string;
-  /** Force the viewer into a dark IDE treatment regardless of system preference. */
-  forceDarkTheme?: boolean;
   /** Optional line range to highlight and scroll to */
   highlightRange?: HighlightRange | null;
   /** Optional IR code boundaries for the displayed file */
@@ -185,7 +182,6 @@ function findOccurrences({
 export function CodeViewer({
   code,
   filePath,
-  forceDarkTheme = false,
   highlightRange,
   boundaries = [],
   boundariesEnabled,
@@ -216,9 +212,7 @@ export function CodeViewer({
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [currentTheme, setCurrentTheme] = useState<BundledTheme>(() => {
-    return forceDarkTheme ? "github-dark" : getPreferredTheme();
-  });
+  const [currentTheme, setCurrentTheme] = useState(getPreferredTheme);
 
   const isOversize = exceedsMaxSize(code);
   const rawLines = useMemo(() => code.split("\n"), [code]);
@@ -267,10 +261,6 @@ export function CodeViewer({
 
   // Listen for system theme changes
   useEffect(() => {
-    if (forceDarkTheme) {
-      setCurrentTheme("github-dark");
-      return;
-    }
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (): void => {
@@ -280,7 +270,7 @@ export function CodeViewer({
     return () => {
       mq.removeEventListener("change", handler);
     };
-  }, [forceDarkTheme]);
+  }, []);
 
   // Run Shiki highlighting
   useEffect(() => {

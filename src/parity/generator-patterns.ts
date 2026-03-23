@@ -1000,6 +1000,7 @@ const buildExtractedComponentFile = ({
   const componentSetupBlock = [patternContextBindingBlock, navigationHookBlock]
     .filter((block) => block.length > 0)
     .join("\n\n");
+  const wrappedRenderedWithSx = `    <>\n${indentBlock(renderedWithSx.trim(), 6)}\n    </>`;
   const stylesImportLine = styledRootDeclaration
     ? 'import { styled, type SxProps, type Theme } from "@mui/material/styles";'
     : 'import type { SxProps, Theme } from "@mui/material/styles";';
@@ -1014,7 +1015,7 @@ ${propsInterfaceEntries}
 
 export function ${cluster.componentName}({ ${parameterEntries.join(", ")} }: ${cluster.componentName}Props) {
 ${componentSetupBlock ? `${indentBlock(componentSetupBlock, 2)}\n` : ""}  return (
-${renderedWithSx}
+${wrappedRenderedWithSx}
   );
 }
 `;
