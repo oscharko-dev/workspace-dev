@@ -181,24 +181,23 @@ export function resizePreviewCodePanes({
   const treePx = ratios.tree * width;
 
   if (treeCollapsed) {
+    const availablePx = Math.max(0, width - treePx);
     const shareTotal = ratios.preview + ratios.code;
     const previewShare = shareTotal > EPSILON ? ratios.preview / shareTotal : 0.5;
-    const currentPreviewPx = previewShare * width;
+    const currentPreviewPx = previewShare * availablePx;
 
     const bounds = resolveLeftBounds({
-      availablePx: width,
+      availablePx,
       minLeftPx: MIN_PREVIEW_WIDTH_PX,
       minRightPx: MIN_CODE_WIDTH_PX
     });
     const nextPreviewPx = clamp(currentPreviewPx + deltaPx, bounds.minLeft, bounds.maxLeft);
-    const nextPreviewShare = width > EPSILON ? nextPreviewPx / width : 0.5;
-
-    const remainingRatio = Math.max(EPSILON, 1 - ratios.tree);
+    const nextCodePx = Math.max(0, availablePx - nextPreviewPx);
 
     return normalizeRatios({
-      tree: ratios.tree,
-      preview: nextPreviewShare * remainingRatio,
-      code: (1 - nextPreviewShare) * remainingRatio
+      tree: treePx / width,
+      preview: nextPreviewPx / width,
+      code: nextCodePx / width
     });
   }
 
