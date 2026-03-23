@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -252,11 +252,11 @@ function getPreviewMessage({
     if (payload?.cancellation && !payload.cancellation.completedAt) {
       return "Cancellation requested. Waiting for terminal state...";
     }
-    return "Generation läuft. Bitte warten...";
+    return "Generation is running. The preview and Inspector will appear here when the job completes.";
   }
 
   if (status === "completed") {
-    return "Code wurde lokal generiert.";
+    return "Code was generated locally.";
   }
 
   if (status === "failed") {
@@ -357,11 +357,62 @@ function FieldHint({ message }: { message: string | undefined }): JSX.Element {
   return <p className="min-h-4 text-xs text-rose-700">{message || "\u00a0"}</p>;
 }
 
-const cardBaseClasses = "flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm";
-const topRowCardClasses = `${cardBaseClasses}`;
-const bottomRowCardClasses = `${cardBaseClasses}`;
+function SectionHeading({
+  eyebrow,
+  title,
+  description
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}): JSX.Element {
+  return (
+    <div className="space-y-2">
+      <p className="m-0 text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-700">{eyebrow}</p>
+      <div className="space-y-1">
+        <h2 className="m-0 text-xl font-semibold tracking-tight text-slate-950">{title}</h2>
+        <p className="m-0 text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusRow({
+  label,
+  badge,
+  detail
+}: {
+  label: string;
+  badge: { text: string; variant: BadgeVariant };
+  detail?: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="m-0 text-sm font-semibold text-slate-900">{label}</p>
+        <StatusBadge text={badge.text} variant={badge.variant} />
+      </div>
+      {detail ? <div className="mt-2 text-xs leading-5 text-slate-600">{detail}</div> : null}
+    </div>
+  );
+}
+
+const cardBaseClasses =
+  "flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur";
+const panelInsetClasses = "px-5 py-5";
+const inputClasses =
+  "w-full rounded-2xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 disabled:bg-slate-100";
+const labelClasses = "text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500";
+const secondaryButtonClasses =
+  "cursor-pointer rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+const primaryButtonClasses =
+  "cursor-pointer rounded-full border border-emerald-500 bg-emerald-500 px-4 py-2 text-sm font-semibold text-black shadow-sm hover:border-emerald-400 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50";
+const disclosureClasses =
+  "group rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4";
+const disclosureSummaryClasses =
+  "cursor-pointer list-none text-sm font-semibold text-slate-900 marker:hidden [&::-webkit-details-marker]:hidden";
 const payloadPreClasses =
-  "mt-3 overflow-x-auto overflow-y-auto rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-800";
+  "mt-3 max-h-72 overflow-auto rounded-2xl border border-slate-800 bg-slate-950 p-3 text-xs leading-6 text-emerald-50";
 const uiVersionLabel = `v${__WORKSPACE_DEV_VERSION__}`;
 
 export function WorkspacePage(): JSX.Element {
@@ -655,15 +706,309 @@ export function WorkspacePage(): JSX.Element {
       ? `running ${jobPayload.queue.runningCount}/${jobPayload.queue.maxConcurrentJobs}, queued ${jobPayload.queue.queuedCount}/${jobPayload.queue.maxQueuedJobs}`
       : undefined;
   const cancelInfo = jobPayload?.cancellation?.reason;
+  const runtimeStatusPayload = runtimeQuery.data?.workspace.payload;
+  const runtimeWorkspaceUrl =
+    runtimeStatusPayload && typeof runtimeStatusPayload.url === "string"
+      ? runtimeStatusPayload.url
+      : undefined;
+  const isInspectorReady = Boolean(jobStatus === "completed" && previewUrl && activeJobId);
+  const jobStageItems = jobStages.length > 0 ? jobStages : [{ name: "Awaiting submission", status: "queued" }];
+  const shouldOpenRuntimeDiagnostics = Boolean(
+    runtimeQuery.data && (!runtimeQuery.data.health.ok || !runtimeQuery.data.workspace.ok)
+  );
+  const shouldOpenJobDiagnostics = jobStatus === "failed" || jobStatus === "canceled";
+  const previewTarget = previewUrl ?? runtimeWorkspaceUrl;
+  const sidebarStack = (
+    <>
+      <section data-testid="input-card" className={cardBaseClasses}>
+        <div className={`${panelInsetClasses} space-y-5`}>
+          <SectionHeading
+            eyebrow="Generation flow"
+            title="Generate a local app without the clutter"
+            description="Keep the required inputs in front, move advanced destination and Git settings out of the way, and jump straight into the Inspector when code is ready."
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
+              REST source
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              Deterministic codegen
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+              Preview {runtimeStatusPayload?.previewEnabled ? "enabled" : "available when runtime is ready"}
+            </span>
+          </div>
+
+          <form
+            id="workspace-submit-form"
+            onSubmit={onSubmit}
+            className="grid gap-4"
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="figma-file-key" className={labelClasses}>
+                  Figma file key
+                </label>
+                <input
+                  id="figma-file-key"
+                  autoComplete="off"
+                  placeholder="1Bvard..."
+                  className={inputClasses}
+                  {...register("figmaFileKey")}
+                />
+                <FieldHint message={errors.figmaFileKey?.message} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label htmlFor="figma-access-token" className={labelClasses}>
+                  Figma access token
+                </label>
+                <input
+                  id="figma-access-token"
+                  type="password"
+                  autoComplete="off"
+                  className={inputClasses}
+                  {...register("figmaAccessToken")}
+                />
+                <FieldHint message={errors.figmaAccessToken?.message} />
+              </div>
+            </div>
+
+            <details className={disclosureClasses} open={isGitPrEnabled}>
+              <summary className={disclosureSummaryClasses}>Advanced destination and Git / PR options</summary>
+              <p className="m-0 mt-2 text-sm leading-6 text-slate-600">
+                Use these only when you want metadata, a custom target path, or a follow-up pull request.
+              </p>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="project-name" className={labelClasses}>
+                      Project name
+                    </label>
+                    <input
+                      id="project-name"
+                      autoComplete="off"
+                      placeholder="my-figma-project"
+                      className={inputClasses}
+                      {...register("projectName")}
+                    />
+                    <p className="m-0 text-xs text-slate-500">Optional metadata label for the generated output.</p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="target-path" className={labelClasses}>
+                      Target path
+                    </label>
+                    <input
+                      id="target-path"
+                      autoComplete="off"
+                      placeholder="apps/generated"
+                      className={inputClasses}
+                      {...register("targetPath")}
+                    />
+                    <p className="m-0 text-xs text-slate-500">Optional destination hint used in metadata and follow-up tooling.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="m-0 text-sm font-semibold text-slate-900">Enable Git / PR automation</p>
+                      <p className="m-0 text-xs leading-5 text-slate-500">
+                        Turn this on only when you want the runtime to use the git.pr stage.
+                      </p>
+                    </div>
+                    <label htmlFor="enable-git-pr" className="inline-flex items-center gap-3 text-sm font-semibold text-slate-800">
+                      <input id="enable-git-pr" type="checkbox" className="h-4 w-4 rounded border-slate-300" {...register("enableGitPr")} />
+                      Enable Git / PR
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="repo-url" className={labelClasses}>
+                        Repo URL
+                      </label>
+                      <input
+                        id="repo-url"
+                        autoComplete="off"
+                        placeholder="https://github.com/org/repo.git"
+                        disabled={!isGitPrEnabled}
+                        className={inputClasses}
+                        {...register("repoUrl")}
+                      />
+                      <FieldHint message={errors.repoUrl?.message} />
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="repo-token" className={labelClasses}>
+                        Repo token/key
+                      </label>
+                      <input
+                        id="repo-token"
+                        type="password"
+                        autoComplete="off"
+                        disabled={!isGitPrEnabled}
+                        className={inputClasses}
+                        {...register("repoToken")}
+                      />
+                      <FieldHint message={errors.repoToken?.message} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </form>
+        </div>
+      </section>
+
+      <section data-testid="runtime-card" className={cardBaseClasses}>
+        <div className={`${panelInsetClasses} space-y-5`}>
+          <SectionHeading
+            eyebrow="Runtime"
+            title="Healthy, locked, and ready to generate"
+            description="Operational signals stay available, but the UI prioritizes only the details that help you decide whether to proceed."
+          />
+
+          <div className="grid gap-3">
+            <StatusRow
+              label="Health"
+              badge={healthBadge}
+              detail={
+                <span>
+                  {runtimeQuery.data ? `HTTP ${String(runtimeQuery.data.health.status)}` : "Polling /healthz"}
+                </span>
+              }
+            />
+            <StatusRow
+              label="Workspace"
+              badge={workspaceBadge}
+              detail={
+                <span>
+                  {runtimeStatusPayload
+                    ? `${runtimeStatusPayload.host}:${String(runtimeStatusPayload.port)}${runtimeStatusPayload.url ? ` • ${runtimeStatusPayload.url}` : ""}`
+                    : "Waiting for runtime metadata"}
+                </span>
+              }
+            />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3">
+              <p className="m-0 text-sm font-semibold text-slate-900">
+                Submit: <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
+              </p>
+              <div className="mt-2 grid gap-1 text-xs leading-5 text-slate-600">
+                <p className="m-0">
+                  Mode lock: <code>figmaSourceMode=rest</code> + <code>llmCodegenMode=deterministic</code>
+                </p>
+                <p className="m-0">
+                  Preview: {runtimeStatusPayload?.previewEnabled ? "Enabled" : "Pending runtime confirmation"}
+                </p>
+                {typeof runtimeStatusPayload?.uptimeMs === "number" ? (
+                  <p className="m-0">Uptime: {Math.round(runtimeStatusPayload.uptimeMs / 1000)}s</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <details className={disclosureClasses} open={shouldOpenRuntimeDiagnostics}>
+            <summary className={disclosureSummaryClasses}>Runtime diagnostics</summary>
+            <p className="m-0 mt-2 text-sm leading-6 text-slate-600">
+              Expand for raw runtime payloads and endpoint responses when you need to troubleshoot the workspace itself.
+            </p>
+            <pre data-testid="runtime-payload" className={payloadPreClasses}>
+              {runtimePayloadView}
+            </pre>
+          </details>
+        </div>
+      </section>
+
+      <section data-testid="job-status-card" className={cardBaseClasses}>
+        <div className={`${panelInsetClasses} space-y-5`}>
+          <SectionHeading
+            eyebrow="Job status"
+            title="Pipeline progress without the noise"
+            description="Keep the current job, stage activity, diff summary, and failure context nearby while deeper JSON stays tucked behind diagnostics."
+          />
+
+          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4">
+            <p className="m-0 text-sm font-semibold text-slate-900">{jobSummary}</p>
+            {activeJobId ? (
+              <p className="m-0 mt-2 text-xs leading-5 text-slate-600">
+                Current job: <code>{activeJobId}</code>
+              </p>
+            ) : null}
+            {queueInfo ? <p className="m-0 mt-1 text-xs leading-5 text-slate-600">Queue: {queueInfo}</p> : null}
+            {cancelInfo ? <p className="m-0 mt-1 text-xs leading-5 text-slate-600">Cancellation: {cancelInfo}</p> : null}
+          </div>
+
+          <ul className="m-0 grid gap-2 p-0">
+            {jobStageItems.map((stage) => (
+              <li
+                key={`${stage.name}-${stage.status}`}
+                className="flex list-none items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3"
+              >
+                <span className="text-sm font-semibold text-slate-900">{stage.name || "unknown"}</span>
+                <StatusBadge text={(stage.status || "queued").toUpperCase()} variant={toStageBadgeVariant(stage.status || "queued")} />
+              </li>
+            ))}
+          </ul>
+
+          {jobPayload?.generationDiff?.summary ? (
+            <div data-testid="generation-diff-summary" className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-4">
+              <p className="m-0 text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-700">Generation diff</p>
+              <p className="m-0 mt-2 text-sm font-semibold text-emerald-950">{jobPayload.generationDiff.summary}</p>
+              {jobPayload.generationDiff.previousJobId ? (
+                <p className="m-0 mt-2 text-xs text-emerald-900">
+                  Previous job: {jobPayload.generationDiff.previousJobId}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {(jobPayload.generationDiff.added?.length ?? 0) > 0 ? (
+                  <span className="rounded-full border border-emerald-300 bg-white px-2 py-1 font-semibold text-emerald-800">
+                    +{jobPayload.generationDiff.added?.length} added
+                  </span>
+                ) : null}
+                {(jobPayload.generationDiff.modified?.length ?? 0) > 0 ? (
+                  <span className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-800">
+                    ~{jobPayload.generationDiff.modified?.length} modified
+                  </span>
+                ) : null}
+                {(jobPayload.generationDiff.removed?.length ?? 0) > 0 ? (
+                  <span className="rounded-full border border-rose-300 bg-white px-2 py-1 font-semibold text-rose-800">
+                    -{jobPayload.generationDiff.removed?.length} removed
+                  </span>
+                ) : null}
+                {(jobPayload.generationDiff.unchanged?.length ?? 0) > 0 ? (
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-600">
+                    {jobPayload.generationDiff.unchanged?.length} unchanged
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <details className={disclosureClasses} open={shouldOpenJobDiagnostics}>
+            <summary className={disclosureSummaryClasses}>Job diagnostics</summary>
+            <p className="m-0 mt-2 text-sm leading-6 text-slate-600">
+              Expand for the raw job payload, terminal error context, and detailed runtime state during troubleshooting.
+            </p>
+            <pre data-testid="job-payload" className={payloadPreClasses}>
+              {jobPayloadView}
+            </pre>
+          </details>
+        </div>
+      </section>
+    </>
+  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-[0.9rem] lg:px-6 xl:px-8">
-          <div className="flex items-center gap-3">
+      <header className="border-b border-slate-200/90 bg-white/90 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 lg:px-6 xl:px-8">
+          <div className="flex items-center gap-4">
             <div
               aria-hidden="true"
-              className="grid h-[2.2rem] w-[2.2rem] place-items-center rounded-lg border border-slate-300 bg-white p-[0.2rem]"
+              className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
             >
               <img
                 src="/workspace/ui/logo-keiko.svg"
@@ -671,18 +1016,24 @@ export function WorkspacePage(): JSX.Element {
                 className="block h-full w-full object-contain"
               />
             </div>
-            <div>
-              <h1 className="m-0 text-[1.1rem] font-bold text-slate-900">Workspace Dev</h1>
-              <p className="m-0 text-[0.8rem] text-slate-600">Autonomous local REST + deterministic code generation</p>
+            <div className="space-y-1">
+              <p className="m-0 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-700">Workspace Dev</p>
+              <div>
+                <h1 className="m-0 text-[1.35rem] font-semibold tracking-tight text-slate-950">Workspace Dev</h1>
+                <p className="m-0 text-sm leading-6 text-slate-600">
+                  Deterministic Figma-to-code workspace for local generation, clearer review, and an IDE-style Inspector as soon as source code is ready.
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 void runtimeQuery.refetch();
               }}
-              className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+              className={secondaryButtonClasses}
             >
               Refresh
             </button>
@@ -695,296 +1046,104 @@ export function WorkspacePage(): JSX.Element {
                 }
                 cancelMutation.mutate({ jobId: activeJobId });
               }}
-              className="cursor-pointer rounded-full border border-black bg-white px-3 py-1.5 text-sm font-semibold text-black transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={secondaryButtonClasses}
             >
               {cancelMutation.isPending ? "Canceling..." : "Cancel Job"}
             </button>
             <button
               type="submit"
               form="workspace-submit-form"
-              className="cursor-pointer rounded-full border border-emerald-500 bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-black transition hover:bg-emerald-400"
+              className={primaryButtonClasses}
             >
               Generate
             </button>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-emerald-50/80 px-4 py-3 text-sm text-slate-700 lg:px-6 xl:px-8">
+          <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-900">
+            Runtime lock
+          </span>
+          <span>
+            <code>figmaSourceMode=rest</code> + <code>llmCodegenMode=deterministic</code>
+          </span>
+          {previewTarget ? (
+            <a
+              href={previewTarget}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-emerald-200 hover:text-emerald-800"
+            >
+              Open runtime preview
+            </a>
+          ) : null}
+        </div>
       </header>
 
-      <p className="m-0 border-b border-slate-200 bg-emerald-50 px-4 py-2 text-sm text-slate-600 lg:px-6 xl:px-8">
-        Runtime mode is hard-locked to <code>figmaSourceMode=rest</code> + <code>llmCodegenMode=deterministic</code>.
-      </p>
+      <main className="min-h-0 flex-1 overflow-auto px-4 py-4 lg:px-6 xl:px-8">
+        {isInspectorReady && previewUrl && activeJobId ? (
+          <div className="grid min-h-full gap-4 xl:grid-cols-[22rem_minmax(0,1fr)] xl:overflow-hidden">
+            <aside className="grid min-h-0 gap-4 xl:overflow-auto xl:pr-1">
+              {sidebarStack}
+            </aside>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto px-4 py-4 lg:px-6 xl:grid-cols-12 xl:[grid-template-rows:0.55fr_1.45fr] xl:px-8">
-        <section data-testid="input-card" className={`${topRowCardClasses} xl:col-span-6`}>
-          <div className="mb-3">
-            <h2 className="m-0 text-xl font-bold text-slate-900">Input</h2>
-            <p className="m-0 text-sm text-slate-600">Reduced workspace flow for autonomous generation</p>
+            <section data-testid="result-card" className="min-h-[42rem] min-w-0 xl:min-h-0">
+              <InspectorPanel
+                jobId={activeJobId}
+                previewUrl={previewUrl}
+                previousJobId={jobPayload?.generationDiff?.previousJobId}
+                isRegenerationJob={Boolean(jobPayload?.lineage?.sourceJobId)}
+                onRegenerationAccepted={(nextJobId) => {
+                  setActiveJobId(nextJobId);
+                }}
+              />
+            </section>
           </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
+            <div className="grid gap-4">{sidebarStack}</div>
 
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto pr-1">
-            <form
-              id="workspace-submit-form"
-              onSubmit={onSubmit}
-              className="grid min-w-[46rem] gap-3 sm:min-w-0 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-            >
-            <div className="flex flex-col gap-1">
-              <label htmlFor="figma-source-mode" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Figma source mode
-              </label>
-              <input
-                id="figma-source-mode"
-                value="rest"
-                disabled
-                className="rounded-lg border border-slate-300 bg-slate-100 px-2 py-2 text-sm text-slate-900"
-              />
-              <p className="min-h-4 text-xs text-slate-500">Locked by runtime</p>
-            </div>
+            <section data-testid="result-card" className={`${cardBaseClasses} xl:sticky xl:top-0`}>
+              <div className={`${panelInsetClasses} flex h-full flex-col justify-between gap-5`}>
+                <SectionHeading
+                  eyebrow="Preview"
+                  title="The Inspector takes over after success"
+                  description="Once generation completes, this panel becomes a dedicated developer workspace with an explorer, preview canvas, syntax-highlighted source, split view, and diff navigation."
+                />
 
-            <div className="flex flex-col gap-1">
-              <label htmlFor="llm-codegen-mode" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                LLM codegen mode
-              </label>
-              <input
-                id="llm-codegen-mode"
-                value="deterministic"
-                disabled
-                className="rounded-lg border border-slate-300 bg-slate-100 px-2 py-2 text-sm text-slate-900"
-              />
-              <p className="min-h-4 text-xs text-slate-500">Locked by runtime</p>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="figma-file-key" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Figma file key
-              </label>
-              <input
-                id="figma-file-key"
-                autoComplete="off"
-                placeholder="1Bvard..."
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900"
-                {...register("figmaFileKey")}
-              />
-              <FieldHint message={errors.figmaFileKey?.message} />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="figma-access-token" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Figma access token
-              </label>
-              <input
-                id="figma-access-token"
-                type="password"
-                autoComplete="off"
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900"
-                {...register("figmaAccessToken")}
-              />
-              <FieldHint message={errors.figmaAccessToken?.message} />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="enable-git-pr" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Enable Git / PR (optional)
-              </label>
-              <div className="flex h-[38px] items-center rounded-lg border border-slate-300 bg-white px-2">
-                <input id="enable-git-pr" type="checkbox" className="size-4" {...register("enableGitPr")} />
-              </div>
-              <p className="min-h-4 text-xs text-slate-500">
-                When enabled, repo URL + token are required and git.pr stage is executed.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="repo-url" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Repo URL
-              </label>
-              <input
-                id="repo-url"
-                autoComplete="off"
-                placeholder="https://github.com/org/repo.git"
-                disabled={!isGitPrEnabled}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                {...register("repoUrl")}
-              />
-              <FieldHint message={errors.repoUrl?.message} />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="repo-token" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Repo token/key
-              </label>
-              <input
-                id="repo-token"
-                type="password"
-                autoComplete="off"
-                disabled={!isGitPrEnabled}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                {...register("repoToken")}
-              />
-              <FieldHint message={errors.repoToken?.message} />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="project-name" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Project name (optional)
-              </label>
-              <input
-                id="project-name"
-                autoComplete="off"
-                placeholder="my-figma-project"
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900"
-                {...register("projectName")}
-              />
-              <p className="min-h-4 text-xs text-slate-500">Used for metadata only</p>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor="target-path" className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Target path (optional)
-              </label>
-              <input
-                id="target-path"
-                autoComplete="off"
-                placeholder="apps/generated"
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900"
-                {...register("targetPath")}
-              />
-              <p className="min-h-4 text-xs text-slate-500">Used for metadata only</p>
-            </div>
-
-            <div className="flex justify-end sm:col-span-2 xl:col-span-3 2xl:col-span-4">
-              <button
-                type="submit"
-                className="cursor-pointer rounded-full border border-emerald-500 bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-black transition hover:bg-emerald-400"
-              >
-                Generate
-              </button>
-            </div>
-            </form>
-          </div>
-        </section>
-
-        <section data-testid="runtime-card" className={`${topRowCardClasses} xl:col-span-6`}>
-          <div className="mb-3">
-            <h2 className="m-0 text-xl font-bold text-slate-900">Runtime</h2>
-            <p className="m-0 text-sm text-slate-600">Server readiness and mode lock state</p>
-          </div>
-          <div className="space-y-1 text-sm text-slate-800">
-            <p className="m-0">
-              Health: <StatusBadge text={healthBadge.text} variant={healthBadge.variant} />
-            </p>
-            <p className="m-0">
-              Workspace: <StatusBadge text={workspaceBadge.text} variant={workspaceBadge.variant} />
-            </p>
-            <p className="m-0">
-              Submit: <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
-            </p>
-          </div>
-          <pre data-testid="runtime-payload" className={`${payloadPreClasses} min-h-0 flex-1`}>
-            {runtimePayloadView}
-          </pre>
-        </section>
-
-        <section data-testid="job-status-card" className={`${bottomRowCardClasses} xl:col-span-6`}>
-          <div className="mb-3">
-            <h2 className="m-0 text-xl font-bold text-slate-900">Job Status</h2>
-            <p className="m-0 text-sm text-slate-600">Current pipeline stage and logs</p>
-          </div>
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
-            <p className="m-0">{jobSummary}</p>
-            {queueInfo ? <p className="m-0 mt-1 text-xs text-slate-500">Queue: {queueInfo}</p> : null}
-            {cancelInfo ? <p className="m-0 mt-1 text-xs text-slate-500">Cancellation: {cancelInfo}</p> : null}
-            <ul className="mt-2 grid gap-1">
-              {jobStages.map((stage) => {
-                const status = (stage.status || "queued").toUpperCase();
-                return (
-                  <li
-                    key={`${stage.name}-${stage.status}`}
-                    className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1"
-                  >
-                    <span className="text-xs font-semibold text-slate-800">{stage.name || "unknown"}</span>
-                    <StatusBadge text={status} variant={toStageBadgeVariant(stage.status || "queued")} />
-                  </li>
-                );
-              })}
-            </ul>
-            {jobPayload?.generationDiff?.summary ? (
-              <div data-testid="generation-diff-summary" className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="m-0 text-xs font-bold uppercase tracking-wide text-slate-700">Generation Diff</p>
-                <p className="m-0 mt-1 text-sm text-slate-800">{jobPayload.generationDiff.summary}</p>
-                {jobPayload.generationDiff.previousJobId ? (
-                  <p className="m-0 mt-1 text-xs text-slate-500">
-                    Previous job: {jobPayload.generationDiff.previousJobId}
+                <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5">
+                  <p className="m-0 text-sm font-semibold text-slate-900">{previewMessage}</p>
+                  <p className="m-0 mt-2 text-sm leading-6 text-slate-600">
+                    The redesign keeps operational context available while hiding payload-heavy detail until you intentionally open it.
                   </p>
-                ) : null}
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  {(jobPayload.generationDiff.added?.length ?? 0) > 0 ? (
-                    <span className="rounded-full border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-emerald-800">
-                      +{jobPayload.generationDiff.added?.length} added
-                    </span>
-                  ) : null}
-                  {(jobPayload.generationDiff.modified?.length ?? 0) > 0 ? (
-                    <span className="rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-amber-800">
-                      ~{jobPayload.generationDiff.modified?.length} modified
-                    </span>
-                  ) : null}
-                  {(jobPayload.generationDiff.removed?.length ?? 0) > 0 ? (
-                    <span className="rounded-full border border-rose-400 bg-rose-50 px-2 py-0.5 text-rose-800">
-                      -{jobPayload.generationDiff.removed?.length} removed
-                    </span>
-                  ) : null}
-                  {(jobPayload.generationDiff.unchanged?.length ?? 0) > 0 ? (
-                    <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
-                      {jobPayload.generationDiff.unchanged?.length} unchanged
-                    </span>
+                  {previewUrl ? (
+                    <a
+                      href={previewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 hover:border-emerald-300 hover:bg-emerald-50"
+                    >
+                      Open Preview
+                    </a>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
-          </div>
-          <pre data-testid="job-payload" className={`${payloadPreClasses} h-28 shrink-0`}>
-            {jobPayloadView}
-          </pre>
-        </section>
 
-        {jobStatus === "completed" && previewUrl && activeJobId ? (
-          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6 xl:min-h-[420px]`}>
-            <InspectorPanel
-              jobId={activeJobId}
-              previewUrl={previewUrl}
-              previousJobId={jobPayload?.generationDiff?.previousJobId}
-              isRegenerationJob={Boolean(jobPayload?.lineage?.sourceJobId)}
-              onRegenerationAccepted={(nextJobId) => {
-                setActiveJobId(nextJobId);
-              }}
-            />
-          </section>
-        ) : (
-          <section data-testid="result-card" className={`${bottomRowCardClasses} xl:col-span-6 xl:min-h-[420px]`}>
-            <div className="mb-3">
-              <h2 className="m-0 text-xl font-bold text-slate-900">Result / Preview</h2>
-              <p className="m-0 text-sm text-slate-600">Generated output for the latest job</p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
-              <p className="m-0">{previewMessage}</p>
-              {previewUrl ? (
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-block font-semibold text-emerald-700 hover:underline"
-                >
-                  Open Preview
-                </a>
-              ) : null}
-            </div>
-            <pre data-testid="submit-payload" className={`${payloadPreClasses} h-28 shrink-0`}>
-              {submitPayloadView}
-            </pre>
-          </section>
+                <details className={disclosureClasses}>
+                  <summary className={disclosureSummaryClasses}>Submitted payload and result metadata</summary>
+                  <p className="m-0 mt-2 text-sm leading-6 text-slate-600">
+                    Expand for the redacted request payload, generation result metadata, and other low-level details that are useful during debugging.
+                  </p>
+                  <pre data-testid="submit-payload" className={payloadPreClasses}>
+                    {submitPayloadView}
+                  </pre>
+                </details>
+              </div>
+            </section>
+          </div>
         )}
       </main>
 
-      <footer className="flex shrink-0 items-center justify-center border-t border-slate-200 px-4 py-3 text-center text-xs text-slate-600 lg:px-6 xl:px-8">
+      <footer className="flex shrink-0 items-center justify-center border-t border-slate-200/90 bg-white/80 px-4 py-3 text-center text-xs text-slate-600 backdrop-blur lg:px-6 xl:px-8">
         <span>{`workspace-dev ui ${uiVersionLabel} - by oscharko`}</span>
       </footer>
     </div>
