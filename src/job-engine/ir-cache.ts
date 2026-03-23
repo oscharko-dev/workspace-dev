@@ -21,13 +21,7 @@ export interface IrCacheEntry {
   ir: DesignIR;
 }
 
-export interface IrCacheOptions {
-  cacheDir: string;
-  ttlMs: number;
-  onLog: (message: string) => void;
-}
-
-export interface IrCacheDerivationOptions {
+interface IrCacheDerivationOptions {
   screenElementBudget?: number;
   screenElementMaxDepth?: number;
   brandTheme?: string;

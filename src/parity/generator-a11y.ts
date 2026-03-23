@@ -33,7 +33,7 @@ export interface AccessibilityWarning {
   contrastRatio: number;
 }
 
-export const A11Y_GENERIC_LABEL_PATTERNS: readonly RegExp[] = [
+const A11Y_GENERIC_LABEL_PATTERNS: readonly RegExp[] = [
   /^frame\s*\d*$/i,
   /^group\s*\d*$/i,
   /^rectangle\s*\d*$/i,
@@ -46,7 +46,7 @@ export const A11Y_GENERIC_LABEL_PATTERNS: readonly RegExp[] = [
 ];
 export const A11Y_IMAGE_DECORATIVE_HINTS: readonly string[] = ["decorative", "background", "placeholder", "pattern", "shape"];
 export const A11Y_NAVIGATION_HINTS: readonly string[] = ["navigation", "navbar", "nav bar", "menu", "sidebar", "tabbar", "drawer"];
-export const A11Y_INTERACTIVE_TYPES: Set<ScreenElementIR["type"]> = new Set<ScreenElementIR["type"]>([
+const A11Y_INTERACTIVE_TYPES: Set<ScreenElementIR["type"]> = new Set<ScreenElementIR["type"]>([
   "button",
   "input",
   "select",
@@ -62,7 +62,7 @@ export const A11Y_INTERACTIVE_TYPES: Set<ScreenElementIR["type"]> = new Set<Scre
 ]);
 export const HEADING_NAME_HINTS: readonly string[] = ["heading", "headline", "title", "h1", "h2", "h3", "ueberschrift", "überschrift", "titel"];
 
-export const toA11yHumanizedLabel = (value: string | undefined): string | undefined => {
+const toA11yHumanizedLabel = (value: string | undefined): string | undefined => {
   if (!value) {
     return undefined;
   }
@@ -257,14 +257,10 @@ export const resolveBackgroundHexForText = ({
 
 // ── ARIA live region detection ────────────────────────────────────────────
 
-export const A11Y_LIVE_REGION_HINTS: readonly string[] = [
+const A11Y_LIVE_REGION_HINTS: readonly string[] = [
   "snackbar", "toast", "notification", "alert", "banner",
   "error", "warning", "success", "info",
   "loading", "spinner", "progress", "skeleton"
-];
-
-export const A11Y_LOADING_STATE_HINTS: readonly string[] = [
-  "loading", "spinner", "progress", "circular", "linear"
 ];
 
 /**
