@@ -40,7 +40,12 @@ const STRING_ELEMENT_FIELDS = new Set([
 const FORM_VALIDATION_FIELDS = new Set([
   "required",
   "validationType",
-  "validationMessage"
+  "validationMessage",
+  "validationMin",
+  "validationMax",
+  "validationMinLength",
+  "validationMaxLength",
+  "validationPattern"
 ]);
 
 function hasChildren(element: ScreenElementIR): boolean {

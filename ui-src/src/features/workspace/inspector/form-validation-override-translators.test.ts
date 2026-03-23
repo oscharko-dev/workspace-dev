@@ -147,7 +147,7 @@ describe("deriveFormValidationOverrideFieldSupport", () => {
     };
 
     const support = deriveFormValidationOverrideFieldSupport(nodeData);
-    expect(support).toHaveLength(3);
+    expect(support).toHaveLength(8);
     expect(support.every((entry) => entry.supported)).toBe(true);
   });
 
@@ -211,7 +211,16 @@ describe("extractSupportedFormValidationOverrideFields", () => {
     const nodeData = { required: true, validationType: "email", validationMessage: "Bad email." };
     const fields = extractSupportedFormValidationOverrideFields(nodeData);
 
-    expect(fields).toEqual(["required", "validationType", "validationMessage"]);
+    expect(fields).toEqual([
+      "required",
+      "validationType",
+      "validationMessage",
+      "validationMin",
+      "validationMax",
+      "validationMinLength",
+      "validationMaxLength",
+      "validationPattern"
+    ]);
   });
 
   it("returns empty for nodes with no validation fields", () => {
@@ -234,9 +243,18 @@ describe("extractSupportedFormValidationOverrideFields", () => {
 // ---------------------------------------------------------------------------
 
 describe("constants", () => {
-  it("exports exactly 3 form validation override fields", () => {
-    expect(FORM_VALIDATION_OVERRIDE_FIELDS).toHaveLength(3);
-    expect([...FORM_VALIDATION_OVERRIDE_FIELDS]).toEqual(["required", "validationType", "validationMessage"]);
+  it("exports exactly 8 form validation override fields", () => {
+    expect(FORM_VALIDATION_OVERRIDE_FIELDS).toHaveLength(8);
+    expect([...FORM_VALIDATION_OVERRIDE_FIELDS]).toEqual([
+      "required",
+      "validationType",
+      "validationMessage",
+      "validationMin",
+      "validationMax",
+      "validationMinLength",
+      "validationMaxLength",
+      "validationPattern"
+    ]);
   });
 
   it("exports all 10 supported validation types", () => {
