@@ -16,6 +16,7 @@ import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath } from "./component-tree-utils";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { ConfigDialog } from "./ConfigDialog";
 import { suggestPairedFile } from "./file-pairing";
 import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries";
 import {
@@ -345,6 +346,8 @@ class RegenerationMutationError extends Error {
 
 type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
 
+type ConfigDialogKey = "preApplyReview" | "localSync" | "createPr" | "inspectability";
+
 interface InspectorPanelProps {
   jobId: string;
   previewUrl: string;
@@ -354,6 +357,10 @@ interface InspectorPanelProps {
   isRegenerationJob?: boolean;
   /** Callback invoked when regeneration is accepted and returns a new job ID. */
   onRegenerationAccepted?: (jobId: string) => void;
+  /** Which config dialog is open, or null if none. */
+  openDialog?: ConfigDialogKey | null;
+  /** Close the currently open config dialog. */
+  onCloseDialog?: () => void;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -814,7 +821,9 @@ export function InspectorPanel({
   previewUrl,
   previousJobId,
   isRegenerationJob = false,
-  onRegenerationAccepted
+  onRegenerationAccepted,
+  openDialog = null,
+  onCloseDialog
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
@@ -3446,54 +3455,57 @@ export function InspectorPanel({
     createPrMutation.isPending ||
     regenerateMutation.isPending;
 
+  const handleCloseDialog = useCallback(() => {
+    onCloseDialog?.();
+  }, [onCloseDialog]);
+
   return (
-    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
-        <h2 className="m-0 text-xl font-bold text-slate-900">Inspector</h2>
-        <p className="m-0 text-sm text-slate-600">Live preview and generated source code</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-[#1e1e2e]">
+      {/* Compact toolbar */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-[#2a2a3d] bg-[#252536] px-3 py-1.5">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             data-testid="inspector-nav-back"
             disabled={!canNavigateBack}
             onClick={handleNavigateBack}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
             title="Back to previous committed drilldown state"
             aria-label="Navigate back in inspector drilldown history"
           >
-            ← Back
+            ←
           </button>
           <button
             type="button"
             data-testid="inspector-nav-forward"
             disabled={!canNavigateForward}
             onClick={handleNavigateForward}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
             title="Forward to next committed drilldown state"
             aria-label="Navigate forward in inspector drilldown history"
           >
-            Forward →
+            →
           </button>
           <button
             type="button"
             data-testid="inspector-shortcut-help-button"
             onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+            className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
             title="Keyboard shortcuts (?)"
             aria-label="Show keyboard shortcuts"
           >
-            ⌨ Shortcuts
+            ⌨
           </button>
           {editModeActive ? (
             <button
               type="button"
               data-testid="inspector-exit-edit-mode"
               onClick={handleExitEditMode}
-              className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100"
+              className="cursor-pointer rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400 transition hover:bg-amber-500/20"
               title="Exit edit mode"
               aria-label="Exit edit mode"
             >
-              Exit Edit Mode
+              Exit Edit
             </button>
           ) : (
             <button
@@ -3501,60 +3513,53 @@ export function InspectorPanel({
               data-testid="inspector-enter-edit-mode"
               disabled={!canEnterEditMode}
               onClick={handleEnterEditMode}
-              className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+              className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-2 py-0.5 text-[11px] font-medium text-slate-400 transition hover:bg-white/5 hover:text-slate-300 disabled:cursor-default disabled:opacity-30"
               title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
               aria-label="Enter edit mode"
             >
-              Edit Mode
+              Edit
             </button>
           )}
         </div>
-        <div className="mt-3 flex flex-wrap gap-2" data-testid="inspector-source-statuses">
+        <div className="h-3 w-px bg-[#3a3a50]" />
+        <div className="flex flex-wrap gap-1" data-testid="inspector-source-statuses">
           {sourceStatuses.map(({ source, label, status }) => (
             <span
               key={source}
               data-testid={`inspector-source-${source}-${status}`}
-              className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold ${getStatusBadgeClasses(status)}`}
+              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${getStatusBadgeClasses(status)}`}
             >
               {label}: {status}
             </span>
           ))}
         </div>
         {selectedNodeId && editCapability ? (
-          <div
+          <div className="h-3 w-px bg-[#3a3a50]" />
+        ) : null}
+        {selectedNodeId && editCapability ? (
+          <span
             data-testid="inspector-edit-capability"
-            className={`mt-3 rounded border px-3 py-2 text-xs ${
+            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
               editCapability.editable
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-slate-200 bg-slate-50 text-slate-700"
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "bg-slate-700/50 text-slate-500"
             }`}
           >
-            <p className="m-0 font-semibold">
-              Edit Capability: {editCapability.editable ? "Supported" : "Not supported"}
-            </p>
-            {editCapability.editable ? (
-              <p data-testid="inspector-edit-capability-fields" className="m-0 mt-1">
-                Editable fields: {editCapability.editableFields.join(", ")}
-              </p>
-            ) : (
-              <p data-testid="inspector-edit-capability-reason" className="m-0 mt-1">
-                {editCapability.reason}
-              </p>
-            )}
-            {editModeActive ? (
-              <p data-testid="inspector-edit-mode-active-indicator" className="m-0 mt-1 font-semibold text-amber-700">
-                Edit mode is active
-              </p>
-            ) : null}
-          </div>
+            {editCapability.editable ? `Edit: ${editCapability.editableFields.length} fields` : "Not editable"}
+          </span>
         ) : null}
-        {editModeActive && selectedNodeId ? (
-          <div
-            data-testid="inspector-edit-studio-panel"
-            className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950"
-          >
-            <p className="m-0 font-semibold">Edit Studio</p>
-            <p className="m-0 mt-1">
+      </div>
+
+      {/* Edit Studio — slides down below toolbar when active */}
+      {editModeActive && selectedNodeId ? (
+        <div
+          data-testid="inspector-edit-studio-panel"
+          className="shrink-0 overflow-y-auto border-b border-[#2a2a3d] bg-[#1a1a2a] px-4 py-2 text-xs text-indigo-200"
+          style={{ maxHeight: "30vh" }}
+        >
+          <div className="mx-auto max-w-5xl">
+            <p className="m-0 font-semibold text-indigo-300">Edit Studio</p>
+            <p className="m-0 mt-1 text-slate-400">
               Structured overrides use exact IR field names in payload output and persist as a single draft.
             </p>
             <p data-testid="inspector-edit-supported-layout-fields" className="m-0 mt-1 text-indigo-900">
@@ -4179,15 +4184,225 @@ export function InspectorPanel({
                 ) : null}
               </>
             ) : (
-              <p data-testid="inspector-edit-node-missing" className="m-0 mt-2 text-indigo-900">
+              <p data-testid="inspector-edit-node-missing" className="m-0 mt-2 text-indigo-400">
                 Selected node details are not available in design IR.
               </p>
             )}
           </div>
+        </div>
+      ) : null}
+
+      {/* Error banners — compact strip */}
+      {sourceErrorBanners.length > 0 ? (
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-[#2a2a3d] bg-[#2a1a1a] px-4 py-1.5" data-testid="inspector-error-banners">
+          {sourceErrorBanners.map((banner) => (
+            <div
+              key={banner.source}
+              data-testid={`inspector-error-${banner.source}`}
+              className="flex flex-wrap items-center gap-2 text-[11px] text-rose-400"
+            >
+              <span className="font-semibold">{banner.title}</span>
+              <span>
+                {banner.details.message} ({banner.details.code}, HTTP {String(banner.details.status)})
+              </span>
+              {banner.onRetry ? (
+                <button
+                  type="button"
+                  data-testid={`inspector-banner-retry-${banner.source}`}
+                  onClick={banner.onRetry}
+                  className="cursor-pointer rounded border border-rose-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-rose-400 transition hover:bg-rose-500/10"
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {manifestState.status === "empty" ? (
+        <div className="shrink-0 border-b border-[#2a2a3d] bg-[#2a2a1a] px-4 py-1">
+          <p
+            data-testid="inspector-manifest-empty-warning"
+            className="m-0 text-[11px] text-amber-400"
+          >
+            Component manifest is empty. Tree selection still works, but file-to-component mappings are unavailable.
+          </p>
+        </div>
+      ) : null}
+
+      {/* ===== THREE-COLUMN IDE LAYOUT ===== */}
+      <div ref={layoutContainerRef} className="flex min-h-0 flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
+        {/* Left: Component Tree sidebar */}
+        {hasTreePane ? (
+          <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0 border-r border-[#2a2a3d]" style={treePaneStyle}>
+            {designIrState.status === "ready" ? (
+              <ComponentTree
+                screens={treeNodes}
+                selectedId={selectedNodeId}
+                onSelect={handleTreeSelect}
+                onEnterScope={handleEnterScope}
+                collapsed={treeCollapsed}
+                onToggleCollapsed={() => {
+                  setTreeCollapsed((prev) => !prev);
+                }}
+                diagnosticsMap={nodeDiagnosticsMap}
+              />
+            ) : (
+              <div className="flex h-full min-h-0 flex-col bg-[#1a1a2a] p-3">
+                <div
+                  data-testid={`inspector-design-ir-state-${designIrState.status}`}
+                  className="rounded border border-[#3a3a50] bg-[#252536] px-3 py-2 text-xs text-slate-400"
+                >
+                  {designIrState.status === "loading" ? (
+                    <p className="m-0">Loading design IR…</p>
+                  ) : null}
+                  {designIrState.status === "empty" ? (
+                    <p className="m-0">No component tree data is available for this job.</p>
+                  ) : null}
+                  {designIrState.status === "error" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>Design IR failed to load.</span>
+                      <button
+                        type="button"
+                        data-testid="inspector-retry-design-ir"
+                        onClick={handleRetryDesignIr}
+                        className="cursor-pointer rounded border border-[#3a3a50] bg-transparent px-2 py-0.5 text-[11px] font-semibold text-slate-400 transition hover:bg-white/5"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
         ) : null}
+
+        {/* Resizable divider: tree ↔ preview (desktop + expanded tree only) */}
+        {hasExpandedTree ? (
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize tree and preview panes"
+            aria-orientation="vertical"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={treeSeparatorNow}
+            data-testid="inspector-splitter-tree-preview"
+            className="hidden shrink-0 cursor-col-resize bg-[#2a2a3d] transition-colors hover:bg-emerald-500/40 focus:bg-emerald-500/40 focus:outline-none xl:block xl:w-px"
+            style={{ touchAction: "none" }}
+            onPointerDown={handleSplitterPointerDown("tree-preview")}
+            onKeyDown={handleSplitterKeyDown("tree-preview")}
+          />
+        ) : null}
+
+        {/* Center: Preview pane */}
+        <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 border-r border-[#2a2a3d] lg:min-h-0" style={previewPaneStyle}>
+          <PreviewPane
+            previewUrl={previewUrl}
+            inspectEnabled={inspectEnabled}
+            activeScopeNodeId={activeScopeNodeId}
+            onToggleInspect={handleToggleInspect}
+            onInspectSelect={handleInspectSelect}
+          />
+        </div>
+
+        {/* Horizontal divider for stacked layout */}
+        <div className="h-px shrink-0 bg-[#2a2a3d] xl:hidden" />
+
+        {/* Resizable divider: preview ↔ code (desktop) */}
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize preview and code panes"
+          aria-orientation="vertical"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={previewSeparatorNow}
+          data-testid="inspector-splitter-preview-code"
+          className="hidden shrink-0 cursor-col-resize bg-[#2a2a3d] transition-colors hover:bg-emerald-500/40 focus:bg-emerald-500/40 focus:outline-none xl:block xl:w-px"
+          style={{ touchAction: "none" }}
+          onPointerDown={handleSplitterPointerDown("preview-code")}
+          onKeyDown={handleSplitterKeyDown("preview-code")}
+        />
+
+        {/* Right: Code pane */}
+        <div data-testid="inspector-pane-code" className="min-h-[200px] flex-1 lg:min-h-0" style={codePaneStyle}>
+          <CodePane
+            files={files}
+            selectedFile={effectiveSelectedFile}
+            onSelectFile={handleSelectFile}
+            filesState={filesState.status}
+            filesError={filesState.error}
+            onRetryFiles={handleRetryFiles}
+            fileContent={fileContentState.content}
+            fileContentState={fileContentState.status}
+            fileContentError={fileContentState.error}
+            onRetryFileContent={handleRetryFileContent}
+            highlightRange={highlightRange}
+            previousJobId={previousJobId}
+            previousFileContent={effectivePreviousFileContent}
+            previousFileContentLoading={effectivePreviousFileContentLoading}
+            previousManifestRange={previousManifestRange}
+            nodeDiffFallbackReason={nodeDiffFallbackReason}
+            breadcrumbPath={breadcrumbPath}
+            onBreadcrumbSelect={handleTreeSelect}
+            hasActiveScope={hasActiveScope}
+            onEnterScope={handleEnterScope}
+            onExitScope={canLevelUp ? handleExitScope : undefined}
+            splitFile={effectiveSplitFile}
+            splitFileContent={splitFileContent}
+            splitFileContentLoading={splitFileContentLoading}
+            onSelectSplitFile={handleSelectSplitFile}
+            boundariesEnabled={boundariesEnabled}
+            onBoundariesEnabledChange={setBoundariesEnabled}
+            fileBoundaries={selectedFileBoundaries}
+            splitFileBoundaries={splitFileBoundaries}
+            onBoundarySelect={handleTreeSelect}
+            activeManifestRange={activeManifestRange}
+            isNodeMapped={isNodeMapped}
+            parentFile={canReturnToParentFile ? parentFile : null}
+            onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
+          />
+        </div>
+      </div>
+
+      {/* Node diagnostics — shown as status bar at bottom */}
+      {selectedNodeId && getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).length > 0 ? (
+        <div
+          data-testid="inspector-node-diagnostics-detail"
+          className="flex shrink-0 flex-wrap gap-3 border-t border-[#2a2a3d] bg-[#252536] px-4 py-1"
+        >
+          {getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).map((diag, idx) => {
+            const badge = getNodeDiagnosticBadge(diag.category);
+            return (
+              <span
+                key={`${diag.category}-${String(idx)}`}
+                data-testid={`inspector-node-diagnostic-${diag.category}`}
+                className="flex items-center gap-1 text-[10px] text-slate-400"
+              >
+                <span className={`inline-flex h-3.5 min-w-[1rem] items-center justify-center rounded px-0.5 text-[8px] font-bold leading-none ${badge.color}`}>
+                  {badge.abbr}
+                </span>
+                {diag.reason}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* ===== CONFIG DIALOGS ===== */}
+
+      {/* Pre-Apply Review Dialog */}
+      <ConfigDialog
+        open={openDialog === "preApplyReview"}
+        onClose={handleCloseDialog}
+        title="Pre-Apply Review"
+      >
         <div
           data-testid="inspector-impact-review-panel"
-          className="mt-3 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950"
+          className="text-xs text-sky-950"
         >
           <p className="m-0 font-semibold">Pre-Apply Review</p>
           <p className="m-0 mt-1">
@@ -4326,9 +4541,17 @@ export function InspectorPanel({
             </p>
           ) : null}
         </div>
+      </ConfigDialog>
+
+      {/* Local Sync Dialog */}
+      <ConfigDialog
+        open={openDialog === "localSync"}
+        onClose={handleCloseDialog}
+        title="Local Sync (Regeneration Jobs)"
+      >
         <div
           data-testid="inspector-sync-panel"
-          className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950"
+          className="text-xs text-emerald-950"
         >
           <p className="m-0 font-semibold">Local Sync (Regeneration Jobs)</p>
           <p className="m-0 mt-1">
@@ -4494,9 +4717,17 @@ export function InspectorPanel({
             </p>
           ) : null}
         </div>
+      </ConfigDialog>
+
+      {/* Create PR Dialog */}
+      <ConfigDialog
+        open={openDialog === "createPr"}
+        onClose={handleCloseDialog}
+        title="Create PR (Regeneration Jobs)"
+      >
         <div
           data-testid="inspector-pr-panel"
-          className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950"
+          className="text-xs text-indigo-950"
         >
           <p className="m-0 font-semibold">Create PR (Regeneration Jobs)</p>
           <p className="m-0 mt-1">
@@ -4599,9 +4830,17 @@ export function InspectorPanel({
             </p>
           ) : null}
         </div>
+      </ConfigDialog>
+
+      {/* Inspectability Coverage Summary Dialog */}
+      <ConfigDialog
+        open={openDialog === "inspectability"}
+        onClose={handleCloseDialog}
+        title="Inspectability Coverage Summary"
+      >
         <div
           data-testid="inspector-inspectability-summary"
-          className="mt-3 max-h-40 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2"
+          className="text-xs"
         >
           <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
             Inspectability Coverage Summary
@@ -4679,204 +4918,7 @@ export function InspectorPanel({
             </div>
           </div>
         </div>
-        {selectedNodeId && getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).length > 0 ? (
-          <div
-            data-testid="inspector-node-diagnostics-detail"
-            className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2"
-          >
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
-              Node Diagnostics
-            </p>
-            <div className="mt-1 grid gap-1">
-              {getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).map((diag, idx) => {
-                const badge = getNodeDiagnosticBadge(diag.category);
-                return (
-                  <div
-                    key={`${diag.category}-${String(idx)}`}
-                    data-testid={`inspector-node-diagnostic-${diag.category}`}
-                    className="flex items-center gap-2 text-xs text-slate-800"
-                  >
-                    <span className={`inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded px-0.5 text-[9px] font-bold leading-none ${badge.color}`}>
-                      {badge.abbr}
-                    </span>
-                    <span>{diag.reason}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-        {manifestState.status === "empty" ? (
-          <p
-            data-testid="inspector-manifest-empty-warning"
-            className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900"
-          >
-            Component manifest is empty. Tree selection still works, but file-to-component mappings are unavailable.
-          </p>
-        ) : null}
-        {sourceErrorBanners.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-2" data-testid="inspector-error-banners">
-            {sourceErrorBanners.map((banner) => (
-              <div
-                key={banner.source}
-                data-testid={`inspector-error-${banner.source}`}
-                className="flex flex-wrap items-center gap-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900"
-              >
-                <span className="font-semibold">{banner.title}</span>
-                <span>
-                  {banner.details.message} ({banner.details.code}, HTTP {String(banner.details.status)})
-                </span>
-                {banner.onRetry ? (
-                  <button
-                    type="button"
-                    data-testid={`inspector-banner-retry-${banner.source}`}
-                    onClick={banner.onRetry}
-                    className="cursor-pointer rounded border border-rose-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-800 transition hover:bg-rose-100"
-                  >
-                    Retry
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <div ref={layoutContainerRef} className="flex min-h-[220px] flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
-        {/* Left: Component Tree sidebar */}
-        {hasTreePane ? (
-          <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0" style={treePaneStyle}>
-            {designIrState.status === "ready" ? (
-              <ComponentTree
-                screens={treeNodes}
-                selectedId={selectedNodeId}
-                onSelect={handleTreeSelect}
-                onEnterScope={handleEnterScope}
-                collapsed={treeCollapsed}
-                onToggleCollapsed={() => {
-                  setTreeCollapsed((prev) => !prev);
-                }}
-                diagnosticsMap={nodeDiagnosticsMap}
-              />
-            ) : (
-              <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-slate-50 p-3">
-                <div
-                  data-testid={`inspector-design-ir-state-${designIrState.status}`}
-                  className="rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
-                >
-                  {designIrState.status === "loading" ? (
-                    <p className="m-0">Loading design IR…</p>
-                  ) : null}
-                  {designIrState.status === "empty" ? (
-                    <p className="m-0">No component tree data is available for this job.</p>
-                  ) : null}
-                  {designIrState.status === "error" ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span>Design IR failed to load. Component tree interactions are disabled.</span>
-                      <button
-                        type="button"
-                        data-testid="inspector-retry-design-ir"
-                        onClick={handleRetryDesignIr}
-                        className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* Resizable divider: tree ↔ preview (desktop + expanded tree only) */}
-        {hasExpandedTree ? (
-          <div
-            role="separator"
-            tabIndex={0}
-            aria-label="Resize tree and preview panes"
-            aria-orientation="vertical"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={treeSeparatorNow}
-            data-testid="inspector-splitter-tree-preview"
-            className="hidden shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none xl:block xl:w-1"
-            style={{ touchAction: "none" }}
-            onPointerDown={handleSplitterPointerDown("tree-preview")}
-            onKeyDown={handleSplitterKeyDown("tree-preview")}
-          />
-        ) : null}
-
-        {/* Center: Preview pane */}
-        <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 lg:min-h-0" style={previewPaneStyle}>
-          <PreviewPane
-            previewUrl={previewUrl}
-            inspectEnabled={inspectEnabled}
-            activeScopeNodeId={activeScopeNodeId}
-            onToggleInspect={handleToggleInspect}
-            onInspectSelect={handleInspectSelect}
-          />
-        </div>
-
-        {/* Horizontal divider for stacked layout */}
-        <div className="h-px shrink-0 bg-slate-200 xl:hidden" />
-
-        {/* Resizable divider: preview ↔ code (desktop) */}
-        <div
-          role="separator"
-          tabIndex={0}
-          aria-label="Resize preview and code panes"
-          aria-orientation="vertical"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={previewSeparatorNow}
-          data-testid="inspector-splitter-preview-code"
-          className="hidden shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none xl:block xl:w-1"
-          style={{ touchAction: "none" }}
-          onPointerDown={handleSplitterPointerDown("preview-code")}
-          onKeyDown={handleSplitterKeyDown("preview-code")}
-        />
-
-        {/* Right: Code pane */}
-        <div data-testid="inspector-pane-code" className="min-h-[200px] flex-1 lg:min-h-0" style={codePaneStyle}>
-          <CodePane
-            files={files}
-            selectedFile={effectiveSelectedFile}
-            onSelectFile={handleSelectFile}
-            filesState={filesState.status}
-            filesError={filesState.error}
-            onRetryFiles={handleRetryFiles}
-            fileContent={fileContentState.content}
-            fileContentState={fileContentState.status}
-            fileContentError={fileContentState.error}
-            onRetryFileContent={handleRetryFileContent}
-            highlightRange={highlightRange}
-            previousJobId={previousJobId}
-            previousFileContent={effectivePreviousFileContent}
-            previousFileContentLoading={effectivePreviousFileContentLoading}
-            previousManifestRange={previousManifestRange}
-            nodeDiffFallbackReason={nodeDiffFallbackReason}
-            breadcrumbPath={breadcrumbPath}
-            onBreadcrumbSelect={handleTreeSelect}
-            hasActiveScope={hasActiveScope}
-            onEnterScope={handleEnterScope}
-            onExitScope={canLevelUp ? handleExitScope : undefined}
-            splitFile={effectiveSplitFile}
-            splitFileContent={splitFileContent}
-            splitFileContentLoading={splitFileContentLoading}
-            onSelectSplitFile={handleSelectSplitFile}
-            boundariesEnabled={boundariesEnabled}
-            onBoundariesEnabledChange={setBoundariesEnabled}
-            fileBoundaries={selectedFileBoundaries}
-            splitFileBoundaries={splitFileBoundaries}
-            onBoundarySelect={handleTreeSelect}
-            activeManifestRange={activeManifestRange}
-            isNodeMapped={isNodeMapped}
-            parentFile={canReturnToParentFile ? parentFile : null}
-            onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
-          />
-        </div>
-      </div>
+      </ConfigDialog>
 
       {/* Shortcut help overlay */}
       <ShortcutHelp
