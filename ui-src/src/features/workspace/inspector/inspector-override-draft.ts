@@ -267,16 +267,6 @@ export function getInspectorOverrideValue<TField extends InspectorOverrideField>
   return entry.value as InspectorOverrideValueByField[TField];
 }
 
-export function listInspectorOverrideEntriesForNode({
-  draft,
-  nodeId
-}: {
-  draft: InspectorOverrideDraft;
-  nodeId: string;
-}): InspectorScalarOverrideEntry[] {
-  return sortEntries(draft.entries.filter((entry) => entry.nodeId === nodeId));
-}
-
 export function upsertInspectorOverrideEntry({
   draft,
   nodeId,

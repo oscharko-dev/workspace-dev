@@ -415,8 +415,6 @@ export const SubmitRequestSchema: RuntimeSchema<WorkspaceJobInput> = {
   safeParse: parseSubmitRequest
 };
 
-export type SubmitRequestInput = WorkspaceJobInput;
-
 export const WorkspaceStatusSchema: RuntimeSchema<WorkspaceStatus> = {
   safeParse: parseWorkspaceStatus
 };

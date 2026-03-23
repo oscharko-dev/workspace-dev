@@ -75,10 +75,6 @@ export interface LayoutOverrideFieldSupport {
   reason: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function parseFiniteNumber(raw: unknown): number | null {
   if (typeof raw === "number") {
     return Number.isFinite(raw) ? raw : null;
@@ -324,8 +320,4 @@ export function isLayoutOverrideValue(field: LayoutOverrideField, value: unknown
     return resolvePrimaryAxisAlignItemsValue(value) !== null;
   }
   return resolveCounterAxisAlignItemsValue(value) !== null;
-}
-
-export function isLayoutOverrideNodeData(value: unknown): value is Readonly<Record<string, unknown>> {
-  return isRecord(value);
 }

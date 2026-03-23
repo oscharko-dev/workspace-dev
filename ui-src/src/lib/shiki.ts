@@ -129,8 +129,3 @@ export async function highlightCode(
 
   return { html, theme: resolvedTheme };
 }
-
-/** Clear the highlight cache (useful for testing). */
-export function clearHighlightCache(): void {
-  cache.clear();
-}

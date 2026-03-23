@@ -21,16 +21,6 @@ export const DESIGN_TYPOGRAPHY_VARIANTS: readonly DesignTokenTypographyVariantNa
 ] as const satisfies readonly DesignTokenTypographyVariantName[];
 
 export const HEADING_TYPOGRAPHY_VARIANTS: readonly DesignTokenTypographyVariantName[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
-export const BODY_TYPOGRAPHY_VARIANTS: readonly DesignTokenTypographyVariantName[] = [
-  "subtitle1",
-  "subtitle2",
-  "body1",
-  "body2",
-  "button",
-  "caption",
-  "overline"
-] as const;
-
 /**
  * Mapping patterns from Figma text style names to MUI typography variant names.
  * Each entry is [regex, variantName]. First match wins.
