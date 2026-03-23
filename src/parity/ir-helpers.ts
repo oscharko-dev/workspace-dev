@@ -20,7 +20,8 @@ import type { FigmaEffect, FigmaPaint } from "./ir-colors.js";
 import type { WorkspaceBrandTheme } from "../contracts/index.js";
 import type {
   FigmaMcpEnrichment,
-  GenerationMetrics
+  GenerationMetrics,
+  NodeDiagnosticEntry
 } from "./types.js";
 
 export const DECORATIVE_NAME_PATTERN: RegExp = /(icon|decor|bg|background|shape|vector|spacer|divider)/i;
@@ -193,6 +194,7 @@ export interface MetricsAccumulator {
   depthTruncatedScreens: NonNullable<GenerationMetrics["depthTruncatedScreens"]>;
   classificationFallbacks: NonNullable<GenerationMetrics["classificationFallbacks"]>;
   degradedGeometryNodes: string[];
+  nodeDiagnostics: NodeDiagnosticEntry[];
 }
 
 export interface FigmaToIrOptions {

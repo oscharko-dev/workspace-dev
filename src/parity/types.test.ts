@@ -91,6 +91,8 @@ const EXPECTED_TYPES_EXPORTS = [
   "MappingCoverageMetrics",
   "MappingGateMode",
   "MappingPolicy",
+  "NodeDiagnosticCategory",
+  "NodeDiagnosticEntry",
   "NonTextElementIR",
   "NonTextElementType",
   "PatchPlan",

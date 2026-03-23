@@ -824,7 +824,15 @@
         "depth": 1
       }
     ],
-    "degradedGeometryNodes": []
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": [
+      {
+        "nodeId": "badge-icon",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'ELLIPSE'.",
+        "screenId": "screen-profile"
+      }
+    ]
   },
   "themeAnalysis": {
     "darkModeDetected": false,

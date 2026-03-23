@@ -102,6 +102,11 @@ export const evaluateElementSkip = ({
 >): ElementSkipEvaluation => {
   if (node.visible === false) {
     metrics.skippedHidden += countSubtreeNodes(node);
+    metrics.nodeDiagnostics.push({
+      nodeId: node.id,
+      category: "hidden",
+      reason: "Node is marked as not visible in the design source."
+    });
     return {
       skip: true,
       placeholderClassification: "none"
@@ -114,6 +119,11 @@ export const evaluateElementSkip = ({
   });
   if (inInstanceContext && placeholderClassification === "technical") {
     metrics.skippedPlaceholders += 1;
+    metrics.nodeDiagnostics.push({
+      nodeId: node.id,
+      category: "placeholder",
+      reason: "Technical placeholder node skipped inside component instance."
+    });
     return {
       skip: true,
       placeholderClassification
@@ -121,6 +131,11 @@ export const evaluateElementSkip = ({
   }
   if (inInstanceContext && !inInputContext && placeholderClassification === "generic") {
     metrics.skippedPlaceholders += 1;
+    metrics.nodeDiagnostics.push({
+      nodeId: node.id,
+      category: "placeholder",
+      reason: "Generic placeholder node skipped inside component instance."
+    });
     return {
       skip: true,
       placeholderClassification
@@ -129,6 +144,11 @@ export const evaluateElementSkip = ({
 
   if (isHelperItemNode({ node }) && isNodeGeometryEmpty({ node })) {
     metrics.skippedPlaceholders += countSubtreeNodes(node);
+    metrics.nodeDiagnostics.push({
+      nodeId: node.id,
+      category: "placeholder",
+      reason: "Helper item node with empty geometry skipped."
+    });
     return {
       skip: true,
       placeholderClassification
@@ -161,6 +181,12 @@ export const buildElementBase = ({
         depth,
         ...(node.layoutMode ? { layoutMode: node.layoutMode } : {}),
         ...(matchedRulePriority !== undefined ? { matchedRulePriority } : {})
+      });
+      metrics.nodeDiagnostics.push({
+        nodeId: node.id,
+        category: "classification-fallback",
+        reason: `Element type classification used fallback rule for Figma node type '${node.type}'.`,
+        screenId
       });
     }
   });

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type UIEvent } from "react";
 import { filterTree } from "./component-tree-utils";
 import { TypeBadge } from "./type-badge-config";
+import { DiagnosticBadge } from "./DiagnosticBadge";
+import { getPrimaryDiagnosticCategory, type NodeDiagnosticsMap } from "./node-diagnostics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,6 +23,7 @@ interface ComponentTreeProps {
   onEnterScope?: (nodeId: string) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  diagnosticsMap?: NodeDiagnosticsMap;
 }
 
 interface VisibleTreeRow {
@@ -41,6 +44,7 @@ interface TreeRowProps {
   onToggleExpand: (nodeId: string) => void;
   focusedId: string | null;
   onFocusNode: (nodeId: string) => void;
+  diagnosticsMap?: NodeDiagnosticsMap;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +122,8 @@ function TreeRow({
   onEnterScope,
   onToggleExpand,
   focusedId,
-  onFocusNode
+  onFocusNode,
+  diagnosticsMap
 }: TreeRowProps): JSX.Element {
   const isSelected = selectedId === row.node.id;
   const isFocused = focusedId === row.node.id;
@@ -187,6 +192,13 @@ function TreeRow({
       )}
 
       <span className="min-w-0 truncate">{row.node.name}</span>
+      {diagnosticsMap ? (() => {
+        const diagnostics = diagnosticsMap.get(row.node.id);
+        if (!diagnostics || diagnostics.length === 0) return null;
+        const primary = getPrimaryDiagnosticCategory(diagnostics);
+        if (!primary) return null;
+        return <DiagnosticBadge category={primary} />;
+      })() : null}
     </div>
   );
 }
@@ -201,7 +213,8 @@ export function ComponentTree({
   onSelect,
   onEnterScope,
   collapsed,
-  onToggleCollapsed
+  onToggleCollapsed,
+  diagnosticsMap
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
@@ -454,6 +467,7 @@ export function ComponentTree({
                 onToggleExpand={toggleExpand}
                 focusedId={effectiveFocusedId}
                 onFocusNode={setFocusedId}
+                diagnosticsMap={diagnosticsMap}
               />
             ))}
             <div style={{ height: bottomSpacerHeight }} />

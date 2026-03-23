@@ -341,6 +341,21 @@ export interface ClassificationFallbackMetric {
   layoutMode?: string;
 }
 
+export type NodeDiagnosticCategory =
+  | "hidden"
+  | "placeholder"
+  | "truncated"
+  | "depth-truncated"
+  | "classification-fallback"
+  | "degraded-geometry";
+
+export interface NodeDiagnosticEntry {
+  nodeId: string;
+  category: NodeDiagnosticCategory;
+  reason: string;
+  screenId?: string;
+}
+
 export interface SimplificationMetrics {
   removedEmptyNodes: number;
   promotedSingleChild: number;
@@ -371,6 +386,7 @@ export interface GenerationMetrics {
   prototypeNavigationResolved?: number;
   prototypeNavigationUnresolved?: number;
   prototypeNavigationRendered?: number;
+  nodeDiagnostics?: NodeDiagnosticEntry[];
 }
 
 export interface DesignIR {
@@ -521,7 +537,8 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     prototypeNavigationDetected: raw.metrics?.prototypeNavigationDetected ?? 0,
     prototypeNavigationResolved: raw.metrics?.prototypeNavigationResolved ?? 0,
     prototypeNavigationUnresolved: raw.metrics?.prototypeNavigationUnresolved ?? 0,
-    prototypeNavigationRendered: 0
+    prototypeNavigationRendered: 0,
+    ...(raw.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...raw.metrics.nodeDiagnostics] } : {})
   };
 
   return {

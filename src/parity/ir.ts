@@ -128,8 +128,17 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     classificationFallbacks: [],
     degradedGeometryNodes: [...(options?.sourceMetrics?.degradedGeometryNodes ?? [])]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .sort((left, right) => left.localeCompare(right))
+      .sort((left, right) => left.localeCompare(right)),
+    nodeDiagnostics: []
   };
+
+  for (const degradedNodeId of metrics.degradedGeometryNodes) {
+    metrics.nodeDiagnostics.push({
+      nodeId: degradedNodeId,
+      category: "degraded-geometry",
+      reason: "Node geometry was degraded during staged fetch."
+    });
+  }
 
   const screens = extractScreens({
     file: parsed,
@@ -154,6 +163,9 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     ...metrics,
     ...(metrics.classificationFallbacks.length > 0
       ? { classificationFallbacks: [...metrics.classificationFallbacks] }
+      : {}),
+    ...(metrics.nodeDiagnostics.length > 0
+      ? { nodeDiagnostics: [...metrics.nodeDiagnostics] }
       : {})
   };
 

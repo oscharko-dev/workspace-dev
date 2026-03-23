@@ -482,7 +482,21 @@
         "depth": 1
       }
     ],
-    "degradedGeometryNodes": []
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": [
+      {
+        "nodeId": "rtl-card1-icon",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'RECTANGLE'.",
+        "screenId": "screen-landing"
+      },
+      {
+        "nodeId": "rtl-card2-icon",
+        "category": "classification-fallback",
+        "reason": "Element type classification used fallback rule for Figma node type 'RECTANGLE'.",
+        "screenId": "screen-landing"
+      }
+    ]
   },
   "themeAnalysis": {
     "darkModeDetected": false,

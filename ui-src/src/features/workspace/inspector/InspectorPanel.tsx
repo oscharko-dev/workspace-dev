@@ -24,6 +24,12 @@ import {
   type InspectabilityGenerationMetricsPayload
 } from "./inspectability-summary";
 import {
+  deriveNodeDiagnosticsMap,
+  getNodeDiagnostics,
+  getNodeDiagnosticBadge,
+  type RawNodeDiagnosticEntry
+} from "./node-diagnostics";
+import {
   resolveNodeDiffMapping,
   nodeDiffUnavailableReason,
   type ManifestPayload as NodeDiffManifestPayload
@@ -1424,6 +1430,25 @@ export function InspectorPanel({
     designIrState.status,
     generationMetricsState.metrics,
     generationMetricsState.status,
+    irScreens,
+    manifest,
+    manifestState.status
+  ]);
+
+  const nodeDiagnosticsMap = useMemo(() => {
+    const metricsPayload = generationMetricsState.metrics as
+      | (InspectabilityGenerationMetricsPayload & { nodeDiagnostics?: RawNodeDiagnosticEntry[] })
+      | null;
+    return deriveNodeDiagnosticsMap({
+      metricsNodeDiagnostics: metricsPayload?.nodeDiagnostics ?? null,
+      designIrStatus: designIrState.status,
+      designIrScreens: irScreens,
+      manifestStatus: manifestState.status,
+      manifest
+    });
+  }, [
+    designIrState.status,
+    generationMetricsState.metrics,
     irScreens,
     manifest,
     manifestState.status
@@ -3826,7 +3851,9 @@ export function InspectorPanel({
             Inspectability Coverage Summary
           </p>
           <p data-testid="inspector-summary-aggregate-note" className="m-0 mt-1 text-xs text-slate-600">
-            {inspectabilitySummary.aggregateOnlyNote}
+            {nodeDiagnosticsMap.size > 0
+              ? "Node-level diagnostics available. Select a node to see details."
+              : inspectabilitySummary.aggregateOnlyNote}
           </p>
           <div className="mt-2 grid gap-2 lg:grid-cols-2">
             <div
@@ -3896,6 +3923,33 @@ export function InspectorPanel({
             </div>
           </div>
         </div>
+        {selectedNodeId && getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).length > 0 ? (
+          <div
+            data-testid="inspector-node-diagnostics-detail"
+            className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2"
+          >
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
+              Node Diagnostics
+            </p>
+            <div className="mt-1 grid gap-1">
+              {getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).map((diag, idx) => {
+                const badge = getNodeDiagnosticBadge(diag.category);
+                return (
+                  <div
+                    key={`${diag.category}-${String(idx)}`}
+                    data-testid={`inspector-node-diagnostic-${diag.category}`}
+                    className="flex items-center gap-2 text-xs text-slate-800"
+                  >
+                    <span className={`inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded px-0.5 text-[9px] font-bold leading-none ${badge.color}`}>
+                      {badge.abbr}
+                    </span>
+                    <span>{diag.reason}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {manifestState.status === "empty" ? (
           <p
             data-testid="inspector-manifest-empty-warning"
@@ -3946,6 +4000,7 @@ export function InspectorPanel({
                 onToggleCollapsed={() => {
                   setTreeCollapsed((prev) => !prev);
                 }}
+                diagnosticsMap={nodeDiagnosticsMap}
               />
             ) : (
               <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-slate-50 p-3">
