@@ -144,10 +144,10 @@ function TreeRow({
         row.isScreen ? "font-bold" : ""
       } ${
         isSelected
-          ? "bg-emerald-50 text-emerald-900"
+          ? "bg-emerald-500/12 text-emerald-100"
           : row.isScreen
-            ? "text-slate-800 hover:bg-slate-50"
-            : "text-slate-700 hover:bg-slate-50"
+            ? "text-zinc-100 hover:bg-zinc-800"
+            : "text-zinc-300 hover:bg-zinc-800"
       } ${isFocused ? "outline-2 -outline-offset-2 outline-emerald-400" : ""}`}
       style={{ paddingLeft }}
       onClick={() => {
@@ -165,7 +165,7 @@ function TreeRow({
           type="button"
           tabIndex={-1}
           aria-label={row.isExpanded ? "Collapse" : "Expand"}
-          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-slate-400 transition hover:text-slate-700"
+          className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-zinc-500 transition hover:text-zinc-100"
           onClick={(event) => {
             event.stopPropagation();
             onToggleExpand(row.node.id);
@@ -184,7 +184,7 @@ function TreeRow({
       )}
 
       {row.isScreen ? (
-        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="currentColor">
+        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-zinc-500" fill="currentColor">
           <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm1 0v10h10V3H3z" />
         </svg>
       ) : (
@@ -378,13 +378,13 @@ export function ComponentTree({
 
   if (collapsed) {
     return (
-      <div className="flex h-full flex-col border-r border-slate-200 bg-slate-50">
+      <div className="flex h-full flex-col border-r border-zinc-700 bg-[#252526]">
         <button
           type="button"
           data-testid="tree-expand-button"
           onClick={onToggleCollapsed}
           aria-label="Expand component tree"
-          className="flex h-8 w-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-slate-500 transition hover:text-slate-800"
+          className="flex h-8 w-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-zinc-400 transition hover:text-zinc-100"
         >
           <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor">
             <path d="M6 4l4 4-4 4z" />
@@ -397,17 +397,17 @@ export function ComponentTree({
   return (
     <div
       data-testid="component-tree"
-      className="flex h-full min-h-0 w-full flex-col border-r border-slate-200 bg-slate-50"
+      className="flex h-full min-h-0 w-full flex-col border-r border-zinc-700 bg-[#252526]"
     >
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-2 py-1.5">
-        <span className="text-[10px] font-bold tracking-wide text-slate-500 uppercase">Components</span>
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-700 px-2 py-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">Explorer</span>
         <button
           type="button"
           data-testid="tree-collapse-button"
           onClick={onToggleCollapsed}
           aria-label="Collapse component tree"
-          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-slate-400 transition hover:text-slate-700"
+          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-zinc-500 transition hover:text-zinc-100"
         >
           <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
             <path d="M10 4l-4 4 4 4z" />
@@ -416,7 +416,7 @@ export function ComponentTree({
       </div>
 
       {/* Search input */}
-      <div className="shrink-0 border-b border-slate-200 px-2 py-1.5">
+      <div className="shrink-0 border-b border-zinc-700 px-2 py-1.5">
         <input
           type="search"
           data-testid="tree-search-input"
@@ -425,7 +425,7 @@ export function ComponentTree({
           onChange={(event) => {
             setSearchQuery(event.target.value);
           }}
-          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none"
+          className="w-full rounded border border-zinc-700 bg-[#1f1f21] px-2 py-1 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-400 focus:outline-none"
           aria-label="Search component tree"
         />
       </div>
@@ -451,7 +451,7 @@ export function ComponentTree({
         }}
       >
         {filteredScreens.length === 0 ? (
-          <p className="px-2 py-4 text-center text-xs text-slate-400">
+          <p className="px-2 py-4 text-center text-xs text-zinc-500">
             {debouncedSearchQuery.trim() ? "No matching components" : "No components"}
           </p>
         ) : (

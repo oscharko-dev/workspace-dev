@@ -25,6 +25,8 @@ interface ScopedCodeModeSelectorProps {
   onModeChange: (mode: ScopedCodeMode) => void;
   /** Whether the active node has a manifest mapping. */
   isMapped: boolean;
+  /** Whether the control is rendered inside the dark IDE shell. */
+  ideMode?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -34,7 +36,8 @@ interface ScopedCodeModeSelectorProps {
 export function ScopedCodeModeSelector({
   activeMode,
   onModeChange,
-  isMapped
+  isMapped,
+  ideMode = false
 }: ScopedCodeModeSelectorProps): JSX.Element {
   const allModes: ScopedCodeMode[] = ["snippet", "focused", "full"];
 
@@ -63,9 +66,9 @@ export function ScopedCodeModeSelector({
             }}
             className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-40"
             style={{
-              borderColor: isActive ? "#6366f1" : undefined,
-              backgroundColor: isActive ? "#eef2ff" : undefined,
-              color: isActive ? "#4338ca" : undefined
+              borderColor: isActive ? (ideMode ? "#10b981" : "#6366f1") : (ideMode ? "#3f3f46" : undefined),
+              backgroundColor: isActive ? (ideMode ? "rgba(16, 185, 129, 0.12)" : "#eef2ff") : (ideMode ? "#252526" : undefined),
+              color: isActive ? (ideMode ? "#d1fae5" : "#4338ca") : (ideMode ? "#d4d4d8" : undefined)
             }}
           >
             {modeLabel(mode)}
@@ -76,7 +79,8 @@ export function ScopedCodeModeSelector({
       {!isMapped ? (
         <span
           data-testid="scoped-mode-unmapped-hint"
-          className="ml-1 text-[10px] text-amber-700"
+          className="ml-1 text-[10px]"
+          style={{ color: ideMode ? "#facc15" : "#b45309" }}
         >
           No mapping — showing full file
         </span>

@@ -64,6 +64,11 @@ for (const viewport of desktopViewportMatrix) {
       ];
 
       for (const payloadContainer of payloadContainers) {
+        const disclosure = payloadContainer.locator("xpath=ancestor::details[1]");
+        await disclosure.evaluate((node) => {
+          (node as HTMLDetailsElement).open = true;
+        });
+
         const metric = await payloadContainer.evaluate((node) => {
           const style = window.getComputedStyle(node);
           return {

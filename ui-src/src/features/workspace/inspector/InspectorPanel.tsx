@@ -3447,78 +3447,103 @@ export function InspectorPanel({
     regenerateMutation.isPending;
 
   return (
-    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="shrink-0 border-b border-slate-200 px-4 py-3">
-        <h2 className="m-0 text-xl font-bold text-slate-900">Inspector</h2>
-        <p className="m-0 text-sm text-slate-600">Live preview and generated source code</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-testid="inspector-nav-back"
-            disabled={!canNavigateBack}
-            onClick={handleNavigateBack}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
-            title="Back to previous committed drilldown state"
-            aria-label="Navigate back in inspector drilldown history"
-          >
-            ← Back
-          </button>
-          <button
-            type="button"
-            data-testid="inspector-nav-forward"
-            disabled={!canNavigateForward}
-            onClick={handleNavigateForward}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
-            title="Forward to next committed drilldown state"
-            aria-label="Navigate forward in inspector drilldown history"
-          >
-            Forward →
-          </button>
-          <button
-            type="button"
-            data-testid="inspector-shortcut-help-button"
-            onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
-            className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-            title="Keyboard shortcuts (?)"
-            aria-label="Show keyboard shortcuts"
-          >
-            ⌨ Shortcuts
-          </button>
-          {editModeActive ? (
+    <div
+      data-testid="inspector-panel"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-zinc-700 bg-[#1e1e1e] shadow-[0_32px_80px_rgba(15,23,42,0.28)]"
+    >
+      <div className="shrink-0 border-b border-zinc-700 bg-[#252526] px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-100">
+                Inspector
+              </span>
+              {isRegenerationJob ? (
+                <span className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-100">
+                  Regeneration
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <h2 className="m-0 text-xl font-semibold tracking-tight text-zinc-50">Inspector</h2>
+              <p className="m-0 text-sm text-zinc-400">
+                Developer review workspace with IDE-style preview, explorer, and source navigation for generated output.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              data-testid="inspector-exit-edit-mode"
-              onClick={handleExitEditMode}
-              className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100"
-              title="Exit edit mode"
-              aria-label="Exit edit mode"
+              data-testid="inspector-nav-back"
+              disabled={!canNavigateBack}
+              onClick={handleNavigateBack}
+              className="cursor-pointer rounded-md border border-zinc-700 bg-[#1f1f21] px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-default disabled:opacity-40"
+              title="Back to previous committed drilldown state"
+              aria-label="Navigate back in inspector drilldown history"
             >
-              Exit Edit Mode
+              ← Back
             </button>
-          ) : (
             <button
               type="button"
-              data-testid="inspector-enter-edit-mode"
-              disabled={!canEnterEditMode}
-              onClick={handleEnterEditMode}
-              className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
-              title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
-              aria-label="Enter edit mode"
+              data-testid="inspector-nav-forward"
+              disabled={!canNavigateForward}
+              onClick={handleNavigateForward}
+              className="cursor-pointer rounded-md border border-zinc-700 bg-[#1f1f21] px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-default disabled:opacity-40"
+              title="Forward to next committed drilldown state"
+              aria-label="Navigate forward in inspector drilldown history"
             >
-              Edit Mode
+              Forward →
             </button>
-          )}
+            <button
+              type="button"
+              data-testid="inspector-shortcut-help-button"
+              onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
+              className="cursor-pointer rounded-md border border-zinc-700 bg-[#1f1f21] px-2 py-1 text-[11px] font-semibold text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
+              title="Keyboard shortcuts (?)"
+              aria-label="Show keyboard shortcuts"
+            >
+              ⌨ Shortcuts
+            </button>
+            {editModeActive ? (
+              <button
+                type="button"
+                data-testid="inspector-exit-edit-mode"
+                onClick={handleExitEditMode}
+                className="cursor-pointer rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                title="Exit edit mode"
+                aria-label="Exit edit mode"
+              >
+                Exit Edit Mode
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="inspector-enter-edit-mode"
+                disabled={!canEnterEditMode}
+                onClick={handleEnterEditMode}
+                className="cursor-pointer rounded-md border border-zinc-700 bg-[#1f1f21] px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-default disabled:opacity-40"
+                title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
+                aria-label="Enter edit mode"
+              >
+                Edit Mode
+              </button>
+            )}
+          </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2" data-testid="inspector-source-statuses">
-          {sourceStatuses.map(({ source, label, status }) => (
-            <span
-              key={source}
-              data-testid={`inspector-source-${source}-${status}`}
-              className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold ${getStatusBadgeClasses(status)}`}
-            >
-              {label}: {status}
-            </span>
-          ))}
+
+        <div className="mt-4 rounded-2xl border border-zinc-700/80 bg-[#1f1f21] px-3 py-3">
+          <div className="flex flex-wrap gap-2" data-testid="inspector-source-statuses">
+            {sourceStatuses.map(({ source, label, status }) => (
+              <span
+                key={source}
+                data-testid={`inspector-source-${source}-${status}`}
+                className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold ${getStatusBadgeClasses(status)}`}
+              >
+                {label}: {status}
+              </span>
+            ))}
+          </div>
         </div>
         {selectedNodeId && editCapability ? (
           <div
@@ -4742,7 +4767,11 @@ export function InspectorPanel({
         ) : null}
       </div>
 
-      <div ref={layoutContainerRef} className="flex min-h-[220px] flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
+      <div
+        ref={layoutContainerRef}
+        className="flex min-h-[220px] flex-1 flex-col bg-[#1e1e1e] xl:flex-row"
+        data-testid="inspector-layout"
+      >
         {/* Left: Component Tree sidebar */}
         {hasTreePane ? (
           <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0" style={treePaneStyle}>
@@ -4759,10 +4788,10 @@ export function InspectorPanel({
                 diagnosticsMap={nodeDiagnosticsMap}
               />
             ) : (
-              <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-slate-50 p-3">
+              <div className="flex h-full min-h-0 flex-col border-r border-zinc-700 bg-[#252526] p-3">
                 <div
                   data-testid={`inspector-design-ir-state-${designIrState.status}`}
-                  className="rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                  className="rounded border border-zinc-700 bg-[#1f1f21] px-3 py-2 text-xs text-zinc-300"
                 >
                   {designIrState.status === "loading" ? (
                     <p className="m-0">Loading design IR…</p>
@@ -4777,7 +4806,7 @@ export function InspectorPanel({
                         type="button"
                         data-testid="inspector-retry-design-ir"
                         onClick={handleRetryDesignIr}
-                        className="cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+                        className="cursor-pointer rounded border border-zinc-700 bg-[#252526] px-2 py-0.5 text-[11px] font-semibold text-zinc-100 transition hover:bg-zinc-800"
                       >
                         Retry
                       </button>
@@ -4800,7 +4829,7 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="hidden shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none xl:block xl:w-1"
+            className="hidden shrink-0 cursor-col-resize bg-zinc-700 transition-colors hover:bg-zinc-500 focus:bg-zinc-500 focus:outline-none xl:block xl:w-1"
             style={{ touchAction: "none" }}
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onKeyDown={handleSplitterKeyDown("tree-preview")}
@@ -4809,17 +4838,25 @@ export function InspectorPanel({
 
         {/* Center: Preview pane */}
         <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 lg:min-h-0" style={previewPaneStyle}>
-          <PreviewPane
-            previewUrl={previewUrl}
-            inspectEnabled={inspectEnabled}
-            activeScopeNodeId={activeScopeNodeId}
-            onToggleInspect={handleToggleInspect}
-            onInspectSelect={handleInspectSelect}
-          />
+          <div className="flex h-full min-h-0 flex-col border-b border-zinc-700 border-t border-zinc-700 bg-[#1e1e1e] xl:border-b-0 xl:border-t-0">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-700 bg-[#252526] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+              <span>Preview</span>
+              <span>{inspectEnabled ? "Inspect mode" : "Preview mode"}</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              <PreviewPane
+                previewUrl={previewUrl}
+                inspectEnabled={inspectEnabled}
+                activeScopeNodeId={activeScopeNodeId}
+                onToggleInspect={handleToggleInspect}
+                onInspectSelect={handleInspectSelect}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Horizontal divider for stacked layout */}
-        <div className="h-px shrink-0 bg-slate-200 xl:hidden" />
+        <div className="h-px shrink-0 bg-zinc-700 xl:hidden" />
 
         {/* Resizable divider: preview ↔ code (desktop) */}
         <div
@@ -4831,7 +4868,7 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="hidden shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none xl:block xl:w-1"
+          className="hidden shrink-0 cursor-col-resize bg-zinc-700 transition-colors hover:bg-zinc-500 focus:bg-zinc-500 focus:outline-none xl:block xl:w-1"
           style={{ touchAction: "none" }}
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onKeyDown={handleSplitterKeyDown("preview-code")}
@@ -4839,43 +4876,63 @@ export function InspectorPanel({
 
         {/* Right: Code pane */}
         <div data-testid="inspector-pane-code" className="min-h-[200px] flex-1 lg:min-h-0" style={codePaneStyle}>
-          <CodePane
-            files={files}
-            selectedFile={effectiveSelectedFile}
-            onSelectFile={handleSelectFile}
-            filesState={filesState.status}
-            filesError={filesState.error}
-            onRetryFiles={handleRetryFiles}
-            fileContent={fileContentState.content}
-            fileContentState={fileContentState.status}
-            fileContentError={fileContentState.error}
-            onRetryFileContent={handleRetryFileContent}
-            highlightRange={highlightRange}
-            previousJobId={previousJobId}
-            previousFileContent={effectivePreviousFileContent}
-            previousFileContentLoading={effectivePreviousFileContentLoading}
-            previousManifestRange={previousManifestRange}
-            nodeDiffFallbackReason={nodeDiffFallbackReason}
-            breadcrumbPath={breadcrumbPath}
-            onBreadcrumbSelect={handleTreeSelect}
-            hasActiveScope={hasActiveScope}
-            onEnterScope={handleEnterScope}
-            onExitScope={canLevelUp ? handleExitScope : undefined}
-            splitFile={effectiveSplitFile}
-            splitFileContent={splitFileContent}
-            splitFileContentLoading={splitFileContentLoading}
-            onSelectSplitFile={handleSelectSplitFile}
-            boundariesEnabled={boundariesEnabled}
-            onBoundariesEnabledChange={setBoundariesEnabled}
-            fileBoundaries={selectedFileBoundaries}
-            splitFileBoundaries={splitFileBoundaries}
-            onBoundarySelect={handleTreeSelect}
-            activeManifestRange={activeManifestRange}
-            isNodeMapped={isNodeMapped}
-            parentFile={canReturnToParentFile ? parentFile : null}
-            onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
-          />
+          <div className="flex h-full min-h-0 flex-col border-l border-zinc-700 bg-[#1e1e1e]">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-700 bg-[#252526] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+              <span>Source</span>
+              <span>{effectiveSelectedFile ? effectiveSelectedFile.split("/").pop() ?? effectiveSelectedFile : "No file"}</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              <CodePane
+                files={files}
+                selectedFile={effectiveSelectedFile}
+                onSelectFile={handleSelectFile}
+                filesState={filesState.status}
+                filesError={filesState.error}
+                onRetryFiles={handleRetryFiles}
+                fileContent={fileContentState.content}
+                fileContentState={fileContentState.status}
+                fileContentError={fileContentState.error}
+                onRetryFileContent={handleRetryFileContent}
+                highlightRange={highlightRange}
+                previousJobId={previousJobId}
+                previousFileContent={effectivePreviousFileContent}
+                previousFileContentLoading={effectivePreviousFileContentLoading}
+                previousManifestRange={previousManifestRange}
+                nodeDiffFallbackReason={nodeDiffFallbackReason}
+                breadcrumbPath={breadcrumbPath}
+                onBreadcrumbSelect={handleTreeSelect}
+                hasActiveScope={hasActiveScope}
+                onEnterScope={handleEnterScope}
+                onExitScope={canLevelUp ? handleExitScope : undefined}
+                splitFile={effectiveSplitFile}
+                splitFileContent={splitFileContent}
+                splitFileContentLoading={splitFileContentLoading}
+                onSelectSplitFile={handleSelectSplitFile}
+                boundariesEnabled={boundariesEnabled}
+                onBoundariesEnabledChange={setBoundariesEnabled}
+                fileBoundaries={selectedFileBoundaries}
+                splitFileBoundaries={splitFileBoundaries}
+                onBoundarySelect={handleTreeSelect}
+                activeManifestRange={activeManifestRange}
+                isNodeMapped={isNodeMapped}
+                parentFile={canReturnToParentFile ? parentFile : null}
+                onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
+                ideMode
+              />
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-zinc-700 bg-[#007acc]/12 px-4 py-2 text-[11px] text-zinc-200">
+        <span>
+          Job {jobId}
+          {selectedNodeId ? ` • Node ${selectedNodeId}` : " • No node selected"}
+        </span>
+        <span>
+          {effectiveSelectedFile ? effectiveSelectedFile : "No file selected"}
+          {hasActiveScope ? " • Scoped" : ""}
+        </span>
       </div>
 
       {/* Shortcut help overlay */}
