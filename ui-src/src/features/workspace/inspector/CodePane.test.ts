@@ -15,6 +15,12 @@ import * as workerClientLib from "../../../lib/shiki-worker-client";
 // ---------------------------------------------------------------------------
 
 vi.mock("../../../lib/shiki", () => ({
+  detectLanguage: vi.fn((filePath: string) => {
+    if (filePath.endsWith(".json")) return "json";
+    if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return "tsx";
+    if (filePath.endsWith(".ts") || filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "typescript";
+    return null;
+  }),
   exceedsMaxSize: vi.fn().mockReturnValue(false),
   getPreferredTheme: vi.fn().mockReturnValue("github-light")
 }));
@@ -202,6 +208,33 @@ describe("CodePane scoped code modes", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code-content")).toHaveTextContent("line 1");
       expect(screen.getByTestId("code-content")).toHaveTextContent("line 20");
+    });
+  });
+
+  it("passes the selected node id through to CodeViewer so formatted snippet overlays remap from IR markers", async () => {
+    renderCodePane({
+      fileContent: [
+        "export function Example() {",
+        "  return (",
+        "    <>",
+        "      {/* @ir:start node-a Header FRAME */}",
+        "      <Box data-super-long-first-prop=\"aaaaaaaaaaaaaaaaaaaa\" data-super-long-second-prop=\"bbbbbbbbbbbbbbbbbbbb\" data-super-long-third-prop=\"cccccccccccccccccccc\" data-super-long-fourth-prop=\"dddddddddddddddddddd\"><Text>Title</Text></Box>",
+        "      {/* @ir:end node-a */}",
+        "    </>",
+        "  );",
+        "}"
+      ].join("\n"),
+      isNodeMapped: true,
+      selectedIrNodeId: "node-a",
+      boundariesEnabled: true,
+      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 4, endLine: 6 }
+    });
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("highlighted-line").length).toBeGreaterThan(3);
+      expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
     });
   });
 });

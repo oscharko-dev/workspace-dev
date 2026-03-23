@@ -15,6 +15,12 @@ import * as workerClientLib from "../../../lib/shiki-worker-client";
 // ---------------------------------------------------------------------------
 
 vi.mock("../../../lib/shiki", () => ({
+  detectLanguage: vi.fn((filePath: string) => {
+    if (filePath.endsWith(".json")) return "json";
+    if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return "tsx";
+    if (filePath.endsWith(".ts") || filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "typescript";
+    return null;
+  }),
   exceedsMaxSize: vi.fn().mockReturnValue(false),
   getPreferredTheme: vi.fn().mockReturnValue("github-light")
 }));
@@ -401,6 +407,196 @@ describe("CodeViewer", () => {
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("line2\nline3");
+    });
+  });
+
+  it("formats TSX code, updates the displayed buffer, and lets search operate on the formatted output", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "const data={answer:42};",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("const data = { answer: 42 };");
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+    });
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    fireEvent.change(findInput, { target: { value: "answer: 42" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-find-count")).toHaveTextContent("1 of 1");
+    });
+  });
+
+  it("copies the formatted buffer after formatting", async () => {
+    const writeText = vi.mocked(navigator.clipboard.writeText);
+
+    render(
+      createElement(CodeViewer, {
+        code: "const data={answer:42};",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("const data = { answer: 42 };");
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-copy-button"));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("const data = { answer: 42 };");
+    });
+  });
+
+  it("shows a graceful formatting fallback message for unsupported file types", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "# hello",
+        filePath: "README.md"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-format-status")).toHaveTextContent("Formatting is unavailable for this file type.");
+      expect(screen.getByTestId("code-content")).toHaveTextContent("# hello");
+    });
+  });
+
+  it("applies rainbow brackets to highlighted HTML output", async () => {
+    mockHighlightCodeWithWorker.mockResolvedValue({
+      html: '<pre class="shiki github-light"><code><span class="line"><span style="color:#24292f">const value = (items[0] + config.count);</span></span></code></pre>',
+      theme: "github-light"
+    });
+
+    render(
+      createElement(CodeViewer, {
+        code: "const value = (items[0] + config.count);",
+        filePath: "src/App.tsx"
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content").innerHTML).toContain("const value");
+    });
+
+    fireEvent.click(screen.getByTestId("code-viewer-rainbow-toggle"));
+
+    await waitFor(() => {
+      const rainbowBrackets = screen.getByTestId("code-content").querySelectorAll("[data-rainbow-bracket=\"true\"]");
+      expect(rainbowBrackets.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("applies rainbow brackets in plain-text fallback mode", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "function demo() { return [1, 2]; }",
+        filePath: "src/demo.ts"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-rainbow-toggle"));
+
+    await waitFor(() => {
+      const rainbowBrackets = screen.getByTestId("code-content").querySelectorAll("[data-rainbow-bracket=\"true\"]");
+      expect(rainbowBrackets.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("skips rainbow bracket rendering for oversize files", () => {
+    mockExceedsMaxSize.mockReturnValue(true);
+
+    render(
+      createElement(CodeViewer, {
+        code: "{".repeat(600_000),
+        filePath: "src/huge.tsx"
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-rainbow-toggle"));
+
+    expect(screen.getByTestId("code-content").innerHTML).not.toContain("data-rainbow-bracket");
+  });
+
+  it("projects full-file boundaries into snippet-local coordinates and keeps tooltip line labels in original file coordinates", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: "line 3\nline 4\nline 5\nline 6\nline 7",
+        filePath: "src/App.tsx",
+        lineOffset: 3,
+        boundariesEnabled: true,
+        boundaries: [
+          {
+            irNodeId: "node-a",
+            irNodeName: "Header",
+            irNodeType: "container",
+            startLine: 4,
+            endLine: 6
+          }
+        ]
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-boundary-lanes-2")).toBeTruthy();
+    });
+
+    const projectedLane = screen.getByTestId("code-boundary-lanes-2");
+    const marker = projectedLane.querySelector("[data-boundary-node-id=\"node-a\"]");
+    expect(marker).toBeTruthy();
+    if (!(marker instanceof HTMLElement)) {
+      throw new Error("Expected projected boundary marker.");
+    }
+
+    fireEvent.mouseEnter(marker);
+    expect(screen.getByTestId("code-boundary-tooltip-range")).toHaveTextContent("Lines 4-6");
+  });
+
+  it("recomputes boundary markers and the active highlight from IR markers after formatting", async () => {
+    render(
+      createElement(CodeViewer, {
+        code: [
+          "export function Example() {",
+          "  return (",
+          "    <>",
+          "      {/* @ir:start node-a Header FRAME */}",
+          "      <Box data-super-long-first-prop=\"aaaaaaaaaaaaaaaaaaaa\" data-super-long-second-prop=\"bbbbbbbbbbbbbbbbbbbb\" data-super-long-third-prop=\"cccccccccccccccccccc\" data-super-long-fourth-prop=\"dddddddddddddddddddd\"><Text>Title</Text></Box>",
+          "      {/* @ir:end node-a */}",
+          "    </>",
+          "  );",
+          "}"
+        ].join("\n"),
+        filePath: "src/App.tsx",
+        highlightRange: { startLine: 5, endLine: 5 },
+        selectedIrNodeId: "node-a",
+        boundariesEnabled: true,
+        boundaries: [
+          {
+            irNodeId: "node-a",
+            irNodeName: "Header",
+            irNodeType: "FRAME",
+            startLine: 4,
+            endLine: 6
+          }
+        ]
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("highlighted-line").length).toBeGreaterThan(3);
+      expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
     });
   });
 

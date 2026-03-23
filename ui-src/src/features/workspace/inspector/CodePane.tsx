@@ -76,6 +76,8 @@ interface CodePaneProps {
   parentFile?: string | null;
   /** Callback to return to the parent file context. */
   onReturnToParentFile?: () => void;
+  /** Currently selected IR node id for viewer-local remapping. */
+  selectedIrNodeId?: string | null;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -155,7 +157,8 @@ export function CodePane({
   previousManifestRange,
   nodeDiffFallbackReason,
   parentFile,
-  onReturnToParentFile
+  onReturnToParentFile,
+  selectedIrNodeId = null
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -448,6 +451,7 @@ export function CodePane({
                   code={scopedCode?.code ?? fileContent}
                   filePath={selectedFile}
                   highlightRange={scopedCode?.highlightRange ?? highlightRange}
+                  selectedIrNodeId={selectedIrNodeId}
                   boundariesEnabled={boundariesEnabled}
                   onBoundariesEnabledChange={onBoundariesEnabledChange}
                   boundaries={fileBoundaries}
@@ -503,6 +507,7 @@ export function CodePane({
                       themeMode="dark"
                       code={splitFileContent}
                       filePath={splitFile}
+                      selectedIrNodeId={splitFile === selectedFile ? selectedIrNodeId : null}
                       boundariesEnabled={boundariesEnabled}
                       onBoundariesEnabledChange={onBoundariesEnabledChange}
                       boundaries={splitFileBoundaries}
@@ -522,6 +527,7 @@ export function CodePane({
               code={scopedCode?.code ?? fileContent}
               filePath={selectedFile}
               highlightRange={scopedCode?.highlightRange ?? highlightRange}
+              selectedIrNodeId={selectedIrNodeId}
               boundariesEnabled={boundariesEnabled}
               onBoundariesEnabledChange={onBoundariesEnabledChange}
               boundaries={fileBoundaries}

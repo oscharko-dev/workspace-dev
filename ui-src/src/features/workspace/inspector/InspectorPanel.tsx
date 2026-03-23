@@ -4463,6 +4463,7 @@ export function InspectorPanel({
             onBoundarySelect={handleTreeSelect}
             activeManifestRange={activeManifestRange}
             isNodeMapped={isNodeMapped}
+            selectedIrNodeId={selectedNodeId}
             parentFile={canReturnToParentFile ? parentFile : null}
             onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
           />
