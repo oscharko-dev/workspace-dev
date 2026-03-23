@@ -471,8 +471,85 @@ export interface WorkspaceStaleDraftCheckResult {
   message: string;
 }
 
+// ---------------------------------------------------------------------------
+// Remap suggestion types for guided stale-draft override remapping (#466)
+// ---------------------------------------------------------------------------
+
+/** User decision for handling a stale draft — extended with remap option. */
+export type WorkspaceStaleDraftDecisionExtended = WorkspaceStaleDraftDecision | "remap";
+
+/** Confidence level for a remap suggestion. */
+export type WorkspaceRemapConfidence = "high" | "medium" | "low";
+
+/** Rule that produced a remap suggestion. */
+export type WorkspaceRemapRule =
+  | "exact-id"
+  | "name-and-type"
+  | "name-fuzzy-and-type"
+  | "ancestry-and-type";
+
+/** A single remap suggestion mapping a source node to a candidate target node. */
+export interface WorkspaceRemapSuggestion {
+  /** The original node ID from the stale draft override. */
+  sourceNodeId: string;
+  /** The original node name (from the source IR). */
+  sourceNodeName: string;
+  /** The element type of the source node. */
+  sourceNodeType: string;
+  /** The suggested target node ID in the latest IR. */
+  targetNodeId: string;
+  /** The target node name in the latest IR. */
+  targetNodeName: string;
+  /** The element type of the target node. */
+  targetNodeType: string;
+  /** The rule that produced this suggestion. */
+  rule: WorkspaceRemapRule;
+  /** Confidence level of the suggestion. */
+  confidence: WorkspaceRemapConfidence;
+  /** Human-readable reason for the suggestion. */
+  reason: string;
+}
+
+/** A source node for which no remap could be determined. */
+export interface WorkspaceRemapRejection {
+  /** The unmappable node ID from the stale draft. */
+  sourceNodeId: string;
+  /** The original node name (from the source IR). */
+  sourceNodeName: string;
+  /** The element type of the source node. */
+  sourceNodeType: string;
+  /** Human-readable reason why remapping was not possible. */
+  reason: string;
+}
+
+/** Input payload for the remap-suggest endpoint. */
+export interface WorkspaceRemapSuggestInput {
+  /** The stale source job ID whose draft overrides need remapping. */
+  sourceJobId: string;
+  /** The latest job ID to remap into. */
+  latestJobId: string;
+  /** Node IDs from the draft that need remapping (those not found in the latest IR). */
+  unmappedNodeIds: string[];
+}
+
+/** Result of the remap-suggest endpoint. */
+export interface WorkspaceRemapSuggestResult {
+  sourceJobId: string;
+  latestJobId: string;
+  suggestions: WorkspaceRemapSuggestion[];
+  rejections: WorkspaceRemapRejection[];
+  message: string;
+}
+
+/** A user decision on a single remap suggestion. */
+export interface WorkspaceRemapDecisionEntry {
+  sourceNodeId: string;
+  targetNodeId: string | null;
+  accepted: boolean;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.22.0" as const;
+export const CONTRACT_VERSION = "2.23.0" as const;

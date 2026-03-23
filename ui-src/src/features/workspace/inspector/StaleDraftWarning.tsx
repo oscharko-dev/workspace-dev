@@ -3,15 +3,20 @@ import type { StaleDraftCheckResult, StaleDraftDecision } from "./inspector-over
 
 interface StaleDraftWarningProps {
   checkResult: StaleDraftCheckResult;
-  onDecision: (decision: StaleDraftDecision) => void;
+  onDecision: (decision: StaleDraftDecision | "remap") => void;
   disabled?: boolean;
+  remapPending?: boolean;
 }
 
 export function StaleDraftWarning({
   checkResult,
   onDecision,
-  disabled = false
+  disabled = false,
+  remapPending = false
 }: StaleDraftWarningProps): JSX.Element {
+  const hasUnmapped = checkResult.unmappedNodeIds.length > 0;
+  const remapAvailable = hasUnmapped && !checkResult.carryForwardAvailable;
+
   return (
     <div
       role="alert"
@@ -38,7 +43,7 @@ export function StaleDraftWarning({
       <p style={{ margin: "0 0 12px", color: "var(--color-text-secondary, #555)" }}>
         {checkResult.message}
       </p>
-      {checkResult.unmappedNodeIds.length > 0 && (
+      {hasUnmapped && (
         <p
           style={{
             margin: "0 0 12px",
@@ -100,6 +105,26 @@ export function StaleDraftWarning({
             title="Apply your edits to the latest job output"
           >
             Carry forward to latest
+          </button>
+        )}
+        {remapAvailable && (
+          <button
+            type="button"
+            disabled={disabled || remapPending}
+            onClick={() => { onDecision("remap"); }}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "1px solid var(--color-info-border, #60a5fa)",
+              background: "var(--color-info-bg, #eff6ff)",
+              color: "var(--color-info-text, #1d4ed8)",
+              cursor: disabled || remapPending ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontWeight: 500
+            }}
+            title="Get guided suggestions for remapping changed nodes"
+          >
+            {remapPending ? "Loading suggestions\u2026" : "Suggest remaps"}
           </button>
         )}
       </div>

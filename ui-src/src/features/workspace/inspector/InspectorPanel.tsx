@@ -105,6 +105,11 @@ import {
 } from "./inspector-override-draft";
 import { StaleDraftWarning } from "./StaleDraftWarning";
 import {
+  RemapReviewPanel,
+  type RemapDecisionEntry,
+  type RemapSuggestResult
+} from "./RemapReviewPanel";
+import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest
 } from "./inspector-impact-review";
@@ -837,6 +842,8 @@ export function InspectorPanel({
   const [draftStale, setDraftStale] = useState(false);
   const [staleDraftCheckResult, setStaleDraftCheckResult] = useState<StaleDraftCheckResult | null>(null);
   const [staleDraftCheckPending, setStaleDraftCheckPending] = useState(false);
+  const [remapResult, setRemapResult] = useState<RemapSuggestResult | null>(null);
+  const [remapPending, setRemapPending] = useState(false);
   const [draftPersistWarning, setDraftPersistWarning] = useState<string | null>(null);
   const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
   const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
@@ -1611,7 +1618,7 @@ export function InspectorPanel({
     return computeInspectorDraftBaseFingerprint({ screens: irScreens });
   }, [designIrState.status, irScreens]);
 
-  const handleStaleDraftDecision = useCallback((decision: StaleDraftDecision) => {
+  const handleStaleDraftDecision = useCallback((decision: StaleDraftDecision | "remap") => {
     if (!baseFingerprint) {
       return;
     }
@@ -1626,6 +1633,7 @@ export function InspectorPanel({
       setStaleDraftCheckResult(null);
       setDraftStale(false);
       setDraftRestoreWarning(null);
+      setRemapResult(null);
       setOverrideDraft(createInspectorOverrideDraft({
         sourceJobId: jobId,
         baseFingerprint
@@ -1645,9 +1653,83 @@ export function InspectorPanel({
       setStaleDraftCheckResult(null);
       setDraftStale(false);
       setDraftRestoreWarning(null);
+      setRemapResult(null);
       setOverrideDraft(carried);
     }
+
+    if (decision === "remap") {
+      if (!staleDraftCheckResult?.latestJobId || staleDraftCheckResult.unmappedNodeIds.length === 0) {
+        return;
+      }
+      setRemapPending(true);
+      const encodedId = encodeURIComponent(jobId);
+      fetch(`/workspace/jobs/${encodedId}/remap-suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceJobId: staleDraftCheckResult.sourceJobId,
+          latestJobId: staleDraftCheckResult.latestJobId,
+          unmappedNodeIds: staleDraftCheckResult.unmappedNodeIds
+        })
+      })
+        .then((res) => res.json() as Promise<RemapSuggestResult>)
+        .then((result) => {
+          setRemapResult(result);
+        })
+        .catch(() => {
+          setRemapResult(null);
+        })
+        .finally(() => {
+          setRemapPending(false);
+        });
+    }
   }, [baseFingerprint, jobId, overrideDraft, staleDraftCheckResult]);
+
+  const handleRemapApply = useCallback((decisions: RemapDecisionEntry[]) => {
+    if (!overrideDraft || !staleDraftCheckResult?.latestJobId || !baseFingerprint) {
+      return;
+    }
+
+    // Build node ID remap map from accepted decisions
+    const remapMap = new Map<string, string>();
+    for (const decision of decisions) {
+      if (decision.accepted && decision.targetNodeId) {
+        remapMap.set(decision.sourceNodeId, decision.targetNodeId);
+      }
+    }
+
+    // Remap draft entries: update nodeIds for accepted remaps, keep others unchanged
+    const remappedEntries = overrideDraft.entries
+      .map((entry) => {
+        const newNodeId = remapMap.get(entry.nodeId);
+        if (newNodeId) {
+          return {
+            ...entry,
+            id: `${newNodeId}:${entry.field}`,
+            nodeId: newNodeId,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return entry;
+      });
+
+    // Carry forward the remapped draft to the latest job
+    const carried = carryForwardDraft({
+      staleDraft: { ...overrideDraft, entries: remappedEntries },
+      newJobId: staleDraftCheckResult.latestJobId,
+      newBaseFingerprint: baseFingerprint
+    });
+
+    setStaleDraftCheckResult(null);
+    setDraftStale(false);
+    setDraftRestoreWarning(null);
+    setRemapResult(null);
+    setOverrideDraft(carried);
+  }, [baseFingerprint, overrideDraft, staleDraftCheckResult]);
+
+  const handleRemapCancel = useCallback(() => {
+    setRemapResult(null);
+  }, []);
 
   const inspectabilitySummary = useMemo(() => {
     return deriveInspectabilitySummary({
@@ -3489,12 +3571,23 @@ export function InspectorPanel({
                 {draftRestoreWarning}
               </p>
             ) : null}
-            {staleDraftCheckResult?.stale ? (
+            {staleDraftCheckResult?.stale && !remapResult ? (
               <div className="mt-2" data-testid="inspector-stale-draft-warning">
                 <StaleDraftWarning
                   checkResult={staleDraftCheckResult}
                   onDecision={handleStaleDraftDecision}
                   disabled={staleDraftCheckPending}
+                  remapPending={remapPending}
+                />
+              </div>
+            ) : null}
+            {remapResult ? (
+              <div className="mt-2" data-testid="inspector-remap-review">
+                <RemapReviewPanel
+                  result={remapResult}
+                  onApply={handleRemapApply}
+                  onCancel={handleRemapCancel}
+                  disabled={remapPending}
                 />
               </div>
             ) : null}

@@ -23,6 +23,8 @@ import type {
   WorkspaceJobStatus,
   WorkspaceRegenerationAccepted,
   WorkspaceRegenerationInput,
+  WorkspaceRemapSuggestInput,
+  WorkspaceRemapSuggestResult,
   WorkspaceStaleDraftCheckResult,
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
@@ -161,4 +163,5 @@ export interface JobEngine {
   getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;
   resolvePreviewAsset: (jobId: string, previewPath: string) => Promise<{ content: Buffer; contentType: string } | undefined>;
   checkStaleDraft: (input: { jobId: string; draftNodeIds: string[] }) => Promise<WorkspaceStaleDraftCheckResult>;
+  suggestRemaps: (input: WorkspaceRemapSuggestInput) => Promise<WorkspaceRemapSuggestResult>;
 }

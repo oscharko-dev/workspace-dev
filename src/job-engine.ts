@@ -50,6 +50,7 @@ import { generateArtifactsStreaming } from "./parity/generator-core.js";
 import type { StreamingArtifactEvent } from "./parity/generator-core.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
 import { applyIrOverrides } from "./job-engine/ir-overrides.js";
+import { generateRemapSuggestions } from "./job-engine/remap-suggestions.js";
 import {
   applyLocalSyncPlan,
   computeLocalSyncPlanFingerprint,
@@ -2756,6 +2757,85 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const suggestRemaps: JobEngine["suggestRemaps"] = async ({
+    sourceJobId,
+    latestJobId,
+    unmappedNodeIds
+  }) => {
+    const sourceJob = jobs.get(sourceJobId);
+    if (!sourceJob) {
+      return {
+        sourceJobId,
+        latestJobId,
+        suggestions: [],
+        rejections: unmappedNodeIds.map((id) => ({
+          sourceNodeId: id,
+          sourceNodeName: "(unknown)",
+          sourceNodeType: "(unknown)",
+          reason: `Source job '${sourceJobId}' not found.`
+        })),
+        message: `Source job '${sourceJobId}' not found.`
+      };
+    }
+
+    const latestJob = jobs.get(latestJobId);
+    if (!latestJob) {
+      return {
+        sourceJobId,
+        latestJobId,
+        suggestions: [],
+        rejections: unmappedNodeIds.map((id) => ({
+          sourceNodeId: id,
+          sourceNodeName: "(unknown)",
+          sourceNodeType: "(unknown)",
+          reason: `Latest job '${latestJobId}' not found.`
+        })),
+        message: `Latest job '${latestJobId}' not found.`
+      };
+    }
+
+    if (!sourceJob.artifacts.designIrFile || !latestJob.artifacts.designIrFile) {
+      return {
+        sourceJobId,
+        latestJobId,
+        suggestions: [],
+        rejections: unmappedNodeIds.map((id) => ({
+          sourceNodeId: id,
+          sourceNodeName: "(unknown)",
+          sourceNodeType: "(unknown)",
+          reason: "Design IR not available for one or both jobs."
+        })),
+        message: "Design IR artifacts are missing — cannot generate remap suggestions."
+      };
+    }
+
+    let sourceIrContent: string;
+    let latestIrContent: string;
+    try {
+      sourceIrContent = await readFile(sourceJob.artifacts.designIrFile, "utf8");
+      latestIrContent = await readFile(latestJob.artifacts.designIrFile, "utf8");
+    } catch {
+      return {
+        sourceJobId,
+        latestJobId,
+        suggestions: [],
+        rejections: [],
+        message: "Could not read Design IR files for remap analysis."
+      };
+    }
+
+    const sourceIr = JSON.parse(sourceIrContent) as import("./parity/types-ir.js").DesignIR;
+    const latestIr = JSON.parse(latestIrContent) as import("./parity/types-ir.js").DesignIR;
+
+    return generateRemapSuggestions({
+      sourceIr,
+      latestIr,
+      unmappedNodeIds,
+      sourceJobId,
+      latestJobId
+    });
+  };
+
   return {
     submitJob,
     submitRegeneration,
@@ -2767,7 +2847,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     getJobResult,
     getJobRecord,
     resolvePreviewAsset,
-    checkStaleDraft
+    checkStaleDraft,
+    suggestRemaps
   };
 };
 
