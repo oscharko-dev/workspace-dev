@@ -22,7 +22,6 @@ import {
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
-import { type BundledTheme } from "shiki";
 import { computeUnifiedDiff, type DiffLine, type DiffResult } from "../../../lib/diff";
 import { getPreferredTheme } from "../../../lib/shiki";
 import type { ManifestRange, ScopedCodeMode } from "./scoped-code-ranges";
@@ -38,8 +37,6 @@ interface DiffViewerProps {
   newCode: string;
   /** File path — used for display and language context. */
   filePath: string;
-  /** Force the viewer into a dark IDE treatment regardless of system preference. */
-  forceDarkTheme?: boolean;
   /** Previous job ID shown in the toolbar. */
   previousJobId: string;
   /** Focus range for the old (previous) side. Null = no range focus. */
@@ -67,7 +64,6 @@ export function DiffViewer({
   oldCode,
   newCode,
   filePath,
-  forceDarkTheme = false,
   previousJobId,
   oldFocusRange,
   newFocusRange,
@@ -80,9 +76,7 @@ export function DiffViewer({
   const [searchInput, setSearchInput] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState<BundledTheme>(() => {
-    return forceDarkTheme ? "github-dark" : getPreferredTheme();
-  });
+  const [currentTheme, setCurrentTheme] = useState(getPreferredTheme);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -92,16 +86,12 @@ export function DiffViewer({
 
   // Theme listener
   useEffect(() => {
-    if (forceDarkTheme) {
-      setCurrentTheme("github-dark");
-      return;
-    }
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (): void => { setCurrentTheme(getPreferredTheme()); };
     mq.addEventListener("change", handler);
     return () => { mq.removeEventListener("change", handler); };
-  }, [forceDarkTheme]);
+  }, []);
 
   // Compute diff
   const diffResult: DiffResult = useMemo(

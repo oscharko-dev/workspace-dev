@@ -72,8 +72,6 @@ interface CodePaneProps {
   parentFile?: string | null;
   /** Callback to return to the parent file context. */
   onReturnToParentFile?: () => void;
-  /** Render the pane inside the dedicated dark IDE shell. */
-  ideMode?: boolean;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -113,8 +111,7 @@ export function CodePane({
   previousManifestRange,
   nodeDiffFallbackReason,
   parentFile,
-  onReturnToParentFile,
-  ideMode = false
+  onReturnToParentFile
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -205,21 +202,9 @@ export function CodePane({
   }, [splitRatio]);
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col"
-      style={{
-        backgroundColor: ideMode ? "#1e1e1e" : undefined,
-        color: ideMode ? "#e4e4e7" : undefined
-      }}
-    >
+    <div className="flex h-full min-h-0 flex-col">
       {/* File selector header */}
-      <div
-        className="flex shrink-0 items-center gap-2 border-b px-3 py-2"
-        style={{
-          borderColor: ideMode ? "#3f3f46" : undefined,
-          backgroundColor: ideMode ? "#252526" : undefined
-        }}
-      >
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <select
           data-testid="inspector-file-selector"
           value={selectedFile ?? ""}
@@ -228,12 +213,7 @@ export function CodePane({
             if (!e.target.value) return;
             onSelectFile(e.target.value);
           }}
-          className="min-w-0 flex-1 truncate rounded border px-2 py-1 text-xs"
-          style={{
-            borderColor: ideMode ? "#52525b" : undefined,
-            backgroundColor: ideMode ? "#1f1f21" : undefined,
-            color: ideMode ? "#f4f4f5" : undefined
-          }}
+          className="min-w-0 flex-1 truncate rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
         >
           {hasCodeFiles ? (
             codeFiles.map((f) => (
@@ -250,12 +230,7 @@ export function CodePane({
             type="button"
             data-testid="inspector-json-toggle"
             onClick={() => { setJsonVisible((v) => !v); }}
-            className="shrink-0 cursor-pointer rounded border px-2 py-1 text-[10px] font-semibold transition"
-            style={{
-              borderColor: ideMode ? "#52525b" : undefined,
-              backgroundColor: ideMode ? "#1f1f21" : undefined,
-              color: ideMode ? "#d4d4d8" : undefined
-            }}
+            className="shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-100"
           >
             {jsonVisible ? "Hide JSON" : "Show JSON"}
           </button>
@@ -297,20 +272,12 @@ export function CodePane({
       {/* Status messages */}
       <div className="shrink-0 px-3 py-2">
         {filesState === "loading" ? (
-          <p
-            data-testid="inspector-state-files-loading"
-            className="m-0 text-xs"
-            style={{ color: ideMode ? "#a1a1aa" : undefined }}
-          >
+          <p data-testid="inspector-state-files-loading" className="m-0 text-xs text-slate-500">
             Loading generated files…
           </p>
         ) : null}
         {filesState === "empty" ? (
-          <p
-            data-testid="inspector-state-files-empty"
-            className="m-0 text-xs"
-            style={{ color: ideMode ? "#facc15" : undefined }}
-          >
+          <p data-testid="inspector-state-files-empty" className="m-0 text-xs text-amber-800">
             No generated source files are available for this job.
           </p>
         ) : null}
@@ -349,18 +316,11 @@ export function CodePane({
 
       {/* Scoped code mode selector — shown when a node is selected */}
       {selectedFile && fileContent !== null ? (
-        <div
-          className="shrink-0 border-b px-3 py-1.5"
-          style={{
-            borderColor: ideMode ? "#3f3f46" : undefined,
-            backgroundColor: ideMode ? "#252526" : undefined
-          }}
-        >
+        <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
           <ScopedCodeModeSelector
             activeMode={scopedMode}
             onModeChange={setScopedMode}
             isMapped={isNodeMapped}
-            ideMode={ideMode}
           />
         </div>
       ) : null}
@@ -394,7 +354,6 @@ export function CodePane({
               oldCode={previousFileContent}
               newCode={scopedCode?.code ?? fileContent}
               filePath={selectedFile}
-              forceDarkTheme={ideMode}
               previousJobId={previousJobId}
               oldFocusRange={scopedDiffRanges.oldFocusRange}
               newFocusRange={scopedDiffRanges.newFocusRange}
@@ -417,7 +376,6 @@ export function CodePane({
                 <CodeViewer
                   code={scopedCode?.code ?? fileContent}
                   filePath={selectedFile}
-                  forceDarkTheme={ideMode}
                   highlightRange={scopedCode?.highlightRange ?? highlightRange}
                   boundariesEnabled={boundariesEnabled}
                   onBoundariesEnabledChange={onBoundariesEnabledChange}
@@ -434,11 +392,8 @@ export function CodePane({
                 aria-label="Resize split panes"
                 aria-orientation="vertical"
                 data-testid="inspector-split-divider"
-                className="w-1 shrink-0 cursor-col-resize transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none"
-                style={{
-                  backgroundColor: ideMode ? "#3f3f46" : undefined,
-                  touchAction: "none"
-                }}
+                className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-slate-400 focus:bg-slate-400 focus:outline-none"
+                style={{ touchAction: "none" }}
                 onPointerDown={handleSplitPointerDown}
               />
 
@@ -448,13 +403,7 @@ export function CodePane({
                 className="flex min-w-0 flex-1 flex-col overflow-hidden"
               >
                 {/* Right pane file selector */}
-                <div
-                  className="flex shrink-0 items-center gap-2 border-b px-2 py-1"
-                  style={{
-                    borderColor: ideMode ? "#3f3f46" : undefined,
-                    backgroundColor: ideMode ? "#252526" : undefined
-                  }}
-                >
+                <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1">
                   <select
                     data-testid="inspector-split-file-selector"
                     value={splitFile ?? ""}
@@ -462,12 +411,7 @@ export function CodePane({
                       if (!e.target.value || !onSelectSplitFile) return;
                       onSelectSplitFile(e.target.value);
                     }}
-                    className="min-w-0 flex-1 truncate rounded border px-2 py-0.5 text-xs"
-                    style={{
-                      borderColor: ideMode ? "#52525b" : undefined,
-                      backgroundColor: ideMode ? "#1f1f21" : undefined,
-                      color: ideMode ? "#f4f4f5" : undefined
-                    }}
+                    className="min-w-0 flex-1 truncate rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-800"
                   >
                     {codeFiles.map((f) => (
                       <option key={f.path} value={f.path}>
@@ -487,7 +431,6 @@ export function CodePane({
                     <CodeViewer
                       code={splitFileContent}
                       filePath={splitFile}
-                      forceDarkTheme={ideMode}
                       boundariesEnabled={boundariesEnabled}
                       onBoundariesEnabledChange={onBoundariesEnabledChange}
                       boundaries={splitFileBoundaries}
@@ -505,7 +448,6 @@ export function CodePane({
             <CodeViewer
               code={scopedCode?.code ?? fileContent}
               filePath={selectedFile}
-              forceDarkTheme={ideMode}
               highlightRange={scopedCode?.highlightRange ?? highlightRange}
               boundariesEnabled={boundariesEnabled}
               onBoundariesEnabledChange={onBoundariesEnabledChange}
@@ -518,12 +460,11 @@ export function CodePane({
           <div
             data-testid="inspector-unmapped-fallback"
             className="flex flex-col items-center justify-center gap-2 p-6 text-center"
-            style={{ color: ideMode ? "#d4d4d8" : undefined }}
           >
-            <p className="m-0 text-xs font-semibold" style={{ color: ideMode ? "#facc15" : undefined }}>
+            <p className="m-0 text-xs font-semibold text-amber-800">
               This component has no file mapping
             </p>
-            <p className="m-0 text-[11px]" style={{ color: ideMode ? "#a1a1aa" : undefined }}>
+            <p className="m-0 text-[11px] text-slate-500">
               The selected node is not mapped to a specific location in the generated source. The current file is displayed as context.
             </p>
             {parentFile && onReturnToParentFile ? (
@@ -531,31 +472,18 @@ export function CodePane({
                 type="button"
                 data-testid="inspector-unmapped-return-parent"
                 onClick={onReturnToParentFile}
-                className="mt-1 cursor-pointer rounded border px-3 py-1 text-[11px] font-semibold transition hover:bg-sky-100"
-                style={{
-                  borderColor: ideMode ? "#0f766e" : undefined,
-                  backgroundColor: ideMode ? "rgba(13, 148, 136, 0.16)" : undefined,
-                  color: ideMode ? "#99f6e4" : undefined
-                }}
+                className="mt-1 cursor-pointer rounded border border-sky-300 bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100"
               >
                 ← Return to {parentFile.split("/").pop() ?? parentFile}
               </button>
             ) : null}
           </div>
         ) : filesState === "empty" ? (
-          <p
-            data-testid="inspector-state-file-content-empty"
-            className="m-0 p-3 text-xs"
-            style={{ color: ideMode ? "#a1a1aa" : undefined }}
-          >
+          <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-slate-500">
             No source file content is available yet.
           </p>
         ) : (
-          <p
-            data-testid="inspector-state-file-content-empty"
-            className="m-0 p-3 text-xs"
-            style={{ color: ideMode ? "#a1a1aa" : undefined }}
-          >
+          <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-slate-500">
             Select a file to view its source.
           </p>
         )}
