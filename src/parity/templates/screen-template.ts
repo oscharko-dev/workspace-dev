@@ -26,6 +26,10 @@ import {
   toScreenResponsiveRootMediaEntries
 } from "../generator-responsive.js";
 import {
+  validateGeneratedJsxFragment,
+  validateGeneratedSourceFile
+} from "../generated-source-validation.js";
+import {
   registerMuiImports,
   registerIconImport,
   registerInteractiveField,
@@ -3207,6 +3211,30 @@ export const resolveElementRenderStrategy = (type: ScreenElementIR["type"]): Ele
   );
 };
 
+const validateRenderedElementFragment = ({
+  raw,
+  element,
+  context,
+  renderSource
+}: {
+  raw: string;
+  element: ScreenElementIR;
+  context: RenderContext;
+  renderSource: string;
+}): string => {
+  validateGeneratedJsxFragment({
+    raw,
+    context: {
+      screenName: context.screenName,
+      nodeId: element.id,
+      nodeName: element.name,
+      nodeType: element.type,
+      renderSource
+    }
+  });
+  return raw;
+};
+
 export const renderElement = (
   element: ScreenElementIR,
   depth: number,
@@ -3236,13 +3264,27 @@ export const renderElement = (
             .filter(([, value]) => value !== undefined)
             .map(([propName, value]) => `${propName}={${literal(value as string)}}`);
       const props = [`sx={{ ${sx} }}`, ...propEntries].join(" ");
-      const raw = `${indent}<${extractionInvocation.componentName} ${props} />`;
+      const raw = validateRenderedElementFragment({
+        raw: `${indent}<${extractionInvocation.componentName} ${props} />`,
+        element,
+        context,
+        renderSource: "pattern extraction"
+      });
       return wrapWithIrMarkers({ element, depth, raw, extracted: true });
     }
 
     const mappedElement = renderMappedElement(element, depth, parent, context);
     if (mappedElement) {
-      return wrapWithIrMarkers({ element, depth, raw: mappedElement });
+      return wrapWithIrMarkers({
+        element,
+        depth,
+        raw: validateRenderedElementFragment({
+          raw: mappedElement,
+          element,
+          context,
+          renderSource: "component mapping"
+        })
+      });
     }
 
     if (element.nodeType === "VECTOR" && element.type !== "image") {
@@ -3259,7 +3301,16 @@ export const renderElement = (
       if (preDispatchRendered === null) {
         return null;
       }
-      return wrapWithIrMarkers({ element, depth, raw: preDispatchRendered });
+      return wrapWithIrMarkers({
+        element,
+        depth,
+        raw: validateRenderedElementFragment({
+          raw: preDispatchRendered,
+          element,
+          context,
+          renderSource: "pre-dispatch strategy"
+        })
+      });
     }
     const strategyRendered = resolveElementRenderStrategy(element.type)({
       element,
@@ -3270,7 +3321,16 @@ export const renderElement = (
     if (strategyRendered === null) {
       return null;
     }
-    return wrapWithIrMarkers({ element, depth, raw: strategyRendered });
+    return wrapWithIrMarkers({
+      element,
+      depth,
+      raw: validateRenderedElementFragment({
+        raw: strategyRendered,
+        element,
+        context,
+        renderSource: `render strategy '${element.type}'`
+      })
+    });
   } finally {
     context.activeRenderElements.delete(element);
   }
@@ -4404,6 +4464,13 @@ ${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` :
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;
   const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
+  validateGeneratedSourceFile({
+    filePath,
+    content: sharedSxOptimizedScreenContent,
+    context: {
+      screenName: prepared.screen.name
+    }
+  });
   const screenTestPlan = buildScreenTestTargetPlan({
     roots: simplifiedChildren,
     renderedOutput: rendered,
@@ -4446,9 +4513,22 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
     prepared,
     renderState
   });
-  return composeFallbackScreenModule({
+  const result = composeFallbackScreenModule({
     prepared,
     renderState,
     dependencies
   });
+  for (const generatedFile of [...result.componentFiles, ...result.contextFiles]) {
+    if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
+      continue;
+    }
+    validateGeneratedSourceFile({
+      filePath: generatedFile.path,
+      content: generatedFile.content,
+      context: {
+        screenName: prepared.screen.name
+      }
+    });
+  }
+  return result;
 };

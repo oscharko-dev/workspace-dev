@@ -14,6 +14,7 @@ import {
   isDeepIconImport,
   extractSharedSxConstantsFromScreenContent
 } from "./generator-core.js";
+import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
@@ -823,5 +824,8 @@ test("deterministic screen rendering maps top-level container header patterns to
   assert.ok(content.includes('role="banner"'));
   assert.ok(content.includes("<Toolbar>"));
   assert.ok(content.includes("<IconButton edge=\"end\""));
+  validateGeneratedSourceFile({
+    filePath: "src/screens/TopLevelContainerAppBar.tsx",
+    content
+  });
 });
-
