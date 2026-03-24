@@ -52,7 +52,8 @@
     "ESCROW.md",
     "ZERO_TELEMETRY.md",
     "SUPPORT.md",
-    "CONTRACT_CHANGELOG.md"
+    "CONTRACT_CHANGELOG.md",
+    "PIPELINE.md"
   ],
   "sideEffects": false,
   "scripts": {

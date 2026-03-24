@@ -1,14 +1,16 @@
 /**
  * Segmented control for switching between scoped code viewing modes.
  *
- * Renders three mutually-exclusive buttons: Snippet, Focused file, Full file.
+ * Renders three mutually-exclusive options: Snippet, Focused file, Full file.
+ * Uses the WAI-ARIA radiogroup pattern for correct accessibility semantics.
  * When the active node has no manifest mapping, only Full file is enabled and
  * a fallback hint is shown.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/444
  */
-import { type JSX } from "react";
+import { useCallback, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
+  getAvailableModes,
   isModeAvailable,
   modeLabel,
   type ScopedCodeMode
@@ -37,15 +39,46 @@ export function ScopedCodeModeSelector({
   isMapped
 }: ScopedCodeModeSelectorProps): JSX.Element {
   const allModes: ScopedCodeMode[] = ["snippet", "focused", "full"];
+  const availableModes = getAvailableModes(isMapped);
+
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = availableModes.indexOf(activeMode);
+    if (currentIndex < 0) return;
+
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      nextIndex = (currentIndex + 1) % availableModes.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      nextIndex = (currentIndex - 1 + availableModes.length) % availableModes.length;
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      event.preventDefault();
+      nextIndex = availableModes.length - 1;
+    }
+
+    if (nextIndex !== null) {
+      const nextMode = availableModes[nextIndex];
+      if (nextMode) {
+        onModeChange(nextMode);
+      }
+    }
+  }, [activeMode, availableModes, onModeChange]);
 
   return (
     <div
       data-testid="scoped-code-mode-selector"
       className="flex items-center gap-2"
-      role="group"
-      aria-label="Code viewing mode"
     >
-      <div className="flex items-center gap-1 rounded-md border border-[#000000] bg-[#1b1b1b] p-1">
+      <div
+        role="radiogroup"
+        aria-label="Code viewing mode"
+        className="flex items-center gap-1 rounded-md border border-[#000000] bg-[#1b1b1b] p-1"
+        onKeyDown={handleKeyDown}
+      >
         {allModes.map((mode) => {
           const available = isModeAvailable(mode, isMapped);
           const isActive = activeMode === mode;
@@ -54,9 +87,11 @@ export function ScopedCodeModeSelector({
             <button
               key={mode}
               type="button"
+              role="radio"
               data-testid={`scoped-mode-${mode}`}
               disabled={!available}
-              aria-pressed={isActive}
+              aria-checked={isActive}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => {
                 if (available && !isActive) {
                   onModeChange(mode);

@@ -22,6 +22,7 @@ export function DiagnosticBadge({ category }: DiagnosticBadgeProps): JSX.Element
       data-testid={`diagnostic-badge-${category}`}
       className={`inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded px-0.5 text-[9px] font-bold leading-none ${badge.color}`}
       title={badge.title}
+      aria-label={badge.title}
     >
       {badge.abbr}
     </span>

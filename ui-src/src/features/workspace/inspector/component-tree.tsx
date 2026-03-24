@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type UIEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type UIEvent } from "react";
 import { filterTree } from "./component-tree-utils";
 import { TypeBadge } from "./type-badge-config";
 import { DiagnosticBadge } from "./DiagnosticBadge";
@@ -40,11 +40,11 @@ interface TreeRowProps {
   row: VisibleTreeRow;
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
-  onEnterScope?: (nodeId: string) => void;
+  onEnterScope?: ((nodeId: string) => void) | undefined;
   onToggleExpand: (nodeId: string) => void;
   focusedId: string | null;
   onFocusNode: (nodeId: string) => void;
-  diagnosticsMap?: NodeDiagnosticsMap;
+  diagnosticsMap?: NodeDiagnosticsMap | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ function findParentRow(rows: VisibleTreeRow[], childIndex: number): VisibleTreeR
 // Tree row
 // ---------------------------------------------------------------------------
 
-function TreeRow({
+const TreeRow = memo(function TreeRow({
   row,
   selectedId,
   onSelect,
@@ -223,7 +223,7 @@ function TreeRow({
       })() : null}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // ComponentTree (public)

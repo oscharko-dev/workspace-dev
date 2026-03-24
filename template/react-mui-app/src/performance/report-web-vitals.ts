@@ -117,7 +117,7 @@ export const startWebVitalsReporting = (): void => {
 
   onCLS(report);
   onFCP(report);
-  onINP(report);
+  onINP(report, { reportAllChanges: true });
   onLCP(report);
   onTTFB(report);
 };

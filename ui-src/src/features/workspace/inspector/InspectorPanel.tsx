@@ -295,27 +295,21 @@ interface RegenerationAcceptedPayload {
 }
 
 function isCreatePrPayload(value: unknown): value is CreatePrPayload {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
+  if (!isRecord(value)) return false;
   return (
-    typeof record.jobId === "string" &&
-    typeof record.sourceJobId === "string" &&
-    typeof record.gitPr === "object" &&
-    record.gitPr !== null
+    typeof value.jobId === "string" &&
+    typeof value.sourceJobId === "string" &&
+    typeof value.gitPr === "object" &&
+    value.gitPr !== null
   );
 }
 
 function isRegenerationAcceptedPayload(value: unknown): value is RegenerationAcceptedPayload {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
+  if (!isRecord(value)) return false;
   return (
-    typeof record.jobId === "string" &&
-    typeof record.sourceJobId === "string" &&
-    record.status === "queued"
+    typeof value.jobId === "string" &&
+    typeof value.sourceJobId === "string" &&
+    value.status === "queued"
   );
 }
 
@@ -403,36 +397,27 @@ type FormValidationControlInputState = {
 // Guards
 // ---------------------------------------------------------------------------
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function isFilesPayload(value: unknown): value is FilesPayload {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const rec = value as Record<string, unknown>;
-  return typeof rec.jobId === "string" && Array.isArray(rec.files);
+  if (!isRecord(value)) return false;
+  return typeof value.jobId === "string" && Array.isArray(value.files);
 }
 
 function isDesignIrPayload(value: unknown): value is DesignIrPayload {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const rec = value as Record<string, unknown>;
-  return typeof rec.jobId === "string" && Array.isArray(rec.screens);
+  if (!isRecord(value)) return false;
+  return typeof value.jobId === "string" && Array.isArray(value.screens);
 }
 
 function isComponentManifestPayload(value: unknown): value is ComponentManifestPayload {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const rec = value as Record<string, unknown>;
-  return typeof rec.jobId === "string" && Array.isArray(rec.screens);
+  if (!isRecord(value)) return false;
+  return typeof value.jobId === "string" && Array.isArray(value.screens);
 }
 
 function isGenerationMetricsPayload(value: unknown): value is InspectabilityGenerationMetricsPayload {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  return isRecord(value);
 }
 
 function isLocalSyncFilePlanEntry(value: unknown): value is LocalSyncFilePlanEntry {
@@ -2054,6 +2039,9 @@ export function InspectorPanel({
       return;
     }
 
+    const abortController = new AbortController();
+    const { signal } = abortController;
+
     const restored = restorePersistedInspectorOverrideDraft({
       jobId,
       currentBaseFingerprint: baseFingerprint
@@ -2074,11 +2062,12 @@ export function InspectorPanel({
         fetch(`/workspace/jobs/${encodedId}/stale-check`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ draftNodeIds })
+          body: JSON.stringify({ draftNodeIds }),
+          signal
         })
           .then((res) => res.json() as Promise<StaleDraftCheckResult>)
           .then((result) => {
-            if (result.stale) {
+            if (!signal.aborted && result.stale) {
               setStaleDraftCheckResult(result);
               setDraftStale(true);
             }
@@ -2087,11 +2076,13 @@ export function InspectorPanel({
             // Server-side check failure is non-critical; local check stands.
           })
           .finally(() => {
-            setStaleDraftCheckPending(false);
+            if (!signal.aborted) {
+              setStaleDraftCheckPending(false);
+            }
           });
       }
 
-      return;
+      return () => { abortController.abort(); };
     }
 
     if (restored.draft && restored.stale) {
@@ -2104,34 +2095,43 @@ export function InspectorPanel({
       fetch(`/workspace/jobs/${encodedId}/stale-check`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draftNodeIds })
+        body: JSON.stringify({ draftNodeIds }),
+        signal
       })
         .then((res) => res.json() as Promise<StaleDraftCheckResult>)
         .then((result) => {
-          setStaleDraftCheckResult(result);
+          if (!signal.aborted) {
+            setStaleDraftCheckResult(result);
+          }
         })
         .catch(() => {
-          setStaleDraftCheckResult({
-            stale: true,
-            latestJobId: null,
-            sourceJobId: jobId,
-            boardKey: null,
-            carryForwardAvailable: false,
-            unmappedNodeIds: [],
-            message: "Could not verify carry-forward availability."
-          });
+          if (!signal.aborted) {
+            setStaleDraftCheckResult({
+              stale: true,
+              latestJobId: null,
+              sourceJobId: jobId,
+              boardKey: null,
+              carryForwardAvailable: false,
+              unmappedNodeIds: [],
+              message: "Could not verify carry-forward availability."
+            });
+          }
         })
         .finally(() => {
-          setStaleDraftCheckPending(false);
+          if (!signal.aborted) {
+            setStaleDraftCheckPending(false);
+          }
         });
 
-      return;
+      return () => { abortController.abort(); };
     }
 
     setOverrideDraft(createInspectorOverrideDraft({
       sourceJobId: jobId,
       baseFingerprint
     }));
+
+    return () => { abortController.abort(); };
   }, [baseFingerprint, jobId]);
 
   // Reset edit history and snapshots when the draft identity changes
@@ -3231,7 +3231,7 @@ export function InspectorPanel({
     releaseCapture
   }: {
     event: ReactPointerEvent<HTMLDivElement>;
-    fallbackClientX?: number;
+    fallbackClientX?: number | undefined;
     releaseCapture: boolean;
   }) => {
     const state = dragStateRef.current;

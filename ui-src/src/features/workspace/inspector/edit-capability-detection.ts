@@ -111,7 +111,7 @@ export interface EditCapabilityNode {
    * Known IR field names present on this node.
    * Used to intersect with SUPPORTED_OVERRIDE_FIELDS.
    */
-  readonly presentFields?: readonly string[];
+  readonly presentFields?: readonly string[] | undefined;
 }
 
 // ---------------------------------------------------------------------------

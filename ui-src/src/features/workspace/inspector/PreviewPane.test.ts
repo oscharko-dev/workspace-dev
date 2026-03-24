@@ -41,11 +41,11 @@ describe("PreviewPane", () => {
     );
 
     expect(screen.getByText("Loading preview…")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "http://127.0.0.1:4010/preview");
+    expect(screen.getByRole("link", { name: "Open preview in new tab" })).toHaveAttribute("href", "http://127.0.0.1:4010/preview");
     expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-inspect-enabled", "false");
     expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-active-scope-node-id", "node-7");
 
-    fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enable inspect mode" }));
     expect(onToggleInspect).toHaveBeenCalledTimes(1);
 
     fireEvent.load(screen.getByTitle("Live preview"));
@@ -68,7 +68,7 @@ describe("PreviewPane", () => {
       })
     );
 
-    expect(screen.getByRole("button", { name: "Inspect" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Disable inspect mode" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-inspect-enabled", "true");
   });
 });

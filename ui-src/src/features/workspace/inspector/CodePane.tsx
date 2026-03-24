@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
@@ -39,45 +39,45 @@ interface CodePaneProps {
   fileContentState: InspectorSourceStatus;
   fileContentError: EndpointErrorDetails | null;
   onRetryFileContent: () => void;
-  highlightRange?: HighlightRange | null;
-  previousJobId?: string | null;
-  previousFileContent?: string | null;
-  previousFileContentLoading?: boolean;
-  breadcrumbPath?: BreadcrumbSegment[];
-  onBreadcrumbSelect?: (nodeId: string) => void;
+  highlightRange?: HighlightRange | null | undefined;
+  previousJobId?: string | null | undefined;
+  previousFileContent?: string | null | undefined;
+  previousFileContentLoading?: boolean | undefined;
+  breadcrumbPath?: BreadcrumbSegment[] | undefined;
+  onBreadcrumbSelect?: ((nodeId: string) => void) | undefined;
   /** Whether a hierarchical drilldown scope is currently active. */
-  hasActiveScope?: boolean;
+  hasActiveScope?: boolean | undefined;
   /** Callback to enter scope on a breadcrumb node. */
-  onEnterScope?: (nodeId: string) => void;
+  onEnterScope?: ((nodeId: string) => void) | undefined;
   /** Callback to exit the current scope level. */
-  onExitScope?: () => void;
+  onExitScope?: (() => void) | undefined;
   /** Split view: suggested/selected second file path. */
-  splitFile?: string | null;
+  splitFile?: string | null | undefined;
   /** Split view: content of the second file. */
-  splitFileContent?: string | null;
+  splitFileContent?: string | null | undefined;
   /** Split view: loading state for second file. */
-  splitFileContentLoading?: boolean;
+  splitFileContentLoading?: boolean | undefined;
   /** Split view: callback to change second file selection. */
-  onSelectSplitFile?: (filePath: string) => void;
-  boundariesEnabled?: boolean;
-  onBoundariesEnabledChange?: (enabled: boolean) => void;
-  fileBoundaries?: CodeBoundaryEntry[];
-  splitFileBoundaries?: CodeBoundaryEntry[];
-  onBoundarySelect?: (nodeId: string) => void;
+  onSelectSplitFile?: ((filePath: string) => void) | undefined;
+  boundariesEnabled?: boolean | undefined;
+  onBoundariesEnabledChange?: ((enabled: boolean) => void) | undefined;
+  fileBoundaries?: CodeBoundaryEntry[] | undefined;
+  splitFileBoundaries?: CodeBoundaryEntry[] | undefined;
+  onBoundarySelect?: ((nodeId: string) => void) | undefined;
   /** Manifest range for the currently selected node (null if unmapped). */
-  activeManifestRange?: FileScopedManifestRange | null;
+  activeManifestRange?: FileScopedManifestRange | null | undefined;
   /** Whether the currently selected node has a manifest mapping. */
-  isNodeMapped?: boolean;
+  isNodeMapped?: boolean | undefined;
   /** Manifest range for the previous job's version of this node (for diff mode). */
-  previousManifestRange?: FileScopedManifestRange | null;
+  previousManifestRange?: FileScopedManifestRange | null | undefined;
   /** Reason why node-scoped diff is unavailable (null when available). */
-  nodeDiffFallbackReason?: string | null;
+  nodeDiffFallbackReason?: string | null | undefined;
   /** Parent file path when viewing a cross-file extracted component. */
-  parentFile?: string | null;
+  parentFile?: string | null | undefined;
   /** Callback to return to the parent file context. */
-  onReturnToParentFile?: () => void;
+  onReturnToParentFile?: (() => void) | undefined;
   /** Currently selected IR node id for viewer-local remapping. */
-  selectedIrNodeId?: string | null;
+  selectedIrNodeId?: string | null | undefined;
 }
 
 const MIN_SPLIT_PANE_PCT = 25;
@@ -237,12 +237,17 @@ export function CodePane({
 
   // --- Split resizer handlers ---
 
+  const splitRatioRef = useRef(splitRatio);
+  useEffect(() => {
+    splitRatioRef.current = splitRatio;
+  });
+
   const handleSplitPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const container = splitContainerRef.current;
     if (!container) return;
 
-    dragStartRef.current = { startX: event.clientX, startRatio: splitRatio };
+    dragStartRef.current = { startX: event.clientX, startRatio: splitRatioRef.current };
 
     const onPointerMove = (moveEvent: PointerEvent): void => {
       const state = dragStartRef.current;
@@ -265,7 +270,24 @@ export function CodePane({
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
-  }, [splitRatio]);
+  }, []);
+
+  const handleSplitDividerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 10 : 2;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      event.preventDefault();
+      setSplitRatio((r) => Math.max(MIN_SPLIT_PANE_PCT, r - step));
+    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setSplitRatio((r) => Math.min(100 - MIN_SPLIT_PANE_PCT, r + step));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setSplitRatio(MIN_SPLIT_PANE_PCT);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setSplitRatio(100 - MIN_SPLIT_PANE_PCT);
+    }
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#333333] text-white">
@@ -328,6 +350,7 @@ export function CodePane({
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#000000] bg-[#2a2a2a] px-3 py-2">
         <select
+          aria-label="Select source file"
           data-testid="inspector-file-selector"
           value={selectedFile ?? ""}
           disabled={isFileSelectorDisabled}
@@ -470,10 +493,14 @@ export function CodePane({
                 tabIndex={0}
                 aria-label="Resize split panes"
                 aria-orientation="vertical"
+                aria-valuenow={Math.round(splitRatio)}
+                aria-valuemin={MIN_SPLIT_PANE_PCT}
+                aria-valuemax={100 - MIN_SPLIT_PANE_PCT}
                 data-testid="inspector-split-divider"
                 className="w-1 shrink-0 cursor-col-resize bg-[#000000] transition-colors hover:bg-[#4eba87] focus:bg-[#4eba87] focus:outline-none"
                 style={{ touchAction: "none" }}
                 onPointerDown={handleSplitPointerDown}
+                onKeyDown={handleSplitDividerKeyDown}
               />
 
               {/* Right pane */}
@@ -484,6 +511,7 @@ export function CodePane({
                 {/* Right pane file selector */}
                 <div className="flex shrink-0 items-center gap-2 border-b border-[#000000] bg-[#1f1f1f] px-2 py-1.5">
                   <select
+                    aria-label="Select split pane file"
                     data-testid="inspector-split-file-selector"
                     value={splitFile ?? ""}
                     onChange={(e) => {
@@ -566,7 +594,7 @@ export function CodePane({
             No source file content is available yet.
           </p>
         ) : (
-          <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-white/55">
+          <p data-testid="inspector-state-file-content-no-selection" className="m-0 p-3 text-xs text-white/55">
             Select a file to view its source.
           </p>
         )}

@@ -8,7 +8,6 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/442
  */
 import {
-  createContext,
   useReducer,
   useMemo,
   type JSX,
@@ -48,7 +47,8 @@ export interface InspectorScopeContextValue {
 // Context
 // ---------------------------------------------------------------------------
 
-const InspectorScopeCtx = createContext<InspectorScopeContextValue | null>(null);
+// Context object lives in useInspectorScope.ts to satisfy react-refresh/only-export-components
+import { InspectorScopeCtx } from "./useInspectorScope";
 
 // ---------------------------------------------------------------------------
 // Provider

@@ -1,6 +1,7 @@
 import { useMemo, useState, type JSX } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { InspectorPanel } from "./inspector/InspectorPanel";
+import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 
 function BackIcon(): JSX.Element {
   return (
@@ -145,18 +146,20 @@ export function InspectorPage(): JSX.Element {
 
       {/* Inspector Panel — full area */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InspectorPanel
-          jobId={activeJobId}
-          previewUrl={activePreviewUrl}
-          previousJobId={previousJobId}
-          isRegenerationJob={activeIsRegenerationJob}
-          onRegenerationAccepted={(nextJobId) => {
-            setActiveJobId(nextJobId);
-            setActiveIsRegenerationJob(true);
-          }}
-          openDialog={openDialog}
-          onCloseDialog={() => { setOpenDialog(null); }}
-        />
+        <InspectorErrorBoundary>
+          <InspectorPanel
+            jobId={activeJobId}
+            previewUrl={activePreviewUrl}
+            previousJobId={previousJobId}
+            isRegenerationJob={activeIsRegenerationJob}
+            onRegenerationAccepted={(nextJobId) => {
+              setActiveJobId(nextJobId);
+              setActiveIsRegenerationJob(true);
+            }}
+            openDialog={openDialog}
+            onCloseDialog={() => { setOpenDialog(null); }}
+          />
+        </InspectorErrorBoundary>
       </main>
     </div>
   );

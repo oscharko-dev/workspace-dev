@@ -151,13 +151,13 @@ describe("CodePane scoped code modes", () => {
       activeManifestRange: { startLine: 5, endLine: 10 }
     });
     const snippet = screen.getByTestId("scoped-mode-snippet");
-    expect(snippet.getAttribute("aria-pressed")).toBe("true");
+    expect(snippet.getAttribute("aria-checked")).toBe("true");
   });
 
   it("defaults to full mode when node is unmapped", () => {
     renderCodePane({ isNodeMapped: false });
     const full = screen.getByTestId("scoped-mode-full");
-    expect(full.getAttribute("aria-pressed")).toBe("true");
+    expect(full.getAttribute("aria-checked")).toBe("true");
   });
 
   it("clicking a mode button switches the active mode", () => {
@@ -167,17 +167,17 @@ describe("CodePane scoped code modes", () => {
     });
 
     // Initially snippet is active
-    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked")).toBe("true");
 
     // Click focused
     fireEvent.click(screen.getByTestId("scoped-mode-focused"));
-    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked")).toBe("false");
 
     // Click full
     fireEvent.click(screen.getByTestId("scoped-mode-full"));
-    expect(screen.getByTestId("scoped-mode-full").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("scoped-mode-full").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked")).toBe("false");
   });
 
   it("renders complete JSX tokens for a mapped snippet when Shiki returns nested spans", async () => {

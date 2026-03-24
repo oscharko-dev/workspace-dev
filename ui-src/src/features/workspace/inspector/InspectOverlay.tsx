@@ -99,7 +99,10 @@ export function InspectOverlay({
         return;
       }
       const previewOrigin = resolvePreviewOrigin();
-      targetWindow.postMessage(message, previewOrigin ?? "*");
+      if (!previewOrigin) {
+        return;
+      }
+      targetWindow.postMessage(message, previewOrigin);
     },
     [iframeRef, resolvePreviewOrigin]
   );

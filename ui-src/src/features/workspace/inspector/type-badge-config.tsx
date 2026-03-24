@@ -50,6 +50,7 @@ export function TypeBadge({ type }: { type: string }): JSX.Element {
     <span
       className={`inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded border border-white/10 px-0.5 text-[9px] font-bold leading-none ${color}`}
       title={type}
+      aria-label={`Element type: ${type}`}
     >
       {abbr}
     </span>

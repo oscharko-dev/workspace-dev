@@ -40,11 +40,11 @@ export type WorkspaceSubmitFormData = z.infer<typeof workspaceSubmitSchema>;
 export interface WorkspaceSubmitPayload {
   figmaFileKey: string;
   figmaAccessToken: string;
-  repoUrl?: string;
-  repoToken?: string;
+  repoUrl?: string | undefined;
+  repoToken?: string | undefined;
   enableGitPr: boolean;
-  projectName?: string;
-  targetPath?: string;
+  projectName?: string | undefined;
+  targetPath?: string | undefined;
   figmaSourceMode: "rest";
   llmCodegenMode: "deterministic";
 }

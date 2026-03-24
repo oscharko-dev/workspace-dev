@@ -7,11 +7,11 @@
  * efficient per-node badge rendering in the component tree.
  */
 
-import type {
-  InspectabilityDesignIrNode,
-  InspectabilityDesignIrScreen,
-  InspectabilityManifestPayload,
-  InspectorDataStatus
+import {
+  collectIrNodeIds,
+  type InspectabilityDesignIrScreen,
+  type InspectabilityManifestPayload,
+  type InspectorDataStatus
 } from "./inspectability-summary";
 
 // ---------------------------------------------------------------------------
@@ -82,36 +82,7 @@ export interface RawNodeDiagnosticEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function collectAllIrNodeIds(screens: InspectabilityDesignIrScreen[]): Set<string> {
-  const ids = new Set<string>();
-  const stack: InspectabilityDesignIrNode[] = [];
-
-  for (const screen of screens) {
-    if (typeof screen.id === "string" && screen.id.length > 0) {
-      ids.add(screen.id);
-    }
-    if (Array.isArray(screen.children)) {
-      for (const child of screen.children) {
-        stack.push(child);
-      }
-    }
-  }
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) continue;
-    if (typeof current.id === "string" && current.id.length > 0) {
-      ids.add(current.id);
-    }
-    if (Array.isArray(current.children)) {
-      for (const child of current.children) {
-        stack.push(child);
-      }
-    }
-  }
-
-  return ids;
-}
+// Uses shared collectIrNodeIds from inspectability-summary.ts
 
 function collectManifestNodeIds(manifest: InspectabilityManifestPayload): Set<string> {
   const ids = new Set<string>();
@@ -186,7 +157,7 @@ export function deriveNodeDiagnosticsMap(input: DeriveNodeDiagnosticsInput): Nod
     input.manifestStatus === "ready" &&
     input.manifest
   ) {
-    const irNodeIds = collectAllIrNodeIds(input.designIrScreens);
+    const irNodeIds = collectIrNodeIds(input.designIrScreens);
     const manifestNodeIds = collectManifestNodeIds(input.manifest);
 
     for (const irNodeId of irNodeIds) {

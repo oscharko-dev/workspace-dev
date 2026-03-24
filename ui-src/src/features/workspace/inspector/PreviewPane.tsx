@@ -33,9 +33,12 @@ export function PreviewPane({
   onToggleInspect,
   onInspectSelect
 }: PreviewPaneProps): JSX.Element {
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [iframeLoadVersion, setIframeLoadVersion] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Derive loading state: loading whenever the current previewUrl hasn't finished loading yet
+  const isLoading = loadedUrl !== previewUrl;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#000000] text-white">
@@ -50,6 +53,7 @@ export function PreviewPane({
             type="button"
             onClick={onToggleInspect}
             aria-pressed={inspectEnabled}
+            aria-label={inspectEnabled ? "Disable inspect mode" : "Enable inspect mode"}
             className={`cursor-pointer rounded border px-2 py-1 font-semibold transition ${
               inspectEnabled
                 ? "border-[#4eba87] bg-[#4eba87]/15 text-[#4eba87]"
@@ -62,6 +66,7 @@ export function PreviewPane({
             href={previewUrl}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label="Open preview in new tab"
             className="inline-flex items-center gap-1.5 rounded border border-[#333333] px-2 py-1 text-white/70 no-underline transition hover:border-[#4eba87]/40 hover:text-[#4eba87]"
           >
             <ExternalLinkIcon />
@@ -83,7 +88,7 @@ export function PreviewPane({
             title="Live preview"
             className="h-full w-full flex-1 border-0 bg-white"
             onLoad={() => {
-              setIsLoading(false);
+              setLoadedUrl(previewUrl);
               setIframeLoadVersion((prev) => prev + 1);
             }}
             sandbox="allow-scripts allow-same-origin"

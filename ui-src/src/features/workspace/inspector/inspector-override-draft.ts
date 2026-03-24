@@ -1,7 +1,8 @@
-import type {
-  ScalarOverrideField,
-  ScalarOverrideValue,
-  ScalarOverrideValueByField
+import {
+  SCALAR_OVERRIDE_FIELDS,
+  type ScalarOverrideField,
+  type ScalarOverrideValue,
+  type ScalarOverrideValueByField
 } from "./scalar-override-translators";
 import {
   FORM_VALIDATION_OVERRIDE_FIELDS,
@@ -88,14 +89,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isScalarOverrideField(value: unknown): value is ScalarOverrideField {
-  return value === "fillColor"
-    || value === "opacity"
-    || value === "cornerRadius"
-    || value === "fontSize"
-    || value === "fontWeight"
-    || value === "fontFamily"
-    || value === "padding"
-    || value === "gap";
+  return typeof value === "string"
+    && (SCALAR_OVERRIDE_FIELDS as readonly string[]).includes(value);
 }
 
 function isFormValidationOverrideField(value: unknown): value is FormValidationOverrideField {
@@ -131,13 +126,27 @@ function isScalarPaddingValue(value: unknown): value is ScalarOverrideValueByFie
 }
 
 function isScalarOverrideValue(field: ScalarOverrideField, value: unknown): value is ScalarOverrideValue {
-  if (field === "fillColor" || field === "fontFamily") {
+  if (field === "fillColor") {
+    return typeof value === "string" && value.length > 0;
+  }
+  if (field === "fontFamily") {
     return typeof value === "string";
   }
   if (field === "padding") {
     return isScalarPaddingValue(value);
   }
-  return isFiniteNumber(value);
+  if (!isFiniteNumber(value)) {
+    return false;
+  }
+  // Range validation for numeric scalar fields
+  if (field === "opacity") {
+    return value >= 0 && value <= 1;
+  }
+  if (field === "fontSize" || field === "fontWeight") {
+    return value > 0;
+  }
+  // cornerRadius, gap: non-negative
+  return value >= 0;
 }
 
 function isFormValidationOverrideValue(field: FormValidationOverrideField, value: unknown): value is FormValidationOverrideValue {
