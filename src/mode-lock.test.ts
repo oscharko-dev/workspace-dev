@@ -20,6 +20,15 @@ test("mode-lock allows local_json + deterministic", () => {
   assert.equal(result.errors.length, 0);
 });
 
+test("mode-lock allows hybrid + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "hybrid",
+    llmCodegenMode: "deterministic"
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
 test("mode-lock allows empty/undefined modes (defaults apply)", () => {
   const result = validateModeLock({});
   assert.equal(result.valid, true);
@@ -31,12 +40,6 @@ test("mode-lock blocks mcp mode", () => {
   assert.equal(result.valid, false);
   assert.equal(result.errors.length, 1);
   assert.match(result.errors[0]!, /mcp.*not available/i);
-});
-
-test("mode-lock blocks hybrid figma source mode", () => {
-  const result = validateModeLock({ figmaSourceMode: "hybrid" });
-  assert.equal(result.valid, false);
-  assert.match(result.errors[0]!, /hybrid.*not available/i);
 });
 
 test("mode-lock blocks hybrid codegen mode", () => {
@@ -85,6 +88,9 @@ test("enforceModeLock does not throw for valid modes", () => {
   );
   assert.doesNotThrow(() =>
     enforceModeLock({ figmaSourceMode: "local_json", llmCodegenMode: "deterministic" })
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({ figmaSourceMode: "hybrid", llmCodegenMode: "deterministic" })
   );
 });
 

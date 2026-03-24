@@ -49,6 +49,8 @@ export interface ScopedDiffRanges {
 
 /** Number of context lines shown above/below the snippet range. */
 export const SNIPPET_CONTEXT_LINES = 2;
+const IR_START_PATTERN = /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
+const IR_END_PATTERN = /\{\/\* @ir:end (\S+) \*\/\}/;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -150,6 +152,58 @@ export function deriveScopedCode(
       };
     }
   }
+}
+
+export function findManifestRangeByIrNodeId(
+  fullCode: string,
+  irNodeId: string
+): ManifestRange | null {
+  const lines = fullCode.split("\n");
+  const openStack: Array<{
+    irNodeId: string;
+    startLine: number;
+  }> = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const startMatch = IR_START_PATTERN.exec(line);
+    if (startMatch) {
+      openStack.push({
+        irNodeId: startMatch[1]!,
+        startLine: index + 1
+      });
+      continue;
+    }
+
+    const endMatch = IR_END_PATTERN.exec(line);
+    if (!endMatch) {
+      continue;
+    }
+
+    const endIrNodeId = endMatch[1]!;
+    let stackIndex = -1;
+    for (let reverseIndex = openStack.length - 1; reverseIndex >= 0; reverseIndex -= 1) {
+      if (openStack[reverseIndex]?.irNodeId === endIrNodeId) {
+        stackIndex = reverseIndex;
+        break;
+      }
+    }
+    if (stackIndex < 0) {
+      continue;
+    }
+
+    const [startEntry] = openStack.splice(stackIndex, 1);
+    if (!startEntry || startEntry.irNodeId !== irNodeId) {
+      continue;
+    }
+
+    return {
+      startLine: startEntry.startLine,
+      endLine: index + 1
+    };
+  }
+
+  return null;
 }
 
 /**

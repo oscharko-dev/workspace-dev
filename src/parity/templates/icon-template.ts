@@ -36,6 +36,23 @@ export const renderFallbackIconExpression = ({
   ariaHidden?: boolean;
   extraEntries?: Array<[string, string | number | undefined]>;
 }): string => {
+  if (
+    typeof element.asset?.source === "string" &&
+    element.asset.source.trim().length > 0 &&
+    (element.asset.kind === "svg" || element.asset.kind === "icon")
+  ) {
+    registerMuiImports(context, "Box");
+    const sx = sxString([
+      ["width", toPxLiteral(element.width)],
+      ["height", toPxLiteral(element.height)],
+      ["display", literal("block")],
+      ...extraEntries
+    ]);
+    const assetLabel = element.asset.alt ?? element.asset.label ?? parent.name ?? element.name ?? "Icon";
+    const altProp = ariaHidden ? ' alt="" aria-hidden="true"' : ` alt={${literal(assetLabel)}}`;
+    return `<Box component="img" src={${literal(element.asset.source.trim())}}${altProp} sx={{ ${sx} }} />`;
+  }
+
   const vectorPaths = collectVectorPaths(element);
   if (vectorPaths.length > 0) {
     return renderInlineSvgIcon({
@@ -92,4 +109,3 @@ export const renderInlineSvgIcon = ({
   const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
   return `<SvgIcon${ariaHiddenProp} sx={{ ${sx} }} viewBox={${literal(`0 0 ${width} ${height}`)}}>${paths}</SvgIcon>`;
 };
-

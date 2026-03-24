@@ -4,12 +4,12 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.23.0
+ * Contract version: 2.24.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
 /** Allowed Figma source modes for workspace-dev. */
-export type WorkspaceFigmaSourceMode = "rest" | "local_json";
+export type WorkspaceFigmaSourceMode = "rest" | "hybrid" | "local_json";
 
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
@@ -569,4 +569,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.23.0" as const;
+export const CONTRACT_VERSION = "2.24.0" as const;

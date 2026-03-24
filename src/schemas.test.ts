@@ -50,6 +50,19 @@ test("schema: valid local_json submit body parses correctly", () => {
   }
 });
 
+test("schema: valid hybrid submit body parses correctly", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    llmCodegenMode: "deterministic"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "hybrid");
+  }
+});
+
 test("schema: local_json mode is inferred from figmaJsonPath when figmaSourceMode is omitted", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaJsonPath: "./fixtures/figma.json"
@@ -199,6 +212,21 @@ test("schema: workspace status rejects non-rest figmaSourceMode", () => {
     previewEnabled: true
   });
   assert.equal(result.success, false);
+});
+
+test("schema: workspace status allows hybrid figmaSourceMode", () => {
+  const result = WorkspaceStatusSchema.safeParse({
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
+    figmaSourceMode: "hybrid",
+    llmCodegenMode: "deterministic",
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true
+  });
+  assert.equal(result.success, true);
 });
 
 test("schema: workspace status allows local_json figmaSourceMode", () => {

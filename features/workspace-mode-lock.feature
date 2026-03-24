@@ -13,6 +13,12 @@ Feature: Workspace mode lock contract
     When mode lock validation runs
     Then the mode lock result is valid
 
+  Scenario: Accept hybrid mode
+    Given figmaSourceMode is "hybrid"
+    And llmCodegenMode is "deterministic"
+    When mode lock validation runs
+    Then the mode lock result is valid
+
   Scenario: Reject unsupported modes with actionable guidance
     Given figmaSourceMode is "mcp"
     And llmCodegenMode is "hybrid"

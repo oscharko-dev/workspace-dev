@@ -25,6 +25,8 @@ interface IrCacheDerivationOptions {
   screenElementBudget?: number;
   screenElementMaxDepth?: number;
   brandTheme?: string;
+  figmaSourceMode?: string;
+  mcpEnrichmentFingerprint?: string;
 }
 
 const toCanonicalJsonString = (value: unknown): string => {
@@ -58,7 +60,9 @@ export const computeOptionsHash = (options: IrCacheDerivationOptions): string =>
   const canonical = toCanonicalJsonString({
     screenElementBudget: options.screenElementBudget,
     screenElementMaxDepth: options.screenElementMaxDepth,
-    brandTheme: options.brandTheme
+    brandTheme: options.brandTheme,
+    figmaSourceMode: options.figmaSourceMode,
+    mcpEnrichmentFingerprint: options.mcpEnrichmentFingerprint
   });
   return createHash("sha256").update(canonical).digest("hex");
 };

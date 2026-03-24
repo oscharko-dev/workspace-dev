@@ -168,6 +168,7 @@ export type ScreenElementType =
   | "text"
   | "container"
   | "button"
+  | "alert"
   | "input"
   | "image"
   | "grid"
@@ -210,10 +211,34 @@ export interface ElementPrototypeNavigationIR {
   mode: "push" | "replace" | "overlay";
 }
 
+export type ScreenElementSemanticSource = "board" | "code_connect" | "design_system" | "metadata" | "node_hint" | "heuristic";
+
+export interface ElementCodeConnectMappingIR {
+  origin?: "code_connect" | "design_system";
+  componentName: string;
+  source: string;
+  label?: string;
+  propContract?: Record<string, unknown>;
+}
+
+export interface ElementAssetReferenceIR {
+  source: string;
+  kind: "image" | "svg" | "icon";
+  mimeType?: string;
+  alt?: string;
+  label?: string;
+  purpose?: "render" | "quality-gate" | "context";
+}
+
 export interface BaseElementIR {
   id: string;
   name: string;
   nodeType: string;
+  semanticName?: string;
+  semanticType?: string;
+  semanticSource?: ScreenElementSemanticSource;
+  codeConnect?: ElementCodeConnectMappingIR;
+  asset?: ElementAssetReferenceIR;
   textRole?: "placeholder";
   x?: number;
   y?: number;
@@ -355,7 +380,14 @@ export type NodeDiagnosticCategory =
   | "truncated"
   | "depth-truncated"
   | "classification-fallback"
-  | "degraded-geometry";
+  | "unsupported-board-component"
+  | "degraded-geometry"
+  | "hybrid-fallback"
+  | "missing-variable-enrichment"
+  | "missing-style-enrichment"
+  | "missing-code-connect-enrichment"
+  | "missing-metadata-enrichment"
+  | "asset-fallback";
 
 export interface NodeDiagnosticEntry {
   nodeId: string;
@@ -370,6 +402,26 @@ export interface SimplificationMetrics {
   promotedGroupMultiChild: number;
   spacingMerges: number;
   guardedSkips: number;
+}
+
+export interface McpCoverageMetric {
+  sourceMode: "mcp" | "hybrid";
+  toolNames: string[];
+  nodeHintCount: number;
+  metadataHintCount: number;
+  codeConnectMappingCount: number;
+  designSystemMappingCount: number;
+  variableCount: number;
+  styleEntryCount: number;
+  assetCount: number;
+  screenshotCount: number;
+  fallbackUsed?: boolean;
+  diagnostics?: Array<{
+    code: string;
+    message: string;
+    severity: "info" | "warning";
+    source: "loader" | "variables" | "styles" | "code_connect" | "design_system" | "metadata" | "screenshots" | "assets";
+  }>;
 }
 
 export interface ScreenSimplificationMetric extends SimplificationMetrics {
@@ -395,6 +447,7 @@ export interface GenerationMetrics {
   prototypeNavigationUnresolved?: number;
   prototypeNavigationRendered?: number;
   nodeDiagnostics?: NodeDiagnosticEntry[];
+  mcpCoverage?: McpCoverageMetric;
 }
 
 export interface DesignIR {
@@ -411,6 +464,12 @@ export interface DesignNodeFingerprint {
   type: ScreenElementIR["type"];
   nodeType: string;
   boundVariables?: string[];
+  semanticName?: string;
+  semanticType?: string;
+  semanticSource?: ScreenElementSemanticSource;
+  codeConnectComponentName?: string;
+  codeConnectSource?: string;
+  assetSource?: string;
   text?: string;
   fillColor?: string;
   strokeColor?: string;
@@ -546,7 +605,8 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     prototypeNavigationResolved: raw.metrics?.prototypeNavigationResolved ?? 0,
     prototypeNavigationUnresolved: raw.metrics?.prototypeNavigationUnresolved ?? 0,
     prototypeNavigationRendered: 0,
-    ...(raw.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...raw.metrics.nodeDiagnostics] } : {})
+    ...(raw.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...raw.metrics.nodeDiagnostics] } : {}),
+    ...(raw.metrics?.mcpCoverage ? { mcpCoverage: { ...raw.metrics.mcpCoverage } } : {})
   };
 
   return {

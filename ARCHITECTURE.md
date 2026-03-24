@@ -32,10 +32,10 @@ It provides deterministic HTTP behavior for:
 
 The runtime enforces:
 
-- `figmaSourceMode=rest|local_json`
+- `figmaSourceMode=rest|hybrid|local_json`
 - `llmCodegenMode=deterministic`
 
-Blocked modes (`mcp`, `hybrid`, `llm_strict`) fail with `MODE_LOCK_VIOLATION`.
+Blocked modes (`mcp`, `llm_strict`) fail with `MODE_LOCK_VIOLATION`.
 
 ## Artifact model
 

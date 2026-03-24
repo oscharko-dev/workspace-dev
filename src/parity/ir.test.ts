@@ -2667,6 +2667,116 @@ test("figmaToDesignIrWithOptions maps new semantic MCP hints to extended types",
   assert.equal(byId.get("hint-chip")?.name, "Status Chip");
 });
 
+test("figmaToDesignIrWithOptions prioritizes explicit board components over MCP hints and generic fallback", () => {
+  const ir = figmaToDesignIrWithOptions(
+    {
+      name: "Explicit Board Components",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          {
+            id: "0:1",
+            type: "CANVAS",
+            children: [
+              {
+                id: "screen-board",
+                type: "FRAME",
+                name: "Board Screen",
+                absoluteBoundingBox: { x: 0, y: 0, width: 960, height: 640 },
+                children: [
+                  {
+                    id: "board-button",
+                    type: "INSTANCE",
+                    name: "<Button>",
+                    cornerRadius: 64,
+                    fills: [{ type: "SOLID", color: toFigmaColor("#ee0000") }],
+                    absoluteBoundingBox: { x: 0, y: 0, width: 220, height: 48 },
+                    children: [{ id: "board-button-text", type: "TEXT", name: "Label", characters: "Weiter" }]
+                  },
+                  {
+                    id: "board-card",
+                    type: "INSTANCE",
+                    name: "<Card>",
+                    cornerRadius: 12,
+                    fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                    absoluteBoundingBox: { x: 0, y: 64, width: 320, height: 180 },
+                    children: [{ id: "board-card-text", type: "TEXT", name: "Title", characters: "Card" }]
+                  },
+                  {
+                    id: "board-divider",
+                    type: "INSTANCE",
+                    name: "<Divider>",
+                    fills: [{ type: "SOLID", color: toFigmaColor("#d9d9d9") }],
+                    absoluteBoundingBox: { x: 0, y: 260, width: 320, height: 1 },
+                    children: []
+                  },
+                  {
+                    id: "board-alert",
+                    type: "INSTANCE",
+                    name: "<Alert>",
+                    fills: [{ type: "SOLID", color: toFigmaColor("#e6f4ff") }],
+                    absoluteBoundingBox: { x: 0, y: 280, width: 320, height: 56 },
+                    children: [{ id: "board-alert-text", type: "TEXT", name: "Message", characters: "Hinweis" }]
+                  },
+                  {
+                    id: "board-stack",
+                    type: "FRAME",
+                    name: "<Stack2>(Nested)",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 352, width: 320, height: 120 },
+                    children: [{ id: "board-stack-text", type: "TEXT", name: "Body", characters: "Stack" }]
+                  },
+                  {
+                    id: "board-unsupported",
+                    type: "INSTANCE",
+                    name: "_<CardContent>",
+                    absoluteBoundingBox: { x: 0, y: 488, width: 320, height: 80 },
+                    children: [{ id: "board-unsupported-text", type: "TEXT", name: "Body", characters: "Unsupported" }]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      mcpEnrichment: {
+        sourceMode: "mcp",
+        toolNames: ["figma-mcp"],
+        nodeHints: [
+          {
+            nodeId: "board-button",
+            semanticName: "Surface Wrapper",
+            semanticType: "paper surface",
+            sourceTools: ["figma-mcp"]
+          },
+          {
+            nodeId: "board-alert",
+            semanticName: "Toast Alert",
+            semanticType: "snackbar alert",
+            sourceTools: ["figma-mcp"]
+          }
+        ]
+      }
+    }
+  );
+
+  const byId = new Map(ir.screens[0]?.children.map((child) => [child.id, child]));
+  assert.equal(byId.get("board-button")?.type, "button");
+  assert.equal(byId.get("board-card")?.type, "card");
+  assert.equal(byId.get("board-divider")?.type, "divider");
+  assert.equal(byId.get("board-alert")?.type, "alert");
+  assert.equal(byId.get("board-stack")?.type, "stack");
+
+  const unsupportedDiagnostic = ir.metrics?.nodeDiagnostics?.find(
+    (entry) => entry.nodeId === "board-unsupported" && entry.category === "unsupported-board-component"
+  );
+  assert.ok(unsupportedDiagnostic);
+  assert.match(unsupportedDiagnostic?.reason ?? "", /CardContent/);
+});
+
 const createResponsiveVariantFigmaFile = () => ({
   name: "Responsive Variants Demo",
   document: {
@@ -4746,4 +4856,229 @@ test("figmaToDesignIrWithOptions marks light-only files as no dark mode detected
   assert.equal(ir.themeAnalysis?.signals.luminance, false);
   assert.equal(ir.themeAnalysis?.signals.naming, false);
   assert.equal(ir.themeAnalysis?.darkPaletteHints, undefined);
+});
+
+test("deriveTokensForTesting prefers authoritative hybrid variables and style catalog over heuristics", () => {
+  const tokens = deriveTokensForTesting(createSampleFigmaFile(), {
+    mcpEnrichment: {
+      sourceMode: "hybrid",
+      toolNames: ["get_variable_defs", "search_design_system"],
+      nodeHints: [],
+      variables: [
+        {
+          name: "color/primary",
+          kind: "color",
+          value: "#112233"
+        },
+        {
+          name: "background/surface",
+          kind: "color",
+          value: "#f7f8fa"
+        },
+        {
+          name: "text/on-surface",
+          kind: "color",
+          value: "#111827"
+        },
+        {
+          name: "spacing/base",
+          kind: "number",
+          value: 12
+        },
+        {
+          name: "radius/md",
+          kind: "number",
+          value: 14
+        },
+        {
+          name: "font/family/base",
+          kind: "string",
+          value: "Figma Sans"
+        }
+      ],
+      styleCatalog: [
+        {
+          name: "Heading 1",
+          styleType: "TEXT",
+          fontSizePx: 44,
+          fontWeight: 700,
+          lineHeightPx: 52,
+          fontFamily: "Figma Sans"
+        },
+        {
+          name: "Body 1",
+          styleType: "TEXT",
+          fontSizePx: 18,
+          fontWeight: 400,
+          lineHeightPx: 28,
+          fontFamily: "Figma Sans"
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.primary, "#112233");
+  assert.equal(tokens.palette.background, "#f7f8fa");
+  assert.equal(tokens.palette.text, "#111827");
+  assert.equal(tokens.spacingBase, 12);
+  assert.equal(tokens.borderRadius, 14);
+  assert.equal(tokens.fontFamily.startsWith("Figma Sans"), true);
+  assert.equal(tokens.typography.h1.fontSizePx, 44);
+  assert.equal(tokens.typography.h1.fontFamily, "Figma Sans");
+  assert.equal(tokens.typography.body1.fontSizePx, 18);
+  assert.equal(tokens.typography.body1.fontFamily, "Figma Sans");
+});
+
+test("figmaToDesignIrWithOptions gives code connect mappings precedence over metadata and node hints in hybrid mode", () => {
+  const ir = figmaToDesignIrWithOptions(createSemanticHintPrecedenceConflictFigmaFile(), {
+    mcpEnrichment: {
+      sourceMode: "hybrid",
+      toolNames: ["get_metadata", "get_code_connect_map"],
+      nodeHints: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          semanticName: "Hint Stack",
+          semanticType: "stack",
+          sourceTools: ["get_metadata"]
+        }
+      ],
+      metadataHints: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          semanticName: "Hint Card",
+          semanticType: "card",
+          sourceTools: ["get_metadata"]
+        }
+      ],
+      codeConnectMappings: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          componentName: "Button",
+          source: "src/components/Button.tsx",
+          label: "React",
+          propContract: {
+            children: "{{text}}"
+          }
+        }
+      ],
+      designSystemMappings: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          componentName: "ActionSurface",
+          source: "src/components/ActionSurface.tsx",
+          label: "React"
+        }
+      ],
+      assets: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          source: "/figma/assets/button.svg",
+          kind: "icon",
+          purpose: "render"
+        }
+      ]
+    }
+  });
+
+  const target = findElementById(ir.screens[0]?.children ?? [], "hint-precedence-paper-stack") as
+    | {
+        type?: string;
+        semanticSource?: string;
+        semanticType?: string;
+        codeConnect?: { componentName?: string; source?: string; propContract?: Record<string, unknown> };
+        asset?: { source?: string; kind?: string };
+      }
+    | undefined;
+
+  assert.equal(target?.type, "button");
+  assert.equal(target?.semanticSource, "code_connect");
+  assert.equal(target?.semanticType, "Button");
+  assert.equal(target?.codeConnect?.componentName, "Button");
+  assert.equal(target?.codeConnect?.source, "src/components/Button.tsx");
+  assert.deepEqual(target?.codeConnect?.propContract, {
+    children: "{{text}}"
+  });
+  assert.equal(target?.asset?.source, "/figma/assets/button.svg");
+  assert.equal(target?.asset?.kind, "icon");
+  assert.equal(ir.metrics?.mcpCoverage?.sourceMode, "hybrid");
+  assert.equal(ir.metrics?.mcpCoverage?.nodeHintCount, 1);
+  assert.equal(ir.metrics?.mcpCoverage?.metadataHintCount, 1);
+  assert.equal(ir.metrics?.mcpCoverage?.codeConnectMappingCount, 1);
+  assert.equal(ir.metrics?.mcpCoverage?.designSystemMappingCount, 1);
+  assert.equal(ir.metrics?.mcpCoverage?.assetCount, 1);
+  assert.deepEqual(ir.metrics?.mcpCoverage?.toolNames, ["get_metadata", "get_code_connect_map"]);
+  assert.equal(ir.metrics?.mcpCoverage?.fallbackUsed, undefined);
+});
+
+test("figmaToDesignIrWithOptions uses design-system mappings when code connect is unavailable in hybrid mode", () => {
+  const ir = figmaToDesignIrWithOptions(createSemanticHintPrecedenceConflictFigmaFile(), {
+    mcpEnrichment: {
+      sourceMode: "hybrid",
+      toolNames: ["search_design_system"],
+      nodeHints: [],
+      designSystemMappings: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          componentName: "DesignButton",
+          source: "src/components/DesignButton.tsx",
+          label: "React",
+          semanticName: "Design Button",
+          semanticType: "Button",
+          propContract: {
+            children: "{{text}}"
+          },
+          libraryKey: "demo-library"
+        }
+      ]
+    }
+  });
+
+  const target = findElementById(ir.screens[0]?.children ?? [], "hint-precedence-paper-stack") as
+    | {
+        type?: string;
+        semanticSource?: string;
+        semanticType?: string;
+        codeConnect?: { origin?: string; componentName?: string; source?: string; propContract?: Record<string, unknown> };
+      }
+    | undefined;
+
+  assert.equal(target?.type, "button");
+  assert.equal(target?.semanticSource, "design_system");
+  assert.equal(target?.semanticType, "Button");
+  assert.equal(target?.codeConnect?.origin, "design_system");
+  assert.equal(target?.codeConnect?.componentName, "DesignButton");
+  assert.equal(target?.codeConnect?.source, "src/components/DesignButton.tsx");
+  assert.deepEqual(target?.codeConnect?.propContract, {
+    children: "{{text}}"
+  });
+  assert.equal(ir.metrics?.mcpCoverage?.designSystemMappingCount, 1);
+});
+
+test("figmaToDesignIrWithOptions preserves metadata-derived semantic structure in hybrid mode", () => {
+  const ir = figmaToDesignIrWithOptions(createSemanticHintPrecedenceConflictFigmaFile(), {
+    mcpEnrichment: {
+      sourceMode: "hybrid",
+      toolNames: ["get_metadata"],
+      nodeHints: [],
+      metadataHints: [
+        {
+          nodeId: "hint-precedence-paper-stack",
+          layerName: "Main Header",
+          layerType: "FRAME",
+          sourceTools: ["get_metadata"]
+        }
+      ]
+    }
+  });
+
+  const target = findElementById(ir.screens[0]?.children ?? [], "hint-precedence-paper-stack") as
+    | { semanticType?: string; semanticName?: string; semanticSource?: string }
+    | undefined;
+  assert.equal(target?.semanticType, "header");
+  assert.equal(target?.semanticName, "Main Header");
+  assert.equal(target?.semanticSource, "metadata");
+  assert.equal(
+    ir.metrics?.nodeDiagnostics?.some((entry) => entry.category === "missing-code-connect-enrichment"),
+    true
+  );
 });

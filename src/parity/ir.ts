@@ -91,8 +91,8 @@ const parseFigmaPayloadOrThrow = ({ figmaJson }: { figmaJson: unknown }): FigmaF
   throw new Error(`Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`);
 };
 
-export const deriveTokensForTesting = (figmaJson: unknown): DesignTokens => {
-  return deriveTokens(parseFigmaPayloadOrThrow({ figmaJson }));
+export const deriveTokensForTesting = (figmaJson: unknown, options?: Pick<FigmaToIrOptions, "mcpEnrichment">): DesignTokens => {
+  return deriveTokens(parseFigmaPayloadOrThrow({ figmaJson }), options?.mcpEnrichment);
 };
 
 export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
@@ -152,12 +152,13 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     throw new Error("No top-level frames/components found in Figma file");
   }
 
-  const derivedTokens = deriveTokens(parsed);
+  const derivedTokens = deriveTokens(parsed, options?.mcpEnrichment);
   const resolvedTokens = resolvedBrandTheme === "sparkasse" ? applySparkasseThemeDefaults(derivedTokens) : derivedTokens;
   const themeAnalysis = deriveThemeAnalysis({
     file: parsed,
     screens,
-    tokens: resolvedTokens
+    tokens: resolvedTokens,
+    ...(options?.mcpEnrichment ? { enrichment: options.mcpEnrichment } : {})
   });
   const metricsOutput = {
     ...metrics,

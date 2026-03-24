@@ -23,6 +23,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.24.0] - 2026-03-24
+
+### Selectable hybrid Figma source mode
+
+Added:
+
+- `WorkspaceFigmaSourceMode = "rest" | "hybrid" | "local_json"` so clients can explicitly request hybrid REST + MCP-enrichment derivation in addition to pure REST and local JSON modes.
+
+---
+
 ## [2.23.0] - 2026-03-23
 
 ### Guided remap suggestions for stale draft recovery

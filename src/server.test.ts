@@ -348,6 +348,48 @@ test("workspace server blocks mcp mode on submit", async () => {
   }
 });
 
+test("workspace server accepts hybrid mode on submit", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "hybrid",
+        figmaFileKey: "test-key",
+        figmaAccessToken: "figd_xxx"
+      }
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    const acceptedModes = body.acceptedModes as Record<string, unknown>;
+    const jobId = typeof body.jobId === "string" ? body.jobId : "";
+    assert.equal(acceptedModes.figmaSourceMode, "hybrid");
+    assert.equal(acceptedModes.llmCodegenMode, "deterministic");
+    assert.ok(jobId.length > 0);
+
+    const terminal = await waitForJobTerminalState({
+      server,
+      jobId,
+      timeoutMs: 20_000
+    });
+    assert.ok(terminal.status === "completed" || terminal.status === "failed");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server rejects invalid JSON payloads", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);

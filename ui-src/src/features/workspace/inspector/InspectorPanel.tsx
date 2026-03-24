@@ -60,7 +60,6 @@ import {
   selectParentFile,
   selectEditModeActive,
   selectEditCapability,
-  selectCanEnterEditMode,
   type ManifestMapping
 } from "./inspector-scope-state";
 import {
@@ -839,7 +838,6 @@ export function InspectorPanel({
   const parentFile = selectParentFile(scopeState);
   const editModeActive = selectEditModeActive(scopeState);
   const editCapability = selectEditCapability(scopeState);
-  const canEnterEditMode = selectCanEnterEditMode(scopeState);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -881,6 +879,7 @@ export function InspectorPanel({
   });
 
   const encodedJobId = encodeURIComponent(jobId);
+  const inspectorPanelRef = useRef<HTMLDivElement>(null);
   const layoutContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
@@ -1921,6 +1920,29 @@ export function InspectorPanel({
     setEditHistory((current) => pushEditHistory(current, nextDraft));
   }, []);
 
+  const focusInspectorFindInput = useCallback((): boolean => {
+    const root = inspectorPanelRef.current;
+    if (!root) {
+      return false;
+    }
+
+    for (const selector of ["[data-testid='diff-viewer-find-input']", "[data-testid='code-viewer-find-input']"]) {
+      const candidates = Array.from(root.querySelectorAll<HTMLInputElement>(selector));
+      const target = candidates.find((candidate) => {
+        return !candidate.disabled && candidate.getClientRects().length > 0;
+      });
+      if (!target) {
+        continue;
+      }
+
+      target.focus();
+      target.select();
+      return true;
+    }
+
+    return false;
+  }, []);
+
   const handleEditUndo = useCallback(() => {
     setEditHistory((current) => {
       if (!canUndo(current)) {
@@ -1967,11 +1989,12 @@ export function InspectorPanel({
     const handleShortcutKey = (event: KeyboardEvent): void => {
       // Do not trigger when a text input, textarea, or contenteditable is focused
       const target = event.target as HTMLElement | null;
-      const isTextInput = target != null
-        && typeof target.tagName === "string"
-        && (target.tagName.toLowerCase() === "input"
-          || target.tagName.toLowerCase() === "textarea"
-          || target.isContentEditable);
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : target;
+      const isTextInput = activeElement != null
+        && typeof activeElement.tagName === "string"
+        && (activeElement.tagName.toLowerCase() === "input"
+          || activeElement.tagName.toLowerCase() === "textarea"
+          || activeElement.isContentEditable);
 
       // `?` toggles shortcut help — only outside text inputs
       if (event.key === "?" && !isTextInput) {
@@ -1987,6 +2010,17 @@ export function InspectorPanel({
       }
 
       const isModKey = event.metaKey || event.ctrlKey;
+      const activeElementNode = activeElement instanceof Node ? activeElement : (target instanceof Node ? target : null);
+      const isFocusInsideInspector = activeElementNode !== null
+        && (activeElementNode === document.body
+          || inspectorPanelRef.current?.contains(activeElementNode));
+
+      if (isModKey && !event.shiftKey && event.key.toLowerCase() === "f" && isFocusInsideInspector) {
+        if (focusInspectorFindInput()) {
+          event.preventDefault();
+          return;
+        }
+      }
 
       // Ctrl/Cmd+Z — undo
       if (isModKey && !event.shiftKey && event.key === "z") {
@@ -2012,7 +2046,7 @@ export function InspectorPanel({
 
     window.addEventListener("keydown", handleShortcutKey);
     return () => { window.removeEventListener("keydown", handleShortcutKey); };
-  }, [handleEditUndo, handleEditRedo, handleCreateSnapshot]);
+  }, [focusInspectorFindInput, handleEditUndo, handleEditRedo, handleCreateSnapshot]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2976,12 +3010,13 @@ export function InspectorPanel({
     [treeNodes]
   );
 
-  // --- Edit capability: recompute when selected node changes ---
-
-  useEffect(() => {
+  const computeSelectedNodeEditCapability = useCallback(() => {
     if (!selectedNodeId) {
-      scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: { editable: false, reason: "No node selected.", editableFields: [] } } });
-      return;
+      return {
+        editable: false,
+        reason: "No node selected.",
+        editableFields: []
+      };
     }
 
     const isMapped = isNodeMapped;
@@ -2992,16 +3027,23 @@ export function InspectorPanel({
     // Extract present fields from the raw IR node (the JSON contains all fields)
     const presentFields = irNode ? extractPresentFields(irNode) : [];
 
-    const capability = detectEditCapability({
+    return detectEditCapability({
       id: selectedNodeId,
       name: nodeName,
       type: nodeType,
       mapped: isMapped,
       presentFields
     });
+  }, [irScreens, isNodeMapped, selectedNodeId]);
 
-    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability } });
-  }, [selectedNodeId, isNodeMapped, irScreens]);
+  // --- Edit capability: recompute when selected node changes ---
+
+  useEffect(() => {
+    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: computeSelectedNodeEditCapability() } });
+  }, [computeSelectedNodeEditCapability]);
+
+  const effectiveEditCapability = editCapability ?? (selectedNodeId ? computeSelectedNodeEditCapability() : null);
+  const canEnterEditMode = Boolean(effectiveEditCapability?.editable);
 
   const handleEnterEditMode = useCallback(() => {
     if (canEnterEditMode) {
@@ -3011,7 +3053,8 @@ export function InspectorPanel({
 
   const handleExitEditMode = useCallback(() => {
     scopeDispatch({ type: "EXIT_EDIT_MODE" });
-  }, []);
+    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: computeSelectedNodeEditCapability() } });
+  }, [computeSelectedNodeEditCapability]);
 
   const applyNavigationVisualState = useCallback(
     (nextScopeState: { selectedNodeId: string | null; effectiveFileTarget: string | null }) => {
@@ -3553,7 +3596,11 @@ export function InspectorPanel({
   }, [onCloseDialog]);
 
   return (
-    <div data-testid="inspector-panel" className="flex h-full min-h-0 flex-col overflow-hidden bg-[#141414] text-white">
+    <div
+      ref={inspectorPanelRef}
+      data-testid="inspector-panel"
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-[#141414] text-white"
+    >
       {/* Compact toolbar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[#000000] bg-[#1d1d1d] px-3 py-1.5">
         <div className="flex items-center gap-1.5">
@@ -3607,7 +3654,7 @@ export function InspectorPanel({
               disabled={!canEnterEditMode}
               onClick={handleEnterEditMode}
               className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
-              title={editCapability?.editable ? "Enter edit mode for this node" : (editCapability?.reason ?? "Select a node to check edit capability")}
+              title={effectiveEditCapability?.editable ? "Enter edit mode for this node" : (effectiveEditCapability?.reason ?? "Select a node to check edit capability")}
               aria-label="Enter edit mode"
             >
               Edit
@@ -3626,19 +3673,19 @@ export function InspectorPanel({
             </span>
           ))}
         </div>
-        {selectedNodeId && editCapability ? (
+        {selectedNodeId && effectiveEditCapability ? (
           <div className="h-3 w-px bg-[#333333]" />
         ) : null}
-        {selectedNodeId && editCapability ? (
+        {selectedNodeId && effectiveEditCapability ? (
           <span
             data-testid="inspector-edit-capability"
             className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-              editCapability.editable
+              effectiveEditCapability.editable
                 ? "border border-[#4eba87]/30 bg-[#4eba87]/10 text-[#4eba87]"
                 : "border border-white/10 bg-[#262626] text-white/45"
             }`}
           >
-            {editCapability.editable ? `Edit: ${editCapability.editableFields.length} fields` : "Not editable"}
+            {effectiveEditCapability.editable ? `Edit: ${effectiveEditCapability.editableFields.length} fields` : "Not editable"}
           </span>
         ) : null}
       </div>

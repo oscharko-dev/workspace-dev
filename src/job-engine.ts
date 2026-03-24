@@ -60,6 +60,7 @@ import {
 import { buildComponentManifest } from "./parity/component-manifest.js";
 import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 import type { DesignIR } from "./parity/types-ir.js";
+import type { FigmaMcpEnrichment } from "./parity/types.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
@@ -436,6 +437,9 @@ const resolveFigmaSourceMode = ({
   if (normalized === "local_json") {
     return "local_json";
   }
+  if (normalized === "hybrid") {
+    return "hybrid";
+  }
   return "rest";
 };
 
@@ -445,6 +449,28 @@ const resolveFormHandlingMode = ({
   submitFormHandlingMode: WorkspaceFormHandlingMode | undefined;
 }): WorkspaceFormHandlingMode => {
   return submitFormHandlingMode === "legacy_use_state" ? "legacy_use_state" : "react_hook_form";
+};
+
+const createHybridFallbackEnrichment = ({
+  code,
+  message
+}: {
+  code: string;
+  message: string;
+}): FigmaMcpEnrichment => {
+  return {
+    sourceMode: "hybrid",
+    nodeHints: [],
+    toolNames: [],
+    diagnostics: [
+      {
+        code,
+        message,
+        severity: "warning",
+        source: "loader"
+      }
+    ]
+  };
 };
 
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
@@ -755,7 +781,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       runtimeGenerationLocale: runtime.generationLocale
     });
     const resolvedGenerationLocale = generationLocaleResolution.locale;
-    const figmaFileKeyForDiagnostics = resolvedFigmaSourceMode === "rest" ? input.figmaFileKey?.trim() : undefined;
+    const figmaFileKeyForDiagnostics =
+      resolvedFigmaSourceMode === "local_json" ? undefined : input.figmaFileKey?.trim();
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -936,7 +963,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             throw createPipelineError({
               code: "E_FIGMA_REST_INPUT",
               stage: "figma.source",
-              message: "figmaFileKey and figmaAccessToken are required when figmaSourceMode=rest."
+              message: `figmaFileKey and figmaAccessToken are required when figmaSourceMode=${resolvedFigmaSourceMode}.`
             });
           }
 
@@ -973,6 +1000,91 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         }
       });
 
+      const hybridMcpEnrichment =
+        resolvedFigmaSourceMode !== "hybrid"
+          ? undefined
+          : await (async (): Promise<FigmaMcpEnrichment> => {
+              const fileKey = input.figmaFileKey?.trim();
+              const accessToken = input.figmaAccessToken?.trim();
+              if (!fileKey || !accessToken) {
+                return createHybridFallbackEnrichment({
+                  code: "W_MCP_ENRICHMENT_SKIPPED",
+                  message: "Hybrid mode fell back to REST-only derivation because Figma REST credentials were incomplete."
+                });
+              }
+              if (!runtime.figmaMcpEnrichmentLoader) {
+                pushLog({
+                  job,
+                  level: "warn",
+                  stage: "ir.derive",
+                  message: "Hybrid mode selected, but no figmaMcpEnrichmentLoader is configured. Falling back to REST-only derivation."
+                });
+                appendDiagnostics({
+                  stage: "ir.derive",
+                  diagnostics: [
+                    {
+                      code: "W_MCP_ENRICHMENT_SKIPPED",
+                      message: "Hybrid mode fell back to REST-only derivation because no MCP enrichment loader is configured.",
+                      suggestion: "Configure a figmaMcpEnrichmentLoader to supply variables, style catalog, metadata hints, or Code Connect mappings.",
+                      stage: "ir.derive",
+                      severity: "warning",
+                      details: {
+                        figmaSourceMode: resolvedFigmaSourceMode
+                      }
+                    }
+                  ]
+                });
+                return createHybridFallbackEnrichment({
+                  code: "W_MCP_ENRICHMENT_SKIPPED",
+                  message: "No MCP enrichment loader configured."
+                });
+              }
+              try {
+                const loaded = await runtime.figmaMcpEnrichmentLoader({
+                  figmaFileKey: fileKey,
+                  figmaAccessToken: accessToken,
+                  cleanedFile: figmaFetch.file,
+                  rawFile: (JSON.parse(await readFile(figmaRawJsonFile, "utf8")) as FigmaFileResponse),
+                  jobDir,
+                  fetchImpl: fetchWithCancellation
+                });
+                if (!loaded) {
+                  return createHybridFallbackEnrichment({
+                    code: "W_MCP_ENRICHMENT_SKIPPED",
+                    message: "Hybrid mode loader returned no enrichment; REST-only derivation was used."
+                  });
+                }
+                return loaded;
+              } catch (error) {
+                const message = getErrorMessage(error);
+                pushLog({
+                  job,
+                  level: "warn",
+                  stage: "ir.derive",
+                  message: `Hybrid MCP enrichment failed; falling back to REST-only derivation. ${message}`
+                });
+                appendDiagnostics({
+                  stage: "ir.derive",
+                  diagnostics: [
+                    {
+                      code: "W_MCP_ENRICHMENT_SKIPPED",
+                      message: "Hybrid mode fell back to REST-only derivation because MCP enrichment loading failed.",
+                      suggestion: "Check the MCP enrichment loader and retry. REST derivation completed without authoritative MCP data.",
+                      stage: "ir.derive",
+                      severity: "warning",
+                      details: {
+                        error: message
+                      }
+                    }
+                  ]
+                });
+                return createHybridFallbackEnrichment({
+                  code: "W_MCP_ENRICHMENT_SKIPPED",
+                  message: `MCP enrichment loader failed: ${message}`
+                });
+              }
+            })();
+
       const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
 
       const ir = await runStage({
@@ -982,34 +1094,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           const emitIrMetricDiagnostics = ({
             source
           }: {
-            source: {
-              metrics?: {
-                truncatedScreens?: Array<{
-                  screenId: string;
-                  screenName: string;
-                  originalElements: number;
-                  retainedElements: number;
-                  budget: number;
-                }>;
-                depthTruncatedScreens?: Array<{
-                  screenId: string;
-                  screenName: string;
-                  firstTruncatedDepth: number;
-                  truncatedBranchCount: number;
-                  maxDepth: number;
-                }>;
-                classificationFallbacks?: Array<{
-                  screenId: string;
-                  screenName: string;
-                  nodeId: string;
-                  nodeName: string;
-                  nodeType: string;
-                  depth: number;
-                  matchedRulePriority?: number;
-                  layoutMode?: string;
-                }>;
-              };
-            };
+            source: DesignIR;
           }): void => {
             const budgetTruncatedScreens = [...(source.metrics?.truncatedScreens ?? [])].sort((left, right) => {
               if (left.screenName !== right.screenName) {
@@ -1155,6 +1240,34 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
                 diagnostics
               });
             }
+
+            const mcpCoverage = source.metrics?.mcpCoverage;
+            if (mcpCoverage) {
+              pushLog({
+                job,
+                level: mcpCoverage.fallbackUsed ? "warn" : "info",
+                stage: "ir.derive",
+                message:
+                  `MCP enrichment coverage (${mcpCoverage.sourceMode}): ` +
+                  `variables=${mcpCoverage.variableCount}, styles=${mcpCoverage.styleEntryCount}, ` +
+                  `codeConnect=${mcpCoverage.codeConnectMappingCount}, designSystem=${mcpCoverage.designSystemMappingCount}, metadata=${mcpCoverage.metadataHintCount}, ` +
+                  `nodeHints=${mcpCoverage.nodeHintCount}, assets=${mcpCoverage.assetCount}, screenshots=${mcpCoverage.screenshotCount}.`
+              });
+              const diagnostics: PipelineDiagnosticInput[] = (mcpCoverage.diagnostics ?? []).map((entry) => ({
+                code: entry.code,
+                message: entry.message,
+                suggestion:
+                  entry.source === "loader"
+                    ? "Configure a hybrid MCP enrichment loader or use pure REST mode if no MCP data is available."
+                    : `Check MCP ${entry.source.replace(/_/g, " ")} availability and data coverage for this board.`,
+                stage: "ir.derive",
+                severity: entry.severity
+              }));
+              appendDiagnostics({
+                stage: "ir.derive",
+                diagnostics
+              });
+            }
           };
           const buildIrEmptyDiagnostics = (): PipelineDiagnosticInput[] => {
             const { rejectedCandidates, rootCandidateCount } = analyzeScreenCandidateRejections({
@@ -1236,7 +1349,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           const irDerivationOptions = {
             screenElementBudget: runtime.figmaScreenElementBudget,
             screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
-            brandTheme: resolvedBrandTheme
+            brandTheme: resolvedBrandTheme,
+            figmaSourceMode: resolvedFigmaSourceMode,
+            ...(hybridMcpEnrichment
+              ? { mcpEnrichmentFingerprint: computeContentHash(hybridMcpEnrichment) }
+              : {})
           };
 
           const irCacheLog = (message: string): void => {
@@ -1277,7 +1394,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               sourceMetrics: {
                 fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
                 degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
-              }
+              },
+              ...(hybridMcpEnrichment ? { mcpEnrichment: hybridMcpEnrichment } : {})
             });
           } catch (error) {
             if (error instanceof Error && error.message.includes("No top-level frames/components found in Figma file")) {
@@ -1372,7 +1490,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               stage: "codegen.generate",
               message: "Image asset export disabled by runtime configuration."
             });
-          } else if (resolvedFigmaSourceMode !== "rest") {
+          } else if (resolvedFigmaSourceMode === "local_json") {
             pushLog({
               job,
               level: "info",

@@ -232,6 +232,10 @@ export const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
   return loweredName.includes("buttonendicon") || loweredName.includes("expandiconwrapper");
 };
 
+const hasStructuralSemanticContainerHints = (element: ScreenElementIR): boolean => {
+  return element.type === "container" && Boolean(element.semanticType || element.semanticName);
+};
+
 const resolvePromotionMode = ({
   element,
   depth
@@ -254,6 +258,7 @@ const resolvePromotionMode = ({
 
   const blockedByGuardrails = Boolean(
     element.prototypeNavigation ||
+      hasStructuralSemanticContainerHints(element) ||
       isIconLikeNode(element) ||
       isSemanticIconWrapper(element) ||
       hasPromotionBlockingVisualStyle(element) ||
@@ -323,6 +328,9 @@ const simplifyNode = ({
   const simplifiedOwnText = simplified.text?.trim();
   if (!hasChildren && !hasVisualStyle(simplified) && !simplifiedOwnText) {
     if (simplified.prototypeNavigation) {
+      return simplified;
+    }
+    if (hasStructuralSemanticContainerHints(simplified)) {
       return simplified;
     }
     stats.removedEmptyNodes += 1;
@@ -755,6 +763,9 @@ export const resolveImageSource = ({
   if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
     return mappedSource.trim();
   }
+  if (typeof element.asset?.source === "string" && element.asset.source.trim().length > 0) {
+    return element.asset.source.trim();
+  }
   return toDeterministicImagePlaceholderSrc({
     element,
     label: fallbackLabel
@@ -874,6 +885,7 @@ export interface RenderedButtonModel {
 export interface RenderContext {
   screenId: string;
   screenName: string;
+  currentFilePath: string;
   generationLocale: string;
   formHandlingMode: ResolvedFormHandlingMode;
   fields: InteractiveFieldModel[];
@@ -978,6 +990,13 @@ const toContractExpression = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
+const resolveElementTextContent = (element: ScreenElementIR): string | undefined => {
+  const ownText = typeof element.text === "string" ? element.text.trim() : "";
+  if (ownText.length > 0) {
+    return ownText;
+  }
+  return firstText(element);
+};
 
 const resolveContractValue = (value: unknown, element: ScreenElementIR): unknown => {
   if (typeof value !== "string") {
@@ -990,19 +1009,67 @@ const resolveContractValue = (value: unknown, element: ScreenElementIR): unknown
     return element.name;
   }
   if (value === "{{text}}") {
-    return firstText(element) ?? "";
+    return resolveElementTextContent(element) ?? "";
   }
   return value;
 };
 
-const registerMappedImport = ({ context, mapping }: { context: RenderContext; mapping: ComponentMappingRule }): string => {
-  const preferredName = toComponentIdentifier(mapping.componentName);
-  const existing = context.mappedImports.find((item) => item.localName === preferredName && item.modulePath === mapping.importPath);
+const stripModuleExtension = (value: string): string => {
+  return value.replace(/\.(?:[cm]?[jt]sx?)$/i, "");
+};
+
+const toNormalizedImportPath = ({
+  source,
+  currentFilePath
+}: {
+  source: string;
+  currentFilePath: string;
+}): string | undefined => {
+  const normalizedSource = source.trim().replace(/\\/g, "/");
+  if (!normalizedSource) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(normalizedSource)) {
+    return undefined;
+  }
+  if (!normalizedSource.startsWith(".") && !normalizedSource.startsWith("/") && !normalizedSource.startsWith("src/")) {
+    return stripModuleExtension(normalizedSource);
+  }
+  const currentDirectory = path.posix.dirname(currentFilePath.replace(/\\/g, "/"));
+  if (normalizedSource.startsWith("./") || normalizedSource.startsWith("../")) {
+    return stripModuleExtension(normalizedSource);
+  }
+  let sourcePath = normalizedSource;
+  if (sourcePath.startsWith("/")) {
+    const srcIndex = sourcePath.lastIndexOf("/src/");
+    if (srcIndex < 0) {
+      return undefined;
+    }
+    sourcePath = sourcePath.slice(srcIndex + 1);
+  }
+  if (!sourcePath.startsWith("src/")) {
+    return undefined;
+  }
+  const relativePath = stripModuleExtension(path.posix.relative(currentDirectory, sourcePath));
+  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+};
+
+const registerMappedImport = ({
+  context,
+  componentName,
+  importPath
+}: {
+  context: RenderContext;
+  componentName: string;
+  importPath: string;
+}): string => {
+  const preferredName = toComponentIdentifier(componentName);
+  const existing = context.mappedImports.find((item) => item.localName === preferredName && item.modulePath === importPath);
   if (existing) {
     return existing.localName;
   }
 
-  const existingByModule = context.mappedImports.find((item) => item.modulePath === mapping.importPath);
+  const existingByModule = context.mappedImports.find((item) => item.modulePath === importPath);
   if (existingByModule) {
     return existingByModule.localName;
   }
@@ -1022,7 +1089,7 @@ const registerMappedImport = ({ context, mapping }: { context: RenderContext; ma
 
   context.mappedImports.push({
     localName: toIdentifier(localName, "MappedComponent"),
-    modulePath: mapping.importPath
+    modulePath: importPath
   });
   const newestImport = context.mappedImports.at(-1);
   return newestImport?.localName ?? "MappedComponent";
@@ -1032,49 +1099,113 @@ export const isPlainRecord = (value: unknown): value is Record<string, unknown> 
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+interface ResolvedMappedElementContract {
+  mappingSource: "manual" | "code_connect";
+  componentName: string;
+  importPath: string;
+  propContract?: Record<string, unknown>;
+}
+
+const resolveMappedElementContract = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): ResolvedMappedElementContract | undefined => {
+  const manualMapping = context.mappingByNodeId.get(element.id);
+  if (manualMapping) {
+    if (!manualMapping.enabled) {
+      pushMappingWarning({
+        context,
+        code: "W_COMPONENT_MAPPING_DISABLED",
+        nodeId: element.id,
+        message: `Component mapping disabled for node '${element.id}', deterministic fallback used`
+      });
+      return undefined;
+    }
+
+    if (!manualMapping.importPath.trim() || !manualMapping.componentName.trim()) {
+      pushMappingWarning({
+        context,
+        code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
+        nodeId: element.id,
+        message: `Component mapping for node '${element.id}' is missing componentName/importPath, deterministic fallback used`
+      });
+      return undefined;
+    }
+
+    if (manualMapping.propContract !== undefined && !isPlainRecord(manualMapping.propContract)) {
+      pushMappingWarning({
+        context,
+        code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
+        nodeId: element.id,
+        message: `Component mapping contract for node '${element.id}' is not an object, deterministic fallback used`
+      });
+      return undefined;
+    }
+    return {
+      mappingSource: "manual",
+      componentName: manualMapping.componentName,
+      importPath: manualMapping.importPath,
+      ...(manualMapping.propContract ? { propContract: manualMapping.propContract } : {})
+    };
+  }
+
+  if (!element.codeConnect) {
+    return undefined;
+  }
+  const importPath = toNormalizedImportPath({
+    source: element.codeConnect.source,
+    currentFilePath: context.currentFilePath
+  });
+  if (!importPath || !element.codeConnect.componentName.trim()) {
+    pushMappingWarning({
+      context,
+      code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
+      nodeId: element.id,
+      message: `Code Connect mapping for node '${element.id}' is missing a usable componentName/importPath, deterministic fallback used`
+    });
+    return undefined;
+  }
+  if (element.codeConnect.propContract !== undefined && !isPlainRecord(element.codeConnect.propContract)) {
+    pushMappingWarning({
+      context,
+      code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
+      nodeId: element.id,
+      message: `Code Connect contract for node '${element.id}' is not an object, deterministic fallback used`
+    });
+    return undefined;
+  }
+  return {
+    mappingSource: "code_connect",
+    componentName: element.codeConnect.componentName,
+    importPath,
+    ...(element.codeConnect.propContract ? { propContract: element.codeConnect.propContract } : {})
+  };
+};
+
 export const renderMappedElement = (
   element: ScreenElementIR,
   depth: number,
   parent: VirtualParent,
   context: RenderContext
 ): string | undefined => {
-  const mapping = context.mappingByNodeId.get(element.id);
+  const mapping = resolveMappedElementContract({
+    element,
+    context
+  });
   if (!mapping) {
     return undefined;
   }
-
-  if (!mapping.enabled) {
-    pushMappingWarning({
-      context,
-      code: "W_COMPONENT_MAPPING_DISABLED",
-      nodeId: element.id,
-      message: `Component mapping disabled for node '${element.id}', deterministic fallback used`
-    });
-    return undefined;
+  const componentName = registerMappedImport({
+    context,
+    componentName: mapping.componentName,
+    importPath: mapping.importPath
+  });
+  if (mapping.mappingSource === "manual") {
+    context.usedMappingNodeIds.add(element.id);
   }
-
-  if (!mapping.importPath.trim() || !mapping.componentName.trim()) {
-    pushMappingWarning({
-      context,
-      code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
-      nodeId: element.id,
-      message: `Component mapping for node '${element.id}' is missing componentName/importPath, deterministic fallback used`
-    });
-    return undefined;
-  }
-
-  if (mapping.propContract !== undefined && !isPlainRecord(mapping.propContract)) {
-    pushMappingWarning({
-      context,
-      code: "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
-      nodeId: element.id,
-      message: `Component mapping contract for node '${element.id}' is not an object, deterministic fallback used`
-    });
-    return undefined;
-  }
-
-  const componentName = registerMappedImport({ context, mapping });
-  context.usedMappingNodeIds.add(element.id);
   const indent = "  ".repeat(depth);
   const sx = toElementSx({
     element,
@@ -1092,7 +1223,7 @@ export const renderMappedElement = (
     return `${indent}<${componentName} ${props}>{${toContractExpression(childrenValue)}}</${componentName}>`;
   }
 
-  const implicitText = firstText(element);
+  const implicitText = resolveElementTextContent(element);
   if (implicitText) {
     return `${indent}<${componentName} ${props}>{${literal(implicitText)}}</${componentName}>`;
   }

@@ -23,8 +23,8 @@
 |------|---------------|----------------|
 | `figmaSourceMode=rest` | Supported | Supported |
 | `figmaSourceMode=local_json` | Supported | Supported |
+| `figmaSourceMode=hybrid` | Supported | Supported |
 | `figmaSourceMode=mcp` | Blocked | Supported |
-| `figmaSourceMode=hybrid` | Blocked | Supported |
 | `llmCodegenMode=deterministic` | Supported | Supported |
 | `llmCodegenMode=hybrid` | Blocked | Supported |
 | `llmCodegenMode=llm_strict` | Blocked | Supported |
@@ -51,5 +51,5 @@ See [CONTRACT_CHANGELOG.md](../../CONTRACT_CHANGELOG.md) for authoritative versi
 
 1. Install `workspace-dev` as a dev dependency.
 2. Replace API calls with local `workspace-dev start`.
-3. Use mode configuration `rest` or `local_json` with `deterministic`.
+3. Use mode configuration `rest`, `hybrid`, or `local_json` with `deterministic`.
 4. `workspace-dev` runs autonomous local fetch/IR/codegen/validation/export without Workspace Dev platform API services.

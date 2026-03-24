@@ -898,6 +898,56 @@ describe("InspectorPanel Edit Studio", () => {
     installMutationMock();
   });
 
+  it("focuses the code viewer find input from the global shortcut while tree focus is active", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    const treeNode = screen.getByTestId("tree-node-node-editable");
+    fireEvent.click(treeNode);
+    treeNode.focus();
+
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    expect(findInput).not.toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(findInput).toHaveFocus();
+    });
+  });
+
+  it("restores edit capability after exiting edit mode for the same selected node", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    renderInspectorPanel({ openDialog: "preApplyReview" });
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-enter-edit-mode")).toBeEnabled();
+      expect(screen.getByTestId("inspector-edit-capability")).toHaveTextContent(/^Edit: \d+ fields$/);
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-exit-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-enter-edit-mode")).toBeEnabled();
+      expect(screen.queryByTestId("inspector-edit-studio-panel")).not.toBeInTheDocument();
+      expect(screen.getByTestId("inspector-edit-capability")).toHaveTextContent(/^Edit: \d+ fields$/);
+    });
+  });
+
   it("renders scalar and layout controls in edit mode while keeping deferred fields hidden", async () => {
     installQueryMock({
       overrides: editableNodeQueryOverrides()

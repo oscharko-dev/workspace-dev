@@ -621,6 +621,19 @@ describe("ENTER_EDIT_MODE and EXIT_EDIT_MODE", () => {
     expect(selectEditModeActive(state)).toBe(false);
   });
 
+  it("EXIT_EDIT_MODE preserves the last computed capability for the current node", () => {
+    let state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, {
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: editableCapability }
+    });
+    state = dispatch(state, { type: "ENTER_EDIT_MODE" });
+    state = dispatch(state, { type: "EXIT_EDIT_MODE" });
+
+    expect(state.editModeActive).toBe(false);
+    expect(state.editCapability).toEqual(editableCapability);
+    expect(selectCanEnterEditMode(state)).toBe(true);
+  });
+
   it("ENTER_EDIT_MODE is idempotent when already active", () => {
     const state = dispatch(INITIAL_INSPECTOR_SCOPE_STATE, { type: "ENTER_EDIT_MODE" });
     const again = dispatch(state, { type: "ENTER_EDIT_MODE" });

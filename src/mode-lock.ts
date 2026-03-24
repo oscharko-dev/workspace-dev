@@ -1,15 +1,15 @@
 /**
  * Mode-lock enforcement for workspace-dev.
  *
- * Only `figmaSourceMode=rest|local_json` and `llmCodegenMode=deterministic` are allowed.
+ * Only `figmaSourceMode=rest|hybrid|local_json` and `llmCodegenMode=deterministic` are allowed.
  * All other modes are blocked with explicit error messages.
  */
 
 const ALLOWED_FIGMA_SOURCE_MODE_DEFAULT = "rest" as const;
-const ALLOWED_FIGMA_SOURCE_MODES = ["rest", "local_json"] as const;
+const ALLOWED_FIGMA_SOURCE_MODES = ["rest", "hybrid", "local_json"] as const;
 const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 
-const BLOCKED_FIGMA_MODES: readonly string[] = ["mcp", "hybrid"];
+const BLOCKED_FIGMA_MODES: readonly string[] = ["mcp"];
 const BLOCKED_CODEGEN_MODES: readonly string[] = ["hybrid", "llm_strict"];
 
 export interface ModeLockValidationResult {
@@ -32,12 +32,12 @@ export function validateModeLock(input: {
     if (isKnownBlocked) {
       errors.push(
         `Mode '${figmaMode}' is not available in workspace-dev. ` +
-        `Only 'rest' and 'local_json' are supported. MCP and hybrid modes require the full Workspace Dev platform deployment.`
+        `Only 'rest', 'hybrid', and 'local_json' are supported. MCP mode requires the full Workspace Dev platform deployment.`
       );
     } else {
       errors.push(
         `Unknown figmaSourceMode '${figmaMode}'. ` +
-        `workspace-dev supports only 'rest' and 'local_json'.`
+        `workspace-dev supports only 'rest', 'hybrid', and 'local_json'.`
       );
     }
   }

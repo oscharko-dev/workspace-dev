@@ -33,6 +33,11 @@ export interface AccessibilityWarning {
   contrastRatio: number;
 }
 
+export interface SemanticContainerDescriptor {
+  component?: "header" | "nav" | "main" | "footer" | "article" | "section" | "form";
+  role?: "banner" | "navigation" | "main" | "contentinfo";
+}
+
 const A11Y_GENERIC_LABEL_PATTERNS: readonly RegExp[] = [
   /^frame\s*\d*$/i,
   /^group\s*\d*$/i,
@@ -163,6 +168,63 @@ export const inferLandmarkRole = ({
     return undefined;
   }
   return hasInteractiveDescendants({ element, context }) ? "navigation" : undefined;
+};
+
+export const resolveSemanticContainerDescriptor = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): SemanticContainerDescriptor | undefined => {
+  const landmarkRole = inferLandmarkRole({ element, context });
+  if (landmarkRole === "navigation") {
+    return {
+      component: "nav",
+      role: "navigation"
+    };
+  }
+  const combined = [element.semanticType, element.semanticName, element.name]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+  if (!combined) {
+    return undefined;
+  }
+  if (/\b(app\s*bar|top\s*bar|header|banner|hero)\b/.test(combined)) {
+    return {
+      component: "header",
+      role: "banner"
+    };
+  }
+  if (/\bmain|content\b/.test(combined)) {
+    return {
+      component: "main",
+      role: "main"
+    };
+  }
+  if (/\bfooter|contentinfo\b/.test(combined)) {
+    return {
+      component: "footer",
+      role: "contentinfo"
+    };
+  }
+  if (/\barticle|card\b/.test(combined)) {
+    return {
+      component: "article"
+    };
+  }
+  if (/\bsection|group\b/.test(combined)) {
+    return {
+      component: "section"
+    };
+  }
+  if (/\bform\b/.test(combined)) {
+    return {
+      component: "form"
+    };
+  }
+  return undefined;
 };
 
 export const isDecorativeImageElement = (element: ScreenElementIR): boolean => {

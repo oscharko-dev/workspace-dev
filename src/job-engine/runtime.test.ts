@@ -122,3 +122,12 @@ test("resolveRuntimeSettings falls back to derived brand theme for unknown value
   assert.equal(runtime.generationLocale, "de-DE");
   assert.equal(runtime.routerMode, "browser");
 });
+
+test("resolveRuntimeSettings preserves an optional hybrid MCP enrichment loader", () => {
+  const loader = async () => undefined;
+  const runtime = resolveRuntimeSettings({
+    figmaMcpEnrichmentLoader: loader
+  });
+
+  assert.equal(runtime.figmaMcpEnrichmentLoader, loader);
+});

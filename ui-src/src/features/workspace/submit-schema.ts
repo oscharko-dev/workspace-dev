@@ -7,6 +7,7 @@ export const workspaceSubmitSchema = z
   .object({
     figmaFileKey: requiredString,
     figmaAccessToken: requiredString,
+    figmaSourceMode: z.enum(["rest", "hybrid"]).default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
     repoToken: optionalString,
@@ -35,7 +36,7 @@ export const workspaceSubmitSchema = z
     }
   });
 
-export type WorkspaceSubmitFormData = z.infer<typeof workspaceSubmitSchema>;
+export type WorkspaceSubmitFormData = z.input<typeof workspaceSubmitSchema>;
 
 export interface WorkspaceSubmitPayload {
   figmaFileKey: string;
@@ -45,7 +46,7 @@ export interface WorkspaceSubmitPayload {
   enableGitPr: boolean;
   projectName?: string | undefined;
   targetPath?: string | undefined;
-  figmaSourceMode: "rest";
+  figmaSourceMode: "rest" | "hybrid";
   llmCodegenMode: "deterministic";
 }
 
@@ -70,12 +71,12 @@ export function toWorkspaceSubmitPayload({
   return {
     figmaFileKey: formData.figmaFileKey.trim(),
     figmaAccessToken: formData.figmaAccessToken.trim(),
+    figmaSourceMode: formData.figmaSourceMode ?? "rest",
     repoUrl: toOptionalString({ value: formData.repoUrl }),
     repoToken: toOptionalString({ value: formData.repoToken }),
     enableGitPr: formData.enableGitPr,
     projectName: toOptionalString({ value: formData.projectName }),
     targetPath: toOptionalString({ value: formData.targetPath }),
-    figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   };
 }
