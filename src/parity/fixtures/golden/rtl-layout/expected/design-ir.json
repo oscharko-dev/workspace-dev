@@ -446,6 +446,13 @@
         "fontFamily": "Cairo",
         "letterSpacingEm": 0.08
       }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
     }
   },
   "metrics": {

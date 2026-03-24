@@ -23,7 +23,7 @@ function HomeDesktopScreenContent() {
   return (
     <Container id="main-content" maxWidth="xl" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 724px)", bgcolor: "#ffffff", px: 1.333, py: 1.333, maxWidth: { xs: "390px", sm: "none", lg: "1440px", xl: "none" }, gap: { xs: 1.333, sm: 2 } }}>
       {/* @ir:start hero-desktop Hero Section table */}
-      <Box data-ir-id="hero-desktop" data-ir-name="Hero Section" sx={{ width: "93.3%", maxWidth: "1344px", minHeight: "400px", display: "flex", flexDirection: "row", alignItems: "center", gap: 2.667 }}>
+      <Box data-ir-id="hero-desktop" data-ir-name="Hero Section" component="header" role="banner" sx={{ width: "93.3%", maxWidth: "1344px", minHeight: "400px", display: "flex", flexDirection: "row", alignItems: "center", gap: 2.667 }}>
         {/* @ir:start hero-text-desktop Hero Text list */}
         <List data-ir-id="hero-text-desktop" data-ir-name="Hero Text" sx={{ width: "48.4%", maxWidth: "650px", minHeight: "400px", display: "flex", flexDirection: "column", gap: 1.333 }}>
           <ListItem key={"hero-heading-desktop"} disablePadding><ListItemText primary={"Build Better Products"} /></ListItem>

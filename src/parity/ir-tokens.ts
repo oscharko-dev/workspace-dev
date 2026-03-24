@@ -9,11 +9,11 @@ import type {
   DesignIR,
   DesignIrDarkPaletteHints,
   DesignIrThemeAnalysis,
+  DesignTokenSourceMetric,
   FigmaMcpDesignSystemMapping,
   DesignTokens,
   FigmaMcpCodeConnectMapping,
   FigmaMcpEnrichment,
-  FigmaMcpMetadataHint,
   FigmaMcpNodeHint,
   ScreenElementIR,
   ScreenIR,
@@ -56,6 +56,7 @@ import {
   resolveDominantFont
 } from "./ir-typography.js";
 import type { FigmaTextStyleEntry } from "./typography-tokens.js";
+import { normalizeMetadataHint } from "./ir-metadata.js";
 
 interface CompositeMcpHint extends FigmaMcpNodeHint {
   priority: number;
@@ -290,53 +291,6 @@ const normalizeSemanticValue = (value: string | undefined): string | undefined =
   return normalized.length > 0 ? normalized : undefined;
 };
 
-const inferSemanticTypeFromMetadataHint = (hint: FigmaMcpMetadataHint): string | undefined => {
-  const combined = [
-    hint.semanticType,
-    hint.semanticName,
-    hint.layerType,
-    hint.layerName
-  ]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .join(" ")
-    .toLowerCase();
-  if (!combined) {
-    return undefined;
-  }
-  if (/\b(nav|navigation|navbar|sidebar|menu|drawer|tabbar)\b/.test(combined)) {
-    return "navigation";
-  }
-  if (/\b(app\s*bar|top\s*bar|header|banner|hero)\b/.test(combined)) {
-    return "header";
-  }
-  if (/\b(main|content|body)\b/.test(combined)) {
-    return "main";
-  }
-  if (/\bfooter|bottom\s*bar|contentinfo\b/.test(combined)) {
-    return "footer";
-  }
-  if (/\b(article|card)\b/.test(combined)) {
-    return "article";
-  }
-  if (/\bsection|group\b/.test(combined)) {
-    return "section";
-  }
-  if (/\bform\b/.test(combined)) {
-    return "form";
-  }
-  return normalizeSemanticValue(hint.semanticType);
-};
-
-const normalizeMetadataHint = (hint: FigmaMcpMetadataHint): FigmaMcpMetadataHint => {
-  const semanticName = normalizeSemanticValue(hint.semanticName) ?? normalizeSemanticValue(hint.layerName);
-  const semanticType = inferSemanticTypeFromMetadataHint(hint);
-  return {
-    ...hint,
-    ...(semanticName ? { semanticName } : {}),
-    ...(semanticType ? { semanticType } : {})
-  };
-};
-
 const toCompositeHintMap = (enrichment: FigmaMcpEnrichment): Map<string, CompositeMcpHint> => {
   const hintsById = new Map<string, CompositeMcpHint>();
   const registerHint = ({
@@ -414,6 +368,26 @@ const toCompositeHintMap = (enrichment: FigmaMcpEnrichment): Map<string, Composi
   return hintsById;
 };
 
+const buildTokenSourceMetric = ({
+  paletteUsedVariables,
+  typographyUsedStyles,
+  spacingUsedVariables,
+  borderRadiusUsedVariables,
+  fontFamilyUsedVariables
+}: {
+  paletteUsedVariables: boolean;
+  typographyUsedStyles: boolean;
+  spacingUsedVariables: boolean;
+  borderRadiusUsedVariables: boolean;
+  fontFamilyUsedVariables: boolean;
+}): DesignTokenSourceMetric => ({
+  palette: paletteUsedVariables ? "variables" : "clustering",
+  typography: typographyUsedStyles ? "styles" : "clustering",
+  spacing: spacingUsedVariables ? "variables" : "clustering",
+  borderRadius: borderRadiusUsedVariables ? "variables" : "clustering",
+  fontFamily: fontFamilyUsedVariables ? "variables" : "clustering"
+});
+
 export const deriveTokens = (file: FigmaFile, enrichment?: FigmaMcpEnrichment): DesignTokens => {
   const nodes = file.document ? collectNodes(file.document, () => true) : [];
   const styleCatalog = resolveNodeStyleCatalog(file);
@@ -476,9 +450,12 @@ export const deriveTokens = (file: FigmaFile, enrichment?: FigmaMcpEnrichment): 
     secondaryColor: derivedSecondary
   });
 
+  const authoritativePrimary = resolveAuthoritativeColorToken({ enrichment, signalKey: "primary", requireDark: false });
+  const paletteUsedVariables = authoritativePrimary !== undefined;
+
   const background = resolveAuthoritativeColorToken({ enrichment, signalKey: "background", requireDark: false }) ?? derivedBackground;
   const text = resolveAuthoritativeColorToken({ enrichment, signalKey: "text", requireDark: false }) ?? derivedText;
-  const primary = resolveAuthoritativeColorToken({ enrichment, signalKey: "primary", requireDark: false }) ?? derivedPrimary;
+  const primary = authoritativePrimary ?? derivedPrimary;
   const secondary =
     resolveAuthoritativeColorToken({ enrichment, signalKey: "secondary", requireDark: false }) ?? derivedSecondary;
   const success =
@@ -527,11 +504,12 @@ export const deriveTokens = (file: FigmaFile, enrichment?: FigmaMcpEnrichment): 
   const derivedFontFamily = normalizeFontStack(
     [dominantBodyFont, dominantHeadingFont].filter((value): value is string => typeof value === "string")
   );
-  const resolvedFontFamily = resolveAuthoritativeFontFamilyToken({ enrichment }) ?? derivedFontFamily;
-  const figmaTextStyleEntries = (() => {
-    const authoritative = resolveAuthoritativeTextStyleEntries({ enrichment });
-    return authoritative.length > 0 ? authoritative : collectFigmaTextStyleEntries({ nodes, styleCatalog });
-  })();
+  const authoritativeFontFamily = resolveAuthoritativeFontFamilyToken({ enrichment });
+  const fontFamilyUsedVariables = authoritativeFontFamily !== undefined;
+  const resolvedFontFamily = authoritativeFontFamily ?? derivedFontFamily;
+  const authoritativeTextStyles = resolveAuthoritativeTextStyleEntries({ enrichment });
+  const typographyUsedStyles = authoritativeTextStyles.length > 0;
+  const figmaTextStyleEntries = typographyUsedStyles ? authoritativeTextStyles : collectFigmaTextStyleEntries({ nodes, styleCatalog });
   const typographyClusters = clusterTypographySamples(fontSamples);
   const typography = buildDerivedTypographyScale({
     clusters: typographyClusters,
@@ -582,7 +560,20 @@ export const deriveTokens = (file: FigmaFile, enrichment?: FigmaMcpEnrichment): 
     fontFamily: resolvedFontFamily,
     headingSize: typography.h1.fontSizePx,
     bodySize: typography.body1.fontSizePx,
-    typography
+    typography,
+    tokenSource: buildTokenSourceMetric({
+      paletteUsedVariables,
+      typographyUsedStyles,
+      spacingUsedVariables: resolveAuthoritativeNumberToken({
+        enrichment,
+        patterns: [/\bspacing\b/i, /\bspace\b/i, /\bgap\b/i, /\bgrid\b/i]
+      }) !== undefined,
+      borderRadiusUsedVariables: resolveAuthoritativeNumberToken({
+        enrichment,
+        patterns: [/\bradius\b/i, /\bcorner\b/i, /\brounded\b/i]
+      }) !== undefined,
+      fontFamilyUsedVariables
+    })
   };
 };
 

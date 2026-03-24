@@ -46,6 +46,16 @@ export interface DesignTokenTypographyVariant {
 
 export type DesignTokenTypographyScale = Record<DesignTokenTypographyVariantName, DesignTokenTypographyVariant>;
 
+export type DesignTokenSource = "variables" | "styles" | "clustering";
+
+export interface DesignTokenSourceMetric {
+  palette: DesignTokenSource;
+  typography: DesignTokenSource;
+  spacing: DesignTokenSource;
+  borderRadius: DesignTokenSource;
+  fontFamily: DesignTokenSource;
+}
+
 export interface DesignTokens {
   palette: DesignTokenPalette;
   borderRadius: number;
@@ -54,6 +64,7 @@ export interface DesignTokens {
   headingSize: number;
   bodySize: number;
   typography: DesignTokenTypographyScale;
+  tokenSource?: DesignTokenSourceMetric;
 }
 
 export interface DesignIrDarkPaletteHints {

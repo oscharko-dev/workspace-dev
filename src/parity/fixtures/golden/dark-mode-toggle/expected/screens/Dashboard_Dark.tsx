@@ -10,7 +10,7 @@ export default function DashboardDarkScreen() {
       <Typography data-ir-id="dark-body" data-ir-name="Body" variant="body1" sx={{ color: "#b3bac7", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Track shipment delays, alerts, and approvals in one place."}</Typography>
       {/* @ir:end dark-body */}
       {/* @ir:start dark-summary-card Summary Card card */}
-      <Card data-ir-id="dark-summary-card" data-ir-name="Summary Card" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "144px", display: "flex", flexDirection: "column", gap: 0.571, p: 1.143, bgcolor: "#1f242e" }}>
+      <Card data-ir-id="dark-summary-card" data-ir-name="Summary Card" component="article" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "144px", display: "flex", flexDirection: "column", gap: 0.571, p: 1.143, bgcolor: "#1f242e" }}>
         <CardContent>
           {/* @ir:start dark-card-title Label text */}
           <Typography data-ir-id="dark-card-title" data-ir-name="Label" variant="body2" sx={{ color: "#a6adba", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Open incidents"}</Typography>

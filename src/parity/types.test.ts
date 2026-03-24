@@ -33,6 +33,8 @@ const EXPECTED_TYPES_EXPORTS = [
   "DesignTokenTypographyScale",
   "DesignTokenTypographyVariant",
   "DesignTokenTypographyVariantName",
+  "DesignTokenSource",
+  "DesignTokenSourceMetric",
   "DesignTokens",
   "DiffFile",
   "DiffStats",

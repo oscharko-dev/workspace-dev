@@ -13,9 +13,9 @@ export default function LandingScreen() {
       <Typography data-ir-id="rtl-subtitle" data-ir-name="Subtitle" variant="h3" component="h4" sx={sharedSxStyle2}>{"اكتشف أفضل المنتجات والخدمات"}</Typography>
       {/* @ir:end rtl-subtitle */}
       {/* @ir:start rtl-card-1 Feature Card table */}
-      <Box data-ir-id="rtl-card-1" data-ir-name="Feature Card" aria-hidden="true" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "#f5f7fa", borderRadius: 1.5 }}>
+      <Box data-ir-id="rtl-card-1" data-ir-name="Feature Card" component="article" aria-hidden="true" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "#f5f7fa", borderRadius: 1.5 }}>
         {/* @ir:start rtl-card1-text Content stack */}
-        <Stack data-ir-id="rtl-card1-text" data-ir-name="Content" direction="column" spacing={0.333} aria-hidden="true" sx={{ width: "73.1%", maxWidth: "250px", minHeight: "76px", display: "flex", flexDirection: "column", gap: 0.333 }}>
+        <Stack data-ir-id="rtl-card1-text" data-ir-name="Content" component="main" direction="column" spacing={0.333} role="main" aria-hidden="true" sx={{ width: "73.1%", maxWidth: "250px", minHeight: "76px", display: "flex", flexDirection: "column", gap: 0.333 }}>
           {/* @ir:start rtl-card1-title Card Title text */}
           <Typography data-ir-id="rtl-card1-title" data-ir-name="Card Title" variant="h2" component="h2" sx={sharedSxStyle1}>{"التصميم الاحترافي"}</Typography>
           {/* @ir:end rtl-card1-title */}
@@ -30,9 +30,9 @@ export default function LandingScreen() {
       </Box>
       {/* @ir:end rtl-card-1 */}
       {/* @ir:start rtl-card-2 Feature Card table */}
-      <Box data-ir-id="rtl-card-2" data-ir-name="Feature Card" aria-hidden="true" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "#f5f7fa", borderRadius: 1.5 }}>
+      <Box data-ir-id="rtl-card-2" data-ir-name="Feature Card" component="article" aria-hidden="true" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "#f5f7fa", borderRadius: 1.5 }}>
         {/* @ir:start rtl-card2-text Content stack */}
-        <Stack data-ir-id="rtl-card2-text" data-ir-name="Content" direction="column" spacing={0.333} aria-hidden="true" sx={{ width: "73.1%", maxWidth: "250px", minHeight: "76px", display: "flex", flexDirection: "column", gap: 0.333 }}>
+        <Stack data-ir-id="rtl-card2-text" data-ir-name="Content" component="main" direction="column" spacing={0.333} role="main" aria-hidden="true" sx={{ width: "73.1%", maxWidth: "250px", minHeight: "76px", display: "flex", flexDirection: "column", gap: 0.333 }}>
           {/* @ir:start rtl-card2-title Card Title text */}
           <Typography data-ir-id="rtl-card2-title" data-ir-name="Card Title" variant="h2" component="h3" sx={sharedSxStyle1}>{"الدعم الفني"}</Typography>
           {/* @ir:end rtl-card2-title */}

@@ -22,7 +22,7 @@ export default function UserListScreen() {
       <Typography data-ir-id="table-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Users"}</Typography>
       {/* @ir:end table-title */}
       {/* @ir:start table-header Table Header table */}
-      <Box data-ir-id="table-header" data-ir-name="Table Header" sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", bgcolor: "#f5f5f7" }}>
+      <Box data-ir-id="table-header" data-ir-name="Table Header" component="header" role="banner" sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", bgcolor: "#f5f5f7" }}>
         {/* @ir:start header-name Header Name text */}
         <Typography data-ir-id="header-name" data-ir-name="Header Name" variant="body1" sx={sharedSxStyle1}>{"Name"}</Typography>
         {/* @ir:end header-name */}

@@ -27,28 +27,28 @@ export default function SettingsScreen() {
       <Card data-ir-id="accordion-section" data-ir-name="MuiAccordionRoot" sx={{ width: "96%", maxWidth: "768px", minHeight: "300px", display: "flex", flexDirection: "column", bgcolor: "#ffffff" }}>
         <CardContent>
           {/* @ir:start accordion-header-1 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-1" data-ir-name="Accordion Header" direction="row" spacing={0.8} sx={sharedSxStyle2}>
+          <Stack data-ir-id="accordion-header-1" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
             {/* @ir:start acc-title-1 Title text */}
             <Typography data-ir-id="acc-title-1" data-ir-name="Title" variant="h3" component="h3" sx={sharedSxStyle1}>{"Profile Information"}</Typography>
             {/* @ir:end acc-title-1 */}
           </Stack>
           {/* @ir:end accordion-header-1 */}
           {/* @ir:start accordion-content-1 Accordion Content stack */}
-          <Stack data-ir-id="accordion-content-1" data-ir-name="Accordion Content" direction="column" spacing={1.2} sx={{ width: "100%", maxWidth: "768px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1.2 }}>
+          <Stack data-ir-id="accordion-content-1" data-ir-name="Accordion Content" component="main" direction="column" spacing={1.2} role="main" sx={{ width: "100%", maxWidth: "768px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1.2 }}>
             {/* @ir:start acc-body-1 Body text */}
             <Typography data-ir-id="acc-body-1" data-ir-name="Body" variant="body1" sx={{ color: "text.primary", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Update your personal details and contact information."}</Typography>
             {/* @ir:end acc-body-1 */}
           </Stack>
           {/* @ir:end accordion-content-1 */}
           {/* @ir:start accordion-header-2 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-2" data-ir-name="Accordion Header" direction="row" spacing={0.8} sx={sharedSxStyle2}>
+          <Stack data-ir-id="accordion-header-2" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
             {/* @ir:start acc-title-2 Title text */}
             <Typography data-ir-id="acc-title-2" data-ir-name="Title" variant="h3" component="h4" sx={sharedSxStyle1}>{"Preferences"}</Typography>
             {/* @ir:end acc-title-2 */}
           </Stack>
           {/* @ir:end accordion-header-2 */}
           {/* @ir:start accordion-header-3 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-3" data-ir-name="Accordion Header" direction="row" spacing={0.8} sx={sharedSxStyle2}>
+          <Stack data-ir-id="accordion-header-3" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
             {/* @ir:start acc-title-3 Title text */}
             <Typography data-ir-id="acc-title-3" data-ir-name="Title" variant="h3" component="h5" sx={sharedSxStyle1}>{"Privacy Settings"}</Typography>
             {/* @ir:end acc-title-3 */}

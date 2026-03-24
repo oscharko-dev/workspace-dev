@@ -10,7 +10,7 @@ export default function DashboardLightScreen() {
       <Typography data-ir-id="light-body" data-ir-name="Body" variant="body1" sx={{ color: "#545c66", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Track shipment delays, alerts, and approvals in one place."}</Typography>
       {/* @ir:end light-body */}
       {/* @ir:start light-summary-card Summary Card card */}
-      <Card data-ir-id="light-summary-card" data-ir-name="Summary Card" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "144px", display: "flex", flexDirection: "column", gap: 0.571, p: 1.143, bgcolor: "#ffffff" }}>
+      <Card data-ir-id="light-summary-card" data-ir-name="Summary Card" component="article" sx={{ width: "87.7%", maxWidth: "342px", minHeight: "144px", display: "flex", flexDirection: "column", gap: 0.571, p: 1.143, bgcolor: "#ffffff" }}>
         <CardContent>
           {/* @ir:start light-card-title Label text */}
           <Typography data-ir-id="light-card-title" data-ir-name="Label" variant="body2" sx={{ color: "#666b75", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Open incidents"}</Typography>
