@@ -15,7 +15,7 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/436
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { getPreferredTheme } from "../../../lib/shiki";
+import { getPreferredTheme } from "../../../lib/shiki-shared";
 
 // ---------------------------------------------------------------------------
 // Platform detection

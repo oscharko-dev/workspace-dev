@@ -1,11 +1,22 @@
+import { Suspense, lazy } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { WorkspacePage } from "../features/workspace/workspace-page";
-import { InspectorPage } from "../features/workspace/inspector-page";
+
+const LazyInspectorPage = lazy(async () => {
+  const module = await import("../features/workspace/inspector-page");
+  return { default: module.InspectorPage };
+});
+
+const routeFallback = <div aria-hidden="true" className="min-h-screen bg-[#101010]" />;
 
 export const appRouter = createBrowserRouter([
   {
     path: "/workspace/ui/inspector",
-    element: <InspectorPage />
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyInspectorPage />
+      </Suspense>
+    )
   },
   {
     path: "/workspace/ui",

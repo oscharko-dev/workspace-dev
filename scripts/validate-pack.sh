@@ -40,6 +40,7 @@ fi
 REQUIRED_FILES=(
   "package.json"
   "README.md"
+  "PIPELINE.md"
   "LICENSE"
   "SECURITY.md"
   "COMPLIANCE.md"

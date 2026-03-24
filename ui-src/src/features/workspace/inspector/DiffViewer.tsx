@@ -23,7 +23,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
 import { computeUnifiedDiff, type DiffLine, type DiffResult } from "../../../lib/diff";
-import { getPreferredTheme, type HighlightResult } from "../../../lib/shiki";
+import { getPreferredTheme, type HighlightTheme } from "../../../lib/shiki-shared";
 import type { ManifestRange, ScopedCodeMode } from "./scoped-code-ranges";
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ interface DiffSearchMatch {
   column: number;
 }
 
-function resolveViewerTheme(themeMode: "system" | "dark"): HighlightResult["theme"] {
+function resolveViewerTheme(themeMode: "system" | "dark"): HighlightTheme {
   if (themeMode === "dark") {
     return "github-dark";
   }
@@ -86,7 +86,7 @@ export function DiffViewer({
   const [searchInput, setSearchInput] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState<HighlightResult["theme"]>(() => resolveViewerTheme(themeMode));
+  const [currentTheme, setCurrentTheme] = useState<HighlightTheme>(() => resolveViewerTheme(themeMode));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);

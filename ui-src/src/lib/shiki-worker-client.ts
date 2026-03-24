@@ -1,4 +1,4 @@
-import { highlightCode, type HighlightResult, type HighlightTheme } from "./shiki";
+import type { HighlightResult, HighlightTheme } from "./shiki-shared";
 import type { HighlightWorkerResponseMessage } from "./shiki-worker-protocol";
 
 interface HighlightWorkerClientRequest {
@@ -14,9 +14,14 @@ interface PendingRequest {
   removeAbortListener: () => void;
 }
 
+interface DirectHighlighterModule {
+  highlightCode: (code: string, filePath: string, theme?: HighlightTheme) => Promise<HighlightResult | null>;
+}
+
 let workerInstance: Worker | null = null;
 let workerDisabled = false;
 let nextRequestId = 1;
+let directHighlighterPromise: Promise<DirectHighlighterModule> | null = null;
 const pendingRequests = new Map<number, PendingRequest>();
 
 function createAbortError(): DOMException {
@@ -161,6 +166,26 @@ async function requestWorkerHighlight({
   });
 }
 
+async function highlightCodeDirect({
+  code,
+  filePath,
+  theme
+}: {
+  code: string;
+  filePath: string;
+  theme: HighlightTheme;
+}): Promise<HighlightResult | null> {
+  if (!directHighlighterPromise) {
+    directHighlighterPromise = import("./shiki");
+    directHighlighterPromise.catch(() => {
+      directHighlighterPromise = null;
+    });
+  }
+
+  const { highlightCode } = await directHighlighterPromise;
+  return await highlightCode(code, filePath, theme);
+}
+
 export async function highlightCodeWithWorker({
   code,
   filePath,
@@ -173,7 +198,7 @@ export async function highlightCodeWithWorker({
     if (isAbortError(error)) {
       throw error;
     }
-    return await highlightCode(code, filePath, theme);
+    return await highlightCodeDirect({ code, filePath, theme });
   }
 }
 
@@ -184,5 +209,6 @@ export function resetHighlightWorkerForTests(): void {
   }
   workerDisabled = false;
   nextRequestId = 1;
+  directHighlighterPromise = null;
   pendingRequests.clear();
 }

@@ -7,14 +7,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { CodePane } from "./CodePane";
-import * as shikiLib from "../../../lib/shiki";
+import * as shikiSharedLib from "../../../lib/shiki-shared";
 import * as workerClientLib from "../../../lib/shiki-worker-client";
 
 // ---------------------------------------------------------------------------
 // Mocks — prevent Shiki WASM loading
 // ---------------------------------------------------------------------------
 
-vi.mock("../../../lib/shiki", () => ({
+vi.mock("../../../lib/shiki-shared", () => ({
   detectLanguage: vi.fn((filePath: string) => {
     if (filePath.endsWith(".json")) return "json";
     if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return "tsx";
@@ -30,7 +30,7 @@ vi.mock("../../../lib/shiki-worker-client", () => ({
 }));
 
 const mockHighlightCodeWithWorker = vi.mocked(workerClientLib.highlightCodeWithWorker);
-const mockExceedsMaxSize = vi.mocked(shikiLib.exceedsMaxSize);
+const mockExceedsMaxSize = vi.mocked(shikiSharedLib.exceedsMaxSize);
 
 // ---------------------------------------------------------------------------
 // Helpers

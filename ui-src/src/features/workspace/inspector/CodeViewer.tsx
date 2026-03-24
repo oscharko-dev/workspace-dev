@@ -20,8 +20,9 @@ import {
   detectLanguage,
   exceedsMaxSize,
   getPreferredTheme,
+  type HighlightTheme,
   type HighlightResult
-} from "../../../lib/shiki";
+} from "../../../lib/shiki-shared";
 import { highlightCodeWithWorker, isAbortError } from "../../../lib/shiki-worker-client";
 import {
   buildCodeBoundaryLayout,
@@ -71,7 +72,7 @@ type SearchMode =
   | { kind: "find"; query: string }
   | { kind: "jump"; requestedLine: number };
 
-type ViewerTheme = HighlightResult["theme"];
+type ViewerTheme = HighlightTheme;
 type ViewerLanguage = ReturnType<typeof detectLanguage>;
 type FormatParser = "typescript" | "json";
 type FormatStatus =
