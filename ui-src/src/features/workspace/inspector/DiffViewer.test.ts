@@ -7,13 +7,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { DiffViewer } from "./DiffViewer";
-import * as shikiLib from "../../../lib/shiki";
+import * as shikiSharedLib from "../../../lib/shiki-shared";
 
-vi.mock("../../../lib/shiki", () => ({
+vi.mock("../../../lib/shiki-shared", () => ({
   getPreferredTheme: vi.fn().mockReturnValue("github-light")
 }));
 
-const mockGetPreferredTheme = vi.mocked(shikiLib.getPreferredTheme);
+const mockGetPreferredTheme = vi.mocked(shikiSharedLib.getPreferredTheme);
 
 afterEach(() => {
   cleanup();

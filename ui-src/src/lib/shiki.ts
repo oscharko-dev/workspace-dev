@@ -9,30 +9,21 @@
  */
 import { createBundledHighlighter } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import {
+  DARK_THEME,
+  LIGHT_THEME,
+  detectLanguage,
+  exceedsMaxSize,
+  getPreferredTheme,
+  type HighlightResult,
+  type HighlightTheme
+} from "./shiki-shared";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+export { detectLanguage, exceedsMaxSize, getPreferredTheme };
+export type { HighlightLanguage, HighlightResult, HighlightTheme } from "./shiki-shared";
 
-export interface HighlightResult {
-  /** HTML string with inline-styled tokens (one <span class="line"> per line) */
-  html: string;
-  /** Theme that was used */
-  theme: HighlightTheme;
-}
-
-export type HighlightLanguage = "tsx" | "typescript" | "json";
-export type HighlightTheme = "github-dark" | "github-light";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const DARK_THEME: HighlightTheme = "github-dark";
-const LIGHT_THEME: HighlightTheme = "github-light";
 const SUPPORTED_LANGS = ["tsx", "typescript", "json"] as const;
 const SUPPORTED_THEMES = [DARK_THEME, LIGHT_THEME] as const;
-const MAX_FILE_SIZE = 500_000; // 500 KB
 
 // ---------------------------------------------------------------------------
 // Singleton highlighter
@@ -82,29 +73,6 @@ function simpleHash(str: string): number {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-/** Detect language from file path. Returns null for unsupported extensions. */
-export function detectLanguage(filePath: string): HighlightLanguage | null {
-  if (filePath.endsWith(".tsx")) return "tsx";
-  if (filePath.endsWith(".ts")) return "typescript";
-  if (filePath.endsWith(".json")) return "json";
-  if (filePath.endsWith(".jsx")) return "tsx";
-  if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "typescript";
-  return null;
-}
-
-/** Returns true if the file exceeds the max size for syntax highlighting. */
-export function exceedsMaxSize(code: string): boolean {
-  return code.length > MAX_FILE_SIZE;
-}
-
-/** Get the preferred theme based on system color scheme. */
-export function getPreferredTheme(): HighlightTheme {
-  if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-    return DARK_THEME;
-  }
-  return LIGHT_THEME;
-}
 
 /**
  * Highlight code with Shiki. Returns cached result when possible.

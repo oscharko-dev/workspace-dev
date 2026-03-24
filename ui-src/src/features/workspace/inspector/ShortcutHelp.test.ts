@@ -8,7 +8,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { createElement } from "react";
 import { ShortcutHelp } from "./ShortcutHelp";
 
-vi.mock("../../../lib/shiki", () => ({
+vi.mock("../../../lib/shiki-shared", () => ({
   getPreferredTheme: vi.fn().mockReturnValue("github-light")
 }));
 

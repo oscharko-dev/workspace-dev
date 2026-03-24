@@ -1,4 +1,4 @@
-import type { HighlightResult, HighlightTheme } from "./shiki";
+import type { HighlightResult, HighlightTheme } from "./shiki-shared";
 
 export interface HighlightWorkerHighlightRequest {
   type: "highlight";
