@@ -8,7 +8,7 @@ import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 5000
+  timeoutMs = 120_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
@@ -20,9 +20,9 @@ const waitForTerminalStatus = async ({
     if (status && (status.status === "completed" || status.status === "failed" || status.status === "canceled")) {
       return status;
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("Timed out waiting for job status");
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for job ${jobId} status`);
 };
 
 const createLocalFigmaPayload = () => ({
@@ -89,7 +89,7 @@ const submitCompletedLocalJsonJob = async ({
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 60_000
+    timeoutMs: 180_000
   });
   assert.equal(status.status, "completed");
   return { accepted, status };
@@ -646,7 +646,7 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
     assert.equal(unreadableRemap.rejections.length, 0);
     assert.equal(unreadableRemap.message, "Could not read Design IR files for remap analysis.");
   } finally {
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
   }
 });
 

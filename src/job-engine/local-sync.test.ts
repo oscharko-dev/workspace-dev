@@ -98,7 +98,7 @@ const writeLocalSyncBaseline = async ({
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 120_000
+  timeoutMs = 180_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;

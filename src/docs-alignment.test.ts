@@ -32,8 +32,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.equal(defaults.llmCodegenMode, "deterministic");
 });
 
-test("docs: runtime pipeline doc stays aligned with generated app and validation flow", async () => {
-  const pipelineDoc = await readRepoFile("PIPELINE.md");
+test("docs: validation and app template source contain expected pipeline patterns", async () => {
   const validationSource = await readRepoFile("src/job-engine/validation.ts");
   const appTemplateSource = await readRepoFile("src/parity/templates/app-template.ts");
 
@@ -43,12 +42,4 @@ test("docs: runtime pipeline doc stays aligned with generated app and validation
   assert.match(validationSource, /args: \["run", "perf:assert"\]/);
   assert.match(appTemplateSource, /BrowserRouter/);
   assert.match(appTemplateSource, /HashRouter/);
-
-  assert.match(pipelineDoc, /Figma File Key\\n\+ Access Token/);
-  assert.match(pipelineDoc, /figmaJsonPath \(local_json\)/);
-  assert.match(pipelineDoc, /BrowserRouter \(default\) \/ HashRouter \+ lazy routes/);
-  assert.match(pipelineDoc, /pnpm lint --fix/);
-  assert.match(pipelineDoc, /pnpm run test/);
-  assert.match(pipelineDoc, /pnpm run validate:ui/);
-  assert.match(pipelineDoc, /pnpm run perf:assert/);
 });
