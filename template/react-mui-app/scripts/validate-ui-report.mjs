@@ -1,4 +1,3 @@
-/* eslint-env node */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";

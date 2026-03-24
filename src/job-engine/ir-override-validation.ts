@@ -51,17 +51,40 @@ export interface PaddingOverrideValue {
   left: number;
 }
 
-export type SupportedRegenerationOverrideValue =
-  | string
-  | number
-  | boolean
-  | PaddingOverrideValue;
-
-export interface ValidatedRegenerationOverrideEntry {
-  nodeId: string;
-  field: SupportedRegenerationOverrideField;
-  value: SupportedRegenerationOverrideValue;
+export interface SupportedRegenerationOverrideValueByField {
+  fillColor: string;
+  opacity: number;
+  cornerRadius: number;
+  fontSize: number;
+  fontWeight: number;
+  fontFamily: string;
+  padding: PaddingOverrideValue;
+  gap: number;
+  width: number;
+  height: number;
+  layoutMode: (typeof SUPPORTED_LAYOUT_MODES)[number];
+  primaryAxisAlignItems: (typeof SUPPORTED_PRIMARY_AXIS_ALIGN_ITEMS)[number];
+  counterAxisAlignItems: (typeof SUPPORTED_COUNTER_AXIS_ALIGN_ITEMS)[number];
+  required: boolean;
+  validationType: (typeof SUPPORTED_VALIDATION_TYPES)[number];
+  validationMessage: string;
+  validationMin: number;
+  validationMax: number;
+  validationMinLength: number;
+  validationMaxLength: number;
+  validationPattern: string;
 }
+
+export type SupportedRegenerationOverrideValue =
+  SupportedRegenerationOverrideValueByField[SupportedRegenerationOverrideField];
+
+export type ValidatedRegenerationOverrideEntry = {
+  [TField in SupportedRegenerationOverrideField]: {
+    nodeId: string;
+    field: TField;
+    value: SupportedRegenerationOverrideValueByField[TField];
+  };
+}[SupportedRegenerationOverrideField];
 
 export interface ValidateRegenerationOverrideEntrySuccess {
   ok: true;
@@ -264,22 +287,14 @@ export function validateRegenerationOverrideEntry(
       : { ok: false, path: "value", message: `${field} must be a non-negative integer.` };
   }
 
-  if (field === "validationPattern") {
-    const normalized = normalizeNonEmptyString(entry.value);
-    if (!normalized) {
-      return { ok: false, path: "value", message: "validationPattern must be a non-empty string." };
-    }
-    try {
-      new RegExp(normalized);
-    } catch {
-      return { ok: false, path: "value", message: "validationPattern must be a valid regular expression." };
-    }
-    return { ok: true, entry: { ...entry, field, value: normalized } };
+  const normalized = normalizeNonEmptyString(entry.value);
+  if (!normalized) {
+    return { ok: false, path: "value", message: "validationPattern must be a non-empty string." };
   }
-
-  return {
-    ok: false,
-    path: "field",
-    message: `field must be one of: ${SUPPORTED_REGENERATION_OVERRIDE_FIELDS.join(", ")}.`
-  };
+  try {
+    new RegExp(normalized);
+  } catch {
+    return { ok: false, path: "value", message: "validationPattern must be a valid regular expression." };
+  }
+  return { ok: true, entry: { ...entry, field, value: normalized } };
 }

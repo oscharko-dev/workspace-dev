@@ -159,7 +159,7 @@ const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
 const parseLocalizedNumber = (value: string, locale: string): number | undefined => {
   const { decimalSymbol, separatorPattern, separatorSymbols } = getLocaleNumberFormatSpec(locale);
   const compactRaw = value.replace(/[\s\u00A0\u202F]/g, "").replace(/[−﹣－]/g, "-");
-  const compact = [...compactRaw]
+  const compact = Array.from(compactRaw)
     .filter((character) => /\d/.test(character) || character === "+" || character === "-" || separatorSymbols.has(character))
     .join("");
   if (!compact || !/\d/.test(compact)) {

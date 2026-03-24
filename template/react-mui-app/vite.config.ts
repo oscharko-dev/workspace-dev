@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 
+type ReactCompilerPresetOptions = NonNullable<Parameters<typeof reactCompilerPreset>[0]>;
+type ReactCompilerBabelPluginOptions = Parameters<typeof babel>[0];
+
 const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
 const toOptionalNumber = (rawValue: string | undefined): number | undefined => {
@@ -32,25 +35,41 @@ const liveEditHmrPath = env.LIVE_EDIT_HMR_PATH;
 const liveEditAllowedHosts = toAllowedHosts(env.LIVE_EDIT_ALLOWED_HOSTS);
 const enableReactCompiler = env.VITE_ENABLE_REACT_COMPILER?.trim().toLowerCase() === "true";
 const reactCompilerTarget = env.VITE_REACT_COMPILER_TARGET?.trim();
-const normalizedReactCompilerTarget =
-  reactCompilerTarget === "17" || reactCompilerTarget === "18" ? reactCompilerTarget : undefined;
+const normalizedReactCompilerTarget: ReactCompilerPresetOptions["target"] | undefined =
+  reactCompilerTarget === "17" || reactCompilerTarget === "18" || reactCompilerTarget === "19"
+    ? reactCompilerTarget
+    : undefined;
 const normalizedBasePath = liveEditBasePath
   ? liveEditBasePath.endsWith("/")
     ? liveEditBasePath
     : `${liveEditBasePath}/`
   : "./";
+const reactCompilerPresetOptions: ReactCompilerPresetOptions | undefined = normalizedReactCompilerTarget
+  ? {
+      compilationMode: "infer",
+      target: normalizedReactCompilerTarget
+    }
+  : undefined;
+const reactCompilerBabelOptions: ReactCompilerBabelPluginOptions | undefined = enableReactCompiler
+  ? {
+      assumptions: undefined,
+      auxiliaryCommentAfter: undefined,
+      auxiliaryCommentBefore: undefined,
+      comments: undefined,
+      compact: undefined,
+      cwd: undefined,
+      generatorOpts: undefined,
+      parserOpts: undefined,
+      plugins: undefined,
+      presets: [reactCompilerPreset(reactCompilerPresetOptions)],
+      retainLines: undefined,
+      shouldPrintComment: undefined,
+      targets: undefined,
+      wrapPluginVisitorMethod: undefined
+    }
+  : undefined;
 
-const reactCompilerPlugins = enableReactCompiler
-  ? [
-      babel({
-        presets: [
-          reactCompilerPreset(
-            normalizedReactCompilerTarget ? { target: normalizedReactCompilerTarget } : undefined
-          )
-        ]
-      } as unknown as Parameters<typeof babel>[0])
-    ]
-  : [];
+const reactCompilerPlugins = reactCompilerBabelOptions ? [babel(reactCompilerBabelOptions)] : [];
 
 export default defineConfig({
   plugins: [react(), ...reactCompilerPlugins],

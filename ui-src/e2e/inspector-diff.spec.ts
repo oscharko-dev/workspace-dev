@@ -10,6 +10,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -35,6 +36,7 @@ test.describe("inspector diff viewer", () => {
   test("diff toggle button is visible after first completed job", async ({ page }) => {
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();
@@ -50,13 +52,12 @@ test.describe("inspector diff viewer", () => {
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
 
-    const { inspectorPanel } = getInspectorLocators(page);
-    await expect(inspectorPanel).toBeVisible();
-
     // Second generation — this creates a previousJobId in generationDiff
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
+    const { inspectorPanel } = getInspectorLocators(page);
     // Wait for inspector to re-render with new job data
     await expect(inspectorPanel).toBeVisible();
 
@@ -75,6 +76,7 @@ test.describe("inspector diff viewer", () => {
     // Second generation
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();
@@ -105,6 +107,7 @@ test.describe("inspector diff viewer", () => {
     await waitForCompletedSubmitStatus(page);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const diffToggle = page.getByTestId("inspector-diff-toggle");
     await expect(diffToggle).toBeEnabled({ timeout: 15_000 });
@@ -127,6 +130,7 @@ test.describe("inspector diff viewer", () => {
     await waitForCompletedSubmitStatus(page);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const diffToggle = page.getByTestId("inspector-diff-toggle");
     await expect(diffToggle).toBeEnabled({ timeout: 15_000 });

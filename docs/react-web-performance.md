@@ -15,6 +15,8 @@ The workflow measures Lighthouse performance for configured routes/profiles, com
 
 Lighthouse JSON parsing supports both legacy (`report.lhr.audits`) and current (`report.audits`) schemas.
 When INP is unavailable, the runner records explicit proxy sources (`total-blocking-time` / `interactive`) in report metadata.
+The bundled seed app now exercises three real hash-routed paths by default: `#/`, `#/overview`, and `#/checkout`.
+That keeps the perf gate aligned with an eager home route plus two lazy secondary routes instead of a single static screen.
 
 ## Budget policy
 
@@ -23,6 +25,9 @@ Budgets and route/profile scope are defined in:
 - `template/react-mui-app/perf-budget.json`
 
 Regression threshold defaults to `10%` (`regressionTolerancePct`).
+`route_transition_ms` remains a lab proxy derived from Lighthouse `interactive` / TBT data, using the post-LCP
+interactive gap (`interactive - LCP`) when available and falling back to TBT. It is still not field-measured SPA
+navigation timing.
 
 ## Artifacts
 

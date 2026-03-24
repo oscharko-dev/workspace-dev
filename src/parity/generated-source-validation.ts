@@ -1,26 +1,75 @@
 import path from "node:path";
-import ts from "typescript";
+import { createRequire } from "node:module";
+import type * as TypeScript from "typescript";
 
-const GENERATED_SOURCE_COMPILER_OPTIONS: ts.CompilerOptions = {
-  target: ts.ScriptTarget.ES2023,
-  module: ts.ModuleKind.NodeNext,
-  moduleResolution: ts.ModuleResolutionKind.NodeNext,
-  isolatedModules: true,
-  verbatimModuleSyntax: true
+let cachedTypescriptModule: typeof TypeScript | null | undefined;
+let missingTypescriptWarningEmitted = false;
+let resolveTypescriptModuleOverride: (() => typeof TypeScript | null) | undefined;
+
+export const __setTypescriptModuleResolverForTests = (
+  resolver?: (() => typeof TypeScript | null)
+): void => {
+  resolveTypescriptModuleOverride = resolver;
+  cachedTypescriptModule = undefined;
+  missingTypescriptWarningEmitted = false;
+};
+
+export const __resetTypescriptModuleResolverForTests = (): void => {
+  __setTypescriptModuleResolverForTests(undefined);
+};
+
+const resolveTypescriptModule = (): typeof TypeScript | null => {
+  if (resolveTypescriptModuleOverride) {
+    return resolveTypescriptModuleOverride();
+  }
+  if (cachedTypescriptModule !== undefined) {
+    return cachedTypescriptModule;
+  }
+
+  try {
+    const requireFromModule = createRequire(import.meta.url);
+    cachedTypescriptModule = requireFromModule("typescript") as typeof TypeScript;
+  } catch {
+    cachedTypescriptModule = null;
+  }
+
+  return cachedTypescriptModule;
+};
+
+const getTypescriptModule = (): typeof TypeScript | null => {
+  const typescriptModule = resolveTypescriptModule();
+  if (typescriptModule || missingTypescriptWarningEmitted) {
+    return typescriptModule;
+  }
+
+  process.emitWarning(
+    "Generated source validation is unavailable because the optional 'typescript' runtime is not installed. Generated source files will skip parser validation.",
+    {
+      code: "WORKSPACE_DEV_MISSING_TYPESCRIPT_VALIDATION"
+    }
+  );
+  missingTypescriptWarningEmitted = true;
+  return null;
 };
 
 const toCompilerOptions = ({
   filePath,
-  forceJsx
+  forceJsx,
+  typescriptModule
 }: {
   filePath: string;
   forceJsx?: boolean;
-}): ts.CompilerOptions => {
-  const compilerOptions: ts.CompilerOptions = {
-    ...GENERATED_SOURCE_COMPILER_OPTIONS
+  typescriptModule: typeof TypeScript;
+}): TypeScript.CompilerOptions => {
+  const compilerOptions: TypeScript.CompilerOptions = {
+    target: typescriptModule.ScriptTarget.ES2023,
+    module: typescriptModule.ModuleKind.NodeNext,
+    moduleResolution: typescriptModule.ModuleResolutionKind.NodeNext,
+    isolatedModules: true,
+    verbatimModuleSyntax: true
   };
   if (forceJsx || path.extname(filePath).toLowerCase() === ".tsx") {
-    compilerOptions.jsx = ts.JsxEmit.ReactJSX;
+    compilerOptions.jsx = typescriptModule.JsxEmit.ReactJSX;
   }
   return compilerOptions;
 };
@@ -33,28 +82,38 @@ const collectErrorDiagnostics = ({
   sourceText: string;
   filePath: string;
   forceJsx?: boolean;
-}): ts.Diagnostic[] => {
-  const result = ts.transpileModule(sourceText, {
+}): TypeScript.Diagnostic[] => {
+  const typescriptModule = getTypescriptModule();
+  if (!typescriptModule) {
+    return [];
+  }
+
+  const result = typescriptModule.transpileModule(sourceText, {
     fileName: filePath,
     reportDiagnostics: true,
     compilerOptions: toCompilerOptions({
       filePath,
+      typescriptModule,
       ...(forceJsx !== undefined ? { forceJsx } : {})
     })
   });
-  return (result.diagnostics ?? []).filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+  return (result.diagnostics ?? []).filter(
+    (diagnostic) => diagnostic.category === typescriptModule.DiagnosticCategory.Error
+  );
 };
 
 const formatDiagnostic = ({
   diagnostic,
   lineOffset,
-  filePath
+  filePath,
+  typescriptModule
 }: {
-  diagnostic: ts.Diagnostic;
+  diagnostic: TypeScript.Diagnostic;
   lineOffset?: number;
   filePath: string;
+  typescriptModule: typeof TypeScript;
 }): string => {
-  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  const message = typescriptModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
   if (!diagnostic.file || diagnostic.start === undefined) {
     return `${filePath} - ${message}`;
   }
@@ -66,17 +125,20 @@ const formatDiagnostic = ({
 const formatDiagnostics = ({
   diagnostics,
   lineOffset,
-  filePath
+  filePath,
+  typescriptModule
 }: {
-  diagnostics: ts.Diagnostic[];
+  diagnostics: TypeScript.Diagnostic[];
   lineOffset?: number;
   filePath: string;
+  typescriptModule: typeof TypeScript;
 }): string => {
   return diagnostics
     .map((diagnostic) =>
       formatDiagnostic({
         diagnostic,
         filePath,
+        typescriptModule,
         ...(lineOffset !== undefined ? { lineOffset } : {})
       })
     )
@@ -113,6 +175,11 @@ export const collectGeneratedJsxFragmentDiagnostics = ({
 }: {
   raw: string;
 }): string[] => {
+  const typescriptModule = getTypescriptModule();
+  if (!typescriptModule) {
+    return [];
+  }
+
   const diagnostics = collectErrorDiagnostics({
     sourceText: `${GENERATED_FRAGMENT_PREFIX}\n${raw}\n${GENERATED_FRAGMENT_SUFFIX}\n`,
     filePath: GENERATED_FRAGMENT_FILE_PATH,
@@ -125,7 +192,8 @@ export const collectGeneratedJsxFragmentDiagnostics = ({
     formatDiagnostic({
       diagnostic,
       lineOffset: GENERATED_FRAGMENT_LINE_OFFSET,
-      filePath: GENERATED_FRAGMENT_FILE_PATH
+      filePath: GENERATED_FRAGMENT_FILE_PATH,
+      typescriptModule
     })
   );
 };
@@ -155,6 +223,11 @@ export const collectGeneratedSourceFileDiagnostics = ({
   filePath: string;
   content: string;
 }): string[] => {
+  const typescriptModule = getTypescriptModule();
+  if (!typescriptModule) {
+    return [];
+  }
+
   const diagnostics = collectErrorDiagnostics({
     sourceText: content,
     filePath
@@ -165,7 +238,8 @@ export const collectGeneratedSourceFileDiagnostics = ({
   return diagnostics.map((diagnostic) =>
     formatDiagnostic({
       diagnostic,
-      filePath
+      filePath,
+      typescriptModule
     })
   );
 };
@@ -179,6 +253,11 @@ export const validateGeneratedSourceFile = ({
   content: string;
   context?: GeneratedSourceFileValidationContext;
 }): void => {
+  const typescriptModule = getTypescriptModule();
+  if (!typescriptModule) {
+    return;
+  }
+
   const diagnostics = collectErrorDiagnostics({
     sourceText: content,
     filePath
@@ -192,7 +271,8 @@ export const validateGeneratedSourceFile = ({
   throw new Error(
     `${prefix}: ${formatDiagnostics({
       diagnostics,
-      filePath
+      filePath,
+      typescriptModule
     })}`
   );
 };

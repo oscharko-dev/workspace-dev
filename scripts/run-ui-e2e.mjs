@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 
 const [mode, ...rawArgs] = process.argv.slice(2);
-if (mode !== "chromium" && mode !== "matrix") {
+if (mode !== "chromium" && mode !== "matrix" && mode !== "live") {
   console.error(`Unsupported ui e2e mode: ${mode ?? "<missing>"}`);
   process.exit(1);
 }
@@ -21,10 +21,20 @@ const playwrightArgs = ["exec", "playwright", "test", "--config", "ui-src/playwr
 if (mode === "chromium") {
   playwrightArgs.push("--project=chromium");
 }
+if (mode === "live") {
+  playwrightArgs.push("--project=chromium", "ui-src/e2e/**/*.live.spec.ts");
+}
 playwrightArgs.push(...forwardedArgs);
 
 const testResult = spawnSync("pnpm", playwrightArgs, {
   stdio: "inherit",
-  shell: process.platform === "win32"
+  shell: process.platform === "win32",
+  env:
+    mode === "live"
+      ? {
+          ...process.env,
+          WORKSPACE_DEV_E2E_INCLUDE_LIVE: "1"
+        }
+      : process.env
 });
 process.exit(testResult.status ?? 1);

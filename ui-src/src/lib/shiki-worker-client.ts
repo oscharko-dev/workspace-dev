@@ -1,11 +1,10 @@
-import type { BundledTheme } from "shiki";
-import { highlightCode, type HighlightResult } from "./shiki";
+import { highlightCode, type HighlightResult, type HighlightTheme } from "./shiki";
 import type { HighlightWorkerResponseMessage } from "./shiki-worker-protocol";
 
 interface HighlightWorkerClientRequest {
   code: string;
   filePath: string;
-  theme: BundledTheme;
+  theme: HighlightTheme;
   signal?: AbortSignal;
 }
 
@@ -62,9 +61,6 @@ function teardownWorkerAndRejectPending(error: Error): void {
 
 function handleWorkerMessage(event: MessageEvent<HighlightWorkerResponseMessage>): void {
   const message = event.data;
-  if (!message || typeof message !== "object") {
-    return;
-  }
 
   if (message.type === "result") {
     settlePendingRequest({

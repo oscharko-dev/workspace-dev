@@ -6,7 +6,7 @@
  */
 import type { JSX } from "react";
 
-export const TYPE_LABELS: Record<string, { abbr: string; color: string }> = {
+const TYPE_LABELS: Record<string, { abbr: string; color: string }> = {
   text: { abbr: "T", color: "bg-[#10293a] text-[#8dd5ff]" },
   button: { abbr: "B", color: "bg-[#173024] text-[#7fe0a9]" },
   input: { abbr: "In", color: "bg-[#332711] text-[#f3cb74]" },

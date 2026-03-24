@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StaleDraftWarning } from "./StaleDraftWarning";
 import type { StaleDraftCheckResult } from "./inspector-override-draft";
 
@@ -15,6 +15,10 @@ const makeStaleDraftResult = (overrides?: Partial<StaleDraftCheckResult>): Stale
 });
 
 describe("StaleDraftWarning", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("renders the stale draft warning alert", () => {
     const onDecision = vi.fn();
     render(
@@ -38,8 +42,8 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    expect(screen.getByText("Continue with original")).toBeDefined();
-    expect(screen.getByText("Discard draft")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Continue with original" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Discard draft" })).toBeDefined();
   });
 
   it("does not render carry-forward button when not available", () => {
@@ -51,7 +55,7 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    expect(screen.queryByText("Carry forward to latest")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Carry forward to latest" })).toBeNull();
   });
 
   it("renders carry-forward button when available", () => {
@@ -63,7 +67,7 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    expect(screen.getByText("Carry forward to latest")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Carry forward to latest" })).toBeDefined();
   });
 
   it("fires 'continue' decision when continue button is clicked", () => {
@@ -75,7 +79,7 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Continue with original"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue with original" }));
     expect(onDecision).toHaveBeenCalledWith("continue");
   });
 
@@ -88,7 +92,7 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Discard draft"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
     expect(onDecision).toHaveBeenCalledWith("discard");
   });
 
@@ -101,7 +105,7 @@ describe("StaleDraftWarning", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Carry forward to latest"));
+    fireEvent.click(screen.getByRole("button", { name: "Carry forward to latest" }));
     expect(onDecision).toHaveBeenCalledWith("carry-forward");
   });
 

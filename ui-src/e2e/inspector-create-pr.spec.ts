@@ -9,6 +9,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -77,6 +79,8 @@ test.describe("inspector PR creation controls", () => {
     await openWorkspaceUi(page, prViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
+    await openInspectorDialog(page, "PR");
 
     const prPanel = page.locator("[data-testid='inspector-pr-panel']");
     await expect(prPanel).toBeVisible();
@@ -115,6 +119,8 @@ test.describe("inspector PR creation controls", () => {
     await openWorkspaceUi(page, prViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
+    await openInspectorDialog(page, "PR");
 
     await page.locator("[data-testid='inspector-pr-repo-url']").fill("https://github.com/acme/repo");
     await page.locator("[data-testid='inspector-pr-repo-token']").fill("ghp_token");
@@ -143,6 +149,8 @@ test.describe("inspector PR creation controls", () => {
     await openWorkspaceUi(page, prViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
+    await openInspectorDialog(page, "PR");
 
     await page.locator("[data-testid='inspector-pr-repo-url']").fill("https://github.com/acme/repo");
     await page.locator("[data-testid='inspector-pr-repo-token']").fill("ghp_token");
@@ -177,6 +185,8 @@ test.describe("inspector PR creation controls", () => {
     await openWorkspaceUi(page, prViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
+    await openInspectorDialog(page, "PR");
 
     await page.locator("[data-testid='inspector-pr-repo-url']").fill("https://github.com/acme/repo");
     await page.locator("[data-testid='inspector-pr-repo-token']").fill("ghp_token");

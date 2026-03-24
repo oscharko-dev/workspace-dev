@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -26,6 +27,7 @@ test.describe("inspector scoped code modes", () => {
     await openWorkspaceUi(page, scopedModesViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {

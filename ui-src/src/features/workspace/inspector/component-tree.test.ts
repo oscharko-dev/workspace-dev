@@ -381,6 +381,47 @@ describe("ComponentTree keyboard navigation", () => {
     expect(onSelect).toHaveBeenCalled();
   });
 
+  it("ArrowLeft collapses an expanded node before moving focus", () => {
+    render(createElement(ComponentTree, defaultProps));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    const headerBar = screen.getByTestId("tree-node-header-bar");
+    expect(headerBar).toHaveAttribute("tabIndex", "0");
+    expect(headerBar).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.keyDown(tree, { key: "ArrowRight" });
+    expect(headerBar).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+    expect(headerBar).toHaveAttribute("aria-expanded", "false");
+    expect(headerBar).toHaveAttribute("tabIndex", "0");
+  });
+
+  it("ArrowLeft moves focus to the parent when the current node is a leaf", () => {
+    render(createElement(ComponentTree, defaultProps));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "ArrowRight" });
+    fireEvent.keyDown(tree, { key: "ArrowRight" });
+
+    const logoNode = screen.getByTestId("tree-node-logo");
+    const headerBar = screen.getByTestId("tree-node-header-bar");
+
+    expect(logoNode).toHaveAttribute("tabIndex", "0");
+    expect(headerBar).toHaveAttribute("tabIndex", "-1");
+
+    fireEvent.keyDown(tree, { key: "ArrowLeft" });
+
+    expect(headerBar).toHaveAttribute("tabIndex", "0");
+    expect(logoNode).toHaveAttribute("tabIndex", "-1");
+  });
+
   it("virtualizes large trees and keeps keyboard navigation selectable", () => {
     const onSelect = vi.fn();
     render(

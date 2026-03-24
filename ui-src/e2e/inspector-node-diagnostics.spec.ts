@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -24,6 +26,7 @@ async function bootInspector({
   await openWorkspaceUi(page, inspectorViewport);
   await triggerDeterministicGeneration(page);
   await waitForCompletedSubmitStatus(page);
+  await openInspector(page);
 }
 
 test.describe("inspector node-level diagnostics deterministic flow", () => {
@@ -37,6 +40,7 @@ test.describe("inspector node-level diagnostics deterministic flow", () => {
 
   test("renders node-level diagnostics note when diagnostics are available", async ({ page }) => {
     await bootInspector({ page });
+    await openInspectorDialog(page, "Coverage");
 
     const summaryNote = page.getByTestId("inspector-summary-aggregate-note");
     await expect(summaryNote).toBeVisible();
@@ -52,6 +56,7 @@ test.describe("inspector node-level diagnostics deterministic flow", () => {
 
   test("shows inspectability summary with coverage and omission counters", async ({ page }) => {
     await bootInspector({ page });
+    await openInspectorDialog(page, "Coverage");
 
     await expect(page.getByTestId("inspector-inspectability-summary")).toBeVisible();
     await expect(page.getByTestId("inspector-summary-manifest-coverage")).toContainText("Manifest coverage");
@@ -81,6 +86,7 @@ test.describe("inspector node-level diagnostics deterministic flow", () => {
         });
       }
     });
+    await openInspectorDialog(page, "Coverage");
 
     // Should not crash and should still render summary
     await expect(page.getByTestId("inspector-inspectability-summary")).toBeVisible();

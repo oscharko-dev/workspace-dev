@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { InspectorPanel } from "./InspectorPanel";
 import {
@@ -189,6 +189,18 @@ function installMutationMock(): void {
   });
 }
 
+function renderInspectorPanel(
+  overrides: Partial<ComponentProps<typeof InspectorPanel>> = {}
+) {
+  return render(
+    createElement(InspectorPanel, {
+      jobId: "job-1",
+      previewUrl: "/workspace/repros/job-1/",
+      ...overrides
+    })
+  );
+}
+
 function editableNodeQueryOverrides({
   invalidPadding = false
 }: {
@@ -339,12 +351,7 @@ describe("InspectorPanel splitters", () => {
   });
 
   it("supports keyboard resizing on the preview-code separator", () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const separator = screen.getByTestId("inspector-splitter-preview-code");
     expect(separator).toHaveAttribute("role", "separator");
@@ -357,24 +364,14 @@ describe("InspectorPanel splitters", () => {
   });
 
   it("renders two interactive separators when tree is expanded", () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-splitter-tree-preview")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-splitter-preview-code")).toBeInTheDocument();
   });
 
   it("supports pointer resizing on the preview-code separator and persists layout on pointerup", () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const separator = screen.getByTestId("inspector-splitter-preview-code");
     const { releasePointerCapture, setPointerCapture } = installPointerCaptureMock(separator);
@@ -414,12 +411,7 @@ describe("InspectorPanel splitters", () => {
   it("persists the last known drag position when pointer capture is lost", () => {
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const separator = screen.getByTestId("inspector-splitter-tree-preview");
     installPointerCaptureMock(separator);
@@ -456,12 +448,7 @@ describe("InspectorPanel splitters", () => {
   });
 
   it("restores the tree pane width after collapse and re-expand", () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const separator = screen.getByTestId("inspector-splitter-tree-preview");
     installPointerCaptureMock(separator);
@@ -508,12 +495,7 @@ describe("InspectorPanel navigation stack", () => {
   });
 
   it("replays committed selection states via back and forward controls", async () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const backButton = screen.getByTestId("inspector-nav-back");
     const forwardButton = screen.getByTestId("inspector-nav-forward");
@@ -545,12 +527,7 @@ describe("InspectorPanel navigation stack", () => {
   });
 
   it("exposes level-up in breadcrumb and applies one-scope-level pop", async () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     const screenNode = screen.getByTestId("tree-screen-screen-home");
     fireEvent.click(screenNode);
@@ -604,12 +581,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-source-design-ir-error")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-design-ir-state-error")).toBeInTheDocument();
@@ -637,12 +609,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-source-component-manifest-error")).toBeInTheDocument();
     expect(screen.getByTestId("component-tree")).toBeInTheDocument();
@@ -669,12 +636,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-source-file-content-error")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-state-file-content-error")).toBeInTheDocument();
@@ -761,12 +723,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-inspectability-summary")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-summary-manifest-coverage")).toBeInTheDocument();
@@ -800,12 +757,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-summary-manifest-unavailable")).toHaveTextContent(
       "component manifest data is not ready"
@@ -827,12 +779,7 @@ describe("InspectorPanel data states", () => {
       }
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     expect(screen.getByTestId("inspector-summary-omission-unavailable")).toHaveTextContent(
       "omission counters are unavailable"
@@ -932,12 +879,7 @@ describe("InspectorPanel data states", () => {
 
     unmount();
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     expect(screen.getByTestId("code-viewer-boundaries-toggle")).toHaveTextContent("Boundaries: On");
   });
@@ -961,12 +903,7 @@ describe("InspectorPanel Edit Studio", () => {
       overrides: editableNodeQueryOverrides()
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1000,12 +937,7 @@ describe("InspectorPanel Edit Studio", () => {
       overrides: editableNodeQueryOverrides({ invalidPadding: true })
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "inspectability" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1045,12 +977,7 @@ describe("InspectorPanel Edit Studio", () => {
       overrides: editableNodeQueryOverrides()
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1108,12 +1035,7 @@ describe("InspectorPanel Edit Studio", () => {
     installQueryMock({
       overrides: editableNodeQueryOverrides()
     });
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1143,12 +1065,7 @@ describe("InspectorPanel Edit Studio", () => {
       overrides: editableNodeQueryOverrides()
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1181,12 +1098,7 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
       overrides: editableNodeQueryOverrides()
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     expect(screen.getByTestId("inspector-impact-review-panel")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-impact-review-empty")).toBeInTheDocument();
@@ -1233,12 +1145,7 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
       overrides: queryOverrides
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     await waitFor(() => {
       expect(screen.getByTestId("inspector-impact-review-summary")).toBeInTheDocument();
@@ -1288,12 +1195,7 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
       overrides: queryOverrides
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     await waitFor(() => {
       expect(screen.getByTestId("inspector-impact-review-summary")).toBeInTheDocument();
@@ -1320,13 +1222,10 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
       )
     );
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/",
-        onRegenerationAccepted
-      })
-    );
+    renderInspectorPanel({
+      openDialog: "preApplyReview",
+      onRegenerationAccepted
+    });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1373,12 +1272,7 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
       )
     );
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "preApplyReview" });
 
     fireEvent.click(screen.getByTestId("tree-node-node-editable"));
     fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
@@ -1553,13 +1447,10 @@ describe("InspectorPanel local sync", () => {
       });
     });
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/",
-        isRegenerationJob: true
-      })
-    );
+    renderInspectorPanel({
+      openDialog: "localSync",
+      isRegenerationJob: true
+    });
 
     const applyButton = screen.getByTestId("inspector-sync-apply-button");
     expect(applyButton).toBeDisabled();
@@ -1594,12 +1485,7 @@ describe("InspectorPanel local sync", () => {
   it("keeps sync controls disabled with explicit hint for non-regeneration jobs", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "localSync" });
 
     expect(screen.getByTestId("inspector-sync-regeneration-required")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-sync-preview-button")).toBeDisabled();
@@ -1621,13 +1507,10 @@ describe("InspectorPanel local sync", () => {
       )
     );
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/",
-        isRegenerationJob: true
-      })
-    );
+    renderInspectorPanel({
+      openDialog: "localSync",
+      isRegenerationJob: true
+    });
 
     fireEvent.click(screen.getByTestId("inspector-sync-preview-button"));
 
@@ -1656,12 +1539,7 @@ describe("InspectorPanel create PR", () => {
   });
 
   it("shows non-regeneration hint and keeps PR action disabled", () => {
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-1",
-        previewUrl: "/workspace/repros/job-1/"
-      })
-    );
+    renderInspectorPanel({ openDialog: "createPr" });
 
     expect(screen.getByTestId("inspector-pr-regeneration-required")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-pr-create-button")).toBeDisabled();
@@ -1693,13 +1571,12 @@ describe("InspectorPanel create PR", () => {
       )
     );
 
-    render(
-      createElement(InspectorPanel, {
-        jobId: "job-regen-1",
-        previewUrl: "/workspace/repros/job-regen-1/",
-        isRegenerationJob: true
-      })
-    );
+    renderInspectorPanel({
+      jobId: "job-regen-1",
+      previewUrl: "/workspace/repros/job-regen-1/",
+      openDialog: "createPr",
+      isRegenerationJob: true
+    });
 
     fireEvent.change(screen.getByTestId("inspector-pr-repo-url"), {
       target: { value: "https://github.com/acme/repo" }

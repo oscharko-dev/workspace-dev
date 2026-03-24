@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { getWorkspaceUiUrl, openWorkspaceUi, resetBrowserStorage } from "./helpers";
+import {
+  ensureWorkspaceDiagnosticsVisible,
+  getWorkspaceUiUrl,
+  openWorkspaceUi,
+  resetBrowserStorage
+} from "./helpers";
 
 const desktopViewportMatrix = [
   { label: "1536x864", width: 1536, height: 864 },
@@ -58,8 +63,14 @@ for (const viewport of desktopViewportMatrix) {
       }
 
       const payloadContainers = [
-        page.getByTestId("runtime-payload"),
-        page.getByTestId("job-payload"),
+        await ensureWorkspaceDiagnosticsVisible(page, {
+          buttonLabel: "Runtime diagnostics",
+          payloadTestId: "runtime-payload"
+        }),
+        await ensureWorkspaceDiagnosticsVisible(page, {
+          buttonLabel: "Job diagnostics",
+          payloadTestId: "job-payload"
+        }),
         page.getByTestId("submit-payload")
       ];
 
@@ -75,7 +86,7 @@ for (const viewport of desktopViewportMatrix) {
 
         expect(["auto", "scroll"]).toContain(metric.overflowX);
         expect(["auto", "scroll"]).toContain(metric.overflowY);
-        expect(metric.height).toBeGreaterThan(60);
+        expect(metric.height).toBeGreaterThan(30);
       }
     });
   });

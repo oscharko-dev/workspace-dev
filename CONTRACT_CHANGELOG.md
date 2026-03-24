@@ -23,6 +23,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.23.0] - 2026-03-23
+
+### Guided remap suggestions for stale draft recovery
+
+Added:
+
+- `WorkspaceStaleDraftDecisionExtended = WorkspaceStaleDraftDecision | "remap"` for stale-draft flows that branch into guided remapping instead of only continue/discard/carry-forward.
+- `WorkspaceRemapConfidence`, `WorkspaceRemapRule`, `WorkspaceRemapSuggestion`, `WorkspaceRemapRejection`, `WorkspaceRemapSuggestInput`, `WorkspaceRemapSuggestResult`, and `WorkspaceRemapDecisionEntry` for typed remap-suggestion request/response handling.
+- `POST /workspace/jobs/{jobId}/remap-suggest` to generate deterministic remap suggestions between a stale source job and a newer completed job.
+
+---
+
 ## [2.22.0] - 2026-03-23
 
 ### Advanced validation rule DSL and cross-field editor

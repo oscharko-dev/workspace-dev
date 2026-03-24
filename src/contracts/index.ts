@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.22.0
+ * Contract version: 2.23.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -180,8 +180,10 @@ export interface WorkspaceJobLog {
   message: string;
 }
 
+/** Severity levels emitted for structured job diagnostics. */
 export type WorkspaceJobDiagnosticSeverity = "error" | "warning" | "info";
 
+/** JSON-safe diagnostic payload values attached to structured job diagnostics. */
 export type WorkspaceJobDiagnosticValue =
   | string
   | number
@@ -190,6 +192,7 @@ export type WorkspaceJobDiagnosticValue =
   | WorkspaceJobDiagnosticValue[]
   | { [key: string]: WorkspaceJobDiagnosticValue };
 
+/** Structured diagnostic entry emitted for job, stage, or node-level issues. */
 export interface WorkspaceJobDiagnostic {
   code: string;
   message: string;
@@ -235,6 +238,7 @@ export interface WorkspaceGenerationDiffReport {
   summary: string;
 }
 
+/** PR execution status attached to completed jobs when Git PR integration is enabled. */
 export interface WorkspaceGitPrStatus {
   status: "executed" | "skipped";
   reason?: string;
@@ -350,10 +354,14 @@ export interface WorkspaceJobLineage {
   overrideCount: number;
 }
 
+/** Supported local sync execution modes. */
 export type WorkspaceLocalSyncMode = "dry_run" | "apply";
 
+/** File action the sync planner intends to perform for a path. */
 export type WorkspaceLocalSyncFileAction = "create" | "overwrite" | "none";
+/** File status reported by the sync planner after comparing generated, baseline, and destination states. */
 export type WorkspaceLocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
+/** Reason explaining why a file received its planned sync status. */
 export type WorkspaceLocalSyncFileReason =
   | "new_file"
   | "managed_destination_unchanged"
@@ -361,18 +369,22 @@ export type WorkspaceLocalSyncFileReason =
   | "destination_deleted_since_sync"
   | "existing_without_baseline"
   | "already_matches_generated";
+/** User decision applied to a single file in local sync preview/apply flows. */
 export type WorkspaceLocalSyncFileDecision = "write" | "skip";
 
+/** Dry-run request payload for previewing a local sync plan. */
 export interface WorkspaceLocalSyncDryRunRequest {
   mode: "dry_run";
   targetPath?: string;
 }
 
+/** User decision for a single planned file during local sync apply. */
 export interface WorkspaceLocalSyncFileDecisionEntry {
   path: string;
   decision: WorkspaceLocalSyncFileDecision;
 }
 
+/** Apply request payload for executing a previously previewed local sync plan. */
 export interface WorkspaceLocalSyncApplyRequest {
   mode: "apply";
   confirmationToken: string;
@@ -380,8 +392,10 @@ export interface WorkspaceLocalSyncApplyRequest {
   fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
 }
 
+/** Union of supported local sync request payloads. */
 export type WorkspaceLocalSyncRequest = WorkspaceLocalSyncDryRunRequest | WorkspaceLocalSyncApplyRequest;
 
+/** Planned file entry returned by local sync preview/apply flows. */
 export interface WorkspaceLocalSyncFilePlanEntry {
   path: string;
   action: WorkspaceLocalSyncFileAction;
@@ -393,6 +407,7 @@ export interface WorkspaceLocalSyncFilePlanEntry {
   message: string;
 }
 
+/** Aggregate counts and byte sizes for a planned local sync run. */
 export interface WorkspaceLocalSyncSummary {
   totalFiles: number;
   selectedFiles: number;
@@ -405,6 +420,7 @@ export interface WorkspaceLocalSyncSummary {
   selectedBytes: number;
 }
 
+/** Dry-run response payload describing a local sync plan before apply. */
 export interface WorkspaceLocalSyncDryRunResult {
   jobId: string;
   sourceJobId: string;
@@ -418,6 +434,7 @@ export interface WorkspaceLocalSyncDryRunResult {
   confirmationExpiresAt: string;
 }
 
+/** Apply response payload describing the executed local sync plan. */
 export interface WorkspaceLocalSyncApplyResult {
   jobId: string;
   sourceJobId: string;

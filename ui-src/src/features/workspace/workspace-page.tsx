@@ -624,11 +624,11 @@ export function WorkspacePage(): JSX.Element {
     isCanceling: Boolean(jobPayload?.cancellation && !jobPayload.cancellation.completedAt)
   });
 
-  const runtimeData = runtimeQuery.data?.workspace?.ok
+  const runtimeData = runtimeQuery.data?.workspace.ok
     ? (runtimeQuery.data.workspace.payload as RuntimeStatusPayload | undefined)
     : undefined;
 
-  const onSubmit = handleSubmit((formData) => {
+  const submitForm = handleSubmit((formData) => {
     submitMutation.mutate(formData);
   });
 
@@ -756,7 +756,13 @@ export function WorkspacePage(): JSX.Element {
               </div>
 
               {/* Input fields */}
-              <form id="workspace-submit-form" onSubmit={onSubmit} className="mt-4">
+              <form
+                id="workspace-submit-form"
+                onSubmit={(event) => {
+                  void submitForm(event);
+                }}
+                className="mt-4"
+              >
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <label htmlFor="figma-file-key" className="text-xs font-medium uppercase tracking-wider text-[#666]">
@@ -888,7 +894,7 @@ export function WorkspacePage(): JSX.Element {
               <div className="flex items-center justify-between border-b border-black/10 py-3">
                 <div>
                   <p className="m-0 text-sm font-medium text-[#333]">Health</p>
-                  <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data?.health?.status ?? "---"}</p>
+                  <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data ? runtimeQuery.data.health.status : "---"}</p>
                 </div>
                 <StatusBadge text={healthBadge.text} variant={healthBadge.variant} />
               </div>

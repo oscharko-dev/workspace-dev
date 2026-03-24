@@ -1,15 +1,16 @@
 /**
  * E2E tests for the Inspector edit mode foundation and capability detection.
  *
- * Verifies edit mode entry/exit, capability detection display for
- * supported and unsupported nodes, and unsupported-state messaging.
+ * Verifies edit mode entry/exit, capability badge behavior, and disabled-state
+ * reason messaging against the current Inspector toolbar UI.
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/451
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -19,6 +20,60 @@ import {
 
 const editModeViewport = { width: 1920, height: 1080 } as const;
 
+function isEditableCapabilityText(value: string | null): boolean {
+  return Boolean(value?.startsWith("Edit: "));
+}
+
+async function getCapabilityBadge(page: Page): Promise<Locator> {
+  const capabilityBadge = page.getByTestId("inspector-edit-capability");
+  await expect(capabilityBadge).toBeVisible({ timeout: 5_000 });
+  return capabilityBadge;
+}
+
+async function selectFirstEditableNode(page: Page): Promise<string> {
+  const { componentTree } = getInspectorLocators(page);
+  const nodes = componentTree.getByTestId(/^tree-node-/);
+  const nodeCount = await nodes.count();
+
+  for (let index = 0; index < nodeCount; index += 1) {
+    const node = nodes.nth(index);
+    await node.click();
+
+    const capabilityBadge = await getCapabilityBadge(page);
+    const capabilityText = await capabilityBadge.textContent();
+    if (!isEditableCapabilityText(capabilityText)) {
+      continue;
+    }
+
+    const nodeId = await node.getAttribute("data-node-id");
+    if (typeof nodeId === "string" && nodeId.length > 0) {
+      await expect(page.getByTestId("inspector-enter-edit-mode")).toBeEnabled();
+      return nodeId;
+    }
+  }
+
+  throw new Error("No editable node was found in the deterministic inspector tree.");
+}
+
+async function selectDifferentNode(page: Page, currentNodeId: string): Promise<void> {
+  const { componentTree } = getInspectorLocators(page);
+  const nodes = componentTree.getByTestId(/^tree-node-/);
+  const nodeCount = await nodes.count();
+
+  for (let index = 0; index < nodeCount; index += 1) {
+    const node = nodes.nth(index);
+    const nodeId = await node.getAttribute("data-node-id");
+    if (!nodeId || nodeId === currentNodeId) {
+      continue;
+    }
+
+    await node.click();
+    return;
+  }
+
+  throw new Error("Could not find a second inspector node to verify edit mode exit behavior.");
+}
+
 test.describe("inspector edit mode foundation", () => {
   test.describe.configure({ mode: "serial", timeout: 180_000 });
 
@@ -27,6 +82,7 @@ test.describe("inspector edit mode foundation", () => {
     await openWorkspaceUi(page, editModeViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {
@@ -34,174 +90,99 @@ test.describe("inspector edit mode foundation", () => {
     await resetBrowserStorage(page);
   });
 
-  test("edit mode button is visible and disabled when no node selected", async ({ page }) => {
-    const editModeBtn = page.getByTestId("inspector-enter-edit-mode");
-    await expect(editModeBtn).toBeVisible();
-    await expect(editModeBtn).toBeDisabled();
+  test("edit mode button is visible before edit mode starts", async ({ page }) => {
+    const editModeButton = page.getByTestId("inspector-enter-edit-mode");
+    await expect(editModeButton).toBeVisible();
+    await expect(page.getByTestId("inspector-edit-studio-panel")).toHaveCount(0);
+
+    const capabilityBadge = page.getByTestId("inspector-edit-capability");
+    if (await capabilityBadge.count()) {
+      const capabilityText = await capabilityBadge.textContent();
+      if (isEditableCapabilityText(capabilityText)) {
+        await expect(editModeButton).toBeEnabled();
+      } else {
+        await expect(editModeButton).toBeDisabled();
+      }
+      const title = await editModeButton.getAttribute("title");
+      expect(title).toBeTruthy();
+    }
   });
 
-  test("selecting a mapped node shows edit capability panel", async ({ page }) => {
+  test("selecting a mapped node shows the capability badge", async ({ page }) => {
     const { componentTree } = getInspectorLocators(page);
-
-    // Select the first component node
     const firstNode = componentTree.getByTestId(/^tree-node-/).first();
     await expect(firstNode).toBeVisible();
     await firstNode.click();
 
-    // Capability panel should appear
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
+    const capabilityBadge = await getCapabilityBadge(page);
+    await expect(capabilityBadge).toHaveText(/^(Edit: \d+ fields|Not editable)$/);
   });
 
   test("editable node enables the edit mode button", async ({ page }) => {
-    const { componentTree } = getInspectorLocators(page);
+    await selectFirstEditableNode(page);
 
-    // Select a node
-    const firstNode = componentTree.getByTestId(/^tree-node-/).first();
-    await firstNode.click();
-
-    // Wait for capability to be computed
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
-
-    // Check if the edit button becomes enabled (depends on node's editability)
-    const editModeBtn = page.getByTestId("inspector-enter-edit-mode");
-    const exitEditBtn = page.getByTestId("inspector-exit-edit-mode");
-
-    // The node may or may not be editable — verify the correct button state
-    const capabilityText = await capabilityPanel.textContent();
-    if (capabilityText?.includes("Supported")) {
-      await expect(editModeBtn).toBeEnabled();
-    } else {
-      await expect(editModeBtn).toBeDisabled();
-      // Exit edit button should not be visible when not in edit mode
-      await expect(exitEditBtn).not.toBeVisible();
-    }
+    const capabilityBadge = await getCapabilityBadge(page);
+    await expect(capabilityBadge).toHaveText(/^Edit: \d+ fields$/);
+    await expect(page.getByTestId("inspector-enter-edit-mode")).toBeEnabled();
+    await expect(page.getByTestId("inspector-exit-edit-mode")).toHaveCount(0);
   });
 
-  test("entering and exiting edit mode toggles the button", async ({ page }) => {
-    const { componentTree } = getInspectorLocators(page);
+  test("entering and exiting edit mode toggles the toolbar controls", async ({ page }) => {
+    await selectFirstEditableNode(page);
 
-    // Select a node
-    const firstNode = componentTree.getByTestId(/^tree-node-/).first();
-    await firstNode.click();
+    const enterEditModeButton = page.getByTestId("inspector-enter-edit-mode");
+    await enterEditModeButton.click();
 
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
+    const exitEditModeButton = page.getByTestId("inspector-exit-edit-mode");
+    await expect(exitEditModeButton).toBeVisible();
+    await expect(enterEditModeButton).toHaveCount(0);
+    await expect(page.getByTestId("inspector-edit-studio-panel")).toBeVisible();
 
-    const capabilityText = await capabilityPanel.textContent();
-    if (!capabilityText?.includes("Supported")) {
-      // Skip test if node is not editable
-      test.skip();
-      return;
-    }
+    await exitEditModeButton.click();
 
-    // Click "Edit Mode" button to enter
-    const editModeBtn = page.getByTestId("inspector-enter-edit-mode");
-    await editModeBtn.click();
-
-    // Exit button should now be visible
-    const exitEditBtn = page.getByTestId("inspector-exit-edit-mode");
-    await expect(exitEditBtn).toBeVisible();
-
-    // Enter button should be gone
-    await expect(editModeBtn).not.toBeVisible();
-
-    // Edit mode active indicator should show
-    const activeIndicator = page.getByTestId("inspector-edit-mode-active-indicator");
-    await expect(activeIndicator).toBeVisible();
-
-    // Click "Exit Edit Mode"
-    await exitEditBtn.click();
-
-    // Enter button should reappear, exit button gone
-    await expect(editModeBtn).toBeVisible();
-    await expect(exitEditBtn).not.toBeVisible();
-    await expect(activeIndicator).not.toBeVisible();
+    await expect(page.getByTestId("inspector-enter-edit-mode")).toBeVisible();
+    await expect(page.getByTestId("inspector-enter-edit-mode")).toBeEnabled();
+    await expect(page.getByTestId("inspector-exit-edit-mode")).toHaveCount(0);
+    await expect(page.getByTestId("inspector-edit-studio-panel")).toHaveCount(0);
   });
 
   test("edit mode exits when selecting a different node", async ({ page }) => {
-    const { componentTree } = getInspectorLocators(page);
+    const selectedNodeId = await selectFirstEditableNode(page);
 
-    const nodes = componentTree.getByTestId(/^tree-node-/);
-    const nodeCount = await nodes.count();
-    if (nodeCount < 2) {
-      test.skip();
-      return;
-    }
+    await page.getByTestId("inspector-enter-edit-mode").click();
+    await expect(page.getByTestId("inspector-exit-edit-mode")).toBeVisible();
+    await expect(page.getByTestId("inspector-edit-studio-panel")).toBeVisible();
 
-    // Select first node
-    await nodes.first().click();
+    await selectDifferentNode(page, selectedNodeId);
 
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
-
-    const capabilityText = await capabilityPanel.textContent();
-    if (!capabilityText?.includes("Supported")) {
-      test.skip();
-      return;
-    }
-
-    // Enter edit mode
-    const editModeBtn = page.getByTestId("inspector-enter-edit-mode");
-    await editModeBtn.click();
-
-    const exitEditBtn = page.getByTestId("inspector-exit-edit-mode");
-    await expect(exitEditBtn).toBeVisible();
-
-    // Select a different node
-    await nodes.nth(1).click();
-
-    // Edit mode should be exited — enter button should reappear
     await expect(page.getByTestId("inspector-enter-edit-mode")).toBeVisible({ timeout: 5_000 });
-    await expect(exitEditBtn).not.toBeVisible();
+    await expect(page.getByTestId("inspector-exit-edit-mode")).toHaveCount(0);
+    await expect(page.getByTestId("inspector-edit-studio-panel")).toHaveCount(0);
   });
 
-  test("unsupported node shows explicit reason", async ({ page }) => {
+  test("non-editable nodes keep the button disabled and expose a concrete reason", async ({ page }) => {
     const { componentTree } = getInspectorLocators(page);
-
-    // Select a screen node (which is not an editable element type)
     const screenNode = componentTree.getByTestId(/^tree-screen-/).first();
     await expect(screenNode).toBeVisible();
     await screenNode.click();
 
-    // Wait for capability panel to show
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
+    const capabilityBadge = await getCapabilityBadge(page);
+    await expect(capabilityBadge).toHaveText("Not editable");
 
-    // Check for reason text
-    const reasonElement = page.getByTestId("inspector-edit-capability-reason");
-    const capabilityText = await capabilityPanel.textContent();
+    const enterEditModeButton = page.getByTestId("inspector-enter-edit-mode");
+    await expect(enterEditModeButton).toBeDisabled();
 
-    // Screen nodes should either show "Not supported" or no reason at all
-    if (capabilityText?.includes("Not supported")) {
-      await expect(reasonElement).toBeVisible();
-      const reasonText = await reasonElement.textContent();
-      expect(reasonText).toBeTruthy();
-      expect(reasonText?.length).toBeGreaterThan(0);
-    }
+    const title = await enterEditModeButton.getAttribute("title");
+    expect(title).toBeTruthy();
+    expect(title).not.toBe("Select a node to check edit capability");
   });
 
-  test("capability fields are displayed for editable nodes", async ({ page }) => {
-    const { componentTree } = getInspectorLocators(page);
+  test("editable nodes show a positive field count in the capability badge", async ({ page }) => {
+    await selectFirstEditableNode(page);
 
-    // Select a node
-    const firstNode = componentTree.getByTestId(/^tree-node-/).first();
-    await firstNode.click();
-
-    const capabilityPanel = page.getByTestId("inspector-edit-capability");
-    await expect(capabilityPanel).toBeVisible({ timeout: 5_000 });
-
-    const capabilityText = await capabilityPanel.textContent();
-    if (!capabilityText?.includes("Supported")) {
-      test.skip();
-      return;
-    }
-
-    // Check fields display
-    const fieldsElement = page.getByTestId("inspector-edit-capability-fields");
-    await expect(fieldsElement).toBeVisible();
-    const fieldsText = await fieldsElement.textContent();
-    expect(fieldsText).toContain("Editable fields:");
+    const capabilityText = await (await getCapabilityBadge(page)).textContent();
+    const fieldCountMatch = capabilityText?.match(/^Edit: (\d+) fields$/);
+    expect(fieldCountMatch, `Expected editable capability text, got: ${capabilityText}`).toBeTruthy();
+    expect(Number(fieldCountMatch?.[1] ?? "0")).toBeGreaterThan(0);
   });
 });

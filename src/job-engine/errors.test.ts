@@ -53,6 +53,179 @@ test("createPipelineError normalizes and truncates diagnostics", () => {
   assert.equal(String(error.diagnostics?.[0]?.details?.nested).length > 0, true);
 });
 
+test("createPipelineError drops invalid diagnostics and sanitizes heterogeneous detail values", () => {
+  const error = createPipelineError({
+    code: "E_TEST",
+    stage: "validate.project",
+    message: "failed",
+    diagnostics: [
+      {
+        code: "   ",
+        message: "ignored",
+        suggestion: "ignored"
+      },
+      {
+        code: "W_SANITIZED",
+        message: "  detailed warning  ",
+        suggestion: "  fix it  ",
+        figmaNodeId: "  1:2  ",
+        figmaUrl: "  https://example.test/node/1:2  ",
+        details: {
+          finiteNumber: 42,
+          infiniteNumber: Number.POSITIVE_INFINITY,
+          nullValue: null,
+          undefinedValue: undefined,
+          bigintValue: 99n,
+          symbolValue: Symbol("demo"),
+          functionValue: function sample() {
+            return "ok";
+          },
+          nestedArray: [1, undefined, Number.NaN, { keep: true }],
+          deepObject: {
+            one: {
+              two: {
+                three: {
+                  four: {
+                    five: "trimmed"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        code: "W_EMPTY_MESSAGE",
+        message: "   ",
+        suggestion: "ignored"
+      },
+      {
+        code: "W_EMPTY_SUGGESTION",
+        message: "ignored",
+        suggestion: "   "
+      }
+    ]
+  });
+
+  assert.equal(error.diagnostics?.length, 1);
+  assert.equal(error.diagnostics?.[0]?.code, "W_SANITIZED");
+  assert.equal(error.diagnostics?.[0]?.stage, "validate.project");
+  assert.equal(error.diagnostics?.[0]?.severity, "error");
+  assert.equal(error.diagnostics?.[0]?.figmaNodeId, "1:2");
+  assert.equal(error.diagnostics?.[0]?.figmaUrl, "https://example.test/node/1:2");
+  assert.equal(error.diagnostics?.[0]?.details?.finiteNumber, 42);
+  assert.equal("infiniteNumber" in (error.diagnostics?.[0]?.details ?? {}), false);
+  assert.equal(error.diagnostics?.[0]?.details?.nullValue, null);
+  assert.equal(error.diagnostics?.[0]?.details?.undefinedValue, "undefined");
+  assert.equal(error.diagnostics?.[0]?.details?.bigintValue, "99n");
+  assert.equal(error.diagnostics?.[0]?.details?.symbolValue, "Symbol(demo)");
+  assert.equal(error.diagnostics?.[0]?.details?.functionValue, "[Function sample]");
+  assert.deepEqual(error.diagnostics?.[0]?.details?.nestedArray, [1, "undefined", { keep: true }]);
+  assert.equal(typeof error.diagnostics?.[0]?.details?.deepObject, "object");
+});
+
+test("mergePipelineDiagnostics honors max and returns undefined when no diagnostics exist", () => {
+  assert.equal(mergePipelineDiagnostics({ first: undefined, second: undefined }), undefined);
+
+  const merged = mergePipelineDiagnostics({
+    first: [
+      {
+        code: "W_A",
+        message: "first",
+        suggestion: "s",
+        stage: "ir.derive",
+        severity: "warning",
+        figmaNodeId: "node-a"
+      }
+    ],
+    second: [
+      {
+        code: "W_A",
+        message: "first",
+        suggestion: "s",
+        stage: "ir.derive",
+        severity: "warning",
+        figmaNodeId: "node-b"
+      }
+    ],
+    max: 1
+  });
+
+  assert.equal(merged?.length, 1);
+  assert.equal(merged?.[0]?.figmaNodeId, "node-a");
+});
+
+test("createPipelineError truncates diagnostic count and omits non-object detail payloads", () => {
+  const diagnostics = Array.from({ length: 30 }, (_, index) => ({
+    code: `W_${String(index).padStart(2, "0")}`,
+    message: `message ${index}`,
+    suggestion: `suggestion ${index}`,
+    details: index === 0 ? ["array detail should be omitted"] : undefined
+  }));
+
+  const error = createPipelineError({
+    code: "E_BULK",
+    stage: "validate.project",
+    message: "bulk diagnostics",
+    diagnostics
+  });
+
+  assert.equal(error.diagnostics?.length, 25);
+  assert.equal("details" in (error.diagnostics?.[0] ?? {}), false);
+  assert.equal(error.diagnostics?.[24]?.code, "W_24");
+});
+
+test("createPipelineError sanitizes anonymous functions, deep arrays, and symbol values without descriptions", () => {
+  const namelessFunction = function namedFunction() {
+    return "ok";
+  };
+  Object.defineProperty(namelessFunction, "name", { value: "" });
+
+  const error = createPipelineError({
+    code: "E_NESTED",
+    stage: "validate.project",
+    message: "nested diagnostics",
+    diagnostics: [
+      {
+        code: "W_NESTED",
+        message: "nested",
+        suggestion: "inspect",
+        details: {
+          anonymousFunction: namelessFunction,
+          noDescriptionSymbol: Symbol(),
+          deepArray: [[[[["too deep"]]]]]
+        }
+      }
+    ]
+  });
+
+  assert.equal(error.diagnostics?.[0]?.details?.anonymousFunction, "[Function anonymous]");
+  assert.equal(error.diagnostics?.[0]?.details?.noDescriptionSymbol, "Symbol()");
+  assert.deepEqual(error.diagnostics?.[0]?.details?.deepArray, [[[1]]]);
+});
+
+test("createPipelineError omits the diagnostics field when every candidate is invalid", () => {
+  const error = createPipelineError({
+    code: "E_INVALID",
+    stage: "validate.project",
+    message: "invalid diagnostics",
+    diagnostics: [
+      {
+        code: "   ",
+        message: "ignored",
+        suggestion: "ignored"
+      },
+      {
+        code: "W_NO_MESSAGE",
+        message: "   ",
+        suggestion: "ignored"
+      }
+    ]
+  });
+
+  assert.equal("diagnostics" in error, false);
+});
+
 test("mergePipelineDiagnostics keeps deterministic first-seen order and de-duplicates", () => {
   const merged = mergePipelineDiagnostics({
     first: [

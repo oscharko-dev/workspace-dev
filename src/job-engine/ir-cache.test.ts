@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile, mkdir, rm, utimes } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -165,6 +165,75 @@ test("loadCachedIr returns undefined for version mismatch", async () => {
   assert.ok(logs.some((log) => log.includes("version mismatch")));
 });
 
+test("loadCachedIr rejects invalid entry structures and mismatched hashes", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+  const contentHash = "7".repeat(64);
+  const optionsHash = "8".repeat(64);
+  const cacheFilePath = path.join(cacheDir, `ir-${contentHash.slice(0, 16)}-${optionsHash.slice(0, 8)}.json`);
+
+  await writeFile(cacheFilePath, JSON.stringify({ version: 1, contentHash, cachedAt: Date.now() }), "utf8");
+  assert.equal(await loadCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, onLog }), undefined);
+  assert.ok(logs.some((log) => log.includes("invalid entry structure")));
+
+  clearLogs();
+  await writeFile(
+    cacheFilePath,
+    JSON.stringify({
+      version: 1,
+      contentHash: "9".repeat(64),
+      cachedAt: Date.now(),
+      ttlMs: 60_000,
+      optionsHash,
+      ir: createMinimalIr()
+    }),
+    "utf8"
+  );
+  assert.equal(await loadCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, onLog }), undefined);
+  assert.ok(logs.some((log) => log.includes("content hash mismatch")));
+
+  clearLogs();
+  await writeFile(
+    cacheFilePath,
+    JSON.stringify({
+      version: 1,
+      contentHash,
+      cachedAt: Date.now(),
+      ttlMs: 60_000,
+      optionsHash: "a".repeat(64),
+      ir: createMinimalIr()
+    }),
+    "utf8"
+  );
+  assert.equal(await loadCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, onLog }), undefined);
+  assert.ok(logs.some((log) => log.includes("options hash mismatch")));
+});
+
+test("loadCachedIr rejects entries whose cached IR is structurally invalid", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+  const contentHash = "b".repeat(64);
+  const optionsHash = "c".repeat(64);
+  const filePath = path.join(cacheDir, `ir-${contentHash.slice(0, 16)}-${optionsHash.slice(0, 8)}.json`);
+
+  await writeFile(
+    filePath,
+    JSON.stringify({
+      version: 1,
+      contentHash,
+      cachedAt: Date.now(),
+      ttlMs: 60_000,
+      optionsHash,
+      ir: { sourceName: "Broken", screens: [] }
+    }),
+    "utf8"
+  );
+
+  const result = await loadCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, onLog });
+  assert.equal(result, undefined);
+  assert.ok(logs.some((log) => log.includes("invalid structure")));
+});
+
 test("loadCachedIr returns cached IR on valid hit", async () => {
   clearLogs();
   const cacheDir = await createTempDir();
@@ -222,6 +291,70 @@ test("saveCachedIr creates cache directory if missing", async () => {
   await saveCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, ir, onLog });
   const entries = await readdir(cacheDir);
   assert.ok(entries.length > 0);
+});
+
+test("saveCachedIr logs write failures without throwing", async () => {
+  clearLogs();
+  const tempRoot = await createTempDir();
+  const blockedPath = path.join(tempRoot, "blocked");
+  await writeFile(blockedPath, "not a directory\n", "utf8");
+
+  try {
+    await saveCachedIr({
+      cacheDir: path.join(blockedPath, "nested"),
+      contentHash: "d".repeat(64),
+      optionsHash: "e".repeat(64),
+      ttlMs: 60_000,
+      ir: createMinimalIr(),
+      onLog
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+
+  assert.ok(logs.some((log) => log.includes("IR cache write failed")));
+});
+
+test("saveCachedIr evicts stale entries once the cache exceeds the max size", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+  const staleTime = new Date(Date.now() - 2 * 60_000);
+
+  try {
+    for (let index = 0; index < 55; index += 1) {
+      const contentHash = `${index.toString(16).padStart(2, "0")}`.repeat(32);
+      const optionsHash = `${(index + 100).toString(16).padStart(2, "0")}`.repeat(32);
+      const filePath = path.join(cacheDir, `ir-${contentHash.slice(0, 16)}-${optionsHash.slice(0, 8)}.json`);
+      await writeFile(
+        filePath,
+        JSON.stringify({
+          version: 1,
+          contentHash,
+          cachedAt: staleTime.getTime(),
+          ttlMs: 1_000,
+          optionsHash,
+          ir: createMinimalIr()
+        }),
+        "utf8"
+      );
+      await utimes(filePath, staleTime, staleTime);
+    }
+
+    await saveCachedIr({
+      cacheDir,
+      contentHash: "f".repeat(64),
+      optionsHash: "0".repeat(64),
+      ttlMs: 1_000,
+      ir: createMinimalIr(),
+      onLog
+    });
+
+    const entries = (await readdir(cacheDir)).filter((entry) => entry.endsWith(".json"));
+    assert.equal(entries.length <= 50, true);
+    assert.ok(logs.some((log) => log.includes("IR cache eviction: removed")));
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
 });
 
 // ── Round-trip: save + load ─────────────────────────────────────────────────

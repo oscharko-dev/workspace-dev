@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -29,6 +30,7 @@ async function bootInspector({
   await openWorkspaceUi(page, inspectorViewport);
   await triggerDeterministicGeneration(page);
   await waitForCompletedSubmitStatus(page);
+  await openInspector(page);
 }
 
 test.describe("inspector data states deterministic flow", () => {

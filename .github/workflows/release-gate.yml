@@ -48,6 +48,15 @@ jobs:
       - name: Canonical tests
         run: pnpm run test
 
+      - name: Template Vitest tests
+        run: pnpm run template:test
+
+      - name: UI coverage gate
+        run: pnpm run ui:test:coverage
+
+      - name: Golden parity fixtures
+        run: pnpm run test:golden
+
       - name: Coverage thresholds
         run: pnpm run test:coverage
 
@@ -169,23 +178,19 @@ jobs:
       - name: Build template app
         run: pnpm --dir template/react-mui-app run build
 
-      - name: Capture web performance baseline (warn-only)
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
-          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
-          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
-          FIGMAPIPE_PERF_STRICT: "false"
-        run: pnpm --dir template/react-mui-app run perf:baseline
-
       - name: Assert web performance budgets and regression (warn-only)
         env:
           FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
           FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
           FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
           FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
-          FIGMAPIPE_PERF_STRICT: "false"
+          FIGMAPIPE_PERF_STRICT: "true"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
         run: pnpm --dir template/react-mui-app run perf:assert
+
+      - name: Summarize web performance report
+        if: always()
+        run: node scripts/print-perf-report-summary.mjs template/react-mui-app/artifacts/performance/perf-assert-report.json
 
       - name: Upload web performance artifacts
         uses: actions/upload-artifact@v4

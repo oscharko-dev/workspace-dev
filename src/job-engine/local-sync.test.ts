@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -286,6 +286,254 @@ test("applyLocalSyncPlan writes only selected files and updates baseline for wri
     ["src/App.tsx"]
   );
   assert.equal(baselinePayload.files[0]?.sha256, sha256("export const App = () => <div>new</div>;\n"));
+});
+
+test("planLocalSync marks deleted managed files as conflicts and already-matching unmanaged files as unchanged", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-deleted-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
+  const sourceRoot = path.join(tempRoot, "generated-project");
+  const targetPath = "sync-target";
+  const boardKey = "board-deleted";
+  const scopePath = `${targetPath}/${boardKey}`;
+  const destinationRoot = path.join(tempRoot, scopePath);
+
+  try {
+    await mkdir(path.join(sourceRoot, "src"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "src", "App.tsx"), "export const App = () => <div>same</div>;\n", "utf8");
+    await writeFile(path.join(sourceRoot, "src", "Deleted.tsx"), "export const Deleted = () => null;\n", "utf8");
+
+    await mkdir(path.join(destinationRoot, "src"), { recursive: true });
+    await writeFile(path.join(destinationRoot, "src", "App.tsx"), "export const App = () => <div>same</div>;\n", "utf8");
+
+    await writeLocalSyncBaseline({
+      outputRoot,
+      scopePath,
+      boardKey,
+      targetPath,
+      destinationRoot,
+      files: [{ path: "src/Deleted.tsx", content: "export const Deleted = () => null;\n" }]
+    });
+
+    const plan = await planLocalSync({
+      generatedProjectDir: sourceRoot,
+      workspaceRoot: tempRoot,
+      outputRoot,
+      targetPath,
+      boardKey
+    });
+
+    assert.equal(plan.summary.totalFiles, 2);
+    assert.equal(plan.summary.conflictCount, 1);
+    assert.equal(plan.summary.unchangedCount, 1);
+    assert.equal(plan.summary.selectedFiles, 0);
+
+    const unchangedEntry = plan.files.find((entry) => entry.relativePath === "src/App.tsx");
+    const deletedEntry = plan.files.find((entry) => entry.relativePath === "src/Deleted.tsx");
+    assert.equal(unchangedEntry?.status, "unchanged");
+    assert.equal(unchangedEntry?.reason, "already_matches_generated");
+    assert.equal(deletedEntry?.status, "conflict");
+    assert.equal(deletedEntry?.reason, "destination_deleted_since_sync");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("planLocalSync rejects invalid baselines, generated symlinks, and unsafe destination parents", async (t) => {
+  await t.test("invalid baseline snapshots fail fast", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-invalid-baseline-"));
+    const outputRoot = path.join(tempRoot, "runtime-output");
+    const sourceRoot = path.join(tempRoot, "generated-project");
+    const baselinePath = path.join(outputRoot, "local-sync-baselines", "sync-target", "board-invalid", "baseline.json");
+
+    try {
+      await mkdir(sourceRoot, { recursive: true });
+      await writeFile(path.join(sourceRoot, "App.tsx"), "export default function App() { return null; }\n", "utf8");
+      await mkdir(path.dirname(baselinePath), { recursive: true });
+      await writeFile(baselinePath, '{"version":999}\n', "utf8");
+
+      await assert.rejects(
+        () =>
+          planLocalSync({
+            generatedProjectDir: sourceRoot,
+            workspaceRoot: tempRoot,
+            outputRoot,
+            targetPath: "sync-target",
+            boardKey: "board-invalid"
+          }),
+        (error: Error) => error instanceof LocalSyncError && error.code === "E_SYNC_BASELINE_INVALID"
+      );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("generated source symlinks are rejected", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-source-symlink-"));
+    const outputRoot = path.join(tempRoot, "runtime-output");
+    const sourceRoot = path.join(tempRoot, "generated-project");
+    const outsideFile = path.join(tempRoot, "outside.tsx");
+
+    try {
+      await mkdir(sourceRoot, { recursive: true });
+      await writeFile(outsideFile, "export const Outside = () => null;\n", "utf8");
+      await symlink(outsideFile, path.join(sourceRoot, "Linked.tsx"));
+
+      await assert.rejects(
+        () =>
+          planLocalSync({
+            generatedProjectDir: sourceRoot,
+            workspaceRoot: tempRoot,
+            outputRoot,
+            targetPath: "sync-target",
+            boardKey: "board-symlink"
+          }),
+        (error: Error) => error instanceof LocalSyncError && error.code === "E_SYNC_SOURCE_SYMLINK"
+      );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("destination parents must stay real directories inside the workspace root", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-dest-parent-"));
+    const outputRoot = path.join(tempRoot, "runtime-output");
+    const sourceRoot = path.join(tempRoot, "generated-project");
+    const parentTarget = path.join(tempRoot, "sync-target");
+    const symlinkTarget = path.join(tempRoot, "actual-target");
+
+    try {
+      await mkdir(sourceRoot, { recursive: true });
+      await writeFile(path.join(sourceRoot, "App.tsx"), "export default function App() { return null; }\n", "utf8");
+
+      await writeFile(parentTarget, "not a directory\n", "utf8");
+      await assert.rejects(
+        () =>
+          planLocalSync({
+            generatedProjectDir: sourceRoot,
+            workspaceRoot: tempRoot,
+            outputRoot,
+            targetPath: "sync-target/nested",
+            boardKey: "board-parent-file"
+          }),
+        (error: Error) => error instanceof LocalSyncError && error.code === "E_SYNC_DESTINATION_CONFLICT"
+      );
+
+      await rm(parentTarget, { force: true });
+      await mkdir(symlinkTarget, { recursive: true });
+      await symlink(symlinkTarget, parentTarget, "dir");
+      await assert.rejects(
+        () =>
+          planLocalSync({
+            generatedProjectDir: sourceRoot,
+            workspaceRoot: tempRoot,
+            outputRoot,
+            targetPath: "sync-target/nested",
+            boardKey: "board-parent-symlink"
+          }),
+        (error: Error) => error instanceof LocalSyncError && error.code === "E_SYNC_DESTINATION_SYMLINK"
+      );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("applyLocalSyncPlan validates file decisions before any writes occur", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-apply-invalid-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
+  const sourceRoot = path.join(tempRoot, "generated-project");
+  const destinationRoot = path.join(tempRoot, "sync-target", "board-validate");
+
+  try {
+    await mkdir(sourceRoot, { recursive: true });
+    await writeFile(path.join(sourceRoot, "App.tsx"), "export const App = () => <div>same</div>;\n", "utf8");
+    await writeFile(path.join(sourceRoot, "New.tsx"), "export const NewFile = () => null;\n", "utf8");
+    await mkdir(destinationRoot, { recursive: true });
+    await writeFile(path.join(destinationRoot, "App.tsx"), "export const App = () => <div>same</div>;\n", "utf8");
+
+    const plan = await planLocalSync({
+      generatedProjectDir: sourceRoot,
+      workspaceRoot: tempRoot,
+      outputRoot,
+      targetPath: "sync-target",
+      boardKey: "board-validate"
+    });
+
+    const appPath = plan.files.find((entry) => entry.relativePath === "App.tsx")?.relativePath;
+    const newPath = plan.files.find((entry) => entry.relativePath === "New.tsx")?.relativePath;
+    assert.ok(appPath);
+    assert.ok(newPath);
+
+    const expectInvalid = async (fileDecisions: Array<{ path: string; decision: "write" | "skip" }>, matcher: RegExp) => {
+      await assert.rejects(
+        () =>
+          applyLocalSyncPlan({
+            plan,
+            jobId: "job-invalid",
+            sourceJobId: "source-invalid",
+            fileDecisions
+          }),
+        (error: Error) => error instanceof LocalSyncError && error.code === "E_SYNC_FILE_DECISIONS_INVALID" && matcher.test(error.message)
+      );
+    };
+
+    await t.test("empty paths are rejected", async () => {
+      await expectInvalid(
+        [
+          { path: "", decision: "write" },
+          { path: newPath ?? "New.tsx", decision: "write" }
+        ],
+        /must be non-empty/
+      );
+    });
+
+    await t.test("duplicate paths are rejected", async () => {
+      await expectInvalid(
+        [
+          { path: newPath ?? "New.tsx", decision: "write" },
+          { path: newPath ?? "New.tsx", decision: "skip" }
+        ],
+        /Duplicate file decision/
+      );
+    });
+
+    await t.test("missing decisions are rejected", async () => {
+      await expectInvalid([{ path: appPath ?? "App.tsx", decision: "skip" }], /Missing file decision/);
+    });
+
+    await t.test("unchanged files cannot be written again", async () => {
+      await expectInvalid(
+        [
+          { path: appPath ?? "App.tsx", decision: "write" },
+          { path: newPath ?? "New.tsx", decision: "skip" }
+        ],
+        /cannot be written again/
+      );
+    });
+
+    await t.test("unknown paths are rejected", async () => {
+      await expectInvalid(
+        [
+          { path: appPath ?? "App.tsx", decision: "skip" },
+          { path: newPath ?? "New.tsx", decision: "write" },
+          { path: "Unknown.tsx", decision: "skip" }
+        ],
+        /unknown path/
+      );
+    });
+
+    await t.test("at least one file must be selected for writing", async () => {
+      await expectInvalid(
+        [
+          { path: appPath ?? "App.tsx", decision: "skip" },
+          { path: newPath ?? "New.tsx", decision: "skip" }
+        ],
+        /Select at least one file/
+      );
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("job-engine local sync persists a baseline and surfaces manual edits as conflicts", async () => {

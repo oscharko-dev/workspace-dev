@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -17,40 +18,36 @@ test.describe("inspector boundary gutters deterministic flow", () => {
   test.beforeEach(async ({ page }) => {
     await setupDeterministicSubmitRoute(page);
 
-    await page.route("**/workspace/jobs/*/component-manifest*", async (route) => {
+    await page.route("**/workspace/jobs/*/files/src%2Fscreens%2FHome.tsx", async (route) => {
       const response = await route.fetch();
-      const payload = (await response.json()) as {
-        screens?: Array<{
-          file?: string;
-          components?: Array<Record<string, unknown>>;
-        }>;
-      };
+      const body = await response.text();
+      const bodyLines = body.split("\n");
+      const overlapSegment = bodyLines.slice(0, 2);
+      const remainingBody = bodyLines.slice(2);
+      const injectedBody = [
+        "{/* @ir:start synthetic-overlap-1 Synthetic overlap 1 FRAME */}",
+        "{/* @ir:start synthetic-overlap-2 Synthetic overlap 2 FRAME */}",
+        "{/* @ir:start synthetic-overlap-3 Synthetic overlap 3 FRAME */}",
+        "{/* @ir:start synthetic-overlap-4 Synthetic overlap 4 FRAME */}",
+        ...overlapSegment,
+        "{/* @ir:end synthetic-overlap-4 */}",
+        "{/* @ir:end synthetic-overlap-3 */}",
+        "{/* @ir:end synthetic-overlap-2 */}",
+        "{/* @ir:end synthetic-overlap-1 */}",
+        ...remainingBody
+      ].join("\n");
 
-      const firstScreen = payload.screens?.[0];
-      const targetFile = firstScreen?.file;
-      if (firstScreen && targetFile && Array.isArray(firstScreen.components)) {
-        for (let i = 1; i <= 4; i += 1) {
-          firstScreen.components.push({
-            irNodeId: `synthetic-overlap-${String(i)}`,
-            irNodeName: `Synthetic overlap ${String(i)}`,
-            irNodeType: "container",
-            file: targetFile,
-            startLine: 1,
-            endLine: 1
-          });
-        }
-      }
-
-      await route.fulfill({ response, json: payload });
+      await route.fulfill({ response, body: injectedBody });
     });
 
     await openWorkspaceUi(page, inspectorViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {
-    await page.unroute("**/workspace/jobs/*/component-manifest*");
+    await page.unroute("**/workspace/jobs/*/files/src%2Fscreens%2FHome.tsx");
     await cleanupDeterministicSubmitRoute(page);
     await resetBrowserStorage(page);
   });
@@ -68,7 +65,7 @@ test.describe("inspector boundary gutters deterministic flow", () => {
     const markers = page.getByTestId(/^code-boundary-marker-/);
     await expect(markers.first()).toBeVisible();
 
-    await expect(page.getByTestId("code-boundary-overflow-indicator-1")).toBeVisible();
+    await expect(page.getByTestId(/^code-boundary-overflow-indicator-/).first()).toBeVisible();
 
     const markerNodeIds = await page.locator("[data-boundary-node-id]").evaluateAll((elements) => {
       return elements

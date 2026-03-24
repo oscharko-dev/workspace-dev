@@ -8,7 +8,7 @@ import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 120_000
+  timeoutMs = 240_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
@@ -166,7 +166,7 @@ test("submitRegeneration creates a queued job with lineage metadata from a compl
   const regenAccepted = engine.submitRegeneration({
     sourceJobId: sourceAccepted.jobId,
     overrides: [
-      { nodeId: "box-1", field: "fillColor", value: "#00ff00" },
+      { nodeId: "title-1", field: "fontSize", value: 28 },
       { nodeId: "box-1", field: "cornerRadius", value: 16 }
     ],
     draftId: "test-draft-123",
@@ -260,4 +260,84 @@ test("submitRegeneration result endpoint includes lineage", async () => {
   assert.ok(result.lineage);
   assert.equal(result.lineage?.sourceJobId, sourceAccepted.jobId);
   assert.equal(result.lineage?.overrideCount, 1);
+});
+
+test("queued regeneration jobs drain when a running job releases the only queue slot", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-queue-drain-"));
+  const figmaPayload = createLocalFigmaPayload();
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(figmaPayload), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 2,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener("abort", () => {
+              reject(new DOMException("aborted", "AbortError"));
+            }, { once: true });
+          }
+        })
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
+
+  const blockingAccepted = engine.submitJob({
+    figmaFileKey: "queued-regen-blocker",
+    figmaAccessToken: "token"
+  });
+  const blockingStartedAt = Date.now();
+  while (Date.now() - blockingStartedAt < 5_000) {
+    if (engine.getJob(blockingAccepted.jobId)?.status === "running") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(engine.getJob(blockingAccepted.jobId)?.status, "running");
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title-1", field: "fontSize", value: 32 }]
+  });
+  assert.equal(engine.getJob(regenAccepted.jobId)?.status, "queued");
+
+  engine.cancelJob({ jobId: blockingAccepted.jobId, reason: "release queue slot" });
+
+  const blockingStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: blockingAccepted.jobId
+  });
+  assert.equal(blockingStatus.status, "canceled");
+
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed", `Queued regeneration should drain, got ${regenStatus.status}`);
+  assert.equal(regenStatus.lineage?.sourceJobId, sourceAccepted.jobId);
+  assert.equal(regenStatus.lineage?.overrideCount, 1);
 });

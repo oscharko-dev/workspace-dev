@@ -240,6 +240,14 @@ export interface BaseElementIR {
   padding?: ElementSpacingIR;
   margin?: ElementSpacingIR;
   cornerRadius?: number;
+  required?: boolean;
+  validationType?: string;
+  validationMessage?: string;
+  validationMin?: number;
+  validationMax?: number;
+  validationMinLength?: number;
+  validationMaxLength?: number;
+  validationPattern?: string;
   prototypeNavigation?: ElementPrototypeNavigationIR;
   variantMapping?: VariantMappingIR;
   cssGridHints?: CssGridChildHints;

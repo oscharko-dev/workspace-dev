@@ -57,11 +57,6 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
   const focusedIndexRef = useRef(0);
   const segmentRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
-  // Hide when path is empty
-  if (path.length === 0) {
-    return null;
-  }
-
   // Determine visible vs collapsed segments
   const needsOverflow = path.length > MAX_VISIBLE_SEGMENTS;
   const visibleSegments = useMemo(() => {
@@ -115,8 +110,9 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
     [needsOverflow, visibleSegments.length]
   );
 
-  // Builds a ref index accounting for the overflow button position
-  let refIndex = 0;
+  if (path.length === 0) {
+    return null;
+  }
 
   return (
     <nav
@@ -148,15 +144,13 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
       ) : null}
 
       {visibleSegments.map((segment, i) => {
-        const isLast = !needsOverflow
-          ? i === visibleSegments.length - 1
-          : i === visibleSegments.length - 1;
+        const isLast = i === visibleSegments.length - 1;
         const isFirst = i === 0;
-        const currentRefIndex = refIndex;
-        refIndex += 1;
 
         // Insert overflow button after the first segment
         const showOverflowBefore = needsOverflow && i === 1;
+        const overflowRefIndex = 1;
+        const segmentRefIndex = needsOverflow && i >= 1 ? i + 1 : i;
 
         return (
           <span key={segment.id} className="flex items-center gap-0.5">
@@ -174,11 +168,8 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
                     type="button"
                     data-testid="breadcrumb-overflow-toggle"
                     ref={(el) => {
-                      const overflowRefIdx = currentRefIndex;
-                      if (el) segmentRefs.current.set(overflowRefIdx, el);
-                      else segmentRefs.current.delete(overflowRefIdx);
-                      // Shift all subsequent indices
-                      refIndex = currentRefIndex + 1;
+                      if (el) segmentRefs.current.set(overflowRefIndex, el);
+                      else segmentRefs.current.delete(overflowRefIndex);
                     }}
                     onClick={() => { setOverflowOpen((v) => !v); }}
                     className="cursor-pointer rounded border border-transparent px-1 py-0.5 text-[11px] font-semibold text-white/55 transition hover:border-white/10 hover:bg-[#000000] hover:text-white"
@@ -218,10 +209,8 @@ export function Breadcrumb({ path, onSelect, hasActiveScope, onEnterScope, onExi
             <button
               type="button"
               ref={(el) => {
-                // Need correct index — after overflow if present
-                const segRefIdx = needsOverflow && i >= 1 ? currentRefIndex + 1 : currentRefIndex;
-                if (el) segmentRefs.current.set(segRefIdx, el);
-                else segmentRefs.current.delete(segRefIdx);
+                if (el) segmentRefs.current.set(segmentRefIndex, el);
+                else segmentRefs.current.delete(segmentRefIndex);
               }}
               data-testid={`breadcrumb-segment-${segment.id}`}
               onClick={() => { handleSegmentClick(segment.id); }}

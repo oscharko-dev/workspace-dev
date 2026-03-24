@@ -11,6 +11,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -28,6 +29,7 @@ test.describe("inspector hierarchical drilldown scope", () => {
     await openWorkspaceUi(page, scopeViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {
@@ -147,6 +149,28 @@ test.describe("inspector hierarchical drilldown scope", () => {
     const segments = breadcrumb.getByTestId(/^breadcrumb-segment-/);
     const segmentCount = await segments.count();
     expect(segmentCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test("ArrowLeft moves keyboard focus back to the parent node without entering scope", async ({ page }) => {
+    const tree = page.getByRole("tree", { name: "Component tree" });
+    await tree.focus();
+
+    await tree.press("ArrowDown");
+    await tree.press("ArrowDown");
+    await tree.press("ArrowRight");
+    await tree.press("ArrowRight");
+
+    const childNode = page.getByTestId("tree-node-nav-button-text");
+    const parentNode = page.getByTestId("tree-node-nav-button");
+    await expect(childNode).toHaveAttribute("tabindex", "0");
+    await expect(parentNode).toHaveAttribute("tabindex", "-1");
+
+    await tree.press("ArrowLeft");
+    await tree.press("Enter");
+
+    await expect(parentNode).toHaveAttribute("aria-selected", "true");
+    await expect(childNode).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByTestId("breadcrumb-scope-badge")).not.toBeVisible();
   });
 
   test("breadcrumb continues to work after scope entry and exit", async ({ page }) => {

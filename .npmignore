@@ -5,5 +5,8 @@ src/
 scripts/
 tsconfig.json
 *.test.ts
+*.test.tsx
+**/*.test.ts
+**/*.test.tsx
 node_modules/
 template/**/node_modules/

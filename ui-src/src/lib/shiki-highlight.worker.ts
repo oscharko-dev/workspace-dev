@@ -12,14 +12,11 @@ type WorkerScope = {
   postMessage: (message: HighlightWorkerResponseMessage) => void;
 };
 
-const workerScope = self as unknown as WorkerScope;
+const workerScope: WorkerScope = globalThis;
 const cancelledRequestIds = new Set<number>();
 
 workerScope.addEventListener("message", (event) => {
   const message = event.data;
-  if (!message || typeof message !== "object" || !("type" in message)) {
-    return;
-  }
 
   if (message.type === "cancel") {
     cancelledRequestIds.add(message.requestId);

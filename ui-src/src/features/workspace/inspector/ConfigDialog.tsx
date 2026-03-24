@@ -1,54 +1,105 @@
-import { useCallback, useEffect, useRef, type JSX, type ReactNode } from "react";
+import { useEffect, useId, useRef, type JSX, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 interface ConfigDialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export function ConfigDialog({ open, onClose, title, children }: ConfigDialogProps): JSX.Element | null {
   const backdropRef = useRef<HTMLDivElement>(null);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    },
-    [onClose]
-  );
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
 
   useEffect(() => {
-    if (open) {
-      document.addEventListener("keydown", handleKeyDown);
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown);
-      };
+    if (!open || typeof document === "undefined") {
+      return undefined;
     }
-    return undefined;
-  }, [open, handleKeyDown]);
+
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const elementToRestore = restoreFocusRef.current;
+      restoreFocusRef.current = null;
+      if (elementToRestore && elementToRestore.isConnected) {
+        elementToRestore.focus();
+      }
+    };
+  }, [open]);
 
   if (!open) {
     return null;
   }
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (event.key !== "Tab" || !backdropRef.current) {
+      return;
+    }
+
+    const focusable = backdropRef.current.querySelectorAll<HTMLElement>(
+      "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+
+    if (event.shiftKey) {
+      if (document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+
+    if (document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div
       ref={backdropRef}
+      data-testid="config-dialog-overlay"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={(event) => {
         if (event.target === backdropRef.current) {
           onClose();
         }
       }}
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
     >
-      <div className="relative flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl">
+      <div
+        data-testid="config-dialog-panel"
+        className="relative flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
+      >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-3">
-          <h3 className="m-0 text-sm font-semibold text-slate-900">{title}</h3>
+          <h3 id={titleId} className="m-0 text-sm font-semibold text-slate-900">{title}</h3>
           <button
+            ref={closeButtonRef}
             type="button"
+            data-testid="config-dialog-close"
             onClick={onClose}
             className="flex size-7 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
             aria-label="Close dialog"

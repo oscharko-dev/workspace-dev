@@ -5,7 +5,7 @@ import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/ind
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
-import { enforceModeLock } from "../mode-lock.js";
+import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
 import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
@@ -1209,7 +1209,7 @@ export function createWorkspaceRequestHandler({
             }),
             allowedModes: {
               figmaSourceMode: defaults.figmaSourceMode,
-              figmaSourceModes: ["rest", "local_json"],
+              figmaSourceModes: [...getAllowedFigmaSourceModes()],
               llmCodegenMode: defaults.llmCodegenMode
             }
           }

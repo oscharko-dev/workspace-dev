@@ -7,7 +7,6 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceLocalSyncApplyResult,
-  WorkspaceLocalSyncFileDecisionEntry,
   WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
   WorkspaceJobInput,
@@ -454,6 +453,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const jobs = new Map<string, JobRecord>();
   const queuedJobIds: string[] = [];
   const queuedJobInputs = new Map<string, WorkspaceJobInput>();
+  const queuedRegenInputs = new Map<string, WorkspaceRegenerationInput>();
   const runningJobIds = new Set<string>();
   const localSyncConfirmations = new Map<string, LocalSyncConfirmationRecord>();
 
@@ -1527,6 +1527,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             commandTimeoutMs: runtime.commandTimeoutMs,
             installPreferOffline: runtime.installPreferOffline,
             skipInstall: runtime.skipInstall,
+            seedNodeModulesDir: path.join(TEMPLATE_ROOT, "node_modules"),
             abortSignal: jobAbortController.signal,
             onLog: (message) => {
               pushLog({
@@ -1689,20 +1690,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       void runJob(job, input).finally(() => {
         runningJobIds.delete(job.jobId);
         refreshQueueSnapshots();
-        while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
-          const nextJobId = queuedJobIds.shift();
-          if (!nextJobId) {
-            break;
-          }
-          const nextJob = jobs.get(nextJobId);
-          const nextInput = queuedJobInputs.get(nextJobId);
-          if (!nextJob || !nextInput || nextJob.status !== "queued") {
-            queuedJobInputs.delete(nextJobId);
-            continue;
-          }
-          queuedJobInputs.delete(nextJobId);
-          executeJob({ job: nextJob, input: nextInput });
-        }
+        drainQueuedJobs();
         refreshQueueSnapshots();
       });
     });
@@ -2040,6 +2028,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             commandTimeoutMs: runtime.commandTimeoutMs,
             installPreferOffline: runtime.installPreferOffline,
             skipInstall: runtime.skipInstall,
+            seedNodeModulesDir: path.join(TEMPLATE_ROOT, "node_modules"),
             abortSignal: jobAbortController.signal,
             onLog: (message) => {
               pushLog({
@@ -2168,26 +2157,42 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       void runRegenerationJob(job, input).finally(() => {
         runningJobIds.delete(job.jobId);
         refreshQueueSnapshots();
-        while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
-          const nextJobId = queuedJobIds.shift();
-          if (!nextJobId) {
-            break;
-          }
-          const nextJob = jobs.get(nextJobId);
-          const nextInput = queuedJobInputs.get(nextJobId);
-          if (!nextJob || !nextInput || nextJob.status !== "queued") {
-            queuedJobInputs.delete(nextJobId);
-            continue;
-          }
-          queuedJobInputs.delete(nextJobId);
-          executeJob({ job: nextJob, input: nextInput });
-        }
+        drainQueuedJobs();
         refreshQueueSnapshots();
       });
     });
   };
 
-  const queuedRegenInputs = new Map<string, WorkspaceRegenerationInput>();
+  const drainQueuedJobs = (): void => {
+    while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
+      const nextJobId = queuedJobIds.shift();
+      if (!nextJobId) {
+        break;
+      }
+
+      const nextJob = jobs.get(nextJobId);
+      const nextInput = queuedJobInputs.get(nextJobId);
+      const nextRegenInput = queuedRegenInputs.get(nextJobId);
+
+      if (!nextJob || nextJob.status !== "queued") {
+        queuedJobInputs.delete(nextJobId);
+        queuedRegenInputs.delete(nextJobId);
+        continue;
+      }
+
+      if (nextInput) {
+        queuedJobInputs.delete(nextJobId);
+        executeJob({ job: nextJob, input: nextInput });
+        continue;
+      }
+
+      if (nextRegenInput) {
+        queuedRegenInputs.delete(nextJobId);
+        executeRegenerationJob({ job: nextJob, input: nextRegenInput });
+        continue;
+      }
+    }
+  };
 
   const submitRegeneration = (input: WorkspaceRegenerationInput) => {
     // Validate source job exists and is completed
@@ -2360,7 +2365,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const appliedPlan = await applyLocalSyncPlan({
       plan: currentPlan,
-      fileDecisions: fileDecisions as WorkspaceLocalSyncFileDecisionEntry[],
+      fileDecisions,
       jobId,
       sourceJobId: syncContext.sourceJobId
     });
@@ -2424,6 +2429,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         queuedJobIds.splice(queuedIndex, 1);
       }
       queuedJobInputs.delete(jobId);
+      queuedRegenInputs.delete(jobId);
       job.status = "canceled";
       job.finishedAt = nowIso();
       job.cancellation.completedAt = nowIso();
@@ -2824,8 +2830,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       };
     }
 
-    const sourceIr = JSON.parse(sourceIrContent) as import("./parity/types-ir.js").DesignIR;
-    const latestIr = JSON.parse(latestIrContent) as import("./parity/types-ir.js").DesignIR;
+    const sourceIr = JSON.parse(sourceIrContent) as DesignIR;
+    const latestIr = JSON.parse(latestIrContent) as DesignIR;
 
     return generateRemapSuggestions({
       sourceIr,

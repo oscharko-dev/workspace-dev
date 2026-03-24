@@ -9,7 +9,6 @@
  */
 import {
   createContext,
-  useContext,
   useReducer,
   useMemo,
   type JSX,
@@ -77,16 +76,4 @@ export function InspectorScopeProvider({ children }: InspectorScopeProviderProps
       {children}
     </InspectorScopeCtx.Provider>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
-export function useInspectorScope(): InspectorScopeContextValue {
-  const ctx = useContext(InspectorScopeCtx);
-  if (!ctx) {
-    throw new Error("useInspectorScope must be used within an InspectorScopeProvider");
-  }
-  return ctx;
 }

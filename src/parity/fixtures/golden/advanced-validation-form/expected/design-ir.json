@@ -1,0 +1,513 @@
+{
+  "sourceName": "Advanced Validation Golden",
+  "screens": [
+    {
+      "id": "screen-validation-form",
+      "name": "Validation Form",
+      "layoutMode": "VERTICAL",
+      "gap": 16,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "validation-title",
+          "name": "Heading",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Request approved budget",
+          "x": 24,
+          "y": 24,
+          "width": 280,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "validation-subtitle",
+          "name": "Subtitle",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Use a company email, provide the amount range, and include a six-character code.",
+          "x": 24,
+          "y": 68,
+          "width": 348,
+          "height": 40,
+          "fillColor": "#666b75",
+          "fontSize": 14,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "email-field",
+          "name": "MuiTextFieldRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 4,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
+          },
+          "type": "input",
+          "x": 24,
+          "y": 132,
+          "width": 372,
+          "height": 56,
+          "strokeColor": "#bfc4cc",
+          "strokeWidth": 1,
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "email-field-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Company email",
+              "x": 36,
+              "y": 136,
+              "width": 104,
+              "height": 16,
+              "fillColor": "#666b75",
+              "fontSize": 12,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 16,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "email-field-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "owner@example.com",
+              "x": 36,
+              "y": 156,
+              "width": 332,
+              "height": 24,
+              "fillColor": "#1c1f24",
+              "fontSize": 16,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 24,
+              "textAlign": "LEFT"
+            }
+          ],
+          "required": true,
+          "validationType": "email",
+          "validationPattern": "^[^@\\s]+@example\\.com$",
+          "validationMessage": "Use your @example.com email."
+        },
+        {
+          "id": "amount-field",
+          "name": "MuiTextFieldRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 4,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
+          },
+          "type": "input",
+          "x": 24,
+          "y": 204,
+          "width": 372,
+          "height": 56,
+          "strokeColor": "#bfc4cc",
+          "strokeWidth": 1,
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "amount-field-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Approved amount",
+              "x": 36,
+              "y": 208,
+              "width": 112,
+              "height": 16,
+              "fillColor": "#666b75",
+              "fontSize": 12,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 16,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "amount-field-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "250",
+              "x": 36,
+              "y": 228,
+              "width": 332,
+              "height": 24,
+              "fillColor": "#1c1f24",
+              "fontSize": 16,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 24,
+              "textAlign": "LEFT"
+            }
+          ],
+          "required": true,
+          "validationType": "number",
+          "validationMin": 100,
+          "validationMax": 5000,
+          "validationMessage": "Amount must be between 100 and 5000."
+        },
+        {
+          "id": "code-field",
+          "name": "MuiTextFieldRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 4,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
+          },
+          "type": "input",
+          "x": 24,
+          "y": 276,
+          "width": 372,
+          "height": 56,
+          "strokeColor": "#bfc4cc",
+          "strokeWidth": 1,
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "code-field-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Approval code",
+              "x": 36,
+              "y": 280,
+              "width": 96,
+              "height": 16,
+              "fillColor": "#666b75",
+              "fontSize": 12,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 16,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "code-field-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "AB12CD",
+              "x": 36,
+              "y": 300,
+              "width": 332,
+              "height": 24,
+              "fillColor": "#1c1f24",
+              "fontSize": 16,
+              "fontWeight": 400,
+              "fontFamily": "Inter",
+              "lineHeight": 24,
+              "textAlign": "LEFT"
+            }
+          ],
+          "validationPattern": "^[A-Z0-9]{6}$",
+          "validationMinLength": 6,
+          "validationMaxLength": 6,
+          "validationMessage": "Promo code must be 6 uppercase characters."
+        },
+        {
+          "id": "submit-budget-button",
+          "name": "MuiButtonRoot",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "primaryAxisAlignItems": "CENTER",
+          "counterAxisAlignItems": "CENTER",
+          "type": "paper",
+          "x": 24,
+          "y": 356,
+          "width": 372,
+          "height": 48,
+          "fillColor": "#ed001f",
+          "cornerRadius": 8,
+          "children": [
+            {
+              "id": "submit-budget-button-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Submit request",
+              "x": 144,
+              "y": 369,
+              "width": 132,
+              "height": 22,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "CENTER"
+            }
+          ]
+        }
+      ],
+      "width": 420,
+      "height": 840,
+      "fillColor": "#ffffff"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#666b75",
+      "background": "#ffffff",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#ed001f",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 4,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 28,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 12,
+        "fontWeight": 400,
+        "lineHeightPx": 16,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 12,
+        "fontWeight": 400,
+        "lineHeightPx": 16,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-validation-form",
+        "screenName": "Validation Form",
+        "elements": 13
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

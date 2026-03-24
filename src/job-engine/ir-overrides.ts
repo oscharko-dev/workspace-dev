@@ -12,48 +12,22 @@ import type { WorkspaceRegenerationOverrideEntry } from "../contracts/index.js";
 import type { DesignIR, ScreenElementIR, ScreenIR } from "../parity/types-ir.js";
 import {
   validateRegenerationOverrideEntry,
-  type PaddingOverrideValue,
   type ValidatedRegenerationOverrideEntry
 } from "./ir-override-validation.js";
 
-/** Fields that map directly to numeric properties on IR elements. */
-const NUMERIC_ELEMENT_FIELDS = new Set([
-  "opacity",
-  "cornerRadius",
-  "fontSize",
-  "fontWeight",
-  "gap"
-]);
-
-const DIMENSION_ELEMENT_FIELDS = new Set([
-  "width",
-  "height"
-]);
-
-/** Fields that map directly to string properties on IR elements. */
-const STRING_ELEMENT_FIELDS = new Set([
-  "fillColor",
-  "fontFamily"
-]);
-
-/** Form validation fields that set properties directly on IR element data. */
-const FORM_VALIDATION_FIELDS = new Set([
-  "required",
-  "validationType",
-  "validationMessage",
-  "validationMin",
-  "validationMax",
-  "validationMinLength",
-  "validationMaxLength",
-  "validationPattern"
-]);
+type NumericElementField = "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap";
+type DimensionElementField = "width" | "height";
+type StringElementField = "fillColor" | "fontFamily";
 
 function hasChildren(element: ScreenElementIR): boolean {
   return Array.isArray(element.children) && element.children.length > 0;
 }
 
-function applyPaddingOverride(element: ScreenElementIR, value: PaddingOverrideValue): boolean {
-  (element as unknown as Record<string, unknown>).padding = {
+function applyPaddingOverride(
+  element: ScreenElementIR,
+  value: Extract<ValidatedRegenerationOverrideEntry, { field: "padding" }>["value"]
+): boolean {
+  element.padding = {
     top: value.top,
     right: value.right,
     bottom: value.bottom,
@@ -64,15 +38,15 @@ function applyPaddingOverride(element: ScreenElementIR, value: PaddingOverrideVa
 
 function applyLayoutModeOverride(
   element: ScreenElementIR,
-  value: ValidatedRegenerationOverrideEntry["value"]
+  value: Extract<ValidatedRegenerationOverrideEntry, { field: "layoutMode" }>["value"]
 ): boolean {
-  if (!hasChildren(element) || typeof value !== "string") {
+  if (!hasChildren(element)) {
     return false;
   }
-  (element as unknown as Record<string, unknown>).layoutMode = value;
+  element.layoutMode = value;
   if (value === "NONE") {
-    delete (element as unknown as Record<string, unknown>).primaryAxisAlignItems;
-    delete (element as unknown as Record<string, unknown>).counterAxisAlignItems;
+    delete element.primaryAxisAlignItems;
+    delete element.counterAxisAlignItems;
   }
   return true;
 }
@@ -84,7 +58,7 @@ export interface ApplyIrOverridesResult {
 }
 
 function cloneElement(element: ScreenElementIR): ScreenElementIR {
-  const cloned: Record<string, unknown> = { ...element };
+  const cloned: ScreenElementIR = { ...element };
   if (element.children && element.children.length > 0) {
     cloned.children = element.children.map((child) => cloneElement(child));
   }
@@ -106,57 +80,80 @@ function applyOverrideToElement(
   element: ScreenElementIR,
   override: ValidatedRegenerationOverrideEntry
 ): boolean {
-  const { field, value } = override;
-
-  if (NUMERIC_ELEMENT_FIELDS.has(field)) {
-    if (typeof value !== "number") {
-      return false;
+  switch (override.field) {
+    case "opacity":
+    case "cornerRadius":
+    case "fontSize":
+    case "fontWeight":
+    case "gap": {
+      const field: NumericElementField = override.field;
+      if (typeof override.value !== "number") {
+        return false;
+      }
+      element[field] = override.value;
+      return true;
     }
-    (element as unknown as Record<string, unknown>)[field] = value;
-    return true;
-  }
-
-  if (DIMENSION_ELEMENT_FIELDS.has(field)) {
-    if (typeof value !== "number" || element.type === "text") {
-      return false;
+    case "width":
+    case "height": {
+      const field: DimensionElementField = override.field;
+      if (typeof override.value !== "number" || element.type === "text") {
+        return false;
+      }
+      element[field] = override.value;
+      return true;
     }
-    (element as unknown as Record<string, unknown>)[field] = value;
-    return true;
-  }
-
-  if (STRING_ELEMENT_FIELDS.has(field)) {
-    if (typeof value !== "string") {
-      return false;
+    case "fillColor":
+    case "fontFamily": {
+      const field: StringElementField = override.field;
+      if (typeof override.value !== "string") {
+        return false;
+      }
+      element[field] = override.value;
+      return true;
     }
-    (element as unknown as Record<string, unknown>)[field] = value;
-    return true;
-  }
-
-  if (field === "padding") {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    case "padding":
+      return applyPaddingOverride(element, override.value);
+    case "layoutMode":
+      return applyLayoutModeOverride(element, override.value);
+    case "primaryAxisAlignItems":
+      if (!hasChildren(element) || element.layoutMode === "NONE") {
+        return false;
+      }
+      element.primaryAxisAlignItems = override.value;
+      return true;
+    case "counterAxisAlignItems":
+      if (!hasChildren(element) || element.layoutMode === "NONE") {
+        return false;
+      }
+      element.counterAxisAlignItems = override.value;
+      return true;
+    case "required":
+      element.required = override.value;
+      return true;
+    case "validationType":
+      element.validationType = override.value;
+      return true;
+    case "validationMessage":
+      element.validationMessage = override.value;
+      return true;
+    case "validationMin":
+      element.validationMin = override.value;
+      return true;
+    case "validationMax":
+      element.validationMax = override.value;
+      return true;
+    case "validationMinLength":
+      element.validationMinLength = override.value;
+      return true;
+    case "validationMaxLength":
+      element.validationMaxLength = override.value;
+      return true;
+    case "validationPattern":
+      element.validationPattern = override.value;
+      return true;
+    default:
       return false;
-    }
-    return applyPaddingOverride(element, value as PaddingOverrideValue);
   }
-
-  if (field === "layoutMode") {
-    return applyLayoutModeOverride(element, value);
-  }
-
-  if (field === "primaryAxisAlignItems" || field === "counterAxisAlignItems") {
-    if (!hasChildren(element) || typeof value !== "string" || element.layoutMode === "NONE") {
-      return false;
-    }
-    (element as unknown as Record<string, unknown>)[field] = value;
-    return true;
-  }
-
-  if (FORM_VALIDATION_FIELDS.has(field)) {
-    (element as unknown as Record<string, unknown>)[field] = value;
-    return true;
-  }
-
-  return false;
 }
 
 function findAndApplyOverride(
@@ -222,11 +219,8 @@ export function applyIrOverrides({
           applied = true;
           break;
         }
-        if (validatedOverride.field === "padding"
-          && typeof validatedOverride.value === "object"
-          && validatedOverride.value !== null
-          && !Array.isArray(validatedOverride.value)) {
-          const paddingValue = validatedOverride.value as PaddingOverrideValue;
+        if (validatedOverride.field === "padding") {
+          const paddingValue = validatedOverride.value;
           screen.padding = {
             top: paddingValue.top,
             right: paddingValue.right,
