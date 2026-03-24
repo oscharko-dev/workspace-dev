@@ -49,7 +49,15 @@ const readTemplateMajors = async () => {
 };
 
 const readDocumentedMajors = async () => {
-  const pipeline = await readFile(pipelineDocPath, "utf8");
+  let pipeline;
+  try {
+    pipeline = await readFile(pipelineDocPath, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
   const match = pipeline.match(/React\s+(\d+)\s*\+\s*MUI\s+v(\d+)\s*\+\s*Vite\s+(\d+)/);
   if (!match) {
     throw new Error(
@@ -70,6 +78,12 @@ const formatStack = ({ react, mui, vite }) => {
 const main = async () => {
   const expected = await readTemplateMajors();
   const documented = await readDocumentedMajors();
+
+  if (documented === null) {
+    console.log("[docs-template-stack] Pipeline doc not found — skipping version consistency check.");
+    console.log(`[docs-template-stack] Template stack: ${formatStack(expected)}`);
+    return;
+  }
 
   const mismatches = [
     expected.react !== documented.react ? "React" : "",

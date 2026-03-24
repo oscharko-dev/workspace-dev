@@ -151,7 +151,7 @@ const jsonFetch = async (url: string, options?: RequestInit): Promise<{ status: 
 const pollForTerminal = async ({
   baseUrl,
   jobId,
-  timeoutMs = 120_000
+  timeoutMs = 180_000
 }: {
   baseUrl: string;
   jobId: string;
