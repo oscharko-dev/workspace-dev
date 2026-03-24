@@ -91,7 +91,12 @@ export const reportRuntimeError = ({
   console.error("[runtime-error]", payload);
 };
 
-export const createRootErrorHandlers = () => {
+interface RootErrorHandlers {
+  onCaughtError: (error: unknown, errorInfo: { componentStack?: string }) => void;
+  onUncaughtError: (error: unknown, errorInfo: { componentStack?: string }) => void;
+}
+
+export const createRootErrorHandlers = (): RootErrorHandlers => {
   return {
     onCaughtError: (error: unknown, errorInfo: { componentStack?: string }) => {
       reportRuntimeError({

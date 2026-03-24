@@ -5,7 +5,7 @@ interface HighlightWorkerClientRequest {
   code: string;
   filePath: string;
   theme: HighlightTheme;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 interface PendingRequest {

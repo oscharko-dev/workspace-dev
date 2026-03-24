@@ -28,15 +28,15 @@ interface BreadcrumbProps {
   /** Callback when the user clicks a segment to navigate. */
   onSelect: (nodeId: string) => void;
   /** Whether a hierarchical drilldown scope is currently active. */
-  hasActiveScope?: boolean;
+  hasActiveScope?: boolean | undefined;
   /** Callback to enter scope on a node (explicit drilldown). */
-  onEnterScope?: (nodeId: string) => void;
+  onEnterScope?: ((nodeId: string) => void) | undefined;
   /** Callback to move up exactly one scope level. */
-  onExitScope?: () => void;
+  onExitScope?: (() => void) | undefined;
   /** The parent file path when viewing a cross-file extracted component (null when none). */
-  parentFile?: string | null;
+  parentFile?: string | null | undefined;
   /** Callback to return to the parent file context without unwinding scope. */
-  onReturnToParentFile?: () => void;
+  onReturnToParentFile?: (() => void) | undefined;
 }
 
 function ScreenIcon(): JSX.Element {

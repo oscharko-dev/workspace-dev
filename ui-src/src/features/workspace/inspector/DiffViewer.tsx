@@ -48,7 +48,7 @@ interface DiffViewerProps {
   /** Whether the diff is scoped to a specific node. */
   isNodeScoped?: boolean;
   /** Reason why node-scoped diff is unavailable (null when available). */
-  nodeDiffFallbackReason?: string | null;
+  nodeDiffFallbackReason?: string | null | undefined;
   /** Force a viewer theme instead of following the system preference. */
   themeMode?: "system" | "dark";
 }
@@ -91,6 +91,7 @@ export function DiffViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isDark = currentTheme === "github-dark";
 
@@ -160,12 +161,13 @@ export function DiffViewer({
     if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [activeMatch]);
 
-  // Cmd+F handler
+  // Cmd+F handler — only intercepts when the DiffViewer contains the active element
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
       if (!containerRef.current) return;
+      if (!containerRef.current.contains(document.activeElement) && document.activeElement !== document.body) return;
       event.preventDefault();
       findInputRef.current?.focus();
       findInputRef.current?.select();
@@ -202,12 +204,27 @@ export function DiffViewer({
     return `${String(activeMatchIndex + 1)} of ${String(searchMatches.length)}`;
   }, [activeMatchIndex, searchMatches.length, searchQuery.length]);
 
+  // Clean up copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Copy handler — always copies the *new* file content
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(newCode);
       setCopied(true);
-      setTimeout(() => { setCopied(false); }, 1500);
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimeoutRef.current = null;
+      }, 1500);
     } catch {
       // Clipboard API may not be available
     }
@@ -311,6 +328,7 @@ export function DiffViewer({
             onBlur={() => { setSearchFocused(false); }}
             onKeyDown={handleSearchInputKeyDown}
             placeholder="Find in diff"
+            aria-label="Find in diff"
             data-testid="diff-viewer-find-input"
             className="h-6 w-36 rounded border bg-transparent px-2 text-[10px] font-mono"
             style={{
@@ -322,6 +340,7 @@ export function DiffViewer({
           />
           <button
             type="button"
+            aria-label="Previous search match"
             data-testid="diff-viewer-find-prev"
             onClick={() => { handleNavigateMatches(-1); }}
             disabled={searchMatches.length === 0}
@@ -336,6 +355,7 @@ export function DiffViewer({
           </button>
           <button
             type="button"
+            aria-label="Next search match"
             data-testid="diff-viewer-find-next"
             onClick={() => { handleNavigateMatches(1); }}
             disabled={searchMatches.length === 0}
@@ -349,6 +369,7 @@ export function DiffViewer({
             Next
           </button>
           <span
+            aria-live="polite"
             data-testid="diff-viewer-find-count"
             className="w-16 text-right text-[10px] font-semibold"
             style={{ color: isDark ? "#8b949e" : "#57606a" }}
@@ -360,6 +381,7 @@ export function DiffViewer({
         <button
           type="button"
           data-testid="diff-viewer-wrap-toggle"
+          aria-pressed={wordWrap}
           onClick={() => { setWordWrap((w) => !w); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
           style={{

@@ -111,7 +111,7 @@ function toRoundedPercent(mappedNodes: number, totalNodes: number): number {
   return Math.round(ratio * 10) / 10;
 }
 
-function collectIrNodeIds(screens: InspectabilityDesignIrScreen[]): Set<string> {
+export function collectIrNodeIds(screens: InspectabilityDesignIrScreen[]): Set<string> {
   const allIds = new Set<string>();
   const stack: InspectabilityDesignIrNode[] = [];
 

@@ -14,7 +14,7 @@
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/436
  */
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { getPreferredTheme } from "../../../lib/shiki";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,8 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const isDark = currentTheme === "github-dark";
-  const categories = buildShortcutData();
+  const categories = useMemo(() => buildShortcutData(), []);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Theme listener
   useEffect(() => {
@@ -124,10 +125,14 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
     return () => { mq.removeEventListener("change", handler); };
   }, []);
 
-  // Focus trap: move focus into overlay when opened
+  // Focus management: save previous focus and restore on close
   useEffect(() => {
     if (open) {
+      previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       closeButtonRef.current?.focus();
+    } else if (previousFocusRef.current) {
+      previousFocusRef.current.focus();
+      previousFocusRef.current = null;
     }
   }, [open]);
 

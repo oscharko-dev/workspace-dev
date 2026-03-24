@@ -55,6 +55,9 @@ export const SNIPPET_CONTEXT_LINES = 2;
 // ---------------------------------------------------------------------------
 
 function clampLine(line: number, totalLines: number): number {
+  if (!Number.isFinite(line)) {
+    return 1;
+  }
   return Math.max(1, Math.min(totalLines, Math.floor(line)));
 }
 

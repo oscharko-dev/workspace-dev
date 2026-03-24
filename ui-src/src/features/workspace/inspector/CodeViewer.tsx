@@ -44,19 +44,19 @@ interface CodeViewerProps {
   /** File path — used for language detection and display */
   filePath: string;
   /** Optional line range to highlight and scroll to */
-  highlightRange?: HighlightRange | null;
+  highlightRange?: HighlightRange | null | undefined;
   /** Optional IR code boundaries for the displayed file */
   boundaries?: CodeBoundaryEntry[];
   /** Controls whether boundary gutters are visible */
-  boundariesEnabled?: boolean;
+  boundariesEnabled?: boolean | undefined;
   /** Called when boundary visibility toggle changes */
-  onBoundariesEnabledChange?: (enabled: boolean) => void;
+  onBoundariesEnabledChange?: ((enabled: boolean) => void) | undefined;
   /** Called when boundary marker is clicked */
-  onBoundarySelect?: (irNodeId: string) => void;
+  onBoundarySelect?: ((irNodeId: string) => void) | undefined;
   /** Active IR node id used to remap overlays after formatting. */
-  selectedIrNodeId?: string | null;
+  selectedIrNodeId?: string | null | undefined;
   /** 1-based offset for line numbers when displaying a code snippet. */
-  lineOffset?: number;
+  lineOffset?: number | undefined;
   /** Force a viewer theme instead of following the system preference. */
   themeMode?: "system" | "dark";
 }
@@ -535,6 +535,11 @@ async function loadPrettierModules(): Promise<PrettierModules> {
       babelPlugin,
       estreePlugin
     }));
+
+    // Clear cache on failure so the next call retries the import
+    prettierModulesPromise.catch(() => {
+      prettierModulesPromise = null;
+    });
   }
 
   return await prettierModulesPromise;
@@ -621,6 +626,7 @@ export function CodeViewer({
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentTheme, setCurrentTheme] = useState(() => resolveViewerTheme(themeMode));
 
   const displayCode = formattedCode ?? code;
@@ -698,6 +704,9 @@ export function CodeViewer({
   useEffect(() => {
     return () => {
       clearFormatFeedbackTimeout();
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
     };
   }, [clearFormatFeedbackTimeout]);
 
@@ -854,6 +863,10 @@ export function CodeViewer({
       if (!codeViewerRef.current) {
         return;
       }
+      // Only intercept when this viewer contains the focused element or body is focused
+      if (!codeViewerRef.current.contains(document.activeElement) && document.activeElement !== document.body) {
+        return;
+      }
 
       event.preventDefault();
       focusFindInput();
@@ -998,8 +1011,12 @@ export function CodeViewer({
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      setTimeout(() => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
         setCopied(false);
+        copyTimeoutRef.current = null;
       }, 1500);
     } catch {
       // Clipboard API may not be available
