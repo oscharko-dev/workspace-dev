@@ -8,7 +8,8 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/460
  */
 
-import type { InspectorOverrideDraft } from "./inspector-override-draft";
+import { isScalarPaddingValue } from "./scalar-override-translators";
+import type { InspectorOverrideDraft, InspectorOverrideValue } from "./inspector-override-draft";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -64,10 +65,14 @@ function nowIso(): string {
 }
 
 function generateSnapshotId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
+  if (typeof globalThis.crypto.randomUUID === "function") {
     return `snap-${globalThis.crypto.randomUUID()}`;
   }
   return `snap-${Date.now()}-${Math.trunc(Math.random() * 1_000_000)}`;
+}
+
+function cloneOverrideValue(value: InspectorOverrideValue): InspectorOverrideValue {
+  return isScalarPaddingValue(value) ? { ...value } : value;
 }
 
 function cloneDraft(draft: InspectorOverrideDraft): InspectorOverrideDraft {
@@ -75,9 +80,7 @@ function cloneDraft(draft: InspectorOverrideDraft): InspectorOverrideDraft {
     ...draft,
     entries: draft.entries.map((entry) => ({
       ...entry,
-      value: typeof entry.value === "object" && entry.value !== null
-        ? { ...(entry.value as unknown as Record<string, unknown>) } as unknown as typeof entry.value
-        : entry.value
+      value: cloneOverrideValue(entry.value)
     }))
   };
 }

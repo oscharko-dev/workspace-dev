@@ -400,16 +400,22 @@ const summarizePlannedFiles = ({
       selectedBytes += entry.sizeBytes;
     }
 
-    if (entry.status === "create") {
-      createCount += 1;
-    } else if (entry.status === "overwrite") {
-      overwriteCount += 1;
-    } else if (entry.status === "conflict") {
-      conflictCount += 1;
-    } else if (entry.status === "untracked") {
-      untrackedCount += 1;
-    } else if (entry.status === "unchanged") {
-      unchangedCount += 1;
+    switch (entry.status) {
+      case "create":
+        createCount += 1;
+        break;
+      case "overwrite":
+        overwriteCount += 1;
+        break;
+      case "conflict":
+        conflictCount += 1;
+        break;
+      case "untracked":
+        untrackedCount += 1;
+        break;
+      case "unchanged":
+        unchangedCount += 1;
+        break;
     }
   }
 

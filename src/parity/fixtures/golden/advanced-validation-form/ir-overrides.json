@@ -1,0 +1,67 @@
+[
+  {
+    "nodeId": "email-field",
+    "field": "required",
+    "value": true
+  },
+  {
+    "nodeId": "email-field",
+    "field": "validationType",
+    "value": "email"
+  },
+  {
+    "nodeId": "email-field",
+    "field": "validationPattern",
+    "value": "^[^@\\s]+@example\\.com$"
+  },
+  {
+    "nodeId": "email-field",
+    "field": "validationMessage",
+    "value": "Use your @example.com email."
+  },
+  {
+    "nodeId": "amount-field",
+    "field": "required",
+    "value": true
+  },
+  {
+    "nodeId": "amount-field",
+    "field": "validationType",
+    "value": "number"
+  },
+  {
+    "nodeId": "amount-field",
+    "field": "validationMin",
+    "value": 100
+  },
+  {
+    "nodeId": "amount-field",
+    "field": "validationMax",
+    "value": 5000
+  },
+  {
+    "nodeId": "amount-field",
+    "field": "validationMessage",
+    "value": "Amount must be between 100 and 5000."
+  },
+  {
+    "nodeId": "code-field",
+    "field": "validationPattern",
+    "value": "^[A-Z0-9]{6}$"
+  },
+  {
+    "nodeId": "code-field",
+    "field": "validationMinLength",
+    "value": 6
+  },
+  {
+    "nodeId": "code-field",
+    "field": "validationMaxLength",
+    "value": 6
+  },
+  {
+    "nodeId": "code-field",
+    "field": "validationMessage",
+    "value": "Promo code must be 6 uppercase characters."
+  }
+]

@@ -59,6 +59,14 @@ Useful scripts:
 - `pnpm run test:golden`
 - `pnpm run test:golden:update`
 
+Linting is standardized on ESLint v9 flat config:
+
+- Root/backend config: `eslint.config.js`
+- UI config: `ui-src/eslint.config.js`
+- Template app config: `template/react-mui-app/eslint.config.js`
+
+`pnpm run lint:ts-style` and `pnpm run ui:lint` both enforce `--max-warnings=0`.
+
 ## Golden fixture tests
 
 Golden end-to-end fixtures validate deterministic output from `figma.json -> design-ir -> generated source` using curated local fixtures in `src/parity/fixtures/golden`.
@@ -259,6 +267,8 @@ Generated template builds can enable React Compiler via environment variables:
 
 - `VITE_ENABLE_REACT_COMPILER=true`
 - optional `VITE_REACT_COMPILER_TARGET=18|19`
+
+Template linting also enforces compiler-safe React patterns through `eslint-plugin-react-compiler`.
 
 ## Example API flow
 

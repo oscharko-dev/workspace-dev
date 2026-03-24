@@ -77,7 +77,7 @@ function nowIso(): string {
 }
 
 function createDraftId(sourceJobId: string): string {
-  const randomPart = typeof globalThis.crypto?.randomUUID === "function"
+  const randomPart = typeof globalThis.crypto.randomUUID === "function"
     ? globalThis.crypto.randomUUID()
     : `${Date.now()}-${Math.trunc(Math.random() * 1_000_000)}`;
   return `${sourceJobId}:${randomPart}`;

@@ -27,6 +27,30 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: [path.resolve(uiRoot, "src/test/setup.ts")],
-    include: [path.resolve(uiRoot, "src/**/*.test.ts")]
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    coverage: {
+      provider: "v8",
+      reportsDirectory: path.resolve(uiRoot, "../coverage/ui"),
+      reporter: ["text-summary", "json-summary", "lcov"],
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/test/**",
+        "src/main.tsx",
+        "src/app/router.tsx",
+        "src/features/workspace/workspace-page.tsx",
+        "src/features/workspace/inspector-page.tsx",
+        "src/features/workspace/inspector/InspectorPanel.tsx",
+        "src/features/workspace/inspector/InspectorScopeContext.tsx",
+        "src/lib/shiki-highlight.worker.ts"
+      ],
+      thresholds: {
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        branches: 80
+      }
+    }
   }
 });

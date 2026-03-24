@@ -9,6 +9,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -215,6 +217,8 @@ test.describe("inspector local sync controls", () => {
     await openWorkspaceUi(page, syncViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
+    await openInspectorDialog(page, "Sync");
 
     const syncPanel = page.getByTestId("inspector-sync-panel");
     const previewButton = page.getByTestId("inspector-sync-preview-button");

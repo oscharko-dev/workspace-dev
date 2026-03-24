@@ -5,6 +5,7 @@ import {
   findFirstSyncedNodeId,
   getInspectorLocators,
   installClipboardMock,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   selectSecondInspectorFile,
@@ -24,6 +25,7 @@ test.describe("inspector deterministic flow", () => {
     await openWorkspaceUi(page, inspectorViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {

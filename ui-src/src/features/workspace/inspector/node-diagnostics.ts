@@ -132,6 +132,28 @@ function isValidCategory(value: unknown): value is NodeDiagnosticCategory {
   return typeof value === "string" && VALID_CATEGORIES.has(value);
 }
 
+function isRawNodeDiagnosticEntry(value: unknown): value is RawNodeDiagnosticEntry {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function toRuntimeNodeDiagnostic(raw: unknown): NodeDiagnostic | null {
+  if (!isRawNodeDiagnosticEntry(raw)) {
+    return null;
+  }
+
+  const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : "";
+  if (nodeId.length === 0 || !isValidCategory(raw.category)) {
+    return null;
+  }
+
+  return {
+    nodeId,
+    category: raw.category,
+    reason: typeof raw.reason === "string" ? raw.reason : `Node diagnosed as ${raw.category}.`,
+    ...(typeof raw.screenId === "string" && raw.screenId.length > 0 ? { screenId: raw.screenId } : {})
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Derivation
 // ---------------------------------------------------------------------------
@@ -151,17 +173,10 @@ export function deriveNodeDiagnosticsMap(input: DeriveNodeDiagnosticsInput): Nod
   // Ingest explicit diagnostics from the runtime
   if (Array.isArray(input.metricsNodeDiagnostics)) {
     for (const raw of input.metricsNodeDiagnostics) {
-      if (!raw || typeof raw !== "object") continue;
-      const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : "";
-      if (nodeId.length === 0) continue;
-      if (!isValidCategory(raw.category)) continue;
-
-      addEntry({
-        nodeId,
-        category: raw.category,
-        reason: typeof raw.reason === "string" ? raw.reason : `Node diagnosed as ${raw.category}.`,
-        ...(typeof raw.screenId === "string" && raw.screenId.length > 0 ? { screenId: raw.screenId } : {})
-      });
+      const entry = toRuntimeNodeDiagnostic(raw);
+      if (entry) {
+        addEntry(entry);
+      }
     }
   }
 

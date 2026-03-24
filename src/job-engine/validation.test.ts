@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readlink, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -67,6 +67,97 @@ test("runProjectValidationWithDeps can disable lint autofix", async () => {
   ]);
 });
 
+test("runProjectValidationWithDeps reuses seeded node_modules and cleans up the temporary link", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-"));
+  const seedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seed-root-"));
+  const seedNodeModulesDir = path.join(seedRoot, "node_modules");
+  const calls: string[] = [];
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+
+  await mkdir(seedNodeModulesDir, { recursive: true });
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir,
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          const metadata = await lstat(nodeModulesDir);
+          assert.equal(metadata.isSymbolicLink(), true);
+          assert.equal(path.resolve(generatedProjectDir, await readlink(nodeModulesDir)), seedNodeModulesDir);
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    assert.deepEqual(calls, [
+      "pnpm lint --fix",
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm build"
+    ]);
+
+    await assert.rejects(
+      () => lstat(nodeModulesDir),
+      (error: Error & { code?: string }) => error.code === "ENOENT"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+    await rm(seedRoot, { recursive: true, force: true });
+  }
+});
+
+test("runProjectValidationWithDeps replaces a preexisting node_modules file before seeding dependencies", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-file-"));
+  const seedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-file-root-"));
+  const seedNodeModulesDir = path.join(seedRoot, "node_modules");
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+  const calls: string[] = [];
+
+  await mkdir(seedNodeModulesDir, { recursive: true });
+  await writeFile(nodeModulesDir, "stale file\n", "utf8");
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir,
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          const metadata = await lstat(nodeModulesDir);
+          assert.equal(metadata.isSymbolicLink(), true);
+          assert.equal(path.resolve(generatedProjectDir, await readlink(nodeModulesDir)), seedNodeModulesDir);
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+    await rm(seedRoot, { recursive: true, force: true });
+  }
+
+  assert.deepEqual(calls, ["pnpm lint --fix", "pnpm lint", "pnpm typecheck", "pnpm build"]);
+});
+
 test("runProjectValidationWithDeps appends perf assertion when enabled", async () => {
   const calls: string[] = [];
   const envByCommand: Record<string, NodeJS.ProcessEnv | undefined> = {};
@@ -103,6 +194,80 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
   ]);
   assert.match(String(envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_ARTIFACT_DIR), /\.figmapipe\/performance$/);
   assert.match(String(envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_BASELINE_PATH), /perf-baseline\.json$/);
+});
+
+test("runProjectValidationWithDeps falls back to install when the seeded node_modules path does not exist", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seed-missing-"));
+  const calls: string[] = [];
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir: path.join(generatedProjectDir, "missing-node-modules"),
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+
+  assert.deepEqual(calls, [
+    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm lint --fix",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm build"
+  ]);
+});
+
+test("runProjectValidationWithDeps still installs when a generated node_modules directory already exists", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-existing-node-modules-"));
+  const seedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-existing-node-modules-seed-"));
+  const seedNodeModulesDir = path.join(seedRoot, "node_modules");
+  const calls: string[] = [];
+
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+  await mkdir(seedNodeModulesDir, { recursive: true });
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir,
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+    await rm(seedRoot, { recursive: true, force: true });
+  }
+
+  assert.equal(calls[0], "pnpm install --frozen-lockfile --reporter append-only --prefer-offline");
 });
 
 test("runProjectValidationWithDeps continues when lint autofix fails", async () => {
@@ -149,6 +314,76 @@ test("runProjectValidationWithDeps continues when lint autofix fails", async () 
     logs.some((entry) => entry.includes("Lint auto-fix failed") && entry.includes("continuing with final lint check")),
     true
   );
+});
+
+test("runProjectValidationWithDeps distinguishes canceled and timed-out lint autofix runs", async (t) => {
+  await t.test("canceled lint-autofix commands abort validation immediately", async () => {
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir: "/tmp/generated-project",
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async ({ args }) => {
+              if (args[0] === "lint" && args[1] === "--fix") {
+                return {
+                  success: false,
+                  code: 1,
+                  stdout: "",
+                  stderr: "",
+                  combined: "lint autofix canceled",
+                  canceled: true
+                };
+              }
+              return {
+                success: true,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                combined: ""
+              };
+            }
+          }
+        }),
+      /lint-autofix canceled by job cancellation request/
+    );
+  });
+
+  await t.test("timed-out lint-autofix failures include an explicit timeout suffix in logs", async () => {
+    const logs: string[] = [];
+
+    await runProjectValidationWithDeps({
+      generatedProjectDir: "/tmp/generated-project",
+      onLog: (message) => {
+        logs.push(message);
+      },
+      deps: {
+        runCommand: async ({ args }) => {
+          if (args[0] === "lint" && args[1] === "--fix") {
+            return {
+              success: false,
+              code: 1,
+              stdout: "",
+              stderr: "autofix timed out",
+              combined: "autofix timed out",
+              timedOut: true
+            };
+          }
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.includes("Lint auto-fix failed (command timeout);")), true);
+  });
 });
 
 test("runProjectValidationWithDeps retries lint/typecheck/build after successful feedback corrections", async () => {
@@ -246,6 +481,78 @@ test("runProjectValidationWithDeps aborts retry loop when feedback cannot apply 
       }),
     /no auto-corrections were applied/i
   );
+});
+
+test("runProjectValidationWithDeps includes rule/code diagnostics even when code context cannot be read", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-detail-diagnostics-"));
+
+  try {
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir,
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async ({ args }) => {
+              if (args[0] === "typecheck") {
+                return {
+                  success: false,
+                  code: 1,
+                  stdout: "",
+                  stderr: "typecheck failed",
+                  combined: "typecheck failed"
+                };
+              }
+              return {
+                success: true,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                combined: ""
+              };
+            },
+            runValidationFeedback: async () => ({
+              diagnostics: [
+                {
+                  stage: "typecheck",
+                  message: "missing import",
+                  filePath: path.join(generatedProjectDir, "missing.ts"),
+                  line: 4,
+                  column: 2,
+                  code: "TS2304"
+                },
+                {
+                  stage: "lint",
+                  message: "rule only diagnostic",
+                  rule: "custom/rule"
+                }
+              ],
+              changedFiles: [],
+              correctionsApplied: 0,
+              fileCorrections: [],
+              summary: "structured diagnostics available"
+            })
+          }
+        }),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        const typed = error as Error & {
+          diagnostics?: Array<{
+            message?: string;
+            details?: Record<string, unknown>;
+          }>;
+        };
+        assert.equal(typed.diagnostics?.[1]?.details?.filePath, path.join(generatedProjectDir, "missing.ts"));
+        assert.equal("codeContext" in (typed.diagnostics?.[1]?.details ?? {}), false);
+        assert.match(String(typed.diagnostics?.[2]?.message), /custom\/rule/);
+        return true;
+      }
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
 });
 
 test("runProjectValidationWithDeps emits structured diagnostics for failed retryable command", async () => {
@@ -372,6 +679,69 @@ test("runProjectValidationWithDeps enforces max validation attempts", async () =
   assert.equal(feedbackInvocations, 2);
 });
 
+test("runProjectValidationWithDeps retries build failures and reports exhaustion after the max attempts", async () => {
+  const feedbackStages: string[] = [];
+
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "build") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "build failed",
+                combined: "src/main.ts:7:2: ERROR: Expected \";\" but found \"}\""
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async ({ stage }) => {
+            feedbackStages.push(stage);
+            return {
+              diagnostics: [
+                {
+                  stage: "build",
+                  message: 'Expected ";" but found "}"',
+                  filePath: "/tmp/generated-project/src/main.ts",
+                  line: 7,
+                  column: 2
+                }
+              ],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Applied build fix"] }],
+              summary: 'Expected ";" but found "}"'
+            };
+          }
+        }
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      assert.match(typed.message, /after 3 attempts/);
+      assert.equal(typed.diagnostics?.[0]?.details?.command, "build");
+      return true;
+    }
+  );
+
+  assert.deepEqual(feedbackStages, ["build", "build"]);
+});
+
 test("runProjectValidationWithDeps does not retry validate-ui failures", async () => {
   let feedbackInvocations = 0;
   await assert.rejects(
@@ -456,6 +826,49 @@ test("runProjectValidationWithDeps logs changed files from lint autofix", async 
   }
 
   assert.equal(logs.some((entry) => /Lint auto-fix changed 1 lint-relevant file\(s\): src\/main\.ts/.test(entry)), true);
+});
+
+test("runProjectValidationWithDeps truncates lint-autofix changed-file logs when more than twenty files change", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-lint-autofix-overflow-"));
+  const sourceDir = path.join(generatedProjectDir, "src");
+  const logs: string[] = [];
+
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+  await mkdir(sourceDir, { recursive: true });
+
+  try {
+    for (let index = 0; index < 22; index += 1) {
+      await writeFile(path.join(sourceDir, `file-${String(index).padStart(2, "0")}.ts`), "const value = 1\n", "utf8");
+    }
+
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      skipInstall: true,
+      onLog: (message) => {
+        logs.push(message);
+      },
+      deps: {
+        runCommand: async ({ args }) => {
+          if (args[0] === "lint" && args[1] === "--fix") {
+            for (let index = 0; index < 22; index += 1) {
+              await writeFile(path.join(sourceDir, `file-${String(index).padStart(2, "0")}.ts`), "const value = 1;\n", "utf8");
+            }
+          }
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+
+  assert.equal(logs.some((entry) => /\(\+2 more\)/.test(entry)), true);
 });
 
 test("runProjectValidationWithDeps runs ui validation when enabled", async () => {
@@ -617,4 +1030,305 @@ test("runProjectValidationWithDeps skips install command when skipInstall=true a
   }
 
   assert.deepEqual(calls, ["pnpm lint --fix", "pnpm lint", "pnpm typecheck", "pnpm build"]);
+});
+
+test("runProjectValidationWithDeps surfaces install command timeouts as validation pipeline errors", async () => {
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "install") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "install timed out",
+                combined: "install timed out",
+                timedOut: true
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          }
+        }
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      assert.equal(typed.code, "E_VALIDATE_PROJECT");
+      assert.match(typed.message, /install failed \(command timeout\)/);
+      assert.equal(typed.diagnostics?.[0]?.details?.command, "install");
+      return true;
+    }
+  );
+});
+
+test("runProjectValidationWithDeps surfaces non-timeout install failures without adding a timeout suffix", async () => {
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "install") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "install failed",
+                combined: "install failed"
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          }
+        }
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        diagnostics?: Array<{ message?: string }>;
+      };
+      assert.match(typed.message, /^install failed: install failed$/);
+      assert.equal(typed.diagnostics?.[0]?.message, "install failed.");
+      return true;
+    }
+  );
+});
+
+test("runProjectValidationWithDeps omits prefer-offline when disabled and falls back to install when seeded node_modules is not a directory", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-install-fallback-"));
+  const seedNodeModulesDir = path.join(generatedProjectDir, "seed-node-modules.txt");
+  const calls: string[] = [];
+
+  await writeFile(seedNodeModulesDir, "not a directory\n", "utf8");
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir,
+      installPreferOffline: false,
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+
+  assert.deepEqual(calls, [
+    "pnpm install --frozen-lockfile --reporter append-only",
+    "pnpm lint --fix",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm build"
+  ]);
+});
+
+test("runProjectValidationWithDeps logs lint autofix diff scan failures and zero-change summaries without aborting validation", async (t) => {
+  await t.test("logs pre-scan failures when lint-autofix cannot read the project before running", async () => {
+    const generatedProjectDir = path.join(os.tmpdir(), `workspace-dev-validation-missing-${Date.now()}`);
+    const logs: string[] = [];
+
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      onLog: (message) => {
+        logs.push(message);
+      },
+      deps: {
+        runCommand: async () => ({
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        })
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.startsWith("Lint auto-fix file-diff pre-scan failed:")), true);
+  });
+
+  await t.test("logs post-scan failures when lint-autofix invalidates the project tree after pre-scan", async () => {
+    const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-postscan-"));
+    const logs: string[] = [];
+
+    await mkdir(path.join(generatedProjectDir, "src"), { recursive: true });
+    await writeFile(path.join(generatedProjectDir, "src", "main.ts"), "const value = 1;\n", "utf8");
+
+    try {
+      await runProjectValidationWithDeps({
+        generatedProjectDir,
+        onLog: (message) => {
+          logs.push(message);
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "lint" && args[1] === "--fix") {
+              await rm(generatedProjectDir, { recursive: true, force: true });
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          }
+        }
+      });
+    } finally {
+      await rm(generatedProjectDir, { recursive: true, force: true });
+    }
+
+    assert.equal(logs.some((entry) => entry.startsWith("Lint auto-fix file-diff post-scan failed:")), true);
+  });
+
+  await t.test("logs a zero-change summary when lint-autofix does not modify any lint-relevant files", async () => {
+    const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-zero-diff-"));
+    const logs: string[] = [];
+
+    await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+
+    try {
+      await runProjectValidationWithDeps({
+        generatedProjectDir,
+        skipInstall: true,
+        onLog: (message) => {
+          logs.push(message);
+        },
+        deps: {
+          runCommand: async () => ({
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          })
+        }
+      });
+    } finally {
+      await rm(generatedProjectDir, { recursive: true, force: true });
+    }
+
+    assert.equal(logs.includes("Lint auto-fix changed 0 lint-relevant file(s)."), true);
+  });
+});
+
+test("runProjectValidationWithDeps aborts before or during command execution when cancellation is requested", async (t) => {
+  await t.test("pre-aborted validation stops before invoking pnpm", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let invocations = 0;
+
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir: "/tmp/generated-project",
+          abortSignal: controller.signal,
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async () => {
+              invocations += 1;
+              return {
+                success: true,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                combined: ""
+              };
+            }
+          }
+        }),
+      /Validation canceled by job cancellation request/
+    );
+
+    assert.equal(invocations, 0);
+  });
+
+  await t.test("canceled install commands surface a deterministic cancellation envelope", async () => {
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir: "/tmp/generated-project",
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async ({ args }) => ({
+              success: false,
+              code: 1,
+              stdout: "",
+              stderr: "",
+              combined: `${args[0]} canceled`,
+              canceled: args[0] === "install"
+            })
+          }
+        }),
+      /install canceled by job cancellation request/
+    );
+  });
+});
+
+test("runProjectValidation forwards optional seed and abort settings to the shared validator", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-wrapper-"));
+  const controller = new AbortController();
+  controller.abort();
+
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+
+  try {
+    await assert.rejects(
+      () =>
+        import("./validation.js").then(({ runProjectValidation }) =>
+          runProjectValidation({
+            generatedProjectDir,
+            skipInstall: true,
+            seedNodeModulesDir: path.join(generatedProjectDir, "seed-node-modules"),
+            abortSignal: controller.signal,
+            onLog: () => {
+              // no-op
+            }
+          })
+        ),
+      /Validation canceled by job cancellation request/
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
 });

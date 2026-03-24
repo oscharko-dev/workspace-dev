@@ -13,6 +13,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -43,6 +44,7 @@ test.describe("inspector node-level diff", () => {
     // Second generation — creates previousJobId
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();
@@ -57,6 +59,7 @@ test.describe("inspector node-level diff", () => {
     await waitForCompletedSubmitStatus(page);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel, componentTree } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();
@@ -98,6 +101,7 @@ test.describe("inspector node-level diff", () => {
     await waitForCompletedSubmitStatus(page);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel, componentTree } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();
@@ -135,6 +139,7 @@ test.describe("inspector node-level diff", () => {
     await waitForCompletedSubmitStatus(page);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
 
     const { inspectorPanel } = getInspectorLocators(page);
     await expect(inspectorPanel).toBeVisible();

@@ -1,10 +1,46 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { afterEach } from "node:test";
+import type * as TypeScript from "typescript";
 import {
+  __resetTypescriptModuleResolverForTests,
+  __setTypescriptModuleResolverForTests,
+  collectGeneratedSourceFileDiagnostics,
   collectGeneratedJsxFragmentDiagnostics,
   validateGeneratedJsxFragment,
   validateGeneratedSourceFile
 } from "./generated-source-validation.js";
+
+afterEach(() => {
+  __resetTypescriptModuleResolverForTests();
+});
+
+const createStubTypescriptModule = ({
+  diagnostics
+}: {
+  diagnostics?: TypeScript.Diagnostic[];
+}): typeof TypeScript =>
+  ({
+    ScriptTarget: {
+      ES2023: 99
+    },
+    ModuleKind: {
+      NodeNext: 99
+    },
+    ModuleResolutionKind: {
+      NodeNext: 99
+    },
+    JsxEmit: {
+      ReactJSX: 99
+    },
+    DiagnosticCategory: {
+      Error: 1
+    },
+    transpileModule: () => ({
+      diagnostics
+    }),
+    flattenDiagnosticMessageText: (messageText: string | { messageText: string }) =>
+      typeof messageText === "string" ? messageText : messageText.messageText
+  }) as unknown as typeof TypeScript;
 
 test("validateGeneratedJsxFragment accepts multiple sibling roots in a valid JSX context", () => {
   assert.doesNotThrow(() => {
@@ -56,5 +92,125 @@ test("validateGeneratedSourceFile rejects malformed TSX modules with file path c
       });
     },
     /Invalid generated source file 'src\/screens\/Broken\.tsx': src\/screens\/Broken\.tsx:\d+:\d+ - JSX element 'Box' has no corresponding closing tag\./
+  );
+});
+
+test("collectGeneratedSourceFileDiagnostics returns an empty list for valid TypeScript modules", () => {
+  const diagnostics = collectGeneratedSourceFileDiagnostics({
+    filePath: "src/screens/Valid.ts",
+    content: "export const answer = 42;\n"
+  });
+
+  assert.deepEqual(diagnostics, []);
+});
+
+test("collectGeneratedSourceFileDiagnostics reports malformed TypeScript modules with file path context", () => {
+  const diagnostics = collectGeneratedSourceFileDiagnostics({
+    filePath: "src/screens/Broken.ts",
+    content: "export const broken = ;\n"
+  });
+
+  assert.equal(diagnostics.length > 0, true);
+  assert.match(
+    diagnostics.join("; "),
+    /src\/screens\/Broken\.ts:\d+:\d+ - Expression expected\./
+  );
+});
+
+test("validateGeneratedSourceFile includes screen context when provided", () => {
+  assert.throws(
+    () => {
+      validateGeneratedSourceFile({
+        filePath: "src/screens/Checkout.tsx",
+        content: `export default function CheckoutScreen() {\n  return (\n    <Stack>\n  );\n}\n`,
+        context: {
+          screenName: "Checkout"
+        }
+      });
+    },
+    /Invalid generated source file 'src\/screens\/Checkout\.tsx' for screen 'Checkout': src\/screens\/Checkout\.tsx:\d+:\d+ - JSX element 'Stack' has no corresponding closing tag\./
+  );
+});
+
+test("generated source validation skips parser checks and warns once when the optional TypeScript runtime is unavailable", () => {
+  __setTypescriptModuleResolverForTests(() => null);
+  const warnings: Array<{ message: string; code?: string }> = [];
+  const emitWarningMock = test.mock.method(
+    process,
+    "emitWarning",
+    (warning: string | Error, options?: { code?: string }) => {
+      warnings.push({
+        message: String(warning),
+        code: options?.code
+      });
+    }
+  );
+
+  try {
+    assert.deepEqual(
+      collectGeneratedSourceFileDiagnostics({
+        filePath: "src/screens/MissingRuntime.ts",
+        content: "export const broken = ;\n"
+      }),
+      []
+    );
+    assert.deepEqual(
+      collectGeneratedJsxFragmentDiagnostics({
+        raw: "</Stack>"
+      }),
+      []
+    );
+    assert.doesNotThrow(() => {
+      validateGeneratedSourceFile({
+        filePath: "src/screens/MissingRuntime.tsx",
+        content: `export default function MissingRuntimeScreen() {\n  return (\n    <Stack>\n  );\n}\n`
+      });
+    });
+
+    assert.equal(warnings.length, 1);
+    assert.equal(
+      warnings[0]?.message.includes("optional 'typescript' runtime is not installed"),
+      true
+    );
+    assert.equal(warnings[0]?.code, "WORKSPACE_DEV_MISSING_TYPESCRIPT_VALIDATION");
+  } finally {
+    emitWarningMock.mock.restore();
+  }
+});
+
+test("collectGeneratedSourceFileDiagnostics tolerates transpile results without diagnostics", () => {
+  __setTypescriptModuleResolverForTests(() =>
+    createStubTypescriptModule({
+      diagnostics: undefined
+    })
+  );
+
+  assert.deepEqual(
+    collectGeneratedSourceFileDiagnostics({
+      filePath: "src/screens/NoDiagnostics.ts",
+      content: "export const answer = 42;\n"
+    }),
+    []
+  );
+});
+
+test("collectGeneratedSourceFileDiagnostics formats diagnostics without file positions deterministically", () => {
+  __setTypescriptModuleResolverForTests(() =>
+    createStubTypescriptModule({
+      diagnostics: [
+        {
+          category: 1,
+          messageText: "Synthetic parse failure"
+        } as TypeScript.Diagnostic
+      ]
+    })
+  );
+
+  assert.deepEqual(
+    collectGeneratedSourceFileDiagnostics({
+      filePath: "src/screens/Synthetic.ts",
+      content: "export const broken = ;\n"
+    }),
+    ["src/screens/Synthetic.ts - Synthetic parse failure"]
   );
 });

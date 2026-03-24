@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Autonomous local workspace runtime for REST-based deterministic Figma-to-code generation. Ships as an npm package (`workspace-dev`) with a CLI entry point. Node.js >=22 required. Air-gap compatible — zero external HTTP dependencies at runtime.
+Autonomous local workspace runtime for deterministic Figma-to-code generation via REST or local JSON input. Ships as an npm package (`workspace-dev`) with a CLI entry point. Node.js >=22 required. Air-gap compatible in `local_json` mode.
 
 ## Common Commands
 
@@ -43,9 +43,9 @@ pnpm run release:quality-gates
 |---|---|
 | `contracts/index.ts` | Public API types (CONTRACT_VERSION). The `./contracts` subpath export. |
 | `server.ts` / `server/` | HTTP server on Node built-in `http` — routes for `/workspace`, `/workspace/ui`, job submission, job status, repro assets. |
-| `job-engine.ts` / `job-engine/` | Job pipeline: figma.source → ir.derive → template.prepare → codegen.generate → validate.project → repro.export → git.pr |
+| `job-engine.ts` / `job-engine/` | Job pipeline: figma.source → ir.derive → template.prepare → codegen.generate → validate.project → repro.export → git.pr, with optional generated-project `test`, `validate:ui`, and `perf:assert` validation steps. |
 | `parity/` | Deterministic codegen: IR derivation (`ir.ts`), file generation (`generator-core.ts`), LLM client (`llm.ts`). |
-| `mode-lock.ts` | Hard enforcement — only `figmaSourceMode=rest` and `llmCodegenMode=deterministic` are allowed. |
+| `mode-lock.ts` | Hard enforcement — only `figmaSourceMode=rest|local_json` and `llmCodegenMode=deterministic` are allowed. |
 | `isolation.ts` | Per-project child-process isolation with deterministic cleanup. |
 | `cli.ts` | CLI argument parsing; binary is `workspace-dev`. |
 
@@ -63,12 +63,16 @@ Tests use the **Node.js native test runner** via `tsx --test`. UI tests use Vite
 
 ## Lint & Quality
 
-- ESLint with strict TypeScript rules (`type-imports`, `no-explicit-any`, `no-floating-promises`, `exactOptionalPropertyTypes`).
+- ESLint v9 runs on native flat config:
+  - `eslint.config.js` for `src/**`
+  - `ui-src/eslint.config.js` for `ui-src/src/**`
+  - `template/react-mui-app/eslint.config.js` for the shipped template app
+- Type-aware linting uses `@typescript-eslint/strict-type-checked` with additional unsafe/async guards (`no-explicit-any`, `no-floating-promises`, `no-misused-promises`, `no-unnecessary-condition`, `await-thenable`, `no-unsafe-*`, `consistent-type-imports`).
 - `lint:boundaries` — prevents imports from `services/*`, `workspace/*`, `infra/*`.
 - `lint:no-telemetry` — enforces zero telemetry.
-- `lint:size` — bundle size limits (53 KB index.js, 5 KB contracts).
+- `lint:size` — published bundle size limits (53 KB index.js, 5 KB contracts) plus a local UI Shiki worker budget guard.
 - `lint:publint` / `lint:types-publish` — package correctness for npm distribution.
 
 ## TypeScript
 
-Strict mode with `isolatedDeclarations`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Target ES2023, module resolution `node20`.
+Strict mode with `isolatedDeclarations`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Target ES2023, module `node20`, module resolution `node16`.

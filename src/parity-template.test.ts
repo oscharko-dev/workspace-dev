@@ -18,8 +18,17 @@ const TEMPLATE_FILES = [
   "perf-budget.json",
   "scripts/perf-runner.mjs",
   "src/App.tsx",
+  "src/components/ErrorBoundary.tsx",
+  "src/components/RouteSkeleton.tsx",
   "src/main.tsx",
   "src/performance/report-web-vitals.ts",
+  "src/performance/resource-hints.ts",
+  "src/performance/runtime-errors.ts",
+  "src/vite-env.d.ts",
+  "src/routes/CheckoutRoute.tsx",
+  "src/routes/HomeRoute.tsx",
+  "src/routes/OverviewRoute.tsx",
+  "src/routes/lazy-routes.ts",
   "src/test/jest-axe.d.ts",
   "src/test/setup.ts",
   "src/theme/theme.ts"
@@ -46,16 +55,25 @@ const toSemverMajor = (versionRange: string | undefined): number | undefined => 
 };
 
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = {
-  "package.json": "f3a553a7cfd3b686b1fcaaa7ec886a50833e90679c3ffeed7ae0a317e0b898e1",
-  "pnpm-lock.yaml": "a87b078b32155517ac5ada7ddc39e4375448a528276b2abcfedd0db1fc854dd5",
-  "vite.config.ts": "a3351eadcec4c2c02d5ed40c7bf155d274bf35c583bc34a4e9a2424f9f73df11",
+  "package.json": "d00f37fa60061cb71c6645a138fdc3b3cc188df5232c6e36cabae3c694bd76b1",
+  "pnpm-lock.yaml": "2bcd7237bfee8734f921528f981b456b286bb789278a3f1818dfa173b46194c7",
+  "vite.config.ts": "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
   "tsconfig.json": "46145f2477e39d3f2d7048e04a23afbb24b9c529981a8d37dbac09faea5bb808",
-  "eslint.config.js": "beca62d859daf895bb540e25cb69d6a5fe6051f4c3627dabb139314c91039910",
+  "eslint.config.js": "5c8adc94a29be71c2124aed12738dc5497d844db2225c986b2b1ec5401cbe684",
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
-  "scripts/perf-runner.mjs": "f236d2543bd33b3cf7c0088f221091e4b1144c156ac97adf202b3fdd95e59c63",
-  "src/App.tsx": "3e2284af4c28946708128ed4feeeb643178010781a99409acc76269363a603ef",
-  "src/main.tsx": "e4ab9640e86610c9e4373c8436d5845230dda0997b8ad8d02b47649599cec8f0",
-  "src/performance/report-web-vitals.ts": "4a818db2533f3290aac059f7117beacb45cb8b604a643ad0f227ca8d3d213e5d",
+  "scripts/perf-runner.mjs": "20cfd927a9a8216c4acdcd8f4b065a980ba2f20e731227b0f9de3171798966a8",
+  "src/App.tsx": "1145a84da77fb08e8b318019790d0fbc2e13dccb423efaeb37a3ff68667ea898",
+  "src/components/ErrorBoundary.tsx": "52ce535a42ceaa79e6f8dcf82ae25ea5ac341532cabfeeaff60c2ec4427377b1",
+  "src/components/RouteSkeleton.tsx": "f4b4bf51d5f362b2ed7e2fb826677c3202970ee71099fddfd49132e6a6f2473d",
+  "src/main.tsx": "0c851c4821d6f502f31ee1535902b01ffc20ee9c3c426bb0a01b9ce09bb1fbe9",
+  "src/performance/report-web-vitals.ts": "c0c5e79d9cfdb09c1c5f4889bd5db887960c0a38eae670dbf7637d6b89cbab5d",
+  "src/performance/resource-hints.ts": "d955f9f50c78b51cb4914dccb54260df51b36587de43a7d6bc72add613555986",
+  "src/performance/runtime-errors.ts": "a184911e8ee2723efd06d6cb810057e6c6b5efbf53d5d283cabbe9e3fcc54122",
+  "src/vite-env.d.ts": "dff9f1cbbb0559e21d251fbab9fbebcbfac51f241cf508b1bc2d04bc7c20ed80",
+  "src/routes/CheckoutRoute.tsx": "d5892642a879e35e61f94b5656a5bcfce510fd50ec80454d7ebcf51ea6f0aeb2",
+  "src/routes/HomeRoute.tsx": "544beb926180c66148acc098c860f2218c2ae4383aa6fe4f6b5cc9f32d2fbc81",
+  "src/routes/OverviewRoute.tsx": "b8cff03d3a82bf9d9697d7e2876d1ffb97a55de6b46d460ec001822d60f7f599",
+  "src/routes/lazy-routes.ts": "f4b9ca60f8ceecb1faa424b7fd1911b3f99c90fafddda1e1ef4dac910d92316f",
   "src/test/jest-axe.d.ts": "078c99e9f30e0e2b4eae659114cbfb826321e5dc4bd6dbe93d1a2a22515a41eb",
   "src/test/setup.ts": "ddb53f127ab6a95a831510013d8b7dee6dc8fe377cce8187af4e3f19ad2704ff",
   "src/theme/theme.ts": "2964ea672f2131bc10cb57a88bd1a40ad98d0bccc1a93e11c8ee61f2e6f2307d"
@@ -140,6 +158,7 @@ test("template semantics: Vite baseline remains at least major 6 with React plug
   assert.match(viteConfig, /from\s+["']vitest\/config["']/);
   assert.match(viteConfig, /\bdefineConfig\b/);
   assert.match(viteConfig, /\breact\s*\(/);
+  assert.match(viteConfig, /VITE_REACT_COMPILER_TARGET=18\|19|reactCompilerTarget === "19"/);
 });
 
 test("template semantics: unit-test toolchain is wired for Vitest + Testing Library + jest-axe", async () => {
@@ -174,4 +193,47 @@ test("template semantics: unit-test toolchain is wired for Vitest + Testing Libr
   assert.match(setupFile, /toHaveNoViolations/);
   assert.match(setupFile, /expect\.extend/);
   assert.match(axeTypesFile, /toHaveNoViolations/);
+});
+
+test("template semantics: routed seed app exercises lazy secondary routes and perf route coverage", async () => {
+  const appContent = await readFile(path.join(templateRoot, "src/App.tsx"), "utf8");
+  const perfBudget = JSON.parse(await readFile(path.join(templateRoot, "perf-budget.json"), "utf8")) as {
+    routes?: string[];
+  };
+
+  assert.match(appContent, /HashRouter/);
+  assert.match(appContent, /LazyOverviewRoute/);
+  assert.match(appContent, /LazyCheckoutRoute/);
+  assert.match(appContent, /warmRouteModule/);
+  assert.equal(perfBudget.routes?.join(","), "/,/overview,/checkout");
+});
+
+test("template semantics: main entry wires resource hints, root error callbacks, and vitals reporting", async () => {
+  const mainContent = await readFile(path.join(templateRoot, "src/main.tsx"), "utf8");
+  const resourceHintContent = await readFile(path.join(templateRoot, "src/performance/resource-hints.ts"), "utf8");
+  const runtimeErrorContent = await readFile(path.join(templateRoot, "src/performance/runtime-errors.ts"), "utf8");
+  const vitalsContent = await readFile(path.join(templateRoot, "src/performance/report-web-vitals.ts"), "utf8");
+
+  assert.match(mainContent, /applyRuntimeResourceHints/);
+  assert.match(mainContent, /createRoot\(rootElement,\s*createRootErrorHandlers\(\)\)/);
+  assert.match(resourceHintContent, /prefetchDNS/);
+  assert.match(resourceHintContent, /preconnect/);
+  assert.match(runtimeErrorContent, /onCaughtError/);
+  assert.match(runtimeErrorContent, /onUncaughtError/);
+  assert.match(vitalsContent, /onCLS/);
+  assert.match(vitalsContent, /onINP/);
+  assert.match(vitalsContent, /onLCP/);
+  assert.match(vitalsContent, /onFCP/);
+  assert.match(vitalsContent, /onTTFB/);
+});
+
+test("template semantics: eslint config includes react compiler enforcement", async () => {
+  const eslintConfig = await readFile(path.join(templateRoot, "eslint.config.js"), "utf8");
+  const packageJson = JSON.parse(await readFile(path.join(templateRoot, "package.json"), "utf8")) as {
+    devDependencies?: Record<string, string>;
+  };
+
+  assert.equal(packageJson.devDependencies?.["eslint-plugin-react-compiler"] !== undefined, true);
+  assert.match(eslintConfig, /react-compiler/);
+  assert.match(eslintConfig, /reactCompiler\.configs\.recommended\.rules/);
 });

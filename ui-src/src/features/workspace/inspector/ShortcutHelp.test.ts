@@ -130,4 +130,23 @@ describe("ShortcutHelp", () => {
     const closeBtn = screen.getByTestId("shortcut-help-close");
     expect(closeBtn.getAttribute("aria-label")).toBe("Close keyboard shortcuts");
   });
+
+  it("moves focus to the close button when opened", () => {
+    render(createElement(ShortcutHelp, { open: true, onClose: mockOnClose }));
+    expect(screen.getByTestId("shortcut-help-close")).toHaveFocus();
+  });
+
+  it("traps Tab and Shift+Tab focus inside the overlay", () => {
+    render(createElement(ShortcutHelp, { open: true, onClose: mockOnClose }));
+
+    const overlay = screen.getByTestId("shortcut-help-overlay");
+    const closeBtn = screen.getByTestId("shortcut-help-close");
+    closeBtn.focus();
+
+    fireEvent.keyDown(overlay, { key: "Tab" });
+    expect(closeBtn).toHaveFocus();
+
+    fireEvent.keyDown(overlay, { key: "Tab", shiftKey: true });
+    expect(closeBtn).toHaveFocus();
+  });
 });

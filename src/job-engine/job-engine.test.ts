@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -47,6 +47,53 @@ const createLocalFigmaPayload = () => ({
     ]
   }
 });
+
+const createFastJobEngine = ({
+  tempRoot,
+  fetchImpl,
+  enablePreview = false
+}: {
+  tempRoot: string;
+  fetchImpl?: typeof fetch;
+  enablePreview?: boolean;
+}) =>
+  createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      ...(fetchImpl ? { fetchImpl } : {})
+    })
+  });
+
+const submitCompletedLocalJsonJob = async ({
+  engine,
+  figmaJsonPath
+}: {
+  engine: ReturnType<typeof createJobEngine>;
+  figmaJsonPath: string;
+}) => {
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 60_000
+  });
+  assert.equal(status.status, "completed");
+  return { accepted, status };
+};
 
 test("createJobEngine accepts jobs and exposes queued status", () => {
   const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-accept");
@@ -153,6 +200,8 @@ test("createJobEngine cancels queued jobs with terminal canceled state", async (
 
   assert.equal(canceled?.status, "canceled");
   assert.equal(canceled?.cancellation?.reason, "User canceled queued job.");
+  assert.equal(engine.getJobResult(queued.jobId)?.cancellation?.reason, "User canceled queued job.");
+  assert.equal(engine.cancelJob({ jobId: queued.jobId, reason: "ignored-after-terminal" })?.status, "canceled");
 
   engine.cancelJob({ jobId: running.jobId, reason: "cleanup" });
   const runningStatus = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: running.jobId, timeoutMs: 20_000 });
@@ -205,6 +254,7 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
   assert.equal(status.status, "canceled");
   assert.equal(status.cancellation?.reason, "Manual stop requested.");
+  assert.equal(engine.getJobResult(accepted.jobId)?.cancellation?.reason, "Manual stop requested.");
 });
 
 test("createJobEngine resolves request brandTheme and generationLocale with submit override precedence", () => {
@@ -334,6 +384,7 @@ test("createJobEngine marks jobs failed when figma source cannot be fetched", as
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_NETWORK");
   assert.equal(status.error?.stage, "figma.source");
+  assert.equal(engine.getJobResult(accepted.jobId)?.error?.code, "E_FIGMA_NETWORK");
 });
 
 test("createJobEngine supports local_json mode without Figma REST calls", async () => {
@@ -427,29 +478,176 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
   assert.equal(status.error?.message.includes("document.children[0].id"), true);
 });
 
-test("resolvePreviewAsset enforces safe job id/path and supports index fallback", async () => {
+test("resolvePreviewAsset enforces safe job id/path and supports direct assets, empty-path fallback, and missing index handling", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-preview-"));
   const reproDir = path.join(tempRoot, "repros", "safe-job");
   await mkdir(reproDir, { recursive: true });
   await writeFile(path.join(reproDir, "index.html"), "<html>ok</html>\n", "utf8");
+  await mkdir(path.join(reproDir, "assets"), { recursive: true });
+  await writeFile(path.join(reproDir, "assets", "app.js"), "console.log('asset');\n", "utf8");
 
-  const engine = createJobEngine({
-    resolveBaseUrl: () => "http://127.0.0.1:1983",
-    paths: {
-      outputRoot: tempRoot,
-      jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
-    },
-    runtime: resolveRuntimeSettings({ enablePreview: true, figmaMaxRetries: 1, figmaRequestTimeoutMs: 1000 })
-  });
+  const engine = createFastJobEngine({ tempRoot, enablePreview: true });
 
   const bad = await engine.resolvePreviewAsset("../unsafe", "index.html");
   assert.equal(bad, undefined);
+
+  const escapedPath = await engine.resolvePreviewAsset("safe-job", "../outside.js");
+  assert.equal(escapedPath, undefined);
+
+  const indexFromEmptyPath = await engine.resolvePreviewAsset("safe-job", "");
+  assert.ok(indexFromEmptyPath);
+  assert.equal(indexFromEmptyPath?.contentType, "text/html; charset=utf-8");
+
+  const directAsset = await engine.resolvePreviewAsset("safe-job", "assets/app.js");
+  assert.ok(directAsset);
+  assert.equal(directAsset?.contentType, "application/javascript; charset=utf-8");
+  assert.equal(directAsset?.content.toString("utf8"), "console.log('asset');\n");
 
   const fallback = await engine.resolvePreviewAsset("safe-job", "missing.txt");
   assert.ok(fallback);
   assert.equal(fallback?.contentType, "text/html; charset=utf-8");
   assert.ok(fallback?.content.toString("utf8").includes("ok"));
+
+  const missingIndex = await engine.resolvePreviewAsset("missing-job", "missing.txt");
+  assert.equal(missingIndex, undefined);
+});
+
+test("createJobEngine stale-check and remap helpers cover missing, unreadable, and artifact-free cases", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-stale-remap-"));
+  const figmaPath = path.join(tempRoot, "local-figma.json");
+  await writeFile(figmaPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  const engine = createFastJobEngine({
+    tempRoot,
+    fetchImpl: async () => {
+      throw new Error("network down");
+    }
+  });
+
+  try {
+    const noBoardAccepted = engine.submitJob({
+      figmaSourceMode: "local_json",
+      figmaJsonPath: "   "
+    });
+    const noBoard = await engine.checkStaleDraft({
+      jobId: noBoardAccepted.jobId,
+      draftNodeIds: []
+    });
+    assert.equal(noBoard.boardKey, null);
+    assert.equal(noBoard.message, "Cannot determine board key for this job.");
+
+    const missingJob = await engine.checkStaleDraft({
+      jobId: "missing-job",
+      draftNodeIds: ["title"]
+    });
+    assert.equal(missingJob.stale, false);
+    assert.equal(missingJob.latestJobId, null);
+    assert.equal(missingJob.sourceJobId, "missing-job");
+
+    const first = await submitCompletedLocalJsonJob({
+      engine,
+      figmaJsonPath: figmaPath
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const second = await submitCompletedLocalJsonJob({
+      engine,
+      figmaJsonPath: figmaPath
+    });
+
+    const latestSelf = await engine.checkStaleDraft({
+      jobId: second.accepted.jobId,
+      draftNodeIds: ["title"]
+    });
+    assert.equal(latestSelf.stale, false);
+    assert.equal(latestSelf.latestJobId, null);
+    assert.equal(latestSelf.carryForwardAvailable, false);
+
+    const carryForward = await engine.checkStaleDraft({
+      jobId: first.accepted.jobId,
+      draftNodeIds: ["title"]
+    });
+    assert.equal(carryForward.stale, true);
+    assert.equal(carryForward.latestJobId, second.accepted.jobId);
+    assert.equal(carryForward.carryForwardAvailable, true);
+    assert.deepEqual(carryForward.unmappedNodeIds, []);
+
+    const unmapped = await engine.checkStaleDraft({
+      jobId: first.accepted.jobId,
+      draftNodeIds: ["title", "missing-node"]
+    });
+    assert.equal(unmapped.carryForwardAvailable, false);
+    assert.deepEqual(unmapped.unmappedNodeIds, ["missing-node"]);
+    assert.match(unmapped.message, /1 node\(s\) could not be resolved/);
+
+    const missingSource = await engine.suggestRemaps({
+      sourceJobId: "missing-job",
+      latestJobId: second.accepted.jobId,
+      unmappedNodeIds: ["missing-node"]
+    });
+    assert.equal(missingSource.suggestions.length, 0);
+    assert.equal(missingSource.rejections.length, 1);
+    assert.equal(missingSource.message, "Source job 'missing-job' not found.");
+
+    const missingLatest = await engine.suggestRemaps({
+      sourceJobId: first.accepted.jobId,
+      latestJobId: "missing-job",
+      unmappedNodeIds: ["missing-node"]
+    });
+    assert.equal(missingLatest.suggestions.length, 0);
+    assert.equal(missingLatest.rejections.length, 1);
+    assert.equal(missingLatest.message, "Latest job 'missing-job' not found.");
+
+    const failedAccepted = engine.submitJob({
+      figmaFileKey: "rest-fail",
+      figmaAccessToken: "token"
+    });
+    const failedStatus = await waitForTerminalStatus({
+      getStatus: engine.getJob,
+      jobId: failedAccepted.jobId,
+      timeoutMs: 20_000
+    });
+    assert.equal(failedStatus.status, "failed");
+
+    const missingArtifacts = await engine.suggestRemaps({
+      sourceJobId: failedAccepted.jobId,
+      latestJobId: second.accepted.jobId,
+      unmappedNodeIds: ["missing-node"]
+    });
+    assert.equal(missingArtifacts.suggestions.length, 0);
+    assert.equal(missingArtifacts.message, "Could not read Design IR files for remap analysis.");
+
+    const readableRemap = await engine.suggestRemaps({
+      sourceJobId: first.accepted.jobId,
+      latestJobId: second.accepted.jobId,
+      unmappedNodeIds: ["title"]
+    });
+    assert.equal(readableRemap.sourceJobId, first.accepted.jobId);
+    assert.equal(readableRemap.latestJobId, second.accepted.jobId);
+    assert.equal(readableRemap.message.length > 0, true);
+
+    await rm(String(second.status.artifacts.designIrFile), { force: true });
+
+    const unreadableStale = await engine.checkStaleDraft({
+      jobId: first.accepted.jobId,
+      draftNodeIds: ["title"]
+    });
+    assert.equal(unreadableStale.stale, true);
+    assert.equal(unreadableStale.latestJobId, second.accepted.jobId);
+    assert.equal(unreadableStale.carryForwardAvailable, false);
+    assert.deepEqual(unreadableStale.unmappedNodeIds, []);
+    assert.equal(unreadableStale.message, `A newer job '${second.accepted.jobId}' exists for this board.`);
+
+    const unreadableRemap = await engine.suggestRemaps({
+      sourceJobId: first.accepted.jobId,
+      latestJobId: second.accepted.jobId,
+      unmappedNodeIds: ["title"]
+    });
+    assert.equal(unreadableRemap.suggestions.length, 0);
+    assert.equal(unreadableRemap.rejections.length, 0);
+    assert.equal(unreadableRemap.message, "Could not read Design IR files for remap analysis.");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("createJobEngine fails fast when cleaning removes all screen candidates", async () => {

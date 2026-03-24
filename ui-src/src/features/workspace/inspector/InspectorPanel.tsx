@@ -71,13 +71,15 @@ import {
   deriveScalarOverrideFieldSupport,
   isScalarPaddingValue,
   translateScalarOverrideInput,
-  type ScalarOverrideField
+  type ScalarOverrideField,
+  type ScalarOverrideValueByField
 } from "./scalar-override-translators";
 import {
   deriveFormValidationOverrideFieldSupport,
   translateFormValidationOverrideInput,
   SUPPORTED_VALIDATION_TYPES,
-  type FormValidationOverrideField
+  type FormValidationOverrideField,
+  type FormValidationOverrideValueByField
 } from "./form-validation-override-translators";
 import {
   COUNTER_AXIS_ALIGN_ITEMS,
@@ -87,7 +89,8 @@ import {
   resolveLayoutModeValue,
   translateLayoutOverrideInput,
   type LayoutModeOverrideValue,
-  type LayoutOverrideField
+  type LayoutOverrideField,
+  type LayoutOverrideValueByField
 } from "./layout-override-translators";
 import {
   computeInspectorDraftBaseFingerprint,
@@ -171,6 +174,7 @@ interface DesignIrElementNode {
   name: string;
   type: string;
   children?: DesignIrElementNode[];
+  [key: string]: unknown;
 }
 
 interface DesignIrScreen {
@@ -857,8 +861,8 @@ export function InspectorPanel({
   const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(loadBoundariesEnabledPreference);
   const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
   const [overrideDraft, setOverrideDraft] = useState<InspectorOverrideDraft | null>(null);
-  const [_editHistory, setEditHistory] = useState<InspectorEditHistory>(() => createEditHistory());
-  const [_snapshotStore, setSnapshotStore] = useState<DraftSnapshotStore>(() => createDraftSnapshotStore());
+  const [, setEditHistory] = useState<InspectorEditHistory>(() => createEditHistory());
+  const [, setSnapshotStore] = useState<DraftSnapshotStore>(() => createDraftSnapshotStore());
   const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(null);
   const [draftStale, setDraftStale] = useState(false);
   const [staleDraftCheckResult, setStaleDraftCheckResult] = useState<StaleDraftCheckResult | null>(null);
@@ -1238,7 +1242,7 @@ export function InspectorPanel({
           summary.conflictCount += 1;
         } else if (entry.status === "untracked") {
           summary.untrackedCount += 1;
-        } else if (entry.status === "unchanged") {
+        } else {
           summary.unchangedCount += 1;
         }
         return summary;
@@ -1344,7 +1348,7 @@ export function InspectorPanel({
     files: FileEntry[];
     error: EndpointErrorDetails | null;
   }>(() => {
-    if (filesQuery.isLoading && !filesQuery.data) {
+    if (filesQuery.isLoading) {
       return { status: "loading", files: [], error: null };
     }
 
@@ -1397,7 +1401,7 @@ export function InspectorPanel({
     manifest: ComponentManifestPayload | null;
     error: EndpointErrorDetails | null;
   }>(() => {
-    if (manifestQuery.isLoading && !manifestQuery.data) {
+    if (manifestQuery.isLoading) {
       return { status: "loading", manifest: null, error: null };
     }
 
@@ -1451,7 +1455,7 @@ export function InspectorPanel({
     treeNodes: TreeNode[];
     error: EndpointErrorDetails | null;
   }>(() => {
-    if (designIrQuery.isLoading && !designIrQuery.data) {
+    if (designIrQuery.isLoading) {
       return { status: "loading", screens: [], treeNodes: [], error: null };
     }
 
@@ -1508,7 +1512,7 @@ export function InspectorPanel({
     metrics: InspectabilityGenerationMetricsPayload | null;
     error: EndpointErrorDetails | null;
   }>(() => {
-    if (generationMetricsQuery.isLoading && !generationMetricsQuery.data) {
+    if (generationMetricsQuery.isLoading) {
       return {
         status: "loading",
         metrics: null,
@@ -1553,11 +1557,14 @@ export function InspectorPanel({
     }
     return findIrElementNode(irScreens, selectedNodeId);
   }, [irScreens, selectedNodeId]);
-  const selectedIrNodeData = useMemo<Readonly<Record<string, unknown>> | null>(() => {
+  const selectedIrNodeData = useMemo<
+    | (DesignIrElementNode & Partial<ScalarOverrideValueByField & LayoutOverrideValueByField & FormValidationOverrideValueByField>)
+    | null
+  >(() => {
     if (!selectedIrNode) {
       return null;
     }
-    return selectedIrNode as unknown as Readonly<Record<string, unknown>>;
+    return selectedIrNode;
   }, [selectedIrNode]);
   const scalarFieldSupport = useMemo(() => {
     if (!selectedIrNodeData) {
@@ -2232,7 +2239,7 @@ export function InspectorPanel({
 
   // --- Derive default file from manifest/files when none explicitly selected ---
   const defaultFile = useMemo<string | null>(() => {
-    if (manifest?.screens?.length) {
+    if (manifest && manifest.screens.length > 0) {
       const firstScreen = manifest.screens[0];
       if (firstScreen && firstScreen.file) {
         return firstScreen.file;
@@ -2334,7 +2341,7 @@ export function InspectorPanel({
       };
     }
 
-    if (fileContentQuery.isLoading && !fileContentQuery.data) {
+    if (fileContentQuery.isLoading) {
       return {
         status: "loading",
         content: null,
@@ -2491,24 +2498,29 @@ export function InspectorPanel({
     setSplitFile(filePath);
   }, []);
 
+  const refetchFiles = filesQuery.refetch;
+  const refetchManifest = manifestQuery.refetch;
+  const refetchDesignIr = designIrQuery.refetch;
+  const refetchFileContent = fileContentQuery.refetch;
+
   const handleRetryFiles = useCallback(() => {
-    void filesQuery.refetch();
-  }, [filesQuery.refetch]);
+    void refetchFiles();
+  }, [refetchFiles]);
 
   const handleRetryManifest = useCallback(() => {
-    void manifestQuery.refetch();
-  }, [manifestQuery.refetch]);
+    void refetchManifest();
+  }, [refetchManifest]);
 
   const handleRetryDesignIr = useCallback(() => {
-    void designIrQuery.refetch();
-  }, [designIrQuery.refetch]);
+    void refetchDesignIr();
+  }, [refetchDesignIr]);
 
   const handleRetryFileContent = useCallback(() => {
     if (!effectiveSelectedFile) {
       return;
     }
-    void fileContentQuery.refetch();
-  }, [effectiveSelectedFile, fileContentQuery.refetch]);
+    void refetchFileContent();
+  }, [effectiveSelectedFile, refetchFileContent]);
 
   const applyScalarOverrideInput = useCallback(({
     field,
@@ -2978,9 +2990,7 @@ export function InspectorPanel({
     const nodeName = irNode?.name ?? selectedNodeId;
 
     // Extract present fields from the raw IR node (the JSON contains all fields)
-    const presentFields = irNode
-      ? extractPresentFields(irNode as unknown as Readonly<Record<string, unknown>>)
-      : [];
+    const presentFields = irNode ? extractPresentFields(irNode) : [];
 
     const capability = detectEditCapability({
       id: selectedNodeId,

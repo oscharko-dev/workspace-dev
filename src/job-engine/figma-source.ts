@@ -50,7 +50,6 @@ interface FigmaNodeLike {
     width?: number;
     height?: number;
   };
-  [key: string]: unknown;
 }
 
 interface FigmaFileLike extends FigmaFileResponse {
@@ -839,7 +838,7 @@ const collectDescendantSignals = (node: FigmaNodeLike): {
       continue;
     }
     descendantCount += 1;
-    const nodeType = String(current.type ?? "").toUpperCase();
+    const nodeType = (current.type ?? "").toUpperCase();
     if (nodeType === "TEXT") {
       hasTextDescendant = true;
     }
@@ -929,7 +928,7 @@ const collectScreenCandidates = ({
       return;
     }
 
-    const nodeType = String(node.type ?? "").toUpperCase();
+    const nodeType = (node.type ?? "").toUpperCase();
     const nextPageName =
       nodeType === "CANVAS" || nodeType === "PAGE" ? toTrimmedName(node.name).toLowerCase() : pageName;
 
@@ -994,7 +993,7 @@ const collectScreenCandidates = ({
 };
 
 const hasIconRecoveryName = (node: FigmaNodeLike): boolean => {
-  const normalizedName = String(node.name ?? "").toLowerCase();
+  const normalizedName = (node.name ?? "").toLowerCase();
   return (
     normalizedName.startsWith("ic_") ||
     normalizedName.includes("iconcomponent") ||

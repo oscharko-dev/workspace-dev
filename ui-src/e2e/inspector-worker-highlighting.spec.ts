@@ -3,6 +3,7 @@ import {
   cleanupDeterministicSubmitRoute,
   getInspectorLocators,
   installClipboardMock,
+  openInspector,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -21,6 +22,7 @@ test.describe("inspector worker highlighting deterministic flow", () => {
     await openWorkspaceUi(page, inspectorViewport);
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await openInspector(page);
   });
 
   test.afterEach(async ({ page }) => {

@@ -11,6 +11,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceJobInput,
+  WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
@@ -39,6 +40,7 @@ interface ValidationFailureResult {
 }
 
 type ValidationResult<T> = ValidationSuccess<T> | ValidationFailureResult;
+type ParsedLocalSyncFileDecision = WorkspaceLocalSyncApplyRequest["fileDecisions"][number];
 
 interface RuntimeSchema<T> {
   safeParse(input: unknown): ValidationResult<T>;
@@ -75,18 +77,18 @@ function parseStringField({
 
   if (value === undefined) {
     if (required) {
-      pushIssue(issues, [key], `${String(key)} is required`);
+      pushIssue(issues, [key], `${key} is required`);
     }
     return undefined;
   }
 
   if (typeof value !== "string") {
-    pushIssue(issues, [key], `${String(key)} must be a string`);
+    pushIssue(issues, [key], `${key} must be a string`);
     return undefined;
   }
 
   if (value.trim().length < minLength) {
-    pushIssue(issues, [key], `${String(key)} must not be empty`);
+    pushIssue(issues, [key], `${key} must not be empty`);
     return undefined;
   }
 
@@ -559,7 +561,10 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
     }
   }
 
-  if (typeof input.confirmationToken !== "string" || input.confirmationToken.trim().length === 0) {
+  const confirmationToken = typeof input.confirmationToken === "string"
+    ? input.confirmationToken.trim()
+    : "";
+  if (confirmationToken.length === 0) {
     pushIssue(issues, ["confirmationToken"], "confirmationToken must be a non-empty string.");
   }
   if (input.confirmOverwrite !== true) {
@@ -569,9 +574,9 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
     pushIssue(issues, ["fileDecisions"], "fileDecisions must be a non-empty array.");
   }
 
-  const fileDecisions = Array.isArray(input.fileDecisions) ? input.fileDecisions : [];
+  const fileDecisions: readonly unknown[] = Array.isArray(input.fileDecisions) ? input.fileDecisions : [];
   const seenPaths = new Set<string>();
-  const parsedFileDecisions: Array<{ path: string; decision: "write" | "skip" }> = [];
+  const parsedFileDecisions: ParsedLocalSyncFileDecision[] = [];
   for (let index = 0; index < fileDecisions.length; index += 1) {
     const candidate = fileDecisions[index];
     if (!isRecord(candidate)) {
@@ -610,13 +615,13 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
   }
 
   return {
-    success: true,
-    data: {
-      mode: "apply",
-      confirmationToken: input.confirmationToken as string,
-      confirmOverwrite: true,
-      fileDecisions: parsedFileDecisions
-    }
+      success: true,
+      data: {
+        mode: "apply",
+        confirmationToken,
+        confirmOverwrite: true,
+        fileDecisions: parsedFileDecisions
+      }
   };
 }
 

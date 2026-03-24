@@ -1,4 +1,3 @@
-/* eslint-env node */
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -249,7 +248,7 @@ const resolveScriptConfig = async () => {
   const regressionTolerancePct =
     Number(process.env.FIGMAPIPE_PERF_REGRESSION_TOLERANCE_PCT ?? budgetConfig.regressionTolerancePct ?? 10) || 10;
   const strict = parseBooleanLike(process.env.FIGMAPIPE_PERF_STRICT, mode === "assert");
-  const allowBaselineBootstrap = parseBooleanLike(process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, true);
+  const allowBaselineBootstrap = parseBooleanLike(process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, mode === "baseline");
   const previewHost = process.env.FIGMAPIPE_PERF_PREVIEW_HOST?.trim() || "127.0.0.1";
   const configuredPort = Number(process.env.FIGMAPIPE_PERF_PREVIEW_PORT);
   const previewPort =
@@ -334,14 +333,23 @@ const collectAuditForRoute = async ({
       source: "interactive-proxy"
     }
   ]);
+  const lcpMetricValue = normalizeNumber(audits["largest-contentful-paint"]?.numericValue);
+  const interactiveMetricValue = normalizeNumber(audits.interactive?.numericValue);
   const routeTransitionMetric = pickMetric([
     {
-      value: normalizeNumber(audits.interactive?.numericValue),
-      source: "interactive"
+      value:
+        typeof interactiveMetricValue === "number" && typeof lcpMetricValue === "number"
+          ? Math.max(0, interactiveMetricValue - lcpMetricValue)
+          : undefined,
+      source: "interactive-minus-lcp"
     },
     {
       value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
       source: "total-blocking-time-proxy"
+    },
+    {
+      value: interactiveMetricValue,
+      source: "interactive"
     }
   ]);
 
@@ -351,7 +359,7 @@ const collectAuditForRoute = async ({
     url,
     metrics: {
       inp_ms: inpMetric.value,
-      lcp_ms: normalizeNumber(audits["largest-contentful-paint"]?.numericValue),
+      lcp_ms: lcpMetricValue,
       cls: normalizeNumber(audits["cumulative-layout-shift"]?.numericValue),
       initial_js_kb: Math.round((jsBytes / 1024) * 100) / 100,
       route_transition_ms: routeTransitionMetric.value
@@ -620,6 +628,7 @@ const run = async () => {
       `[perf-runner] mode=${mode} samples=${samples.length} failedBudgets=${failedBudgetChecks.length} failedRegression=${failedRegressionChecks.length} strict=${config.strict}`
     );
     console.log(`[perf-runner] report=${config.reportPath}`);
+    console.log(`[perf-runner] baselineStatus=${baselineStatus}`);
 
     if (strictFailure) {
       process.exitCode = 1;

@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  ensureWorkspaceDiagnosticsVisible,
   getInspectorLocators,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -60,10 +63,32 @@ function parseJsonObject(value: string | null): Record<string, unknown> {
   }
 }
 
+function extractJobPayloadRecord(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (typeof value.jobId === "string") {
+    return value;
+  }
+
+  if (isRecord(value.payload) && typeof value.payload.jobId === "string") {
+    return value.payload;
+  }
+
+  if (isRecord(value.result) && isRecord(value.result.payload) && typeof value.result.payload.jobId === "string") {
+    return value.result.payload;
+  }
+
+  return null;
+}
+
 async function readActiveJobId(page: Page): Promise<string> {
+  await ensureWorkspaceDiagnosticsVisible(page, {
+    buttonLabel: "Job diagnostics",
+    payloadTestId: "job-payload"
+  });
+
   const payloadText = await page.getByTestId("job-payload").textContent();
   const payload = parseJsonObject(payloadText);
-  const jobId = payload.jobId;
+  const resolvedPayload = extractJobPayloadRecord(payload);
+  const jobId = resolvedPayload?.jobId;
   if (typeof jobId !== "string" || jobId.length === 0) {
     throw new Error("Could not determine active jobId from runtime payload.");
   }
@@ -76,10 +101,13 @@ async function assertScreenNodeUnsupported(page: Page): Promise<void> {
   await expect(screenNode).toBeVisible();
   await screenNode.click();
 
-  await expect(page.getByTestId("inspector-edit-capability")).toBeVisible();
-  await expect(page.getByTestId("inspector-edit-capability-reason")).toContainText(
-    "does not support structured editing"
-  );
+  await expect(page.getByTestId("inspector-edit-capability")).toHaveText("Not editable");
+  const enterEditModeButton = page.getByTestId("inspector-enter-edit-mode");
+  await expect(enterEditModeButton).toBeDisabled();
+
+  const title = await enterEditModeButton.getAttribute("title");
+  expect(title).toBeTruthy();
+  expect(title).not.toBe("Select a node to check edit capability");
 }
 
 async function findFirstEditableNodeId(page: Page): Promise<string> {
@@ -93,7 +121,7 @@ async function findFirstEditableNodeId(page: Page): Promise<string> {
     await expect(page.getByTestId("inspector-edit-capability")).toBeVisible();
 
     const capabilityText = await page.getByTestId("inspector-edit-capability").textContent();
-    if (!capabilityText?.includes("Edit Capability: Supported")) {
+    if (!capabilityText?.startsWith("Edit: ")) {
       continue;
     }
 
@@ -273,6 +301,8 @@ async function submitDeterministicWithInjectedDraft({
     return response.request().method() === "POST" && response.url().endsWith(SUBMIT_ENDPOINT_SUFFIX);
   });
 
+  await page.getByLabel("Figma file key").fill("fixture-key");
+  await page.getByLabel("Figma access token").fill("fixture-token");
   await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
 
   const submitResponse = await submitResponsePromise;
@@ -305,9 +335,10 @@ test.describe("inspector scalar overrides deterministic flow", () => {
   });
 
   test("edits scalar and layout overrides, preserves deferred exclusions, and restores persisted draft into a new matching job", async ({ page }) => {
+    const firstJobId = await readActiveJobId(page);
+    await openInspector(page);
     await assertScreenNodeUnsupported(page);
 
-    const firstJobId = await readActiveJobId(page);
     const editableNodeId = await findFirstEditableLayoutNodeId({
       page,
       jobId: firstJobId
@@ -326,8 +357,10 @@ test.describe("inspector scalar overrides deterministic flow", () => {
     const edited = await applyScalarOverrides(page);
     const layoutEdited = await applyLayoutOverrides(page);
 
+    await openInspectorDialog(page, "Review");
     await expect(page.getByTestId("inspector-impact-review-summary-categories")).toContainText("layout");
     await expect(page.getByTestId("inspector-impact-review-layout-risk")).toBeVisible();
+    await page.getByRole("button", { name: "Close dialog" }).click();
 
     const persistedDraftJson = await page.evaluate(({ jobId, storagePrefix }) => {
       return window.localStorage.getItem(`${storagePrefix}${jobId}`);
@@ -335,6 +368,8 @@ test.describe("inspector scalar overrides deterministic flow", () => {
     expect(persistedDraftJson).toBeTruthy();
 
     await page.getByTestId("inspector-exit-edit-mode").click();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Workspace Dev" })).toBeVisible();
 
     const secondJobId = await submitDeterministicWithInjectedDraft({
       page,
@@ -350,6 +385,7 @@ test.describe("inspector scalar overrides deterministic flow", () => {
     }, { jobId: secondJobId, storagePrefix: DRAFT_STORAGE_PREFIX });
     expect(restoredDraftJson).toBeTruthy();
 
+    await openInspector(page);
     await enterEditStudio(page, editableNodeId);
     await expect(page.getByTestId("inspector-edit-draft-stale-warning")).toHaveCount(0);
 

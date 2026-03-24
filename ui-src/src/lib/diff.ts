@@ -117,8 +117,8 @@ function myersDiff(oldLines: string[], newLines: string[]): EditStep[] {
     }
 
     const prevKOffset = prevK + max;
-    let prevX = tv[prevKOffset]!;
-    let prevY = prevX - prevK;
+    const prevX = tv[prevKOffset]!;
+    const prevY = prevX - prevK;
 
     // Diagonal moves first (these are "keep" operations)
     while (cx > prevX && cy > prevY) {

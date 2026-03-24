@@ -7,7 +7,7 @@
 
 const ALLOWED_FIGMA_SOURCE_MODE_DEFAULT = "rest" as const;
 const ALLOWED_FIGMA_SOURCE_MODES = ["rest", "local_json"] as const;
-const ALLOWED_LLM_CODEGEN_MODE = "deterministic" as const;
+const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 
 const BLOCKED_FIGMA_MODES: readonly string[] = ["mcp", "hybrid"];
 const BLOCKED_CODEGEN_MODES: readonly string[] = ["hybrid", "llm_strict"];
@@ -16,6 +16,9 @@ export interface ModeLockValidationResult {
   valid: boolean;
   errors: string[];
 }
+
+export type AllowedFigmaSourceMode = (typeof ALLOWED_FIGMA_SOURCE_MODES)[number];
+export type AllowedLlmCodegenMode = (typeof ALLOWED_LLM_CODEGEN_MODES)[number];
 
 export function validateModeLock(input: {
   figmaSourceMode?: string;
@@ -40,7 +43,7 @@ export function validateModeLock(input: {
   }
 
   const codegenMode = input.llmCodegenMode?.trim().toLowerCase();
-  if (codegenMode && codegenMode !== ALLOWED_LLM_CODEGEN_MODE) {
+  if (codegenMode && !ALLOWED_LLM_CODEGEN_MODES.includes(codegenMode as AllowedLlmCodegenMode)) {
     const isKnownBlocked = BLOCKED_CODEGEN_MODES.includes(codegenMode);
     if (isKnownBlocked) {
       errors.push(
@@ -75,10 +78,18 @@ export function enforceModeLock(input: {
 
 export function getWorkspaceDefaults(): {
   figmaSourceMode: typeof ALLOWED_FIGMA_SOURCE_MODE_DEFAULT;
-  llmCodegenMode: typeof ALLOWED_LLM_CODEGEN_MODE;
+  llmCodegenMode: AllowedLlmCodegenMode;
 } {
   return {
     figmaSourceMode: ALLOWED_FIGMA_SOURCE_MODE_DEFAULT,
-    llmCodegenMode: ALLOWED_LLM_CODEGEN_MODE
+    llmCodegenMode: ALLOWED_LLM_CODEGEN_MODES[0]
   };
+}
+
+export function getAllowedFigmaSourceModes(): readonly AllowedFigmaSourceMode[] {
+  return ALLOWED_FIGMA_SOURCE_MODES;
+}
+
+export function getAllowedLlmCodegenModes(): readonly AllowedLlmCodegenMode[] {
+  return ALLOWED_LLM_CODEGEN_MODES;
 }

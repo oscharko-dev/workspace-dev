@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import type { WorkspaceRegenerationOverrideEntry } from "../contracts/index.js";
 import { cleanFigmaForCodegen } from "../job-engine/figma-clean.js";
+import { applyIrOverrides } from "../job-engine/ir-overrides.js";
 import { generateArtifacts } from "./generator-core.js";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 
@@ -18,6 +20,7 @@ interface GoldenArtifactSpec {
 interface GoldenFixtureSpec {
   id: string;
   figmaJson: string;
+  irOverridesFile?: string;
   artifacts: GoldenArtifactSpec[];
 }
 
@@ -60,6 +63,17 @@ const loadManifest = async (): Promise<GoldenFixtureManifest> => {
   assert.equal(payload.version, 1, "Unsupported golden fixture manifest version.");
   assert.equal(Array.isArray(payload.fixtures), true, "Manifest must contain fixtures[].");
   return payload as GoldenFixtureManifest;
+};
+
+const loadIrOverrides = async ({ fixture }: { fixture: GoldenFixtureSpec }): Promise<WorkspaceRegenerationOverrideEntry[]> => {
+  if (!fixture.irOverridesFile) {
+    return [];
+  }
+
+  const overridesPath = path.join(GOLDEN_ROOT, fixture.irOverridesFile);
+  const payload = JSON.parse(await readFile(overridesPath, "utf8")) as unknown;
+  assert.equal(Array.isArray(payload), true, `Fixture '${fixture.id}' overrides must be an array.`);
+  return payload as WorkspaceRegenerationOverrideEntry[];
 };
 
 const listFiles = async ({ root }: { root: string }): Promise<string[]> => {
@@ -145,9 +159,17 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
         file: figmaPayload
       });
 
-      const ir = figmaToDesignIrWithOptions(cleaned.cleanedFile, {
+      const baseIr = figmaToDesignIrWithOptions(cleaned.cleanedFile, {
         brandTheme: "derived"
       });
+      const overrides = await loadIrOverrides({ fixture });
+      const ir =
+        overrides.length > 0
+          ? applyIrOverrides({
+              ir: baseIr,
+              overrides
+            }).ir
+          : baseIr;
 
       const firstProjectDir = await generateFixtureArtifacts({
         fixture,

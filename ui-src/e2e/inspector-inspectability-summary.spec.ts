@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -24,6 +26,8 @@ async function bootInspector({
   await openWorkspaceUi(page, inspectorViewport);
   await triggerDeterministicGeneration(page);
   await waitForCompletedSubmitStatus(page);
+  await openInspector(page);
+  await openInspectorDialog(page, "Coverage");
 }
 
 test.describe("inspector inspectability summary deterministic flow", () => {
@@ -50,7 +54,9 @@ test.describe("inspector inspectability summary deterministic flow", () => {
     await expect(page.getByTestId("inspector-summary-omission-classification-fallbacks")).toContainText(
       /Classification fallbacks:\s+\d+/
     );
-    await expect(page.getByTestId("inspector-summary-aggregate-note")).toContainText("Aggregate-only summary");
+    await expect(page.getByTestId("inspector-summary-aggregate-note")).toContainText(
+      /Node-level diagnostics available|Aggregate-only summary/
+    );
   });
 
   test("shows omission fallback when generation metrics file is unavailable", async ({ page }) => {

@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Plugin } from "prettier";
+import type { format as prettierFormat } from "prettier/standalone";
 import {
   detectLanguage,
   exceedsMaxSize,
@@ -85,7 +86,7 @@ interface RainbowDecoration {
 }
 
 interface PrettierModules {
-  format: typeof import("prettier/standalone").format;
+  format: typeof prettierFormat;
   typescriptPlugin: Plugin;
   babelPlugin: Plugin;
   estreePlugin: Plugin;
@@ -743,7 +744,7 @@ export function CodeViewer({
           forTheme: currentTheme
         });
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         if (isAbortError(error) || abortController.signal.aborted) {
           return;
         }

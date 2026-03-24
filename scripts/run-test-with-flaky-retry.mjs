@@ -9,7 +9,7 @@ const packageRoot = path.resolve(__dirname, "..");
 const artifactDir = path.resolve(packageRoot, "artifacts/testing");
 const artifactPath = path.resolve(artifactDir, "flaky-retry-report.json");
 
-const command = process.env.WORKSPACE_DEV_TEST_COMMAND ?? "pnpm run test:ci";
+const command = process.env.WORKSPACE_DEV_TEST_COMMAND ?? "pnpm run test:flaky-target";
 const parsedRetries = Number.parseInt(process.env.WORKSPACE_DEV_TEST_RETRIES ?? "1", 10);
 const maxRetries = Number.isFinite(parsedRetries) && parsedRetries >= 0 ? parsedRetries : 1;
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
@@ -164,13 +164,17 @@ export function CodePane({
   const [diffEnabled, setDiffEnabled] = useState(false);
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitRatio, setSplitRatio] = useState(50); // percentage for left pane
-  const [scopedMode, setScopedMode] = useState<ScopedCodeMode>(
-    isNodeMapped ? defaultMappedMode() : fallbackMode()
-  );
-
-  // Reset scoped mode when mapping status changes
-  useEffect(() => {
-    setScopedMode(isNodeMapped ? defaultMappedMode() : fallbackMode());
+  const [scopedModes, setScopedModes] = useState(() => ({
+    mapped: defaultMappedMode(),
+    unmapped: fallbackMode()
+  }));
+  const scopedMode = isNodeMapped ? scopedModes.mapped : scopedModes.unmapped;
+  const handleScopedModeChange = useCallback((nextMode: ScopedCodeMode) => {
+    setScopedModes((currentModes) => {
+      return isNodeMapped
+        ? { ...currentModes, mapped: nextMode }
+        : { ...currentModes, unmapped: nextMode };
+    });
   }, [isNodeMapped]);
 
   const effectiveActiveManifestRange = useMemo<ManifestRange | null>(() => {
@@ -242,7 +246,7 @@ export function CodePane({
 
     const onPointerMove = (moveEvent: PointerEvent): void => {
       const state = dragStartRef.current;
-      if (!state || !container) return;
+      if (!state) return;
       const containerWidth = container.getBoundingClientRect().width;
       if (containerWidth <= 0) return;
       const deltaPx = moveEvent.clientX - state.startX;
@@ -343,13 +347,13 @@ export function CodePane({
             <option value="">No source files available</option>
           )}
         </select>
-        {selectedFile && fileContent !== null ? (
-          <ScopedCodeModeSelector
-            activeMode={scopedMode}
-            onModeChange={setScopedMode}
-            isMapped={isNodeMapped}
-          />
-        ) : null}
+          {selectedFile && fileContent !== null ? (
+            <ScopedCodeModeSelector
+              activeMode={scopedMode}
+              onModeChange={handleScopedModeChange}
+              isMapped={isNodeMapped}
+            />
+          ) : null}
       </div>
 
       {/* Status messages */}
@@ -444,7 +448,7 @@ export function CodePane({
               <div
                 data-testid="inspector-split-left"
                 className="min-w-0 overflow-hidden"
-                style={{ flexBasis: `${String(splitRatio.toFixed(2))}%`, flexGrow: 0, flexShrink: 0 }}
+                style={{ flexBasis: `${splitRatio.toFixed(2)}%`, flexGrow: 0, flexShrink: 0 }}
               >
                 <CodeViewer
                   themeMode="dark"

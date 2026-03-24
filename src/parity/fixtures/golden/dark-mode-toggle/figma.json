@@ -1,0 +1,270 @@
+{
+  "name": "Dark Mode Golden",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-dashboard-light",
+            "type": "FRAME",
+            "name": "Dashboard Light",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 20,
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 390, "height": 844 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.98, "g": 0.98, "b": 0.99, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "light-title",
+                "type": "TEXT",
+                "name": "Heading",
+                "characters": "Operations Dashboard",
+                "style": {
+                  "fontSize": 28,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 36,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 24, "y": 24, "width": 280, "height": 36 }
+              },
+              {
+                "id": "light-body",
+                "type": "TEXT",
+                "name": "Body",
+                "characters": "Track shipment delays, alerts, and approvals in one place.",
+                "style": {
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 24,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.33, "g": 0.36, "b": 0.4, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 24, "y": 80, "width": 320, "height": 48 }
+              },
+              {
+                "id": "light-summary-card",
+                "type": "FRAME",
+                "name": "Summary Card",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 8,
+                "paddingTop": 16,
+                "paddingRight": 16,
+                "paddingBottom": 16,
+                "paddingLeft": 16,
+                "cornerRadius": 16,
+                "absoluteBoundingBox": { "x": 24, "y": 152, "width": 342, "height": 144 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "light-card-title",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Open incidents",
+                    "style": {
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 20,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 40, "y": 168, "width": 96, "height": 20 }
+                  },
+                  {
+                    "id": "light-card-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "14 urgent reviews",
+                    "style": {
+                      "fontSize": 24,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 32,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 40, "y": 196, "width": 220, "height": 32 }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "screen-dashboard-dark",
+            "type": "FRAME",
+            "name": "Dashboard Dark",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 20,
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 420, "y": 0, "width": 390, "height": 844 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.07, "g": 0.08, "b": 0.11, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "dark-title",
+                "type": "TEXT",
+                "name": "Heading",
+                "characters": "Operations Dashboard",
+                "style": {
+                  "fontSize": 28,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 36,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.96, "g": 0.97, "b": 0.98, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 444, "y": 24, "width": 280, "height": 36 }
+              },
+              {
+                "id": "dark-body",
+                "type": "TEXT",
+                "name": "Body",
+                "characters": "Track shipment delays, alerts, and approvals in one place.",
+                "style": {
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 24,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.7, "g": 0.73, "b": 0.78, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 444, "y": 80, "width": 320, "height": 48 }
+              },
+              {
+                "id": "dark-summary-card",
+                "type": "FRAME",
+                "name": "Summary Card",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 8,
+                "paddingTop": 16,
+                "paddingRight": 16,
+                "paddingBottom": 16,
+                "paddingLeft": 16,
+                "cornerRadius": 16,
+                "absoluteBoundingBox": { "x": 444, "y": 152, "width": 342, "height": 144 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.12, "g": 0.14, "b": 0.18, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "dark-card-title",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Open incidents",
+                    "style": {
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 20,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.65, "g": 0.68, "b": 0.73, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 460, "y": 168, "width": 96, "height": 20 }
+                  },
+                  {
+                    "id": "dark-card-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "14 urgent reviews",
+                    "style": {
+                      "fontSize": 24,
+                      "fontWeight": 700,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 32,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.96, "g": 0.97, "b": 0.98, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 460, "y": 196, "width": 220, "height": 32 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

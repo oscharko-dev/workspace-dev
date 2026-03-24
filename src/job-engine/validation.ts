@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobDiagnostic } from "../contracts/index.js";
 import { runCommand as runCommandImpl } from "./command-runner.js";
@@ -39,6 +39,97 @@ const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjec
   } catch {
     return false;
   }
+};
+
+const pathExists = async (candidatePath: string): Promise<boolean> => {
+  try {
+    await lstat(candidatePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const prepareValidationNodeModules = async ({
+  generatedProjectDir,
+  seedNodeModulesDir,
+  skipInstall,
+  onLog
+}: {
+  generatedProjectDir: string;
+  seedNodeModulesDir?: string;
+  skipInstall: boolean;
+  onLog: (message: string) => void;
+}): Promise<{ installRequired: boolean; cleanup?: () => Promise<void> }> => {
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+
+  if (skipInstall) {
+    const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir });
+    if (!nodeModulesExists) {
+      throw createPipelineError({
+        code: "E_VALIDATE_PROJECT",
+        stage: "validate.project",
+        message: `skipInstall=true requires an existing node_modules directory at ${nodeModulesDir}.`,
+        diagnostics: [
+          {
+            code: "E_VALIDATE_PROJECT",
+            message: "Validation cannot run because node_modules is missing while skipInstall=true.",
+            suggestion: "Either disable skipInstall or ensure dependencies are installed in generated-app/node_modules.",
+            stage: "validate.project",
+            severity: "error",
+            details: {
+              generatedProjectDir
+            }
+          }
+        ]
+      });
+    }
+    onLog("Skipping install because skipInstall=true.");
+    return {
+      installRequired: false
+    };
+  }
+
+  if (!seedNodeModulesDir) {
+    return {
+      installRequired: true
+    };
+  }
+
+  if (await hasExistingNodeModules({ generatedProjectDir })) {
+    return {
+      installRequired: true
+    };
+  }
+
+  let seedNodeModulesMetadata: Awaited<ReturnType<typeof stat>>;
+  try {
+    seedNodeModulesMetadata = await stat(seedNodeModulesDir);
+  } catch {
+    return {
+      installRequired: true
+    };
+  }
+
+  if (!seedNodeModulesMetadata.isDirectory()) {
+    return {
+      installRequired: true
+    };
+  }
+
+  if (await pathExists(nodeModulesDir)) {
+    await rm(nodeModulesDir, { recursive: true, force: true });
+  }
+
+  await symlink(seedNodeModulesDir, nodeModulesDir, process.platform === "win32" ? "junction" : "dir");
+  onLog(`Reusing seeded node_modules from ${seedNodeModulesDir}.`);
+
+  return {
+    installRequired: false,
+    cleanup: async () => {
+      await rm(nodeModulesDir, { recursive: true, force: true });
+    }
+  };
 };
 
 const LINT_RELEVANT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]);
@@ -174,8 +265,8 @@ const toValidationDetailDiagnostics = async ({
     detailed.push({
       code: "E_VALIDATE_PROJECT_DETAIL",
       message:
-        `${diagnostic.message}` +
-        `${diagnostic.code ? ` (${diagnostic.code})` : diagnostic.rule ? ` (${diagnostic.rule})` : ""}`,
+        diagnostic.message +
+        (diagnostic.code ? ` (${diagnostic.code})` : diagnostic.rule ? ` (${diagnostic.rule})` : ""),
       suggestion: "Fix the generated source near the reported location and rerun the job.",
       stage: "validate.project",
       severity: "error",
@@ -257,6 +348,7 @@ export const runProjectValidationWithDeps = async ({
   installPreferOffline = true,
   skipInstall = false,
   abortSignal,
+  seedNodeModulesDir,
   deps
 }: {
   generatedProjectDir: string;
@@ -269,6 +361,7 @@ export const runProjectValidationWithDeps = async ({
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   abortSignal?: AbortSignal;
+  seedNodeModulesDir?: string;
   deps?: Partial<ValidationDeps>;
 }): Promise<void> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
@@ -280,35 +373,18 @@ export const runProjectValidationWithDeps = async ({
     installArgs.push("--prefer-offline");
   }
 
-  if (skipInstall) {
-    const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir });
-    if (!nodeModulesExists) {
-      throw createPipelineError({
-        code: "E_VALIDATE_PROJECT",
-        stage: "validate.project",
-        message: `skipInstall=true requires an existing node_modules directory at ${path.join(generatedProjectDir, "node_modules")}.`,
-        diagnostics: [
-          {
-            code: "E_VALIDATE_PROJECT",
-            message: "Validation cannot run because node_modules is missing while skipInstall=true.",
-            suggestion: "Either disable skipInstall or ensure dependencies are installed in generated-app/node_modules.",
-            stage: "validate.project",
-            severity: "error",
-            details: {
-              generatedProjectDir
-            }
-          }
-        ]
-      });
-    }
-    onLog("Skipping install because skipInstall=true.");
-  }
+  const nodeModulesPreparation = await prepareValidationNodeModules({
+    generatedProjectDir,
+    skipInstall,
+    onLog,
+    ...(seedNodeModulesDir ? { seedNodeModulesDir } : {})
+  });
 
   const installCommand: {
     name: string;
     args: string[];
     timeoutMs?: number;
-  } | undefined = !skipInstall
+  } | undefined = nodeModulesPreparation.installRequired
     ? { name: "install", args: installArgs, timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000) }
     : undefined;
 
@@ -368,171 +444,175 @@ export const runProjectValidationWithDeps = async ({
     throw new Error("Validation canceled by job cancellation request.");
   };
 
-  throwIfCanceled();
-
-  if (installCommand) {
-    onLog(`Running ${installCommand.name}`);
+  try {
     throwIfCanceled();
-    const installResult = await runCommand({
-      cwd: generatedProjectDir,
-      command: "pnpm",
-      args: installCommand.args,
-      ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {}),
-      ...(abortSignal ? { abortSignal } : {})
-    });
-    if (installResult.canceled) {
-      throw new Error(`${installCommand.name} canceled by job cancellation request.`);
-    }
-    if (!installResult.success) {
-      const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
-      throw createPipelineError({
-        code: "E_VALIDATE_PROJECT",
-        stage: "validate.project",
-        message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`,
-        diagnostics: [
-          {
-            code: "E_VALIDATE_PROJECT",
-            message: `${installCommand.name} failed${timeoutSuffix}.`,
-            suggestion: "Check dependency resolution/network access and rerun validation.",
-            stage: "validate.project",
-            severity: "error",
-            details: {
-              command: installCommand.name,
-              output: installResult.combined.slice(0, 2000)
-            }
-          }
-        ]
-      });
-    }
-  }
 
-  for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
-    onLog(`Validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS}`);
-    let shouldRetry = false;
-
-    for (const command of attemptCommands) {
-      onLog(`Running ${command.name}`);
+    if (installCommand) {
+      onLog(`Running ${installCommand.name}`);
       throwIfCanceled();
-
-      let beforeAutofix = new Map<string, string>();
-      let shouldDiffAutofixChanges = command.name === "lint-autofix";
-      if (command.name === "lint-autofix") {
-        try {
-          beforeAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
-        } catch (error) {
-          shouldDiffAutofixChanges = false;
-          const message = error instanceof Error ? error.message : String(error);
-          onLog(`Lint auto-fix file-diff pre-scan failed: ${message}`);
-        }
-      }
-
-      const result = await runCommand({
+      const installResult = await runCommand({
         cwd: generatedProjectDir,
         command: "pnpm",
-        args: command.args,
-        ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
-        ...(command.env ? { env: command.env } : {}),
+        args: installCommand.args,
+        ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {}),
         ...(abortSignal ? { abortSignal } : {})
       });
-      if (result.canceled) {
-        throw new Error(`${command.name} canceled by job cancellation request.`);
+      if (installResult.canceled) {
+        throw new Error(`${installCommand.name} canceled by job cancellation request.`);
       }
-
-      if (command.name === "lint-autofix") {
-        if (shouldDiffAutofixChanges) {
-          try {
-            const afterAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
-            const changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
-            if (changedFiles.length === 0) {
-              onLog("Lint auto-fix changed 0 lint-relevant file(s).");
-            } else {
-              onLog(
-                `Lint auto-fix changed ${changedFiles.length} lint-relevant file(s): ${formatChangedFilesForLog({ changedFiles })}`
-              );
+      if (!installResult.success) {
+        const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
+        throw createPipelineError({
+          code: "E_VALIDATE_PROJECT",
+          stage: "validate.project",
+          message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`,
+          diagnostics: [
+            {
+              code: "E_VALIDATE_PROJECT",
+              message: `${installCommand.name} failed${timeoutSuffix}.`,
+              suggestion: "Check dependency resolution/network access and rerun validation.",
+              stage: "validate.project",
+              severity: "error",
+              details: {
+                command: installCommand.name,
+                output: installResult.combined.slice(0, 2000)
+              }
             }
+          ]
+        });
+      }
+    }
+
+    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
+      onLog(`Validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS}`);
+      let shouldRetry = false;
+
+      for (const command of attemptCommands) {
+        onLog(`Running ${command.name}`);
+        throwIfCanceled();
+
+        let beforeAutofix = new Map<string, string>();
+        let shouldDiffAutofixChanges = command.name === "lint-autofix";
+        if (command.name === "lint-autofix") {
+          try {
+            beforeAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
           } catch (error) {
+            shouldDiffAutofixChanges = false;
             const message = error instanceof Error ? error.message : String(error);
-            onLog(`Lint auto-fix file-diff post-scan failed: ${message}`);
+            onLog(`Lint auto-fix file-diff pre-scan failed: ${message}`);
           }
         }
 
-        if (!result.success) {
-          const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
-          const output = result.combined.slice(0, 600);
-          onLog(`Lint auto-fix failed${timeoutSuffix}; continuing with final lint check. Output: ${output}`);
+        const result = await runCommand({
+          cwd: generatedProjectDir,
+          command: "pnpm",
+          args: command.args,
+          ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
+          ...(command.env ? { env: command.env } : {}),
+          ...(abortSignal ? { abortSignal } : {})
+        });
+        if (result.canceled) {
+          throw new Error(`${command.name} canceled by job cancellation request.`);
         }
-      }
 
-      if (result.success || command.ignoreFailure) {
-        continue;
-      }
+        if (command.name === "lint-autofix") {
+          if (shouldDiffAutofixChanges) {
+            try {
+              const afterAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
+              const changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
+              if (changedFiles.length === 0) {
+                onLog("Lint auto-fix changed 0 lint-relevant file(s).");
+              } else {
+                onLog(
+                  `Lint auto-fix changed ${changedFiles.length} lint-relevant file(s): ${formatChangedFilesForLog({ changedFiles })}`
+                );
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              onLog(`Lint auto-fix file-diff post-scan failed: ${message}`);
+            }
+          }
 
-      const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
-      const retryableStage = toRetryableDiagnosticStage(command.name);
-      const parsedDiagnostics =
-        retryableStage !== undefined
-          ? parseValidationDiagnostics({
-              stage: retryableStage,
-              output: result.combined,
-              generatedProjectDir
-            })
-          : [];
+          if (!result.success) {
+            const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
+            const output = result.combined.slice(0, 600);
+            onLog(`Lint auto-fix failed${timeoutSuffix}; continuing with final lint check. Output: ${output}`);
+          }
+        }
 
-      if (!isRetryableStage(command.name)) {
-        throw await toValidationPipelineError({
-          commandName: command.name,
-          timeoutSuffix,
-          output: result.combined,
+        if (result.success || command.ignoreFailure) {
+          continue;
+        }
+
+        const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
+        const retryableStage = toRetryableDiagnosticStage(command.name);
+        const parsedDiagnostics =
+          retryableStage !== undefined
+            ? parseValidationDiagnostics({
+                stage: retryableStage,
+                output: result.combined,
+                generatedProjectDir
+              })
+            : [];
+
+        if (!isRetryableStage(command.name)) {
+          throw await toValidationPipelineError({
+            commandName: command.name,
+            timeoutSuffix,
+            output: result.combined,
+            generatedProjectDir,
+            diagnostics: parsedDiagnostics,
+            summary: undefined
+          });
+        }
+
+        if (attempt >= MAX_VALIDATION_ATTEMPTS) {
+          throw await toValidationPipelineError({
+            commandName: command.name,
+            timeoutSuffix: `${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts`,
+            output: result.combined,
+            generatedProjectDir,
+            diagnostics: parsedDiagnostics,
+            summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`
+          });
+        }
+
+        const feedback = await runValidationFeedback({
           generatedProjectDir,
-          diagnostics: parsedDiagnostics,
-          summary: undefined
-        });
-      }
-
-      if (attempt >= MAX_VALIDATION_ATTEMPTS) {
-        throw await toValidationPipelineError({
-          commandName: command.name,
-          timeoutSuffix: `${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts`,
+          stage: command.name,
           output: result.combined,
-          generatedProjectDir,
-          diagnostics: parsedDiagnostics,
-          summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`
+          onLog
         });
+
+        onLog(
+          `Applied ${feedback.correctionsApplied} correction edit(s) across ${feedback.changedFiles.length} file(s) after ${command.name} failure.`
+        );
+
+        if (feedback.changedFiles.length === 0) {
+          throw await toValidationPipelineError({
+            commandName: command.name,
+            timeoutSuffix,
+            failureHint: "no auto-corrections were applied",
+            output: result.combined,
+            generatedProjectDir,
+            diagnostics: feedback.diagnostics,
+            summary: feedback.summary
+          });
+        }
+
+        onLog(
+          `Retrying validation after ${command.name} corrections (${attempt + 1}/${MAX_VALIDATION_ATTEMPTS}).`
+        );
+        shouldRetry = true;
+        break;
       }
 
-      const feedback = await runValidationFeedback({
-        generatedProjectDir,
-        stage: command.name,
-        output: result.combined,
-        onLog
-      });
-
-      onLog(
-        `Applied ${feedback.correctionsApplied} correction edit(s) across ${feedback.changedFiles.length} file(s) after ${command.name} failure.`
-      );
-
-      if (feedback.changedFiles.length === 0) {
-        throw await toValidationPipelineError({
-          commandName: command.name,
-          timeoutSuffix,
-          failureHint: "no auto-corrections were applied",
-          output: result.combined,
-          generatedProjectDir,
-          diagnostics: feedback.diagnostics,
-          summary: feedback.summary
-        });
+      if (!shouldRetry) {
+        return;
       }
-
-      onLog(
-        `Retrying validation after ${command.name} corrections (${attempt + 1}/${MAX_VALIDATION_ATTEMPTS}).`
-      );
-      shouldRetry = true;
-      break;
     }
-
-    if (!shouldRetry) {
-      return;
-    }
+  } finally {
+    await nodeModulesPreparation.cleanup?.();
   }
 };
 
@@ -546,7 +626,8 @@ export const runProjectValidation = async ({
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false,
-  abortSignal
+  abortSignal,
+  seedNodeModulesDir
 }: {
   generatedProjectDir: string;
   onLog: (message: string) => void;
@@ -558,6 +639,7 @@ export const runProjectValidation = async ({
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   abortSignal?: AbortSignal;
+  seedNodeModulesDir?: string;
 }): Promise<void> => {
   return await runProjectValidationWithDeps({
     generatedProjectDir,
@@ -569,6 +651,7 @@ export const runProjectValidation = async ({
     commandTimeoutMs,
     installPreferOffline,
     skipInstall,
+    ...(seedNodeModulesDir ? { seedNodeModulesDir } : {}),
     ...(abortSignal ? { abortSignal } : {})
   });
 };

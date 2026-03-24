@@ -1,0 +1,302 @@
+{
+  "name": "Advanced Validation Golden",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-validation-form",
+            "type": "FRAME",
+            "name": "Validation Form",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 420, "height": 840 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "validation-title",
+                "type": "TEXT",
+                "name": "Heading",
+                "characters": "Request approved budget",
+                "style": {
+                  "fontSize": 28,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 36,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 24, "y": 24, "width": 280, "height": 36 }
+              },
+              {
+                "id": "validation-subtitle",
+                "type": "TEXT",
+                "name": "Subtitle",
+                "characters": "Use a company email, provide the amount range, and include a six-character code.",
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 20,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 24, "y": 68, "width": 348, "height": 40 }
+              },
+              {
+                "id": "email-field",
+                "type": "FRAME",
+                "name": "MuiTextFieldRoot",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 4,
+                "absoluteBoundingBox": { "x": 24, "y": 132, "width": 372, "height": 56 },
+                "cornerRadius": 8,
+                "strokes": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.75, "g": 0.77, "b": 0.8, "a": 1 }
+                  }
+                ],
+                "strokeWeight": 1,
+                "children": [
+                  {
+                    "id": "email-field-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Company email",
+                    "style": {
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 16,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 136, "width": 104, "height": 16 }
+                  },
+                  {
+                    "id": "email-field-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "owner@example.com",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 24,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 156, "width": 332, "height": 24 }
+                  }
+                ]
+              },
+              {
+                "id": "amount-field",
+                "type": "FRAME",
+                "name": "MuiTextFieldRoot",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 4,
+                "absoluteBoundingBox": { "x": 24, "y": 204, "width": 372, "height": 56 },
+                "cornerRadius": 8,
+                "strokes": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.75, "g": 0.77, "b": 0.8, "a": 1 }
+                  }
+                ],
+                "strokeWeight": 1,
+                "children": [
+                  {
+                    "id": "amount-field-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Approved amount",
+                    "style": {
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 16,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 208, "width": 112, "height": 16 }
+                  },
+                  {
+                    "id": "amount-field-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "250",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 24,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 228, "width": 332, "height": 24 }
+                  }
+                ]
+              },
+              {
+                "id": "code-field",
+                "type": "FRAME",
+                "name": "MuiTextFieldRoot",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 4,
+                "absoluteBoundingBox": { "x": 24, "y": 276, "width": 372, "height": 56 },
+                "cornerRadius": 8,
+                "strokes": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.75, "g": 0.77, "b": 0.8, "a": 1 }
+                  }
+                ],
+                "strokeWeight": 1,
+                "children": [
+                  {
+                    "id": "code-field-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Approval code",
+                    "style": {
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 16,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 280, "width": 96, "height": 16 }
+                  },
+                  {
+                    "id": "code-field-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "AB12CD",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 400,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 24,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 36, "y": 300, "width": 332, "height": 24 }
+                  }
+                ]
+              },
+              {
+                "id": "submit-budget-button",
+                "type": "FRAME",
+                "name": "MuiButtonRoot",
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "CENTER",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 24, "y": 356, "width": 372, "height": 48 },
+                "cornerRadius": 8,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.93, "g": 0, "b": 0.12, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "submit-budget-button-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Submit request",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 22,
+                      "textAlignHorizontal": "CENTER"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 144, "y": 369, "width": 132, "height": 22 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

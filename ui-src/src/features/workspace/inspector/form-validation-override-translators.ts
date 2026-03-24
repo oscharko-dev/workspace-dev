@@ -299,7 +299,7 @@ export function deriveFormValidationOverrideFieldSupport(
         return {
           field,
           supported: false,
-          reason: `validationType "${String(value)}" is not a supported validation type.`
+          reason: `validationType "${value}" is not a supported validation type.`
         };
       }
     }

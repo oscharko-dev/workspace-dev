@@ -1,0 +1,416 @@
+{
+  "sourceName": "CSS Grid Golden",
+  "screens": [
+    {
+      "id": "screen-operations-grid",
+      "name": "Operations Grid",
+      "layoutMode": "VERTICAL",
+      "gap": 20,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "grid-title",
+          "name": "Heading",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Warehouse Operations",
+          "x": 24,
+          "y": 24,
+          "width": 340,
+          "height": 38,
+          "fillColor": "#1c1f24",
+          "fontSize": 30,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 38,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "grid-subtitle",
+          "name": "Subtitle",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Monitor intake, throughput, and dock utilization across shifts.",
+          "x": 24,
+          "y": 74,
+          "width": 440,
+          "height": 24,
+          "fillColor": "#545c66",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "analytics-matrix",
+          "name": "Analytics Matrix",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "grid",
+          "x": 24,
+          "y": 122,
+          "width": 932,
+          "height": 540,
+          "children": [
+            {
+              "id": "grid-area-nav",
+              "name": "grid-area-nav",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "grid",
+              "x": 24,
+              "y": 122,
+              "width": 220,
+              "height": 324,
+              "fillColor": "#ffffff",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "grid-area-nav-text",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Shift filters",
+                  "x": 48,
+                  "y": 146,
+                  "width": 140,
+                  "height": 28,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 20,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "grid-area-hero",
+              "name": "grid-area-hero",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "grid",
+              "x": 260,
+              "y": 122,
+              "width": 696,
+              "height": 192,
+              "fillColor": "#ffffff",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "grid-area-hero-text",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Dock turnaround dropped 18% this week",
+                  "x": 284,
+                  "y": 146,
+                  "width": 420,
+                  "height": 32,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 24,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 32,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "grid-area-stats",
+              "name": "grid-area-stats",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "grid",
+              "x": 260,
+              "y": 330,
+              "width": 696,
+              "height": 116,
+              "fillColor": "#ffffff",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "grid-area-stats-text",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "96 inbound loads processed before noon",
+                  "x": 284,
+                  "y": 362,
+                  "width": 420,
+                  "height": 30,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 22,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 30,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "grid-area-footer",
+              "name": "grid-area-footer",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "grid",
+              "x": 24,
+              "y": 462,
+              "width": 932,
+              "height": 136,
+              "fillColor": "#ffffff",
+              "cornerRadius": 16,
+              "children": [
+                {
+                  "id": "grid-area-footer-text",
+                  "name": "Label",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Supervisors are reviewing six delayed outbound loads.",
+                  "x": 48,
+                  "y": 516,
+                  "width": 420,
+                  "height": 28,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 20,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 980,
+      "height": 780,
+      "fillColor": "#f7fafc"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#545c66",
+      "background": "#fcfdfe",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 16,
+    "spacingBase": 20,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 30,
+    "bodySize": 16,
+    "typography": {
+      "h1": {
+        "fontSizePx": 30,
+        "fontWeight": 700,
+        "lineHeightPx": 38,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 22,
+        "fontWeight": 600,
+        "lineHeightPx": 30,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 20,
+        "fontWeight": 500,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 16,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 30,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 16,
+        "fontWeight": 500,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 16,
+        "fontWeight": 700,
+        "lineHeightPx": 38,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-operations-grid",
+        "screenName": "Operations Grid",
+        "elements": 11
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

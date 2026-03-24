@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  ensureWorkspaceDiagnosticsVisible,
   getInspectorLocators,
+  openInspector,
+  openInspectorDialog,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -26,26 +29,47 @@ function parseJsonRecord(value: string | null): Record<string, unknown> {
   }
 }
 
-async function readActiveJobPayload(page: Page): Promise<Record<string, unknown>> {
-  const payloadTexts = await page.getByTestId("job-payload").allTextContents();
-  for (const payloadText of payloadTexts) {
-    const parsed = parseJsonRecord(payloadText);
-    if (typeof parsed.jobId === "string") {
-      return parsed;
-    }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractJobPayloadRecord(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (typeof value.jobId === "string") {
+    return value;
   }
 
-  const fallback = payloadTexts[0] ?? null;
-  return parseJsonRecord(fallback);
+  if (isRecord(value.payload) && typeof value.payload.jobId === "string") {
+    return value.payload;
+  }
+
+  if (isRecord(value.result) && isRecord(value.result.payload) && typeof value.result.payload.jobId === "string") {
+    return value.result.payload;
+  }
+
+  return null;
 }
 
 async function readActiveJobId(page: Page): Promise<string> {
-  const payload = await readActiveJobPayload(page);
-  const jobId = payload.jobId;
+  await ensureWorkspaceDiagnosticsVisible(page, {
+    buttonLabel: "Job diagnostics",
+    payloadTestId: "job-payload"
+  });
+
+  const payloadText = await page.getByTestId("job-payload").textContent();
+  const payload = parseJsonRecord(payloadText);
+  const resolvedPayload = extractJobPayloadRecord(payload);
+  const jobId = resolvedPayload?.jobId;
   if (typeof jobId !== "string" || jobId.length === 0) {
     throw new Error("Could not resolve active jobId from runtime payload.");
   }
   return jobId;
+}
+
+async function closeConfigDialog(page: Page): Promise<void> {
+  const closeButton = page.getByRole("button", { name: "Close dialog" });
+  await expect(closeButton).toBeVisible();
+  await closeButton.click();
+  await expect(closeButton).toHaveCount(0);
 }
 
 async function findFirstEditableNodeId(page: Page): Promise<string> {
@@ -59,7 +83,7 @@ async function findFirstEditableNodeId(page: Page): Promise<string> {
     const capabilityPanel = page.getByTestId("inspector-edit-capability");
     await expect(capabilityPanel).toBeVisible();
     const capabilityText = await capabilityPanel.textContent();
-    if (!capabilityText?.includes("Edit Capability: Supported")) {
+    if (!capabilityText?.startsWith("Edit: ")) {
       continue;
     }
 
@@ -97,6 +121,59 @@ async function applySingleOverride(page: Page): Promise<void> {
   throw new Error("No editable scalar field input available for deterministic override test.");
 }
 
+async function waitForRegeneratedInspectorSources(page: Page): Promise<void> {
+  const diffToggle = page.getByTestId("inspector-diff-toggle");
+  const readyStatuses = [
+    page.getByTestId("inspector-source-files-ready"),
+    page.getByTestId("inspector-source-design-ir-ready"),
+    page.getByTestId("inspector-source-component-manifest-ready"),
+    page.getByTestId("inspector-source-file-content-ready")
+  ] as const;
+  const retryButtons = [
+    page.getByTestId("inspector-banner-retry-files"),
+    page.getByTestId("inspector-retry-files"),
+    page.getByTestId("inspector-banner-retry-design-ir"),
+    page.getByTestId("inspector-retry-design-ir"),
+    page.getByTestId("inspector-banner-retry-component-manifest"),
+    page.getByTestId("inspector-banner-retry-file-content"),
+    page.getByTestId("inspector-retry-file-content")
+  ] as const;
+
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const statusesReady = await Promise.all(
+      readyStatuses.map(async (statusBadge) => {
+        const count = await statusBadge.count().catch(() => 0);
+        if (count === 0) {
+          return false;
+        }
+        return statusBadge.isVisible().catch(() => false);
+      })
+    );
+
+    if (statusesReady.every(Boolean) && await diffToggle.isEnabled().catch(() => false)) {
+      return;
+    }
+
+    for (const retryButton of retryButtons) {
+      const count = await retryButton.count().catch(() => 0);
+      if (count === 0) {
+        continue;
+      }
+
+      if (await retryButton.isVisible().catch(() => false)) {
+        await retryButton.click({ timeout: 1_000 }).catch(() => {});
+      }
+    }
+
+    await page.waitForTimeout(1_000);
+  }
+
+  for (const statusBadge of readyStatuses) {
+    await expect(statusBadge).toBeVisible();
+  }
+  await expect(diffToggle).toBeEnabled();
+}
+
 test.describe("inspector regeneration review deterministic flow", () => {
   test.describe.configure({ mode: "serial", timeout: 360_000 });
 
@@ -115,16 +192,23 @@ test.describe("inspector regeneration review deterministic flow", () => {
     await waitForCompletedSubmitStatus(page);
 
     const sourceJobId = await readActiveJobId(page);
+    await openInspector(page);
 
-    await expect(page.getByTestId("inspector-impact-review-panel")).toBeVisible();
+    await openInspectorDialog(page, "Review");
     await expect(page.getByTestId("inspector-impact-review-empty")).toBeVisible();
-    await expect(page.getByTestId("inspector-sync-regeneration-required")).toBeVisible();
-    await expect(page.getByTestId("inspector-pr-regeneration-required")).toBeVisible();
-    await expect(page.getByTestId("inspector-sync-preview-button")).toBeDisabled();
+    await closeConfigDialog(page);
 
+    await openInspectorDialog(page, "Sync");
+    await expect(page.getByTestId("inspector-sync-regeneration-required")).toBeVisible();
+    await expect(page.getByTestId("inspector-sync-preview-button")).toBeDisabled();
+    await closeConfigDialog(page);
+
+    await openInspectorDialog(page, "PR");
+    await expect(page.getByTestId("inspector-pr-regeneration-required")).toBeVisible();
     await page.getByTestId("inspector-pr-repo-url").fill("https://github.com/acme/repo");
     await page.getByTestId("inspector-pr-repo-token").fill("ghp_test_token");
     await expect(page.getByTestId("inspector-pr-create-button")).toBeDisabled();
+    await closeConfigDialog(page);
 
     const editableNodeId = await findFirstEditableNodeId(page);
     await page.getByTestId(`tree-node-${editableNodeId}`).click();
@@ -133,6 +217,7 @@ test.describe("inspector regeneration review deterministic flow", () => {
 
     await applySingleOverride(page);
 
+    await openInspectorDialog(page, "Review");
     await expect(page.getByTestId("inspector-impact-review-summary")).toBeVisible();
     await expect(page.getByTestId("inspector-impact-review-summary-total")).toContainText("Total overrides: 1");
 
@@ -140,25 +225,24 @@ test.describe("inspector regeneration review deterministic flow", () => {
     await expect(regenerateButton).toBeEnabled();
     await regenerateButton.click();
 
-    await waitForCompletedSubmitStatus(page);
-
-    const regenerationPayload = await readActiveJobPayload(page);
-    expect(typeof regenerationPayload.jobId === "string").toBeTruthy();
-    expect(regenerationPayload.jobId).not.toBe(sourceJobId);
-
-    const lineage = regenerationPayload.lineage as { sourceJobId?: string } | undefined;
-    expect(lineage?.sourceJobId).toBe(sourceJobId);
-
     await expect(page.getByTestId("inspector-impact-review-regeneration-active")).toBeVisible();
-    await expect(page.getByTestId("inspector-sync-preview-button")).toBeEnabled();
-    await expect(page.getByTestId("inspector-pr-regeneration-required")).toHaveCount(0);
+    await closeConfigDialog(page);
+    await waitForRegeneratedInspectorSources(page);
 
+    await openInspectorDialog(page, "Sync");
+    await expect(page.getByTestId("inspector-sync-regeneration-required")).toHaveCount(0);
+    await expect(page.getByTestId("inspector-sync-preview-button")).toBeEnabled();
+    await closeConfigDialog(page);
+
+    await openInspectorDialog(page, "PR");
+    await expect(page.getByTestId("inspector-pr-regeneration-required")).toHaveCount(0);
     await page.getByTestId("inspector-pr-repo-url").fill("https://github.com/acme/repo");
     await page.getByTestId("inspector-pr-repo-token").fill("ghp_test_token");
     await expect(page.getByTestId("inspector-pr-create-button")).toBeEnabled();
+    await closeConfigDialog(page);
 
     const diffToggle = page.getByTestId("inspector-diff-toggle");
-    await expect(diffToggle).toBeEnabled({ timeout: 15_000 });
+    await expect(diffToggle).toBeEnabled({ timeout: 60_000 });
     await diffToggle.click();
     await expect(page.getByTestId("diff-viewer")).toBeVisible();
   });

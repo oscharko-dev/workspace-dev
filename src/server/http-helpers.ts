@@ -63,7 +63,9 @@ export async function readJsonBody(
   let body = "";
 
   for await (const chunk of request) {
-    body += chunk;
+    const normalizedChunk =
+      typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    body += normalizedChunk;
     if (body.length > MAX_REQUEST_BODY_BYTES) {
       return { ok: false, error: "Request body exceeds 1 MiB size limit." };
     }

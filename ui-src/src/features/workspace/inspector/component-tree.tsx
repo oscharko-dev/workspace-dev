@@ -111,6 +111,22 @@ function flattenVisibleRows(nodes: TreeNode[], expandedIds: Set<string>): Visibl
   return rows;
 }
 
+function findParentRow(rows: VisibleTreeRow[], childIndex: number): VisibleTreeRow | null {
+  const child = rows[childIndex];
+  if (!child || child.depth === 0) {
+    return null;
+  }
+
+  for (let index = childIndex - 1; index >= 0; index -= 1) {
+    const candidate = rows[index];
+    if (candidate && candidate.depth === child.depth - 1) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Tree row
 // ---------------------------------------------------------------------------
@@ -194,7 +210,7 @@ function TreeRow({
           <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm1 0v10h10V3H3z" />
         </svg>
       ) : (
-        <TypeBadge type={row.node.type ?? "container"} />
+        <TypeBadge type={row.node.type} />
       )}
 
       <span className="min-w-0 truncate">{row.node.name}</span>
@@ -345,6 +361,11 @@ export function ComponentTree({
         event.preventDefault();
         if (current.hasChildren && current.isExpanded) {
           toggleExpand(current.node.id);
+        } else {
+          const parent = findParentRow(flatRows, currentIndex);
+          if (parent) {
+            setFocusedId(parent.node.id);
+          }
         }
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();

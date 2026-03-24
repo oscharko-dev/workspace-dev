@@ -19,11 +19,11 @@ It provides deterministic HTTP behavior for:
 `workspace-dev` runs as a single Node.js process with:
 
 - local in-process job engine (no Redis, no Postgres, no external worker)
-- Figma REST fetch (`figma.source`) with retry + timeout
+- Figma source ingest via REST fetch with retry + timeout or local JSON fixture load (`figma.source`)
 - deterministic IR derivation (`ir.derive`)
 - template bootstrap from bundled React+TypeScript+MUI v7 template (`template.prepare`)
 - deterministic local code generation (`codegen.generate`)
-- project validation (`validate.project`: install, lint, typecheck, build, `validate:ui`, optional `perf:assert`)
+- project validation (`validate.project`: install when needed, best-effort `lint --fix`, lint, typecheck, build, optional generated-project `test`, optional `validate:ui`, optional `perf:assert`)
 - local repro export (`repro.export`)
 - optional git/pr stage (`git.pr`) when enabled explicitly
 - integrated preview file serving from generated artifacts
@@ -32,7 +32,7 @@ It provides deterministic HTTP behavior for:
 
 The runtime enforces:
 
-- `figmaSourceMode=rest`
+- `figmaSourceMode=rest|local_json`
 - `llmCodegenMode=deterministic`
 
 Blocked modes (`mcp`, `hybrid`, `llm_strict`) fail with `MODE_LOCK_VIOLATION`.

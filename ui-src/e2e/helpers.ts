@@ -16,6 +16,8 @@ export interface InspectorLocators {
   fileSelector: Locator;
 }
 
+export type InspectorDialogLabel = "Review" | "Sync" | "PR" | "Coverage";
+
 const UI_URL = process.env.WORKSPACE_DEV_UI_URL ?? "http://127.0.0.1:19831/workspace/ui";
 const FIXTURE_PATH = path.resolve(
   fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
@@ -177,6 +179,62 @@ export async function waitForCompletedSubmitStatus(
   expect(terminalStatus, `Expected deterministic flow to complete, but terminal status was ${terminalStatus}`).toBe(
     "COMPLETED"
   );
+}
+
+/**
+ * Opens the Inspector from the workspace shell once a generation has completed.
+ */
+export async function openInspector(page: Page): Promise<void> {
+  if (page.url().includes("/workspace/ui/inspector")) {
+    await expect(page.getByTestId("inspector-panel")).toBeVisible();
+    return;
+  }
+
+  const openInspectorButton = page.getByRole("button", { name: "Open Inspector" });
+  await expect(openInspectorButton).toBeVisible();
+  await openInspectorButton.click();
+  await expect(page).toHaveURL(/\/workspace\/ui\/inspector/);
+  await expect(page.getByTestId("inspector-panel")).toBeVisible();
+}
+
+/**
+ * Expands a collapsible workspace diagnostics section when its payload is hidden.
+ */
+export async function ensureWorkspaceDiagnosticsVisible(
+  page: Page,
+  options: {
+    buttonLabel: "Runtime diagnostics" | "Job diagnostics";
+    payloadTestId: "runtime-payload" | "job-payload";
+  }
+): Promise<Locator> {
+  const payload = page.getByTestId(options.payloadTestId);
+  if (await payload.count()) {
+    await expect(payload).toBeVisible();
+    return payload;
+  }
+
+  const toggle = page.getByRole("button", { name: options.buttonLabel, exact: true });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(payload).toBeVisible();
+  return payload;
+}
+
+/**
+ * Opens a config dialog from the Inspector header and waits for its panel content.
+ */
+export async function openInspectorDialog(page: Page, label: InspectorDialogLabel): Promise<void> {
+  const dialogTestIdByLabel: Record<InspectorDialogLabel, string> = {
+    Review: "inspector-impact-review-panel",
+    Sync: "inspector-sync-panel",
+    PR: "inspector-pr-panel",
+    Coverage: "inspector-inspectability-summary"
+  };
+
+  const button = page.getByRole("button", { name: label, exact: true });
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect(page.getByTestId(dialogTestIdByLabel[label])).toBeVisible();
 }
 
 /**

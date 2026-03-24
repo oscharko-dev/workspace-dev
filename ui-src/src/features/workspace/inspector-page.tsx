@@ -46,6 +46,7 @@ export function InspectorPage(): JSX.Element {
   const isRegeneration = searchParams.get("isRegeneration") === "true";
 
   const [activeJobId, setActiveJobId] = useState(jobId);
+  const [activeIsRegenerationJob, setActiveIsRegenerationJob] = useState(isRegeneration);
   const [openDialog, setOpenDialog] = useState<ConfigDialogKey | null>(null);
 
   const hasRequiredParams = Boolean(activeJobId && previewUrl);
@@ -148,9 +149,10 @@ export function InspectorPage(): JSX.Element {
           jobId={activeJobId}
           previewUrl={activePreviewUrl}
           previousJobId={previousJobId}
-          isRegenerationJob={isRegeneration}
+          isRegenerationJob={activeIsRegenerationJob}
           onRegenerationAccepted={(nextJobId) => {
             setActiveJobId(nextJobId);
+            setActiveIsRegenerationJob(true);
           }}
           openDialog={openDialog}
           onCloseDialog={() => { setOpenDialog(null); }}

@@ -165,7 +165,7 @@ export async function getUiAssets(moduleDir: string): Promise<Map<UiAssetPath, U
     return await existing;
   }
 
-  const loadPromise = loadUiAssets(cacheKey).catch((error) => {
+  const loadPromise = loadUiAssets(cacheKey).catch((error: unknown) => {
     uiAssetsCache.delete(cacheKey);
     throw error;
   });

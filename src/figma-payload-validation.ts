@@ -11,7 +11,9 @@ export interface FigmaPayloadValidationError {
   issues: FigmaPayloadValidationIssue[];
 }
 
-export interface ValidatedFigmaNode {
+type FigmaPayloadOpenRecord = Record<string, unknown>;
+
+export type ValidatedFigmaNode = FigmaPayloadOpenRecord & {
   id: string;
   type: string;
   children?: ValidatedFigmaNode[];
@@ -21,14 +23,12 @@ export interface ValidatedFigmaNode {
     width: number;
     height: number;
   };
-  [key: string]: unknown;
-}
+};
 
-export interface ValidatedFigmaPayload {
+export type ValidatedFigmaPayload = FigmaPayloadOpenRecord & {
   name?: string;
   document: ValidatedFigmaNode;
-  [key: string]: unknown;
-}
+};
 
 type ValidationResult<T> = { success: true; data: T } | { success: false; error: FigmaPayloadValidationError };
 

@@ -237,4 +237,226 @@ describe("CodePane scoped code modes", () => {
       expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
     });
   });
+
+  it("renders file list loading, empty, and retryable error states", () => {
+    const onRetryFiles = vi.fn();
+    const { rerender } = render(
+      createElement(CodePane, {
+        files: [],
+        filesState: "loading",
+        filesError: null,
+        onRetryFiles,
+        selectedFile: null,
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "empty",
+        fileContentError: null,
+        onRetryFileContent: noopFn
+      })
+    );
+
+    expect(screen.getByTestId("inspector-state-files-loading")).toBeInTheDocument();
+
+    rerender(
+      createElement(CodePane, {
+        files: [],
+        filesState: "empty",
+        filesError: null,
+        onRetryFiles,
+        selectedFile: null,
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "empty",
+        fileContentError: null,
+        onRetryFileContent: noopFn
+      })
+    );
+    expect(screen.getByTestId("inspector-state-files-empty")).toBeInTheDocument();
+
+    rerender(
+      createElement(CodePane, {
+        files: [],
+        filesState: "error",
+        filesError: { status: 503, code: "FILES_UNAVAILABLE", message: "Files unavailable." },
+        onRetryFiles,
+        selectedFile: null,
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "empty",
+        fileContentError: null,
+        onRetryFileContent: noopFn
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-retry-files"));
+    expect(onRetryFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows json entries only after the JSON toggle is enabled", () => {
+    renderCodePane({
+      files: [
+        ...sampleFiles,
+        { path: "src/design-ir.json", sizeBytes: 100 }
+      ]
+    });
+
+    expect(screen.queryByRole("option", { name: "src/design-ir.json" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inspector-json-toggle"));
+    expect(screen.getByRole("option", { name: "src/design-ir.json" })).toBeInTheDocument();
+  });
+
+  it("renders diff mode with node-scoped fallback details when previous content is available", async () => {
+    renderCodePane({
+      previousJobId: "prev-job-id",
+      previousFileContent: "line 1\nline 2\nline 3",
+      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 2, endLine: 2 },
+      previousManifestRange: { startLine: 2, endLine: 2 },
+      isNodeMapped: true,
+      nodeDiffFallbackReason: "Previous file does not contain this node."
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-diff-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("diff-viewer")).toBeInTheDocument();
+      expect(screen.getByTestId("inspector-node-diff-fallback")).toHaveTextContent(
+        "Previous file does not contain this node."
+      );
+    });
+  });
+
+  it("renders split view, resizes the divider, and dispatches right-pane selection", async () => {
+    const onSelectSplitFile = vi.fn();
+    renderCodePane({
+      splitFile: "src/screens/About.tsx",
+      splitFileContent: "export function About() { return null; }",
+      onSelectSplitFile
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-split-toggle"));
+
+    const splitView = await screen.findByTestId("inspector-split-view");
+    Object.defineProperty(splitView, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 1_000, height: 600, top: 0, left: 0, right: 1_000, bottom: 600, x: 0, y: 0 })
+    });
+
+    const divider = screen.getByTestId("inspector-split-divider");
+    fireEvent.pointerDown(divider, { clientX: 500 });
+    fireEvent.pointerMove(window, { clientX: 650 });
+    fireEvent.pointerUp(window);
+
+    expect(screen.getByTestId("inspector-split-left").getAttribute("style")).toContain("65%");
+
+    fireEvent.change(screen.getByTestId("inspector-split-file-selector"), {
+      target: { value: "src/screens/Home.tsx" }
+    });
+    expect(onSelectSplitFile).toHaveBeenCalledWith("src/screens/Home.tsx");
+  });
+
+  it("renders split loading placeholder deterministically", async () => {
+    render(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: sampleCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn,
+        splitFile: "src/screens/About.tsx",
+        splitFileContent: null,
+        splitFileContentLoading: true
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-split-toggle"));
+    expect(await screen.findByTestId("inspector-split-loading")).toBeInTheDocument();
+  });
+
+  it("renders split empty placeholder when the right pane has no file selected", async () => {
+    render(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: sampleCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn,
+        splitFile: null,
+        splitFileContent: null,
+        splitFileContentLoading: false
+      })
+    );
+    fireEvent.click(screen.getByTestId("inspector-split-toggle"));
+    expect(await screen.findByTestId("inspector-split-empty")).toBeInTheDocument();
+  });
+
+  it("renders file-content loading, retryable error, unmapped fallback, and parent return action", () => {
+    const onRetryFileContent = vi.fn();
+    const onReturnToParentFile = vi.fn();
+    const { rerender } = render(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "loading",
+        fileContentError: null,
+        onRetryFileContent
+      })
+    );
+
+    expect(screen.getByTestId("inspector-state-file-content-loading")).toBeInTheDocument();
+
+    rerender(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "error",
+        fileContentError: { status: 404, code: "FILE_NOT_FOUND", message: "Missing file." },
+        onRetryFileContent
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-retry-file-content"));
+    expect(onRetryFileContent).toHaveBeenCalledTimes(1);
+
+    rerender(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: null,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent,
+        isNodeMapped: false,
+        parentFile: "src/screens/AppShell.tsx",
+        onReturnToParentFile
+      })
+    );
+
+    expect(screen.getByTestId("inspector-unmapped-fallback")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inspector-unmapped-return-parent"));
+    expect(onReturnToParentFile).toHaveBeenCalledTimes(1);
+  });
 });

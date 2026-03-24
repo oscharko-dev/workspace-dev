@@ -1,4 +1,4 @@
-import { onCLS, onINP, onLCP, type Metric } from "web-vitals";
+import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "web-vitals";
 
 interface WebVitalsPayload {
   metric: string;
@@ -33,12 +33,22 @@ const shouldSample = (sampleRate: number): boolean => {
   return Math.random() <= sampleRate;
 };
 
+let reportingStarted = false;
+let samplingDecision: boolean | undefined;
+
 const resolveRoute = (): string => {
   const hashRoute = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
   if (hashRoute && hashRoute.startsWith("/")) {
     return hashRoute;
   }
   return window.location.pathname || "/";
+};
+
+const shouldSamplePageLoad = (sampleRate: number): boolean => {
+  if (samplingDecision === undefined) {
+    samplingDecision = shouldSample(sampleRate);
+  }
+  return samplingDecision;
 };
 
 const sendToEndpoint = async ({
@@ -49,8 +59,8 @@ const sendToEndpoint = async ({
   payload: WebVitalsPayload;
 }): Promise<void> => {
   const body = JSON.stringify(payload);
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon(endpoint, body);
+  const sent = navigator.sendBeacon(endpoint, new Blob([body], { type: "application/json" }));
+  if (sent) {
     return;
   }
   await fetch(endpoint, {
@@ -69,7 +79,7 @@ const createPayload = (metric: Metric): WebVitalsPayload => {
   return {
     metric: metric.name,
     value: metric.value,
-    rating: metric.rating ?? "unknown",
+    rating: metric.rating,
     id: metric.id,
     delta: metric.delta,
     navigationType: metric.navigationType,
@@ -79,13 +89,23 @@ const createPayload = (metric: Metric): WebVitalsPayload => {
   };
 };
 
+export const resetWebVitalsReportingForTests = (): void => {
+  reportingStarted = false;
+  samplingDecision = undefined;
+};
+
 export const startWebVitalsReporting = (): void => {
-  const sampleRate = toSampleRate(import.meta.env.VITE_PERF_SAMPLE_RATE);
-  if (!shouldSample(sampleRate)) {
+  if (reportingStarted) {
     return;
   }
 
-  const endpoint = import.meta.env.VITE_PERF_ENDPOINT?.trim();
+  const sampleRate = toSampleRate(import.meta.env.VITE_PERF_SAMPLE_RATE);
+  if (!shouldSamplePageLoad(sampleRate)) {
+    return;
+  }
+  reportingStarted = true;
+
+  const endpoint = import.meta.env.VITE_PERF_ENDPOINT?.trim() ?? "";
   const report = (metric: Metric): void => {
     const payload = createPayload(metric);
     if (endpoint) {
@@ -96,6 +116,8 @@ export const startWebVitalsReporting = (): void => {
   };
 
   onCLS(report);
+  onFCP(report);
   onINP(report);
   onLCP(report);
+  onTTFB(report);
 };

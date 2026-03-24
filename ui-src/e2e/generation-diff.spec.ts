@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   cleanupDeterministicSubmitRoute,
+  ensureWorkspaceDiagnosticsVisible,
   openWorkspaceUi,
   resetBrowserStorage,
   setupDeterministicSubmitRoute,
@@ -9,6 +10,31 @@ import {
 } from "./helpers";
 
 const diffTestViewport = { width: 1920, height: 1080 } as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: string | null): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  return isRecord(parsed) ? parsed : {};
+}
+
+function extractGenerationDiffRecord(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (isRecord(value.generationDiff)) {
+    return value.generationDiff;
+  }
+
+  if (!isRecord(value.result) || !isRecord(value.result.payload) || !isRecord(value.result.payload.generationDiff)) {
+    return null;
+  }
+
+  return value.result.payload.generationDiff;
+}
 
 test.describe("generation diff report", () => {
   test.describe.configure({ mode: "serial", timeout: 180_000 });
@@ -42,6 +68,10 @@ test.describe("generation diff report", () => {
   test("includes generationDiff in job status API response", async ({ page }) => {
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await ensureWorkspaceDiagnosticsVisible(page, {
+      buttonLabel: "Job diagnostics",
+      payloadTestId: "job-payload"
+    });
 
     const jobPayloadPre = page.getByTestId("job-payload");
     await expect(jobPayloadPre).toBeVisible();
@@ -49,20 +79,21 @@ test.describe("generation diff report", () => {
     const jobPayloadText = await jobPayloadPre.textContent();
     expect(jobPayloadText).toBeTruthy();
 
-    const parsed = JSON.parse(jobPayloadText!) as Record<string, unknown>;
-    expect(parsed).toHaveProperty("generationDiff");
-
-    const diff = parsed.generationDiff as {
+    const parsed = parseJsonRecord(jobPayloadText);
+    const diff = extractGenerationDiffRecord(parsed) as {
       summary: string;
       added: string[];
       unchanged: string[];
       boardKey: string;
-    };
-    expect(diff.summary).toBeTruthy();
-    expect(diff.boardKey).toBeTruthy();
-    expect(Array.isArray(diff.added)).toBe(true);
+    } | null;
+    expect(diff).toBeTruthy();
+
+    const resolvedDiff = diff!;
+    expect(resolvedDiff.summary).toBeTruthy();
+    expect(resolvedDiff.boardKey).toBeTruthy();
+    expect(Array.isArray(resolvedDiff.added)).toBe(true);
     // First run shows added files, subsequent runs may show all unchanged
-    const totalFiles = diff.added.length + (diff.unchanged?.length ?? 0);
+    const totalFiles = resolvedDiff.added.length + (resolvedDiff.unchanged?.length ?? 0);
     expect(totalFiles).toBeGreaterThan(0);
   });
 
@@ -82,6 +113,10 @@ test.describe("generation diff report", () => {
   test("generation diff report contains board key and file entries", async ({ page }) => {
     await triggerDeterministicGeneration(page);
     await waitForCompletedSubmitStatus(page);
+    await ensureWorkspaceDiagnosticsVisible(page, {
+      buttonLabel: "Job diagnostics",
+      payloadTestId: "job-payload"
+    });
 
     // Verify the job payload contains full generationDiff structure
     const jobPayloadPre = page.getByTestId("job-payload");
@@ -90,28 +125,27 @@ test.describe("generation diff report", () => {
     const jobText = await jobPayloadPre.textContent();
     expect(jobText).toBeTruthy();
 
-    const parsed = JSON.parse(jobText!) as {
-      generationDiff?: {
-        boardKey: string;
-        currentJobId: string;
-        previousJobId: string | null;
-        generatedAt: string;
-        added: string[];
-        modified: { file: string }[];
-        removed: string[];
-        unchanged: string[];
-        summary: string;
-      };
-    };
+    const parsed = parseJsonRecord(jobText);
+    const diff = extractGenerationDiffRecord(parsed) as {
+      boardKey: string;
+      currentJobId: string;
+      previousJobId: string | null;
+      generatedAt: string;
+      added: string[];
+      modified: { file: string }[];
+      removed: string[];
+      unchanged: string[];
+      summary: string;
+    } | null;
 
-    expect(parsed.generationDiff).toBeTruthy();
-    const diff = parsed.generationDiff!;
-    expect(diff.boardKey).toBeTruthy();
-    expect(diff.currentJobId).toBeTruthy();
-    expect(diff.generatedAt).toBeTruthy();
-    expect(Array.isArray(diff.added)).toBe(true);
-    expect(Array.isArray(diff.modified)).toBe(true);
-    expect(Array.isArray(diff.removed)).toBe(true);
-    expect(Array.isArray(diff.unchanged)).toBe(true);
+    expect(diff).toBeTruthy();
+    const resolvedDiff = diff!;
+    expect(resolvedDiff.boardKey).toBeTruthy();
+    expect(resolvedDiff.currentJobId).toBeTruthy();
+    expect(resolvedDiff.generatedAt).toBeTruthy();
+    expect(Array.isArray(resolvedDiff.added)).toBe(true);
+    expect(Array.isArray(resolvedDiff.modified)).toBe(true);
+    expect(Array.isArray(resolvedDiff.removed)).toBe(true);
+    expect(Array.isArray(resolvedDiff.unchanged)).toBe(true);
   });
 });

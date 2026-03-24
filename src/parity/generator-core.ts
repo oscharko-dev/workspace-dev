@@ -244,6 +244,10 @@ interface GenerateArtifactsInput {
   onLog: (message: string) => void;
 }
 
+type GenerateArtifactsInputWithRuntimeAdapters = GenerateArtifactsInput & {
+  [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]?: Partial<GenerateArtifactsRuntimeAdapters>;
+};
+
 interface RejectedScreenEnhancement {
   screenName: string;
   reason: string;
@@ -415,20 +419,20 @@ const resolveGenerateArtifactsRuntimeAdapters = (input: GenerateArtifactsInput):
   if (input.context) {
     return input.context.runtimeAdapters;
   }
-  const candidate = (input as unknown as Record<PropertyKey, unknown>)[GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL];
-  if (!candidate || typeof candidate !== "object") {
+  const runtimeAdapterCarrier = input as GenerateArtifactsInputWithRuntimeAdapters;
+  const candidate = runtimeAdapterCarrier[GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL];
+  if (!candidate) {
     return DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS;
   }
-  const partial = candidate as Partial<GenerateArtifactsRuntimeAdapters>;
   return {
-    mkdirRecursive: partial.mkdirRecursive ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.mkdirRecursive,
-    writeTextFile: partial.writeTextFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeTextFile,
-    writeGeneratedFile: partial.writeGeneratedFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeGeneratedFile,
+    mkdirRecursive: candidate.mkdirRecursive ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.mkdirRecursive,
+    writeTextFile: candidate.writeTextFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeTextFile,
+    writeGeneratedFile: candidate.writeGeneratedFile ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.writeGeneratedFile,
     loadDesignSystemConfig:
-      partial.loadDesignSystemConfig ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadDesignSystemConfig,
+      candidate.loadDesignSystemConfig ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadDesignSystemConfig,
     applyDesignSystemMappings:
-      partial.applyDesignSystemMappings ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.applyDesignSystemMappings,
-    loadIconResolver: partial.loadIconResolver ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadIconResolver
+      candidate.applyDesignSystemMappings ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.applyDesignSystemMappings,
+    loadIconResolver: candidate.loadIconResolver ?? DEFAULT_GENERATE_ARTIFACTS_RUNTIME_ADAPTERS.loadIconResolver
   };
 };
 
