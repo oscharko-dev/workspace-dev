@@ -26,7 +26,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   }
 
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
-  assert.match(claudeDoc, /figmaSourceMode=rest\|local_json/);
+  assert.match(claudeDoc, /figmaSourceMode=rest\|hybrid\|local_json/);
   assert.match(claudeDoc, /module resolution `node16`/);
   assert.equal(defaults.figmaSourceMode, "rest");
   assert.equal(defaults.llmCodegenMode, "deterministic");

@@ -162,9 +162,10 @@ const TreeRow = memo(function TreeRow({
           ? "bg-[#000000] text-[#4eba87]"
           : "text-white/80 hover:bg-[#000000] hover:text-white"
       } ${isFocused ? "outline-2 -outline-offset-2 outline-[#4eba87]" : ""}`}
-      onClick={() => {
+      onClick={(event) => {
         onSelect(row.node.id);
         onFocusNode(row.node.id);
+        event.currentTarget.focus();
       }}
       onDoubleClick={() => {
         if (onEnterScope) {

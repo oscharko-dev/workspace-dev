@@ -235,21 +235,37 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     if (normalizedFigmaSourceMode === undefined) {
       return figmaJsonPath !== undefined ? "local_json" : "rest";
     }
-    if (normalizedFigmaSourceMode === "rest" || normalizedFigmaSourceMode === "local_json") {
+    if (
+      normalizedFigmaSourceMode === "rest" ||
+      normalizedFigmaSourceMode === "hybrid" ||
+      normalizedFigmaSourceMode === "local_json"
+    ) {
       return normalizedFigmaSourceMode as WorkspaceFigmaSourceMode;
     }
     return undefined;
   })();
 
-  if (resolvedFigmaSourceMode === "rest") {
+  if (resolvedFigmaSourceMode === "rest" || resolvedFigmaSourceMode === "hybrid") {
     if (!figmaFileKey) {
-      pushIssue(issues, ["figmaFileKey"], "figmaFileKey is required when figmaSourceMode=rest");
+      pushIssue(
+        issues,
+        ["figmaFileKey"],
+        `figmaFileKey is required when figmaSourceMode=${resolvedFigmaSourceMode}`
+      );
     }
     if (!figmaAccessToken) {
-      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken is required when figmaSourceMode=rest");
+      pushIssue(
+        issues,
+        ["figmaAccessToken"],
+        `figmaAccessToken is required when figmaSourceMode=${resolvedFigmaSourceMode}`
+      );
     }
     if (figmaJsonPath !== undefined) {
-      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath must be omitted when figmaSourceMode=rest");
+      pushIssue(
+        issues,
+        ["figmaJsonPath"],
+        `figmaJsonPath must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`
+      );
     }
   }
 
@@ -349,8 +365,8 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1) {
     pushIssue(issues, ["port"], "port must be a positive integer");
   }
-  if (figmaSourceMode !== "rest" && figmaSourceMode !== "local_json") {
-    pushIssue(issues, ["figmaSourceMode"], "figmaSourceMode must be one of: rest, local_json");
+  if (figmaSourceMode !== "rest" && figmaSourceMode !== "hybrid" && figmaSourceMode !== "local_json") {
+    pushIssue(issues, ["figmaSourceMode"], "figmaSourceMode must be one of: rest, hybrid, local_json");
   }
   if (llmCodegenMode !== "deterministic") {
     pushIssue(issues, ["llmCodegenMode"], "llmCodegenMode must equal 'deterministic'");

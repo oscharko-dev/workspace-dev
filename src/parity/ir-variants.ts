@@ -32,6 +32,8 @@ interface FigmaNode {
   type: string;
   visible?: boolean;
   children?: FigmaNode[];
+  componentId?: string;
+  componentSetId?: string;
   componentProperties?: Record<string, FigmaComponentPropertyValue>;
   componentPropertyDefinitions?: Record<string, FigmaComponentPropertyDefinition>;
   fills?: FigmaPaint[];

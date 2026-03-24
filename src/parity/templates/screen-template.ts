@@ -45,6 +45,7 @@ import {
   hasInteractiveDescendants,
   hasMeaningfulTextDescendants,
   inferLandmarkRole,
+  resolveSemanticContainerDescriptor,
   isDecorativeElement,
   isDecorativeImageElement,
   inferHeadingComponentByNodeId,
@@ -1502,12 +1503,15 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
       })()
     : "";
   const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
-  const roleProp = navigationProps?.roleProp ?? "";
+  const semanticContainerProps = resolveSemanticContainerProps({ element, context });
+  const roleProp = navigationProps?.roleProp ?? semanticContainerProps.roleProp;
   const tabIndexProp = navigationProps?.tabIndexProp ?? "";
   const onClickProp = navigationProps?.onClickProp ?? "";
   const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
+  const componentProp = semanticContainerProps.componentProp;
+  const ariaLabelProp = navigationProps ? "" : semanticContainerProps.ariaLabelProp;
   const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
-  return `${indent}<Card${elevationProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${sxProp}>
+  return `${indent}<Card${componentProp}${elevationProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${sxProp}>
 ${mediaBlock}${contentBlock}${actionsBlock}
 ${indent}</Card>`;
 };
@@ -1804,7 +1808,7 @@ export const renderAppBar = (element: ScreenElementIR, depth: number, parent: Vi
       context
     });
   const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
-  return `${indent}<AppBar role="banner" position="static"${sxProp}>
+  return `${indent}<AppBar component="header" role="banner" position="static"${sxProp}>
 ${indent}  <Toolbar>
 ${renderedChildren || `${indent}    <Typography variant="h6">{${literal(fallbackTitle)}}</Typography>`}
 ${indent}  </Toolbar>
@@ -2178,7 +2182,7 @@ export const renderNavigation = (element: ScreenElementIR, depth: number, parent
     })
     .join("\n");
   const navLabel = resolveElementA11yLabel({ element, fallback: "Navigation" });
-  return `${indent}<BottomNavigation role="navigation" aria-label={${literal(navLabel)}} showLabels value={0} sx={{ ${sx} }}>
+  return `${indent}<BottomNavigation component="nav" role="navigation" aria-label={${literal(navLabel)}} showLabels value={0} sx={{ ${sx} }}>
 ${renderedActions}
 ${indent}</BottomNavigation>`;
 };
@@ -2320,6 +2324,36 @@ export const renderGrid = (element: ScreenElementIR, depth: number, parent: Virt
   return renderContainer(element, depth, parent, context);
 };
 
+const resolveSemanticContainerProps = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): {
+  componentProp: string;
+  roleProp: string;
+  ariaLabelProp: string;
+} => {
+  const descriptor = resolveSemanticContainerDescriptor({ element, context });
+  if (!descriptor) {
+    return {
+      componentProp: "",
+      roleProp: "",
+      ariaLabelProp: ""
+    };
+  }
+  const ariaLabelProp =
+    descriptor.component === "nav"
+      ? ` aria-label={${literal(resolveElementA11yLabel({ element, fallback: "Navigation" }))}}`
+      : "";
+  return {
+    componentProp: descriptor.component ? ` component="${descriptor.component}"` : "",
+    roleProp: descriptor.role ? ` role="${descriptor.role}"` : "",
+    ariaLabelProp
+  };
+};
+
 export const renderStack = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
   if ((element.children?.length ?? 0) === 0) {
     return renderContainer(element, depth, parent, context);
@@ -2338,17 +2372,20 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
   });
   const landmarkRole = inferLandmarkRole({ element, context });
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
-  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : "";
+  const semanticContainerProps = resolveSemanticContainerProps({ element, context });
+  const roleProp = landmarkRole ? ` role="${landmarkRole}"` : semanticContainerProps.roleProp;
   const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
+  const componentProp = semanticContainerProps.componentProp;
+  const ariaLabelProp = semanticContainerProps.ariaLabelProp;
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 1,
     context
   });
   if (!renderedChildren.trim()) {
-    return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+    return `${indent}<Stack${componentProp} direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaLabelProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
-  return `${indent}<Stack direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaHiddenProp} sx={{ ${sx} }}>
+  return `${indent}<Stack${componentProp} direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaLabelProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Stack>`;
 };
@@ -2411,16 +2448,19 @@ export const renderPaper = (element: ScreenElementIR, depth: number, parent: Vir
   const variantProp = variant ? ` variant="${variant}"` : "";
   const landmarkRole = inferLandmarkRole({ element, context });
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
-  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const semanticContainerProps = resolveSemanticContainerProps({ element, context });
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : semanticContainerProps.roleProp);
   const tabIndexProp = navigationProps?.tabIndexProp ?? "";
   const onClickProp = navigationProps?.onClickProp ?? "";
   const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
   const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
+  const componentProp = semanticContainerProps.componentProp;
+  const ariaLabelProp = navigationProps ? "" : semanticContainerProps.ariaLabelProp;
   const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
   if (!renderedChildren.trim()) {
-    return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp} />`;
+    return `${indent}<Paper${componentProp}${elevationProp}${variantProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp} />`;
   }
-  return `${indent}<Paper${elevationProp}${variantProp}${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp}>
+  return `${indent}<Paper${componentProp}${elevationProp}${variantProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp}${sxProp}>
 ${renderedChildren}
 ${indent}</Paper>`;
 };
@@ -2711,6 +2751,25 @@ export const renderSnackbar = (element: ScreenElementIR, depth: number, parent: 
   return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }} role="status" aria-live="polite">
 ${indent}  <Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>
 ${indent}</Snackbar>`;
+};
+
+export const renderAlertElement = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext
+): string => {
+  registerMuiImports(context, "Alert");
+  const indent = "  ".repeat(depth);
+  const message = firstText(element)?.trim() || element.name || "Hinweis";
+  const severity = toAlertSeverityFromName(element.name);
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  return `${indent}<Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>`;
 };
 
 export const renderSkeleton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
@@ -3044,22 +3103,25 @@ export const renderContainerFallback = ({
   const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const landmarkRole = inferLandmarkRole({ element, context });
   const isDecorative = !landmarkRole && isDecorativeElement({ element, context });
-  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : "");
+  const semanticContainerProps = resolveSemanticContainerProps({ element, context });
+  const roleProp = navigationProps?.roleProp ?? (landmarkRole ? ` role="${landmarkRole}"` : semanticContainerProps.roleProp);
   const tabIndexProp = navigationProps?.tabIndexProp ?? "";
   const onClickProp = navigationProps?.onClickProp ?? "";
   const onKeyDownProp = navigationProps?.onKeyDownProp ?? "";
   const ariaHiddenProp = navigationProps ? "" : isDecorative ? ' aria-hidden="true"' : "";
+  const componentProp = semanticContainerProps.componentProp;
+  const ariaLabelProp = navigationProps ? "" : semanticContainerProps.ariaLabelProp;
 
   if (!renderedChildren.trim()) {
     if (!hasVisualStyle(element) && !navigation) {
       return null;
     }
     registerMuiImports(context, "Box");
-    return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+    return `${indent}<Box${componentProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
   }
 
   registerMuiImports(context, "Box");
-  return `${indent}<Box${roleProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }}>
+  return `${indent}<Box${componentProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${ariaHiddenProp} sx={{ ${sx} }}>
 ${renderedChildren}
 ${indent}</Box>`;
 };
@@ -3190,6 +3252,7 @@ export const elementRenderStrategies: Partial<Record<ScreenElementIR["type"], El
   breadcrumbs: ({ element, depth, parent, context }) => renderBreadcrumbs(element, depth, parent, context),
   tab: ({ element, depth, parent, context }) => renderTabs(element, depth, parent, context),
   dialog: ({ element, depth, parent, context }) => renderDialog(element, depth, parent, context),
+  alert: ({ element, depth, parent, context }) => renderAlertElement(element, depth, parent, context),
   snackbar: ({ element, depth, parent, context }) => renderSnackbar(element, depth, parent, context),
   stepper: ({ element, depth, parent, context }) => renderStepper(element, depth, parent, context),
   progress: ({ element, depth, parent, context }) => renderProgress(element, depth, parent, context),
@@ -3952,6 +4015,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
   const renderContext: RenderContext = {
     screenId: screen.id,
     screenName: screen.name,
+    currentFilePath: prepared.filePath,
     generationLocale: prepared.resolvedGenerationLocale,
     formHandlingMode: prepared.resolvedFormHandlingMode,
     fields: [],

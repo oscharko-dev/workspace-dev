@@ -31,6 +31,16 @@ const toRgba = (hex: string): { r: number; g: number; b: number } => {
   };
 };
 
+const toFigmaColor = (hex: string): { r: number; g: number; b: number; a: number } => {
+  const { r, g, b } = toRgba(hex);
+  return {
+    r: r / 255,
+    g: g / 255,
+    b: b / 255,
+    a: 1
+  };
+};
+
 const toLuminance = (hex: string): number => {
   const { r, g, b } = toRgba(hex);
   const toLinear = (channel: number): number => {
@@ -5160,4 +5170,220 @@ test("deterministic screen rendering infers heading hierarchy components from ty
   assert.ok(h5Line.includes('component="h5"'));
   assert.ok(h6Line.includes('component="h6"'));
   assert.equal(bodyLine.includes('component="h'), false);
+});
+
+test("deterministic screen rendering honors explicit board component semantics from Figma IR", () => {
+  const ir = figmaToDesignIr({
+    name: "Board Semantics",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "board-screen",
+              type: "FRAME",
+              name: "Board Semantics",
+              layoutMode: "VERTICAL",
+              itemSpacing: 16,
+              absoluteBoundingBox: { x: 0, y: 0, width: 960, height: 640 },
+              children: [
+                {
+                  id: "board-button",
+                  type: "INSTANCE",
+                  name: "<Button>",
+                  cornerRadius: 64,
+                  fills: [{ type: "SOLID", color: toFigmaColor("#ee0000") }],
+                  absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 48 },
+                  children: [{ id: "board-button-text", type: "TEXT", name: "Label", characters: "Vorhaben hinzufügen" }]
+                },
+                {
+                  id: "board-card",
+                  type: "INSTANCE",
+                  name: "<Card>",
+                  cornerRadius: 12,
+                  fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
+                  absoluteBoundingBox: { x: 0, y: 64, width: 320, height: 160 },
+                  children: [{ id: "board-card-text", type: "TEXT", name: "Title", characters: "Card Content" }]
+                },
+                {
+                  id: "board-divider",
+                  type: "INSTANCE",
+                  name: "<Divider>",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d9d9d9") }],
+                  absoluteBoundingBox: { x: 0, y: 240, width: 320, height: 1 },
+                  children: []
+                },
+                {
+                  id: "board-alert",
+                  type: "INSTANCE",
+                  name: "<Alert>",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#e6f4ff") }],
+                  absoluteBoundingBox: { x: 0, y: 264, width: 320, height: 56 },
+                  children: [{ id: "board-alert-text", type: "TEXT", name: "Message", characters: "Bitte beachten" }]
+                },
+                {
+                  id: "board-stack",
+                  type: "FRAME",
+                  name: "<Stack2>(Nested)",
+                  layoutMode: "VERTICAL",
+                  absoluteBoundingBox: { x: 0, y: 336, width: 320, height: 96 },
+                  children: [{ id: "board-stack-text", type: "TEXT", name: "<Dynamic Typography>", characters: "Stack Body" }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const screen = ir.screens[0];
+  assert.ok(screen);
+  const content = createDeterministicScreenFile(screen!).content;
+
+  assertValidTsx({
+    content,
+    filePath: toDeterministicScreenPath(screen?.name ?? "Board Semantics")
+  });
+  assert.ok(content.includes("<Button "));
+  assert.ok(content.includes('{"Vorhaben hinzufügen"}'));
+  assert.ok(content.includes("<Card "));
+  assert.ok(content.includes("<Divider "));
+  assert.ok(content.includes('aria-hidden="true"'));
+  assert.ok(content.includes("<Alert "));
+  assert.ok(content.includes('severity="info"'));
+  assert.ok(content.includes("<Stack "));
+  assert.ok(content.includes('direction="column"'));
+  assert.equal(content.includes('<Paper data-ir-id="board-button"'), false);
+  assert.equal(content.includes('<Paper data-ir-name="<Button>"'), false);
+  assert.equal(content.includes("<Snackbar open"), false);
+});
+
+test("generateArtifacts uses upstream code connect mappings from IR during generation", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-code-connect-"));
+  const ir = createIr();
+  ir.screens[0]!.children = [
+    {
+      id: "code-connect-button",
+      name: "Primary action",
+      nodeType: "INSTANCE",
+      type: "button",
+      text: "Weiter",
+      semanticName: "Button",
+      semanticType: "Button",
+      semanticSource: "code_connect",
+      codeConnect: {
+        componentName: "AcmeButton",
+        source: "src/components/AcmeButton.tsx",
+        propContract: {
+          children: "{{text}}"
+        }
+      }
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  assert.ok(screenContent.includes('import AcmeButton from "../components/AcmeButton";'));
+  assert.ok(screenContent.includes("<AcmeButton "));
+  assert.ok(screenContent.includes('data-figma-node-id={"code-connect-button"}'));
+  assert.ok(screenContent.includes('>{"Weiter"}</AcmeButton>'));
+});
+
+test("generateArtifacts renders metadata-driven semantic containers with HTML5 components", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-semantic-container-"));
+  const ir = createIr();
+  ir.screens[0]!.children = [
+    {
+      id: "semantic-header",
+      name: "Frame 12",
+      nodeType: "FRAME",
+      type: "container",
+      semanticName: "Main Header",
+      semanticType: "header",
+      semanticSource: "metadata",
+      children: [
+        {
+          id: "semantic-header-title",
+          name: "Heading",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Dashboard"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  assert.ok(screenContent.includes("<Box "));
+  assert.ok(screenContent.includes('component="header"'));
+  assert.ok(screenContent.includes('role="banner"'));
+  assert.ok(screenContent.includes('{"Dashboard"}'));
+});
+
+test("generateArtifacts prefers MCP asset references for images and icon wrappers", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-mcp-assets-"));
+  const ir = createIr();
+  ir.screens[0]!.children = [
+    {
+      id: "mcp-image",
+      name: "Hero image",
+      nodeType: "RECTANGLE",
+      type: "image",
+      width: 320,
+      height: 180,
+      asset: {
+        source: "/mcp/assets/hero.png",
+        kind: "image",
+        alt: "Hero image"
+      }
+    },
+    {
+      id: "mcp-icon",
+      name: "ic_settings",
+      nodeType: "INSTANCE",
+      type: "container",
+      width: 24,
+      height: 24,
+      asset: {
+        source: "/mcp/assets/settings.svg",
+        kind: "icon",
+        label: "Settings icon"
+      },
+      children: []
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  assert.ok(screenContent.includes('src={"/mcp/assets/hero.png"}'));
+  assert.equal(screenContent.includes("data:image/svg+xml;utf8"), false);
+  assert.ok(screenContent.includes('src={"/mcp/assets/settings.svg"}'));
+  assert.ok(screenContent.includes('component="img"'));
 });

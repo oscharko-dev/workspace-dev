@@ -226,6 +226,15 @@ describe("ComponentTree", () => {
     expect(onSelect).toHaveBeenCalledWith("submit-btn");
   });
 
+  it("moves DOM focus to the clicked row for follow-up keyboard shortcuts", () => {
+    render(createElement(ComponentTree, defaultProps));
+
+    const node = screen.getByTestId("tree-node-submit-btn");
+    fireEvent.click(node);
+
+    expect(node).toHaveFocus();
+  });
+
   it("collapses a screen when chevron is clicked", () => {
     render(createElement(ComponentTree, defaultProps));
     // HeaderBar should be visible (Home is expanded by default)

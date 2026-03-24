@@ -14,8 +14,6 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/384
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { Plugin } from "prettier";
-import type { format as prettierFormat } from "prettier/standalone";
 import {
   detectLanguage,
   exceedsMaxSize,
@@ -29,6 +27,13 @@ import {
   type CodeBoundaryEntry,
   type CodeBoundaryWithLane
 } from "./code-boundaries";
+import {
+  formatCodeForViewer,
+  FORMAT_ERROR_TIMEOUT_MS,
+  FORMAT_SUCCESS_TIMEOUT_MS,
+  type FormatStatus,
+  type ViewerLanguage
+} from "./code-formatting";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +65,12 @@ interface CodeViewerProps {
   lineOffset?: number | undefined;
   /** Force a viewer theme instead of following the system preference. */
   themeMode?: "system" | "dark";
+  /** Allow this viewer to claim Cmd/Ctrl+F when focus is elsewhere in the inspector. */
+  allowExternalFindShortcut?: boolean | undefined;
+  /** Optional external format handler for full-file-managed formatting flows. */
+  onFormat?: (() => void | Promise<void>) | undefined;
+  /** Optional externally managed format status. */
+  formatStatus?: FormatStatus | undefined;
 }
 
 interface SearchMatch {
@@ -73,24 +84,10 @@ type SearchMode =
   | { kind: "jump"; requestedLine: number };
 
 type ViewerTheme = HighlightTheme;
-type ViewerLanguage = ReturnType<typeof detectLanguage>;
-type FormatParser = "typescript" | "json";
-type FormatStatus =
-  | { kind: "idle"; message: null }
-  | { kind: "formatting"; message: null }
-  | { kind: "success"; message: null }
-  | { kind: "error"; message: string };
 
 interface RainbowDecoration {
   color: string;
   depth: number;
-}
-
-interface PrettierModules {
-  format: typeof prettierFormat;
-  typescriptPlugin: Plugin;
-  babelPlugin: Plugin;
-  estreePlugin: Plugin;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,13 +96,9 @@ interface PrettierModules {
 
 const IR_START_PATTERN = /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
 const IR_END_PATTERN = /\{\/\* @ir:end (\S+) \*\/\}/;
-const FORMAT_SUCCESS_TIMEOUT_MS = 1500;
-const FORMAT_ERROR_TIMEOUT_MS = 3000;
 const RAINBOW_BRACKET_ATTRIBUTE = "data-rainbow-bracket";
 const LIGHT_RAINBOW_COLORS = ["#d1242f", "#8250df", "#0969da", "#0a7f50", "#9a6700", "#bc4c00"] as const;
 const DARK_RAINBOW_COLORS = ["#ff7b72", "#d2a8ff", "#79c0ff", "#7ee787", "#f2cc60", "#ffa657"] as const;
-
-let prettierModulesPromise: Promise<PrettierModules> | null = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -523,67 +516,6 @@ function formatPlainTextLineHtml(line: string): string {
   return normalizeRenderableLineHtml(escapeHtml(line));
 }
 
-async function loadPrettierModules(): Promise<PrettierModules> {
-  if (!prettierModulesPromise) {
-    prettierModulesPromise = Promise.all([
-      import("prettier/standalone"),
-      import("prettier/plugins/typescript"),
-      import("prettier/plugins/babel"),
-      import("prettier/plugins/estree")
-    ]).then(([prettier, typescriptPlugin, babelPlugin, estreePlugin]) => ({
-      format: prettier.format,
-      typescriptPlugin,
-      babelPlugin,
-      estreePlugin
-    }));
-
-    // Clear cache on failure so the next call retries the import
-    prettierModulesPromise.catch(() => {
-      prettierModulesPromise = null;
-    });
-  }
-
-  return await prettierModulesPromise;
-}
-
-function resolveFormatParser(language: ViewerLanguage): FormatParser | null {
-  if (language === "tsx" || language === "typescript") {
-    return "typescript";
-  }
-  if (language === "json") {
-    return "json";
-  }
-  return null;
-}
-
-async function formatCodeForViewer({
-  code,
-  filePath,
-  language
-}: {
-  code: string;
-  filePath: string;
-  language: ViewerLanguage;
-}): Promise<string> {
-  const parser = resolveFormatParser(language);
-  if (!parser) {
-    throw new Error("Formatting is unavailable for this file type.");
-  }
-
-  const { format, typescriptPlugin, babelPlugin, estreePlugin } = await loadPrettierModules();
-  const plugins = parser === "json"
-    ? [babelPlugin, estreePlugin]
-    : [typescriptPlugin, estreePlugin];
-
-  const formatted = await format(code, {
-    parser,
-    plugins,
-    filepath: filePath
-  });
-
-  return formatted.replace(/\n$/, "");
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -598,7 +530,10 @@ export function CodeViewer({
   onBoundarySelect,
   selectedIrNodeId = null,
   lineOffset = 1,
-  themeMode = "system"
+  themeMode = "system",
+  allowExternalFindShortcut = false,
+  onFormat,
+  formatStatus: externalFormatStatus
 }: CodeViewerProps): JSX.Element {
   const [highlightState, setHighlightState] = useState<{
     result: HighlightResult | null;
@@ -629,8 +564,9 @@ export function CodeViewer({
   const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentTheme, setCurrentTheme] = useState(() => resolveViewerTheme(themeMode));
-
-  const displayCode = formattedCode ?? code;
+  const usesExternalFormatting = onFormat !== undefined || externalFormatStatus !== undefined;
+  const effectiveFormatStatus = externalFormatStatus ?? formatStatus;
+  const displayCode = usesExternalFormatting ? code : (formattedCode ?? code);
   const detectedLanguage = useMemo<ViewerLanguage>(() => detectLanguage(filePath), [filePath]);
   const isOversize = exceedsMaxSize(displayCode);
   const rawLines = useMemo(() => displayCode.split("\n"), [displayCode]);
@@ -697,10 +633,14 @@ export function CodeViewer({
   }, [themeMode]);
 
   useEffect(() => {
+    if (usesExternalFormatting) {
+      setFormattedCode(null);
+      return;
+    }
     setFormattedCode(null);
     clearFormatFeedbackTimeout();
     setFormatStatus({ kind: "idle", message: null });
-  }, [clearFormatFeedbackTimeout, code, filePath]);
+  }, [clearFormatFeedbackTimeout, code, filePath, usesExternalFormatting]);
 
   useEffect(() => {
     return () => {
@@ -854,6 +794,28 @@ export function CodeViewer({
       return;
     }
 
+    const isTextEditableElement = (element: Element | null): boolean => {
+      if (!(element instanceof HTMLElement)) {
+        return false;
+      }
+      if (element.isContentEditable) {
+        return true;
+      }
+      if (element instanceof HTMLInputElement) {
+        const inputType = element.type.toLowerCase();
+        return inputType !== "button"
+          && inputType !== "checkbox"
+          && inputType !== "file"
+          && inputType !== "hidden"
+          && inputType !== "image"
+          && inputType !== "radio"
+          && inputType !== "range"
+          && inputType !== "reset"
+          && inputType !== "submit";
+      }
+      return element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+    };
+
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.metaKey || event.ctrlKey)) {
         return;
@@ -864,8 +826,14 @@ export function CodeViewer({
       if (!codeViewerRef.current) {
         return;
       }
-      // Only intercept when this viewer contains the focused element or body is focused
-      if (!codeViewerRef.current.contains(document.activeElement) && document.activeElement !== document.body) {
+      const activeElement = document.activeElement;
+      const viewerHasFocus = codeViewerRef.current.contains(activeElement);
+      if (!viewerHasFocus && activeElement !== document.body) {
+        if (!allowExternalFindShortcut || isTextEditableElement(activeElement)) {
+          return;
+        }
+      }
+      if (!viewerHasFocus && isTextEditableElement(activeElement)) {
         return;
       }
 
@@ -877,7 +845,7 @@ export function CodeViewer({
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [focusFindInput]);
+  }, [allowExternalFindShortcut, focusFindInput]);
 
   // Parse highlighted lines
   const highlightedLines = useMemo(() => {
@@ -1025,6 +993,11 @@ export function CodeViewer({
   }, [displayCode, effectiveHighlightRange]);
 
   const handleFormat = useCallback(async () => {
+    if (onFormat) {
+      await onFormat();
+      return;
+    }
+
     setFormatStatus({ kind: "formatting", message: null });
     clearFormatFeedbackTimeout();
 
@@ -1044,7 +1017,7 @@ export function CodeViewer({
       setFormatStatus({ kind: "error", message });
       scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
     }
-  }, [clearFormatFeedbackTimeout, detectedLanguage, displayCode, filePath, scheduleFormatStatusReset]);
+  }, [clearFormatFeedbackTimeout, detectedLanguage, displayCode, filePath, onFormat, scheduleFormatStatusReset]);
 
   useEffect(() => {
     if (!effectiveBoundariesEnabled || effectiveViewerBoundaries.length === 0) {
@@ -1053,14 +1026,14 @@ export function CodeViewer({
   }, [effectiveBoundariesEnabled, effectiveViewerBoundaries.length]);
 
   const formatButtonLabel = useMemo(() => {
-    if (formatStatus.kind === "formatting") {
+    if (effectiveFormatStatus.kind === "formatting") {
       return "Formatting…";
     }
-    if (formatStatus.kind === "success") {
+    if (effectiveFormatStatus.kind === "success") {
       return "Formatted!";
     }
     return "Format";
-  }, [formatStatus.kind]);
+  }, [effectiveFormatStatus.kind]);
 
   return (
     <div
@@ -1199,14 +1172,14 @@ export function CodeViewer({
           type="button"
           data-testid="code-viewer-format-button"
           onClick={() => { void handleFormat(); }}
-          disabled={formatStatus.kind === "formatting"}
+          disabled={effectiveFormatStatus.kind === "formatting"}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-70"
           style={{
             borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: formatStatus.kind === "success"
+            backgroundColor: effectiveFormatStatus.kind === "success"
               ? (isDark ? "#14532d" : "#dcfce7")
               : (isDark ? "#21262d" : "#ffffff"),
-            color: formatStatus.kind === "success"
+            color: effectiveFormatStatus.kind === "success"
               ? (isDark ? "#86efac" : "#166534")
               : (isDark ? "#c9d1d9" : "#24292f")
           }}
@@ -1214,13 +1187,13 @@ export function CodeViewer({
           {formatButtonLabel}
         </button>
 
-        {formatStatus.kind === "error" ? (
+        {effectiveFormatStatus.kind === "error" ? (
           <span
             data-testid="code-viewer-format-status"
             className="shrink-0 text-[10px] font-semibold"
             style={{ color: isDark ? "#fda4af" : "#be123c" }}
           >
-            {formatStatus.message}
+            {effectiveFormatStatus.message}
           </span>
         ) : null}
 

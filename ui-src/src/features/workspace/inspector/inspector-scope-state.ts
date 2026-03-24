@@ -526,7 +526,7 @@ export function inspectorScopeReducer(
       if (!state.editModeActive) {
         return state;
       }
-      return { ...state, editModeActive: false, editCapability: null };
+      return { ...state, editModeActive: false };
     }
 
     case "SET_EDIT_CAPABILITY": {

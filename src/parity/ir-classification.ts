@@ -41,6 +41,12 @@ interface ElementClassificationNode {
   cornerRadius?: number;
 }
 
+export interface ExplicitBoardComponentMatch {
+  rawName: string;
+  canonicalName: string;
+  type?: ElementTypeValue;
+}
+
 interface SemanticHintContext {
   combined: string;
 }
@@ -188,6 +194,260 @@ export const isIconLikeNodeName = (value: string): boolean => {
     value.startsWith("icon_") ||
     hasAnyWord(value, ["icon"])
   );
+};
+
+const EXPLICIT_BOARD_NODE_TYPES = new Set(["INSTANCE", "COMPONENT", "COMPONENT_SET"]);
+
+interface ExplicitBoardComponentDescriptor {
+  canonicalName: string;
+  type?: ElementTypeValue;
+  exactPatterns: readonly RegExp[];
+  wordPatterns?: readonly RegExp[];
+}
+
+const EXPLICIT_BOARD_COMPONENT_DESCRIPTORS: readonly ExplicitBoardComponentDescriptor[] = [
+  {
+    canonicalName: "IconButton",
+    type: "button",
+    exactPatterns: [/^icon\s*button$/i, /^iconbutton$/i],
+    wordPatterns: [/\bicon[-_\s]*button\b/i]
+  },
+  {
+    canonicalName: "Button",
+    type: "button",
+    exactPatterns: [/^button$/i, /^cta$/i],
+    wordPatterns: [/\bbutton\b/i, /\bcta\b/i]
+  },
+  {
+    canonicalName: "Snackbar",
+    type: "snackbar",
+    exactPatterns: [/^snackbar$/i, /^toast$/i],
+    wordPatterns: [/\bsnackbar\b/i, /\btoast\b/i]
+  },
+  {
+    canonicalName: "Alert",
+    type: "alert",
+    exactPatterns: [/^alert$/i],
+    wordPatterns: [/\balert\b/i]
+  },
+  {
+    canonicalName: "Card",
+    type: "card",
+    exactPatterns: [/^card$/i],
+    wordPatterns: [/\bcard\b/i]
+  },
+  {
+    canonicalName: "Divider",
+    type: "divider",
+    exactPatterns: [/^divider$/i, /^separator$/i],
+    wordPatterns: [/\bdivider\b/i, /\bseparator\b/i]
+  },
+  {
+    canonicalName: "Stack",
+    type: "stack",
+    exactPatterns: [/^stack(?:\d+)?$/i],
+    wordPatterns: [/\bstack(?:\d+)?\b/i]
+  },
+  {
+    canonicalName: "Typography",
+    type: "text",
+    exactPatterns: [/^typography$/i, /^dynamic\s+typography$/i],
+    wordPatterns: [/\btypography\b/i, /\bdynamic\s+typography\b/i]
+  },
+  {
+    canonicalName: "AppBar",
+    type: "appbar",
+    exactPatterns: [/^app\s*bar$/i, /^appbar$/i],
+    wordPatterns: [/\bapp[-_\s]*bar\b/i, /\bappbar\b/i]
+  },
+  {
+    canonicalName: "Drawer",
+    type: "drawer",
+    exactPatterns: [/^drawer$/i, /^side\s*drawer$/i],
+    wordPatterns: [/\bdrawer\b/i, /\bsidebar\b/i]
+  },
+  {
+    canonicalName: "Breadcrumbs",
+    type: "breadcrumbs",
+    exactPatterns: [/^breadcrumbs?$/i],
+    wordPatterns: [/\bbreadcrumbs?\b/i]
+  },
+  {
+    canonicalName: "Dialog",
+    type: "dialog",
+    exactPatterns: [/^dialog$/i, /^modal$/i],
+    wordPatterns: [/\bdialog\b/i, /\bmodal\b/i]
+  },
+  {
+    canonicalName: "Tab",
+    type: "tab",
+    exactPatterns: [/^tabs?$/i],
+    wordPatterns: [/\btabs?\b/i]
+  },
+  {
+    canonicalName: "Chip",
+    type: "chip",
+    exactPatterns: [/^chip$/i],
+    wordPatterns: [/\bchip\b/i]
+  },
+  {
+    canonicalName: "Badge",
+    type: "badge",
+    exactPatterns: [/^badge$/i],
+    wordPatterns: [/\bbadge\b/i]
+  },
+  {
+    canonicalName: "Avatar",
+    type: "avatar",
+    exactPatterns: [/^avatar$/i],
+    wordPatterns: [/\bavatar\b/i]
+  },
+  {
+    canonicalName: "Paper",
+    type: "paper",
+    exactPatterns: [/^paper$/i, /^surface$/i],
+    wordPatterns: [/\bpaper\b/i, /\bsurface\b/i]
+  },
+  {
+    canonicalName: "Select",
+    type: "select",
+    exactPatterns: [/^select$/i, /^dropdown$/i],
+    wordPatterns: [/\bselect\b/i, /\bdropdown\b/i]
+  },
+  {
+    canonicalName: "Input",
+    type: "input",
+    exactPatterns: [/^input$/i, /^text\s*field$/i, /^textfield$/i],
+    wordPatterns: [/\binput\b/i, /\btext[-_\s]*field\b/i, /\btextfield\b/i]
+  },
+  {
+    canonicalName: "Switch",
+    type: "switch",
+    exactPatterns: [/^switch$/i, /^toggle$/i],
+    wordPatterns: [/\bswitch\b/i, /\btoggle\b/i]
+  },
+  {
+    canonicalName: "Checkbox",
+    type: "checkbox",
+    exactPatterns: [/^checkbox$/i],
+    wordPatterns: [/\bcheckbox\b/i]
+  },
+  {
+    canonicalName: "Radio",
+    type: "radio",
+    exactPatterns: [/^radio$/i],
+    wordPatterns: [/\bradio\b/i]
+  },
+  {
+    canonicalName: "Slider",
+    type: "slider",
+    exactPatterns: [/^slider$/i],
+    wordPatterns: [/\bslider\b/i]
+  },
+  {
+    canonicalName: "Rating",
+    type: "rating",
+    exactPatterns: [/^rating$/i],
+    wordPatterns: [/\brating\b/i]
+  },
+  {
+    canonicalName: "Tooltip",
+    type: "tooltip",
+    exactPatterns: [/^tooltip$/i],
+    wordPatterns: [/\btooltip\b/i]
+  },
+  {
+    canonicalName: "Stepper",
+    type: "stepper",
+    exactPatterns: [/^stepper$/i],
+    wordPatterns: [/\bstepper\b/i]
+  },
+  {
+    canonicalName: "Navigation",
+    type: "navigation",
+    exactPatterns: [/^navigation$/i, /^navigation\s*bar$/i, /^navbar$/i],
+    wordPatterns: [/\bnavigation\b/i, /\bnavbar\b/i]
+  },
+  {
+    canonicalName: "Table",
+    type: "table",
+    exactPatterns: [/^table$/i, /^data\s*table$/i],
+    wordPatterns: [/\btable\b/i]
+  },
+  {
+    canonicalName: "Grid",
+    type: "grid",
+    exactPatterns: [/^grid(?:\d+)?$/i],
+    wordPatterns: [/\bgrid(?:\d+)?\b/i]
+  }
+];
+
+const normalizeExplicitBoardComponentSource = (value: string): string => {
+  return value
+    .replace(/🔥/g, " ")
+    .replace(/^_+/, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const resolveExplicitBoardDescriptor = ({
+  candidate,
+  allowWordPatterns
+}: {
+  candidate: string;
+  allowWordPatterns: boolean;
+}): ExplicitBoardComponentDescriptor | undefined => {
+  const normalizedCandidate = normalizeExplicitBoardComponentSource(candidate);
+  if (!normalizedCandidate) {
+    return undefined;
+  }
+  return EXPLICIT_BOARD_COMPONENT_DESCRIPTORS.find((descriptor) => {
+    if (descriptor.exactPatterns.some((pattern) => pattern.test(normalizedCandidate))) {
+      return true;
+    }
+    return allowWordPatterns && descriptor.wordPatterns?.some((pattern) => pattern.test(normalizedCandidate)) === true;
+  });
+};
+
+export const resolveExplicitBoardComponentFromNode = (
+  node: Pick<ElementClassificationNode, "name" | "type">
+): ExplicitBoardComponentMatch | undefined => {
+  const rawName = typeof node.name === "string" ? node.name.trim() : "";
+  if (!rawName) {
+    return undefined;
+  }
+
+  const angleMatch = rawName.match(/<\s*([^>]+?)\s*>/);
+  if (angleMatch?.[1]) {
+    const candidate = angleMatch[1].trim();
+    const descriptor = resolveExplicitBoardDescriptor({
+      candidate,
+      allowWordPatterns: true
+    });
+    return {
+      rawName: candidate,
+      canonicalName: descriptor?.canonicalName ?? candidate,
+      ...(descriptor?.type ? { type: descriptor.type } : {})
+    };
+  }
+
+  if (!EXPLICIT_BOARD_NODE_TYPES.has(node.type)) {
+    return undefined;
+  }
+
+  const descriptor = resolveExplicitBoardDescriptor({
+    candidate: rawName,
+    allowWordPatterns: true
+  });
+  if (!descriptor) {
+    return undefined;
+  }
+  return {
+    rawName,
+    canonicalName: descriptor.canonicalName,
+    ...(descriptor.type ? { type: descriptor.type } : {})
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -683,6 +943,23 @@ export const classifyElementTypeDecisionFromNode = <TNode extends ElementClassif
   node: TNode;
   dependencies: NodeClassificationDependencies<TNode>;
 }): NodeClassificationDecision => {
+  if (node.type === "TEXT") {
+    return {
+      type: "text",
+      matchedRulePriority: 10,
+      fallback: false
+    };
+  }
+
+  const explicitBoardComponent = resolveExplicitBoardComponentFromNode(node);
+  if (explicitBoardComponent?.type) {
+    return {
+      type: explicitBoardComponent.type,
+      matchedRulePriority: 0,
+      fallback: false
+    };
+  }
+
   const context = createNodeClassificationContext({
     node,
     dependencies

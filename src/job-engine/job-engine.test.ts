@@ -115,6 +115,229 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
 
+test("createJobEngine supports hybrid mode with MCP enrichment loader output", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-"));
+  const payload = createLocalFigmaPayload();
+  const loaderCalls: Array<{ figmaFileKey: string; figmaAccessToken: string; jobDir: string }> = [];
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }),
+      figmaMcpEnrichmentLoader: async (input) => {
+        loaderCalls.push({
+          figmaFileKey: input.figmaFileKey,
+          figmaAccessToken: input.figmaAccessToken,
+          jobDir: input.jobDir
+        });
+
+        return {
+          sourceMode: "hybrid",
+          toolNames: ["figma-mcp"],
+          nodeHints: [],
+          metadataHints: [
+            {
+              nodeId: "missing-node",
+              layerName: "Main Header",
+              layerType: "FRAME",
+              sourceTools: ["get_metadata"]
+            }
+          ],
+          codeConnectMappings: [
+            {
+              nodeId: "missing-node",
+              componentName: "Banner",
+              source: "src/components/Banner.tsx",
+              label: "React"
+            }
+          ],
+          designSystemMappings: [
+            {
+              nodeId: "missing-node-secondary",
+              componentName: "BannerSurface",
+              source: "src/components/BannerSurface.tsx",
+              label: "React",
+              libraryKey: "demo-library"
+            }
+          ],
+          variables: [
+            {
+              name: "color/primary",
+              kind: "color",
+              value: "#102030"
+            }
+          ],
+          styleCatalog: [
+            {
+              name: "Heading 1",
+              styleType: "TEXT",
+              fontSizePx: 42,
+              fontWeight: 700,
+              lineHeightPx: 50,
+              fontFamily: "Figma Sans"
+            }
+          ],
+          assets: [
+            {
+              nodeId: "missing-node",
+              source: "/figma/assets/banner.svg",
+              kind: "image",
+              purpose: "render"
+            }
+          ],
+          screenshots: [
+            {
+              nodeId: "missing-node",
+              url: "https://example.invalid/banner.png",
+              purpose: "quality-gate"
+            }
+          ]
+        };
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token"
+  });
+  assert.equal(accepted.acceptedModes.figmaSourceMode, "hybrid");
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "completed");
+  assert.equal(loaderCalls.length, 1);
+  assert.deepEqual(loaderCalls[0], {
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+    jobDir: String(status.artifacts.jobDir)
+  });
+
+  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+    tokens?: {
+      palette?: { primary?: string };
+      typography?: { h1?: { fontSizePx?: number; fontFamily?: string } };
+    };
+    metrics?: {
+      mcpCoverage?: {
+        sourceMode?: string;
+        variableCount?: number;
+        styleEntryCount?: number;
+        metadataHintCount?: number;
+        codeConnectMappingCount?: number;
+        designSystemMappingCount?: number;
+        assetCount?: number;
+        screenshotCount?: number;
+        fallbackUsed?: boolean;
+      };
+    };
+  };
+
+  assert.equal(designIr.tokens?.palette?.primary, "#102030");
+  assert.equal(designIr.tokens?.typography?.h1?.fontSizePx, 42);
+  assert.equal(designIr.tokens?.typography?.h1?.fontFamily, "Figma Sans");
+  assert.equal(designIr.metrics?.mcpCoverage?.sourceMode, "hybrid");
+  assert.equal(designIr.metrics?.mcpCoverage?.variableCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.styleEntryCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.metadataHintCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.codeConnectMappingCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.designSystemMappingCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.assetCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.screenshotCount, 1);
+  assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, undefined);
+  assert.equal(
+    status.logs.some((entry) => entry.message.includes("MCP enrichment coverage (hybrid): variables=1, styles=1")),
+    true
+  );
+});
+
+test("createJobEngine falls back deterministically when hybrid mode has no MCP enrichment loader", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-fallback-"));
+  const payload = createLocalFigmaPayload();
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token"
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "completed");
+  assert.equal(
+    status.logs.some((entry) => entry.message.includes("no figmaMcpEnrichmentLoader is configured")),
+    true
+  );
+
+  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+    metrics?: {
+      mcpCoverage?: {
+        sourceMode?: string;
+        variableCount?: number;
+        styleEntryCount?: number;
+        codeConnectMappingCount?: number;
+        designSystemMappingCount?: number;
+        metadataHintCount?: number;
+        assetCount?: number;
+        fallbackUsed?: boolean;
+        diagnostics?: Array<{ code?: string }>;
+      };
+    };
+  };
+
+  assert.equal(designIr.metrics?.mcpCoverage?.sourceMode, "hybrid");
+  assert.equal(designIr.metrics?.mcpCoverage?.variableCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.styleEntryCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.codeConnectMappingCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.designSystemMappingCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.metadataHintCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.assetCount, 0);
+  assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, true);
+  assert.equal(designIr.metrics?.mcpCoverage?.diagnostics?.[0]?.code, "W_MCP_ENRICHMENT_SKIPPED");
+});
+
 test("createJobEngine rejects submit when queue backpressure cap is reached", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-backpressure-"));
   const engine = createJobEngine({

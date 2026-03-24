@@ -45,7 +45,7 @@ pnpm run release:quality-gates
 | `server.ts` / `server/` | HTTP server on Node built-in `http` — routes for `/workspace`, `/workspace/ui`, job submission, job status, repro assets. |
 | `job-engine.ts` / `job-engine/` | Job pipeline: figma.source → ir.derive → template.prepare → codegen.generate → validate.project → repro.export → git.pr, with optional generated-project `test`, `validate:ui`, and `perf:assert` validation steps. |
 | `parity/` | Deterministic codegen: IR derivation (`ir.ts`), file generation (`generator-core.ts`), LLM client (`llm.ts`). |
-| `mode-lock.ts` | Hard enforcement — only `figmaSourceMode=rest|local_json` and `llmCodegenMode=deterministic` are allowed. |
+| `mode-lock.ts` | Hard enforcement — only `figmaSourceMode=rest|hybrid|local_json` and `llmCodegenMode=deterministic` are allowed. |
 | `isolation.ts` | Per-project child-process isolation with deterministic cleanup. |
 | `cli.ts` | CLI argument parsing; binary is `workspace-dev`. |
 

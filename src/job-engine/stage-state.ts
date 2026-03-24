@@ -49,7 +49,12 @@ export const toAcceptedModes = ({
 } => {
   const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
   return {
-    figmaSourceMode: normalizedFigmaSourceMode === "local_json" ? "local_json" : "rest",
+    figmaSourceMode:
+      normalizedFigmaSourceMode === "local_json"
+        ? "local_json"
+        : normalizedFigmaSourceMode === "hybrid"
+          ? "hybrid"
+          : "rest",
     llmCodegenMode: "deterministic"
   };
 };

@@ -76,9 +76,95 @@ export interface FigmaMcpNodeHint {
   sourceTools: string[];
 }
 
+export interface FigmaMcpVariableDefinition {
+  name: string;
+  kind: "color" | "number" | "string" | "boolean";
+  value: string | number | boolean;
+  collectionName?: string;
+  modeName?: string;
+  aliases?: string[];
+  sourceNodeId?: string;
+  sourceProperty?: string;
+}
+
+export interface FigmaMcpStyleCatalogEntry {
+  name: string;
+  styleType: "TEXT" | "FILL" | "STROKE" | "EFFECT" | string;
+  id?: string;
+  fontSizePx?: number;
+  fontWeight?: number;
+  lineHeightPx?: number;
+  fontFamily?: string;
+  letterSpacingPx?: number;
+  color?: string;
+  aliases?: string[];
+}
+
+export interface FigmaMcpCodeConnectMapping {
+  nodeId: string;
+  componentName: string;
+  source: string;
+  label?: string;
+  semanticName?: string;
+  semanticType?: string;
+  propContract?: Record<string, unknown>;
+}
+
+export interface FigmaMcpDesignSystemMapping {
+  nodeId: string;
+  componentName: string;
+  source: string;
+  label?: string;
+  semanticName?: string;
+  semanticType?: string;
+  propContract?: Record<string, unknown>;
+  libraryKey?: string;
+}
+
+export interface FigmaMcpMetadataHint {
+  nodeId: string;
+  semanticName?: string;
+  semanticType?: string;
+  layerName?: string;
+  layerType?: string;
+  sourceTools: string[];
+}
+
+export interface FigmaMcpScreenshotReference {
+  nodeId: string;
+  url: string;
+  mimeType?: string;
+  purpose?: "quality-gate" | "context";
+}
+
+export interface FigmaMcpAssetReference {
+  nodeId: string;
+  source: string;
+  kind: "image" | "svg" | "icon";
+  mimeType?: string;
+  alt?: string;
+  label?: string;
+  purpose?: "render" | "quality-gate" | "context";
+}
+
+export interface FigmaMcpEnrichmentDiagnostic {
+  code: string;
+  message: string;
+  severity: "info" | "warning";
+  source: "loader" | "variables" | "styles" | "code_connect" | "design_system" | "metadata" | "screenshots" | "assets";
+}
+
 export interface FigmaMcpEnrichment {
   sourceMode: "mcp" | "hybrid";
   nodeHints: FigmaMcpNodeHint[];
+  variables?: FigmaMcpVariableDefinition[];
+  styleCatalog?: FigmaMcpStyleCatalogEntry[];
+  codeConnectMappings?: FigmaMcpCodeConnectMapping[];
+  designSystemMappings?: FigmaMcpDesignSystemMapping[];
+  metadataHints?: FigmaMcpMetadataHint[];
+  assets?: FigmaMcpAssetReference[];
+  screenshots?: FigmaMcpScreenshotReference[];
+  diagnostics?: FigmaMcpEnrichmentDiagnostic[];
   toolNames: string[];
 }
 

@@ -46,6 +46,30 @@ const jsxSampleCode = [
   "  );",
   "}"
 ].join("\n");
+const scopedFormattingCode = [
+  "export function EmptyState() {",
+  "  return (",
+  "    <Box>",
+  "      {/* @ir:start parent Header FRAME */}",
+  "      <Stack>",
+  "        <Typography>Before</Typography>",
+  "      </Stack>",
+  "      {/* @ir:end parent */}",
+  "      {/* @ir:start node-a Primary Button paper */}",
+  "      <Paper data-ir-id=\"node-a\" data-ir-name=\"Primary Button\" data-super-long-first-prop=\"aaaaaaaaaaaaaaaaaaaa\" data-super-long-second-prop=\"bbbbbbbbbbbbbbbbbbbb\" data-super-long-third-prop=\"cccccccccccccccccccc\" data-super-long-fourth-prop=\"dddddddddddddddddddd\"><Stack direction=\"row\" spacing={0.4}><Typography>Primary action</Typography></Stack></Paper>",
+  "      {/* @ir:end node-a */}",
+  "      {/* @ir:start between Between FRAME */}",
+  "      <Stack>",
+  "        <Typography>Between</Typography>",
+  "      </Stack>",
+  "      {/* @ir:end between */}",
+  "      {/* @ir:start node-b Secondary Button paper */}",
+  "      <Paper data-ir-id=\"node-b\" data-ir-name=\"Secondary Button\" data-super-long-fifth-prop=\"eeeeeeeeeeeeeeeeeeee\" data-super-long-sixth-prop=\"ffffffffffffffffffff\" data-super-long-seventh-prop=\"gggggggggggggggggggg\" data-super-long-eighth-prop=\"hhhhhhhhhhhhhhhhhhhh\"><Stack direction=\"row\" spacing={0.4}><Typography>Secondary action</Typography></Stack></Paper>",
+  "      {/* @ir:end node-b */}",
+  "    </Box>",
+  "  );",
+  "}"
+].join("\n");
 const sampleFiles = [
   { path: "src/screens/Home.tsx", sizeBytes: 500 },
   { path: "src/screens/About.tsx", sizeBytes: 300 }
@@ -238,6 +262,73 @@ describe("CodePane scoped code modes", () => {
     });
   });
 
+  it("formats selected component snippets via full-file content and keeps the formatted state across component selection", async () => {
+    const { rerender } = render(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: scopedFormattingCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn,
+        isNodeMapped: true,
+        selectedIrNodeId: "node-a",
+        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 9, endLine: 11 }
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("</Stack>");
+      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+    });
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+      expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
+      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+    });
+
+    rerender(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: scopedFormattingCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn,
+        isNodeMapped: true,
+        selectedIrNodeId: "node-b",
+        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 17, endLine: 19 }
+      })
+    );
+
+    expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
+      expect(screen.getByTestId("code-content")).toHaveTextContent("Secondary action");
+      expect(screen.getByTestId("code-content")).toHaveTextContent("</Stack>");
+    });
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+      expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
+      expect(screen.getByTestId("code-content")).toHaveTextContent("Secondary action");
+    });
+  });
+
   it("renders file list loading, empty, and retryable error states", () => {
     const onRetryFiles = vi.fn();
     const { rerender } = render(
@@ -352,6 +443,30 @@ describe("CodePane scoped code modes", () => {
       target: { value: "src/screens/Home.tsx" }
     });
     expect(onSelectSplitFile).toHaveBeenCalledWith("src/screens/Home.tsx");
+  });
+
+  it("supports keyboard resizing for split view divider", async () => {
+    renderCodePane({
+      splitFile: "src/screens/About.tsx",
+      splitFileContent: "export function About() { return null; }"
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-split-toggle"));
+
+    const divider = await screen.findByTestId("inspector-split-divider");
+    const leftPane = screen.getByTestId("inspector-split-left");
+
+    fireEvent.keyDown(divider, { key: "ArrowLeft", shiftKey: true });
+    expect(leftPane.getAttribute("style")).toContain("40%");
+
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(leftPane.getAttribute("style")).toContain("42%");
+
+    fireEvent.keyDown(divider, { key: "Home" });
+    expect(leftPane.getAttribute("style")).toContain("25%");
+
+    fireEvent.keyDown(divider, { key: "End" });
+    expect(leftPane.getAttribute("style")).toContain("75%");
   });
 
   it("renders split loading placeholder deterministically", async () => {

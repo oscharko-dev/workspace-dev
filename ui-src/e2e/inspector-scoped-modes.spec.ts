@@ -70,14 +70,14 @@ test.describe("inspector scoped code modes", () => {
 
     // Switch to full file mode
     await page.getByTestId("scoped-mode-full").click();
-    await expect(page.getByTestId("scoped-mode-full")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("scoped-mode-full")).toHaveAttribute("aria-checked", "true");
 
     // The code viewer should still be visible
     await expect(codeContent).toBeVisible();
 
     // Switch to focused mode
     await page.getByTestId("scoped-mode-focused").click();
-    await expect(page.getByTestId("scoped-mode-focused")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("scoped-mode-focused")).toHaveAttribute("aria-checked", "true");
 
     // The code viewer should still be visible with highlighted lines
     await expect(codeContent).toBeVisible();
@@ -96,7 +96,7 @@ test.describe("inspector scoped code modes", () => {
 
     // Switch to focused mode first
     await page.getByTestId("scoped-mode-focused").click();
-    await expect(page.getByTestId("scoped-mode-focused")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("scoped-mode-focused")).toHaveAttribute("aria-checked", "true");
 
     // Enable diff mode (if previous job is available)
     const diffToggle = page.getByTestId("inspector-diff-toggle");
@@ -115,7 +115,7 @@ test.describe("inspector scoped code modes", () => {
 
       // Switch modes while diff is active
       await page.getByTestId("scoped-mode-full").click();
-      await expect(page.getByTestId("scoped-mode-full")).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("scoped-mode-full")).toHaveAttribute("aria-checked", "true");
 
       // Diff viewer should still be visible
       await expect(diffViewer).toBeVisible();

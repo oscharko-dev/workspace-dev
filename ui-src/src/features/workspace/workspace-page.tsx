@@ -33,7 +33,7 @@ interface RuntimeStatusPayload {
   url: string;
   host: string;
   port: number;
-  figmaSourceMode: "rest";
+  figmaSourceMode: "rest" | "hybrid" | "local_json";
   llmCodegenMode: "deterministic";
   uptimeMs: number;
   outputRoot: string;
@@ -381,6 +381,7 @@ export function WorkspacePage(): JSX.Element {
     defaultValues: {
       figmaFileKey: initialFigmaKey,
       figmaAccessToken: "",
+      figmaSourceMode: "rest",
       enableGitPr: false,
       repoUrl: "",
       repoToken: "",
@@ -390,6 +391,7 @@ export function WorkspacePage(): JSX.Element {
   });
 
   const isGitPrEnabled = watch("enableGitPr");
+  const selectedFigmaSourceMode = watch("figmaSourceMode");
 
   const runtimeQuery = useQuery({
     queryKey: ["runtime-status"],
@@ -710,7 +712,7 @@ export function WorkspacePage(): JSX.Element {
         <div className="flex items-center gap-2 px-6 pb-3 pt-2">
           <span className="font-mono text-xs text-[#666]">Runtime lock</span>
           <code className="rounded bg-[#f5f5f5] px-2 py-1 font-mono text-xs text-[#666]">
-            figmaSourceMode=rest &nbsp; llmCodegenMode=deterministic
+            figmaSourceMode=rest|hybrid|local_json &nbsp; llmCodegenMode=deterministic
           </code>
           {previewUrl ? (
             <a
@@ -744,8 +746,23 @@ export function WorkspacePage(): JSX.Element {
             <div className="p-6 pt-4">
               {/* Mode tabs */}
               <div className="flex gap-2 border-b border-black/10 pb-3">
-                <span className="rounded-md border border-[#4eba87] bg-emerald-500/5 px-3 py-1 text-sm font-medium text-[#4eba87]">
+                <span
+                  className={`rounded-md px-3 py-1 text-sm font-medium ${
+                    selectedFigmaSourceMode === "rest"
+                      ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
+                      : "text-[#333]"
+                  }`}
+                >
                   REST mode
+                </span>
+                <span
+                  className={`rounded-md px-3 py-1 text-sm font-medium ${
+                    selectedFigmaSourceMode === "hybrid"
+                      ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
+                      : "text-[#333]"
+                  }`}
+                >
+                  Hybrid mode
                 </span>
                 <span className="rounded-md px-3 py-1 text-sm font-medium text-[#333]">
                   Deterministic codegen
@@ -764,6 +781,27 @@ export function WorkspacePage(): JSX.Element {
                 className="mt-4"
               >
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="figma-source-mode" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      Source mode
+                    </label>
+                    <select
+                      id="figma-source-mode"
+                      className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                      {...register("figmaSourceMode")}
+                    >
+                      <option value="rest">REST</option>
+                      <option value="hybrid">Hybrid (REST + MCP enrich)</option>
+                    </select>
+                    <FieldHint
+                      message={
+                        selectedFigmaSourceMode === "hybrid"
+                          ? "Hybrid keeps REST as the source of structure and applies additive MCP enrichment when available."
+                          : undefined
+                      }
+                    />
+                  </div>
+
                   <div className="flex flex-col gap-2">
                     <label htmlFor="figma-file-key" className="text-xs font-medium uppercase tracking-wider text-[#666]">
                       Figma File Key
@@ -919,7 +957,9 @@ export function WorkspacePage(): JSX.Element {
                 <div className="mt-2 space-y-1">
                   <p className="m-0 text-xs text-[#666]">
                     <span className="text-[#666]">Mode: </span>
-                    <span className="text-[#333]">figmaSourceMode=rest &nbsp; llmCodegenMode=deterministic</span>
+                    <span className="text-[#333]">
+                      figmaSourceMode={selectedFigmaSourceMode} &nbsp; llmCodegenMode=deterministic
+                    </span>
                   </p>
                   <p className="m-0 text-xs text-[#666]">
                     <span className="text-[#666]">Preview: </span>

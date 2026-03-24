@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -341,6 +342,7 @@ const createThemeDerivationRenderContext = ({
   const baseContext: RenderContext = {
     screenId: `${screen.id}:theme-defaults`,
     screenName: `${screen.name}:theme-defaults`,
+    currentFilePath: path.posix.join("src", "theme", "theme.ts"),
     generationLocale,
     formHandlingMode: "legacy_use_state",
     fields: [],

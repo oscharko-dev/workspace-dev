@@ -216,6 +216,23 @@ describe("Breadcrumb", () => {
     expect(screen.getByTestId("breadcrumb-overflow-menu")).toBeTruthy();
   });
 
+  it("closes the overflow menu on outside click", () => {
+    const path: BreadcrumbSegment[] = [
+      { id: "s1", name: "Screen", type: "screen" },
+      { id: "a1", name: "Level1", type: "container" },
+      { id: "a2", name: "Level2", type: "container" },
+      { id: "a3", name: "Level3", type: "container" },
+      { id: "a4", name: "Level4", type: "card" }
+    ];
+    render(createElement(Breadcrumb, { path, onSelect: mockOnSelect }));
+
+    fireEvent.click(screen.getByTestId("breadcrumb-overflow-toggle"));
+    expect(screen.getByTestId("breadcrumb-overflow-menu")).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId("breadcrumb-overflow-menu")).toBeNull();
+  });
+
   it("calls onSelect when clicking an overflow menu item", () => {
     const path: BreadcrumbSegment[] = [
       { id: "s1", name: "Screen", type: "screen" },
@@ -240,6 +257,28 @@ describe("Breadcrumb", () => {
     const segment = screen.getByTestId("breadcrumb-segment-b1");
     expect(segment.textContent).toContain("B");
     expect(segment.textContent).toContain("MyButton");
+  });
+
+  it("moves focus across segments with arrow keys", () => {
+    const path: BreadcrumbSegment[] = [
+      { id: "s1", name: "Screen", type: "screen" },
+      { id: "h1", name: "Header", type: "appbar" },
+      { id: "b1", name: "Button", type: "button" }
+    ];
+    render(createElement(Breadcrumb, { path, onSelect: mockOnSelect }));
+
+    const nav = screen.getByTestId("inspector-breadcrumb");
+    const first = screen.getByTestId("breadcrumb-segment-s1");
+    const second = screen.getByTestId("breadcrumb-segment-h1");
+
+    first.focus();
+    expect(first).toHaveFocus();
+
+    fireEvent.keyDown(nav, { key: "ArrowRight" });
+    expect(second).toHaveFocus();
+
+    fireEvent.keyDown(nav, { key: "ArrowLeft" });
+    expect(first).toHaveFocus();
   });
 
   it("renders and triggers enter scope for the last segment", () => {

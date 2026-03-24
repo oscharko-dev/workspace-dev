@@ -9,6 +9,7 @@ import {
   defaultMappedMode,
   deriveScopedCode,
   deriveScopedDiffRanges,
+  findManifestRangeByIrNodeId,
   fallbackMode,
   getAvailableModes,
   isModeAvailable,
@@ -139,6 +140,57 @@ describe("deriveScopedCode", () => {
       const result = deriveScopedCode(code10, "focused", range);
       expect(result.highlightRange?.endLine).toBe(10);
     });
+  });
+});
+
+describe("findManifestRangeByIrNodeId", () => {
+  it("returns the matching start and end lines for a node marker pair", () => {
+    const code = [
+      "export function Example() {",
+      "  return (",
+      "    <>",
+      "      {/* @ir:start node-a Header FRAME */}",
+      "      <Box>Title</Box>",
+      "      {/* @ir:end node-a */}",
+      "    </>",
+      "  );",
+      "}"
+    ].join("\n");
+
+    expect(findManifestRangeByIrNodeId(code, "node-a")).toEqual({
+      startLine: 4,
+      endLine: 6
+    });
+  });
+
+  it("handles nested markers and returns the exact selected node range", () => {
+    const code = [
+      "{/* @ir:start parent Parent FRAME */}",
+      "<Box>",
+      "  {/* @ir:start child-a Child A FRAME */}",
+      "  <Stack />",
+      "  {/* @ir:end child-a */}",
+      "  {/* @ir:start child-b Child B FRAME */}",
+      "  <Typography>Body</Typography>",
+      "  {/* @ir:end child-b */}",
+      "</Box>",
+      "{/* @ir:end parent */}"
+    ].join("\n");
+
+    expect(findManifestRangeByIrNodeId(code, "child-b")).toEqual({
+      startLine: 6,
+      endLine: 8
+    });
+  });
+
+  it("returns null when the requested node markers are missing", () => {
+    const code = [
+      "{/* @ir:start node-a Header FRAME */}",
+      "<Box />",
+      "{/* @ir:end node-a */}"
+    ].join("\n");
+
+    expect(findManifestRangeByIrNodeId(code, "node-missing")).toBeNull();
   });
 });
 

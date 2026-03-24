@@ -109,6 +109,39 @@ describe("StaleDraftWarning", () => {
     expect(onDecision).toHaveBeenCalledWith("carry-forward");
   });
 
+  it("renders remap guidance when unmapped nodes block carry-forward", () => {
+    const onDecision = vi.fn();
+    render(
+      <StaleDraftWarning
+        checkResult={makeStaleDraftResult({
+          carryForwardAvailable: false,
+          unmappedNodeIds: ["node-1"]
+        })}
+        onDecision={onDecision}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Suggest remaps" }));
+    expect(onDecision).toHaveBeenCalledWith("remap");
+  });
+
+  it("shows the remap loading state and disables the remap action while pending", () => {
+    const onDecision = vi.fn();
+    render(
+      <StaleDraftWarning
+        checkResult={makeStaleDraftResult({
+          carryForwardAvailable: false,
+          unmappedNodeIds: ["node-1"]
+        })}
+        onDecision={onDecision}
+        remapPending
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "Loading suggestions…" });
+    expect(button).toBeDisabled();
+  });
+
   it("shows unmapped node count when nodes are unresolvable", () => {
     const onDecision = vi.fn();
     render(

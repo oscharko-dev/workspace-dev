@@ -57,6 +57,7 @@ export const DEPTH_SEMANTIC_TYPES: Set<ScreenElementIR["type"]> = new Set<Screen
   "navigation",
   "stepper",
   "table",
+  "alert",
   "snackbar"
 ]);
 

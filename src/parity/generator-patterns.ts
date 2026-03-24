@@ -862,6 +862,7 @@ const buildExtractedComponentFile = ({
   const componentRenderContext: RenderContext = {
     screenId: screen.id,
     screenName: `${screen.name}:${cluster.componentName}`,
+    currentFilePath: path.posix.join("src", "components", ensureTsxName(cluster.componentName)),
     generationLocale,
     formHandlingMode: "legacy_use_state",
     fields: [],

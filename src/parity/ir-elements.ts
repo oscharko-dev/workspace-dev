@@ -8,7 +8,8 @@ import {
   isNodeGeometryEmpty
 } from "../figma-node-heuristics.js";
 import {
-  hasAnyWord
+  hasAnyWord,
+  resolveExplicitBoardComponentFromNode
 } from "./ir-classification.js";
 import {
   resolveElevationFromEffects,
@@ -169,6 +170,17 @@ export const buildElementBase = ({
   metrics,
   navigationContext
 }: Pick<MapElementInput, "node" | "depth" | "screenId" | "screenName" | "metrics" | "navigationContext">): ElementBaseBuildResult => {
+  const explicitBoardComponent = resolveExplicitBoardComponentFromNode(node);
+  if (explicitBoardComponent && !explicitBoardComponent.type) {
+    metrics.nodeDiagnostics.push({
+      nodeId: node.id,
+      category: "unsupported-board-component",
+      reason:
+        `Explicit board component '${explicitBoardComponent.rawName}' has no deterministic parity renderer mapping; ` +
+        "generation falls back to generic semantic classification.",
+      screenId
+    });
+  }
   const elementType = determineElementType(node, {
     depth,
     onFallback: ({ matchedRulePriority }) => {

@@ -1,6 +1,7 @@
 import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "../contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
-import type { JobEngineRuntime } from "./types.js";
+import type { FigmaMcpEnrichment } from "../parity/types.js";
+import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -77,7 +78,8 @@ export const resolveRuntimeSettings = ({
   maxConcurrentJobs,
   maxQueuedJobs,
   enablePreview,
-  fetchImpl
+  fetchImpl,
+  figmaMcpEnrichmentLoader
 }: {
   figmaRequestTimeoutMs?: number;
   figmaMaxRetries?: number;
@@ -108,6 +110,7 @@ export const resolveRuntimeSettings = ({
   maxQueuedJobs?: number;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
+  figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
 }): JobEngineRuntime => {
   return {
     figmaTimeoutMs:
@@ -196,6 +199,7 @@ export const resolveRuntimeSettings = ({
         ? Math.max(0, Math.min(1000, Math.trunc(maxQueuedJobs)))
         : DEFAULT_MAX_QUEUED_JOBS,
     previewEnabled: enablePreview !== false,
-    fetchImpl: fetchImpl ?? fetch
+    fetchImpl: fetchImpl ?? fetch,
+    ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {})
   };
 };

@@ -198,6 +198,7 @@ export {
   resolveIconButtonAriaLabel,
   hasInteractiveDescendants,
   inferLandmarkRole,
+  resolveSemanticContainerDescriptor,
   isDecorativeImageElement,
   isDecorativeElement,
   inferHeadingComponentByNodeId,
@@ -211,7 +212,7 @@ export {
   buildAccordionHeaderA11yId,
   buildAccordionPanelA11yId
 } from "./generator-a11y.js";
-export type { AccessibilityWarning } from "./generator-a11y.js";
+export type { AccessibilityWarning, SemanticContainerDescriptor } from "./generator-a11y.js";
 
 // ── Internal imports from sub-modules used by the orchestrator ────────────
 import {
@@ -551,7 +552,8 @@ const initializeGenerateArtifactsStatePhase = ({
     prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
     prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
     prototypeNavigationRendered: 0,
-    ...(ir.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] } : {})
+    ...(ir.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] } : {}),
+    ...(ir.metrics?.mcpCoverage ? { mcpCoverage: { ...ir.metrics.mcpCoverage } } : {})
   };
   const truncationByScreenId = new Map(
     generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)

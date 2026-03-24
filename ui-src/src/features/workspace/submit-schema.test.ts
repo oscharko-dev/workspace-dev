@@ -39,4 +39,20 @@ describe("workspaceSubmitSchema", () => {
       llmCodegenMode: "deterministic"
     });
   });
+
+  it("supports hybrid submit payloads", () => {
+    const parsed = workspaceSubmitSchema.parse({
+      figmaFileKey: "file-key",
+      figmaAccessToken: "figd_token",
+      figmaSourceMode: "hybrid",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: ""
+    });
+
+    const payload = toWorkspaceSubmitPayload({ formData: parsed });
+
+    expect(payload.figmaSourceMode).toBe("hybrid");
+    expect(payload.llmCodegenMode).toBe("deterministic");
+  });
 });

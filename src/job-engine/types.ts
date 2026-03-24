@@ -28,10 +28,12 @@ import type {
   WorkspaceStaleDraftCheckResult,
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
+import type { FigmaMcpEnrichment } from "../parity/types.js";
 
 export interface FigmaFileResponse {
   name?: string;
   document?: unknown;
+  styles?: Record<string, unknown>;
 }
 
 export interface FigmaFetchDiagnostics {
@@ -111,6 +113,16 @@ export interface JobEngineRuntime {
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
   previewEnabled: boolean;
+  fetchImpl: typeof fetch;
+  figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
+}
+
+export interface FigmaMcpEnrichmentLoaderInput {
+  figmaFileKey: string;
+  figmaAccessToken: string;
+  cleanedFile: FigmaFileResponse;
+  rawFile: FigmaFileResponse;
+  jobDir: string;
   fetchImpl: typeof fetch;
 }
 

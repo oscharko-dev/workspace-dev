@@ -9,10 +9,18 @@ import {
   defaultMappedMode,
   deriveScopedCode,
   deriveScopedDiffRanges,
+  findManifestRangeByIrNodeId,
   fallbackMode,
   type ManifestRange,
   type ScopedCodeMode
 } from "./scoped-code-ranges";
+import {
+  formatCodeForViewer,
+  FORMAT_ERROR_TIMEOUT_MS,
+  FORMAT_SUCCESS_TIMEOUT_MS,
+  type FormatStatus
+} from "./code-formatting";
+import { detectLanguage } from "../../../lib/shiki-shared";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -164,10 +172,17 @@ export function CodePane({
   const [diffEnabled, setDiffEnabled] = useState(false);
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitRatio, setSplitRatio] = useState(50); // percentage for left pane
+  const [formattedFileState, setFormattedFileState] = useState<{
+    filePath: string;
+    sourceContent: string;
+    formattedContent: string;
+  } | null>(null);
+  const [formatStatus, setFormatStatus] = useState<FormatStatus>({ kind: "idle", message: null });
   const [scopedModes, setScopedModes] = useState(() => ({
     mapped: defaultMappedMode(),
     unmapped: fallbackMode()
   }));
+  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scopedMode = isNodeMapped ? scopedModes.mapped : scopedModes.unmapped;
   const handleScopedModeChange = useCallback((nextMode: ScopedCodeMode) => {
     setScopedModes((currentModes) => {
@@ -192,11 +207,83 @@ export function CodePane({
     };
   }, [activeManifestRange, selectedFile]);
 
+  const clearFormatFeedbackTimeout = useCallback(() => {
+    if (formatFeedbackTimeoutRef.current !== null) {
+      clearTimeout(formatFeedbackTimeoutRef.current);
+      formatFeedbackTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleFormatStatusReset = useCallback((delayMs: number) => {
+    clearFormatFeedbackTimeout();
+    formatFeedbackTimeoutRef.current = setTimeout(() => {
+      setFormatStatus({ kind: "idle", message: null });
+      formatFeedbackTimeoutRef.current = null;
+    }, delayMs);
+  }, [clearFormatFeedbackTimeout]);
+
+  useEffect(() => {
+    return () => {
+      clearFormatFeedbackTimeout();
+    };
+  }, [clearFormatFeedbackTimeout]);
+
+  const formattedFileContent = useMemo(() => {
+    if (!selectedFile || fileContent === null || !formattedFileState) {
+      return null;
+    }
+    if (formattedFileState.filePath !== selectedFile) {
+      return null;
+    }
+    if (formattedFileState.sourceContent !== fileContent) {
+      return null;
+    }
+    return formattedFileState.formattedContent;
+  }, [fileContent, formattedFileState, selectedFile]);
+
+  useEffect(() => {
+    if (!selectedFile || fileContent === null) {
+      setFormattedFileState(null);
+      clearFormatFeedbackTimeout();
+      setFormatStatus({ kind: "idle", message: null });
+      return;
+    }
+
+    if (formattedFileState?.filePath === selectedFile && formattedFileState.sourceContent === fileContent) {
+      return;
+    }
+
+    setFormattedFileState((currentState) => {
+      if (!currentState) {
+        return null;
+      }
+      if (currentState.filePath === selectedFile && currentState.sourceContent === fileContent) {
+        return currentState;
+      }
+      return null;
+    });
+    clearFormatFeedbackTimeout();
+    setFormatStatus({ kind: "idle", message: null });
+  }, [clearFormatFeedbackTimeout, fileContent, formattedFileState?.filePath, formattedFileState?.sourceContent, selectedFile]);
+
+  const detectedLanguage = useMemo(() => {
+    return selectedFile ? detectLanguage(selectedFile) : null;
+  }, [selectedFile]);
+
+  const effectiveScopedManifestRange = useMemo<ManifestRange | null>(() => {
+    if (!formattedFileContent || !selectedIrNodeId) {
+      return effectiveActiveManifestRange;
+    }
+    return findManifestRangeByIrNodeId(formattedFileContent, selectedIrNodeId) ?? effectiveActiveManifestRange;
+  }, [effectiveActiveManifestRange, formattedFileContent, selectedIrNodeId]);
+
+  const displayFileContent = formattedFileContent ?? fileContent;
+
   // Derive scoped code for the current file
   const scopedCode = useMemo(() => {
-    if (fileContent === null) return null;
-    return deriveScopedCode(fileContent, scopedMode, effectiveActiveManifestRange);
-  }, [effectiveActiveManifestRange, fileContent, scopedMode]);
+    if (displayFileContent === null) return null;
+    return deriveScopedCode(displayFileContent, scopedMode, effectiveScopedManifestRange);
+  }, [displayFileContent, effectiveScopedManifestRange, scopedMode]);
 
   // Derive scoped diff ranges (independent old/new offsets)
   const scopedDiffRanges = useMemo(() => {
@@ -209,6 +296,44 @@ export function CodePane({
 
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startRatio: number } | null>(null);
+
+  const handleFormatSelectedFile = useCallback(async () => {
+    if (!selectedFile || fileContent === null) {
+      return;
+    }
+
+    const formatSource = formattedFileContent ?? fileContent;
+    setFormatStatus({ kind: "formatting", message: null });
+    clearFormatFeedbackTimeout();
+
+    try {
+      const formatted = await formatCodeForViewer({
+        code: formatSource,
+        filePath: selectedFile,
+        language: detectedLanguage
+      });
+      setFormattedFileState({
+        filePath: selectedFile,
+        sourceContent: fileContent,
+        formattedContent: formatted
+      });
+      setFormatStatus({ kind: "success", message: null });
+      scheduleFormatStatusReset(FORMAT_SUCCESS_TIMEOUT_MS);
+    } catch (error) {
+      const message = error instanceof Error && error.message.length > 0
+        ? error.message
+        : "Formatting failed.";
+      setFormatStatus({ kind: "error", message });
+      scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
+    }
+  }, [
+    clearFormatFeedbackTimeout,
+    detectedLanguage,
+    fileContent,
+    formattedFileContent,
+    scheduleFormatStatusReset,
+    selectedFile
+  ]);
 
   const codeFiles = files.filter(
     (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts") || (jsonVisible && f.path.endsWith(".json"))
@@ -475,15 +600,18 @@ export function CodePane({
               >
                 <CodeViewer
                   themeMode="dark"
-                  code={scopedCode?.code ?? fileContent}
+                  code={scopedCode?.code ?? displayFileContent ?? fileContent}
                   filePath={selectedFile}
                   highlightRange={scopedCode?.highlightRange ?? highlightRange}
+                  allowExternalFindShortcut
                   selectedIrNodeId={selectedIrNodeId}
                   boundariesEnabled={boundariesEnabled}
                   onBoundariesEnabledChange={onBoundariesEnabledChange}
                   boundaries={fileBoundaries}
                   onBoundarySelect={onBoundarySelect}
                   lineOffset={scopedCode?.lineOffset}
+                  onFormat={handleFormatSelectedFile}
+                  formatStatus={formatStatus}
                 />
               </div>
 
@@ -556,15 +684,18 @@ export function CodePane({
           ) : (
             <CodeViewer
               themeMode="dark"
-              code={scopedCode?.code ?? fileContent}
+              code={scopedCode?.code ?? displayFileContent ?? fileContent}
               filePath={selectedFile}
               highlightRange={scopedCode?.highlightRange ?? highlightRange}
+              allowExternalFindShortcut
               selectedIrNodeId={selectedIrNodeId}
               boundariesEnabled={boundariesEnabled}
               onBoundariesEnabledChange={onBoundariesEnabledChange}
               boundaries={fileBoundaries}
               onBoundarySelect={onBoundarySelect}
               lineOffset={scopedCode?.lineOffset}
+              onFormat={handleFormatSelectedFile}
+              formatStatus={formatStatus}
             />
           )
         ) : !isNodeMapped && selectedFile ? (

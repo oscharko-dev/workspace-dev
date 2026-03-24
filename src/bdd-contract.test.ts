@@ -20,6 +20,7 @@ test("bdd contract: workspace mode-lock feature scenarios exist", async () => {
   const scenarios = extractScenarioNames(featureContent);
   const requiredScenarios = [
     "Accept locked modes",
+    "Accept hybrid mode",
     "Reject unsupported modes with actionable guidance"
   ];
 
@@ -45,6 +46,16 @@ test("bdd contract: locked modes stay valid", () => {
 test("bdd contract: local_json mode stays valid", () => {
   const result = validateModeLock({
     figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic"
+  });
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("bdd contract: hybrid mode stays valid", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "hybrid",
     llmCodegenMode: "deterministic"
   });
 

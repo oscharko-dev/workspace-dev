@@ -50,7 +50,7 @@ const collectAllElements = (children: ScreenElementIR[]): ScreenElementIR[] => {
 };
 
 const VALID_ELEMENT_TYPES = new Set<string>([
-  "text", "container", "button", "input", "image", "grid", "stack",
+  "text", "container", "button", "alert", "input", "image", "grid", "stack",
   "paper", "card", "chip", "switch", "checkbox", "radio", "select",
   "slider", "rating", "list", "table", "tooltip", "appbar", "drawer",
   "breadcrumbs", "tab", "dialog", "snackbar", "stepper", "progress",

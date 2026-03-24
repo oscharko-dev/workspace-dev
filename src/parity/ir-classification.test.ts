@@ -10,6 +10,7 @@ import {
   isIconLikeNodeName,
   classifyElementTypeFromNode,
   classifyElementTypeFromSemanticHint,
+  resolveExplicitBoardComponentFromNode,
   NODE_CLASSIFICATION_RULES,
   SEMANTIC_CLASSIFICATION_RULES
 } from "./ir-classification.js";
@@ -657,6 +658,50 @@ describe("classifyElementTypeFromNode", () => {
         "button"
       );
     });
+
+    it("classifies explicit board button names before paper fallback", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "INSTANCE",
+            name: "<Button>",
+            children: [{ id: "label-1", type: "TEXT", characters: "Weiter" }]
+          }),
+          WITH_SOLID_FILL
+        ),
+        "button"
+      );
+    });
+
+    it("classifies explicit instance button names without angle brackets", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "INSTANCE",
+            name: "Merkzettel Button",
+            children: [{ id: "label-1", type: "TEXT", characters: "Merken" }]
+          }),
+          WITH_SOLID_FILL
+        ),
+        "button"
+      );
+    });
+  });
+
+  describe("alert", () => {
+    it("classifies explicit board alert names", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "INSTANCE",
+            name: "<Alert>",
+            children: [{ id: "alert-text", type: "TEXT", characters: "Hinweis" }]
+          }),
+          WITH_SOLID_FILL
+        ),
+        "alert"
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -732,6 +777,10 @@ describe("classifyElementTypeFromNode", () => {
       assert.equal(classify(makeNode({ type: "TEXT", name: "button-label" })), "text");
     });
 
+    it("text takes priority over explicit board component names", () => {
+      assert.equal(classify(makeNode({ type: "TEXT", name: "<Button>" })), "text");
+    });
+
     it("select takes priority over input when both keywords present", () => {
       assert.equal(
         classify(makeNode({
@@ -754,6 +803,21 @@ describe("classifyElementTypeFromNode", () => {
           WITH_SOLID_FILL
         ),
         "card"
+      );
+    });
+
+    it("explicit board button takes priority over visual surface paper inference", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "INSTANCE",
+            name: "<Button>",
+            cornerRadius: 16,
+            children: [{ id: "c1", type: "TEXT", characters: "Absenden" }]
+          }),
+          WITH_SOLID_FILL
+        ),
+        "button"
       );
     });
   });
@@ -816,6 +880,31 @@ describe("classifyElementTypeFromSemanticHint", () => {
 
   it("returns undefined for non-matching hints", () => {
     assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "wrapper", semanticType: "container" }), undefined);
+  });
+});
+
+describe("resolveExplicitBoardComponentFromNode", () => {
+  it("resolves supported explicit board components", () => {
+    const match = resolveExplicitBoardComponentFromNode({
+      type: "INSTANCE",
+      name: "<Stack2>(Nested)"
+    });
+    assert.deepEqual(match, {
+      rawName: "Stack2",
+      canonicalName: "Stack",
+      type: "stack"
+    });
+  });
+
+  it("keeps unsupported explicit board components visible for diagnostics", () => {
+    const match = resolveExplicitBoardComponentFromNode({
+      type: "INSTANCE",
+      name: "_<CardContent>"
+    });
+    assert.deepEqual(match, {
+      rawName: "CardContent",
+      canonicalName: "CardContent"
+    });
   });
 });
 

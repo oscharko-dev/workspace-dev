@@ -65,6 +65,7 @@ export interface FigmaNode {
   strokeStyleId?: string;
   effectStyleId?: string;
   textStyleId?: string;
+  boundVariables?: Record<string, unknown>;
   children?: FigmaNode[];
   fillGeometry?: Array<{
     path?: string;
@@ -102,6 +103,8 @@ export interface FigmaNode {
     textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT";
   };
   cornerRadius?: number;
+  componentId?: string;
+  componentSetId?: string;
   componentProperties?: Record<string, FigmaComponentPropertyValue>;
   componentPropertyDefinitions?: Record<string, FigmaComponentPropertyDefinition>;
   interactions?: FigmaInteraction[];

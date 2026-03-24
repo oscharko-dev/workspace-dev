@@ -18,7 +18,12 @@ export interface InspectorLocators {
 
 export type InspectorDialogLabel = "Review" | "Sync" | "PR" | "Coverage";
 
-const UI_URL = process.env.WORKSPACE_DEV_UI_URL ?? "http://127.0.0.1:19831/workspace/ui";
+const configuredUiUrl = process.env.WORKSPACE_DEV_UI_URL?.trim();
+const configuredRuntimeBaseUrl = process.env.WORKSPACE_DEV_RUNTIME_BASE_URL?.trim();
+const configuredPort = Number.parseInt(process.env.WORKSPACE_DEV_E2E_PORT?.trim() ?? "", 10);
+const defaultPort = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 19831;
+const runtimeBaseUrl = configuredRuntimeBaseUrl ?? `http://127.0.0.1:${String(defaultPort)}`;
+const UI_URL = configuredUiUrl ?? `${runtimeBaseUrl}/workspace/ui`;
 const FIXTURE_PATH = path.resolve(
   fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
 );

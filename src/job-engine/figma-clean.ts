@@ -1,7 +1,7 @@
 import type { FigmaFileResponse } from "./types.js";
 import { isHelperItemNode, isNodeGeometryEmpty, isTechnicalPlaceholderNode } from "../figma-node-heuristics.js";
 
-const ALLOWED_FILE_KEYS = new Set(["name", "document"]);
+const ALLOWED_FILE_KEYS = new Set(["name", "document", "styles"]);
 
 const ALLOWED_NODE_KEYS = new Set([
   "id",
@@ -26,8 +26,16 @@ const ALLOWED_NODE_KEYS = new Set([
   "absoluteBoundingBox",
   "characters",
   "style",
+  "styles",
+  "fillStyleId",
+  "strokeStyleId",
+  "effectStyleId",
+  "textStyleId",
   "cornerRadius",
   "effects",
+  "boundVariables",
+  "componentId",
+  "componentSetId",
   "componentProperties",
   "componentPropertyDefinitions",
   "interactions"
@@ -54,6 +62,7 @@ const ALLOWED_COMPONENT_PROPERTY_DEFINITION_KEYS = new Set(["type", "defaultValu
 const ALLOWED_INTERACTION_KEYS = new Set(["trigger", "action", "actions"]);
 const ALLOWED_INTERACTION_TRIGGER_KEYS = new Set(["type"]);
 const ALLOWED_INTERACTION_ACTION_KEYS = new Set(["type", "destinationId", "navigation", "transitionNodeID", "transitionNodeId"]);
+const ALLOWED_FILE_STYLE_KEYS = new Set(["name", "styleType", "style_type", "key", "description"]);
 
 interface FigmaCleaningAccumulator {
   inputNodeCount: number;
@@ -92,6 +101,52 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isFiniteNumber = (value: unknown): value is number => {
   return typeof value === "number" && Number.isFinite(value);
+};
+
+const sanitizeStringRecord = (value: unknown): Record<string, string> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const output: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string" && entry.trim().length > 0) {
+      output[key] = entry;
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const sanitizeStyleCatalog = (value: unknown, metrics: FigmaCleaningAccumulator): Record<string, unknown> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const output: Record<string, unknown> = {};
+  for (const [styleId, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    metrics.removedPropertyCount += countRemovedKeys(entry, ALLOWED_FILE_STYLE_KEYS);
+    const nextEntry: Record<string, unknown> = {};
+    if (typeof entry.name === "string" && entry.name.trim().length > 0) {
+      nextEntry.name = entry.name;
+    }
+    if (typeof entry.styleType === "string" && entry.styleType.trim().length > 0) {
+      nextEntry.styleType = entry.styleType;
+    }
+    if (typeof entry.style_type === "string" && entry.style_type.trim().length > 0) {
+      nextEntry.style_type = entry.style_type;
+    }
+    if (typeof entry.key === "string" && entry.key.trim().length > 0) {
+      nextEntry.key = entry.key;
+    }
+    if (typeof entry.description === "string" && entry.description.trim().length > 0) {
+      nextEntry.description = entry.description;
+    }
+    if (Object.keys(nextEntry).length > 0) {
+      output[styleId] = nextEntry;
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
 };
 
 const countRemovedKeys = (value: Record<string, unknown>, allowList: Set<string>): number => {
@@ -756,6 +811,12 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
     if (isFiniteNumber(current.cornerRadius)) {
       nextNode.cornerRadius = current.cornerRadius;
     }
+    if (typeof current.componentId === "string") {
+      nextNode.componentId = current.componentId;
+    }
+    if (typeof current.componentSetId === "string") {
+      nextNode.componentSetId = current.componentSetId;
+    }
     if (isFiniteNumber(current.opacity) && current.opacity >= 0 && current.opacity < 1) {
       nextNode.opacity = current.opacity;
     }
@@ -771,6 +832,25 @@ const sanitizeNode = (nodeCandidate: unknown, context: CleanNodeContext): Record
     const style = sanitizeStyle(current.style, metrics);
     if (style) {
       nextNode.style = style;
+    }
+    const styles = sanitizeStringRecord(current.styles);
+    if (styles) {
+      nextNode.styles = styles;
+    }
+    if (typeof current.fillStyleId === "string" && current.fillStyleId.trim().length > 0) {
+      nextNode.fillStyleId = current.fillStyleId;
+    }
+    if (typeof current.strokeStyleId === "string" && current.strokeStyleId.trim().length > 0) {
+      nextNode.strokeStyleId = current.strokeStyleId;
+    }
+    if (typeof current.effectStyleId === "string" && current.effectStyleId.trim().length > 0) {
+      nextNode.effectStyleId = current.effectStyleId;
+    }
+    if (typeof current.textStyleId === "string" && current.textStyleId.trim().length > 0) {
+      nextNode.textStyleId = current.textStyleId;
+    }
+    if (isRecord(current.boundVariables) && Object.keys(current.boundVariables).length > 0) {
+      nextNode.boundVariables = current.boundVariables;
     }
 
     const fills = sanitizePaints(current.fills, metrics);
@@ -912,6 +992,10 @@ export const cleanFigmaForCodegen = ({ file }: { file: FigmaFileResponse }): Cle
   const cleanedFile: FigmaFileResponse = {};
   if (typeof rawFile.name === "string") {
     cleanedFile.name = rawFile.name;
+  }
+  const styleCatalog = sanitizeStyleCatalog(rawFile.styles, metrics);
+  if (styleCatalog) {
+    cleanedFile.styles = styleCatalog;
   }
   if (cleanedDocument) {
     cleanedFile.document = cleanedDocument;

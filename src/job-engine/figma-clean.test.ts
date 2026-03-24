@@ -298,6 +298,78 @@ test("cleanFigmaForCodegen removes hidden/helper/placeholder nodes and strips no
   assert.equal(result.report.outputNodeCount < result.report.inputNodeCount, true);
 });
 
+test("cleanFigmaForCodegen preserves style catalogs, node style ids, and bound variables", () => {
+  const input = {
+    name: "Styled Demo",
+    styles: {
+      "S:1": {
+        name: "Heading/H1",
+        styleType: "TEXT",
+        description: "primary heading",
+        ignored: true
+      }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "frame-1",
+              type: "FRAME",
+              name: "Screen",
+              children: [
+                {
+                  id: "text-1",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Hello",
+                  textStyleId: "S:1",
+                  fillStyleId: "S:fill",
+                  strokeStyleId: "S:stroke",
+                  effectStyleId: "S:effect",
+                  styles: {
+                    text: "S:1",
+                    fill: "S:fill"
+                  },
+                  boundVariables: {
+                    fills: [{ id: "VariableID:1" }]
+                  },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+  assert.deepEqual(result.cleanedFile.styles, {
+    "S:1": {
+      name: "Heading/H1",
+      styleType: "TEXT",
+      description: "primary heading"
+    }
+  });
+  const textNode = findNodeById(result.cleanedFile.document, "text-1");
+  assert.deepEqual(textNode?.styles, {
+    text: "S:1",
+    fill: "S:fill"
+  });
+  assert.equal(textNode?.textStyleId, "S:1");
+  assert.equal(textNode?.fillStyleId, "S:fill");
+  assert.equal(textNode?.strokeStyleId, "S:stroke");
+  assert.equal(textNode?.effectStyleId, "S:effect");
+  assert.deepEqual(textNode?.boundVariables, {
+    fills: [{ id: "VariableID:1" }]
+  });
+});
+
 test("cleanFigmaForCodegen keeps finite letterSpacing style values and drops invalid ones", () => {
   const input = {
     name: "LetterSpacing style",

@@ -278,6 +278,49 @@ describe("CodeViewer", () => {
     expect(findInput).toHaveFocus();
   });
 
+  it("focuses find input when Ctrl+F is pressed from a non-editable external control and external shortcuts are enabled", () => {
+    render(
+      createElement("div", {}, [
+        createElement("button", { key: "external-button", "data-testid": "external-button", type: "button" }, "Outside"),
+        createElement(CodeViewer, {
+          key: "viewer",
+          code: "const x = 1;",
+          filePath: "src/App.tsx",
+          allowExternalFindShortcut: true
+        })
+      ])
+    );
+
+    const externalButton = screen.getByTestId("external-button");
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    externalButton.focus();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(findInput).toHaveFocus();
+  });
+
+  it("does not hijack Ctrl+F from an external text input even when external shortcuts are enabled", () => {
+    render(
+      createElement("div", {}, [
+        createElement("input", { key: "external-input", "data-testid": "external-input", type: "text" }),
+        createElement(CodeViewer, {
+          key: "viewer",
+          code: "const x = 1;",
+          filePath: "src/App.tsx",
+          allowExternalFindShortcut: true
+        })
+      ])
+    );
+
+    const externalInput = screen.getByTestId("external-input");
+    const findInput = screen.getByTestId("code-viewer-find-input");
+    externalInput.focus();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(findInput).not.toHaveFocus();
+    expect(externalInput).toHaveFocus();
+  });
+
   it("updates search count and navigates matches with Enter and Shift+Enter", async () => {
     render(
       createElement(CodeViewer, {
@@ -453,6 +496,40 @@ describe("CodeViewer", () => {
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("const data = { answer: 42 };");
+    });
+  });
+
+  it("uses externally managed formatting state without resetting the displayed buffer on scoped code updates", async () => {
+    const onFormat = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      createElement(CodeViewer, {
+        code: "const data = { answer: 42 };",
+        filePath: "src/App.tsx",
+        onFormat,
+        formatStatus: { kind: "success", message: null }
+      })
+    );
+
+    expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(onFormat).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(
+      createElement(CodeViewer, {
+        code: "const data = { answer: 42 };\nconst next = 1;",
+        filePath: "src/App.tsx",
+        onFormat,
+        formatStatus: { kind: "success", message: null }
+      })
+    );
+
+    expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("const next = 1;");
     });
   });
 
