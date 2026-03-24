@@ -74,6 +74,8 @@ export type {
   DesignTokenTypographyVariant,
   DesignTokenTypographyVariantName,
   DesignTokens,
+  DesignTokenSource,
+  DesignTokenSourceMetric,
   GeneratedFile,
   GenerationMetrics,
   McpCoverageMetric,

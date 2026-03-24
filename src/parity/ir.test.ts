@@ -4927,6 +4927,24 @@ test("deriveTokensForTesting prefers authoritative hybrid variables and style ca
   assert.equal(tokens.typography.h1.fontFamily, "Figma Sans");
   assert.equal(tokens.typography.body1.fontSizePx, 18);
   assert.equal(tokens.typography.body1.fontFamily, "Figma Sans");
+
+  assert.ok(tokens.tokenSource, "tokenSource metric must be present");
+  assert.equal(tokens.tokenSource.palette, "variables");
+  assert.equal(tokens.tokenSource.typography, "styles");
+  assert.equal(tokens.tokenSource.spacing, "variables");
+  assert.equal(tokens.tokenSource.borderRadius, "variables");
+  assert.equal(tokens.tokenSource.fontFamily, "variables");
+});
+
+test("deriveTokensForTesting reports clustering token source when no MCP enrichment is provided", () => {
+  const tokens = deriveTokensForTesting(createSampleFigmaFile());
+
+  assert.ok(tokens.tokenSource, "tokenSource metric must be present");
+  assert.equal(tokens.tokenSource.palette, "clustering");
+  assert.equal(tokens.tokenSource.typography, "clustering");
+  assert.equal(tokens.tokenSource.spacing, "clustering");
+  assert.equal(tokens.tokenSource.borderRadius, "clustering");
+  assert.equal(tokens.tokenSource.fontFamily, "clustering");
 });
 
 test("figmaToDesignIrWithOptions gives code connect mappings precedence over metadata and node hints in hybrid mode", () => {

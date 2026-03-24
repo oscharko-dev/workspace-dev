@@ -21,7 +21,7 @@ export default function OperationsGridScreen() {
           {/* @ir:end grid-area-nav */}
         </Box>
           {/* @ir:start grid-area-hero grid-area-hero grid */}
-          <Box data-ir-id="grid-area-hero" data-ir-name="grid-area-hero" sx={{ position: "absolute", left: "236px", top: "0px", width: "696px", minHeight: "192px", bgcolor: "#ffffff", borderRadius: 1 }}>
+          <Box data-ir-id="grid-area-hero" data-ir-name="grid-area-hero" component="header" role="banner" sx={{ position: "absolute", left: "236px", top: "0px", width: "696px", minHeight: "192px", bgcolor: "#ffffff", borderRadius: 1 }}>
             {/* @ir:start grid-area-hero-text Label text */}
             <Typography data-ir-id="grid-area-hero-text" data-ir-name="Label" variant="h2" component="h2" sx={{ position: "absolute", left: "24px", top: "24px", color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Dock turnaround dropped 18% this week"}</Typography>
             {/* @ir:end grid-area-hero-text */}
@@ -36,7 +36,7 @@ export default function OperationsGridScreen() {
           {/* @ir:end grid-area-stats */}
         <Box sx={{ gridColumn: "1 / 3" }}>
           {/* @ir:start grid-area-footer grid-area-footer grid */}
-          <Box data-ir-id="grid-area-footer" data-ir-name="grid-area-footer" sx={{ position: "absolute", left: "0px", top: "340px", width: "932px", minHeight: "136px", bgcolor: "#ffffff", borderRadius: 1 }}>
+          <Box data-ir-id="grid-area-footer" data-ir-name="grid-area-footer" component="footer" role="contentinfo" sx={{ position: "absolute", left: "0px", top: "340px", width: "932px", minHeight: "136px", bgcolor: "#ffffff", borderRadius: 1 }}>
             {/* @ir:start grid-area-footer-text Label text */}
             <Typography data-ir-id="grid-area-footer-text" data-ir-name="Label" variant="h4" component="h5" sx={{ position: "absolute", left: "24px", top: "54px", color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Supervisors are reviewing six delayed outbound loads."}</Typography>
             {/* @ir:end grid-area-footer-text */}
