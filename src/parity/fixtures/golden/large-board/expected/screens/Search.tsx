@@ -4,9 +4,9 @@ import { Container, TextField, Typography } from "@mui/material";
 import { SearchFormContextProvider, useSearchFormContext } from "../context/SearchFormContext";
 
 function SearchScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useSearchFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useSearchFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
       {/* @ir:start search-title Title text */}
       <Typography data-ir-id="search-title" data-ir-name="Title" variant="h3" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Search"}</Typography>
       {/* @ir:end search-title */}
@@ -25,7 +25,7 @@ function SearchScreenContent() {
             <TextField
               label={"Search"}
               type={"search"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}

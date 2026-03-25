@@ -531,6 +531,54 @@ export const resolveSemanticFamilyScore = ({
   return -1.5;
 };
 
+const resolveSemanticSignalStrength = (cluster: ColorCluster): number => {
+  return (
+    cluster.styleSignals.success +
+    cluster.styleSignals.warning +
+    cluster.styleSignals.error +
+    cluster.styleSignals.info
+  );
+};
+
+const resolveSignalHuePenalty = ({
+  cluster,
+  mode
+}: {
+  cluster: ColorCluster;
+  mode: "primary" | "secondary";
+}): number => {
+  const family = resolveColorFamily(cluster.color);
+  const semanticSignalStrength = resolveSemanticSignalStrength(cluster);
+  const explicitBrandStrength = cluster.styleSignals.primary + cluster.styleSignals.secondary + cluster.styleSignals.brand;
+  const hasStrongInteractiveIntent = explicitBrandStrength >= 1 || cluster.contexts.button >= 1.4;
+
+  const baseFamilyPenalty = (() => {
+    if (family === "green") {
+      return mode === "secondary" ? 4.8 : 4.2;
+    }
+    if (family === "orange" || family === "yellow") {
+      return mode === "secondary" ? 3.4 : 3;
+    }
+    if (family === "red") {
+      return mode === "secondary" ? 1.6 : 1.2;
+    }
+    return 0;
+  })();
+  const semanticSignalPenalty = semanticSignalStrength * (mode === "secondary" ? 2.6 : 2.1);
+  const totalPenalty = baseFamilyPenalty + semanticSignalPenalty;
+  if (totalPenalty <= 0) {
+    return 0;
+  }
+
+  if (hasStrongInteractiveIntent) {
+    return totalPenalty * 0.35;
+  }
+  if (explicitBrandStrength > 0) {
+    return totalPenalty * 0.55;
+  }
+  return totalPenalty;
+};
+
 export const isDistinctFromColors = ({
   color,
   references,
@@ -872,6 +920,10 @@ export const choosePrimaryColor = ({
     if (colorDistance(cluster.color, textColor) < 0.08) {
       value -= 8;
     }
+    value -= resolveSignalHuePenalty({
+      cluster,
+      mode: "primary"
+    });
     return value;
   };
 
@@ -894,7 +946,12 @@ export const chooseSecondaryColor = ({
   backgroundColor: string;
   primaryColor: string;
 }): string => {
-  const pool = clusters.filter((cluster) => colorDistance(cluster.color, primaryColor) >= 0.14);
+  const nonBackgroundPool = clusters.filter(
+    (cluster) => colorDistance(cluster.color, primaryColor) >= 0.14 && colorDistance(cluster.color, backgroundColor) >= 0.08
+  );
+  const pool = nonBackgroundPool.length > 0
+    ? nonBackgroundPool
+    : clusters.filter((cluster) => colorDistance(cluster.color, primaryColor) >= 0.14);
   if (pool.length === 0) {
     return TOKEN_DERIVATION_DEFAULTS.palette.secondary;
   }
@@ -904,13 +961,17 @@ export const chooseSecondaryColor = ({
       cluster.styleSignals.secondary * 4.4 +
       cluster.styleSignals.accent * 2.2 +
       cluster.contexts.heading +
-      cluster.contexts.button * 0.8 +
+      cluster.contexts.button * 1.2 +
       saturation(cluster.color) * 2 +
       colorDistance(cluster.color, primaryColor) * 2 +
       cluster.totalWeight * 0.03;
     if (contrastRatio(cluster.color, backgroundColor) >= 3) {
       value += 1.2;
     }
+    value -= resolveSignalHuePenalty({
+      cluster,
+      mode: "secondary"
+    });
     return value;
   };
 

@@ -283,7 +283,7 @@
   "tokens": {
     "palette": {
       "primary": "#191c23",
-      "secondary": "#f8f9fb",
+      "secondary": "#afb6c3",
       "background": "#f8f9fb",
       "text": "#191c23",
       "success": "#16A34A",
@@ -429,7 +429,7 @@
     },
     "darkPaletteHints": {
       "primary": "#f8f9fb",
-      "secondary": "#191c23",
+      "secondary": "#afb6c3",
       "success": "#16A34A",
       "warning": "#D97706",
       "error": "#DC2626",

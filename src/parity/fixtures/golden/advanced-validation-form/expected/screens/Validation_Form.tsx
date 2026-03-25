@@ -4,9 +4,9 @@ import { Container, Paper, TextField, Typography } from "@mui/material";
 import { ValidationFormFormContextProvider, useValidationFormFormContext } from "../context/ValidationFormFormContext";
 
 function ValidationFormScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useValidationFormFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useValidationFormFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 380px)", bgcolor: "background.default", px: 4, py: 4 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 380px)", bgcolor: "background.default", px: 4, py: 4 }}>
       {/* @ir:start validation-title Heading text */}
       <Typography data-ir-id="validation-title" data-ir-name="Heading" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Request approved budget"}</Typography>
       {/* @ir:end validation-title */}
@@ -30,7 +30,7 @@ function ValidationFormScreenContent() {
               placeholder={"owner@example.com"}
               type={"email"}
               autoComplete={"email"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}
@@ -67,7 +67,7 @@ function ValidationFormScreenContent() {
             <TextField
               label={"Approved amount"}
               type={"number"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}
@@ -104,7 +104,7 @@ function ValidationFormScreenContent() {
           return (
             <TextField
               label={"Approval code"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}

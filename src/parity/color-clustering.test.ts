@@ -21,14 +21,26 @@ import { emptyStyleSignals } from "./ir-helpers.js";
 import {
   clusterSamples,
   COLOR_CLUSTER_MERGE_THRESHOLD,
-  NEAR_DUPLICATE_DISTANCE
+  NEAR_DUPLICATE_DISTANCE,
+  chooseBackgroundColor,
+  chooseTextColor,
+  choosePrimaryColor,
+  chooseSecondaryColor
 } from "./ir-palette.js";
 
-const makeSample = (color: string, weight = 1, context: ColorSample["context"] = "decorative"): ColorSample => ({
+const makeSample = (
+  color: string,
+  weight = 1,
+  context: ColorSample["context"] = "decorative",
+  styleSignalOverrides: Partial<ColorSample["styleSignals"]> = {}
+): ColorSample => ({
   color,
   weight,
   context,
-  styleSignals: emptyStyleSignals()
+  styleSignals: {
+    ...emptyStyleSignals(),
+    ...styleSignalOverrides
+  }
 });
 
 // ── parseHexCached ──────────────────────────────────────────────────────────
@@ -226,4 +238,40 @@ test("clusterSamples: context weights are preserved through merging", () => {
   assert.equal(result.length, 1);
   assert.ok(result[0]!.contexts.button > 0, "Button context weight should be preserved");
   assert.ok(result[0]!.contexts.heading > 0, "Heading context weight should be preserved");
+});
+
+test("chooseSecondaryColor downweights semantic-like green candidates when a blue accent alternative exists", () => {
+  const clusters = clusterSamples([
+    makeSample("#f7f8fb", 80, "surface", { background: 1 }),
+    makeSample("#1f2937", 40, "body", { text: 1 }),
+    makeSample("#d4001a", 24, "button", { primary: 2, brand: 1 }),
+    makeSample("#2e7d32", 30, "decorative"),
+    makeSample("#1976d2", 20, "heading", { accent: 2, secondary: 1 })
+  ]);
+
+  const backgroundColor = chooseBackgroundColor(clusters);
+  const textColor = chooseTextColor({ clusters, backgroundColor });
+  const primaryColor = choosePrimaryColor({ clusters, backgroundColor, textColor });
+  const secondaryColor = chooseSecondaryColor({ clusters, backgroundColor, primaryColor });
+
+  assert.equal(primaryColor, "#d4001a");
+  assert.equal(secondaryColor, "#1976d2");
+});
+
+test("chooseSecondaryColor remains distinct from background and primary when candidate pool is narrow", () => {
+  const clusters = clusterSamples([
+    makeSample("#f7f8fb", 80, "surface", { background: 1 }),
+    makeSample("#1f2937", 40, "body", { text: 1 }),
+    makeSample("#d4001a", 24, "button", { primary: 2, brand: 1 }),
+    makeSample("#2e7d32", 30, "decorative")
+  ]);
+
+  const backgroundColor = chooseBackgroundColor(clusters);
+  const textColor = chooseTextColor({ clusters, backgroundColor });
+  const primaryColor = choosePrimaryColor({ clusters, backgroundColor, textColor });
+  const secondaryColor = chooseSecondaryColor({ clusters, backgroundColor, primaryColor });
+
+  assert.equal(primaryColor, "#d4001a");
+  assert.notEqual(secondaryColor, backgroundColor);
+  assert.notEqual(secondaryColor, primaryColor);
 });

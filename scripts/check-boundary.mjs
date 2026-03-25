@@ -38,6 +38,9 @@ const FORBIDDEN_PATTERNS = [
 // Generator modules should depend only on types-ir.ts / types.ts, never on ir.ts directly.
 const IR_BOUNDARY_PATTERN = /from\s+["']\.\/ir\.js["']/;
 const IR_BOUNDARY_SCOPE_PREFIX = "src/parity/generator-";
+const STAGE_SERVICE_PATH_PATTERN = /^src\/job-engine\/services\/(.+)-service\.ts$/;
+const STAGE_SERVICE_IMPORT_PATTERN = /from\s+["']\.\/([a-z0-9-]+-service)\.js["']/i;
+const STAGE_SERVICE_REQUIRE_PATTERN = /require\s*\(\s*["']\.\/([a-z0-9-]+-service)\.js["']\s*\)/i;
 
 // ── Package.json forbidden runtime dependencies ─────────────────────────────
 const FORBIDDEN_DEPENDENCIES = ["pg", "ioredis", "bullmq", "figmapipe-api", "@figmapipe/api", "sqlite3", "better-sqlite3", "fastify", "zod"];
@@ -66,9 +69,12 @@ const main = async () => {
     const content = await readFile(filePath, "utf-8");
     const lines = content.split("\n");
     const relativePath = path.relative(process.cwd(), filePath);
+    const relativePathPosix = relativePath.split(path.sep).join("/");
     const isGeneratorModule =
-      relativePath.startsWith(IR_BOUNDARY_SCOPE_PREFIX) &&
-      !relativePath.endsWith(".test.ts");
+      relativePathPosix.startsWith(IR_BOUNDARY_SCOPE_PREFIX) &&
+      !relativePathPosix.endsWith(".test.ts");
+    const stageServiceMatch = relativePathPosix.match(STAGE_SERVICE_PATH_PATTERN);
+    const currentStageServiceName = stageServiceMatch ? `${stageServiceMatch[1]}-service` : undefined;
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       for (const pattern of FORBIDDEN_PATTERNS) {
@@ -88,6 +94,19 @@ const main = async () => {
           content: `IR boundary violation: generator module imports from ir.ts directly. Use types.js instead. [${line.trim()}]`,
           type: "import"
         });
+      }
+      if (currentStageServiceName) {
+        const importedStageService = line.match(STAGE_SERVICE_IMPORT_PATTERN)?.[1] ?? line.match(STAGE_SERVICE_REQUIRE_PATTERN)?.[1];
+        if (importedStageService && importedStageService !== currentStageServiceName) {
+          violations.push({
+            file: relativePath,
+            line: lineIndex + 1,
+            content:
+              `Stage service coupling violation: '${currentStageServiceName}' imports '${importedStageService}'. ` +
+              "Use pipeline orchestrator wiring instead of direct stage-to-stage imports.",
+            type: "import"
+          });
+        }
       }
     }
   }

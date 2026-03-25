@@ -4,9 +4,9 @@ import { Container, Paper, TextField, Typography } from "@mui/material";
 import { LoginFormContextProvider, useLoginFormContext } from "../context/LoginFormContext";
 
 function LoginScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useLoginFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useLoginFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
       {/* @ir:start login-title Title text */}
       <Typography data-ir-id="login-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
       {/* @ir:end login-title */}
@@ -26,7 +26,7 @@ function LoginScreenContent() {
               label={"Email"}
               type={"email"}
               autoComplete={"email"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}

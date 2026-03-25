@@ -7,6 +7,7 @@ import {
   createDeterministicAppFile,
   createDeterministicScreenFile,
   createDeterministicThemeFile,
+  deriveSelectOptions,
   generateArtifacts,
   toDeterministicScreenPath,
   detectFormGroups,
@@ -146,6 +147,19 @@ const readGeneratedStringArrayLiteral = ({
   const match = source.match(new RegExp(`const ${escapedName}: string\\[] = (\\[[\\s\\S]*?\\]);`));
   assert.ok(match?.[1], `Expected array literal declaration for '${variableName}'.`);
   return JSON.parse(match?.[1] ?? "[]") as string[];
+};
+
+const readGeneratedStringArrayMapLiteral = ({
+  source,
+  variableName
+}: {
+  source: string;
+  variableName: string;
+}): Record<string, string[]> => {
+  const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`const ${escapedName}: Record<string, string\\[]> = (\\{[\\s\\S]*?\\});`));
+  assert.ok(match?.[1], `Expected map literal declaration for '${variableName}'.`);
+  return JSON.parse(match?.[1] ?? "{}") as Record<string, string[]>;
 };
 
 const createIr = () => ({
@@ -841,6 +855,18 @@ const createDetachedMuiFieldRegressionScreen = () => ({
   padding: { top: 0, right: 0, bottom: 0, left: 0 },
   fillColor: "#ffffff",
   children: [
+    {
+      id: "detached-helper-text",
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "Bitte erfassen Sie die gewünschte monatliche Sparrate und den Zeitraum.",
+      x: 32,
+      y: 8,
+      fillColor: "#6e6e6e",
+      fontFamily: "Roboto",
+      fontSize: 12
+    },
     {
       id: "detached-label-1",
       name: "MuiTypographyRoot",
@@ -4907,6 +4933,7 @@ test("deterministic screen rendering resolves detached MUI field labels, relativ
   const screenFile = createDeterministicScreenFile(screen);
   const content = screenFile.content;
 
+  assert.ok(content.includes("Bitte erfassen Sie die gewünschte monatliche Sparrate und den Zeitraum."));
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
   assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
   assert.ok(content.includes('src={"./images/bauen-oder-kaufen.png"}'));
@@ -4915,6 +4942,58 @@ test("deterministic screen rendering resolves detached MUI field labels, relativ
   assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiInputRoot"}'), false);
   assert.equal(content.includes("M0 0L23.9931 0L23.9931 23.9931L0 23.9931L0 0Z"), false);
+});
+
+test("deriveSelectOptions keeps exact defaults for alphanumeric month-like values", () => {
+  const monthOptions = deriveSelectOptions("April 2026", "de-DE");
+  assert.equal(monthOptions[0], "April 2026");
+  assert.ok(monthOptions.includes("April 2026"));
+  assert.equal(monthOptions.includes("2.026,00"), false);
+
+  const dayOptions = deriveSelectOptions("1. des Monats", "de-DE");
+  assert.equal(dayOptions[0], "1. des Monats");
+  assert.ok(dayOptions.includes("1. des Monats"));
+  assert.equal(dayOptions.includes("1,00"), false);
+});
+
+test("deriveSelectOptions always includes the exact default value for numeric-like inputs", () => {
+  const options = deriveSelectOptions("10%", "de-DE");
+  assert.equal(options[0], "10%");
+  assert.ok(options.includes("10%"));
+  assert.equal(options.some((candidate) => candidate !== "10%"), true);
+});
+
+test("deterministic screen rendering keeps select default values inside generated option maps", () => {
+  const screen = {
+    id: "select-default-membership-screen",
+    name: "Select Default Membership Screen",
+    layoutMode: "VERTICAL" as const,
+    gap: 8,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      createSemanticSelectInputNode({
+        id: "start-month-select",
+        label: "Zu welchem Monat soll die Besparung starten?",
+        value: "April 2026"
+      }),
+      createSemanticSelectInputNode({
+        id: "start-day-select",
+        label: "Zu welchem Tag des Monats sollen die Sparraten abgebucht werden?",
+        value: "1. des Monats"
+      })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen, { generationLocale: "de-DE" }).content;
+  const selectOptionsMap = readGeneratedStringArrayMapLiteral({
+    source: content,
+    variableName: "selectOptions"
+  });
+  const flattenedOptions = Object.values(selectOptionsMap).flat();
+  assert.ok(flattenedOptions.includes("April 2026"));
+  assert.ok(flattenedOptions.includes("1. des Monats"));
+  assert.equal(flattenedOptions.includes("2.026,00"), false);
+  assert.equal(flattenedOptions.includes("1,00"), false);
 });
 
 test("deterministic screen rendering derives semantic select options with locale-aware number formatting", () => {

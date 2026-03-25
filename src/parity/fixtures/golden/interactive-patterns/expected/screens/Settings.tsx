@@ -71,7 +71,7 @@ export default function SettingsScreen() {
           <Typography data-ir-id="cancel-label" data-ir-name="Label" variant="body1" sx={{ fontWeight: 500, color: "text.primary", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Cancel"}</Typography>
           {/* @ir:end cancel-label */}
           {/* @ir:start dialog-confirm Confirm Button paper */}
-          <Paper data-ir-id="dialog-confirm" data-ir-name="Confirm Button" sx={{ position: "relative", width: "25.1%", maxWidth: "88px", minHeight: "40px", bgcolor: "info.main", borderRadius: 1 }}>
+          <Paper data-ir-id="dialog-confirm" data-ir-name="Confirm Button" sx={{ position: "relative", width: "25.1%", maxWidth: "88px", minHeight: "40px", bgcolor: "secondary.main", borderRadius: 1 }}>
             {/* @ir:start confirm-label Label text */}
             <Typography data-ir-id="confirm-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "18px", top: "10px", fontWeight: 600, color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Confirm"}</Typography>
             {/* @ir:end confirm-label */}

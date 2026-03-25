@@ -1,0 +1,548 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceFigmaSourceMode,
+  WorkspaceFormHandlingMode,
+  WorkspaceJobInput,
+  WorkspaceJobStageName
+} from "../../contracts/index.js";
+import type { DesignIR } from "../../parity/types-ir.js";
+import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
+import { StageArtifactStore } from "../pipeline/artifact-store.js";
+import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { resolveRuntimeSettings } from "../runtime.js";
+import { createInitialStages, nowIso } from "../stage-state.js";
+import type { JobEngineRuntime, JobRecord } from "../types.js";
+import { createCodegenGenerateService } from "./codegen-generate-service.js";
+import { FigmaSourceService } from "./figma-source-service.js";
+import { createGitPrService } from "./git-pr-service.js";
+import { IrDeriveService } from "./ir-derive-service.js";
+import { ReproExportService } from "./repro-export-service.js";
+import { TemplatePrepareService } from "./template-prepare-service.js";
+import { createValidateProjectService } from "./validate-project-service.js";
+
+const createLocalFigmaPayload = () => ({
+  name: "Stage Service Board",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-1",
+            type: "FRAME",
+            name: "Screen 1",
+            absoluteBoundingBox: { x: 0, y: 0, width: 360, height: 240 },
+            children: [
+              {
+                id: "title-1",
+                type: "TEXT",
+                name: "Title",
+                characters: "Hello",
+                absoluteBoundingBox: { x: 16, y: 16, width: 128, height: 20 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createMinimalIr = (): DesignIR =>
+  ({
+    sourceName: "test",
+    screens: [
+      {
+        id: "screen-1",
+        name: "Screen 1",
+        route: "/",
+        layoutMode: "VERTICAL",
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: []
+      }
+    ],
+    tokens: {
+      palette: {
+        primary: "#1976d2",
+        secondary: "#9c27b0",
+        background: "#ffffff",
+        text: "#111111",
+        success: "#2e7d32",
+        warning: "#ed6c02",
+        error: "#d32f2f",
+        info: "#0288d1",
+        divider: "#e0e0e0",
+        action: {
+          active: "#1976d2",
+          hover: "#1976d21a",
+          selected: "#1976d214",
+          disabled: "#00000042",
+          disabledBackground: "#0000001f",
+          focus: "#1976d21f"
+        }
+      },
+      borderRadius: 4,
+      spacingBase: 8,
+      fontFamily: "Roboto",
+      headingSize: 24,
+      bodySize: 14,
+      typography: {}
+    }
+  }) as DesignIR;
+
+const createJobRecord = ({
+  runtime,
+  jobDir,
+  requestOverrides
+}: {
+  runtime: JobEngineRuntime;
+  jobDir: string;
+  requestOverrides?: Partial<JobRecord["request"]>;
+}): JobRecord => {
+  return {
+    jobId: "job-stage-test",
+    status: "queued",
+    submittedAt: nowIso(),
+    request: {
+      enableGitPr: false,
+      figmaSourceMode: "local_json",
+      llmCodegenMode: "deterministic",
+      brandTheme: "derived",
+      generationLocale: "en-US",
+      formHandlingMode: "react_hook_form",
+      ...requestOverrides
+    },
+    stages: createInitialStages(),
+    logs: [],
+    artifacts: {
+      outputRoot: path.dirname(path.dirname(jobDir)),
+      jobDir
+    },
+    preview: { enabled: false },
+    queue: {
+      runningCount: 0,
+      queuedCount: 0,
+      maxConcurrentJobs: runtime.maxConcurrentJobs,
+      maxQueuedJobs: runtime.maxQueuedJobs
+    }
+  };
+};
+
+const createExecutionContext = async ({
+  mode = "submission",
+  input,
+  runtimeOverrides,
+  requestOverrides
+}: {
+  mode?: "submission" | "regeneration";
+  input?: WorkspaceJobInput;
+  runtimeOverrides?: Partial<Parameters<typeof resolveRuntimeSettings>[0]>;
+  requestOverrides?: Partial<JobRecord["request"]>;
+}): Promise<{
+  executionContext: PipelineExecutionContext;
+  stageContextFor: (stage: WorkspaceJobStageName) => StageRuntimeContext;
+}> => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-"));
+  const jobsRoot = path.join(root, "jobs");
+  const jobDir = path.join(jobsRoot, "job-stage-test");
+  const generatedProjectDir = path.join(jobDir, "generated-app");
+  const runtime = resolveRuntimeSettings({
+    enablePreview: false,
+    skipInstall: true,
+    enableUiValidation: false,
+    enableUnitTestValidation: false,
+    figmaMaxRetries: 1,
+    figmaRequestTimeoutMs: 1_000,
+    ...runtimeOverrides
+  });
+  await mkdir(jobDir, { recursive: true });
+  await mkdir(generatedProjectDir, { recursive: true });
+
+  const job = createJobRecord({
+    runtime,
+    jobDir,
+    requestOverrides
+  });
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const resolvedBrandTheme = (job.request.brandTheme ?? "derived") as WorkspaceBrandTheme;
+  const resolvedFigmaSourceMode = (job.request.figmaSourceMode ?? "local_json") as WorkspaceFigmaSourceMode;
+  const resolvedFormHandlingMode = (job.request.formHandlingMode ?? "react_hook_form") as WorkspaceFormHandlingMode;
+
+  const executionContext: PipelineExecutionContext = {
+    mode,
+    job,
+    ...(input ? { input } : {}),
+    runtime,
+    resolvedPaths: {
+      outputRoot: root,
+      jobsRoot,
+      reprosRoot: path.join(root, "repros")
+    },
+    resolvedWorkspaceRoot: root,
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    jobAbortController: new AbortController(),
+    fetchWithCancellation: runtime.fetchImpl,
+    paths: {
+      jobDir,
+      generatedProjectDir,
+      figmaRawJsonFile: path.join(jobDir, "figma.raw.json"),
+      figmaJsonFile: path.join(jobDir, "figma.json"),
+      designIrFile: path.join(jobDir, "design-ir.json"),
+      stageTimingsFile: path.join(jobDir, "stage-timings.json"),
+      reproDir: path.join(root, "repros", "job-stage-test"),
+      iconMapFilePath: path.join(root, "icon-map.json"),
+      designSystemFilePath: path.join(root, "design-system.json"),
+      irCacheDir: path.join(root, "cache", "ir"),
+      templateRoot: path.join(root, "template"),
+      templateCopyFilter: () => true
+    },
+    artifactStore,
+    resolvedBrandTheme,
+    resolvedFigmaSourceMode,
+    resolvedFormHandlingMode,
+    generationLocaleResolution: { locale: "en-US" },
+    resolvedGenerationLocale: "en-US",
+    appendDiagnostics: () => {
+      // no-op for service contract tests
+    },
+    getCollectedDiagnostics: () => undefined,
+    syncPublicJobProjection: async () => {
+      // no-op for service contract tests
+    }
+  };
+
+  return {
+    executionContext,
+    stageContextFor: (stage) => createStageRuntimeContext({ executionContext, stage })
+  };
+};
+
+const seedRegenerationArtifacts = async ({
+  executionContext,
+  sourceJobId,
+  sourceIrFile,
+  overrides = []
+}: {
+  executionContext: PipelineExecutionContext;
+  sourceJobId: string;
+  sourceIrFile?: string;
+  overrides?: Array<{ field: string; nodeId: string; value: unknown }>;
+}): Promise<void> => {
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.regenerationSourceIr,
+    stage: "ir.derive",
+    value: {
+      sourceJobId,
+      ...(sourceIrFile ? { sourceIrFile } : {})
+    }
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.regenerationOverrides,
+    stage: "ir.derive",
+    value: overrides
+  });
+};
+
+test("FigmaSourceService writes cleaned artifacts for local_json mode", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma.json");
+  await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+
+  assert.ok(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaRaw));
+  assert.ok(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned));
+  assert.ok(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics));
+  assert.ok(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.figmaCleanedReport));
+});
+
+test("FigmaSourceService maps missing local_json path to E_FIGMA_LOCAL_JSON_PATH", async () => {
+  const { stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await FigmaSourceService.execute({}, stageContextFor("figma.source"));
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "E_FIGMA_LOCAL_JSON_PATH"
+  );
+});
+
+test("IrDeriveService regeneration reads seeded artifacts and writes design.ir", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-ir.json");
+  await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr), executionContext.paths.designIrFile);
+  assert.equal((await readFile(executionContext.paths.designIrFile, "utf8")).includes("Screen 1"), true);
+});
+
+test("IrDeriveService maps missing source design IR to E_REGEN_SOURCE_IR_MISSING", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "missing-source"
+  });
+
+  await assert.rejects(
+    async () => {
+      await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+    },
+    (error: unknown) =>
+      error instanceof Error && "code" in error && (error as { code: string }).code === "E_REGEN_SOURCE_IR_MISSING"
+  );
+});
+
+test("TemplatePrepareService copies template and stores generated.project artifact", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await mkdir(executionContext.paths.templateRoot, { recursive: true });
+  await writeFile(path.join(executionContext.paths.templateRoot, "template.txt"), "template\n", "utf8");
+
+  await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+
+  assert.equal(
+    await readFile(path.join(executionContext.paths.generatedProjectDir, "template.txt"), "utf8"),
+    "template\n"
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
+    executionContext.paths.generatedProjectDir
+  );
+});
+
+test("TemplatePrepareService maps missing template to E_TEMPLATE_MISSING", async () => {
+  const { stageContextFor } = await createExecutionContext({});
+
+  await assert.rejects(
+    async () => {
+      await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+    },
+    (error: unknown) =>
+      error instanceof Error && "code" in error && (error as { code: string }).code === "E_TEMPLATE_MISSING"
+  );
+});
+
+test("CodegenGenerateService reads design.ir and stores summary, manifest, metrics, and diff artifacts", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "generation-metrics.json"), "{}\n", "utf8");
+  await writeFile(path.join(executionContext.paths.jobDir, "generation-diff.json"), "{}\n", "utf8");
+
+  let diffInputJobId = "";
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      yield { type: "progress", screenIndex: 1, screenCount: 1, screenName: "Screen 1" } as const;
+      return { generatedPaths: ["generation-metrics.json"] };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>,
+    runGenerationDiffFn: async (input) => {
+      diffInputJobId = input.jobId;
+      return {
+        summary: "ok"
+      } as Awaited<ReturnType<typeof import("../generation-diff.js").runGenerationDiff>>;
+    }
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(diffInputJobId, executionContext.job.jobId);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
+    executionContext.paths.generatedProjectDir
+  );
+  assert.deepEqual(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary), {
+    generatedPaths: ["generation-metrics.json"]
+  });
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationMetrics),
+    path.join(executionContext.paths.generatedProjectDir, "generation-metrics.json")
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentManifest),
+    path.join(executionContext.paths.generatedProjectDir, "component-manifest.json")
+  );
+  assert.deepEqual(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), {
+    summary: "ok"
+  });
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile),
+    path.join(executionContext.paths.jobDir, "generation-diff.json")
+  );
+});
+
+test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await writeFile(executionContext.paths.designIrFile, "{", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  const service = createCodegenGenerateService({
+    generateArtifactsStreamingFn: async function* () {
+      return { generatedPaths: [] };
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute({ boardKeySeed: "demo-board" }, stageContextFor("codegen.generate"));
+    },
+    (error: unknown) => error instanceof Error && "code" in error && (error as { code: string }).code === "E_IR_EMPTY"
+  );
+});
+
+test("ValidateProjectService reads generated.project and writes validation.summary", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  let calledWithDir = "";
+  const service = createValidateProjectService({
+    runProjectValidationFn: async (input) => {
+      calledWithDir = input.generatedProjectDir;
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(calledWithDir, executionContext.paths.generatedProjectDir);
+  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+});
+
+test("ValidateProjectService forwards aborted signal to project validation", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  executionContext.jobAbortController.abort();
+  const service = createValidateProjectService({
+    runProjectValidationFn: async (input) => {
+      assert.equal(input.abortSignal?.aborted, true);
+      throw new DOMException("aborted", "AbortError");
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+  );
+});
+
+test("ReproExportService copies dist output and writes repro.path", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: { enablePreview: true }
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<html></html>\n", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+
+  await ReproExportService.execute(undefined, stageContextFor("repro.export"));
+
+  assert.equal(await readFile(path.join(executionContext.paths.reproDir, "index.html"), "utf8"), "<html></html>\n");
+  assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.reproPath), executionContext.paths.reproDir);
+});
+
+test("GitPrService reads generation diff from the store and writes git.pr.status", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "codegen.generate",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    stage: "codegen.generate",
+    value: {
+      summary: "diff ready"
+    }
+  });
+  let receivedGenerationDiff: unknown;
+  const service = createGitPrService({
+    runGitPrFlowFn: async (input) => {
+      receivedGenerationDiff = input.generationDiff;
+      return {
+        status: "executed",
+        prUrl: "https://example.invalid/pr/1",
+        branchName: "feature/test",
+        scopePath: "src",
+        changedFiles: 3
+      };
+    }
+  });
+
+  await service.execute(
+    {
+      enableGitPr: true,
+      repoUrl: "https://example.invalid/repo.git"
+    },
+    stageContextFor("git.pr")
+  );
+
+  assert.deepEqual(receivedGenerationDiff, { summary: "diff ready" });
+  const gitStatus = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.gitPrStatus);
+  assert.equal(gitStatus?.status, "executed");
+});
