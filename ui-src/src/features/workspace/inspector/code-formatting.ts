@@ -1,6 +1,6 @@
 import type { Plugin } from "prettier";
 import type { format as prettierFormat } from "prettier/standalone";
-import { detectLanguage } from "../../../lib/shiki-shared";
+import type { detectLanguage } from "../../../lib/shiki-shared";
 
 export type ViewerLanguage = ReturnType<typeof detectLanguage>;
 type FormatParser = "typescript" | "json";

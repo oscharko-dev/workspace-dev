@@ -1310,6 +1310,14 @@ export const escapeXmlText = (value: string): string => {
     .replace(/'/g, "&apos;");
 };
 
+export const toRenderableAssetSource = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/images/")) {
+    return trimmed;
+  }
+  return `.${trimmed}`;
+};
+
 export const sanitizeSelectOptionValue = (value: string): string => {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : "Option";
@@ -1396,5 +1404,4 @@ export const toAlertSeverityFromName = (name: string): "error" | "warning" | "in
   }
   return "info";
 };
-
 

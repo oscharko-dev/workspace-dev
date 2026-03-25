@@ -77,7 +77,7 @@
           },
           "primaryAxisAlignItems": "MIN",
           "counterAxisAlignItems": "CENTER",
-          "type": "table",
+          "type": "stack",
           "x": 24,
           "y": 100,
           "width": 372,

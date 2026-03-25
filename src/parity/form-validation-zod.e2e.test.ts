@@ -229,7 +229,7 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   const screenContent = await readFile(generatedScreenPath, "utf8");
   const contextContent = await readFile(generatedContextPath, "utf8");
 
-  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
+  assert.ok(screenContent.includes('component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate'));
   assert.ok(screenContent.includes("<Controller"));
 
   assert.ok(contextContent.includes("export type TypedZodValidationFormFormInput = z.input<typeof formSchema>;"));
@@ -244,8 +244,12 @@ test("E2E: generated RHF form context uses z.infer typing and password min-lengt
   assert.ok(contextContent.includes('case "password"'));
   assert.ok(contextContent.includes("if (trimmed.length < 8) {"));
   assert.ok(contextContent.includes("Password must be at least 8 characters."));
+  assert.ok(contextContent.includes("if (validationType) {"));
+  assert.equal(contextContent.includes("if (!validationType) {"), false);
+  assert.ok(contextContent.includes('as unknown as z.ZodType<FieldSchemaOutput<TSpec>, string>;'));
   assert.equal(contextContent.includes("as unknown as UseFormReturn"), false);
   assert.ok(contextContent.includes("if (!isTouched && !isSubmitted) {"));
+  assert.equal(screenContent.includes('value={controllerField.value ?? ""}'), false);
 });
 
 test("E2E: select schema validation enforces deterministic option membership in RHF context generation", { skip: skipReason }, async () => {
@@ -285,8 +289,8 @@ test("E2E: select schema validation enforces deterministic option membership in 
     "Expected select membership guard for non-empty values"
   );
   assert.ok(
-    contextContent.includes('spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".")'),
-    "Expected deterministic select validation fallback message"
+    contextContent.includes("const selectValidationMessage = spec.selectValidationMessage;"),
+    "Expected deterministic select validation message from field-specific schema spec"
   );
   assert.ok(
     contextContent.includes("if (trimmed.length === 0) {"),
@@ -883,7 +887,7 @@ test("E2E: Zod .transform() — typed output with number/iban/credit_card transf
     "Expected deterministic field schema specs map in generated RHF context"
   );
   assert.ok(
-    /createFieldSchema\(\{ fieldKey: "[^"]+", spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(contextContent),
+    /createFieldSchema\(\{ spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(contextContent),
     "Expected schema entries to bind field-specific specs into createFieldSchema"
   );
   assert.ok(

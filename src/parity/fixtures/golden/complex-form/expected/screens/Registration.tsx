@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
 import { Controller } from "react-hook-form";
-import { Checkbox, Container, FormControlLabel, Paper, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import { Checkbox, Container, FormControlLabel, Paper, Stack, TextField, Typography } from "@mui/material";
 import { RegistrationFormContextProvider, useRegistrationFormContext } from "../context/RegistrationFormContext";
 
 function RegistrationScreenContent() {
@@ -13,21 +13,83 @@ function RegistrationScreenContent() {
       {/* @ir:start form-subtitle Subtitle text */}
       <Typography data-ir-id="form-subtitle" data-ir-name="Subtitle" variant="h2" component="h2" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Fill in your details to get started"}</Typography>
       {/* @ir:end form-subtitle */}
-      {/* @ir:start name-row Name Row table */}
-      <Table data-ir-id="name-row" data-ir-name="Name Row" size="small" sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 2 }}>
-        <TableHead>
-          <TableRow>
-            <TableCell>{"First Name"}</TableCell>
-            <TableCell>{"John"}</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          <TableRow>
-            <TableCell>{"Last Name"}</TableCell>
-            <TableCell>{"Doe"}</TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+      {/* @ir:start name-row Name Row stack */}
+      <Stack data-ir-id="name-row" data-ir-name="Name Row" direction="row" spacing={2} sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 2 }}>
+        {/* @ir:start first-name-field MuiTextFieldRoot input */}
+        <Controller data-ir-id="first-name-field" data-ir-name="MuiTextFieldRoot"
+          name={"muitextfieldroot_first_name_field"}
+          control={control}
+          render={({ field: controllerField, fieldState }) => {
+            const helperText = resolveFieldErrorMessage({
+              fieldKey: "muitextfieldroot_first_name_field",
+              isTouched: fieldState.isTouched,
+              isSubmitted,
+              fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+            });
+            return (
+              <TextField
+                label={"First Name"}
+                value={controllerField.value ?? ""}
+                onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
+                onBlur={controllerField.onBlur}
+                error={Boolean(helperText)}
+                helperText={helperText}
+                aria-label={"First Name"}
+                aria-describedby={"muitextfieldroot_first_name_field-helper-text"}
+          sx={{
+            width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
+            "& .MuiOutlinedInput-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "primary.main" },
+            "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
+            "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
+          }}
+
+                slotProps={{
+                  htmlInput: { "aria-describedby": "muitextfieldroot_first_name_field-helper-text" },
+            formHelperText: { id: "muitextfieldroot_first_name_field-helper-text" }
+                }}
+              />
+            );
+          }}
+        />
+        {/* @ir:end first-name-field */}
+        {/* @ir:start last-name-field MuiTextFieldRoot input */}
+        <Controller data-ir-id="last-name-field" data-ir-name="MuiTextFieldRoot"
+          name={"muitextfieldroot_last_name_field"}
+          control={control}
+          render={({ field: controllerField, fieldState }) => {
+            const helperText = resolveFieldErrorMessage({
+              fieldKey: "muitextfieldroot_last_name_field",
+              isTouched: fieldState.isTouched,
+              isSubmitted,
+              fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+            });
+            return (
+              <TextField
+                label={"Last Name"}
+                value={controllerField.value ?? ""}
+                onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
+                onBlur={controllerField.onBlur}
+                error={Boolean(helperText)}
+                helperText={helperText}
+                aria-label={"Last Name"}
+                aria-describedby={"muitextfieldroot_last_name_field-helper-text"}
+          sx={{
+            width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
+            "& .MuiOutlinedInput-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "primary.main" },
+            "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
+            "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
+          }}
+
+                slotProps={{
+                  htmlInput: { "aria-describedby": "muitextfieldroot_last_name_field-helper-text" },
+            formHelperText: { id: "muitextfieldroot_last_name_field-helper-text" }
+                }}
+              />
+            );
+          }}
+        />
+        {/* @ir:end last-name-field */}
+      </Stack>
       {/* @ir:end name-row */}
       {/* @ir:start email-field MuiTextFieldRoot input */}
       <Controller data-ir-id="email-field" data-ir-name="MuiTextFieldRoot"
@@ -54,7 +116,7 @@ function RegistrationScreenContent() {
               aria-label={"Email Address"}
               aria-describedby={"muitextfieldroot_email_field-helper-text"}
         sx={{
-          width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667, borderRadius: 1,
+          width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
           "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
           "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
         }}

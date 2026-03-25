@@ -48,6 +48,75 @@ const createLocalFigmaPayload = () => ({
   }
 });
 
+const createLowFidelityFigmaPayload = () => ({
+  name: "Sparkasse Recovery",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-recovery",
+            type: "FRAME",
+            name: "Sparkasse Recovery",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+            children: [
+              ...Array.from({ length: 12 }, (_, index) => ({
+                id: `instance-${index + 1}`,
+                type: "INSTANCE",
+                name: index % 3 === 0 ? "<Card>" : "<Button>",
+                absoluteBoundingBox: {
+                  x: (index % 3) * 220,
+                  y: Math.floor(index / 3) * 120,
+                  width: 200,
+                  height: 96
+                },
+                children: []
+              })),
+              {
+                id: "vector-logo",
+                type: "VECTOR",
+                name: "Sparkasse S",
+                absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 }
+              },
+              {
+                id: "vector-dot",
+                type: "VECTOR",
+                name: "Ellipse 4",
+                absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 }
+              },
+              {
+                id: "text-title",
+                type: "TEXT",
+                name: "Heading",
+                characters: "Finanzierungsplaner",
+                absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 }
+              },
+              {
+                id: "text-meta",
+                type: "TEXT",
+                name: "Meta",
+                characters: "Meyer Technology GmbH",
+                absoluteBoundingBox: { x: 24, y: 232, width: 200, height: 20 }
+              },
+              {
+                id: "text-chip",
+                type: "TEXT",
+                name: "Chip",
+                characters: "Bearbeitung gesperrt",
+                absoluteBoundingBox: { x: 24, y: 264, width: 180, height: 20 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const createFastJobEngine = ({
   tempRoot,
   fetchImpl,
@@ -267,6 +336,150 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
     status.logs.some((entry) => entry.message.includes("MCP enrichment coverage (hybrid): variables=1, styles=1")),
     true
   );
+});
+
+test("createJobEngine applies authoritative hybrid subtrees before IR derivation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-subtrees-"));
+  const payload = {
+    name: "Hybrid Subtree Board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-merge",
+              type: "FRAME",
+              name: "Hybrid Subtree Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 720, height: 480 },
+              children: [
+                {
+                  id: "action-button",
+                  type: "INSTANCE",
+                  name: "<Button>",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 96 },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }),
+      figmaMcpEnrichmentLoader: async () => ({
+        sourceMode: "hybrid",
+        toolNames: ["figma-mcp"],
+        nodeHints: [],
+        authoritativeSubtrees: [
+          {
+            nodeId: "action-button",
+            document: {
+              id: "action-button",
+              type: "INSTANCE",
+              name: "<Button>",
+              absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 96 },
+              children: [
+                {
+                  id: "action-title",
+                  type: "TEXT",
+                  name: "Action Title",
+                  characters: "Druckcenter",
+                  absoluteBoundingBox: { x: 72, y: 40, width: 160, height: 20 }
+                }
+              ]
+            }
+          }
+        ]
+      })
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token"
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "completed");
+  assert.equal(
+    status.logs.some((entry) => entry.message.includes("authoritative subtree snapshot")),
+    true
+  );
+
+  const cleanedFigma = await readFile(String(status.artifacts.figmaJsonFile), "utf8");
+  const designIr = await readFile(String(status.artifacts.designIrFile), "utf8");
+  assert.equal(cleanedFigma.includes("Druckcenter"), true);
+  assert.equal(designIr.includes("Druckcenter"), true);
+});
+
+test("createJobEngine fails low-fidelity rest jobs without authoritative recovery", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-low-fidelity-rest-"));
+  const payload = createLowFidelityFigmaPayload();
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "rest",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token"
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_FIGMA_LOW_FIDELITY_SOURCE");
+  assert.equal(status.error?.stage, "figma.source");
+  assert.equal(status.error?.diagnostics?.[0]?.code, "E_FIGMA_LOW_FIDELITY_SOURCE");
 });
 
 test("createJobEngine falls back deterministically when hybrid mode has no MCP enrichment loader", async () => {

@@ -72,6 +72,9 @@ type BooleanContextKey =
   | "hasButtonLabelHint"
   | "hasButtonKeyword"
   | "hasStrongImageName"
+  | "hasMeaningfulTextDescendants"
+  | "hasControlSemanticDescendants"
+  | "hasFormLikeFieldCluster"
   | "hasIconLikeName"
   | "isLikelyGridByStructure"
   | "isLikelyListByStructure"
@@ -102,6 +105,9 @@ interface NodeClassificationContext<TNode extends ElementClassificationNode> {
   hasButtonLabelHint: boolean;
   hasButtonKeyword: boolean;
   hasStrongImageName: boolean;
+  hasMeaningfulTextDescendants: boolean;
+  hasControlSemanticDescendants: boolean;
+  hasFormLikeFieldCluster: boolean;
   hasIconLikeName: boolean;
   rowBuckets: number;
   columnBuckets: number;
@@ -475,6 +481,74 @@ const countPositionBuckets = ({
   return buckets;
 };
 
+const collectDescendants = (
+  node: ElementClassificationNode,
+  visited: Set<ElementClassificationNode> = new Set()
+): ElementClassificationNode[] => {
+  if (visited.has(node)) {
+    return [];
+  }
+  visited.add(node);
+  const children = node.children ?? [];
+  return [...children, ...children.flatMap((child) => collectDescendants(child, visited))];
+};
+
+const isCompositeExplicitBoardButton = (node: ElementClassificationNode): boolean => {
+  const descendants = collectDescendants(node);
+  if (descendants.length === 0) {
+    return false;
+  }
+  const descendantTextNodes = descendants.filter(
+    (child) => child.type === "TEXT" && (child.characters ?? "").trim().length > 0
+  );
+  const explicitComponents = descendants
+    .map((child) => resolveExplicitBoardComponentFromNode(child))
+    .filter((match): match is ExplicitBoardComponentMatch => Boolean(match));
+  const hasNestedSurfaceComponent = explicitComponents.some((match) => {
+    if (!match.type) {
+      return false;
+    }
+    return match.canonicalName !== "Button" && match.canonicalName !== "IconButton";
+  });
+  const hasAvatarLikeDescendant =
+    explicitComponents.some((match) => match.type === "avatar") ||
+    descendants.some((child) => (child.name ?? "").toLowerCase().includes("avatar")) ||
+    descendants.some((child) => child.type === "ELLIPSE");
+  const hasChipLikeDescendant = explicitComponents.some((match) => match.type === "chip");
+  const hasRichNestedNonText = descendants.some(
+    (child) => child.type !== "TEXT" && (child.children?.length ?? 0) >= 2
+  );
+
+  return (
+    hasNestedSurfaceComponent ||
+    hasAvatarLikeDescendant ||
+    hasChipLikeDescendant ||
+    descendantTextNodes.length >= 3 ||
+    (descendantTextNodes.length >= 2 && hasRichNestedNonText)
+  );
+};
+
+const CONTROL_DESCENDANT_NAME_HINTS = [
+  "styled(div)",
+  "muiformcontrolroot",
+  "textfield",
+  "muioutlinedinputroot",
+  "muioutlinedinputinput",
+  "muiinputadornmentroot",
+  "muiinputbaseroot",
+  "muiinputbaseinput",
+  "muiinputroot",
+  "muiselect",
+  "muisliderroot",
+  "muisliderrail",
+  "muislidertrack",
+  "muisliderthumb"
+] as const;
+
+const hasControlSemanticName = (value: string): boolean => {
+  return hasAnySubstring(value, [...CONTROL_DESCENDANT_NAME_HINTS]);
+};
+
 const createNodeClassificationContext = <TNode extends ElementClassificationNode>({
   node,
   dependencies
@@ -489,6 +563,7 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
   const childCount = children.length;
   const textChildCount = children.filter((child) => child.type === "TEXT" && (child.characters ?? "").trim().length > 0).length;
   const hasChildren = childCount > 0;
+  const descendants = collectDescendants(node);
   const hasSolidFill = dependencies.hasSolidFill(node);
   const hasGradientFill = dependencies.hasGradientFill(node);
   const hasImageFill = dependencies.hasImageFill(node);
@@ -534,7 +609,38 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
     );
   });
   const hasRowCellStructure = children.some((child) => (child.children?.length ?? 0) >= TABLE_ROW_CELL_MIN_CHILDREN);
-  const isLikelyTableByStructure = hasChildren && childCount >= TABLE_MIN_CHILDREN && hasRowCellStructure && (width >= TABLE_MIN_WIDTH || hasTableishChildNames);
+  const hasMeaningfulTextDescendants = descendants.some(
+    (child) => child.type === "TEXT" && (child.characters ?? "").trim().length > 0
+  );
+  const hasControlSemanticDescendants =
+    hasControlSemanticName(name) ||
+    descendants.some((child) => hasControlSemanticName((child.name ?? "").toLowerCase()));
+  const hasFormLikeFieldCluster = (() => {
+    if (children.length < 2 || node.layoutMode === "HORIZONTAL") {
+      return false;
+    }
+    const fieldLikeChildren = children.filter((child) => {
+      const childName = (child.name ?? "").toLowerCase();
+      const childWidth = child.absoluteBoundingBox?.width ?? 0;
+      const childHeight = child.absoluteBoundingBox?.height ?? 0;
+      const childLooksLikeField = childWidth >= FIELD_MIN_WIDTH && childHeight >= FIELD_MIN_HEIGHT && childHeight <= FIELD_MAX_HEIGHT * 2;
+      if (!childLooksLikeField) {
+        return false;
+      }
+      if (hasControlSemanticName(childName)) {
+        return true;
+      }
+      return collectDescendants(child).some((descendant) => hasControlSemanticName((descendant.name ?? "").toLowerCase()));
+    });
+    return fieldLikeChildren.length >= 2;
+  })();
+  const isLikelyTableByStructure =
+    hasChildren &&
+    childCount >= TABLE_MIN_CHILDREN &&
+    hasRowCellStructure &&
+    (width >= TABLE_MIN_WIDTH || hasTableishChildNames) &&
+    !hasControlSemanticDescendants &&
+    !hasFormLikeFieldCluster;
   const hasButtonLabelHint =
     name.includes("zur übersicht") || name.includes("termin vereinbaren") || name.includes("zum finanzierungsplaner");
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
@@ -606,6 +712,9 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
     hasButtonLabelHint,
     hasButtonKeyword,
     hasStrongImageName,
+    hasMeaningfulTextDescendants,
+    hasControlSemanticDescendants,
+    hasFormLikeFieldCluster,
     hasIconLikeName,
     rowBuckets,
     columnBuckets,
@@ -771,12 +880,18 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
   {
     type: "image",
     priority: 321,
+    nodeTypes: ["FRAME"],
+    requires: { hasStrongImageName: true, hasMeaningfulTextDescendants: false }
+  },
+  {
+    type: "image",
+    priority: 322,
     nodeTypes: ["RECTANGLE", "FRAME"],
     requires: { hasStrongImageName: true, hasChildren: false }
   },
   {
     type: "image",
-    priority: 322,
+    priority: 323,
     nodeTypes: ["VECTOR"],
     requires: { hasStrongImageName: true, hasChildren: false, hasIconLikeName: false }
   }
@@ -951,19 +1066,31 @@ export const classifyElementTypeDecisionFromNode = <TNode extends ElementClassif
     };
   }
 
+  const context = createNodeClassificationContext({
+    node,
+    dependencies
+  });
   const explicitBoardComponent = resolveExplicitBoardComponentFromNode(node);
   if (explicitBoardComponent?.type) {
+    if (explicitBoardComponent.canonicalName === "Button" && isCompositeExplicitBoardButton(node)) {
+      const compositeSurfaceType: ScreenElementIR["type"] =
+        context.hasVisualSurface || context.hasStroke
+          ? context.hasRoundedCorners || context.width >= CARD_MIN_WIDTH / 2 || context.height >= CARD_MIN_HEIGHT / 2
+            ? "card"
+            : "paper"
+          : "container";
+      return {
+        type: compositeSurfaceType,
+        matchedRulePriority: 0,
+        fallback: false
+      };
+    }
     return {
       type: explicitBoardComponent.type,
       matchedRulePriority: 0,
       fallback: false
     };
   }
-
-  const context = createNodeClassificationContext({
-    node,
-    dependencies
-  });
 
   for (const rule of sortedNodeRules) {
     if (matchesNodeRule(rule, context)) {

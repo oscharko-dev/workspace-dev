@@ -24,6 +24,8 @@ import { detectLanguage } from "../../../lib/shiki-shared";
 
 export type { HighlightRange } from "./CodeViewer";
 
+const IDLE_FORMAT_STATUS: FormatStatus = { kind: "idle", message: null };
+
 type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
 
 interface EndpointErrorDetails {
@@ -177,7 +179,11 @@ export function CodePane({
     sourceContent: string;
     formattedContent: string;
   } | null>(null);
-  const [formatStatus, setFormatStatus] = useState<FormatStatus>({ kind: "idle", message: null });
+  const [formatFeedbackState, setFormatFeedbackState] = useState<{
+    filePath: string;
+    sourceContent: string;
+    status: FormatStatus;
+  } | null>(null);
   const [scopedModes, setScopedModes] = useState(() => ({
     mapped: defaultMappedMode(),
     unmapped: fallbackMode()
@@ -217,7 +223,7 @@ export function CodePane({
   const scheduleFormatStatusReset = useCallback((delayMs: number) => {
     clearFormatFeedbackTimeout();
     formatFeedbackTimeoutRef.current = setTimeout(() => {
-      setFormatStatus({ kind: "idle", message: null });
+      setFormatFeedbackState(null);
       formatFeedbackTimeoutRef.current = null;
     }, delayMs);
   }, [clearFormatFeedbackTimeout]);
@@ -240,31 +246,18 @@ export function CodePane({
     }
     return formattedFileState.formattedContent;
   }, [fileContent, formattedFileState, selectedFile]);
-
-  useEffect(() => {
-    if (!selectedFile || fileContent === null) {
-      setFormattedFileState(null);
-      clearFormatFeedbackTimeout();
-      setFormatStatus({ kind: "idle", message: null });
-      return;
+  const formatStatus = useMemo(() => {
+    if (!selectedFile || fileContent === null || !formatFeedbackState) {
+      return IDLE_FORMAT_STATUS;
     }
-
-    if (formattedFileState?.filePath === selectedFile && formattedFileState.sourceContent === fileContent) {
-      return;
+    if (formatFeedbackState.filePath !== selectedFile) {
+      return IDLE_FORMAT_STATUS;
     }
-
-    setFormattedFileState((currentState) => {
-      if (!currentState) {
-        return null;
-      }
-      if (currentState.filePath === selectedFile && currentState.sourceContent === fileContent) {
-        return currentState;
-      }
-      return null;
-    });
-    clearFormatFeedbackTimeout();
-    setFormatStatus({ kind: "idle", message: null });
-  }, [clearFormatFeedbackTimeout, fileContent, formattedFileState?.filePath, formattedFileState?.sourceContent, selectedFile]);
+    if (formatFeedbackState.sourceContent !== fileContent) {
+      return IDLE_FORMAT_STATUS;
+    }
+    return formatFeedbackState.status;
+  }, [fileContent, formatFeedbackState, selectedFile]);
 
   const detectedLanguage = useMemo(() => {
     return selectedFile ? detectLanguage(selectedFile) : null;
@@ -303,7 +296,11 @@ export function CodePane({
     }
 
     const formatSource = formattedFileContent ?? fileContent;
-    setFormatStatus({ kind: "formatting", message: null });
+    setFormatFeedbackState({
+      filePath: selectedFile,
+      sourceContent: fileContent,
+      status: { kind: "formatting", message: null }
+    });
     clearFormatFeedbackTimeout();
 
     try {
@@ -317,13 +314,21 @@ export function CodePane({
         sourceContent: fileContent,
         formattedContent: formatted
       });
-      setFormatStatus({ kind: "success", message: null });
+      setFormatFeedbackState({
+        filePath: selectedFile,
+        sourceContent: fileContent,
+        status: { kind: "success", message: null }
+      });
       scheduleFormatStatusReset(FORMAT_SUCCESS_TIMEOUT_MS);
     } catch (error) {
       const message = error instanceof Error && error.message.length > 0
         ? error.message
         : "Formatting failed.";
-      setFormatStatus({ kind: "error", message });
+      setFormatFeedbackState({
+        filePath: selectedFile,
+        sourceContent: fileContent,
+        status: { kind: "error", message }
+      });
       scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
     }
   }, [

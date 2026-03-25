@@ -41,6 +41,7 @@ import {
   DEFAULT_SPACING_BASE,
   literal,
   escapeXmlText,
+  toRenderableAssetSource,
   normalizeFontFamily,
   toLetterSpacingEm
 } from "./generator-templates.js";
@@ -132,6 +133,15 @@ export const hasVisualStyle = (element: ScreenElementIR): boolean => {
         (element.margin.top > 0 || element.margin.right > 0 || element.margin.bottom > 0 || element.margin.left > 0))
   );
 };
+
+const SELF_RENDERING_CONTROL_TYPES = new Set<ScreenElementIR["type"]>([
+  "slider",
+  "switch",
+  "checkbox",
+  "radio",
+  "rating",
+  "progress"
+]);
 
 const hasPromotionBlockingVisualStyle = (element: ScreenElementIR): boolean => {
   return Boolean(
@@ -227,6 +237,27 @@ export const isIconLikeNode = (element: ScreenElementIR): boolean => {
   );
 };
 
+export const isVectorGraphicNode = (element: ScreenElementIR): boolean => {
+  if (isTextElement(element)) {
+    return false;
+  }
+  const vectorPaths = collectVectorPaths(element);
+  if (vectorPaths.length === 0) {
+    return false;
+  }
+  const hasMeaningfulText = collectTextNodes(element).some((node) => /[a-z0-9]/i.test(node.text.trim()));
+  if (hasMeaningfulText) {
+    return false;
+  }
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const area = width * height;
+  return (
+    (width > 0 && height > 0 && width <= 160 && height <= 160) ||
+    (area > 0 && area <= 16_000)
+  );
+};
+
 export const isSemanticIconWrapper = (element: ScreenElementIR): boolean => {
   const loweredName = element.name.toLowerCase();
   return loweredName.includes("buttonendicon") || loweredName.includes("expandiconwrapper");
@@ -313,6 +344,10 @@ const simplifyNode = ({
   }
 
   if (simplified.type === "image") {
+    return simplified;
+  }
+
+  if (SELF_RENDERING_CONTROL_TYPES.has(simplified.type)) {
     return simplified;
   }
 
@@ -723,7 +758,7 @@ export const collectIconNodes = (element: ScreenElementIR, visited: Set<ScreenEl
     return [];
   }
   visited.add(element);
-  const local = isIconLikeNode(element) ? [element] : [];
+  const local = isIconLikeNode(element) || isVectorGraphicNode(element) ? [element] : [];
   const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child, visited));
   return [...local, ...nested];
 };
@@ -761,10 +796,10 @@ export const resolveImageSource = ({
 }): string => {
   const mappedSource = context.imageAssetMap[element.id];
   if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
-    return mappedSource.trim();
+    return toRenderableAssetSource(mappedSource);
   }
   if (typeof element.asset?.source === "string" && element.asset.source.trim().length > 0) {
-    return element.asset.source.trim();
+    return toRenderableAssetSource(element.asset.source);
   }
   return toDeterministicImagePlaceholderSrc({
     element,
@@ -885,9 +920,12 @@ export interface RenderedButtonModel {
 export interface RenderContext {
   screenId: string;
   screenName: string;
+  screenElements?: readonly ScreenElementIR[] | undefined;
   currentFilePath: string;
   generationLocale: string;
   formHandlingMode: ResolvedFormHandlingMode;
+  hasScreenFormFields?: boolean | undefined;
+  primarySubmitButtonKey?: string | undefined;
   fields: InteractiveFieldModel[];
   accordions: InteractiveAccordionModel[];
   tabs: InteractiveTabsModel[];
@@ -918,6 +956,7 @@ export interface RenderContext {
     nodeId: string;
     message: string;
   }>;
+  consumedFieldLabelNodeIds?: Set<string> | undefined;
   emittedWarningKeys: Set<string>;
   emittedAccessibilityWarningKeys: Set<string>;
   pageBackgroundColorNormalized: string | undefined;

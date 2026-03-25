@@ -765,6 +765,7 @@ const toTabStripPatternCandidate = ({
     tabActionNodeIds
   });
   const hasTabHintSignal = hasTabNameHint(tabStripNode) || tabItems.some((tabItem) => hasTabNameHint(tabItem.node));
+  const hasExplicitTabNode = tabItems.some((tabItem) => tabItem.node.type === "tab");
   const hasInteractiveTabSignal = tabItems.some((tabItem) => {
     if (tabItem.node.type === "button" || tabItem.node.prototypeNavigation) {
       return true;
@@ -774,7 +775,8 @@ const toTabStripPatternCandidate = ({
       context
     });
   });
-  if (!hasTabHintSignal && !hasInteractiveTabSignal && !hasUnderlineSignal) {
+  const hasSemanticTabSignal = hasTabHintSignal || hasUnderlineSignal || hasExplicitTabNode;
+  if (!hasSemanticTabSignal && !(hasInteractiveTabSignal && tabItems.length >= 3)) {
     return undefined;
   }
   if (

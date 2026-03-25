@@ -57,6 +57,7 @@ import {
   isLikelyInputContainer,
   isLikelyAccordionContainer,
   isIconLikeNode,
+  isVectorGraphicNode,
   isSemanticIconWrapper,
   hasVisualStyle,
   detectTabInterfacePattern,
@@ -73,6 +74,7 @@ import {
   deriveSelectOptions,
   renderMappedElement,
   toStateKey,
+  hasSubtreeName,
   approximatelyEqualNumber,
   inferRequiredFromLabel,
   sanitizeRequiredLabel,
@@ -171,6 +173,9 @@ import {
 } from "./form-template.js";
 
 export const renderText = (element: TextElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  if (context.consumedFieldLabelNodeIds?.has(element.id)) {
+    return "";
+  }
   registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text.trim() || element.name);
@@ -290,9 +295,15 @@ export const renderSemanticInput = (
   const indent = "  ".repeat(depth);
   const model = buildSemanticInputModel(element);
   const field = registerInteractiveField({ context, element, model });
-  const outlineContainer = findFirstByName(element, "muioutlinedinputroot") ?? element;
+  const nestedOutlineContainer = findFirstByName(element, "muioutlinedinputroot");
+  const hasDistinctFieldShell =
+    Boolean(element.strokeColor || element.fillColor || element.fillGradient) ||
+    (typeof element.cornerRadius === "number" && element.cornerRadius > 0) ||
+    ((element.width ?? 0) - (nestedOutlineContainer?.width ?? 0) >= 24) ||
+    ((element.height ?? 0) - (nestedOutlineContainer?.height ?? 0) >= 12);
+  const outlineContainer = nestedOutlineContainer && !hasDistinctFieldShell ? nestedOutlineContainer : element;
   const outlinedBorderNode = findFirstByName(element, "muinotchedoutlined");
-  const outlineStrokeColor = outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor;
+  const outlineStrokeColor = outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor ?? nestedOutlineContainer?.strokeColor;
   const textFieldDefaults = context.themeComponentDefaults?.MuiTextField;
   const outlinedInputRadiusSource = outlinedBorderNode?.cornerRadius ?? outlineContainer.cornerRadius;
   const omitOutlinedInputBorderRadius = matchesRoundedInteger({
@@ -393,8 +404,8 @@ ${indent}        <InputLabel id={${literal(selectLabelId)}} sx={{ ${inputLabelSt
 ${indent}        <Select
 ${indent}          labelId={${literal(selectLabelId)}}
 ${indent}          label={${literal(field.label)}}
-${indent}          value={controllerField.value ?? ""}
-${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          value={controllerField.value}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
 ${indent}          onBlur={controllerField.onBlur}
 ${indent}          aria-describedby={${literal(helperTextId)}}
 ${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
@@ -419,7 +430,7 @@ ${indent}  <Select
 ${indent}    labelId={${literal(selectLabelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
-${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
@@ -489,7 +500,7 @@ ${indent}    });
 ${indent}    return (
 ${indent}      <TextField
 ${indent}        label={${literal(field.label)}}
-${field.placeholder ? `${indent}        placeholder={${literal(field.placeholder)}}\n` : ""}${field.inputType ? `${indent}        type={${literal(field.inputType)}}\n` : ""}${field.autoComplete ? `${indent}        autoComplete={${literal(field.autoComplete)}}\n` : ""}${field.required ? `${indent}        required\n` : ""}${indent}        value={controllerField.value ?? ""}
+${field.placeholder ? `${indent}        placeholder={${literal(field.placeholder)}}\n` : ""}${field.inputType ? `${indent}        type={${literal(field.inputType)}}\n` : ""}${field.autoComplete ? `${indent}        autoComplete={${literal(field.autoComplete)}}\n` : ""}${field.required ? `${indent}        required\n` : ""}${indent}        value={controllerField.value}
 ${indent}        onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
 ${indent}        onBlur={controllerField.onBlur}
 ${indent}        error={Boolean(helperText)}
@@ -698,6 +709,33 @@ ${indent}  </AccordionDetails>
 ${indent}</Accordion>`;
 };
 
+const subtreeContainsButtonSurfaceType = (
+  element: ScreenElementIR,
+  targetTypes: ReadonlySet<ScreenElementIR["type"]>
+): boolean => {
+  if (targetTypes.has(element.type)) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => subtreeContainsButtonSurfaceType(child, targetTypes));
+};
+
+const isCompositeButtonSurfaceElement = (element: ScreenElementIR): boolean => {
+  if (element.type !== "button") {
+    return false;
+  }
+  const meaningfulTextNodes = collectTextNodes(element).filter((node) => /[a-z0-9]/i.test(node.text.trim()));
+  if (meaningfulTextNodes.length <= 1) {
+    return false;
+  }
+  const nonTextChildren = (element.children ?? []).filter((child) => child.type !== "text");
+  const hasRichNestedNonText = nonTextChildren.some((child) => (child.children?.length ?? 0) > 0);
+  const hasEmbeddedSurfaceSemantic = subtreeContainsButtonSurfaceType(
+    element,
+    new Set<ScreenElementIR["type"]>(["card", "paper", "chip", "avatar", "alert", "badge"])
+  );
+  return hasEmbeddedSurfaceSemantic || meaningfulTextNodes.length >= 3 || (meaningfulTextNodes.length >= 2 && hasRichNestedNonText);
+};
+
 export const renderButton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   registerMuiImports(context, "Button");
   const indent = "  ".repeat(depth);
@@ -718,6 +756,20 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
     buttonTextColor
   });
   const navigation = resolvePrototypeNavigationBinding({ element, context });
+
+  if (isCompositeButtonSurfaceElement(element)) {
+    const surfaceElement = {
+      ...element,
+      type:
+        element.fillColor || element.fillGradient || (element.cornerRadius ?? 0) >= 8 || (element.width ?? 0) >= 160
+          ? "card"
+          : "paper"
+    } as ScreenElementIR;
+    if (surfaceElement.type === "card") {
+      return renderCard(surfaceElement, depth, parent, context) ?? renderPaper(surfaceElement, depth, parent, context);
+    }
+    return renderPaper(surfaceElement, depth, parent, context);
+  }
 
   if (iconNode && isIconOnlyButton) {
     registerMuiImports(context, "IconButton");
@@ -861,15 +913,27 @@ export const renderButton = (element: ScreenElementIR, depth: number, parent: Vi
   const colorProp = mappedColor && mappedColor !== "primary" ? ` color="${mappedColor}"` : "";
   const sizeProp = size ? ` size="${size}"` : "";
   const fullWidthProp = fullWidth ? " fullWidth" : "";
-  const isRhfSubmitButton = !navigation && !inferredDisabled && context.formHandlingMode === "react_hook_form" && context.fields.length > 0;
+  const hasScreenFormFields = context.hasScreenFormFields === true;
+  const primarySubmitButtonKey = context.primarySubmitButtonKey ?? "";
+  const isPrimarySubmitButton =
+    !navigation &&
+    !inferredDisabled &&
+    hasScreenFormFields &&
+    primarySubmitButtonKey === buttonKey;
+  const isRhfSubmitButton =
+    !navigation &&
+    !inferredDisabled &&
+    hasScreenFormFields &&
+    context.formHandlingMode === "react_hook_form" &&
+    isPrimarySubmitButton;
   const disabledProp = inferredDisabled
     ? " disabled"
     : isRhfSubmitButton
-      ? ` disabled={isSubmitting && primarySubmitButtonKey === ${literal(buttonKey)}}`
+      ? " disabled={isSubmitting}"
       : "";
   const startIconProp = iconExpression && !iconBelongsAtEnd ? ` startIcon={${iconExpression}}` : "";
   const endIconProp = iconExpression && iconBelongsAtEnd ? ` endIcon={${iconExpression}}` : "";
-  const typeProp = navigation ? "" : ` type={primarySubmitButtonKey === ${literal(buttonKey)} ? "submit" : "button"}`;
+  const typeProp = navigation ? "" : isPrimarySubmitButton ? ' type="submit"' : ' type="button"';
   const linkProps = navigation && !inferredDisabled ? toRouterLinkProps({ navigation, context }) : "";
 
   return `${indent}<Button variant="${variant}"${colorProp}${linkProps}${sizeProp}${fullWidthProp}${disabledProp} disableElevation${typeProp}${startIconProp}${endIconProp} sx={{ ${sxWithVariantStates} }}>{${literal(label ?? element.name)}}</Button>`;
@@ -1289,6 +1353,206 @@ export const collectRenderedItemLabels = (element: ScreenElementIR, generationLo
   }));
 };
 
+const TABLE_CONTROL_NAME_HINTS = [
+  "styled(div)",
+  "muiinput",
+  "textfield",
+  "muiselect",
+  "muislider"
+] as const;
+
+const hasSliderSemanticDescendant = (element: ScreenElementIR): boolean => {
+  return (
+    subtreeContainsElementType(element, "slider") ||
+    hasSubtreeName(element, "muislider") ||
+    hasSubtreeName(element, "slider rail") ||
+    hasSubtreeName(element, "slider track") ||
+    hasSubtreeName(element, "slider thumb") ||
+    hasSubtreeName(element, "slider section")
+  );
+};
+
+const hasNamedControlDescendant = (element: ScreenElementIR): boolean => {
+  const loweredName = element.name.toLowerCase();
+  if (TABLE_CONTROL_NAME_HINTS.some((hint) => loweredName.includes(hint))) {
+    return true;
+  }
+  return (element.children ?? []).some((child) => hasNamedControlDescendant(child));
+};
+
+const tableRowsContainInteractiveControls = (rows: ScreenElementIR[][]): boolean => {
+  const controlLikeRowCount = rows.filter((row) =>
+    row.some(
+      (cell) =>
+        subtreeContainsElementType(cell, "input") ||
+        subtreeContainsElementType(cell, "select") ||
+        subtreeContainsElementType(cell, "slider") ||
+        hasNamedControlDescendant(cell)
+    )
+  ).length;
+  return controlLikeRowCount >= Math.min(2, rows.length);
+};
+
+const shouldSuppressInputContainerRendering = (element: ScreenElementIR): boolean => {
+  const directInteractiveChildCount = (element.children ?? []).filter((child) => {
+    if (child.type === "input" || child.type === "select" || child.type === "slider" || child.type === "image") {
+      return true;
+    }
+    return hasNamedControlDescendant(child);
+  }).length;
+  return (
+    directInteractiveChildCount > 1 ||
+    hasSliderSemanticDescendant(element) ||
+    subtreeContainsElementType(element, "image")
+  );
+};
+
+const isLikelySimpleButtonBaseSurface = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): boolean => {
+  const loweredName = element.name.toLowerCase();
+  if (!loweredName.includes("buttonbase")) {
+    return false;
+  }
+  if (!hasMeaningfulTextDescendants({ element, context })) {
+    return false;
+  }
+  if (
+    subtreeContainsElementType(element, "input") ||
+    subtreeContainsElementType(element, "select") ||
+    subtreeContainsElementType(element, "slider") ||
+    subtreeContainsElementType(element, "image")
+  ) {
+    return false;
+  }
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  if (width <= 0 || height <= 0 || width > 360 || height > 88) {
+    return false;
+  }
+  const textNodes = collectTextNodes(element).filter((node) => node.text.trim().length > 0);
+  return textNodes.length >= 1 && textNodes.length <= 2;
+};
+
+interface IconOnlyStepperPattern {
+  readonly children: readonly ScreenElementIR[];
+}
+
+const isStepperConnectorNode = (element: ScreenElementIR): boolean => {
+  if (element.type === "divider") {
+    return true;
+  }
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const longestSide = Math.max(width, height);
+  const shortestSide = Math.min(width, height);
+  if (longestSide <= 0 || shortestSide <= 0) {
+    return false;
+  }
+  const aspectRatio = longestSide / shortestSide;
+  return shortestSide <= 4 && aspectRatio >= 4 && !hasNamedControlDescendant(element);
+};
+
+const isStepperIconNode = (element: ScreenElementIR): boolean => {
+  return (
+    isIconLikeNode(element) ||
+    isVectorGraphicNode(element) ||
+    isSemanticIconWrapper(element) ||
+    Boolean(pickBestIconNode(element))
+  );
+};
+
+const detectIconOnlyStepperPattern = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): IconOnlyStepperPattern | undefined => {
+  if (element.type !== "container" && element.type !== "stepper") {
+    return undefined;
+  }
+  const children = sortChildren(element.children ?? [], element.layoutMode ?? "HORIZONTAL", {
+    generationLocale: context.generationLocale
+  });
+  if (children.length < 3 || hasMeaningfulTextDescendants({ element, context })) {
+    return undefined;
+  }
+  let iconCount = 0;
+  let connectorCount = 0;
+  for (const child of children) {
+    if (isStepperConnectorNode(child)) {
+      connectorCount += 1;
+      continue;
+    }
+    if (isStepperIconNode(child)) {
+      iconCount += 1;
+      continue;
+    }
+    return undefined;
+  }
+  if (iconCount < 2 || connectorCount === 0) {
+    return undefined;
+  }
+  return { children };
+};
+
+const renderIconOnlyStepper = ({
+  element,
+  depth,
+  parent,
+  context,
+  pattern
+}: {
+  element: ScreenElementIR;
+  depth: number;
+  parent: VirtualParent;
+  context: RenderContext;
+  pattern: IconOnlyStepperPattern;
+}): string => {
+  registerMuiImports(context, "Box", "Stack");
+  const indent = "  ".repeat(depth);
+  const spacing =
+    typeof element.gap === "number" && element.gap > 0
+      ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0.5
+      : 0.5;
+  const sx = toElementSx({
+    element,
+    parent,
+    context,
+    includePaints: false
+  });
+  const renderedChildren = pattern.children
+    .map((child) => {
+      if (isStepperConnectorNode(child)) {
+        const connectorColor = child.fillColor ?? child.strokeColor ?? element.strokeColor ?? element.fillColor ?? "#d7d7d7";
+        const connectorWidth = toPxLiteral(child.width ?? child.height ?? 24) ?? literal("24px");
+        const connectorHeight = toPxLiteral(Math.max(1, Math.min(child.height ?? child.width ?? 2, 4))) ?? literal("2px");
+        return `${indent}  <Box aria-hidden="true" sx={{ width: ${connectorWidth}, height: ${connectorHeight}, bgcolor: ${toThemeColorLiteral({ color: connectorColor, tokens: context.tokens })}, borderRadius: 999 }} />`;
+      }
+      const iconNode = isStepperIconNode(child) && !pickBestIconNode(child) ? child : (pickBestIconNode(child) ?? child);
+      return `${indent}  ${renderFallbackIconExpression({
+        element: iconNode,
+        parent: { name: child.name },
+        context,
+        ariaHidden: true,
+        extraEntries: [
+          ["width", toPxLiteral(child.width ?? iconNode.width)],
+          ["height", toPxLiteral(child.height ?? iconNode.height)],
+          ["display", literal("block")]
+        ]
+      }).trim()}`;
+    })
+    .join("\n");
+  return `${indent}<Stack direction="row" spacing={${spacing}} alignItems="center" sx={{ ${sx} }}>
+${renderedChildren}
+${indent}</Stack>`;
+};
+
 
 export const renderGridLayout = ({
   element,
@@ -1374,6 +1638,18 @@ ${indent}</Grid>`;
 };
 
 export const renderCard = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
+  const loweredName = element.name.toLowerCase();
+  if (loweredName.includes("muicardcontentroot")) {
+    return renderContainerFallback({
+      element,
+      depth,
+      parent,
+      context
+    });
+  }
+  if (!shouldSuppressInputContainerRendering(element) && isLikelyInputContainer(element)) {
+    return renderSemanticInput(element, depth, parent, context);
+  }
   if ((element.children?.length ?? 0) === 0 && !hasVisualStyle(element)) {
     return renderContainer(element, depth, parent, context);
   }
@@ -1659,7 +1935,7 @@ export const isLikelyAppBarToolbarActionNode = ({
   if (node.prototypeNavigation) {
     return true;
   }
-  if (isIconLikeNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node))) {
+  if (isIconLikeNode(node) || isVectorGraphicNode(node) || isSemanticIconWrapper(node) || Boolean(pickBestIconNode(node))) {
     return true;
   }
   return hasInteractiveDescendants({ element: node, context });
@@ -1701,14 +1977,33 @@ export const renderStructuredAppBarToolbarChildren = ({
   if (!title) {
     return undefined;
   }
+  const titleHasStructuredBranding =
+    titleNode !== undefined &&
+    !isTextElement(titleNode) &&
+    (Boolean(pickBestIconNode(titleNode)) ||
+      (titleNode.children ?? []).some((child) => child.type !== "text" && !isDecorativeElement({ element: child, context })));
+  if (titleHasStructuredBranding) {
+    return undefined;
+  }
 
-  const toolbarActions = children
-    .filter((child) => child.id !== titleNode?.id)
+  const nonTitleChildren = children.filter((child) => child.id !== titleNode?.id);
+  if (
+    nonTitleChildren.some((child) =>
+      hasMeaningfulTextDescendants({
+        element: child,
+        context
+      })
+    )
+  ) {
+    return undefined;
+  }
+
+  const toolbarActions = nonTitleChildren
     .map((child) => {
       if (!isLikelyAppBarToolbarActionNode({ node: child, context })) {
         return undefined;
       }
-      const iconNode = isIconLikeNode(child) || isSemanticIconWrapper(child) ? child : pickBestIconNode(child);
+      const iconNode = isIconLikeNode(child) || isVectorGraphicNode(child) || isSemanticIconWrapper(child) ? child : pickBestIconNode(child);
       if (!iconNode) {
         return undefined;
       }
@@ -1988,6 +2283,16 @@ ${indent}</Dialog>`;
 export const renderStepper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string | null => {
   const steps = collectRenderedItemLabels(element, context.generationLocale);
   if (steps.length === 0) {
+    const iconOnlyStepperPattern = detectIconOnlyStepperPattern({ element, context });
+    if (iconOnlyStepperPattern) {
+      return renderIconOnlyStepper({
+        element,
+        depth,
+        parent,
+        context,
+        pattern: iconOnlyStepperPattern
+      });
+    }
     return renderContainer(element, depth, parent, context);
   }
   registerMuiImports(context, "Stepper", "Step", "StepLabel");
@@ -2391,6 +2696,12 @@ ${indent}</Stack>`;
 };
 
 export const renderPaper = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
+  if (!shouldSuppressInputContainerRendering(element) && isLikelyInputContainer(element)) {
+    return renderSemanticInput(element, depth, parent, context);
+  }
+  if (isLikelySimpleButtonBaseSurface({ element, context })) {
+    return renderButton(element, depth, parent, context);
+  }
   registerMuiImports(context, "Paper");
   const indent = "  ".repeat(depth);
   const elevation = normalizeElevationForSx(element.elevation);
@@ -2488,6 +2799,14 @@ export const renderTable = (element: ScreenElementIR, depth: number, parent: Vir
     .filter((row) => row.length > 0);
   if (rows.length < 2 || rows.some((row) => row.length < 2)) {
     return renderContainer(element, depth, parent, context);
+  }
+  if (tableRowsContainInteractiveControls(rows) || hasNamedControlDescendant(element)) {
+    return renderContainerFallback({
+      element,
+      depth,
+      parent,
+      context
+    });
   }
   const containsImageCell = rows.some((row) => row.some((cell) => subtreeContainsElementType(cell, "image")));
   if (containsImageCell) {
@@ -2687,8 +3006,8 @@ ${indent}        <InputLabel id={${literal(labelId)}}>{${literal(field.label)}}<
 ${indent}        <Select
 ${indent}          labelId={${literal(labelId)}}
 ${indent}          label={${literal(field.label)}}
-${indent}          value={controllerField.value ?? ""}
-${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(String(event.target.value))}
+${indent}          value={controllerField.value}
+${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
 ${indent}          onBlur={controllerField.onBlur}
 ${indent}          aria-describedby={${literal(helperTextId)}}
 ${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
@@ -2712,7 +3031,7 @@ ${indent}  <Select
 ${indent}    labelId={${literal(labelId)}}
 ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
-${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, String(event.target.value))}
+${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
@@ -2870,7 +3189,10 @@ export const renderContainerIconWrapper = ({
   parent,
   context
 }: ElementRenderStrategyInput): string | undefined => {
-  if (!(isIconLikeNode(element) || isSemanticIconWrapper(element)) || hasMeaningfulTextDescendants({ element, context })) {
+  if (
+    !(isIconLikeNode(element) || isVectorGraphicNode(element) || isSemanticIconWrapper(element)) ||
+    hasMeaningfulTextDescendants({ element, context })
+  ) {
     return undefined;
   }
   const baseIconWrapperLayoutEntries = baseLayoutEntries(element, parent, {
@@ -2908,7 +3230,20 @@ export const tryRenderAccordionContainer: ContainerRenderStrategy = ({ element, 
   return asContainerStrategyMatch(renderSemanticAccordion(element, depth, parent, context));
 };
 
+export const tryRenderSliderSectionContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (element.type !== "container" || !hasSliderSemanticDescendant(element)) {
+    return undefined;
+  }
+  if (element.layoutMode === "VERTICAL" || element.layoutMode === "HORIZONTAL") {
+    return asContainerStrategyMatch(renderSimpleFlexContainerAsStack({ element, depth, parent, context }));
+  }
+  return asContainerStrategyMatch(renderContainerFallback({ element, depth, parent, context }));
+};
+
 export const tryRenderInputContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (shouldSuppressInputContainerRendering(element)) {
+    return undefined;
+  }
   if (!isLikelyInputContainer(element)) {
     return undefined;
   }
@@ -2920,6 +3255,29 @@ export const tryRenderPillShapedButtonContainer: ContainerRenderStrategy = ({ el
     return undefined;
   }
   return asContainerStrategyMatch(renderButton(element, depth, parent, context));
+};
+
+export const tryRenderButtonBaseContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  if (!isLikelySimpleButtonBaseSurface({ element, context })) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(renderButton(element, depth, parent, context));
+};
+
+export const tryRenderIconOnlyStepperContainer: ContainerRenderStrategy = ({ element, depth, parent, context }) => {
+  const detectedPattern = detectIconOnlyStepperPattern({ element, context });
+  if (!detectedPattern) {
+    return undefined;
+  }
+  return asContainerStrategyMatch(
+    renderIconOnlyStepper({
+      element,
+      depth,
+      parent,
+      context,
+      pattern: detectedPattern
+    })
+  );
 };
 
 export const tryRenderIconLikeContainer: ContainerRenderStrategy = (input) => {
@@ -3009,8 +3367,11 @@ export const tryRenderSimpleFlexContainer: ContainerRenderStrategy = ({ element,
 
 export const CONTAINER_RENDER_STRATEGIES: readonly ContainerRenderStrategy[] = [
   tryRenderAccordionContainer,
+  tryRenderSliderSectionContainer,
   tryRenderInputContainer,
   tryRenderPillShapedButtonContainer,
+  tryRenderButtonBaseContainer,
+  tryRenderIconOnlyStepperContainer,
   tryRenderIconLikeContainer,
   tryRenderGridLikeContainer,
   tryRenderPaperSurfaceContainer,
@@ -3350,7 +3711,13 @@ export const renderElement = (
       });
     }
 
-    if (element.nodeType === "VECTOR" && element.type !== "image") {
+    if (
+      element.nodeType === "VECTOR" &&
+      element.type !== "image" &&
+      !isVectorGraphicNode(element) &&
+      !isIconLikeNode(element) &&
+      !isSemanticIconWrapper(element)
+    ) {
       return null;
     }
 
@@ -3994,6 +4361,12 @@ export const prepareFallbackScreenModel = ({
   };
 };
 
+const resolveSubmitButtonKey = (buttons: RenderedButtonModel[]): string => {
+  const preferred = buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
+  const fallback = buttons.find((button) => button.eligibleForSubmit);
+  return preferred?.key ?? fallback?.key ?? "";
+};
+
 export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallbackScreenModel }): FallbackRenderState => {
   const {
     screen,
@@ -4012,12 +4385,27 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     pageBackgroundColorNormalized,
     extractionPlan
   } = prepared;
-  const renderContext: RenderContext = {
+  const formGroups = detectFormGroups(simplifiedChildren);
+  const formGroupByChildIndex = new Map<number, string>();
+  for (const group of formGroups) {
+    for (const childIndex of group.childIndices) {
+      formGroupByChildIndex.set(childIndex, group.groupId);
+    }
+  }
+
+  const createRenderContext = (
+    hasScreenFormFields: boolean,
+    consumedFieldLabelNodeIds: ReadonlySet<string> = new Set<string>(),
+    primarySubmitButtonKey = ""
+  ): RenderContext => ({
     screenId: screen.id,
     screenName: screen.name,
+    screenElements: simplifiedChildren,
     currentFilePath: prepared.filePath,
     generationLocale: prepared.resolvedGenerationLocale,
     formHandlingMode: prepared.resolvedFormHandlingMode,
+    hasScreenFormFields,
+    primarySubmitButtonKey,
     fields: [],
     accordions: [],
     tabs: [],
@@ -4044,6 +4432,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
+    consumedFieldLabelNodeIds: new Set(consumedFieldLabelNodeIds),
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized,
@@ -4052,29 +4441,33 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
       : {})
+  });
+  const renderWithContext = (context: RenderContext): string => {
+    const renderedOutput = simplifiedChildren
+      .map((element, childIndex) => {
+        context.currentFormGroupId = formGroupByChildIndex.get(childIndex);
+        return renderElement(
+          element,
+          3,
+          rootParent,
+          context
+        );
+      })
+      .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
+      .join("\n");
+    context.currentFormGroupId = undefined;
+    return renderedOutput;
   };
-
-  const formGroups = detectFormGroups(simplifiedChildren);
-  const formGroupByChildIndex = new Map<number, string>();
-  for (const group of formGroups) {
-    for (const childIndex of group.childIndices) {
-      formGroupByChildIndex.set(childIndex, group.groupId);
-    }
-  }
-
-  const rendered = simplifiedChildren
-    .map((element, childIndex) => {
-      renderContext.currentFormGroupId = formGroupByChildIndex.get(childIndex);
-      return renderElement(
-        element,
-        3,
-        rootParent,
-        renderContext
-      );
-    })
-    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
-    .join("\n");
-  renderContext.currentFormGroupId = undefined;
+  const previewRenderContext = createRenderContext(false);
+  renderWithContext(previewRenderContext);
+  const previewPrimarySubmitButtonKey =
+    previewRenderContext.fields.length > 0 ? resolveSubmitButtonKey(previewRenderContext.buttons) : "";
+  const renderContext = createRenderContext(
+    previewRenderContext.fields.length > 0,
+    previewRenderContext.consumedFieldLabelNodeIds,
+    previewPrimarySubmitButtonKey
+  );
+  const rendered = renderWithContext(renderContext);
   const hasInteractiveFields = renderContext.fields.length > 0;
   const hasInteractiveAccordions = renderContext.accordions.length > 0;
   const hasSelectField = renderContext.fields.some((field) => field.isSelect);
@@ -4201,12 +4594,6 @@ export const assembleFallbackDependencies = ({
     renderContext.accordions.map((accordion) => [accordion.key, accordion.defaultExpanded])
   );
 
-  const resolveSubmitButtonKey = (buttons: RenderedButtonModel[]): string => {
-    const preferred = buttons.find((button) => button.eligibleForSubmit && button.preferredSubmit);
-    const fallback = buttons.find((button) => button.eligibleForSubmit);
-    return preferred?.key ?? fallback?.key ?? "";
-  };
-
   const primarySubmitButtonKey = hasInteractiveFields ? resolveSubmitButtonKey(renderContext.buttons) : "";
 
   const hasMultipleFormGroups = formGroups.length > 1;
@@ -4233,10 +4620,9 @@ export const assembleFallbackDependencies = ({
     }
   }
 
-  const submitButtonDeclaration =
-    renderContext.buttons.length > 0 ? `const primarySubmitButtonKey = ${literal(primarySubmitButtonKey)};` : "";
   const shouldGenerateFormContext = enablePatternExtraction && hasInteractiveFields && !hasMultipleFormGroups;
   const usesReactHookForm = hasInteractiveFields && resolvedFormHandlingMode === "react_hook_form";
+  const hasRhfSubmitButtonState = usesReactHookForm && primarySubmitButtonKey.length > 0;
   const formContextFileSpec = shouldGenerateFormContext
     ? usesReactHookForm
       ? buildReactHookFormContextFile({
@@ -4268,7 +4654,7 @@ export const assembleFallbackDependencies = ({
         "handleSubmit",
         "onSubmit",
         "resolveFieldErrorMessage",
-        "isSubmitting",
+        ...(hasRhfSubmitButtonState ? ["isSubmitting"] : []),
         "isSubmitted"
       ]
     : [
@@ -4348,7 +4734,6 @@ const ${dialogCloseHandlerVar} = (): void => {
           .join("\n\n")
       : "";
   const stateBlock = [
-    submitButtonDeclaration,
     formContextHookBlock,
     inlineFieldStateBlock,
     accordionStateBlock,
@@ -4365,7 +4750,7 @@ const ${dialogCloseHandlerVar} = (): void => {
     renderContext.tabs.length > 0 ||
     renderContext.dialogs.length > 0;
   const formSubmitExpression =
-    hasInteractiveFields && usesReactHookForm ? "handleSubmit(onSubmit)" : "handleSubmit";
+    hasInteractiveFields && usesReactHookForm ? "((event) => { void handleSubmit(onSubmit)(event); })" : "handleSubmit";
   const containerFormProps = hasInteractiveFields ? ` component="form" onSubmit={${formSubmitExpression}} noValidate` : "";
 
   const reactValueImports = hasLocalStatefulElements ? ["useState"] : [];

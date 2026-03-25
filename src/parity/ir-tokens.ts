@@ -10,11 +10,13 @@ import type {
   DesignIrDarkPaletteHints,
   DesignIrThemeAnalysis,
   DesignTokenSourceMetric,
+  McpCoverageMetric,
   FigmaMcpDesignSystemMapping,
   DesignTokens,
   FigmaMcpCodeConnectMapping,
   FigmaMcpEnrichment,
   FigmaMcpNodeHint,
+  NodeDiagnosticCategory,
   ScreenElementIR,
   ScreenIR,
   ScreenElementSemanticSource
@@ -196,7 +198,7 @@ const buildMcpCoverageMetric = ({
   enrichment
 }: {
   enrichment: FigmaMcpEnrichment;
-}): import("./types.js").McpCoverageMetric => {
+}): McpCoverageMetric => {
   const diagnostics = enrichment.diagnostics?.map((entry) => ({ ...entry })) ?? [];
   const pushCoverageDiagnostic = ({
     code,
@@ -992,7 +994,7 @@ export const applyMcpEnrichmentToIr = (ir: DesignIR, enrichment: FigmaMcpEnrichm
     reason
   }: {
     nodeId: string;
-    category: import("./types.js").NodeDiagnosticCategory;
+    category: NodeDiagnosticCategory;
     reason: string;
   }): void => {
     if (nextNodeDiagnostics.some((entry) => entry.nodeId === nodeId && entry.category === category)) {

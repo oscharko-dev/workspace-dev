@@ -13,6 +13,11 @@ const MAX_ICON_RECOVERY_DESCENDANTS = 160;
 const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
 const MAX_ICON_RECOVERY_AREA = MAX_ICON_RECOVERY_DIMENSION * MAX_ICON_RECOVERY_DIMENSION;
+const LOW_FIDELITY_MIN_INSTANCE_COUNT = 12;
+const LOW_FIDELITY_MIN_EXPLICIT_COMPONENTS = 6;
+const LOW_FIDELITY_MIN_VECTOR_FALLBACKS = 2;
+const LOW_FIDELITY_MAX_TEXT_TO_INSTANCE_RATIO = 0.45;
+const MAX_AUTHORITATIVE_SUBTREE_CANDIDATES = 8;
 const SCREEN_CANDIDATE_NAME_EXCLUDE_RE = /^(icon|icons|atom|atoms|component|components|_hidden)(\/|$)/i;
 const SCREEN_CANDIDATE_PAGE_EXCLUDE_RE = /\b(components|assets|icons|tokens|styles)\b/i;
 const SCREEN_CANDIDATE_INPUT_HINT_RE = /\b(input|field|form|email|password|search|phone|otp|button|cta)\b/i;
@@ -93,6 +98,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isStringArray = (value: unknown): value is string[] => {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+};
+
+const isFiniteNumber = (value: unknown): value is number => {
+  return typeof value === "number" && Number.isFinite(value);
 };
 
 const parseFigmaStatus = (status: number): { code: string; retryable: boolean } => {
@@ -504,9 +513,19 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
   if (!isStringArray(degradedGeometryNodes)) {
     return undefined;
   }
+  const lowFidelityReasonsRaw = payload.diagnostics && isRecord(payload.diagnostics)
+    ? payload.diagnostics.lowFidelityReasons
+    : undefined;
+  if (lowFidelityReasonsRaw !== undefined && !isStringArray(lowFidelityReasonsRaw)) {
+    return undefined;
+  }
 
   const sourceMode = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.sourceMode : undefined;
   const fetchedNodes = payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.fetchedNodes : undefined;
+  const lowFidelityDetected =
+    payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.lowFidelityDetected : undefined;
+  const authoritativeSubtreeCount =
+    payload.diagnostics && isRecord(payload.diagnostics) ? payload.diagnostics.authoritativeSubtreeCount : undefined;
   const fileVersionId = typeof payload.fileVersionId === "string" ? payload.fileVersionId : undefined;
   const candidateSubtreeHashesRaw = payload.candidateSubtreeHashes;
   let candidateSubtreeHashes: Record<string, string> | undefined;
@@ -529,7 +548,10 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
     (sourceMode !== "geometry-paths" && sourceMode !== "staged-nodes") ||
     typeof fetchedNodes !== "number" ||
     !Number.isFinite(fetchedNodes) ||
-    fetchedNodes < 0
+    fetchedNodes < 0 ||
+    (lowFidelityDetected !== undefined && typeof lowFidelityDetected !== "boolean") ||
+    (authoritativeSubtreeCount !== undefined &&
+      (!isFiniteNumber(authoritativeSubtreeCount) || authoritativeSubtreeCount < 0))
   ) {
     return undefined;
   }
@@ -557,7 +579,10 @@ const toCacheEntry = (payload: unknown): FigmaCacheEntry | undefined => {
     diagnostics: {
       sourceMode,
       fetchedNodes,
-      degradedGeometryNodes
+      degradedGeometryNodes,
+      ...(typeof lowFidelityDetected === "boolean" ? { lowFidelityDetected } : {}),
+      ...(lowFidelityReasonsRaw && lowFidelityReasonsRaw.length > 0 ? { lowFidelityReasons: lowFidelityReasonsRaw } : {}),
+      ...(isFiniteNumber(authoritativeSubtreeCount) ? { authoritativeSubtreeCount } : {})
     },
     file: payload.file
   };
@@ -1126,6 +1151,263 @@ const findNodeById = ({
   return undefined;
 };
 
+const normalizeFidelityNodeName = (value: string | undefined): string => {
+  return (value ?? "")
+    .replace(/🔥/g, " ")
+    .replace(/^_+/, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+};
+
+const isExplicitBoardComponentName = (value: string | undefined): boolean => {
+  const normalized = normalizeFidelityNodeName(value);
+  if (!normalized) {
+    return false;
+  }
+  if (/<\s*(button|card|alert|stack\d*|chip|avatar|paper|divider|badge|tab|dialog|snackbar|navigation)\s*>/i.test(value ?? "")) {
+    return true;
+  }
+  return /^(button|card|alert|stack\d*|chip|avatar|paper|divider|badge|tab|dialog|snackbar|navigation)$/.test(normalized);
+};
+
+const isFallbackProneVectorNode = (node: FigmaNodeLike): boolean => {
+  if (node.type !== "VECTOR") {
+    return false;
+  }
+  const normalizedName = normalizeFidelityNodeName(node.name);
+  if (!normalizedName) {
+    return false;
+  }
+  const width = node.absoluteBoundingBox?.width;
+  const height = node.absoluteBoundingBox?.height;
+  const withinIconSize =
+    (isFiniteNumber(width) && width <= 160 && width > 0) &&
+    (isFiniteNumber(height) && height <= 160 && height > 0);
+  if (!withinIconSize) {
+    return false;
+  }
+  return !(
+    normalizedName.includes("icon") ||
+    normalizedName.startsWith("ic_") ||
+    normalizedName.startsWith("icon/") ||
+    normalizedName.startsWith("icons/") ||
+    normalizedName.startsWith("icon-") ||
+    normalizedName.startsWith("icon_")
+  );
+};
+
+const detectLowFidelityReasons = (file: FigmaFileResponse): string[] => {
+  const root = isRecord(file.document) ? (file.document as FigmaNodeLike) : undefined;
+  if (!root) {
+    return [];
+  }
+
+  let instanceCount = 0;
+  let explicitBoardComponentCount = 0;
+  let fallbackProneVectorCount = 0;
+  let textNodeCount = 0;
+  const queue: FigmaNodeLike[] = [root];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    if (current.type === "INSTANCE") {
+      instanceCount += 1;
+    }
+    if (isExplicitBoardComponentName(current.name)) {
+      explicitBoardComponentCount += 1;
+    }
+    if (current.type === "TEXT" && typeof (current as { characters?: unknown }).characters === "string") {
+      if (((current as { characters?: string }).characters ?? "").trim().length > 0) {
+        textNodeCount += 1;
+      }
+    }
+    if (isFallbackProneVectorNode(current)) {
+      fallbackProneVectorCount += 1;
+    }
+    for (const child of asNodeArray(current.children)) {
+      queue.push(child);
+    }
+  }
+
+  const reasons: string[] = [];
+  if (
+    instanceCount >= LOW_FIDELITY_MIN_INSTANCE_COUNT &&
+    explicitBoardComponentCount >= LOW_FIDELITY_MIN_EXPLICIT_COMPONENTS
+  ) {
+    reasons.push(
+      `Direct geometry payload is instance-heavy (${instanceCount} instances, ${explicitBoardComponentCount} explicit board components).`
+    );
+  }
+  if (
+    explicitBoardComponentCount >= Math.max(4, LOW_FIDELITY_MIN_EXPLICIT_COMPONENTS - 2) &&
+    fallbackProneVectorCount >= LOW_FIDELITY_MIN_VECTOR_FALLBACKS
+  ) {
+    reasons.push(
+      `Direct geometry payload contains ${fallbackProneVectorCount} small vector nodes without icon-like semantics; logo/icon fidelity may degrade.`
+    );
+  }
+  if (
+    instanceCount >= LOW_FIDELITY_MIN_INSTANCE_COUNT &&
+    textNodeCount > 0 &&
+    textNodeCount / instanceCount <= LOW_FIDELITY_MAX_TEXT_TO_INSTANCE_RATIO
+  ) {
+    reasons.push(
+      `Direct geometry payload exposes relatively few text descendants (${textNodeCount} text nodes across ${instanceCount} instances).`
+    );
+  }
+  return reasons;
+};
+
+export const applyAuthoritativeFigmaSubtrees = ({
+  file,
+  subtrees
+}: {
+  file: FigmaFileResponse;
+  subtrees: Array<{ nodeId: string; document: unknown }>;
+}): {
+  file: FigmaFileResponse;
+  appliedNodeIds: string[];
+} => {
+  const root = isRecord(file.document) ? (file.document as FigmaNodeLike) : undefined;
+  if (!root || subtrees.length === 0) {
+    return {
+      file,
+      appliedNodeIds: []
+    };
+  }
+
+  const replacementsById = new Map<string, FigmaNodeLike>();
+  const appliedNodeIds: string[] = [];
+  for (const subtree of subtrees) {
+    const nodeId = subtree.nodeId.trim();
+    if (!nodeId || !isRecord(subtree.document) || !findNodeById({ root, targetId: nodeId })) {
+      continue;
+    }
+    replacementsById.set(nodeId, subtree.document as FigmaNodeLike);
+    appliedNodeIds.push(nodeId);
+  }
+
+  if (replacementsById.size === 0) {
+    return {
+      file,
+      appliedNodeIds: []
+    };
+  }
+
+  return {
+    file: {
+      ...file,
+      document: mergeNodesIntoTree({
+        node: root,
+        replacementsById
+      })
+    },
+    appliedNodeIds: appliedNodeIds.sort((left, right) => left.localeCompare(right))
+  };
+};
+
+export const fetchAuthoritativeFigmaSubtrees = async ({
+  fileKey,
+  accessToken,
+  file,
+  timeoutMs,
+  maxRetries,
+  fetchImpl,
+  onLog,
+  maxScreenCandidates,
+  screenNamePattern
+}: {
+  fileKey: string;
+  accessToken: string;
+  file: FigmaFileResponse;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl: typeof fetch;
+  onLog: (message: string) => void;
+  maxScreenCandidates: number;
+  screenNamePattern?: string;
+}): Promise<Array<{ nodeId: string; document: unknown }>> => {
+  const root = isRecord(file.document) ? (file.document as FigmaNodeLike) : undefined;
+  if (!root || detectLowFidelityReasons(file).length === 0) {
+    return [];
+  }
+
+  const includeScreenNamePattern = toScreenNamePattern({
+    screenNamePattern,
+    onLog
+  });
+  const screenCandidatesWithSize = collectScreenCandidates({
+    root,
+    maxCandidates: Math.min(MAX_AUTHORITATIVE_SUBTREE_CANDIDATES, Math.max(1, maxScreenCandidates)),
+    requireMinSize: true,
+    screenNamePattern: includeScreenNamePattern
+  });
+  const candidateIds = screenCandidatesWithSize.candidates
+    .map((candidate) => candidate.id?.trim())
+    .filter((candidateId): candidateId is string => Boolean(candidateId));
+  const authoritativeSubtrees: Array<{ nodeId: string; document: unknown }> = [];
+
+  const fetchScreenSubtree = async ({
+    nodeId,
+    includeGeometry
+  }: {
+    nodeId: string;
+    includeGeometry: boolean;
+  }): Promise<FigmaNodeLike | undefined> => {
+    const payload = await executeFigmaRequest({
+      url: buildNodesUrl({
+        fileKey,
+        ids: [nodeId],
+        includeGeometry
+      }),
+      requestLabel: `nodes authoritative ${nodeId}${includeGeometry ? " geometry=paths" : ""}`,
+      accessToken,
+      timeoutMs,
+      maxRetries,
+      fetchImpl,
+      onLog,
+      allowTooLargeFallback: true
+    });
+    return extractNodeDocuments(payload).get(nodeId);
+  };
+
+  for (const nodeId of candidateIds) {
+    let authoritativeDocument: FigmaNodeLike | undefined;
+    try {
+      authoritativeDocument = await fetchScreenSubtree({
+        nodeId,
+        includeGeometry: true
+      });
+    } catch (error) {
+      if (!(error instanceof FigmaTooLargeError)) {
+        throw error;
+      }
+      onLog(
+        `Authoritative subtree fetch for '${nodeId}' was too large with geometry=paths; retrying without geometry.`
+      );
+      authoritativeDocument = await fetchScreenSubtree({
+        nodeId,
+        includeGeometry: false
+      });
+    }
+    if (!authoritativeDocument) {
+      onLog(`Authoritative subtree fetch for '${nodeId}' returned no document; keeping REST subtree.`);
+      continue;
+    }
+    authoritativeSubtrees.push({
+      nodeId,
+      document: authoritativeDocument
+    });
+  }
+
+  return authoritativeSubtrees;
+};
+
 const buildNodesUrl = ({
   fileKey,
   ids,
@@ -1393,14 +1675,22 @@ export const fetchFigmaFile = async ({
         onLog,
         allowTooLargeFallback: true
       });
+      const file = toFigmaFileOrParseError({ payload, requestLabel: "files geometry=paths" });
+      const lowFidelityReasons = detectLowFidelityReasons(file);
 
       return {
         result: {
-          file: toFigmaFileOrParseError({ payload, requestLabel: "files geometry=paths" }),
+          file,
           diagnostics: {
             sourceMode: "geometry-paths",
             fetchedNodes: 0,
-            degradedGeometryNodes: []
+            degradedGeometryNodes: [],
+            ...(lowFidelityReasons.length > 0
+              ? {
+                  lowFidelityDetected: true,
+                  lowFidelityReasons
+                }
+              : {})
           }
         },
         ...(typeof stagedFileVersionId === "string" ? { fileVersionId: stagedFileVersionId } : {})

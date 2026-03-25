@@ -57,6 +57,7 @@ export const appTheme = extendTheme({
     MuiTextField: {
       styleOverrides: {
         root: {
+          borderRadius: 1,
           "& .MuiOutlinedInput-root": {
             borderRadius: "8px"
           }

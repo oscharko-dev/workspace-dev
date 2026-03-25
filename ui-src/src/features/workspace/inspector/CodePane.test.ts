@@ -70,6 +70,11 @@ const scopedFormattingCode = [
   "  );",
   "}"
 ].join("\n");
+const alternateFormattingCode = [
+  "export function AboutRoute() {",
+  "  return <section data-testid=\"about-route\">About route</section>;",
+  "}"
+].join("\n");
 const sampleFiles = [
   { path: "src/screens/Home.tsx", sizeBytes: 500 },
   { path: "src/screens/About.tsx", sizeBytes: 300 }
@@ -326,6 +331,54 @@ describe("CodePane scoped code modes", () => {
       expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
       expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
       expect(screen.getByTestId("code-content")).toHaveTextContent("Secondary action");
+    });
+  });
+
+  it("resets formatted viewer feedback when switching to a different file", async () => {
+    const { rerender } = render(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/Home.tsx",
+        onSelectFile: noopFn,
+        fileContent: scopedFormattingCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn,
+        isNodeMapped: true,
+        selectedIrNodeId: "node-a",
+        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 9, endLine: 11 }
+      })
+    );
+
+    fireEvent.click(screen.getByTestId("code-viewer-format-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+    });
+
+    rerender(
+      createElement(CodePane, {
+        files: sampleFiles,
+        filesState: "ready",
+        filesError: null,
+        onRetryFiles: noopFn,
+        selectedFile: "src/screens/About.tsx",
+        onSelectFile: noopFn,
+        fileContent: alternateFormattingCode,
+        fileContentState: "ready",
+        fileContentError: null,
+        onRetryFileContent: noopFn
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("code-content")).toHaveTextContent("About route");
+      expect(screen.getByTestId("code-viewer-format-button")).not.toHaveTextContent("Formatted!");
+      expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
     });
   });
 
