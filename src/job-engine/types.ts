@@ -40,6 +40,9 @@ export interface FigmaFetchDiagnostics {
   sourceMode: "geometry-paths" | "staged-nodes" | "local-json";
   fetchedNodes: number;
   degradedGeometryNodes: string[];
+  lowFidelityDetected?: boolean;
+  lowFidelityReasons?: string[];
+  authoritativeSubtreeCount?: number;
 }
 
 export interface FigmaFetchResult {

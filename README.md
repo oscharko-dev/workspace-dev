@@ -79,13 +79,13 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
 `workspace-dev` enforces:
 
 - `figmaSourceMode=rest`
+- `figmaSourceMode=hybrid`
 - `figmaSourceMode=local_json`
 - `llmCodegenMode=deterministic`
 
 Not available:
 
 - MCP (`figmaSourceMode=mcp`)
-- Hybrid modes
 - `llm_strict`
 
 ## Required submit input
@@ -93,6 +93,10 @@ Not available:
 - `figmaSourceMode=rest`:
   - `figmaFileKey`
   - `figmaAccessToken`
+- `figmaSourceMode=hybrid`:
+  - `figmaFileKey`
+  - `figmaAccessToken`
+  - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
 - `figmaSourceMode=local_json`:
   - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 

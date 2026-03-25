@@ -114,6 +114,7 @@ export {
   collectVectorPaths,
   firstVectorColor,
   escapeXmlText,
+  toRenderableAssetSource,
   deriveResponsiveThemeBreakpointValues,
   toMuiContainerMaxWidth,
   toAlertSeverityFromName,

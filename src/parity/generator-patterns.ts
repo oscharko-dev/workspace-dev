@@ -20,7 +20,8 @@ import {
 import {
   literal,
   indentBlock,
-  renderElement
+  renderElement,
+  toRenderableAssetSource
 } from "./generator-templates.js";
 import {
   sortChildren,
@@ -379,7 +380,7 @@ const toImageSourceForExtraction = ({
   }
   const mappedSource = imageAssetMap[node.id];
   if (typeof mappedSource === "string" && mappedSource.trim().length > 0) {
-    return mappedSource.trim();
+    return toRenderableAssetSource(mappedSource);
   }
   const fallbackLabel = resolveElementA11yLabel({ element: node, fallback: "Image" });
   return toDeterministicImagePlaceholderSrc({

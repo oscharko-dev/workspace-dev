@@ -24,7 +24,7 @@ import {
 } from "./job-engine/errors.js";
 import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
 import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
-import { fetchFigmaFile } from "./job-engine/figma-source.js";
+import { applyAuthoritativeFigmaSubtrees, fetchFigmaFile } from "./job-engine/figma-source.js";
 import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { runGenerationDiff } from "./job-engine/generation-diff.js";
 import { resolveBoardKey } from "./parity/board-key.js";
@@ -859,7 +859,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      const figmaFetch = await runStage({
+      let figmaFetch = await runStage({
         job,
         stage: "figma.source",
         action: async () => {
@@ -872,6 +872,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               sourceMode: "geometry-paths" | "staged-nodes" | "local-json";
               fetchedNodes: number;
               degradedGeometryNodes: string[];
+              lowFidelityDetected?: boolean;
+              lowFidelityReasons?: string[];
+              authoritativeSubtreeCount?: number;
             };
           }) => {
             await writeFile(figmaRawJsonFile, `${JSON.stringify(sourceFile, null, 2)}\n`, "utf8");
@@ -883,7 +886,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
               stage: "figma.source",
               message:
                 `Figma source mode=${diagnostics.sourceMode}, fetchedNodes=${diagnostics.fetchedNodes}, ` +
-                `degradedGeometryNodes=${diagnostics.degradedGeometryNodes.length}, cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
+                `degradedGeometryNodes=${diagnostics.degradedGeometryNodes.length}, ` +
+                `lowFidelity=${diagnostics.lowFidelityDetected === true ? "yes" : "no"}, ` +
+                `authoritativeSubtrees=${diagnostics.authoritativeSubtreeCount ?? 0}, ` +
+                `cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
                 `removedHidden=${cleaning.report.removedHiddenNodes}, removedPlaceholders=${cleaning.report.removedPlaceholderNodes}, ` +
                 `removedHelpers=${cleaning.report.removedHelperNodes}, removedInvalid=${cleaning.report.removedInvalidNodes}, removedProperties=${cleaning.report.removedPropertyCount}`
             });
@@ -1084,6 +1090,70 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
                 });
               }
             })();
+
+      const authoritativeSubtrees = hybridMcpEnrichment?.authoritativeSubtrees ?? [];
+      if (authoritativeSubtrees.length > 0) {
+        const rawFile = JSON.parse(await readFile(figmaRawJsonFile, "utf8")) as FigmaFileResponse;
+        const mergedSource = applyAuthoritativeFigmaSubtrees({
+          file: rawFile,
+          subtrees: authoritativeSubtrees
+        });
+        if (mergedSource.appliedNodeIds.length > 0) {
+          const cleaning = cleanFigmaForCodegen({ file: mergedSource.file });
+          await writeFile(figmaRawJsonFile, `${JSON.stringify(mergedSource.file, null, 2)}\n`, "utf8");
+          await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
+          figmaFetch = {
+            ...figmaFetch,
+            file: cleaning.cleanedFile,
+            diagnostics: {
+              ...figmaFetch.diagnostics,
+              authoritativeSubtreeCount: mergedSource.appliedNodeIds.length
+            }
+          };
+          pushLog({
+            job,
+            level: "info",
+            stage: "ir.derive",
+            message: `Applied ${mergedSource.appliedNodeIds.length} authoritative subtree snapshot(s) from hybrid enrichment before IR derivation.`
+          });
+        }
+      }
+
+      if (figmaFetch.diagnostics.lowFidelityDetected === true && (figmaFetch.diagnostics.authoritativeSubtreeCount ?? 0) === 0) {
+        const lowFidelityReasons = figmaFetch.diagnostics.lowFidelityReasons ?? [];
+        const summary =
+          lowFidelityReasons.length > 0
+            ? lowFidelityReasons.join(" ")
+            : "REST geometry payload appears structurally weak for this board.";
+        pushLog({
+          job,
+          level: "error",
+          stage: "figma.source",
+          message: `Low-fidelity Figma source detected without authoritative recovery. ${summary}`
+        });
+        throw createPipelineError({
+          code: "E_FIGMA_LOW_FIDELITY_SOURCE",
+          stage: "figma.source",
+          message: `Figma source fidelity is too low to generate a reliable screen. ${summary}`,
+          diagnostics: [
+            {
+              code: "E_FIGMA_LOW_FIDELITY_SOURCE",
+              message: "Figma REST geometry-paths payload is too low-fidelity for deterministic generation.",
+              suggestion:
+                resolvedFigmaSourceMode === "hybrid"
+                  ? "Verify authoritative subtree recovery for hybrid mode or use a local_json export for this board."
+                  : "Retry with figmaSourceMode=hybrid so authoritative subtrees can be recovered, or use a local_json export.",
+              stage: "figma.source",
+              severity: "error",
+              details: {
+                figmaSourceMode: resolvedFigmaSourceMode,
+                sourceMode: figmaFetch.diagnostics.sourceMode,
+                reasons: lowFidelityReasons
+              }
+            }
+          ]
+        });
+      }
 
       const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
 

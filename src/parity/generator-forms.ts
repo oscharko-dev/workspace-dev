@@ -363,6 +363,17 @@ const isValueLikeText = (value: string): boolean => {
   return /\d/.test(trimmed) || trimmed.includes("%") || trimmed.includes("€") || /jahr/i.test(trimmed);
 };
 
+const INTERNAL_IMPLEMENTATION_LABEL_PATTERN =
+  /^(?:mui[a-z0-9]+(?:root|input|select|button[a-z0-9]*|svgiconroot)?|styled\(div\)|container|vector)$/i;
+
+const isInternalImplementationLabel = (value: string | undefined): boolean => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return true;
+  }
+  return INTERNAL_IMPLEMENTATION_LABEL_PATTERN.test(trimmed);
+};
+
 const normalizeInputPlaceholderText = (value: string): string => {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 };
@@ -375,6 +386,98 @@ export const normalizeInputSemanticText = (value: string): string => {
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+};
+
+const collectDescendantIds = (element: ScreenElementIR, ids: Set<string> = new Set()): Set<string> => {
+  ids.add(element.id);
+  for (const child of element.children ?? []) {
+    collectDescendantIds(child, ids);
+  }
+  return ids;
+};
+
+const resolveNearbyFieldLabel = ({
+  context,
+  element
+}: {
+  context: RenderContext;
+  element: ScreenElementIR;
+}): TextElementIR | undefined => {
+  if (!context.screenElements || context.screenElements.length === 0) {
+    return undefined;
+  }
+  const left = element.x;
+  const top = element.y;
+  const width = element.width;
+  const height = element.height;
+  if (
+    typeof left !== "number" ||
+    typeof top !== "number" ||
+    typeof width !== "number" ||
+    !Number.isFinite(left) ||
+    !Number.isFinite(top) ||
+    !Number.isFinite(width)
+  ) {
+    return undefined;
+  }
+
+  const right = left + width;
+  const maxVerticalGap = Math.max(56, (typeof height === "number" && Number.isFinite(height) ? height : 0) * 2);
+  const descendantIds = collectDescendantIds(element);
+  let bestMatch:
+    | {
+        node: TextElementIR;
+        score: number;
+      }
+    | undefined;
+
+  for (const rootElement of context.screenElements) {
+    for (const textNode of collectTextNodes(rootElement)) {
+      if (descendantIds.has(textNode.id)) {
+        continue;
+      }
+      const text = textNode.text.trim();
+      if (
+        text.length === 0 ||
+        isValueLikeText(text) ||
+        /^[€%$]$/.test(text) ||
+        isInternalImplementationLabel(text)
+      ) {
+        continue;
+      }
+
+      const nodeX = typeof textNode.x === "number" && Number.isFinite(textNode.x) ? textNode.x : undefined;
+      const nodeY = typeof textNode.y === "number" && Number.isFinite(textNode.y) ? textNode.y : undefined;
+      const nodeWidth =
+        typeof textNode.width === "number" && Number.isFinite(textNode.width) ? textNode.width : Math.max(24, text.length * 7);
+      const nodeHeight = typeof textNode.height === "number" && Number.isFinite(textNode.height) ? textNode.height : 16;
+      if (nodeX === undefined || nodeY === undefined) {
+        continue;
+      }
+
+      const nodeRight = nodeX + nodeWidth;
+      const nodeBottom = nodeY + nodeHeight;
+      const verticalGap = top - nodeBottom;
+      if (verticalGap < -6 || verticalGap > maxVerticalGap) {
+        continue;
+      }
+
+      const horizontalGap = Math.max(0, left - nodeRight, nodeX - right);
+      if (horizontalGap > 48) {
+        continue;
+      }
+
+      const score = verticalGap * 100 + horizontalGap;
+      if (!bestMatch || score < bestMatch.score) {
+        bestMatch = {
+          node: textNode,
+          score
+        };
+      }
+    }
+  }
+
+  return bestMatch?.node;
 };
 
 const collectInputSemanticHints = ({
@@ -527,7 +630,29 @@ const splitTextRows = (texts: TextElementIR[]): { topRow: TextElementIR[]; botto
 };
 
 export const isLikelyInputContainer = (element: ScreenElementIR): boolean => {
-  if (element.type !== "container") {
+  if (element.type !== "container" && element.type !== "paper" && element.type !== "card") {
+    return false;
+  }
+  if (hasAnySubtreeName(element, ["muislider"]) || (element.children ?? []).some((child) => child.type === "slider")) {
+    return false;
+  }
+
+  const directInteractiveChildCount = (element.children ?? []).filter((child) => {
+    if (child.type === "input" || child.type === "select" || child.type === "slider" || child.type === "image") {
+      return true;
+    }
+    const childName = child.name.toLowerCase();
+    return (
+      hasAnySubtreeName(child, INPUT_NAME_HINTS) ||
+      hasAnySubtreeName(child, ["muiselect", "muislider"]) ||
+      childName.includes("styled(div)") ||
+      childName.includes("muiinput") ||
+      childName.includes("textfield") ||
+      childName.includes("muiselect") ||
+      childName.includes("muislider")
+    );
+  }).length;
+  if (directInteractiveChildCount > 1) {
     return false;
   }
 
@@ -574,7 +699,16 @@ export const registerInteractiveField = ({
     return existing;
   }
 
-  const rawLabel = model.labelNode?.text?.trim() ?? element.name;
+  const modelLabel = model.labelNode?.text?.trim();
+  const nearbyLabelNode = resolveNearbyFieldLabel({ context, element });
+  if (nearbyLabelNode) {
+    context.consumedFieldLabelNodeIds?.add(nearbyLabelNode.id);
+  }
+  const rawLabel =
+    (modelLabel && !isInternalImplementationLabel(modelLabel) ? modelLabel : undefined) ??
+    nearbyLabelNode?.text?.trim() ??
+    modelLabel ??
+    element.name;
   const required = inferRequiredFromLabel(rawLabel);
   const sanitizedLabel = required ? sanitizeRequiredLabel(rawLabel) : rawLabel;
   const label = sanitizedLabel.length > 0 ? sanitizedLabel : rawLabel;

@@ -571,6 +571,430 @@ const createRegressionScreen = () => ({
   ]
 });
 
+const createStepperIconNode = ({
+  id,
+  x,
+  y,
+  fillColor
+}: {
+  id: string;
+  x: number;
+  y: number;
+  fillColor: string;
+}): any => ({
+  id,
+  name: "MuiSvgIconRoot",
+  nodeType: "FRAME",
+  type: "container" as const,
+  x,
+  y,
+  width: 24,
+  height: 24,
+  fillColor,
+  vectorPaths: [
+    "M0 0L24 0L24 24L0 24L0 0Z",
+    "M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z"
+  ]
+});
+
+const createStepperConnectorNode = ({
+  id,
+  x,
+  y,
+  fillColor
+}: {
+  id: string;
+  x: number;
+  y: number;
+  fillColor: string;
+}): any => ({
+  id,
+  name: "Step Connector",
+  nodeType: "RECTANGLE",
+  type: "divider" as const,
+  x,
+  y,
+  width: 20,
+  height: 2,
+  fillColor
+});
+
+const createSliderSectionNode = ({
+  id,
+  x,
+  y
+}: {
+  id: string;
+  x: number;
+  y: number;
+}): any => ({
+  id,
+  name: "Slider Section",
+  nodeType: "FRAME",
+  type: "container" as const,
+  x,
+  y,
+  width: 260,
+  height: 92,
+  layoutMode: "VERTICAL" as const,
+  gap: 8,
+  children: [
+    {
+      id: `${id}-label`,
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "In wie viel Jahren planen Sie den Bau / Kauf?",
+      x,
+      y,
+      fillColor: "#222222",
+      fontFamily: "Roboto",
+      fontSize: 14,
+      fontWeight: 500
+    },
+    {
+      id: `${id}-value`,
+      name: "MuiInputBaseRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "12",
+      x: x + 220,
+      y,
+      fillColor: "#222222",
+      fontFamily: "Roboto",
+      fontSize: 15,
+      fontWeight: 500
+    },
+    {
+      id: `${id}-slider`,
+      name: "MuiSliderRoot",
+      nodeType: "FRAME",
+      type: "slider" as const,
+      x,
+      y: y + 32,
+      width: 240,
+      height: 24,
+      children: [
+        {
+          id: `${id}-rail`,
+          name: "MuiSliderRail",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x,
+          y: y + 42,
+          width: 240,
+          height: 4
+        },
+        {
+          id: `${id}-track`,
+          name: "MuiSliderTrack",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x,
+          y: y + 42,
+          width: 96,
+          height: 4
+        },
+        {
+          id: `${id}-thumb`,
+          name: "MuiSliderThumb",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: x + 96,
+          y: y + 34,
+          width: 16,
+          height: 16
+        }
+      ]
+    },
+    {
+      id: `${id}-min`,
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "3",
+      x,
+      y: y + 72,
+      fillColor: "#6e6e6e",
+      fontFamily: "Roboto",
+      fontSize: 12
+    },
+    {
+      id: `${id}-max`,
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "25",
+      x: x + 224,
+      y: y + 72,
+      fillColor: "#6e6e6e",
+      fontFamily: "Roboto",
+      fontSize: 12
+    }
+  ]
+});
+
+const createMuiBoardRegressionScreen = () => ({
+  id: "mui-board-regression-screen",
+  name: "Material UI Board Regression",
+  layoutMode: "NONE" as const,
+  gap: 0,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  fillColor: "#ffffff",
+  children: [
+    {
+      id: "mui-board-title",
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "Bauen oder kaufen",
+      x: 0,
+      y: 0,
+      fillColor: "#222222",
+      fontFamily: "Roboto",
+      fontWeight: 700,
+      fontSize: 21
+    },
+    {
+      id: "mui-board-stepper",
+      name: "Progress Strip",
+      nodeType: "FRAME",
+      type: "container" as const,
+      x: 0,
+      y: 32,
+      width: 136,
+      height: 24,
+      layoutMode: "HORIZONTAL" as const,
+      gap: 8,
+      children: [
+        createStepperIconNode({ id: "mui-board-step-1", x: 0, y: 32, fillColor: "#4da36c" }),
+        createStepperConnectorNode({ id: "mui-board-connector-1", x: 32, y: 43, fillColor: "#1f1f1f" }),
+        createStepperIconNode({ id: "mui-board-step-2", x: 56, y: 32, fillColor: "#d7d7d7" }),
+        createStepperConnectorNode({ id: "mui-board-connector-2", x: 88, y: 43, fillColor: "#d7d7d7" }),
+        createStepperIconNode({ id: "mui-board-step-3", x: 112, y: 32, fillColor: "#d7d7d7" })
+      ]
+    },
+    {
+      id: "mui-board-form-table",
+      name: "Form Layout Table",
+      nodeType: "FRAME",
+      type: "table" as const,
+      x: 0,
+      y: 80,
+      width: 760,
+      height: 280,
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      children: [
+        {
+          id: "mui-board-row-1",
+          name: "Row 1",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 0,
+          y: 80,
+          width: 760,
+          height: 92,
+          layoutMode: "HORIZONTAL" as const,
+          gap: 20,
+          children: [createRegressionScreen().children[1], createRegressionScreen().children[2]]
+        },
+        {
+          id: "mui-board-row-2",
+          name: "Row 2",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 0,
+          y: 188,
+          width: 760,
+          height: 120,
+          layoutMode: "HORIZONTAL" as const,
+          gap: 20,
+          children: [
+            createSliderSectionNode({ id: "mui-board-slider-section", x: 0, y: 188 }),
+            {
+              id: "mui-board-image",
+              name: "Image (Bauen oder kaufen)",
+              nodeType: "FRAME",
+              type: "image" as const,
+              x: 320,
+              y: 188,
+              width: 240,
+              height: 160,
+              asset: {
+                source: "/images/bauen-oder-kaufen.png",
+                kind: "image" as const
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+});
+
+const createDetachedMuiFieldRegressionScreen = () => ({
+  id: "mui-detached-field-regression-screen",
+  name: "Detached Mui Fields",
+  layoutMode: "NONE" as const,
+  gap: 0,
+  padding: { top: 0, right: 0, bottom: 0, left: 0 },
+  fillColor: "#ffffff",
+  children: [
+    {
+      id: "detached-label-1",
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "Monatliche Sparrate (optional)",
+      x: 32,
+      y: 32,
+      fillColor: "#6e6e6e",
+      fontFamily: "Roboto",
+      fontSize: 12
+    },
+    {
+      id: "detached-input-1",
+      name: "MuiInputBaseRoot",
+      nodeType: "FRAME",
+      type: "input" as const,
+      x: 32,
+      y: 56,
+      width: 360,
+      height: 22,
+      children: [
+        {
+          id: "detached-input-1-value-root",
+          name: "MuiInputBaseInput",
+          nodeType: "FRAME",
+          type: "input" as const,
+          x: 32,
+          y: 56,
+          width: 320,
+          height: 22,
+          vectorPaths: ["M0 0L320 0L320 22L0 22L0 0Z"],
+          children: [
+            {
+              id: "detached-input-1-value",
+              name: "50,00",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "50,00",
+              x: 32,
+              y: 56,
+              fillColor: "#222222",
+              fontFamily: "Roboto",
+              fontSize: 15,
+              fontWeight: 500
+            }
+          ]
+        },
+        {
+          id: "detached-input-1-suffix",
+          name: "MuiTypographyRoot",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "€",
+          x: 376,
+          y: 56,
+          fillColor: "#6e6e6e",
+          fontFamily: "Roboto",
+          fontSize: 15
+        }
+      ]
+    },
+    {
+      id: "detached-label-2",
+      name: "MuiTypographyRoot",
+      nodeType: "TEXT",
+      type: "text" as const,
+      text: "Zu welchem Monat soll die Besparung starten?",
+      x: 32,
+      y: 112,
+      fillColor: "#6e6e6e",
+      fontFamily: "Roboto",
+      fontSize: 12
+    },
+    {
+      id: "detached-input-2",
+      name: "MuiInputRoot",
+      nodeType: "FRAME",
+      type: "input" as const,
+      x: 32,
+      y: 136,
+      width: 360,
+      height: 24,
+      children: [
+        {
+          id: "detached-input-2-select",
+          name: "MuiSelectSelect",
+          nodeType: "FRAME",
+          type: "select" as const,
+          x: 32,
+          y: 136,
+          width: 320,
+          height: 22,
+          vectorPaths: ["M0 0L320 0L320 22L0 22L0 0Z"],
+          children: [
+            {
+              id: "detached-input-2-value",
+              name: "April 2026",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "April 2026",
+              x: 32,
+              y: 136,
+              fillColor: "#222222",
+              fontFamily: "Roboto",
+              fontSize: 15,
+              fontWeight: 500
+            }
+          ]
+        },
+        {
+          id: "detached-input-2-icon",
+          name: "MuiSvgIconRoot",
+          nodeType: "FRAME",
+          type: "container" as const,
+          x: 368,
+          y: 136,
+          width: 23.993057250976562,
+          height: 23.993057250976562,
+          vectorPaths: ["M0 0L23.9931 0L23.9931 23.9931L0 23.9931L0 0Z"],
+          children: [
+            {
+              id: "detached-input-2-icon-vector",
+              name: "Vector",
+              nodeType: "VECTOR",
+              type: "container" as const,
+              x: 374,
+              y: 144,
+              width: 11.996528625488281,
+              height: 7.407856464385986,
+              fillColor: "#6e6e6e",
+              vectorPaths: ["M1.40959 0L5.99826 4.57868L10.5869 0L11.9965 1.40959L5.99826 7.40786L0 1.40959L1.40959 0Z"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "detached-image",
+      name: "Image (Bauen oder kaufen)",
+      nodeType: "FRAME",
+      type: "image" as const,
+      x: 432,
+      y: 32,
+      width: 280,
+      height: 210,
+      asset: {
+        source: "/images/bauen-oder-kaufen.png",
+        kind: "image" as const
+      }
+    }
+  ]
+});
+
 const extractMuiIconImportLines = (content: string): string[] => {
   return content
     .split("\n")
@@ -3366,7 +3790,8 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
   assert.ok(mappedContent.includes('from "@custom/icons";'));
   assert.ok(mappedContent.includes("<CustomVectorIcon"));
   assert.ok(mappedContent.includes('data-figma-node-id={"mapped-vector-node"}'));
-  assert.equal(mappedContent.includes("unmapped-vector-node"), false);
+  assert.ok(mappedContent.includes("<SvgIcon"));
+  assert.ok(mappedContent.includes('data-ir-id="unmapped-vector-node"'));
 
   const fallbackProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-vector-fallback-"));
   await generateArtifacts({
@@ -3380,7 +3805,9 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
   });
   const fallbackContent = await readFile(path.join(fallbackProjectDir, toDeterministicScreenPath("Mapped Vector Screen")), "utf8");
   assert.equal(fallbackContent.includes("CustomVectorIcon"), false);
-  assert.equal(fallbackContent.includes("mapped-vector-node"), false);
+  assert.ok(fallbackContent.includes("<SvgIcon"));
+  assert.ok(fallbackContent.includes('data-ir-id="mapped-vector-node"'));
+  assert.ok(fallbackContent.includes('data-ir-id="unmapped-vector-node"'));
 });
 
 test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
@@ -3776,7 +4203,7 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
     )
   );
   assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
-  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
+  assert.ok(screenContent.includes('component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate'));
   assert.ok(screenContent.includes("<Controller"));
   assert.equal(screenContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
   assert.equal(screenContent.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"), false);
@@ -3960,13 +4387,13 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
   });
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
-  assert.ok(generatedScreenContent.includes('component="img" src={"/images/hero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'));
+  assert.ok(generatedScreenContent.includes('component="img" src={"./images/hero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'));
   assert.ok(
     generatedScreenContent.includes(
-      '<CardMedia component="img" image={"/images/card-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
+      '<CardMedia component="img" image={"./images/card-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
     )
   );
-  assert.ok(generatedScreenContent.includes('component="img" src={"/images/table-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'));
+  assert.ok(generatedScreenContent.includes('component="img" src={"./images/table-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'));
 });
 
 test("generateArtifacts applies lazy loading for below-fold images and fetchpriority for hero images", async () => {
@@ -4019,12 +4446,12 @@ test("generateArtifacts applies lazy loading for below-fold images and fetchprio
   const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Lazy Screen")), "utf8");
 
   // Hero image (y=50): should have fetchPriority="high", decoding="async", no loading="lazy"
-  assert.ok(content.includes('src={"/images/hero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'));
-  assert.ok(!content.includes('/images/hero-banner.png") alt={"Hero Banner"} loading="lazy"'));
+  assert.ok(content.includes('src={"./images/hero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'));
+  assert.ok(!content.includes('./images/hero-banner.png") alt={"Hero Banner"} loading="lazy"'));
 
   // Below-fold image (y=900): should have loading="lazy", decoding="async", no fetchpriority
-  assert.ok(content.includes('src={"/images/gallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'));
-  assert.ok(!content.includes('/images/gallery.png") alt={"Gallery Photo"} decoding="async" fetchpriority'));
+  assert.ok(content.includes('src={"./images/gallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'));
+  assert.ok(!content.includes('./images/gallery.png") alt={"Gallery Photo"} decoding="async" fetchpriority'));
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
@@ -4454,6 +4881,42 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   assert.ok(content.includes('minHeight: "66px"'));
 });
 
+test("deterministic screen rendering preserves simple MUI board controls, stepper icons, and exported images", () => {
+  const screen = createMuiBoardRegressionScreen();
+  const screenFile = createDeterministicScreenFile(screen);
+  const content = screenFile.content;
+
+  assert.ok(content.includes("Bauen oder kaufen"));
+  assert.ok(content.includes("<Slider"));
+  assert.ok(content.includes('src={"./images/bauen-oder-kaufen.png"}'));
+  assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
+  assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
+  assert.equal(content.includes('data-ir-id="1:32"'), false);
+  assert.equal(content.includes('data-ir-id="1:44"'), false);
+  assert.equal(content.includes("<Table"), false);
+  assert.equal(content.includes('{"MuiSliderRail"}'), false);
+  assert.equal(content.includes('{"MuiSliderTrack"}'), false);
+  assert.equal(content.includes('{"MuiSliderThumb"}'), false);
+  assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
+  assert.equal(content.includes('{"MuiInputRoot"}'), false);
+  assert.equal(content.includes('M0 0L24 0L24 24L0 24L0 0Z'), false);
+});
+
+test("deterministic screen rendering resolves detached MUI field labels, relative image assets, and decimal bounding-box paths", () => {
+  const screen = createDetachedMuiFieldRegressionScreen();
+  const screenFile = createDeterministicScreenFile(screen);
+  const content = screenFile.content;
+
+  assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
+  assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
+  assert.ok(content.includes('src={"./images/bauen-oder-kaufen.png"}'));
+  assert.equal(content.includes('data-ir-id="detached-label-1"'), false);
+  assert.equal(content.includes('data-ir-id="detached-label-2"'), false);
+  assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
+  assert.equal(content.includes('{"MuiInputRoot"}'), false);
+  assert.equal(content.includes("M0 0L23.9931 0L23.9931 23.9931L0 23.9931L0 0Z"), false);
+});
+
 test("deterministic screen rendering derives semantic select options with locale-aware number formatting", () => {
   const screen = {
     id: "semantic-select-locale-screen",
@@ -4806,7 +5269,7 @@ test("deterministic screen rendering emits form validation state scaffolding for
   assert.ok(content.includes("const handleFieldBlur = (fieldKey: string): void => {"));
   assert.ok(content.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
   assert.ok(content.includes('import type { FormEvent, ChangeEvent } from "react";'));
-  assert.ok(content.includes('const primarySubmitButtonKey = "primary_submit_primary_submit";'));
+  assert.equal(content.includes("const primarySubmitButtonKey"), false);
 });
 
 test("deterministic screen rendering uses react-hook-form scaffolding by default", () => {
@@ -4822,7 +5285,7 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes('component="form" onSubmit={handleSubmit(onSubmit)} noValidate'));
+  assert.ok(content.includes('component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate'));
   assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
   assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
   assert.ok(content.includes('import { z } from "zod";'));
@@ -4832,7 +5295,7 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
   assert.ok(
     content.includes('type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;')
   );
-  assert.ok(/createFieldSchema\(\{ fieldKey: "[^"]+", spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(content));
+  assert.ok(/createFieldSchema\(\{ spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(content));
   assert.ok(content.includes("type FormInput = z.input<typeof formSchema>;"));
   assert.ok(content.includes("type FormOutput = z.output<typeof formSchema>;"));
   assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({"));
@@ -4889,7 +5352,7 @@ test("deterministic screen rendering enforces select option membership in RHF sc
   assert.ok(content.includes("const selectOptions: Record<string, string[]> = "));
   assert.ok(content.includes("const selectFieldOptions = spec.selectOptions;"));
   assert.ok(content.includes("!selectFieldOptions.includes(rawValue)"));
-  assert.ok(content.includes('spec.selectValidationMessage ?? ("Please select a valid option for " + fieldKey + ".")'));
+  assert.ok(content.includes("const selectValidationMessage = spec.selectValidationMessage;"));
 });
 
 test("deterministic screen rendering seeds visual error examples from red outlines", () => {
@@ -5069,16 +5532,83 @@ test("deterministic screen rendering assigns a single primary submit button and 
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes('const primarySubmitButtonKey = "primary_action_btn_primary";'));
+  assert.equal(content.includes("const primarySubmitButtonKey"), false);
 
   const secondaryLine = findRenderedButtonLine({ content, label: "Secondary" });
-  assert.ok(secondaryLine.includes('type={primarySubmitButtonKey === "secondary_action_btn_secondary" ? "submit" : "button"}'));
+  assert.ok(secondaryLine.includes('type="button"'));
 
   const primaryLine = findRenderedButtonLine({ content, label: "Primary" });
-  assert.ok(primaryLine.includes('type={primarySubmitButtonKey === "primary_action_btn_primary" ? "submit" : "button"}'));
+  assert.ok(primaryLine.includes('type="submit"'));
+  assert.ok(primaryLine.includes("disabled={isSubmitting}"));
 
   const disabledLine = findRenderedButtonLine({ content, label: "Disabled" });
-  assert.ok(disabledLine.includes('type={primarySubmitButtonKey === "disabled_action_btn_disabled" ? "submit" : "button"}'));
+  assert.ok(disabledLine.includes('type="button"'));
+});
+
+test("deterministic screen rendering keeps plain buttons on screens without form fields", () => {
+  const screen = {
+    id: "no-form-button-screen",
+    name: "No Form Button Screen",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    width: 360,
+    height: 220,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "btn-plain-secondary",
+        name: "Secondary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 0,
+        width: 180,
+        height: 36,
+        strokeColor: "#565656",
+        children: [
+          {
+            id: "btn-plain-secondary-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Secondary",
+            fillColor: "#292929"
+          }
+        ]
+      },
+      {
+        id: "btn-plain-primary",
+        name: "Primary Action",
+        nodeType: "FRAME",
+        type: "button" as const,
+        x: 0,
+        y: 64,
+        width: 220,
+        height: 48,
+        fillColor: "#d4001a",
+        children: [
+          {
+            id: "btn-plain-primary-label",
+            name: "Label",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Primary",
+            fillColor: "#ffffff"
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assert.equal(content.includes("const primarySubmitButtonKey"), false);
+  assert.equal(content.includes('type={primarySubmitButtonKey === '), false);
+
+  const secondaryLine = findRenderedButtonLine({ content, label: "Secondary" });
+  assert.ok(secondaryLine.includes('type="button"'));
+
+  const primaryLine = findRenderedButtonLine({ content, label: "Primary" });
+  assert.ok(primaryLine.includes('type="button"'));
 });
 
 test("deterministic screen rendering infers heading hierarchy components from typography prominence", () => {
@@ -5261,6 +5791,332 @@ test("deterministic screen rendering honors explicit board component semantics f
   assert.equal(content.includes('<Paper data-ir-id="board-button"'), false);
   assert.equal(content.includes('<Paper data-ir-name="<Button>"'), false);
   assert.equal(content.includes("<Snackbar open"), false);
+});
+
+test("deterministic screen rendering preserves composite button surfaces and vector-only graphics", () => {
+  const screen = {
+    id: "composite-button-screen",
+    name: "Composite Button Surface",
+    layoutMode: "VERTICAL" as const,
+    gap: 16,
+    padding: { top: 16, right: 16, bottom: 16, left: 16 },
+    children: [
+      {
+        id: "action-card",
+        name: "<Button>",
+        nodeType: "INSTANCE",
+        type: "button" as const,
+        width: 320,
+        height: 96,
+        fillColor: "#ffffff",
+        strokeColor: "#d9d9d9",
+        cornerRadius: 16,
+        children: [
+          {
+            id: "action-card-icon",
+            name: "Sparkasse S",
+            nodeType: "VECTOR",
+            type: "container" as const,
+            width: 24,
+            height: 24,
+            fillColor: "#ee0000",
+            vectorPaths: ["M0 0H24V24H0Z"]
+          },
+          {
+            id: "action-card-title",
+            name: "Title",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Druckcenter"
+          },
+          {
+            id: "action-card-meta",
+            name: "Meta",
+            nodeType: "TEXT",
+            type: "text" as const,
+            text: "Dokumente verwalten"
+          },
+          {
+            id: "action-card-chip",
+            name: "<Chip>",
+            nodeType: "INSTANCE",
+            type: "chip" as const,
+            children: [
+              {
+                id: "action-card-chip-text",
+                name: "Chip Text",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Bearbeitung gesperrt"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "brand-mark",
+        name: "Sparkasse S",
+        nodeType: "VECTOR",
+        type: "container" as const,
+        width: 24,
+        height: 24,
+        fillColor: "#ee0000",
+        vectorPaths: ["M0 0H24V24H0Z"]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertValidTsx({
+    content,
+    filePath: toDeterministicScreenPath(screen.name)
+  });
+  assert.ok(content.includes("<Card "));
+  assert.ok(content.includes('{"Druckcenter"}'));
+  assert.ok(content.includes('label={"Bearbeitung gesperrt"}'));
+  assert.equal(content.includes('<Button variant='), false);
+  assert.ok(content.includes("<SvgIcon"));
+  assert.ok(content.includes('viewBox={"0 0 24 24"}'));
+});
+
+test("deterministic screen rendering keeps Sparkasse-style branded headers structured instead of collapsing them to tabs or icon buttons", () => {
+  const screen = {
+    id: "sparkasse-header-screen",
+    name: "Sparkasse Header Screen",
+    layoutMode: "NONE" as const,
+    width: 1440,
+    height: 900,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    children: [
+      {
+        id: "brand-bar",
+        name: "Markenbühne",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 0,
+        y: 0,
+        width: 1440,
+        height: 88,
+        fillColor: "#ee0000",
+        layoutMode: "HORIZONTAL" as const,
+        children: [
+          {
+            id: "brand-cluster",
+            name: "Brand Cluster",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 24,
+            y: 16,
+            width: 240,
+            height: 56,
+            children: [
+              {
+                id: "brand-mark",
+                name: "Sparkasse S",
+                nodeType: "VECTOR",
+                type: "container" as const,
+                width: 24,
+                height: 24,
+                fillColor: "#ffffff",
+                vectorPaths: ["M0 0H24V24H0Z"]
+              },
+              {
+                id: "brand-title",
+                name: "Brand Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Sparkasse Musterstadt",
+                fillColor: "#ffffff"
+              }
+            ]
+          },
+          {
+            id: "nav-start",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 840,
+            y: 24,
+            width: 120,
+            height: 32,
+            children: [
+              {
+                id: "nav-start-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Startseite",
+                fillColor: "#ffffff"
+              }
+            ]
+          },
+          {
+            id: "nav-search",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 968,
+            y: 24,
+            width: 160,
+            height: 32,
+            children: [
+              {
+                id: "nav-search-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Personensuche",
+                fillColor: "#ffffff"
+              }
+            ]
+          },
+          {
+            id: "nav-messenger",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 1136,
+            y: 24,
+            width: 132,
+            height: 32,
+            children: [
+              {
+                id: "nav-messenger-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Messenger",
+                fillColor: "#ffffff"
+              }
+            ]
+          },
+          {
+            id: "nav-profile",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 1288,
+            y: 20,
+            width: 64,
+            height: 40,
+            children: [
+              {
+                id: "nav-profile-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "PB",
+                fillColor: "#ffffff"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "context-header",
+        name: "Header + Titel",
+        nodeType: "FRAME",
+        type: "container" as const,
+        x: 24,
+        y: 108,
+        width: 1392,
+        height: 72,
+        layoutMode: "HORIZONTAL" as const,
+        children: [
+          {
+            id: "context-left",
+            name: "Context Left",
+            nodeType: "FRAME",
+            type: "container" as const,
+            x: 24,
+            y: 112,
+            width: 420,
+            height: 56,
+            children: [
+              {
+                id: "context-title",
+                name: "Title",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Gewerbliche Finanzierung",
+                fillColor: "#222222"
+              },
+              {
+                id: "context-subtitle",
+                name: "Subtitle",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Ben Sommer",
+                fillColor: "#565656"
+              }
+            ]
+          },
+          {
+            id: "context-action-save",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 1200,
+            y: 120,
+            width: 88,
+            height: 32,
+            strokeColor: "#d9d9d9",
+            cornerRadius: 16,
+            children: [
+              {
+                id: "context-action-save-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Merken",
+                fillColor: "#565656"
+              }
+            ]
+          },
+          {
+            id: "context-action-help",
+            name: "<Button>",
+            nodeType: "INSTANCE",
+            type: "button" as const,
+            x: 1296,
+            y: 120,
+            width: 72,
+            height: 32,
+            strokeColor: "#d9d9d9",
+            cornerRadius: 16,
+            children: [
+              {
+                id: "context-action-help-label",
+                name: "Label",
+                nodeType: "TEXT",
+                type: "text" as const,
+                text: "Hilfe",
+                fillColor: "#565656"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  assertValidTsx({
+    content,
+    filePath: toDeterministicScreenPath(screen.name)
+  });
+  assert.ok(content.includes("<AppBar "));
+  assert.ok(content.includes('{"Sparkasse Musterstadt"}'));
+  assert.ok(content.includes('{"Startseite"}'));
+  assert.ok(content.includes('{"Personensuche"}'));
+  assert.ok(content.includes('{"Messenger"}'));
+  assert.ok(content.includes('{"PB"}'));
+  assert.ok(content.includes('{"Gewerbliche Finanzierung"}'));
+  assert.ok(content.includes('{"Ben Sommer"}'));
+  assert.ok(content.includes('{"Merken"}'));
+  assert.ok(content.includes('{"Hilfe"}'));
+  assert.equal(content.includes("<Tabs "), false);
+  assert.equal(content.includes("<IconButton edge=\"end\""), false);
 });
 
 test("generateArtifacts uses upstream code connect mappings from IR during generation", async () => {

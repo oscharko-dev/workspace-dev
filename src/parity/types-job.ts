@@ -87,9 +87,11 @@ export interface FigmaMcpVariableDefinition {
   sourceProperty?: string;
 }
 
+export type FigmaMcpStyleType = "TEXT" | "FILL" | "STROKE" | "EFFECT" | (string & {});
+
 export interface FigmaMcpStyleCatalogEntry {
   name: string;
-  styleType: "TEXT" | "FILL" | "STROKE" | "EFFECT" | string;
+  styleType: FigmaMcpStyleType;
   id?: string;
   fontSizePx?: number;
   fontWeight?: number;
@@ -147,6 +149,11 @@ export interface FigmaMcpAssetReference {
   purpose?: "render" | "quality-gate" | "context";
 }
 
+export interface FigmaMcpAuthoritativeSubtree {
+  nodeId: string;
+  document: unknown;
+}
+
 export interface FigmaMcpEnrichmentDiagnostic {
   code: string;
   message: string;
@@ -162,6 +169,7 @@ export interface FigmaMcpEnrichment {
   codeConnectMappings?: FigmaMcpCodeConnectMapping[];
   designSystemMappings?: FigmaMcpDesignSystemMapping[];
   metadataHints?: FigmaMcpMetadataHint[];
+  authoritativeSubtrees?: FigmaMcpAuthoritativeSubtree[];
   assets?: FigmaMcpAssetReference[];
   screenshots?: FigmaMcpScreenshotReference[];
   diagnostics?: FigmaMcpEnrichmentDiagnostic[];

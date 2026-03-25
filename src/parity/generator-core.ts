@@ -42,6 +42,7 @@ export {
   hasVisualStyle,
   createEmptySimplificationStats,
   isIconLikeNode,
+  isVectorGraphicNode,
   isSemanticIconWrapper,
   simplifyElements,
   sortChildren,

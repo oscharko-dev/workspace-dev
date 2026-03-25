@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fetchFigmaFile } from "./figma-source.js";
+import { fetchAuthoritativeFigmaSubtrees, fetchFigmaFile } from "./figma-source.js";
 
 const jsonResponse = (payload: unknown, init?: ResponseInit): Response => {
   return new Response(JSON.stringify(payload), {
@@ -86,6 +86,77 @@ const createBootstrapDocumentWithScreens = (count: number) => ({
   }
 });
 
+const createLowFidelityDirectGeometryDocument = () => ({
+  name: "Instance Heavy Board",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-heavy",
+            type: "FRAME",
+            name: "Heavy Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+            children: [
+              ...Array.from({ length: 12 }, (_, index) => ({
+                id: `instance-${index + 1}`,
+                type: "INSTANCE",
+                name: index % 3 === 0 ? "<Card>" : "<Button>",
+                absoluteBoundingBox: { x: (index % 3) * 220, y: Math.floor(index / 3) * 120, width: 200, height: 96 },
+                children: []
+              })),
+              {
+                id: "vector-logo",
+                type: "VECTOR",
+                name: "Sparkasse S",
+                absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 }
+              },
+              {
+                id: "vector-dot",
+                type: "VECTOR",
+                name: "Ellipse 4",
+                absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 }
+              },
+              {
+                id: "text-1",
+                type: "TEXT",
+                name: "Heading",
+                characters: "Finanzierungsplaner",
+                absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 }
+              },
+              {
+                id: "text-2",
+                type: "TEXT",
+                name: "Body",
+                characters: "Bitte prüfen",
+                absoluteBoundingBox: { x: 24, y: 232, width: 120, height: 20 }
+              },
+              {
+                id: "text-3",
+                type: "TEXT",
+                name: "Meta",
+                characters: "Meyer Technology GmbH",
+                absoluteBoundingBox: { x: 24, y: 264, width: 160, height: 20 }
+              },
+              {
+                id: "text-4",
+                type: "TEXT",
+                name: "Hint",
+                characters: "Bearbeitung gesperrt",
+                absoluteBoundingBox: { x: 24, y: 296, width: 160, height: 20 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const findNodeById = (node: unknown, targetId: string): Record<string, unknown> | undefined => {
   if (!node || typeof node !== "object") {
     return undefined;
@@ -146,6 +217,74 @@ test("fetchFigmaFile returns direct geometry payload when request succeeds", asy
   assert.equal(result.file.name, "Demo");
   assert.equal(result.diagnostics.sourceMode, "geometry-paths");
   assert.equal(result.diagnostics.fetchedNodes, 0);
+});
+
+test("fetchFigmaFile flags low-fidelity direct geometry payloads for instance-heavy explicit boards", async () => {
+  const result = await fetchFigmaFile(
+    createRequest(async () => {
+      return jsonResponse(createLowFidelityDirectGeometryDocument());
+    })
+  );
+
+  assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+  assert.equal(result.diagnostics.lowFidelityDetected, true);
+  assert.equal((result.diagnostics.lowFidelityReasons?.length ?? 0) >= 2, true);
+  assert.equal(
+    (result.diagnostics.lowFidelityReasons ?? []).some((reason) => reason.includes("instance-heavy")),
+    true
+  );
+  assert.equal(
+    (result.diagnostics.lowFidelityReasons ?? []).some((reason) => reason.includes("vector nodes")),
+    true
+  );
+});
+
+test("fetchAuthoritativeFigmaSubtrees recovers screen subtrees for low-fidelity direct geometry payloads", async () => {
+  const subtrees = await fetchAuthoritativeFigmaSubtrees({
+    fileKey: "abc",
+    accessToken: "token",
+    file: createLowFidelityDirectGeometryDocument(),
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 4,
+    fetchImpl: async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      assert.match(url, /\/nodes\?/);
+      return jsonResponse({
+        nodes: {
+          "screen-heavy": {
+            document: {
+              id: "screen-heavy",
+              type: "FRAME",
+              name: "Heavy Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+              children: [
+                {
+                  id: "screen-heavy-title",
+                  type: "TEXT",
+                  name: "Title",
+                  characters: "Finanzierungsplaner",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 240, height: 24 }
+                },
+                {
+                  id: "screen-heavy-action",
+                  type: "TEXT",
+                  name: "Action",
+                  characters: "Druckcenter",
+                  absoluteBoundingBox: { x: 24, y: 56, width: 160, height: 20 }
+                }
+              ]
+            }
+          }
+        }
+      });
+    },
+    onLog: () => {},
+    screenNamePattern: undefined
+  });
+
+  assert.deepEqual(subtrees.map((subtree) => subtree.nodeId), ["screen-heavy"]);
+  assert.equal(JSON.stringify(subtrees[0]).includes("Druckcenter"), true);
 });
 
 test("fetchFigmaFile retries with Bearer header when PAT is rejected", async () => {

@@ -10,6 +10,7 @@ import { createServer, type Server } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkspaceStartOptions } from "./contracts/index.js";
+import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid-enrichment.js";
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
 import { getWorkspaceDefaults } from "./mode-lock.js";
 import { buildApp, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
@@ -119,6 +120,12 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
+  });
+  runtime.figmaMcpEnrichmentLoader ??= createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: runtime.figmaTimeoutMs,
+    maxRetries: runtime.figmaMaxRetries,
+    maxScreenCandidates: runtime.figmaMaxScreenCandidates,
+    ...(runtime.figmaScreenNamePattern !== undefined ? { screenNamePattern: runtime.figmaScreenNamePattern } : {})
   });
 
   let resolvedPort = port;

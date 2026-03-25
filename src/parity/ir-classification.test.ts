@@ -450,6 +450,68 @@ describe("classifyElementTypeFromNode", () => {
         "table"
       );
     });
+
+    it("does not classify MUI form stacks with control descendants as table", () => {
+      const result = classify(
+        makeNode({
+          name: "MuiStackRoot",
+          layoutMode: "VERTICAL",
+          absoluteBoundingBox: { x: 0, y: 0, width: 560, height: 280 },
+          children: [
+            {
+              id: "field-1",
+              type: "FRAME",
+              name: "Styled(div)",
+              absoluteBoundingBox: { x: 0, y: 0, width: 560, height: 66 },
+              children: [
+                { id: "field-1-label", type: "TEXT", characters: "Monatliche Sparrate (optional)" },
+                {
+                  id: "field-1-input-root",
+                  type: "FRAME",
+                  name: "MuiInputBaseRoot",
+                  children: [{ id: "field-1-value", type: "TEXT", characters: "50,00" }]
+                }
+              ]
+            },
+            {
+              id: "field-2",
+              type: "FRAME",
+              name: "Styled(div)",
+              absoluteBoundingBox: { x: 0, y: 84, width: 560, height: 66 },
+              children: [
+                { id: "field-2-label", type: "TEXT", characters: "Zu welchem Monat soll die Besparung starten?" },
+                {
+                  id: "field-2-select-root",
+                  type: "FRAME",
+                  name: "MuiInputRoot",
+                  children: [{ id: "field-2-value", type: "TEXT", characters: "April 2026" }]
+                }
+              ]
+            },
+            {
+              id: "field-3",
+              type: "FRAME",
+              name: "Slider Row",
+              absoluteBoundingBox: { x: 0, y: 168, width: 560, height: 72 },
+              children: [
+                { id: "field-3-label", type: "TEXT", characters: "In wie viel Jahren planen Sie den Bau / Kauf?" },
+                {
+                  id: "field-3-slider",
+                  type: "FRAME",
+                  name: "MuiSliderRoot",
+                  children: [
+                    { id: "field-3-rail", type: "FRAME", name: "MuiSliderRail" },
+                    { id: "field-3-track", type: "FRAME", name: "MuiSliderTrack" },
+                    { id: "field-3-thumb", type: "FRAME", name: "MuiSliderThumb" }
+                  ]
+                }
+              ]
+            }
+          ]
+        })
+      );
+      assert.notEqual(result, "table");
+    });
   });
 
   describe("navigation", () => {
@@ -746,6 +808,20 @@ describe("classifyElementTypeFromNode", () => {
       );
     });
 
+    it("classifies strong image wrappers without text descendants as image", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "FRAME",
+            name: "Image (Bauen oder kaufen)",
+            absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 160 },
+            children: [{ id: "image-layer", type: "RECTANGLE", name: "Bitmap Layer" }]
+          })
+        ),
+        "image"
+      );
+    });
+
     it("does not classify VECTOR with image name as image when icon-like", () => {
       assert.notEqual(
         classify(makeNode({ type: "VECTOR", name: "icon illustration" })),
@@ -818,6 +894,44 @@ describe("classifyElementTypeFromNode", () => {
           WITH_SOLID_FILL
         ),
         "button"
+      );
+    });
+
+    it("explicit board buttons with card-like descendants stay surfaces instead of flattening to button", () => {
+      assert.equal(
+        classify(
+          makeNode({
+            type: "INSTANCE",
+            name: "<Button>",
+            cornerRadius: 16,
+            absoluteBoundingBox: { x: 0, y: 0, width: 320, height: 96 },
+            children: [
+              {
+                id: "card-avatar",
+                type: "INSTANCE",
+                name: "<Avatar>",
+                children: [{ id: "card-avatar-vector", type: "ELLIPSE", name: "Avatar Shape" }]
+              },
+              {
+                id: "card-copy",
+                type: "FRAME",
+                name: "Text Cluster",
+                children: [
+                  { id: "card-title", type: "TEXT", characters: "Druckcenter" },
+                  { id: "card-meta", type: "TEXT", characters: "Bearbeitung gesperrt" }
+                ]
+              },
+              {
+                id: "card-chip",
+                type: "INSTANCE",
+                name: "<Chip>",
+                children: [{ id: "card-chip-text", type: "TEXT", characters: "Gesperrt" }]
+              }
+            ]
+          }),
+          WITH_STROKE
+        ),
+        "card"
       );
     });
   });

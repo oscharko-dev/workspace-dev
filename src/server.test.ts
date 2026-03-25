@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { toDeterministicScreenPath } from "./parity/generator-artifacts.js";
 import { createWorkspaceServer } from "./server.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +59,323 @@ const createFakeFigmaFetch = (): typeof fetch => {
     const payload = createLocalFigmaPayload();
 
     return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      }
+    });
+  };
+};
+
+const createLowFidelityRecoveryFetch = (): typeof fetch => {
+  const lowFidelityPayload = {
+    name: "Sparkasse Recovery",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-recovery",
+              type: "FRAME",
+              name: "Sparkasse Recovery",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+              children: [
+                ...Array.from({ length: 12 }, (_, index) => ({
+                  id: `instance-${index + 1}`,
+                  type: "INSTANCE",
+                  name: index % 3 === 0 ? "<Card>" : "<Button>",
+                  absoluteBoundingBox: {
+                    x: (index % 3) * 220,
+                    y: Math.floor(index / 3) * 120,
+                    width: 200,
+                    height: 96
+                  },
+                  children: []
+                })),
+                {
+                  id: "vector-logo",
+                  type: "VECTOR",
+                  name: "Sparkasse S",
+                  absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 }
+                },
+                {
+                  id: "vector-dot",
+                  type: "VECTOR",
+                  name: "Ellipse 4",
+                  absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 }
+                },
+                {
+                  id: "text-title",
+                  type: "TEXT",
+                  name: "Heading",
+                  characters: "Finanzierungsplaner",
+                  absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 }
+                },
+                {
+                  id: "text-meta",
+                  type: "TEXT",
+                  name: "Meta",
+                  characters: "Meyer Technology GmbH",
+                  absoluteBoundingBox: { x: 24, y: 232, width: 200, height: 20 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const authoritativeScreen = {
+    id: "screen-recovery",
+    type: "FRAME",
+    name: "Sparkasse Recovery",
+    absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+    children: [
+      {
+        id: "brand-bar",
+        type: "FRAME",
+        name: "Markenbühne",
+        absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 88 },
+        children: [
+          {
+            id: "brand-cluster",
+            type: "FRAME",
+            name: "Brand Cluster",
+            absoluteBoundingBox: { x: 24, y: 16, width: 240, height: 56 },
+            children: [
+              {
+                id: "brand-mark",
+                type: "VECTOR",
+                name: "Sparkasse S",
+                absoluteBoundingBox: { x: 24, y: 20, width: 24, height: 24 },
+                vectorPaths: ["M0 0H24V24H0Z"]
+              },
+              {
+                id: "brand-title",
+                type: "TEXT",
+                name: "Brand Title",
+                characters: "Sparkasse Musterstadt",
+                absoluteBoundingBox: { x: 56, y: 16, width: 180, height: 24 }
+              }
+            ]
+          },
+          {
+            id: "nav-start",
+            type: "INSTANCE",
+            name: "<Button>",
+            absoluteBoundingBox: { x: 840, y: 24, width: 120, height: 32 },
+            children: [
+              {
+                id: "nav-start-label",
+                type: "TEXT",
+                name: "Label",
+                characters: "Startseite",
+                absoluteBoundingBox: { x: 868, y: 28, width: 80, height: 20 }
+              }
+            ]
+          },
+          {
+            id: "nav-search",
+            type: "INSTANCE",
+            name: "<Button>",
+            absoluteBoundingBox: { x: 968, y: 24, width: 160, height: 32 },
+            children: [
+              {
+                id: "nav-search-label",
+                type: "TEXT",
+                name: "Label",
+                characters: "Personensuche",
+                absoluteBoundingBox: { x: 996, y: 28, width: 116, height: 20 }
+              }
+            ]
+          },
+          {
+            id: "nav-messenger",
+            type: "INSTANCE",
+            name: "<Button>",
+            absoluteBoundingBox: { x: 1136, y: 24, width: 132, height: 32 },
+            children: [
+              {
+                id: "nav-messenger-label",
+                type: "TEXT",
+                name: "Label",
+                characters: "Messenger",
+                absoluteBoundingBox: { x: 1164, y: 28, width: 84, height: 20 }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "context-header",
+        type: "FRAME",
+        name: "Header + Titel",
+        absoluteBoundingBox: { x: 0, y: 100, width: 1440, height: 80 },
+        children: [
+          {
+            id: "context-left",
+            type: "FRAME",
+            name: "Context Left",
+            absoluteBoundingBox: { x: 24, y: 108, width: 420, height: 64 },
+            children: [
+              {
+                id: "context-title",
+                type: "TEXT",
+                name: "Title",
+                characters: "Gewerbliche Finanzierung (12.03.2026)",
+                absoluteBoundingBox: { x: 72, y: 116, width: 280, height: 24 }
+              },
+              {
+                id: "context-subtitle",
+                type: "TEXT",
+                name: "Subtitle",
+                characters: "Finanzierungsantrag: 1234567890",
+                absoluteBoundingBox: { x: 72, y: 144, width: 220, height: 20 }
+              }
+            ]
+          },
+          {
+            id: "context-summary-card",
+            type: "INSTANCE",
+            name: "<Card>",
+            absoluteBoundingBox: { x: 780, y: 108, width: 320, height: 64 },
+            children: [
+              {
+                id: "company-name",
+                type: "TEXT",
+                name: "Title",
+                characters: "Meyer Technology GmbH",
+                absoluteBoundingBox: { x: 812, y: 120, width: 180, height: 24 }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "empty-state",
+        type: "FRAME",
+        name: "<Card>",
+        absoluteBoundingBox: { x: 120, y: 220, width: 960, height: 240 },
+        children: [
+          {
+            id: "empty-icon",
+            type: "VECTOR",
+            name: "ic_plus_circle_m",
+            absoluteBoundingBox: { x: 560, y: 252, width: 64, height: 64 },
+            vectorPaths: ["M0 0H64V64H0Z"]
+          },
+          {
+            id: "empty-title",
+            type: "TEXT",
+            name: "Title",
+            characters: "Kein Vorhaben hinzugefügt",
+            absoluteBoundingBox: { x: 460, y: 340, width: 220, height: 28 }
+          },
+          {
+            id: "empty-copy",
+            type: "TEXT",
+            name: "Body",
+            characters: "Bitte fügen Sie ein Vorhaben über die Schaltfläche hinzu.",
+            absoluteBoundingBox: { x: 388, y: 372, width: 360, height: 24 }
+          },
+          {
+            id: "empty-cta",
+            type: "INSTANCE",
+            name: "<Button>",
+            absoluteBoundingBox: { x: 420, y: 416, width: 320, height: 40 },
+            children: [
+              {
+                id: "empty-cta-label",
+                type: "TEXT",
+                name: "Label",
+                characters: "Vorhaben hinzufügen",
+                absoluteBoundingBox: { x: 492, y: 426, width: 176, height: 20 }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "actions-title",
+        type: "TEXT",
+        name: "Title",
+        characters: "Aktionen zum Finanzierungsantrag",
+        absoluteBoundingBox: { x: 120, y: 500, width: 320, height: 28 }
+      },
+      {
+        id: "action-card",
+        type: "INSTANCE",
+        name: "<Button>",
+        absoluteBoundingBox: { x: 120, y: 560, width: 472, height: 84 },
+        children: [
+          {
+            id: "action-card-title",
+            type: "TEXT",
+            name: "Title",
+            characters: "Sicherheiten verwalten",
+            absoluteBoundingBox: { x: 196, y: 580, width: 180, height: 24 }
+          },
+          {
+            id: "action-card-chip",
+            type: "INSTANCE",
+            name: "<Chip>",
+            absoluteBoundingBox: { x: 196, y: 608, width: 148, height: 24 },
+            children: [
+              {
+                id: "action-card-chip-label",
+                type: "TEXT",
+                name: "Chip",
+                characters: "Bearbeitung gesperrt",
+                absoluteBoundingBox: { x: 208, y: 612, width: 136, height: 16 }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        id: "document-card",
+        type: "INSTANCE",
+        name: "<Button>",
+        absoluteBoundingBox: { x: 608, y: 560, width: 472, height: 84 },
+        children: [
+          {
+            id: "document-card-title",
+            type: "TEXT",
+            name: "Title",
+            characters: "Druckcenter",
+            absoluteBoundingBox: { x: 684, y: 580, width: 120, height: 24 }
+          }
+        ]
+      }
+    ]
+  };
+
+  return async (input) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/nodes?")) {
+      return new Response(
+        JSON.stringify({
+          nodes: {
+            "screen-recovery": {
+              document: authoritativeScreen
+            }
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+
+    return new Response(JSON.stringify(lowFidelityPayload), {
       status: 200,
       headers: {
         "content-type": "application/json"
@@ -384,6 +702,64 @@ test("workspace server accepts hybrid mode on submit", async () => {
       timeoutMs: 20_000
     });
     assert.ok(terminal.status === "completed" || terminal.status === "failed");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server recovers low-fidelity hybrid screens with the built-in authoritative subtree loader", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createLowFidelityRecoveryFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "hybrid",
+        figmaFileKey: "sparkasse-board",
+        figmaAccessToken: "figd_demo"
+      }
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    const jobId = typeof body.jobId === "string" ? body.jobId : "";
+    assert.ok(jobId.length > 0);
+
+    const terminal = await waitForJobTerminalState({
+      server,
+      jobId,
+      timeoutMs: 120_000
+    });
+    assert.equal(terminal.status, "completed");
+
+    const generatedProjectDir = String(terminal.artifacts.generatedProjectDir);
+    const screenContent = await readFile(
+      path.join(generatedProjectDir, toDeterministicScreenPath("Sparkasse Recovery")),
+      "utf8"
+    );
+
+    assert.ok(screenContent.includes('{"Sparkasse Musterstadt"}'));
+    assert.ok(screenContent.includes('{"Startseite"}'));
+    assert.ok(screenContent.includes('{"Personensuche"}'));
+    assert.ok(screenContent.includes('{"Messenger"}'));
+    assert.ok(screenContent.includes('{"Gewerbliche Finanzierung (12.03.2026)"}'));
+    assert.ok(screenContent.includes('{"Meyer Technology GmbH"}'));
+    assert.ok(screenContent.includes('{"Kein Vorhaben hinzugefügt"}'));
+    assert.ok(screenContent.includes('{"Bitte fügen Sie ein Vorhaben über die Schaltfläche hinzu."}'));
+    assert.ok(screenContent.includes('{"Aktionen zum Finanzierungsantrag"}'));
+    assert.ok(screenContent.includes('{"Sicherheiten verwalten"}'));
+    assert.ok(screenContent.includes('{"Druckcenter"}'));
+    assert.equal(screenContent.includes("<Tabs "), false);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -942,6 +1318,12 @@ test("workspace server returns 429 backpressure when queue limit is reached", as
         reason: "cleanup"
       }
     });
+
+    const firstTerminal = await waitForJobTerminalState({ server, jobId: firstJobId, timeoutMs: 20_000 });
+    assert.equal(firstTerminal.status, "canceled");
+
+    const secondTerminal = await waitForJobTerminalState({ server, jobId: secondJobId, timeoutMs: 20_000 });
+    assert.equal(secondTerminal.status, "canceled");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
