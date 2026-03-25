@@ -223,6 +223,44 @@ const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string
   }).format(safe);
 };
 
+const NUMERIC_SELECT_VALUE_PATTERN = /^[+\-−﹣－\d.,'’%€$£¥\s\u00A0\u202F]+$/;
+
+const isNumericSelectValueCandidate = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (!/\d/.test(trimmed)) {
+    return false;
+  }
+  if (/\p{L}/u.test(trimmed)) {
+    return false;
+  }
+  return NUMERIC_SELECT_VALUE_PATTERN.test(trimmed);
+};
+
+const toStableSelectOptions = ({
+  defaultValue,
+  options
+}: {
+  defaultValue: string;
+  options: string[];
+}): string[] => {
+  const normalizedDefault = defaultValue.trim();
+  const orderedCandidates = normalizedDefault.length > 0 ? [normalizedDefault, ...options] : [...options];
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+  for (const candidate of orderedCandidates) {
+    const normalized = candidate.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    resolved.push(normalized);
+  }
+  return resolved;
+};
+
 export const deriveSelectOptions = (defaultValue: string, generationLocale: string): string[] => {
   const trimmed = defaultValue.trim();
   if (!trimmed) {
@@ -233,34 +271,46 @@ export const deriveSelectOptions = (defaultValue: string, generationLocale: stri
     const match = trimmed.match(/(\d+)/);
     const base = match ? Number(match[1]) : undefined;
     if (typeof base === "number" && Number.isFinite(base)) {
-      return [...new Set([Math.max(1, base - 5), base, base + 5].map((value) => `${value} Jahre`))];
+      return toStableSelectOptions({
+        defaultValue: trimmed,
+        options: [...new Set([Math.max(1, base - 5), base, base + 5].map((value) => `${value} Jahre`))]
+      });
     }
   }
 
-  if (trimmed.includes("%")) {
+  if (isNumericSelectValueCandidate(trimmed) && trimmed.includes("%")) {
     const parsed = parseLocalizedNumber(trimmed, generationLocale);
     if (typeof parsed === "number") {
       const deltas = [-0.25, 0, 0.25];
-      return [
-        ...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta), 2, generationLocale)} %`))
-      ];
+      return toStableSelectOptions({
+        defaultValue: trimmed,
+        options: [
+          ...new Set(deltas.map((delta) => `${formatLocalizedNumber(Math.max(0, parsed + delta), 2, generationLocale)} %`))
+        ]
+      });
     }
   }
 
-  const parsed = parseLocalizedNumber(trimmed, generationLocale);
+  const parsed = isNumericSelectValueCandidate(trimmed) ? parseLocalizedNumber(trimmed, generationLocale) : undefined;
   if (typeof parsed === "number") {
     const deltas = [-0.1, 0, 0.1];
-    return [
-      ...new Set(
-        deltas.map((delta) => {
-          const value = parsed * (1 + delta);
-          return formatLocalizedNumber(Math.max(0, value), 2, generationLocale);
-        })
-      )
-    ];
+    return toStableSelectOptions({
+      defaultValue: trimmed,
+      options: [
+        ...new Set(
+          deltas.map((delta) => {
+            const value = parsed * (1 + delta);
+            return formatLocalizedNumber(Math.max(0, value), 2, generationLocale);
+          })
+        )
+      ]
+    });
   }
 
-  return [trimmed, `${trimmed} A`, `${trimmed} B`];
+  return toStableSelectOptions({
+    defaultValue: trimmed,
+    options: [trimmed, `${trimmed} A`, `${trimmed} B`]
+  });
 };
 
 const INPUT_NAME_HINTS = [
@@ -396,6 +446,129 @@ const collectDescendantIds = (element: ScreenElementIR, ids: Set<string> = new S
   return ids;
 };
 
+const findElementPath = ({
+  elements,
+  targetId
+}: {
+  elements: readonly ScreenElementIR[];
+  targetId: string;
+}): ScreenElementIR[] | undefined => {
+  const visit = (candidate: ScreenElementIR, path: ScreenElementIR[]): ScreenElementIR[] | undefined => {
+    const nextPath = [...path, candidate];
+    if (candidate.id === targetId) {
+      return nextPath;
+    }
+    for (const child of candidate.children ?? []) {
+      const resolved = visit(child, nextPath);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return undefined;
+  };
+
+  for (const element of elements) {
+    const resolved = visit(element, []);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return undefined;
+};
+
+interface NearbyFieldLabelCandidate {
+  node: TextElementIR;
+  relationPenalty: number;
+}
+
+const collectNearbyFieldLabelCandidates = ({
+  context,
+  element,
+  descendantIds
+}: {
+  context: RenderContext;
+  element: ScreenElementIR;
+  descendantIds: Set<string>;
+}): NearbyFieldLabelCandidate[] => {
+  const candidateById = new Map<string, NearbyFieldLabelCandidate>();
+  const appendScope = ({
+    scope,
+    relationPenalty
+  }: {
+    scope: readonly ScreenElementIR[];
+    relationPenalty: number;
+  }): void => {
+    for (const scopeElement of scope) {
+      for (const textNode of collectTextNodes(scopeElement)) {
+        if (descendantIds.has(textNode.id)) {
+          continue;
+        }
+        const existing = candidateById.get(textNode.id);
+        if (!existing || relationPenalty < existing.relationPenalty) {
+          candidateById.set(textNode.id, {
+            node: textNode,
+            relationPenalty
+          });
+        }
+      }
+    }
+  };
+
+  const rootElements = context.screenElements ?? [];
+  if (rootElements.length === 0) {
+    return [];
+  }
+
+  const path = findElementPath({
+    elements: rootElements,
+    targetId: element.id
+  });
+  if (!path || path.length === 0) {
+    appendScope({
+      scope: rootElements,
+      relationPenalty: 2
+    });
+    return Array.from(candidateById.values());
+  }
+
+  const parent = path.at(-2);
+  const grandParent = path.at(-3);
+  const root = path[0];
+
+  if (parent) {
+    appendScope({
+      scope: [parent, ...(parent.children ?? [])],
+      relationPenalty: 0
+    });
+  } else {
+    appendScope({
+      scope: rootElements,
+      relationPenalty: 0
+    });
+  }
+
+  if (grandParent) {
+    appendScope({
+      scope: [grandParent, ...(grandParent.children ?? [])],
+      relationPenalty: 1
+    });
+  } else if (root && root !== element) {
+    appendScope({
+      scope: [root],
+      relationPenalty: 1
+    });
+  }
+
+  if (candidateById.size === 0) {
+    appendScope({
+      scope: rootElements,
+      relationPenalty: 2
+    });
+  }
+
+  return Array.from(candidateById.values());
+};
+
 const resolveNearbyFieldLabel = ({
   context,
   element
@@ -424,6 +597,15 @@ const resolveNearbyFieldLabel = ({
   const right = left + width;
   const maxVerticalGap = Math.max(56, (typeof height === "number" && Number.isFinite(height) ? height : 0) * 2);
   const descendantIds = collectDescendantIds(element);
+  const candidates = collectNearbyFieldLabelCandidates({
+    context,
+    element,
+    descendantIds
+  });
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
   let bestMatch:
     | {
         node: TextElementIR;
@@ -431,49 +613,58 @@ const resolveNearbyFieldLabel = ({
       }
     | undefined;
 
-  for (const rootElement of context.screenElements) {
-    for (const textNode of collectTextNodes(rootElement)) {
-      if (descendantIds.has(textNode.id)) {
-        continue;
-      }
-      const text = textNode.text.trim();
-      if (
-        text.length === 0 ||
-        isValueLikeText(text) ||
-        /^[€%$]$/.test(text) ||
-        isInternalImplementationLabel(text)
-      ) {
-        continue;
-      }
+  for (const candidate of candidates) {
+    const textNode = candidate.node;
+    const text = textNode.text.trim();
+    if (
+      text.length === 0 ||
+      isValueLikeText(text) ||
+      /^[€%$]$/.test(text) ||
+      isInternalImplementationLabel(text)
+    ) {
+      continue;
+    }
 
-      const nodeX = typeof textNode.x === "number" && Number.isFinite(textNode.x) ? textNode.x : undefined;
-      const nodeY = typeof textNode.y === "number" && Number.isFinite(textNode.y) ? textNode.y : undefined;
-      const nodeWidth =
-        typeof textNode.width === "number" && Number.isFinite(textNode.width) ? textNode.width : Math.max(24, text.length * 7);
-      const nodeHeight = typeof textNode.height === "number" && Number.isFinite(textNode.height) ? textNode.height : 16;
-      if (nodeX === undefined || nodeY === undefined) {
-        continue;
-      }
+    const nodeX = typeof textNode.x === "number" && Number.isFinite(textNode.x) ? textNode.x : undefined;
+    const nodeY = typeof textNode.y === "number" && Number.isFinite(textNode.y) ? textNode.y : undefined;
+    const nodeWidth =
+      typeof textNode.width === "number" && Number.isFinite(textNode.width) ? textNode.width : Math.max(24, text.length * 7);
+    const nodeHeight = typeof textNode.height === "number" && Number.isFinite(textNode.height) ? textNode.height : 16;
+    if (nodeX === undefined || nodeY === undefined) {
+      continue;
+    }
 
-      const nodeRight = nodeX + nodeWidth;
-      const nodeBottom = nodeY + nodeHeight;
-      const verticalGap = top - nodeBottom;
-      if (verticalGap < -6 || verticalGap > maxVerticalGap) {
-        continue;
-      }
+    const nodeRight = nodeX + nodeWidth;
+    const nodeBottom = nodeY + nodeHeight;
+    const verticalGap = top - nodeBottom;
+    if (verticalGap < -6 || verticalGap > maxVerticalGap) {
+      continue;
+    }
 
-      const horizontalGap = Math.max(0, left - nodeRight, nodeX - right);
-      if (horizontalGap > 48) {
-        continue;
-      }
+    const overlapWidth = Math.max(0, Math.min(right, nodeRight) - Math.max(left, nodeX));
+    const minComparableWidth = Math.max(1, Math.min(width, nodeWidth));
+    const horizontalOverlapRatio = overlapWidth / minComparableWidth;
+    const horizontalGap = Math.max(0, left - nodeRight, nodeX - right);
+    if (horizontalGap > 52 || (horizontalGap > 24 && horizontalOverlapRatio < 0.2)) {
+      continue;
+    }
 
-      const score = verticalGap * 100 + horizontalGap;
-      if (!bestMatch || score < bestMatch.score) {
-        bestMatch = {
-          node: textNode,
-          score
-        };
-      }
+    const wordCount = text.split(/\s+/).filter((segment) => segment.length > 0).length;
+    const helperSentencePenalty =
+      (text.length > 80 ? 16 : 0) +
+      (wordCount > 12 ? 20 : 0) +
+      (/[.;!]/.test(text) ? 10 : 0);
+    const score =
+      verticalGap * 100 +
+      horizontalGap * 4 +
+      candidate.relationPenalty * 80 +
+      helperSentencePenalty -
+      horizontalOverlapRatio * 48;
+    if (!bestMatch || score < bestMatch.score) {
+      bestMatch = {
+        node: textNode,
+        score
+      };
     }
   }
 
@@ -700,12 +891,13 @@ export const registerInteractiveField = ({
   }
 
   const modelLabel = model.labelNode?.text?.trim();
-  const nearbyLabelNode = resolveNearbyFieldLabel({ context, element });
-  if (nearbyLabelNode) {
+  const resolvedModelLabel = modelLabel && !isInternalImplementationLabel(modelLabel) ? modelLabel : undefined;
+  const nearbyLabelNode = resolvedModelLabel ? undefined : resolveNearbyFieldLabel({ context, element });
+  if (!resolvedModelLabel && nearbyLabelNode) {
     context.consumedFieldLabelNodeIds?.add(nearbyLabelNode.id);
   }
   const rawLabel =
-    (modelLabel && !isInternalImplementationLabel(modelLabel) ? modelLabel : undefined) ??
+    resolvedModelLabel ??
     nearbyLabelNode?.text?.trim() ??
     modelLabel ??
     element.name;

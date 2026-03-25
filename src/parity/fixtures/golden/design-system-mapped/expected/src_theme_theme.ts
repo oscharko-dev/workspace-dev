@@ -6,7 +6,7 @@ export const appTheme = extendTheme({
       palette: {
       mode: "light",
       primary: { main: "#212121" },
-      secondary: { main: "#f2f4fc" },
+      secondary: { main: "#617df5" },
       success: { main: "#16A34A" },
       warning: { main: "#D97706" },
       error: { main: "#f54236" },
@@ -57,8 +57,15 @@ export const appTheme = extendTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: "12px",
-          backgroundColor: "#ffffff"
+          borderRadius: "12px"
+        }
+      }
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          backgroundColor: "#ffffff",
+          borderRadius: 0.75
         }
       }
     },

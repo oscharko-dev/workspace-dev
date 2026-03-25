@@ -4,9 +4,9 @@ import { Checkbox, Container, FormControlLabel, Paper, Stack, TextField, Typogra
 import { RegistrationFormContextProvider, useRegistrationFormContext } from "../context/RegistrationFormContext";
 
 function RegistrationScreenContent() {
-  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useRegistrationFormContext();
+  const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useRegistrationFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.default", px: 2.667, py: 2.667 }}>
       {/* @ir:start form-title Heading text */}
       <Typography data-ir-id="form-title" data-ir-name="Heading" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
       {/* @ir:end form-title */}
@@ -29,7 +29,7 @@ function RegistrationScreenContent() {
             return (
               <TextField
                 label={"First Name"}
-                value={controllerField.value ?? ""}
+                value={controllerField.value}
                 onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
                 onBlur={controllerField.onBlur}
                 error={Boolean(helperText)}
@@ -66,7 +66,7 @@ function RegistrationScreenContent() {
             return (
               <TextField
                 label={"Last Name"}
-                value={controllerField.value ?? ""}
+                value={controllerField.value}
                 onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
                 onBlur={controllerField.onBlur}
                 error={Boolean(helperText)}
@@ -108,7 +108,7 @@ function RegistrationScreenContent() {
               placeholder={"john@example.com"}
               type={"email"}
               autoComplete={"email"}
-              value={controllerField.value ?? ""}
+              value={controllerField.value}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)}
               onBlur={controllerField.onBlur}
               error={Boolean(helperText)}

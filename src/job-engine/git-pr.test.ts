@@ -40,7 +40,7 @@ test("runGitPrFlowWithDeps validates repo configuration early", async () => {
     () =>
       runGitPrFlowWithDeps({
         input: { figmaFileKey: "demo", figmaAccessToken: "pat", enableGitPr: true },
-        job,
+        jobId: job.jobId,
         generatedProjectDir: "/tmp",
         jobDir: "/tmp",
         onLog: () => {
@@ -60,7 +60,7 @@ test("runGitPrFlowWithDeps validates repo configuration early", async () => {
           repoUrl: "https://gitlab.com/acme/repo",
           repoToken: "token"
         },
-        job,
+        jobId: job.jobId,
         generatedProjectDir: "/tmp",
         jobDir: "/tmp",
         onLog: () => {
@@ -88,7 +88,7 @@ test("runGitPrFlowWithDeps returns executed without commit when no changes", asy
       repoUrl: "https://github.com/acme/repo.git",
       repoToken: "secret"
     },
-    job: createJobRecord(),
+    jobId: createJobRecord().jobId,
     generatedProjectDir,
     jobDir: path.join(tempRoot, "job"),
     onLog: (message) => {
@@ -141,7 +141,7 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
       repoToken: "my-secret-token",
       targetPath: "generated"
     },
-    job: createJobRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    jobId: createJobRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").jobId,
     generatedProjectDir,
     jobDir: path.join(tempRoot, "job"),
     onLog: (message) => {
@@ -200,7 +200,7 @@ test("runGitPrFlowWithDeps rejects unsafe targetPath", async () => {
           repoToken: "secret",
           targetPath: "../outside"
         },
-        job: createJobRecord(),
+        jobId: createJobRecord().jobId,
         generatedProjectDir,
         jobDir: path.join(tempRoot, "job"),
         onLog: () => {
@@ -248,7 +248,7 @@ test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successf
       repoUrl: "git@github.com:acme/repo.git",
       repoToken: "ssh-secret"
     },
-    job: createJobRecord("bbbbbbbb-cccc-dddd-eeee-ffffffffffff"),
+    jobId: createJobRecord("bbbbbbbb-cccc-dddd-eeee-ffffffffffff").jobId,
     generatedProjectDir,
     jobDir: path.join(tempRoot, "job"),
     onLog: () => {
@@ -311,7 +311,7 @@ test("runGitPrFlowWithDeps rejects malformed GitHub repository URLs before runni
           repoUrl: "https://github.com/acme",
           repoToken: "secret"
         },
-        job: createJobRecord(),
+        jobId: createJobRecord().jobId,
         generatedProjectDir: "/tmp/generated",
         jobDir: "/tmp/job",
         onLog: () => {
@@ -356,7 +356,7 @@ test("runGitPrFlowWithDeps surfaces deterministic git step failures", async (t) 
               repoUrl: "https://github.com/acme/repo.git",
               repoToken: "secret"
             },
-            job: createJobRecord(),
+            jobId: createJobRecord().jobId,
             generatedProjectDir,
             jobDir: path.join(tempRoot, "job"),
             onLog: () => {

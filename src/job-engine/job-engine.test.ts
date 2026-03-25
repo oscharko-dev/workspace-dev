@@ -336,6 +336,13 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
     status.logs.some((entry) => entry.message.includes("MCP enrichment coverage (hybrid): variables=1, styles=1")),
     true
   );
+  const stageTimings = JSON.parse(await readFile(String(status.artifacts.stageTimingsFile), "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+  };
+  assert.equal(
+    (stageTimings.diagnostics ?? []).some((entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST"),
+    false
+  );
 });
 
 test("createJobEngine applies authoritative hybrid subtrees before IR derivation", async () => {
@@ -549,6 +556,13 @@ test("createJobEngine falls back deterministically when hybrid mode has no MCP e
   assert.equal(designIr.metrics?.mcpCoverage?.assetCount, 0);
   assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, true);
   assert.equal(designIr.metrics?.mcpCoverage?.diagnostics?.[0]?.code, "W_MCP_ENRICHMENT_SKIPPED");
+  const stageTimings = JSON.parse(await readFile(String(status.artifacts.stageTimingsFile), "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+  };
+  assert.equal(
+    (stageTimings.diagnostics ?? []).some((entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST"),
+    true
+  );
 });
 
 test("createJobEngine rejects submit when queue backpressure cap is reached", async () => {

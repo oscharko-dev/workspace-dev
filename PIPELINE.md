@@ -1,6 +1,7 @@
 # Pipeline
 
 `workspace-dev` executes a deterministic local Figma-to-code workflow with a fixed stage order and a bundled template stack.
+Internally, the pipeline is split into seven in-process stage services coordinated by a shared orchestrator.
 
 ## Stage flow
 
@@ -24,8 +25,17 @@ flowchart TB
 
 ## Operational notes
 
-- `figma.source` accepts either authenticated Figma REST input or local JSON input.
-- `ir.derive` and `codegen.generate` stay deterministic by design; `workspace-dev` does not use hybrid or MCP generation modes.
+- Pipeline kernel lives under `src/job-engine/pipeline/`:
+  - `PipelineOrchestrator` handles stage order, skip behavior, status transitions, cancellation, and error mapping.
+  - `StageArtifactStore` persists stage output references under `<jobDir>/.stage-store`.
+- Stage services live under `src/job-engine/services/*-service.ts` and exchange data through artifact keys instead of direct service calls.
+- Two plans are supported:
+  - `submission`: all seven stages run in order.
+  - `regeneration`: `figma.source` and `git.pr` are skipped by plan-level rules; remaining stages keep canonical order.
+- `figma.source` accepts authenticated Figma REST input, `local_json`, and `hybrid` mode. In `hybrid`, REST fetch remains authoritative and optional MCP enrichment is merged in as artifact-backed hints for downstream derivation.
+- `ir.derive` and `codegen.generate` stay deterministic by design; hybrid mode enriches deterministic derivation with MCP metadata but does not switch the runtime into LLM generation.
 - `template.prepare` always starts from the bundled React 19 + MUI v7 + Vite 8 seed in `template/react-mui-app`.
 - `validate.project` is the release-quality gate for generated output and can optionally run generated-project unit tests, UI validation, and performance assertions.
 - `git.pr` is opt-in and skipped for local-only runs and regeneration jobs.
+- Standard stage artifact keys include: `figma.cleaned`, `design.ir`, `generated.project`, `generation.metrics`, `validation.summary`, `repro.path`, `git.pr.status`.
+- Public job fields such as `artifacts.*`, `generationDiff`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services.

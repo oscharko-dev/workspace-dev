@@ -6,7 +6,7 @@ export const appTheme = extendTheme({
       palette: {
       mode: "light",
       primary: { main: "#1c1f24" },
-      secondary: { main: "#f7f9fa" },
+      secondary: { main: "#268026" },
       success: { main: "#268026" },
       warning: { main: "#D97706" },
       error: { main: "#DC2626" },

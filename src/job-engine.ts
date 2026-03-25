@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -15,18 +15,13 @@ import type {
   WorkspaceJobStatus,
   WorkspaceRegenerationInput
 } from "./contracts/index.js";
-import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
 import {
   createPipelineError,
   getErrorMessage,
   mergePipelineDiagnostics,
   type PipelineDiagnosticInput
 } from "./job-engine/errors.js";
-import { cleanFigmaForCodegen } from "./job-engine/figma-clean.js";
-import { exportImageAssetsFromFigma } from "./job-engine/image-export.js";
-import { applyAuthoritativeFigmaSubtrees, fetchFigmaFile } from "./job-engine/figma-source.js";
-import { copyDir, pathExists, resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
-import { runGenerationDiff } from "./job-engine/generation-diff.js";
+import { resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { resolveBoardKey } from "./parity/board-key.js";
 import { runGitPrFlow } from "./job-engine/git-pr.js";
 import { getContentType, normalizePathPart } from "./job-engine/preview.js";
@@ -43,12 +38,7 @@ import {
   updateStage
 } from "./job-engine/stage-state.js";
 import { createTemplateCopyFilter } from "./job-engine/template-copy-filter.js";
-import type { CreateJobEngineInput, FigmaFileResponse, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
-import { runProjectValidation } from "./job-engine/validation.js";
-import { generateArtifactsStreaming } from "./parity/generator-core.js";
-import type { StreamingArtifactEvent } from "./parity/generator-core.js";
-import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "./job-engine/ir-cache.js";
-import { applyIrOverrides } from "./job-engine/ir-overrides.js";
+import type { CreateJobEngineInput, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
 import { generateRemapSuggestions } from "./job-engine/remap-suggestions.js";
 import {
   applyLocalSyncPlan,
@@ -57,10 +47,13 @@ import {
   type LocalSyncPlan,
   planLocalSync
 } from "./job-engine/local-sync.js";
-import { buildComponentManifest } from "./parity/component-manifest.js";
-import { figmaToDesignIrWithOptions } from "./parity/ir.js";
 import type { DesignIR } from "./parity/types-ir.js";
-import type { FigmaMcpEnrichment } from "./parity/types.js";
+import { StageArtifactStore } from "./job-engine/pipeline/artifact-store.js";
+import { STAGE_ARTIFACT_KEYS } from "./job-engine/pipeline/artifact-keys.js";
+import { PipelineOrchestrator, isPipelineCancellationError } from "./job-engine/pipeline/orchestrator.js";
+import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
+import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
+import { buildRegenerationPipelinePlan, buildSubmissionPipelinePlan } from "./job-engine/services/pipeline-services.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
@@ -156,26 +149,6 @@ const toPipelineError = ({
   });
 };
 
-const toFigmaNodeUrl = ({
-  fileKey,
-  nodeId
-}: {
-  fileKey: string | undefined;
-  nodeId: string | undefined;
-}): string | undefined => {
-  if (!fileKey || !nodeId) {
-    return undefined;
-  }
-  const trimmedFileKey = fileKey.trim();
-  const trimmedNodeId = nodeId.trim();
-  if (!trimmedFileKey || !trimmedNodeId) {
-    return undefined;
-  }
-  return `https://www.figma.com/design/${encodeURIComponent(trimmedFileKey)}?node-id=${encodeURIComponent(
-    trimmedNodeId.replace(/:/g, "-")
-  )}`;
-};
-
 /** Recursively collect all node IDs from an IR node tree. */
 const collectNodeIds = (node: unknown, ids: Set<string>): void => {
   if (!isRecord(node)) {
@@ -191,185 +164,6 @@ const collectNodeIds = (node: unknown, ids: Set<string>): void => {
   }
 };
 
-interface RejectedScreenCandidate {
-  nodeId: string;
-  nodeName: string;
-  nodeType: string;
-  reason: "hidden-page" | "hidden-node" | "non-screen-root" | "unsupported-node-type" | "section-without-screen-like-children";
-  pageId?: string;
-  pageName?: string;
-}
-
-const collectRejectedSectionCandidates = ({
-  section,
-  pageId,
-  pageName
-}: {
-  section: Record<string, unknown>;
-  pageId?: string;
-  pageName?: string;
-}): RejectedScreenCandidate[] => {
-  const sectionChildren = Array.isArray(section.children) ? section.children : [];
-  const rejections: RejectedScreenCandidate[] = [];
-  let hasNestedScreenLike = false;
-  for (const nestedCandidate of sectionChildren) {
-    if (!isRecord(nestedCandidate)) {
-      continue;
-    }
-    const nestedType = typeof nestedCandidate.type === "string" ? nestedCandidate.type : "UNKNOWN";
-    if (nestedType === "FRAME" || nestedType === "COMPONENT") {
-      hasNestedScreenLike = true;
-      continue;
-    }
-    const nestedId = typeof nestedCandidate.id === "string" ? nestedCandidate.id : "unknown";
-    const nestedName = typeof nestedCandidate.name === "string" ? nestedCandidate.name : nestedType;
-    if (nestedType === "SECTION") {
-      const nestedSectionRejections = collectRejectedSectionCandidates({
-        section: nestedCandidate,
-        ...(pageId ? { pageId } : {}),
-        ...(pageName ? { pageName } : {})
-      });
-      if (nestedSectionRejections.length > 0) {
-        rejections.push(...nestedSectionRejections);
-      }
-      continue;
-    }
-    rejections.push({
-      nodeId: nestedId,
-      nodeName: nestedName,
-      nodeType: nestedType,
-      reason: "unsupported-node-type",
-      ...(pageId ? { pageId } : {}),
-      ...(pageName ? { pageName } : {})
-    });
-  }
-  if (!hasNestedScreenLike) {
-    rejections.push({
-      nodeId: typeof section.id === "string" ? section.id : "unknown",
-      nodeName: typeof section.name === "string" ? section.name : "Section",
-      nodeType: "SECTION",
-      reason: "section-without-screen-like-children",
-      ...(pageId ? { pageId } : {}),
-      ...(pageName ? { pageName } : {})
-    });
-  }
-  return rejections;
-};
-
-const analyzeScreenCandidateRejections = ({
-  sourceFile
-}: {
-  sourceFile: FigmaFileResponse;
-}): {
-  rejectedCandidates: RejectedScreenCandidate[];
-  rootCandidateCount: number;
-} => {
-  const rejectedCandidates: RejectedScreenCandidate[] = [];
-  if (!isRecord(sourceFile.document)) {
-    return {
-      rejectedCandidates,
-      rootCandidateCount: 0
-    };
-  }
-  const documentNode = sourceFile.document;
-  const pages = Array.isArray(documentNode.children) ? documentNode.children : [];
-  let rootCandidateCount = 0;
-  for (const pageCandidate of pages) {
-    if (!isRecord(pageCandidate)) {
-      continue;
-    }
-    const pageId = typeof pageCandidate.id === "string" ? pageCandidate.id : undefined;
-    const pageName = typeof pageCandidate.name === "string" ? pageCandidate.name : undefined;
-    if (pageCandidate.visible === false) {
-      rejectedCandidates.push({
-        nodeId: pageId ?? "unknown",
-        nodeName: pageName ?? "Page",
-        nodeType: "CANVAS",
-        reason: "hidden-page"
-      });
-      continue;
-    }
-    const pageChildren = Array.isArray(pageCandidate.children) ? pageCandidate.children : [];
-    for (const childCandidate of pageChildren) {
-      if (!isRecord(childCandidate)) {
-        continue;
-      }
-      const nodeType = typeof childCandidate.type === "string" ? childCandidate.type : "UNKNOWN";
-      const nodeId = typeof childCandidate.id === "string" ? childCandidate.id : "unknown";
-      const nodeName = typeof childCandidate.name === "string" ? childCandidate.name : nodeType;
-      if (childCandidate.visible === false) {
-        rejectedCandidates.push({
-          nodeId,
-          nodeName,
-          nodeType,
-          reason: "hidden-node",
-          ...(pageId ? { pageId } : {}),
-          ...(pageName ? { pageName } : {})
-        });
-        continue;
-      }
-      if (nodeType === "FRAME" || nodeType === "COMPONENT") {
-        rootCandidateCount += 1;
-        continue;
-      }
-      if (nodeType === "SECTION") {
-        const sectionRejections = collectRejectedSectionCandidates({
-          section: childCandidate,
-          ...(pageId ? { pageId } : {}),
-          ...(pageName ? { pageName } : {})
-        });
-        rejectedCandidates.push(...sectionRejections);
-        continue;
-      }
-      rejectedCandidates.push({
-        nodeId,
-        nodeName,
-        nodeType,
-        reason: "non-screen-root",
-        ...(pageId ? { pageId } : {}),
-        ...(pageName ? { pageName } : {})
-      });
-    }
-  }
-  return {
-    rejectedCandidates: rejectedCandidates.slice(0, 20),
-    rootCandidateCount
-  };
-};
-
-const SCREEN_REJECTION_REASON_MESSAGE: Record<RejectedScreenCandidate["reason"], string> = {
-  "hidden-page": "The page is hidden.",
-  "hidden-node": "The node is hidden.",
-  "non-screen-root": "The node is not a supported top-level screen root (expected FRAME/COMPONENT/SECTION).",
-  "unsupported-node-type": "The node type is not supported as a screen candidate.",
-  "section-without-screen-like-children": "The section has no FRAME/COMPONENT children."
-};
-
-const SCREEN_REJECTION_REASON_SUGGESTION: Record<RejectedScreenCandidate["reason"], string> = {
-  "hidden-page": "Unhide the page or move target screens into a visible page.",
-  "hidden-node": "Unhide the node or choose a visible FRAME/COMPONENT root.",
-  "non-screen-root": "Use FRAME/COMPONENT roots for screen-level content or wrap content in a FRAME.",
-  "unsupported-node-type": "Convert or wrap the node into a FRAME/COMPONENT that can be treated as a screen root.",
-  "section-without-screen-like-children": "Add at least one FRAME/COMPONENT under this section."
-};
-
-const toSortedReasonCounts = ({
-  rejectedCandidates
-}: {
-  rejectedCandidates: RejectedScreenCandidate[];
-}): Record<string, number> => {
-  const reasonCounts = new Map<string, number>();
-  for (const entry of rejectedCandidates) {
-    reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
-  }
-  return [...reasonCounts.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .reduce<Record<string, number>>((accumulator, [reason, count]) => {
-      accumulator[reason] = count;
-      return accumulator;
-    }, {});
-};
-
 const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
   return (
     error instanceof Error &&
@@ -378,30 +172,6 @@ const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
     typeof (error as { code?: unknown }).code === "string" &&
     isWorkspaceJobStageName((error as { stage?: unknown }).stage)
   );
-};
-
-const isPerfValidationEnabled = (): boolean => {
-  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
-  if (!raw) {
-    return false;
-  }
-  const normalized = raw.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
-};
-
-const isLintAutofixEnabled = (): boolean => {
-  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
-  if (!raw) {
-    return true;
-  }
-  const normalized = raw.trim().toLowerCase();
-  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
-    return true;
-  }
-  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
-    return false;
-  }
-  return true;
 };
 
 const resolveJobGenerationLocale = ({
@@ -451,28 +221,6 @@ const resolveFormHandlingMode = ({
   return submitFormHandlingMode === "legacy_use_state" ? "legacy_use_state" : "react_hook_form";
 };
 
-const createHybridFallbackEnrichment = ({
-  code,
-  message
-}: {
-  code: string;
-  message: string;
-}): FigmaMcpEnrichment => {
-  return {
-    sourceMode: "hybrid",
-    nodeHints: [],
-    toolNames: [],
-    diagnostics: [
-      {
-        code,
-        message,
-        severity: "warning",
-        source: "loader"
-      }
-    ]
-  };
-};
-
 export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
   const resolvedPaths = resolveAbsoluteOutputRoot({ outputRoot: paths.outputRoot });
   const resolvedWorkspaceRoot = path.resolve(paths.workspaceRoot ?? path.resolve(paths.outputRoot, ".."));
@@ -503,21 +251,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       this.queue = queue;
     }
   }
-
-  class JobCancellationError extends Error {
-    code = "E_JOB_CANCELED" as const;
-    stage: WorkspaceJobStageName;
-
-    constructor({ stage, reason }: { stage: WorkspaceJobStageName; reason: string }) {
-      super(reason);
-      this.name = "JobCancellationError";
-      this.stage = stage;
-    }
-  }
-
-  const isJobCancellationError = (error: unknown): error is JobCancellationError => {
-    return error instanceof JobCancellationError;
-  };
 
   const toQueueSnapshot = ({ jobId }: { jobId?: string } = {}): WorkspaceJobStatus["queue"] => {
     const position = jobId ? queuedJobIds.indexOf(jobId) : -1;
@@ -613,19 +346,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
-  const markStageSkipped = ({
-    job,
-    stage,
-    message
-  }: {
-    job: JobRecord;
-    stage: WorkspaceJobStageName;
-    message: string;
-  }): void => {
-    updateStage({ job, stage, status: "skipped", message });
-    pushLog({ job, level: "info", stage, message });
-  };
-
   const markQueuedStagesSkippedAfterCancellation = ({
     job,
     reason
@@ -637,118 +357,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       if (stage.status === "queued") {
         updateStage({ job, stage: stage.name, status: "skipped", message: reason });
       }
-    }
-  };
-
-  const resolveCancellationReason = ({
-    job,
-    fallbackReason
-  }: {
-    job: JobRecord;
-    fallbackReason: string;
-  }): string => {
-    if (job.cancellation?.reason) {
-      return job.cancellation.reason;
-    }
-    return fallbackReason;
-  };
-
-  const ensureStageNotCanceled = ({
-    job,
-    stage
-  }: {
-    job: JobRecord;
-    stage: WorkspaceJobStageName;
-  }): void => {
-    if (!job.cancellation || job.cancellation.completedAt) {
-      return;
-    }
-    throw new JobCancellationError({
-      stage,
-      reason: resolveCancellationReason({
-        job,
-        fallbackReason: "Cancellation requested."
-      })
-    });
-  };
-
-  const runStage = async <T>({
-    job,
-    stage,
-    action
-  }: {
-    job: JobRecord;
-    stage: WorkspaceJobStageName;
-    action: () => Promise<T>;
-  }): Promise<T> => {
-    ensureStageNotCanceled({ job, stage });
-    job.currentStage = stage;
-    updateStage({ job, stage, status: "running" });
-    pushLog({ job, level: "info", stage, message: `Starting stage '${stage}'.` });
-
-    try {
-      const result = await action();
-      ensureStageNotCanceled({ job, stage });
-      updateStage({ job, stage, status: "completed" });
-      pushLog({ job, level: "info", stage, message: `Completed stage '${stage}'.` });
-      return result;
-    } catch (error) {
-      if (isJobCancellationError(error)) {
-        updateStage({
-          job,
-          stage,
-          status: "failed",
-          message: error.message
-        });
-        pushLog({
-          job,
-          level: "warn",
-          stage,
-          message: `${error.code}: ${error.message}`
-        });
-        throw error;
-      }
-
-      if (job.cancellation && isAbortLikeError(error)) {
-        const cancellationError = new JobCancellationError({
-          stage,
-          reason: resolveCancellationReason({
-            job,
-            fallbackReason: "Cancellation requested."
-          })
-        });
-        updateStage({
-          job,
-          stage,
-          status: "failed",
-          message: cancellationError.message
-        });
-        pushLog({
-          job,
-          level: "warn",
-          stage,
-          message: `${cancellationError.code}: ${cancellationError.message}`
-        });
-        throw cancellationError;
-      }
-
-      const typedError = toPipelineError({
-        error,
-        fallbackStage: stage
-      });
-      updateStage({
-        job,
-        stage,
-        status: "failed",
-        message: typedError.message
-      });
-      pushLog({
-        job,
-        level: "error",
-        stage,
-        message: `${typedError.code}: ${typedError.message}`
-      });
-      throw typedError;
     }
   };
 
@@ -793,6 +401,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
     const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
     const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
+    const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -859,952 +468,68 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      let figmaFetch = await runStage({
+      const artifactStore = new StageArtifactStore({ jobDir });
+      const context: PipelineExecutionContext = {
+        mode: "submission",
         job,
-        stage: "figma.source",
-        action: async () => {
-          const writeAndClean = async ({
-            sourceFile,
-            diagnostics
-          }: {
-            sourceFile: FigmaFileResponse;
-            diagnostics: {
-              sourceMode: "geometry-paths" | "staged-nodes" | "local-json";
-              fetchedNodes: number;
-              degradedGeometryNodes: string[];
-              lowFidelityDetected?: boolean;
-              lowFidelityReasons?: string[];
-              authoritativeSubtreeCount?: number;
-            };
-          }) => {
-            await writeFile(figmaRawJsonFile, `${JSON.stringify(sourceFile, null, 2)}\n`, "utf8");
-            const cleaning = cleanFigmaForCodegen({ file: sourceFile });
-            await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
-            pushLog({
-              job,
-              level: "info",
-              stage: "figma.source",
-              message:
-                `Figma source mode=${diagnostics.sourceMode}, fetchedNodes=${diagnostics.fetchedNodes}, ` +
-                `degradedGeometryNodes=${diagnostics.degradedGeometryNodes.length}, ` +
-                `lowFidelity=${diagnostics.lowFidelityDetected === true ? "yes" : "no"}, ` +
-                `authoritativeSubtrees=${diagnostics.authoritativeSubtreeCount ?? 0}, ` +
-                `cleanedNodes=${cleaning.report.outputNodeCount}/${cleaning.report.inputNodeCount}, ` +
-                `removedHidden=${cleaning.report.removedHiddenNodes}, removedPlaceholders=${cleaning.report.removedPlaceholderNodes}, ` +
-                `removedHelpers=${cleaning.report.removedHelperNodes}, removedInvalid=${cleaning.report.removedInvalidNodes}, removedProperties=${cleaning.report.removedPropertyCount}`
-            });
-            return {
-              file: cleaning.cleanedFile,
-              diagnostics,
-              cleaning
-            };
-          };
-
-          if (resolvedFigmaSourceMode === "local_json") {
-            const localPath = input.figmaJsonPath?.trim();
-            if (!localPath) {
-              throw createPipelineError({
-                code: "E_FIGMA_LOCAL_JSON_PATH",
-                stage: "figma.source",
-                message: "figmaJsonPath is required when figmaSourceMode=local_json."
-              });
-            }
-
-            const resolvedLocalPath = path.resolve(localPath);
-            let localFileContent: string;
-            try {
-              localFileContent = await readFile(resolvedLocalPath, "utf8");
-            } catch (error) {
-              throw createPipelineError({
-                code: "E_FIGMA_LOCAL_JSON_READ",
-                stage: "figma.source",
-                message: `Could not read local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
-                cause: error
-              });
-            }
-
-            let parsedLocalFile: unknown;
-            try {
-              parsedLocalFile = JSON.parse(localFileContent);
-            } catch (error) {
-              throw createPipelineError({
-                code: "E_FIGMA_PARSE",
-                stage: "figma.source",
-                message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
-                cause: error
-              });
-            }
-
-            const parsedLocalPayload = safeParseFigmaPayload({ input: parsedLocalFile });
-            if (!parsedLocalPayload.success) {
-              throw createPipelineError({
-                code: "E_FIGMA_PARSE",
-                stage: "figma.source",
-                message:
-                  `Could not parse local Figma JSON file '${localPath}': invalid Figma payload ` +
-                  `(${summarizeFigmaPayloadValidationError({ error: parsedLocalPayload.error })}).`
-              });
-            }
-
-            pushLog({
-              job,
-              level: "info",
-              stage: "figma.source",
-              message: `Loaded local Figma JSON from '${resolvedLocalPath}'.`
-            });
-
-            return await writeAndClean({
-              sourceFile: parsedLocalPayload.data,
-              diagnostics: {
-                sourceMode: "local-json",
-                fetchedNodes: 0,
-                degradedGeometryNodes: []
-              }
-            });
-          }
-
-          const fileKey = input.figmaFileKey?.trim();
-          const accessToken = input.figmaAccessToken?.trim();
-          if (!fileKey || !accessToken) {
-            throw createPipelineError({
-              code: "E_FIGMA_REST_INPUT",
-              stage: "figma.source",
-              message: `figmaFileKey and figmaAccessToken are required when figmaSourceMode=${resolvedFigmaSourceMode}.`
-            });
-          }
-
-          const result = await fetchFigmaFile({
-            fileKey,
-            accessToken,
-            timeoutMs: runtime.figmaTimeoutMs,
-            maxRetries: runtime.figmaMaxRetries,
-            bootstrapDepth: runtime.figmaBootstrapDepth,
-            nodeBatchSize: runtime.figmaNodeBatchSize,
-            nodeFetchConcurrency: runtime.figmaNodeFetchConcurrency,
-            adaptiveBatchingEnabled: runtime.figmaAdaptiveBatchingEnabled,
-            maxScreenCandidates: runtime.figmaMaxScreenCandidates,
-            ...(runtime.figmaScreenNamePattern !== undefined
-              ? { screenNamePattern: runtime.figmaScreenNamePattern }
-              : {}),
-            cacheEnabled: runtime.figmaCacheEnabled,
-            cacheTtlMs: runtime.figmaCacheTtlMs,
-            cacheDir: path.join(resolvedPaths.outputRoot, "cache", "figma-source"),
-            fetchImpl: fetchWithCancellation,
-            onLog: (message) => {
-              pushLog({
-                job,
-                level: "info",
-                stage: "figma.source",
-                message
-              });
-            }
-          });
-          return await writeAndClean({
-            sourceFile: result.file,
-            diagnostics: result.diagnostics
-          });
-        }
-      });
-
-      const hybridMcpEnrichment =
-        resolvedFigmaSourceMode !== "hybrid"
-          ? undefined
-          : await (async (): Promise<FigmaMcpEnrichment> => {
-              const fileKey = input.figmaFileKey?.trim();
-              const accessToken = input.figmaAccessToken?.trim();
-              if (!fileKey || !accessToken) {
-                return createHybridFallbackEnrichment({
-                  code: "W_MCP_ENRICHMENT_SKIPPED",
-                  message: "Hybrid mode fell back to REST-only derivation because Figma REST credentials were incomplete."
-                });
-              }
-              if (!runtime.figmaMcpEnrichmentLoader) {
-                pushLog({
-                  job,
-                  level: "warn",
-                  stage: "ir.derive",
-                  message: "Hybrid mode selected, but no figmaMcpEnrichmentLoader is configured. Falling back to REST-only derivation."
-                });
-                appendDiagnostics({
-                  stage: "ir.derive",
-                  diagnostics: [
-                    {
-                      code: "W_MCP_ENRICHMENT_SKIPPED",
-                      message: "Hybrid mode fell back to REST-only derivation because no MCP enrichment loader is configured.",
-                      suggestion: "Configure a figmaMcpEnrichmentLoader to supply variables, style catalog, metadata hints, or Code Connect mappings.",
-                      stage: "ir.derive",
-                      severity: "warning",
-                      details: {
-                        figmaSourceMode: resolvedFigmaSourceMode
-                      }
-                    }
-                  ]
-                });
-                return createHybridFallbackEnrichment({
-                  code: "W_MCP_ENRICHMENT_SKIPPED",
-                  message: "No MCP enrichment loader configured."
-                });
-              }
-              try {
-                const loaded = await runtime.figmaMcpEnrichmentLoader({
-                  figmaFileKey: fileKey,
-                  figmaAccessToken: accessToken,
-                  cleanedFile: figmaFetch.file,
-                  rawFile: (JSON.parse(await readFile(figmaRawJsonFile, "utf8")) as FigmaFileResponse),
-                  jobDir,
-                  fetchImpl: fetchWithCancellation
-                });
-                if (!loaded) {
-                  return createHybridFallbackEnrichment({
-                    code: "W_MCP_ENRICHMENT_SKIPPED",
-                    message: "Hybrid mode loader returned no enrichment; REST-only derivation was used."
-                  });
-                }
-                return loaded;
-              } catch (error) {
-                const message = getErrorMessage(error);
-                pushLog({
-                  job,
-                  level: "warn",
-                  stage: "ir.derive",
-                  message: `Hybrid MCP enrichment failed; falling back to REST-only derivation. ${message}`
-                });
-                appendDiagnostics({
-                  stage: "ir.derive",
-                  diagnostics: [
-                    {
-                      code: "W_MCP_ENRICHMENT_SKIPPED",
-                      message: "Hybrid mode fell back to REST-only derivation because MCP enrichment loading failed.",
-                      suggestion: "Check the MCP enrichment loader and retry. REST derivation completed without authoritative MCP data.",
-                      stage: "ir.derive",
-                      severity: "warning",
-                      details: {
-                        error: message
-                      }
-                    }
-                  ]
-                });
-                return createHybridFallbackEnrichment({
-                  code: "W_MCP_ENRICHMENT_SKIPPED",
-                  message: `MCP enrichment loader failed: ${message}`
-                });
-              }
-            })();
-
-      const authoritativeSubtrees = hybridMcpEnrichment?.authoritativeSubtrees ?? [];
-      if (authoritativeSubtrees.length > 0) {
-        const rawFile = JSON.parse(await readFile(figmaRawJsonFile, "utf8")) as FigmaFileResponse;
-        const mergedSource = applyAuthoritativeFigmaSubtrees({
-          file: rawFile,
-          subtrees: authoritativeSubtrees
-        });
-        if (mergedSource.appliedNodeIds.length > 0) {
-          const cleaning = cleanFigmaForCodegen({ file: mergedSource.file });
-          await writeFile(figmaRawJsonFile, `${JSON.stringify(mergedSource.file, null, 2)}\n`, "utf8");
-          await writeFile(figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
-          figmaFetch = {
-            ...figmaFetch,
-            file: cleaning.cleanedFile,
-            diagnostics: {
-              ...figmaFetch.diagnostics,
-              authoritativeSubtreeCount: mergedSource.appliedNodeIds.length
-            }
-          };
-          pushLog({
-            job,
-            level: "info",
-            stage: "ir.derive",
-            message: `Applied ${mergedSource.appliedNodeIds.length} authoritative subtree snapshot(s) from hybrid enrichment before IR derivation.`
-          });
-        }
-      }
-
-      if (figmaFetch.diagnostics.lowFidelityDetected === true && (figmaFetch.diagnostics.authoritativeSubtreeCount ?? 0) === 0) {
-        const lowFidelityReasons = figmaFetch.diagnostics.lowFidelityReasons ?? [];
-        const summary =
-          lowFidelityReasons.length > 0
-            ? lowFidelityReasons.join(" ")
-            : "REST geometry payload appears structurally weak for this board.";
-        pushLog({
-          job,
-          level: "error",
-          stage: "figma.source",
-          message: `Low-fidelity Figma source detected without authoritative recovery. ${summary}`
-        });
-        throw createPipelineError({
-          code: "E_FIGMA_LOW_FIDELITY_SOURCE",
-          stage: "figma.source",
-          message: `Figma source fidelity is too low to generate a reliable screen. ${summary}`,
-          diagnostics: [
-            {
-              code: "E_FIGMA_LOW_FIDELITY_SOURCE",
-              message: "Figma REST geometry-paths payload is too low-fidelity for deterministic generation.",
-              suggestion:
-                resolvedFigmaSourceMode === "hybrid"
-                  ? "Verify authoritative subtree recovery for hybrid mode or use a local_json export for this board."
-                  : "Retry with figmaSourceMode=hybrid so authoritative subtrees can be recovered, or use a local_json export.",
-              stage: "figma.source",
-              severity: "error",
-              details: {
-                figmaSourceMode: resolvedFigmaSourceMode,
-                sourceMode: figmaFetch.diagnostics.sourceMode,
-                reasons: lowFidelityReasons
-              }
-            }
-          ]
-        });
-      }
-
-      const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
-
-      const ir = await runStage({
-        job,
-        stage: "ir.derive",
-        action: async () => {
-          const emitIrMetricDiagnostics = ({
-            source
-          }: {
-            source: DesignIR;
-          }): void => {
-            const budgetTruncatedScreens = [...(source.metrics?.truncatedScreens ?? [])].sort((left, right) => {
-              if (left.screenName !== right.screenName) {
-                return left.screenName.localeCompare(right.screenName);
-              }
-              return left.screenId.localeCompare(right.screenId);
-            });
-            if (budgetTruncatedScreens.length > 0) {
-              const diagnostics: PipelineDiagnosticInput[] = budgetTruncatedScreens.slice(0, 8).map((entry) => {
-                const figmaUrl = toFigmaNodeUrl({
-                  fileKey: figmaFileKeyForDiagnostics,
-                  nodeId: entry.screenId
-                });
-                return {
-                  code: "W_IR_ELEMENT_BUDGET_TRUNCATION",
-                  message:
-                    `Screen '${entry.screenName}' exceeded element budget (${entry.retainedElements}/${entry.originalElements} retained).`,
-                  suggestion:
-                    "Split the screen into smaller sections/components or increase figmaScreenElementBudget if larger screens are intentional.",
-                  stage: "ir.derive",
-                  severity: "warning",
-                  figmaNodeId: entry.screenId,
-                  ...(figmaUrl ? { figmaUrl } : {}),
-                  details: {
-                    screenId: entry.screenId,
-                    screenName: entry.screenName,
-                    originalElements: entry.originalElements,
-                    retainedElements: entry.retainedElements,
-                    budget: entry.budget
-                  }
-                };
-              });
-              appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics
-              });
-            }
-
-            const depthTruncatedScreens = [...(source.metrics?.depthTruncatedScreens ?? [])].sort((left, right) => {
-              if (left.screenName !== right.screenName) {
-                return left.screenName.localeCompare(right.screenName);
-              }
-              return left.screenId.localeCompare(right.screenId);
-            });
-            if (depthTruncatedScreens.length > 0) {
-              const summary = depthTruncatedScreens
-                .slice(0, 3)
-                .map(
-                  (entry) =>
-                    `'${entry.screenName}' branches=${entry.truncatedBranchCount} firstDepth=${entry.firstTruncatedDepth}`
-                )
-                .join("; ");
-              pushLog({
-                job,
-                level: "warn",
-                stage: "ir.derive",
-                message:
-                  `Dynamic depth truncation applied on ${depthTruncatedScreens.length} screen(s) ` +
-                  `(maxDepth=${runtime.figmaScreenElementMaxDepth}). ${summary}`
-              });
-
-              const diagnostics: PipelineDiagnosticInput[] = depthTruncatedScreens.slice(0, 8).map((entry) => {
-                const figmaUrl = toFigmaNodeUrl({
-                  fileKey: figmaFileKeyForDiagnostics,
-                  nodeId: entry.screenId
-                });
-                return {
-                  code: "W_IR_DEPTH_TRUNCATION",
-                  message:
-                    `Depth truncation started at depth ${entry.firstTruncatedDepth} for screen '${entry.screenName}'.`,
-                  suggestion:
-                    "Split deeply nested content into smaller screens/components or increase figmaScreenElementMaxDepth.",
-                  stage: "ir.derive",
-                  severity: "warning",
-                  figmaNodeId: entry.screenId,
-                  ...(figmaUrl ? { figmaUrl } : {}),
-                  details: {
-                    screenId: entry.screenId,
-                    screenName: entry.screenName,
-                    maxDepth: entry.maxDepth,
-                    firstTruncatedDepth: entry.firstTruncatedDepth,
-                    truncatedBranchCount: entry.truncatedBranchCount
-                  }
-                };
-              });
-              appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics
-              });
-            }
-
-            const classificationFallbacks = [...(source.metrics?.classificationFallbacks ?? [])].sort((left, right) => {
-              if (left.screenName !== right.screenName) {
-                return left.screenName.localeCompare(right.screenName);
-              }
-              if (left.depth !== right.depth) {
-                return left.depth - right.depth;
-              }
-              return left.nodeId.localeCompare(right.nodeId);
-            });
-            if (classificationFallbacks.length > 0) {
-              pushLog({
-                job,
-                level: "warn",
-                stage: "ir.derive",
-                message:
-                  `Classification fallback to container used for ${classificationFallbacks.length} node(s). ` +
-                  `Top sample: ${classificationFallbacks
-                    .slice(0, 3)
-                    .map((entry) => `'${entry.nodeName}'`)
-                    .join(", ")}`
-              });
-              const diagnostics: PipelineDiagnosticInput[] = classificationFallbacks.slice(0, 12).map((entry) => {
-                const figmaUrl = toFigmaNodeUrl({
-                  fileKey: figmaFileKeyForDiagnostics,
-                  nodeId: entry.nodeId
-                });
-                return {
-                  code: "W_IR_CLASSIFICATION_FALLBACK",
-                  message: `Node '${entry.nodeName}' fell back to generic 'container' classification.`,
-                  suggestion:
-                    "Use clearer component naming/structure (e.g., button/input/list/table semantics) so deterministic classification can resolve a specific type.",
-                  stage: "ir.derive",
-                  severity: "warning",
-                  figmaNodeId: entry.nodeId,
-                  ...(figmaUrl ? { figmaUrl } : {}),
-                  details: {
-                    screenId: entry.screenId,
-                    screenName: entry.screenName,
-                    nodeId: entry.nodeId,
-                    nodeName: entry.nodeName,
-                    nodeType: entry.nodeType,
-                    depth: entry.depth,
-                    ...(entry.layoutMode ? { layoutMode: entry.layoutMode } : {}),
-                    ...(entry.matchedRulePriority !== undefined
-                      ? { matchedRulePriority: entry.matchedRulePriority }
-                      : {})
-                  }
-                };
-              });
-              appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics
-              });
-            }
-
-            const mcpCoverage = source.metrics?.mcpCoverage;
-            if (mcpCoverage) {
-              pushLog({
-                job,
-                level: mcpCoverage.fallbackUsed ? "warn" : "info",
-                stage: "ir.derive",
-                message:
-                  `MCP enrichment coverage (${mcpCoverage.sourceMode}): ` +
-                  `variables=${mcpCoverage.variableCount}, styles=${mcpCoverage.styleEntryCount}, ` +
-                  `codeConnect=${mcpCoverage.codeConnectMappingCount}, designSystem=${mcpCoverage.designSystemMappingCount}, metadata=${mcpCoverage.metadataHintCount}, ` +
-                  `nodeHints=${mcpCoverage.nodeHintCount}, assets=${mcpCoverage.assetCount}, screenshots=${mcpCoverage.screenshotCount}.`
-              });
-              const diagnostics: PipelineDiagnosticInput[] = (mcpCoverage.diagnostics ?? []).map((entry) => ({
-                code: entry.code,
-                message: entry.message,
-                suggestion:
-                  entry.source === "loader"
-                    ? "Configure a hybrid MCP enrichment loader or use pure REST mode if no MCP data is available."
-                    : `Check MCP ${entry.source.replace(/_/g, " ")} availability and data coverage for this board.`,
-                stage: "ir.derive",
-                severity: entry.severity
-              }));
-              appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics
-              });
-            }
-          };
-          const buildIrEmptyDiagnostics = (): PipelineDiagnosticInput[] => {
-            const { rejectedCandidates, rootCandidateCount } = analyzeScreenCandidateRejections({
-              sourceFile: figmaFetch.file
-            });
-            const reasonCounts = toSortedReasonCounts({
-              rejectedCandidates
-            });
-            if (figmaFetch.cleaning.report.screenCandidateCount <= 0) {
-              reasonCounts["cleaning-removed-candidates"] = 1;
-            }
-            const candidateDiagnostics: PipelineDiagnosticInput[] = rejectedCandidates.slice(0, 8).map((entry) => {
-              const figmaUrl = toFigmaNodeUrl({
-                fileKey: figmaFileKeyForDiagnostics,
-                nodeId: entry.nodeId
-              });
-              return {
-                code: "E_IR_EMPTY_CANDIDATE_REJECTED",
-                message: `Rejected node '${entry.nodeName}' (${entry.nodeType}): ${SCREEN_REJECTION_REASON_MESSAGE[entry.reason]}`,
-                suggestion: SCREEN_REJECTION_REASON_SUGGESTION[entry.reason],
-                stage: "ir.derive",
-                severity: "error",
-                ...(entry.nodeId ? { figmaNodeId: entry.nodeId } : {}),
-                ...(figmaUrl ? { figmaUrl } : {}),
-                details: {
-                  reason: entry.reason,
-                  ...(entry.pageId ? { pageId: entry.pageId } : {}),
-                  ...(entry.pageName ? { pageName: entry.pageName } : {}),
-                  nodeType: entry.nodeType
-                }
-              };
-            });
-            return [
-              {
-                code: "E_IR_EMPTY",
-                message: "IR derivation produced zero screens.",
-                suggestion:
-                  "Provide at least one visible FRAME/COMPONENT root screen and avoid layouts that are fully removed by cleaning.",
-                stage: "ir.derive",
-                severity: "error",
-                details: {
-                  rootCandidateCount,
-                  rejectedCandidateCount: rejectedCandidates.length,
-                  reasonCounts,
-                  screenCandidateCountAfterCleaning: figmaFetch.cleaning.report.screenCandidateCount
-                }
-              },
-              ...candidateDiagnostics
-            ];
-          };
-
-          if (figmaFetch.cleaning.report.screenCandidateCount <= 0) {
-            throw createPipelineError({
-              code: "E_FIGMA_CLEAN_EMPTY",
-              stage: "ir.derive",
-              message: "Figma cleaning removed all screen candidates.",
-              diagnostics: [
-                {
-                  code: "E_FIGMA_CLEAN_EMPTY",
-                  message: "No screen candidates remained after Figma cleaning.",
-                  suggestion:
-                    "Ensure at least one visible FRAME/COMPONENT (or SECTION with FRAME/COMPONENT children) remains after cleaning.",
-                  stage: "ir.derive",
-                  severity: "error",
-                  details: {
-                    inputNodeCount: figmaFetch.cleaning.report.inputNodeCount,
-                    outputNodeCount: figmaFetch.cleaning.report.outputNodeCount,
-                    screenCandidateCount: figmaFetch.cleaning.report.screenCandidateCount,
-                    removedHiddenNodes: figmaFetch.cleaning.report.removedHiddenNodes,
-                    removedPlaceholderNodes: figmaFetch.cleaning.report.removedPlaceholderNodes,
-                    removedHelperNodes: figmaFetch.cleaning.report.removedHelperNodes,
-                    removedInvalidNodes: figmaFetch.cleaning.report.removedInvalidNodes
-                  }
-                }
-              ]
-            });
-          }
-
-          const irDerivationOptions = {
-            screenElementBudget: runtime.figmaScreenElementBudget,
-            screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
-            brandTheme: resolvedBrandTheme,
-            figmaSourceMode: resolvedFigmaSourceMode,
-            ...(hybridMcpEnrichment
-              ? { mcpEnrichmentFingerprint: computeContentHash(hybridMcpEnrichment) }
-              : {})
-          };
-
-          const irCacheLog = (message: string): void => {
-            pushLog({ job, level: "info", stage: "ir.derive", message });
-          };
-
-          if (runtime.irCacheEnabled) {
-            const contentHash = computeContentHash(figmaFetch.file);
-            const optionsHash = computeOptionsHash(irDerivationOptions);
-
-            const cached = await loadCachedIr({
-              cacheDir: irCacheDir,
-              contentHash,
-              optionsHash,
-              ttlMs: runtime.irCacheTtlMs,
-              onLog: irCacheLog
-            });
-
-            if (cached) {
-              await writeFile(designIrFile, `${JSON.stringify(cached, null, 2)}\n`, "utf8");
-              pushLog({
-                job,
-                level: "info",
-                stage: "ir.derive",
-                message:
-                  `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens ` +
-                  `(brandTheme=${resolvedBrandTheme}).`
-              });
-              emitIrMetricDiagnostics({ source: cached });
-              return cached;
-            }
-          }
-
-          let derived: ReturnType<typeof figmaToDesignIrWithOptions>;
-          try {
-            derived = figmaToDesignIrWithOptions(figmaFetch.file, {
-              ...irDerivationOptions,
-              sourceMetrics: {
-                fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
-                degradedGeometryNodes: figmaFetch.diagnostics.degradedGeometryNodes
-              },
-              ...(hybridMcpEnrichment ? { mcpEnrichment: hybridMcpEnrichment } : {})
-            });
-          } catch (error) {
-            if (error instanceof Error && error.message.includes("No top-level frames/components found in Figma file")) {
-              throw createPipelineError({
-                code: "E_IR_EMPTY",
-                stage: "ir.derive",
-                message: "No screen found in IR.",
-                cause: error,
-                diagnostics: buildIrEmptyDiagnostics()
-              });
-            }
-            throw error;
-          }
-          if (!Array.isArray(derived.screens) || derived.screens.length === 0) {
-            throw createPipelineError({
-              code: "E_IR_EMPTY",
-              stage: "ir.derive",
-              message: "No screen found in IR.",
-              diagnostics: buildIrEmptyDiagnostics()
-            });
-          }
-          await writeFile(designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
-
-          if (runtime.irCacheEnabled) {
-            const contentHash = computeContentHash(figmaFetch.file);
-            const optionsHash = computeOptionsHash(irDerivationOptions);
-            await saveCachedIr({
-              cacheDir: irCacheDir,
-              contentHash,
-              optionsHash,
-              ttlMs: runtime.irCacheTtlMs,
-              ir: derived,
-              onLog: irCacheLog
-            });
-          }
-
-          emitIrMetricDiagnostics({ source: derived });
-
-          pushLog({
-            job,
-            level: "info",
-            stage: "ir.derive",
-            message:
-              `Derived Design IR with ${derived.screens.length} screens (brandTheme=${resolvedBrandTheme}, ` +
-              `skippedHidden=${derived.metrics?.skippedHidden ?? 0}, skippedPlaceholders=${derived.metrics?.skippedPlaceholders ?? 0}, ` +
-              `truncatedScreens=${derived.metrics?.truncatedScreens.length ?? 0}, ` +
-              `depthTruncatedScreens=${derived.metrics?.depthTruncatedScreens?.length ?? 0}).`
-          });
-          return derived;
-        }
-      });
-
-      await runStage({
-        job,
-        stage: "template.prepare",
-        action: async () => {
-          const templateExists = await pathExists(TEMPLATE_ROOT);
-          if (!templateExists) {
-            throw createPipelineError({
-              code: "E_TEMPLATE_MISSING",
-              stage: "template.prepare",
-              message: `Template not found at ${TEMPLATE_ROOT}`
-            });
-          }
-
-          await rm(generatedProjectDir, { recursive: true, force: true });
-          await copyDir({
-            sourceDir: TEMPLATE_ROOT,
-            targetDir: generatedProjectDir,
-            filter: TEMPLATE_COPY_FILTER
-          });
-        }
-      });
-
-      const generationSummary = await runStage({
-        job,
-        stage: "codegen.generate",
-        action: async () => {
-          if (generationLocaleResolution.warningMessage) {
-            pushLog({
-              job,
-              level: "warn",
-              stage: "codegen.generate",
-              message: generationLocaleResolution.warningMessage
-            });
-          }
-          let imageAssetMap: Record<string, string> = {};
-          if (!runtime.exportImages) {
-            pushLog({
-              job,
-              level: "info",
-              stage: "codegen.generate",
-              message: "Image asset export disabled by runtime configuration."
-            });
-          } else if (resolvedFigmaSourceMode === "local_json") {
-            pushLog({
-              job,
-              level: "info",
-              stage: "codegen.generate",
-              message: "Image asset export skipped for figmaSourceMode=local_json."
-            });
-          } else {
-            const fileKey = input.figmaFileKey?.trim();
-            const accessToken = input.figmaAccessToken?.trim();
-            if (!fileKey || !accessToken) {
-              pushLog({
-                job,
-                level: "warn",
-                stage: "codegen.generate",
-                message: "Image asset export skipped because figmaFileKey/figmaAccessToken are missing."
-              });
-            } else {
-              try {
-                const exportResult = await exportImageAssetsFromFigma({
-                  fileKey,
-                  accessToken,
-                  ir,
-                  generatedProjectDir,
-                  fetchImpl: fetchWithCancellation,
-                  timeoutMs: runtime.figmaTimeoutMs,
-                  maxRetries: runtime.figmaMaxRetries,
-                  onLog: (message) => {
-                    pushLog({
-                      job,
-                      level: message.toLowerCase().includes("warning") ? "warn" : "info",
-                      stage: "codegen.generate",
-                      message
-                    });
-                  }
-                });
-                imageAssetMap = exportResult.imageAssetMap;
-              } catch (error) {
-                pushLog({
-                  job,
-                  level: "warn",
-                  stage: "codegen.generate",
-                  message: `Image asset export failed; falling back to placeholders: ${getErrorMessage(error)}`
-                });
-              }
-            }
-          }
-
-          const streamingOnLog = (message: string): void => {
-            pushLog({
-              job,
-              level: "info",
-              stage: "codegen.generate",
-              message
-            });
-          };
-          const generator = generateArtifactsStreaming({
-            projectDir: generatedProjectDir,
-            ir,
-            iconMapFilePath,
-            designSystemFilePath,
-            imageAssetMap,
-            generationLocale: resolvedGenerationLocale,
-            routerMode: runtime.routerMode,
-            formHandlingMode: resolvedFormHandlingMode,
-            llmModelName: "deterministic",
-            llmCodegenMode: "deterministic",
-            onLog: streamingOnLog
-          });
-          let iterResult = await generator.next();
-          while (!iterResult.done) {
-            const event: StreamingArtifactEvent = iterResult.value;
-            if (event.type === "progress") {
-              pushLog({
-                job,
-                level: "info",
-                stage: "codegen.generate",
-                message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
-              });
-            }
-            iterResult = await generator.next();
-          }
-          return iterResult.value;
-        }
-      });
-
-      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
-        job.artifacts.generationMetricsFile = path.join(generatedProjectDir, "generation-metrics.json");
-      }
-
-      // Build component manifest mapping IR nodes to generated code ranges
-      try {
-        const manifest = await buildComponentManifest({
-          projectDir: generatedProjectDir,
-          screens: ir.screens
-        });
-        const manifestPath = path.join(generatedProjectDir, "component-manifest.json");
-        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-        job.artifacts.componentManifestFile = manifestPath;
-        pushLog({
-          job,
-          level: "info",
-          stage: "codegen.generate",
-          message: `Component manifest written with ${manifest.screens.length} screens.`
-        });
-      } catch (error) {
-        pushLog({
-          job,
-          level: "warn",
-          stage: "codegen.generate",
-          message: `Component manifest generation failed: ${getErrorMessage(error)}`
-        });
-      }
-
-      // Generation diff: compare current output with previous run for same board key
-      try {
-        const boardKeySeed = input.figmaFileKey?.trim() || input.figmaJsonPath?.trim() || "local-json";
-        const boardKey = resolveBoardKey(boardKeySeed);
-        const diffReport = await runGenerationDiff({
-          generatedProjectDir,
+        input,
+        runtime,
+        resolvedPaths,
+        resolvedWorkspaceRoot,
+        resolveBaseUrl,
+        jobAbortController,
+        fetchWithCancellation,
+        paths: {
           jobDir,
-          outputRoot: resolvedPaths.outputRoot,
-          boardKey,
-          jobId: job.jobId
-        });
-        job.generationDiff = diffReport;
-        job.artifacts.generationDiffFile = path.join(jobDir, "generation-diff.json");
-        pushLog({
-          job,
-          level: "info",
-          stage: "codegen.generate",
-          message: `Generation diff: ${diffReport.summary}`
-        });
-      } catch (error) {
-        pushLog({
-          job,
-          level: "warn",
-          stage: "codegen.generate",
-          message: `Generation diff computation failed: ${getErrorMessage(error)}`
-        });
-      }
+          generatedProjectDir,
+          figmaRawJsonFile,
+          figmaJsonFile,
+          designIrFile,
+          stageTimingsFile,
+          reproDir,
+          iconMapFilePath,
+          designSystemFilePath,
+          irCacheDir,
+          templateRoot: TEMPLATE_ROOT,
+          templateCopyFilter: TEMPLATE_COPY_FILTER
+        },
+        artifactStore,
+        resolvedBrandTheme,
+        resolvedFigmaSourceMode,
+        resolvedFormHandlingMode,
+        generationLocaleResolution,
+        resolvedGenerationLocale,
+        appendDiagnostics,
+        getCollectedDiagnostics: () => collectedDiagnostics,
+        syncPublicJobProjection: async () => {
+          await syncPublicJobProjection({ job, artifactStore });
+        },
+        ...(figmaFileKeyForDiagnostics ? { figmaFileKeyForDiagnostics } : {})
+      };
 
-      await runStage({
-        job,
-        stage: "validate.project",
-        action: async () => {
-          await runProjectValidation({
-            generatedProjectDir,
-            enableLintAutofix: isLintAutofixEnabled(),
-            enablePerfValidation: isPerfValidationEnabled(),
-            enableUiValidation: runtime.enableUiValidation,
-            enableUnitTestValidation: runtime.enableUnitTestValidation,
-            commandTimeoutMs: runtime.commandTimeoutMs,
-            installPreferOffline: runtime.installPreferOffline,
-            skipInstall: runtime.skipInstall,
-            seedNodeModulesDir: path.join(TEMPLATE_ROOT, "node_modules"),
-            abortSignal: jobAbortController.signal,
-            onLog: (message) => {
-              pushLog({
-                job,
-                level: "info",
-                stage: "validate.project",
-                message
-              });
-            }
-          });
-        }
+      const orchestrator = new PipelineOrchestrator({
+        toPipelineError,
+        isAbortLikeError
       });
-
-      if (!runtime.previewEnabled) {
-        markStageSkipped({
-          job,
-          stage: "repro.export",
-          message: "Preview disabled by runtime configuration."
-        });
-      } else {
-        await runStage({
-          job,
-          stage: "repro.export",
-          action: async () => {
-            await rm(reproDir, { recursive: true, force: true });
-            await copyDir({
-              sourceDir: path.join(generatedProjectDir, "dist"),
-              targetDir: reproDir
-            });
-          }
-        });
-      }
-
-      if (!input.enableGitPr) {
-        job.gitPr = {
-          status: "skipped",
-          reason: "enableGitPr=false"
-        };
-        markStageSkipped({
-          job,
-          stage: "git.pr",
-          message: "Git/PR flow disabled by request."
-        });
-      } else {
-        const gitResult = await runStage({
-          job,
-          stage: "git.pr",
-          action: async () => {
-            return await runGitPrFlow({
-              input,
-              job,
-              generatedProjectDir,
-              jobDir,
-              commandTimeoutMs: runtime.commandTimeoutMs,
-              ...(job.generationDiff ? { generationDiff: job.generationDiff } : {}),
-              onLog: (message) => {
-                pushLog({
-                  job,
-                  level: "info",
-                  stage: "git.pr",
-                  message
-                });
-              }
-            });
-          }
-        });
-
-        job.gitPr = {
-          status: "executed",
-          branchName: gitResult.branchName,
-          scopePath: gitResult.scopePath,
-          changedFiles: gitResult.changedFiles
-        };
-        if (gitResult.prUrl) {
-          job.gitPr.prUrl = gitResult.prUrl;
-        }
-      }
+      await orchestrator.execute({
+        context,
+        plan: buildSubmissionPipelinePlan()
+      });
 
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
       await persistStageTimings();
+      const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushLog({
         job,
         level: "info",
-        message: `Job completed. Generated output at ${generatedProjectDir} (${generationSummary.generatedPaths.length} artifacts).`
+        message:
+          `Job completed. Generated output at ${generatedProjectDir} ` +
+          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
       });
     } catch (error) {
-      if (isJobCancellationError(error)) {
+      if (isPipelineCancellationError(error)) {
         job.status = "canceled";
         job.finishedAt = nowIso();
         job.currentStage = error.stage;
@@ -1986,14 +711,19 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const resolvedFormHandlingMode = sourceRecord.request.formHandlingMode;
     const resolvedGenerationLocale = sourceRecord.request.generationLocale;
+    const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
+    const resolvedBrandTheme = sourceRecord.request.brandTheme;
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
+    const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
+    const figmaJsonFile = path.join(jobDir, "figma.json");
     const designIrFile = path.join(jobDir, "design-ir.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
     const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
     const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
+    const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -2032,246 +762,110 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await writeFile(stageTimingsFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     };
 
+    const appendDiagnostics = ({
+      stage,
+      diagnostics
+    }: {
+      stage: WorkspaceJobStageName;
+      diagnostics: PipelineDiagnosticInput[];
+    }): void => {
+      if (diagnostics.length === 0) {
+        return;
+      }
+      const normalized = createPipelineError({
+        code: "E_PIPELINE_DIAGNOSTICS_INTERNAL",
+        stage,
+        message: "Collected pipeline diagnostics.",
+        diagnostics
+      }).diagnostics;
+      collectedDiagnostics = mergePipelineDiagnostics({
+        ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
+        ...(normalized ? { second: normalized } : {})
+      });
+    };
+
     try {
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      // Skip figma.source — load IR from source job
-      markStageSkipped({
-        job,
-        stage: "figma.source",
-        message: `Reusing source from job '${regenInput.sourceJobId}'.`
-      });
-
-      // Load and apply overrides to source IR
-      const ir = await runStage({
-        job,
+      const artifactStore = new StageArtifactStore({ jobDir });
+      await artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.regenerationSourceIr,
         stage: "ir.derive",
-        action: async () => {
-          const sourceIrPath = sourceRecord.artifacts.designIrFile;
-          if (!sourceIrPath) {
-            throw createPipelineError({
-              code: "E_REGEN_SOURCE_IR_MISSING",
-              stage: "ir.derive",
-              message: `Source job '${regenInput.sourceJobId}' has no Design IR artifact.`
-            });
-          }
-
-          let rawContent: string;
-          try {
-            rawContent = await readFile(sourceIrPath, "utf8");
-          } catch {
-            throw createPipelineError({
-              code: "E_REGEN_SOURCE_IR_READ",
-              stage: "ir.derive",
-              message: `Could not read Design IR from source job '${regenInput.sourceJobId}'.`
-            });
-          }
-
-          let baseIr: DesignIR;
-          try {
-            baseIr = JSON.parse(rawContent) as DesignIR;
-          } catch {
-            throw createPipelineError({
-              code: "E_REGEN_SOURCE_IR_PARSE",
-              stage: "ir.derive",
-              message: `Could not parse Design IR from source job '${regenInput.sourceJobId}'.`
-            });
-          }
-
-          const overrideResult = applyIrOverrides({
-            ir: baseIr,
-            overrides: regenInput.overrides
-          });
-
-          await writeFile(designIrFile, `${JSON.stringify(overrideResult.ir, null, 2)}\n`, "utf8");
-
-          pushLog({
-            job,
-            level: "info",
-            stage: "ir.derive",
-            message:
-              `Applied ${overrideResult.appliedCount} override(s) to source IR ` +
-              `(${overrideResult.skippedCount} skipped, ${overrideResult.ir.screens.length} screens).`
-          });
-
-          return overrideResult.ir;
+        value: {
+          sourceJobId: regenInput.sourceJobId,
+          sourceIrFile: sourceRecord.artifacts.designIrFile
         }
       });
-
-      await runStage({
+      await artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.regenerationOverrides,
+        stage: "ir.derive",
+        value: regenInput.overrides
+      });
+      const context: PipelineExecutionContext = {
+        mode: "regeneration",
         job,
-        stage: "template.prepare",
-        action: async () => {
-          const templateExists = await pathExists(TEMPLATE_ROOT);
-          if (!templateExists) {
-            throw createPipelineError({
-              code: "E_TEMPLATE_MISSING",
-              stage: "template.prepare",
-              message: `Template not found at ${TEMPLATE_ROOT}`
-            });
-          }
-          await rm(generatedProjectDir, { recursive: true, force: true });
-          await copyDir({
-            sourceDir: TEMPLATE_ROOT,
-            targetDir: generatedProjectDir,
-            filter: TEMPLATE_COPY_FILTER
-          });
-        }
-      });
-
-      const generationSummary = await runStage({
-        job,
-        stage: "codegen.generate",
-        action: async () => {
-          const streamingOnLog = (message: string): void => {
-            pushLog({
-              job,
-              level: "info",
-              stage: "codegen.generate",
-              message
-            });
-          };
-          const generator = generateArtifactsStreaming({
-            projectDir: generatedProjectDir,
-            ir,
-            iconMapFilePath,
-            designSystemFilePath,
-            generationLocale: resolvedGenerationLocale,
-            routerMode: runtime.routerMode,
-            formHandlingMode: resolvedFormHandlingMode,
-            llmModelName: "deterministic",
-            llmCodegenMode: "deterministic",
-            onLog: streamingOnLog
-          });
-          let iterResult = await generator.next();
-          while (!iterResult.done) {
-            const event: StreamingArtifactEvent = iterResult.value;
-            if (event.type === "progress") {
-              pushLog({
-                job,
-                level: "info",
-                stage: "codegen.generate",
-                message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
-              });
-            }
-            iterResult = await generator.next();
-          }
-          return iterResult.value;
-        }
-      });
-
-      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
-        job.artifacts.generationMetricsFile = path.join(generatedProjectDir, "generation-metrics.json");
-      }
-
-      try {
-        const manifest = await buildComponentManifest({
-          projectDir: generatedProjectDir,
-          screens: ir.screens
-        });
-        const manifestPath = path.join(generatedProjectDir, "component-manifest.json");
-        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-        job.artifacts.componentManifestFile = manifestPath;
-      } catch (error) {
-        pushLog({
-          job,
-          level: "warn",
-          stage: "codegen.generate",
-          message: `Component manifest generation failed: ${getErrorMessage(error)}`
-        });
-      }
-
-      try {
-        const boardKeySeed = sourceRecord.request.figmaFileKey ?? "regeneration";
-        const boardKey = resolveBoardKey(boardKeySeed);
-        const diffReport = await runGenerationDiff({
-          generatedProjectDir,
+        regenerationInput: regenInput,
+        sourceJob: sourceRecord,
+        runtime,
+        resolvedPaths,
+        resolvedWorkspaceRoot,
+        resolveBaseUrl,
+        jobAbortController,
+        fetchWithCancellation: runtime.fetchImpl,
+        paths: {
           jobDir,
-          outputRoot: resolvedPaths.outputRoot,
-          boardKey,
-          jobId: job.jobId
-        });
-        job.generationDiff = diffReport;
-        job.artifacts.generationDiffFile = path.join(jobDir, "generation-diff.json");
-      } catch (error) {
-        pushLog({
-          job,
-          level: "warn",
-          stage: "codegen.generate",
-          message: `Generation diff computation failed: ${getErrorMessage(error)}`
-        });
-      }
-
-      await runStage({
-        job,
-        stage: "validate.project",
-        action: async () => {
-          await runProjectValidation({
-            generatedProjectDir,
-            enableLintAutofix: isLintAutofixEnabled(),
-            enablePerfValidation: isPerfValidationEnabled(),
-            enableUiValidation: runtime.enableUiValidation,
-            enableUnitTestValidation: runtime.enableUnitTestValidation,
-            commandTimeoutMs: runtime.commandTimeoutMs,
-            installPreferOffline: runtime.installPreferOffline,
-            skipInstall: runtime.skipInstall,
-            seedNodeModulesDir: path.join(TEMPLATE_ROOT, "node_modules"),
-            abortSignal: jobAbortController.signal,
-            onLog: (message) => {
-              pushLog({
-                job,
-                level: "info",
-                stage: "validate.project",
-                message
-              });
-            }
-          });
-        }
-      });
-
-      if (!runtime.previewEnabled) {
-        markStageSkipped({
-          job,
-          stage: "repro.export",
-          message: "Preview disabled by runtime configuration."
-        });
-      } else {
-        await runStage({
-          job,
-          stage: "repro.export",
-          action: async () => {
-            await rm(reproDir, { recursive: true, force: true });
-            await copyDir({
-              sourceDir: path.join(generatedProjectDir, "dist"),
-              targetDir: reproDir
-            });
-          }
-        });
-      }
-
-      // git.pr always skipped for regeneration jobs (per issue #455 scope)
-      job.gitPr = {
-        status: "skipped",
-        reason: "Git/PR flow not applicable for regeneration jobs."
+          generatedProjectDir,
+          figmaRawJsonFile,
+          figmaJsonFile,
+          designIrFile,
+          stageTimingsFile,
+          reproDir,
+          iconMapFilePath,
+          designSystemFilePath,
+          irCacheDir,
+          templateRoot: TEMPLATE_ROOT,
+          templateCopyFilter: TEMPLATE_COPY_FILTER
+        },
+        artifactStore,
+        resolvedBrandTheme,
+        resolvedFigmaSourceMode,
+        resolvedFormHandlingMode,
+        generationLocaleResolution: { locale: resolvedGenerationLocale },
+        resolvedGenerationLocale,
+        appendDiagnostics,
+        getCollectedDiagnostics: () => collectedDiagnostics,
+        syncPublicJobProjection: async () => {
+          await syncPublicJobProjection({ job, artifactStore });
+        },
+        ...(resolvedFigmaSourceMode === "local_json" || !sourceRecord.request.figmaFileKey?.trim()
+          ? {}
+          : { figmaFileKeyForDiagnostics: sourceRecord.request.figmaFileKey.trim() })
       };
-      markStageSkipped({
-        job,
-        stage: "git.pr",
-        message: "Git/PR flow not applicable for regeneration jobs."
+
+      const orchestrator = new PipelineOrchestrator({
+        toPipelineError,
+        isAbortLikeError
+      });
+      await orchestrator.execute({
+        context,
+        plan: buildRegenerationPipelinePlan()
       });
 
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
       await persistStageTimings();
+      const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushLog({
         job,
         level: "info",
-        message: `Regeneration job completed. Generated output at ${generatedProjectDir} (${generationSummary.generatedPaths.length} artifacts).`
+        message:
+          `Regeneration job completed. Generated output at ${generatedProjectDir} ` +
+          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
       });
     } catch (error) {
-      if (isJobCancellationError(error)) {
+      if (isPipelineCancellationError(error)) {
         job.status = "canceled";
         job.finishedAt = nowIso();
         job.currentStage = error.stage;
@@ -2776,7 +1370,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const prResult = await runGitPrFlow({
       input,
-      job,
+      jobId,
       generatedProjectDir,
       jobDir,
       onLog: (message) => {

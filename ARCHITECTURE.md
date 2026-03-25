@@ -19,14 +19,24 @@ It provides deterministic HTTP behavior for:
 `workspace-dev` runs as a single Node.js process with:
 
 - local in-process job engine (no Redis, no Postgres, no external worker)
-- Figma source ingest via REST fetch with retry + timeout or local JSON fixture load (`figma.source`)
-- deterministic IR derivation (`ir.derive`)
-- template bootstrap from bundled React+TypeScript+MUI v7 template (`template.prepare`)
-- deterministic local code generation (`codegen.generate`)
-- project validation (`validate.project`: install when needed, best-effort `lint --fix`, lint, typecheck, build, optional generated-project `test`, optional `validate:ui`, optional `perf:assert`)
-- local repro export (`repro.export`)
-- optional git/pr stage (`git.pr`) when enabled explicitly
+- pipeline kernel (`src/job-engine/pipeline/`) with:
+  - `PipelineOrchestrator` for stage ordering, skip logic, cancellation, status/log updates, and pipeline error mapping
+  - `StageArtifactStore` for filesystem-backed stage artifact references under each job directory
+  - public job projection that syncs artifact-backed outputs back into compatibility fields such as `artifacts.*`, `generationDiff`, and `gitPr`
+- seven internal stage services (`src/job-engine/services/`):
+  - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
+  - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
+  - `template.prepare` (template reset/copy)
+  - `codegen.generate` (deterministic generation stream, optional image export, manifest/diff)
+  - `validate.project` (validation gate and feedback loop)
+  - `repro.export` (generated `dist` export)
+  - `git.pr` (optional git/pr automation)
 - integrated preview file serving from generated artifacts
+
+Execution plans:
+
+- `submission`: all seven stages in canonical order
+- `regeneration`: same order with `figma.source` and `git.pr` skipped by plan rules; `ir.derive` reads seeded regeneration artifacts (`regeneration.source_ir`, `regeneration.overrides`) from the current job store
 
 ## Hard mode lock
 
@@ -44,6 +54,7 @@ Default output root is `.workspace-dev` in the current project.
 - `.workspace-dev/jobs/<jobId>/figma.json`
 - `.workspace-dev/jobs/<jobId>/design-ir.json`
 - `.workspace-dev/jobs/<jobId>/generated-app/*`
+- `.workspace-dev/jobs/<jobId>/.stage-store/*` (artifact reference index and per-key refs)
 - `.workspace-dev/repros/<jobId>/*`
 
 ## Security boundaries

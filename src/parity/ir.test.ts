@@ -4112,6 +4112,67 @@ test("deriveTokensForTesting boosts style-tagged brand colors", () => {
   assert.equal(tokens.palette.primary, "#0b84f3");
 });
 
+test("deriveTokensForTesting avoids selecting success-like green as secondary when a stronger interactive accent exists", () => {
+  const tokens = deriveTokensForTesting({
+    name: "Secondary Accent Preference Demo",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Screen",
+              fills: [{ type: "SOLID", color: toFigmaColor("#f7f8fb") }],
+              absoluteBoundingBox: { x: 0, y: 0, width: 1280, height: 900 },
+              children: [
+                {
+                  id: "heading",
+                  type: "TEXT",
+                  name: "Headline",
+                  characters: "Bauen oder kaufen",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1f2937") }],
+                  style: { fontSize: 32, fontWeight: 700, fontFamily: "Inter" },
+                  absoluteBoundingBox: { x: 40, y: 40, width: 340, height: 38 }
+                },
+                {
+                  id: "primary-button",
+                  type: "FRAME",
+                  name: "Primary Button",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#d4001a") }],
+                  absoluteBoundingBox: { x: 40, y: 760, width: 260, height: 56 }
+                },
+                {
+                  id: "green-promo",
+                  type: "RECTANGLE",
+                  name: "Promo Tile",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#2e7d32") }],
+                  absoluteBoundingBox: { x: 40, y: 140, width: 320, height: 190 }
+                },
+                {
+                  id: "blue-accent",
+                  type: "FRAME",
+                  name: "Secondary CTA",
+                  fills: [{ type: "SOLID", color: toFigmaColor("#1976d2") }],
+                  absoluteBoundingBox: { x: 390, y: 140, width: 280, height: 120 }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(tokens.palette.primary, "#d4001a");
+  assert.equal(tokens.palette.secondary, "#1976d2");
+  assert.notEqual(tokens.palette.secondary, "#2e7d32");
+});
+
 test("deriveTokensForTesting derives semantic palette colors from explicit figma signals", () => {
   const tokens = deriveTokensForTesting({
     name: "Semantic Demo",
