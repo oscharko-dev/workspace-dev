@@ -11,7 +11,7 @@ import {
   Typography
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
+import { HashRouter, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import RouteSkeleton from "./components/RouteSkeleton";
 import HomeRoute from "./routes/HomeRoute";
@@ -86,6 +86,8 @@ function TemplateNavigation() {
 }
 
 function AppShell() {
+  const location = useLocation();
+
   return (
     <Box
       sx={{
@@ -159,7 +161,7 @@ function AppShell() {
         </Paper>
 
         <Box sx={{ mt: 4 }}>
-          <Suspense fallback={routeFallback}>
+          <Suspense fallback={routeFallback} key={location.pathname}>
             <Routes>
               <Route
                 element={
