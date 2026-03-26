@@ -1,0 +1,46 @@
+name: Bug Report
+description: Report a reproducible defect in workspace-dev.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide a minimal, reproducible report. Do not paste secrets, tokens, or customer data.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem and the expected outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: List the exact steps, commands, inputs, and configuration needed to reproduce the issue.
+      placeholder: |
+        1. Run `npx workspace-dev start`
+        2. Submit ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Node version, package version, OS, install method, and Figma source mode.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Paste sanitized logs, stack traces, or screenshots. Redact secrets before submitting.
+    validations:
+      required: false
