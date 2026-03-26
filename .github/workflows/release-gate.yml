@@ -143,7 +143,7 @@ jobs:
         run: pnpm run sbom:spdx:template
 
       - name: Upload flaky retry artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-flaky-retry-node-${{ matrix.node-version }}
@@ -151,7 +151,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-sbom-node-${{ matrix.node-version }}
@@ -159,7 +159,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload Playwright diagnostics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: workspace-dev-playwright-node-${{ matrix.node-version }}
@@ -208,7 +208,7 @@ jobs:
         run: node scripts/print-perf-report-summary.mjs template/react-mui-app/artifacts/performance/perf-assert-report.json
 
       - name: Upload web performance artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-performance-web
