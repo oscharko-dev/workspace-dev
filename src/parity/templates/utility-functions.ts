@@ -32,7 +32,21 @@ import type {
   ResolvedFormHandlingMode
 } from "../generator-core.js";
 
-export const literal = (value: string): string => JSON.stringify(value);
+const UNSAFE_JAVASCRIPT_LITERAL_ESCAPES = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "&": "\\u0026",
+  "/": "\\u002F",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029"
+} as const;
+
+export const literal = (value: string): string => {
+  const jsonLiteral = JSON.stringify(value);
+  return jsonLiteral.replace(/[<>&/\u2028\u2029]/g, (character) => {
+    return UNSAFE_JAVASCRIPT_LITERAL_ESCAPES[character as keyof typeof UNSAFE_JAVASCRIPT_LITERAL_ESCAPES];
+  });
+};
 
 export const toPascalCase = (value: string): string => {
   return value.replace(/(?:^|[^a-zA-Z0-9])([a-zA-Z0-9])/g, (_match, char: string) => char.toUpperCase());
@@ -1404,4 +1418,3 @@ export const toAlertSeverityFromName = (name: string): "error" | "warning" | "in
   }
   return "info";
 };
-

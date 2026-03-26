@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import { createElement } from "react";
 import { InspectOverlay } from "./InspectOverlay";
 
-const PREVIEW_ORIGIN = "http://127.0.0.1:19831";
+const PREVIEW_ORIGIN = "https://127.0.0.1:19831";
 const PREVIEW_URL = `${PREVIEW_ORIGIN}/workspace/repros/job-1/`;
 
 describe("InspectOverlay", () => {

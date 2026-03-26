@@ -22,14 +22,6 @@ function writeFile(name, content) {
 console.log("Fixing generator-render.ts...");
 let render = readFile("generator-render.ts");
 
-// Fix imports: remove unused, add missing
-render = render.replace(
-  `import { readFile, mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";`,
-  `import { readFile, mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";`
-);
-
 // Remove unused imports
 render = render.replace(`import { ensureTsxName } from "./path-utils.js";\n`, '');
 render = render.replace(`import type { ScreenArtifactIdentity } from "./generator-artifacts.js";\n`, '');
@@ -198,23 +190,6 @@ forms = forms.replace(
   collectTextNodes,
   collectVectorPaths
 } from "./generator-templates.js";`
-);
-
-forms = forms.replace(
-  `import {
-  hasSubtreeName,
-  collectSubtreeNames,
-  collectIconNodes,
-  toStateKey,
-  findFirstByName
-} from "./generator-render.js";`,
-  `import {
-  hasSubtreeName,
-  collectSubtreeNames,
-  collectIconNodes,
-  toStateKey,
-  findFirstByName
-} from "./generator-render.js";`
 );
 
 // Remove unused VirtualParent import

@@ -4,15 +4,19 @@ on:
   pull_request:
     branches: [dev-gate]
 
+permissions: {}
+
 jobs:
   allow-only-dev-to-dev-gate:
     runs-on: ubuntu-latest
+    env:
+      SOURCE_BRANCH: ${{ github.head_ref }}
     steps:
       - name: Enforce dev as the only source branch for dev-gate
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ github.head_ref }}" != "dev" ]]; then
-            echo "Only branch 'dev' may merge into 'dev-gate'. Current source branch: '${{ github.head_ref }}'." >&2
+          if [[ "${SOURCE_BRANCH}" != "dev" ]]; then
+            echo "Only branch 'dev' may merge into 'dev-gate'. Current source branch: '${SOURCE_BRANCH}'." >&2
             exit 1
           fi

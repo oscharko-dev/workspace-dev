@@ -46,8 +46,14 @@ const createLocalFigmaPayload = () => ({
 
 const createFakeFigmaFetch = (): typeof fetch => {
   return async (input) => {
-    const url = typeof input === "string" ? input : input.toString();
-    if (!url.includes("https://api.figma.com/v1/files/")) {
+    const rawUrl = input instanceof URL ? input.href : typeof input === "string" ? input : input.url;
+    const requestUrl = new URL(rawUrl);
+    const isExpectedFigmaRequest =
+      requestUrl.protocol === "https:" &&
+      requestUrl.hostname === "api.figma.com" &&
+      requestUrl.pathname.startsWith("/v1/files/");
+
+    if (!isExpectedFigmaRequest) {
       return new Response(JSON.stringify({ error: "unexpected-url" }), {
         status: 404,
         headers: {

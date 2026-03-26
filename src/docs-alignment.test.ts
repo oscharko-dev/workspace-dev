@@ -9,6 +9,10 @@ import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, getWorkspaceDefa
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 
+const escapeRegExp = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
 const readRepoFile = async (relativePath: string): Promise<string> => {
   return await readFile(path.resolve(packageRoot, relativePath), "utf8");
 };
@@ -23,11 +27,11 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const defaults = getWorkspaceDefaults();
   const figmaModeLock = `figmaSourceMode=${getAllowedFigmaSourceModes().join("|")}`;
   const codegenModeLock = `llmCodegenMode=${getAllowedLlmCodegenModes().join("|")}`;
-  const escapedContractVersion = CONTRACT_VERSION.replaceAll(".", "\\.");
+  const escapedContractVersion = escapeRegExp(CONTRACT_VERSION);
 
   for (const document of docsToCheck) {
-    assert.match(document, new RegExp(figmaModeLock.replace("|", "\\|")));
-    assert.match(document, new RegExp(codegenModeLock.replace("|", "\\|")));
+    assert.match(document, new RegExp(escapeRegExp(figmaModeLock)));
+    assert.match(document, new RegExp(escapeRegExp(codegenModeLock)));
   }
 
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
