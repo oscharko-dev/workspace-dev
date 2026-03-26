@@ -54,7 +54,11 @@ export function sendText({
   allowFrameEmbedding?: boolean;
 }): void {
   response.statusCode = statusCode;
-  applySecurityHeaders({ response, cacheControl, allowFrameEmbedding });
+  applySecurityHeaders({
+    response,
+    ...(cacheControl === undefined ? {} : { cacheControl }),
+    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding })
+  });
   response.setHeader("content-type", contentType);
   response.end(payload);
 }
@@ -75,7 +79,11 @@ export function sendBuffer({
   allowFrameEmbedding?: boolean;
 }): void {
   response.statusCode = statusCode;
-  applySecurityHeaders({ response, cacheControl, allowFrameEmbedding });
+  applySecurityHeaders({
+    response,
+    ...(cacheControl === undefined ? {} : { cacheControl }),
+    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding })
+  });
   response.setHeader("content-type", contentType);
   response.end(payload);
 }
