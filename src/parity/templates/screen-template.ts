@@ -549,49 +549,17 @@ export const renderSemanticAccordion = (
   const detailsRoot = findFirstByName(element, "collapsewrapper") ?? element.children?.[1] ?? element;
   const detailsContainer = detailsRoot.children?.length === 1 ? (detailsRoot.children[0] ?? detailsRoot) : detailsRoot;
 
-  const summaryChildren = sortChildren(summaryContent.children ?? [], summaryContent.layoutMode ?? "NONE", {
-    generationLocale: context.generationLocale
+  const renderedSummary = renderChildrenIntoParent({
+    element: summaryContent,
+    depth: depth + 3,
+    context
   });
-  const renderedSummary = summaryChildren
-    .map((child) =>
-      renderElement(
-        child,
-        depth + 3,
-        {
-          x: summaryContent.x,
-          y: summaryContent.y,
-          width: summaryContent.width,
-          height: summaryContent.height,
-          name: summaryContent.name,
-          layoutMode: summaryContent.layoutMode ?? "NONE"
-        },
-        context
-      )
-    )
-    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
-    .join("\n");
 
-  const detailChildren = sortChildren(detailsContainer.children ?? [], detailsContainer.layoutMode ?? "NONE", {
-    generationLocale: context.generationLocale
+  const renderedDetails = renderChildrenIntoParent({
+    element: detailsContainer,
+    depth: depth + 2,
+    context
   });
-  const renderedDetails = detailChildren
-    .map((child) =>
-      renderElement(
-        child,
-        depth + 2,
-        {
-          x: detailsContainer.x,
-          y: detailsContainer.y,
-          width: detailsContainer.width,
-          height: detailsContainer.height,
-          name: detailsContainer.name,
-          layoutMode: detailsContainer.layoutMode ?? "NONE"
-        },
-        context
-      )
-    )
-    .filter((chunk): chunk is string => Boolean(chunk && chunk.trim()))
-    .join("\n");
 
   const summaryFallbackLabel = firstText(summaryContent) ?? firstText(element) ?? "Accordion";
   const expandIconNode = findFirstByName(summaryRoot, "expandiconwrapper") ?? findFirstByName(element, "expandiconwrapper");
