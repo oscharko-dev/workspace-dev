@@ -1,6 +1,28 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { MAX_REQUEST_BODY_BYTES } from "./constants.js";
 
+function applySecurityHeaders({
+  response,
+  allowFrameEmbedding,
+  cacheControl
+}: {
+  response: ServerResponse;
+  allowFrameEmbedding?: boolean;
+  cacheControl?: string;
+}): void {
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("referrer-policy", "no-referrer");
+  response.setHeader("cache-control", cacheControl ?? "no-store");
+  if (!allowFrameEmbedding) {
+    response.setHeader("x-frame-options", "SAMEORIGIN");
+    response.setHeader("content-security-policy", "frame-ancestors 'self'");
+    return;
+  }
+
+  response.removeHeader("x-frame-options");
+  response.removeHeader("content-security-policy");
+}
+
 export function sendJson({
   response,
   statusCode,
@@ -11,6 +33,7 @@ export function sendJson({
   payload: unknown;
 }): void {
   response.statusCode = statusCode;
+  applySecurityHeaders({ response });
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload)}\n`);
 }
@@ -20,19 +43,19 @@ export function sendText({
   statusCode,
   contentType,
   payload,
-  cacheControl
+  cacheControl,
+  allowFrameEmbedding
 }: {
   response: ServerResponse;
   statusCode: number;
   contentType: string;
   payload: string;
   cacheControl?: string;
+  allowFrameEmbedding?: boolean;
 }): void {
   response.statusCode = statusCode;
+  applySecurityHeaders({ response, cacheControl, allowFrameEmbedding });
   response.setHeader("content-type", contentType);
-  if (cacheControl) {
-    response.setHeader("cache-control", cacheControl);
-  }
   response.end(payload);
 }
 
@@ -41,19 +64,19 @@ export function sendBuffer({
   statusCode,
   contentType,
   payload,
-  cacheControl
+  cacheControl,
+  allowFrameEmbedding
 }: {
   response: ServerResponse;
   statusCode: number;
   contentType: string;
   payload: Buffer;
   cacheControl?: string;
+  allowFrameEmbedding?: boolean;
 }): void {
   response.statusCode = statusCode;
+  applySecurityHeaders({ response, cacheControl, allowFrameEmbedding });
   response.setHeader("content-type", contentType);
-  if (cacheControl) {
-    response.setHeader("cache-control", cacheControl);
-  }
   response.end(payload);
 }
 
@@ -61,14 +84,17 @@ export async function readJsonBody(
   request: IncomingMessage
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   let body = "";
+  let bodyBytes = 0;
 
   for await (const chunk of request) {
-    const normalizedChunk =
-      typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-    body += normalizedChunk;
-    if (body.length > MAX_REQUEST_BODY_BYTES) {
+    const normalizedChunkBuffer =
+      typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+    bodyBytes += normalizedChunkBuffer.byteLength;
+    if (bodyBytes > MAX_REQUEST_BODY_BYTES) {
       return { ok: false, error: "Request body exceeds 1 MiB size limit." };
     }
+    const normalizedChunk = normalizedChunkBuffer.toString("utf8");
+    body += normalizedChunk;
   }
 
   if (body.trim().length === 0) {

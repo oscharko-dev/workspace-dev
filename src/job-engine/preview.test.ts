@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getContentType, normalizePathPart } from "./preview.js";
+import { getContentType, isWithinRoot, normalizePathPart } from "./preview.js";
 
 test("getContentType resolves known extensions and fallback", () => {
   assert.equal(getContentType("index.html"), "text/html; charset=utf-8");
@@ -18,4 +18,23 @@ test("normalizePathPart removes leading slashes and normalizes separators", () =
   assert.equal(normalizePathPart("/nested/file.txt"), "nested/file.txt");
   assert.equal(normalizePathPart("\\nested\\file.txt"), "nested/file.txt");
   assert.equal(normalizePathPart("plain/file.txt"), "plain/file.txt");
+  assert.equal(normalizePathPart("../escape.txt"), undefined);
+  assert.equal(normalizePathPart("./escape.txt"), undefined);
+});
+
+test("isWithinRoot requires true path containment and not sibling-prefix matches", () => {
+  assert.equal(
+    isWithinRoot({
+      rootPath: "/tmp/repros/safe-job",
+      candidatePath: "/tmp/repros/safe-job/index.html"
+    }),
+    true
+  );
+  assert.equal(
+    isWithinRoot({
+      rootPath: "/tmp/repros/safe-job",
+      candidatePath: "/tmp/repros/safe-job-2/index.html"
+    }),
+    false
+  );
 });

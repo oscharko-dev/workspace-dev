@@ -35,6 +35,8 @@ export {
   getProjectInstance,
   removeProjectInstance,
   removeAllInstances,
-  listProjectInstances
+  listProjectInstances,
+  registerIsolationProcessCleanup,
+  unregisterIsolationProcessCleanup
 } from "./isolation.js";
 export type { ProjectInstance } from "./isolation.js";

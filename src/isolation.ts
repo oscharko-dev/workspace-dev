@@ -5,8 +5,8 @@
  * This ensures true runtime isolation: no shared state, ports, or artefacts
  * between concurrent projects.
  *
- * Cleanup is deterministic: instances are killed and temp directories removed
- * even when the parent process crashes or receives SIGTERM.
+ * Cleanup is deterministic through explicit lifecycle APIs, with optional
+ * process-level cleanup registration for host applications that want it.
  */
 
 import { fork, type ChildProcess } from "node:child_process";
@@ -67,30 +67,65 @@ const toPublicInstance = (instance: ManagedInstance): ProjectInstance => ({
   createdAt: instance.createdAt
 });
 
-// ── Deterministic cleanup on parent exit ────────────────────────────────────
+// ── Optional host-process cleanup registration ──────────────────────────────
 let cleanupRegistered = false;
 
-const registerParentCleanup = (): void => {
-  if (cleanupRegistered) return;
+const killAllActiveInstances = (): void => {
+  for (const [key, inst] of activeInstances) {
+    try {
+      inst.process.kill("SIGTERM");
+    } catch {
+      // Ignore already-dead processes during best-effort cleanup.
+    }
+    activeInstances.delete(key);
+  }
+};
+
+const processCleanupListeners: Partial<Record<"exit" | "SIGINT" | "SIGTERM", () => void>> = {};
+
+export const registerIsolationProcessCleanup = (): void => {
+  if (cleanupRegistered) {
+    return;
+  }
   cleanupRegistered = true;
 
-  const killAll = (): void => {
-    for (const [key, inst] of activeInstances) {
-      try {
-        inst.process.kill("SIGTERM");
-      } catch { /* already dead */ }
-      activeInstances.delete(key);
-    }
+  const handleExit = () => {
+    killAllActiveInstances();
+  };
+  const handleSigint = () => {
+    killAllActiveInstances();
+  };
+  const handleSigterm = () => {
+    killAllActiveInstances();
   };
 
-  process.on("exit", killAll);
-  process.on("SIGINT", () => { killAll(); process.exit(128 + 2); });
-  process.on("SIGTERM", () => { killAll(); process.exit(128 + 15); });
-  process.on("uncaughtException", (err) => {
-    console.error("[isolation] uncaughtException — cleaning up instances", err);
-    killAll();
-    process.exit(1);
-  });
+  processCleanupListeners.exit = handleExit;
+  processCleanupListeners.SIGINT = handleSigint;
+  processCleanupListeners.SIGTERM = handleSigterm;
+
+  process.on("exit", handleExit);
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
+};
+
+export const unregisterIsolationProcessCleanup = (): void => {
+  if (!cleanupRegistered) {
+    return;
+  }
+  cleanupRegistered = false;
+
+  if (processCleanupListeners.exit) {
+    process.off("exit", processCleanupListeners.exit);
+    delete processCleanupListeners.exit;
+  }
+  if (processCleanupListeners.SIGINT) {
+    process.off("SIGINT", processCleanupListeners.SIGINT);
+    delete processCleanupListeners.SIGINT;
+  }
+  if (processCleanupListeners.SIGTERM) {
+    process.off("SIGTERM", processCleanupListeners.SIGTERM);
+    delete processCleanupListeners.SIGTERM;
+  }
 };
 
 interface ResolvedIsolationEntryPoint {
@@ -149,8 +184,6 @@ export const createProjectInstance = async (
   if (activeInstances.has(projectKey)) {
     throw new Error(`Instance for project '${projectKey}' already exists. Remove it first.`);
   }
-
-  registerParentCleanup();
 
   const baseDir = options.workDir ?? process.cwd();
   const workDir = path.join(baseDir, ".figmapipe", projectKey);

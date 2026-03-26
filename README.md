@@ -17,6 +17,12 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 - GitHub release notes and signed evidence assets (SBOM/OpenVEX): https://github.com/oscharko-dev/workspace-dev/releases
 - GitHub Packages is intentionally not used for `workspace-dev` distribution.
 
+## Repository branch flow
+
+- `dev` is the active development branch for feature work and contributor pull requests.
+- `dev-gate` is the protected quality gate branch; only `dev` may merge into `dev-gate`.
+- `main` is the release branch; only `dev-gate` may merge into `main`.
+
 ## Prerequisites
 
 - Node.js `>=22.0.0`
