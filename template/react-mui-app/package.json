@@ -20,7 +20,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.0.0",
-    "@mui/material": "^7.0.0",
+    "@mui/material": "^7.3.9",
     "@mui/system": "^7.0.0",
     "@hookform/resolvers": "^5.2.2",
     "react": "^19.2.0",
