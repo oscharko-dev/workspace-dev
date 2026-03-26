@@ -30,11 +30,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
+      - name: Enforce dependency vulnerability gate
+        run: pnpm audit --audit-level high
+
+      - name: Enforce template dependency vulnerability gate
+        run: pnpm --dir template/react-mui-app audit --audit-level high
+
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
 
       - name: Enforce pipeline/template docs version consistency
         run: pnpm run verify:docs-template-stack
+
+      - name: Verify npm signature attestations
+        run: npm audit signatures
+
+      - name: Verify template npm signature attestations
+        run: pnpm run template:signatures
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -69,6 +84,9 @@ jobs:
       - name: Enforce zero telemetry policy
         run: pnpm run lint:no-telemetry
 
+      - name: Enforce license allowlist
+        run: pnpm run verify:licenses
+
       - name: Build package
         run: pnpm run build
 
@@ -77,6 +95,18 @@ jobs:
 
       - name: Verify package tarball contents
         run: pnpm run verify:pack
+
+      - name: Generate CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx
+
+      - name: Generate template CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx:template
+
+      - name: Generate SPDX SBOM
+        run: pnpm run sbom:spdx
+
+      - name: Generate template SPDX SBOM
+        run: pnpm run sbom:spdx:template
 
   performance-web:
     runs-on: ubuntu-latest

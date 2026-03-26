@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
-const lockfilePath = path.resolve(packageRoot, "pnpm-lock.yaml");
+const lockfilePaths = [
+  path.resolve(packageRoot, "pnpm-lock.yaml"),
+  path.resolve(packageRoot, "template/react-mui-app/pnpm-lock.yaml")
+];
 
 const DEFAULT_ALLOWED_HOSTS = ["registry.npmjs.org"];
 
@@ -36,19 +39,24 @@ const extractHosts = (content) => {
 };
 
 const main = async () => {
-  const content = await readFile(lockfilePath, "utf8");
-  const observedHosts = extractHosts(content);
   const allowedHosts = resolveAllowedHosts();
+  const observedHosts = new Set();
+
+  for (const lockfilePath of lockfilePaths) {
+    const content = await readFile(lockfilePath, "utf8");
+    const lockfileHosts = extractHosts(content);
+    for (const host of lockfileHosts) {
+      observedHosts.add(host);
+    }
+  }
 
   const unexpectedHosts = [...observedHosts].filter((host) => !allowedHosts.has(host)).sort();
   if (unexpectedHosts.length > 0) {
-    console.error("[lockfile-host-allowlist] Unexpected hosts found in pnpm-lock.yaml:");
+    console.error("[lockfile-host-allowlist] Unexpected hosts found in tracked lockfiles:");
     for (const host of unexpectedHosts) {
       console.error(` - ${host}`);
     }
-    console.error(
-      `[lockfile-host-allowlist] Allowed hosts: ${[...allowedHosts].sort().join(", ")}`
-    );
+    console.error(`[lockfile-host-allowlist] Allowed hosts: ${[...allowedHosts].sort().join(", ")}`);
     process.exit(1);
   }
 

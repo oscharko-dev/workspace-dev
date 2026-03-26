@@ -4,6 +4,7 @@
   "description": "Autonomous local workspace runtime for REST + deterministic Figma-to-code generation",
   "type": "module",
   "license": "MIT",
+  "packageManager": "pnpm@10.30.3",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "bin": {
@@ -69,7 +70,10 @@
     "test:bdd": "tsx --test src/bdd-contract.test.ts",
     "test:property-based": "tsx --test src/mode-lock.fuzz.test.ts",
     "test:coverage": "c8 --all --src src --include \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" --exclude \"src/isolated-server-entry.ts\" --exclude \"src/job-engine/types.ts\" --exclude \"src/parity/types.ts\" --exclude \"src/parity/types-core.ts\" --exclude \"src/parity/types-edit-session.ts\" --exclude \"src/parity/types-job.ts\" --exclude \"src/parity/types-kpi.ts\" --exclude \"src/parity/types-mapping.ts\" --exclude \"src/parity/types-sync.ts\" --exclude \"src/parity/fixtures/golden/**/expected/src_theme_theme.ts\" --reporter=text-summary --reporter=lcov --reporter=json-summary --report-dir coverage tsx --test \"src/**/*.test.ts\" \"integration/**/*.test.ts\" && node scripts/check-coverage-thresholds.mjs",
+    "template:install": "pnpm --dir template/react-mui-app install --frozen-lockfile",
     "template:test": "pnpm --dir template/react-mui-app run test",
+    "template:audit": "pnpm --dir template/react-mui-app audit --audit-level high",
+    "template:signatures": "npm --prefix template/react-mui-app audit signatures",
     "ui:dev": "pnpm exec vite --config ui-src/vite.config.ts",
     "ui:build": "pnpm exec vite build --config ui-src/vite.config.ts",
     "ui:typecheck": "pnpm exec tsc --project ui-src/tsconfig.json --noEmit",
@@ -97,10 +101,12 @@
     "perf:web:baseline": "pnpm --dir template/react-mui-app run perf:baseline",
     "perf:web:assert": "pnpm --dir template/react-mui-app run perf:assert",
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
+    "sbom:cyclonedx:template": "node scripts/generate-cyclonedx.mjs artifacts/sbom/figma-generated-app.cdx.json --package-root template/react-mui-app",
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
+    "sbom:spdx:template": "node scripts/generate-spdx.mjs artifacts/sbom/figma-generated-app.spdx.json --package-root template/react-mui-app",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",
-    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:coverage && pnpm run ui:test:e2e && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap",
-    "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:spdx && pnpm run verify:airgap",
+    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:coverage && pnpm run ui:test:e2e && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:airgap",
+    "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:airgap",
     "prepublishOnly": "pnpm run release:quality-gates:publish-lifecycle"
   },
   "devDependencies": {
@@ -153,6 +159,14 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/oscharko-dev/workspace-dev.git"
+  },
+  "homepage": "https://github.com/oscharko-dev/workspace-dev#readme",
+  "bugs": {
+    "url": "https://github.com/oscharko-dev/workspace-dev/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/oscharko-dev"
   },
   "publishConfig": {
     "access": "public",

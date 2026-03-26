@@ -795,6 +795,9 @@ test("request handler preview routes inject inspect bridge into HTML and pass th
     assert.equal(htmlResponse.statusCode, 200);
     assert.equal(htmlResponse.body.includes("data-workspace-dev-inspect"), true);
     assert.equal(htmlResponse.body.includes("</html>"), true);
+    assert.equal(htmlResponse.headers["x-frame-options"], undefined);
+    assert.equal(htmlResponse.headers["content-security-policy"], undefined);
+    assert.equal(htmlResponse.headers["x-content-type-options"], "nosniff");
 
     const assetResponse = await app.inject({
       method: "GET",
@@ -802,6 +805,8 @@ test("request handler preview routes inject inspect bridge into HTML and pass th
     });
     assert.equal(assetResponse.statusCode, 200);
     assert.equal(assetResponse.body, "console.log('preview');\n");
+    assert.equal(assetResponse.headers["x-frame-options"], undefined);
+    assert.equal(assetResponse.headers["content-security-policy"], undefined);
 
     const missingResponse = await app.inject({
       method: "GET",
@@ -809,6 +814,166 @@ test("request handler preview routes inject inspect bridge into HTML and pass th
     });
     assert.equal(missingResponse.statusCode, 404);
     assert.equal(missingResponse.json<Record<string, unknown>>().error, "PREVIEW_NOT_FOUND");
+
+    const traversalResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/repros/job-1/%2e%2e%2fsibling%2findex.html"
+    });
+    assert.equal(traversalResponse.statusCode, 404);
+    assert.equal(traversalResponse.json<Record<string, unknown>>().error, "PREVIEW_NOT_FOUND");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler blocks browser cross-site write requests and requires JSON content type", async (t) => {
+  const submitJob = test.mock.fn(() => ({
+    jobId: "job-secure",
+    status: "queued",
+    acceptedModes: {
+      figmaSourceMode: "rest",
+      llmCodegenMode: "deterministic"
+    }
+  }));
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob })
+  });
+
+  const port = app.addresses()[0]?.port ?? 0;
+  const sameOriginHeaders = {
+    origin: `http://127.0.0.1:${port}`,
+    "sec-fetch-site": "same-origin"
+  };
+
+  const routes = [
+    {
+      url: "/workspace/submit",
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "secret-token",
+        figmaSourceMode: "rest"
+      }
+    },
+    {
+      url: "/workspace/jobs/job-1/cancel",
+      payload: {
+        reason: "cleanup"
+      }
+    },
+    {
+      url: "/workspace/jobs/job-1/sync",
+      payload: {
+        mode: "dry_run"
+      }
+    },
+    {
+      url: "/workspace/jobs/job-1/regenerate",
+      payload: {
+        overrides: []
+      }
+    },
+    {
+      url: "/workspace/jobs/job-1/create-pr",
+      payload: {
+        repoUrl: "https://github.com/oscharko-dev/workspace-dev.git",
+        repoToken: "ghp_test_token"
+      }
+    }
+  ] as const;
+
+  try {
+    for (const route of routes) {
+      await t.test(`${route.url} rejects text/plain writes`, async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: route.url,
+          headers: {
+            ...sameOriginHeaders,
+            "content-type": "text/plain"
+          },
+          payload: JSON.stringify(route.payload)
+        });
+
+        assert.equal(response.statusCode, 415);
+        assert.equal(response.json<Record<string, unknown>>().error, "UNSUPPORTED_MEDIA_TYPE");
+      });
+
+      await t.test(`${route.url} rejects cross-site browser writes`, async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: route.url,
+          headers: {
+            origin: "https://evil.example",
+            "sec-fetch-site": "cross-site",
+            "content-type": "application/json"
+          },
+          payload: JSON.stringify(route.payload)
+        });
+
+        assert.equal(response.statusCode, 403);
+        assert.equal(response.json<Record<string, unknown>>().error, "FORBIDDEN_REQUEST_ORIGIN");
+      });
+
+      await t.test(`${route.url} rejects browser writes without same-origin metadata`, async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: route.url,
+          headers: {
+            "sec-fetch-site": "same-origin",
+            "content-type": "application/json"
+          },
+          payload: JSON.stringify(route.payload)
+        });
+
+        assert.equal(response.statusCode, 403);
+        assert.equal(response.json<Record<string, unknown>>().error, "FORBIDDEN_REQUEST_ORIGIN");
+      });
+    }
+
+    const allowedResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        ...sameOriginHeaders,
+        "content-type": "application/json"
+      },
+      payload: JSON.stringify({
+        figmaFileKey: "file-key",
+        figmaAccessToken: "secret-token",
+        figmaSourceMode: "rest"
+      })
+    });
+
+    assert.equal(allowedResponse.statusCode, 202);
+    assert.equal(allowedResponse.headers["x-content-type-options"], "nosniff");
+    assert.equal(allowedResponse.headers["x-frame-options"], "SAMEORIGIN");
+    assert.equal(allowedResponse.headers["cache-control"], "no-store");
+  } finally {
+    await close();
+  }
+
+  assert.equal(submitJob.mock.callCount(), 1);
+});
+
+test("request handler preserves 404 semantics for unknown POST routes", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    for (const url of ["/workspace/unknown", "/workspace/jobs/job-1/result"]) {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        headers: {
+          origin: "https://evil.example",
+          "sec-fetch-site": "cross-site",
+          "content-type": "text/plain"
+        },
+        payload: "ignored"
+      });
+
+      assert.equal(response.statusCode, 404);
+      assert.equal(response.json<Record<string, unknown>>().error, "NOT_FOUND");
+    }
   } finally {
     await close();
   }

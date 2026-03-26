@@ -38,8 +38,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
+
+      - name: Enforce template dependency vulnerability gate
+        run: pnpm --dir template/react-mui-app audit --audit-level high
 
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
@@ -49,6 +55,9 @@ jobs:
 
       - name: Verify npm signature attestations
         run: npm audit signatures
+
+      - name: Verify template npm signature attestations
+        run: pnpm run template:signatures
 
       - name: Run release quality gates
         run: |
@@ -76,7 +85,9 @@ jobs:
           pnpm run verify:reproducible-build
           pnpm run verify:fips
           pnpm run sbom:cyclonedx
+          pnpm run sbom:cyclonedx:template
           pnpm run sbom:spdx
+          pnpm run sbom:spdx:template
           pnpm run verify:airgap
 
       - name: Upload release evidence artifacts
@@ -163,6 +174,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
       - name: Set reproducible build metadata
         shell: bash
         run: |
@@ -191,8 +205,14 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
 
+      - name: Generate template CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.cdx.json" --package-root template/react-mui-app
+
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
+
+      - name: Generate template SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.spdx.json" --package-root template/react-mui-app
 
       - name: Generate OpenVEX artifact
         shell: bash
@@ -293,9 +313,11 @@ jobs:
           fi
 
           CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
+          TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.cdx.json"
           SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
+          TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.spdx.json"
           OPENVEX_ASSET="${RELEASE_EVIDENCE_DIR}/openvex.json"
-          for ASSET_PATH in "${CYCLO_ASSET}" "${SPDX_ASSET}" "${OPENVEX_ASSET}"; do
+          for ASSET_PATH in "${CYCLO_ASSET}" "${TEMPLATE_CYCLO_ASSET}" "${SPDX_ASSET}" "${TEMPLATE_SPDX_ASSET}" "${OPENVEX_ASSET}"; do
             if [[ ! -f "${ASSET_PATH}" ]]; then
               echo "Required release evidence asset is missing: ${ASSET_PATH}"
               exit 1
@@ -306,14 +328,18 @@ jobs:
             echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
             gh release upload "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${TEMPLATE_CYCLO_ASSET}#figma-generated-app-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${TEMPLATE_SPDX_ASSET}#figma-generated-app-${PACKAGE_VERSION}.spdx.json" \
               "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
               --clobber
           else
             echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
             gh release create "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${TEMPLATE_CYCLO_ASSET}#figma-generated-app-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${TEMPLATE_SPDX_ASSET}#figma-generated-app-${PACKAGE_VERSION}.spdx.json" \
               "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
               --target "${GITHUB_SHA}" \
               --title "workspace-dev ${RELEASE_TAG}" \

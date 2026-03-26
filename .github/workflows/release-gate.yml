@@ -30,8 +30,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
+
+      - name: Enforce template dependency vulnerability gate
+        run: pnpm --dir template/react-mui-app audit --audit-level high
 
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
@@ -41,6 +47,9 @@ jobs:
 
       - name: Verify npm signature attestations
         run: npm audit signatures
+
+      - name: Verify template npm signature attestations
+        run: pnpm run template:signatures
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -124,8 +133,14 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: pnpm run sbom:cyclonedx
 
+      - name: Generate template CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx:template
+
       - name: Generate SPDX SBOM
         run: pnpm run sbom:spdx
+
+      - name: Generate template SPDX SBOM
+        run: pnpm run sbom:spdx:template
 
       - name: Upload flaky retry artifacts
         uses: actions/upload-artifact@v4

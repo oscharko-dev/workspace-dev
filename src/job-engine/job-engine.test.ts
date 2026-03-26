@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -931,10 +931,16 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
 test("resolvePreviewAsset enforces safe job id/path and supports direct assets, empty-path fallback, and missing index handling", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-preview-"));
   const reproDir = path.join(tempRoot, "repros", "safe-job");
+  const siblingReproDir = path.join(tempRoot, "repros", "safe-job-2");
   await mkdir(reproDir, { recursive: true });
+  await mkdir(siblingReproDir, { recursive: true });
   await writeFile(path.join(reproDir, "index.html"), "<html>ok</html>\n", "utf8");
+  await writeFile(path.join(siblingReproDir, "index.html"), "<html>sibling</html>\n", "utf8");
   await mkdir(path.join(reproDir, "assets"), { recursive: true });
   await writeFile(path.join(reproDir, "assets", "app.js"), "console.log('asset');\n", "utf8");
+  await writeFile(path.join(tempRoot, "outside.js"), "console.log('outside');\n", "utf8");
+  await symlink(path.join(tempRoot, "outside.js"), path.join(reproDir, "assets", "linked.js"));
+  await symlink(siblingReproDir, path.join(tempRoot, "repros", "safe-job-link"));
 
   const engine = createFastJobEngine({ tempRoot, enablePreview: true });
 
@@ -944,6 +950,12 @@ test("resolvePreviewAsset enforces safe job id/path and supports direct assets, 
   const escapedPath = await engine.resolvePreviewAsset("safe-job", "../outside.js");
   assert.equal(escapedPath, undefined);
 
+  const siblingEscape = await engine.resolvePreviewAsset("safe-job", "../safe-job-2/index.html");
+  assert.equal(siblingEscape, undefined);
+
+  const symlinkedRoot = await engine.resolvePreviewAsset("safe-job-link", "index.html");
+  assert.equal(symlinkedRoot, undefined);
+
   const indexFromEmptyPath = await engine.resolvePreviewAsset("safe-job", "");
   assert.ok(indexFromEmptyPath);
   assert.equal(indexFromEmptyPath?.contentType, "text/html; charset=utf-8");
@@ -952,6 +964,9 @@ test("resolvePreviewAsset enforces safe job id/path and supports direct assets, 
   assert.ok(directAsset);
   assert.equal(directAsset?.contentType, "application/javascript; charset=utf-8");
   assert.equal(directAsset?.content.toString("utf8"), "console.log('asset');\n");
+
+  const symlinkedAsset = await engine.resolvePreviewAsset("safe-job", "assets/linked.js");
+  assert.equal(symlinkedAsset, undefined);
 
   const fallback = await engine.resolvePreviewAsset("safe-job", "missing.txt");
   assert.ok(fallback);

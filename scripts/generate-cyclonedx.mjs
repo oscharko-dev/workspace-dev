@@ -6,12 +6,44 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(__dirname, "..");
 
-const run = (command, args) =>
+const parseArgs = () => {
+  const args = process.argv.slice(2);
+  let outputPath = "artifacts/sbom/workspace-dev.cdx.json";
+  let packageRoot = repoRoot;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (!current) {
+      continue;
+    }
+    if (current === "--package-root") {
+      const next = args[index + 1];
+      if (!next) {
+        throw new Error("Missing value for --package-root.");
+      }
+      packageRoot = path.resolve(repoRoot, next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--package-root=")) {
+      packageRoot = path.resolve(repoRoot, current.slice("--package-root=".length));
+      continue;
+    }
+    outputPath = current;
+  }
+
+  return {
+    outputPath,
+    packageRoot
+  };
+};
+
+const run = (command, args, cwd) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: packageRoot,
+      cwd,
       env: process.env,
       stdio: "inherit"
     });
@@ -27,8 +59,8 @@ const run = (command, args) =>
   });
 
 const main = async () => {
-  const outputPath = process.argv[2] ?? "artifacts/sbom/workspace-dev.cdx.json";
-  const absoluteOutputPath = path.resolve(packageRoot, outputPath);
+  const { outputPath, packageRoot } = parseArgs();
+  const absoluteOutputPath = path.resolve(repoRoot, outputPath);
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
   await run("npm", [
@@ -44,9 +76,9 @@ const main = async () => {
     "--output-reproducible",
     "--output-file",
     absoluteOutputPath
-  ]);
+  ], packageRoot);
 
-  console.log(`[sbom] CycloneDX written to ${absoluteOutputPath}`);
+  console.log(`[sbom] CycloneDX written to ${absoluteOutputPath} (packageRoot=${packageRoot})`);
 };
 
 main().catch((error) => {

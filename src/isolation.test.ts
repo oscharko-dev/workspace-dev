@@ -7,12 +7,15 @@ import {
   removeAllInstances,
   getProjectInstance,
   listProjectInstances,
-  resolveIsolationEntryPointForTest
+  registerIsolationProcessCleanup,
+  resolveIsolationEntryPointForTest,
+  unregisterIsolationProcessCleanup
 } from "./isolation.js";
 
 // Clean up after each test to avoid leaked processes
 afterEach(async () => {
   await removeAllInstances();
+  unregisterIsolationProcessCleanup();
 });
 
 test("isolation: two instances run in parallel on different ports", async () => {
@@ -126,6 +129,45 @@ test("isolation: invalid projectKey throws", async () => {
     () => createProjectInstance("../traversal", { workDir: "/tmp" }),
     /Invalid projectKey/
   );
+});
+
+test("isolation: createProjectInstance does not register host process listeners by default", async () => {
+  const beforeCounts = {
+    exit: process.listenerCount("exit"),
+    sigint: process.listenerCount("SIGINT"),
+    sigterm: process.listenerCount("SIGTERM")
+  };
+
+  await createProjectInstance("project-no-cleanup-hook", { workDir: "/tmp" });
+
+  const afterCounts = {
+    exit: process.listenerCount("exit"),
+    sigint: process.listenerCount("SIGINT"),
+    sigterm: process.listenerCount("SIGTERM")
+  };
+
+  assert.deepEqual(afterCounts, beforeCounts);
+});
+
+test("isolation: process cleanup hooks are opt-in and idempotent", () => {
+  const beforeCounts = {
+    exit: process.listenerCount("exit"),
+    sigint: process.listenerCount("SIGINT"),
+    sigterm: process.listenerCount("SIGTERM")
+  };
+
+  registerIsolationProcessCleanup();
+  registerIsolationProcessCleanup();
+
+  assert.equal(process.listenerCount("exit"), beforeCounts.exit + 1);
+  assert.equal(process.listenerCount("SIGINT"), beforeCounts.sigint + 1);
+  assert.equal(process.listenerCount("SIGTERM"), beforeCounts.sigterm + 1);
+
+  unregisterIsolationProcessCleanup();
+
+  assert.equal(process.listenerCount("exit"), beforeCounts.exit);
+  assert.equal(process.listenerCount("SIGINT"), beforeCounts.sigint);
+  assert.equal(process.listenerCount("SIGTERM"), beforeCounts.sigterm);
 });
 
 test("isolation: removeProjectInstance returns false for unknown key", async () => {

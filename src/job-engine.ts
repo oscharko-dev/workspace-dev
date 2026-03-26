@@ -24,7 +24,7 @@ import {
 import { resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { resolveBoardKey } from "./parity/board-key.js";
 import { runGitPrFlow } from "./job-engine/git-pr.js";
-import { getContentType, normalizePathPart } from "./job-engine/preview.js";
+import { getContentType, hasSymlinkInPath, isWithinRoot, normalizePathPart } from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
 import { DEFAULT_GENERATION_LOCALE, normalizeGenerationLocale, resolveGenerationLocale } from "./generation-locale.js";
 import {
@@ -1291,11 +1291,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
 
     const normalizedPart = normalizePathPart(previewPath || "index.html");
+    if (normalizedPart === undefined) {
+      return undefined;
+    }
     const fallbackPath = normalizedPart.length > 0 ? normalizedPart : "index.html";
-    const candidatePath = path.normalize(path.join(resolvedPaths.reprosRoot, safeJobId, fallbackPath));
-    const expectedPrefix = path.normalize(path.join(resolvedPaths.reprosRoot, safeJobId));
+    const previewRoot = path.resolve(resolvedPaths.reprosRoot, safeJobId);
+    const candidatePath = path.resolve(previewRoot, fallbackPath);
 
-    if (!candidatePath.startsWith(expectedPrefix)) {
+    if (!isWithinRoot({ candidatePath, rootPath: previewRoot })) {
+      return undefined;
+    }
+    if (await hasSymlinkInPath({ candidatePath, rootPath: previewRoot })) {
       return undefined;
     }
 
@@ -1307,7 +1313,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       };
     } catch {
       if (fallbackPath !== "index.html") {
-        const indexPath = path.join(resolvedPaths.reprosRoot, safeJobId, "index.html");
+        const indexPath = path.resolve(previewRoot, "index.html");
+        if (await hasSymlinkInPath({ candidatePath: indexPath, rootPath: previewRoot })) {
+          return undefined;
+        }
         try {
           const content = await readFile(indexPath);
           return {

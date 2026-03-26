@@ -9,9 +9,19 @@ import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
 import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
+import { validateWriteRequest } from "./request-security.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
+
+const PROTECTED_POST_ACTIONS = new Set([
+  "cancel",
+  "sync",
+  "regenerate",
+  "create-pr",
+  "stale-check",
+  "remap-suggest"
+]);
 
 interface CreateWorkspaceRequestHandlerInput {
   host: string;
@@ -539,7 +549,8 @@ export function createWorkspaceRequestHandler({
             statusCode: 200,
             contentType: previewAsset.contentType,
             payload: Buffer.from(injectedHtml, "utf8"),
-            cacheControl: "no-store, no-cache, must-revalidate, max-age=0"
+            cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+            allowFrameEmbedding: true
           });
           return;
         }
@@ -549,7 +560,8 @@ export function createWorkspaceRequestHandler({
           statusCode: 200,
           contentType: previewAsset.contentType,
           payload: previewAsset.content,
-          cacheControl: "no-store, no-cache, must-revalidate, max-age=0"
+          cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+          allowFrameEmbedding: true
         });
         return;
       }
@@ -599,6 +611,36 @@ export function createWorkspaceRequestHandler({
 
     if (method === "POST") {
       const parsedJobRoute = parseJobRoute(pathname);
+      const isProtectedWriteRoute =
+        pathname === "/workspace/submit" ||
+        (parsedJobRoute?.action !== undefined && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action));
+
+      if (!isProtectedWriteRoute) {
+        sendJson({
+          response,
+          statusCode: 404,
+          payload: {
+            error: "NOT_FOUND",
+            message: `Unknown route: ${method} ${pathname}`
+          }
+        });
+        return;
+      }
+
+      const writeRequestValidation = validateWriteRequest({
+        request,
+        host,
+        port: getResolvedPort()
+      });
+      if (!writeRequestValidation.ok) {
+        sendJson({
+          response,
+          statusCode: writeRequestValidation.statusCode,
+          payload: writeRequestValidation.payload
+        });
+        return;
+      }
+
       if (parsedJobRoute?.action === "cancel") {
         const jobId = decodeURIComponent(parsedJobRoute.jobId);
         const rawBody = await readJsonBody(request);
