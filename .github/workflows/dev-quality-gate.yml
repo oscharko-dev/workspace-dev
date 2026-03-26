@@ -149,7 +149,7 @@ jobs:
         run: node scripts/print-perf-report-summary.mjs template/react-mui-app/artifacts/performance/perf-assert-report.json
 
       - name: Upload web performance artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-dev-performance-web-${{ github.run_id }}

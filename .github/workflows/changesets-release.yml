@@ -91,7 +91,7 @@ jobs:
           pnpm run verify:airgap
 
       - name: Upload release evidence artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-release-evidence-node-${{ matrix.node-version }}
@@ -141,7 +141,7 @@ jobs:
         run: node scripts/print-perf-report-summary.mjs template/react-mui-app/artifacts/performance/perf-assert-report.json
 
       - name: Upload web performance artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-performance-web-${{ github.run_id }}
@@ -351,7 +351,7 @@ jobs:
           echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Upload release evidence artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-dev-release-evidence-${{ github.run_id }}
