@@ -20,6 +20,7 @@ const readRepoFile = async (relativePath: string): Promise<string> => {
 test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const architectureDoc = await readRepoFile("ARCHITECTURE.md");
   const claudeDoc = await readRepoFile("CLAUDE.md");
+  const complianceDoc = await readRepoFile("COMPLIANCE.md");
   const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const readmeDoc = await readRepoFile("README.md");
@@ -37,6 +38,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
   assert.match(claudeDoc, /figmaSourceMode=rest\|hybrid\|local_json/);
   assert.match(claudeDoc, /module resolution `node16`/);
+  assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
+  assert.doesNotMatch(complianceDoc, /npm-publish\.yml/);
   assert.match(compatibilityDoc, new RegExp(`\\| Contract version \\| \`${escapedContractVersion}\` \\|`));
   assert.match(compatibilityDoc, /\| `figmaSourceMode=hybrid` \| Supported \|/);
   assert.match(contributingDoc, /feature branch from `dev`/);
