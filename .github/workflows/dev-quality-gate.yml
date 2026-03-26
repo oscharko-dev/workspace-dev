@@ -16,7 +16,7 @@ jobs:
         node-version: [22]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v5
         with:
@@ -113,7 +113,7 @@ jobs:
     continue-on-error: true
     needs: quality
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v5
         with:
