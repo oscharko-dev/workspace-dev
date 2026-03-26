@@ -43,6 +43,8 @@ Please include:
 - Zero runtime dependencies (supply-chain minimization).
 - No install lifecycle scripts (`preinstall`, `install`, `postinstall`).
 - Local-only default bind (`127.0.0.1`).
+- Browser write routes are same-origin only; cross-origin embedded write access is unsupported.
+- Protected write-route preflight (`OPTIONS`) requests return explicit `405 Method Not Allowed` with `Allow: POST` and no permissive CORS allow headers.
 - Runtime mode-lock enforcement (`rest` + `deterministic` only).
 - Runtime request validation and deterministic error envelopes.
 - Error-message sanitization for PII/secret leakage reduction.

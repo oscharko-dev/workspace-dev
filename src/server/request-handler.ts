@@ -24,6 +24,23 @@ const PROTECTED_POST_ACTIONS = new Set([
   "remap-suggest"
 ]);
 
+interface ProtectedWriteRoute {
+  parsedJobRoute?: ReturnType<typeof parseJobRoute>;
+}
+
+function resolveProtectedWriteRoute(pathname: string): ProtectedWriteRoute | null {
+  if (pathname === "/workspace/submit") {
+    return {};
+  }
+
+  const parsedJobRoute = parseJobRoute(pathname);
+  if (parsedJobRoute && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action)) {
+    return { parsedJobRoute };
+  }
+
+  return null;
+}
+
 interface CreateWorkspaceRequestHandlerInput {
   host: string;
   getResolvedPort: () => number;
@@ -59,6 +76,7 @@ export function createWorkspaceRequestHandler({
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
     const pathname = requestUrl.pathname;
+    const protectedWriteRoute = resolveProtectedWriteRoute(pathname);
 
     if (method === "GET" && pathname === "/workspace") {
       const resolvedPort = getResolvedPort();
@@ -615,13 +633,35 @@ export function createWorkspaceRequestHandler({
       }
     }
 
-    if (method === "POST") {
-      const parsedJobRoute = parseJobRoute(pathname);
-      const isProtectedWriteRoute =
-        pathname === "/workspace/submit" ||
-        (parsedJobRoute?.action !== undefined && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action));
+    if (method === "OPTIONS") {
+      if (!protectedWriteRoute) {
+        sendJson({
+          response,
+          statusCode: 404,
+          payload: {
+            error: "NOT_FOUND",
+            message: `Unknown route: ${method} ${pathname}`
+          }
+        });
+        return;
+      }
 
-      if (!isProtectedWriteRoute) {
+      response.setHeader("allow", "POST");
+      sendJson({
+        response,
+        statusCode: 405,
+        payload: {
+          error: "METHOD_NOT_ALLOWED",
+          message: `Write route '${pathname}' only supports POST and does not support cross-origin browser preflight requests.`
+        }
+      });
+      return;
+    }
+
+    if (method === "POST") {
+      const parsedJobRoute = protectedWriteRoute?.parsedJobRoute;
+
+      if (!protectedWriteRoute) {
         sendJson({
           response,
           statusCode: 404,

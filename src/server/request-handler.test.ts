@@ -1080,6 +1080,71 @@ test("request handler preserves 404 semantics for unknown POST routes", async ()
   }
 });
 
+test("request handler rejects OPTIONS on protected write routes without CORS headers", async (t) => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const protectedRoutes = [
+      "/workspace/submit",
+      "/workspace/jobs/job-1/regenerate"
+    ] as const;
+
+    for (const url of protectedRoutes) {
+      await t.test(url, async () => {
+        const response = await app.inject({
+          method: "OPTIONS",
+          url,
+          headers: {
+            origin: "https://portal.example",
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "content-type"
+          }
+        });
+
+        assert.equal(response.statusCode, 405);
+        assert.equal(response.headers.allow, "POST");
+        assert.equal(response.headers["content-type"], "application/json; charset=utf-8");
+        assert.equal(response.headers["x-content-type-options"], "nosniff");
+        assert.equal(response.headers["x-frame-options"], "SAMEORIGIN");
+        assert.equal(response.headers["access-control-allow-origin"], undefined);
+        assert.equal(response.headers["access-control-allow-methods"], undefined);
+        assert.equal(response.headers["access-control-allow-headers"], undefined);
+        assert.equal(response.headers["access-control-max-age"], undefined);
+
+        assert.deepEqual(response.json<Record<string, unknown>>(), {
+          error: "METHOD_NOT_ALLOWED",
+          message: `Write route '${url}' only supports POST and does not support cross-origin browser preflight requests.`
+        });
+      });
+    }
+  } finally {
+    await close();
+  }
+});
+
+test("request handler preserves 404 semantics for unknown OPTIONS routes", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    for (const url of ["/workspace/unknown", "/workspace/jobs/job-1/result"]) {
+      const response = await app.inject({
+        method: "OPTIONS",
+        url,
+        headers: {
+          origin: "https://portal.example",
+          "access-control-request-method": "POST"
+        }
+      });
+
+      assert.equal(response.statusCode, 404);
+      assert.equal(response.json<Record<string, unknown>>().error, "NOT_FOUND");
+      assert.equal(response.headers.allow, undefined);
+    }
+  } finally {
+    await close();
+  }
+});
+
 test("request handler stale-check, remap-suggest, submit, and cancel routes cover normalization and fallback errors", async (t) => {
   const checkStaleDraft = test.mock.fn(async ({ jobId, draftNodeIds }: { jobId: string; draftNodeIds: string[] }) => ({
     stale: draftNodeIds.length > 0,
