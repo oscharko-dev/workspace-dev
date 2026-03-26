@@ -63,11 +63,12 @@ export const toNavigateHandlerProps = ({
   const navigateCall = navigation.replace
     ? `navigate(${literal(navigation.routePath)}, { replace: true })`
     : `navigate(${literal(navigation.routePath)})`;
+  const navigateStatement = `void ${navigateCall}`;
   return {
-    onClickProp: ` onClick={() => ${navigateCall}}`,
+    onClickProp: ` onClick={() => { ${navigateStatement}; }}`,
     onKeyDownProp:
       ' onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); ' +
-      `${navigateCall}; } }}`,
+      `${navigateStatement}; } }}`,
     roleProp: ' role="button"',
     tabIndexProp: " tabIndex={0}"
   };

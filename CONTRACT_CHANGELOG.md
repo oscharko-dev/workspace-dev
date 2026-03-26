@@ -23,6 +23,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.25.0] - 2026-03-26
+
+### Per-IP submission rate limiting
+
+Added:
+
+- `WorkspaceStartOptions.rateLimitPerMinute?: number` (default `10`, `0` disables) for per-client job submission throttling across `POST /workspace/submit` and `POST /workspace/jobs/{jobId}/regenerate`.
+
+---
+
 ## [2.24.0] - 2026-03-24
 
 ### Selectable hybrid Figma source mode

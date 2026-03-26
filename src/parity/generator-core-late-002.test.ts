@@ -788,8 +788,7 @@ test("deterministic screen rendering emits <img> accessibility semantics with de
   const content = createDeterministicScreenFile(screen).content;
   assert.ok(content.includes("<Box "));
   assert.ok(content.includes('component="img"'));
-  assert.ok(content.includes('src={"data:image/svg+xml;utf8,'));
+  assert.ok(content.includes('src={"data:image\\u002Fsvg+xml;utf8,'));
   assert.ok(content.includes('alt={"Product Image"}'));
   assert.ok(content.includes('alt="" aria-hidden="true"'));
 });
-

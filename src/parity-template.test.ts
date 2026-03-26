@@ -55,14 +55,14 @@ const toSemverMajor = (versionRange: string | undefined): number | undefined => 
 };
 
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = {
-  "package.json": "d00f37fa60061cb71c6645a138fdc3b3cc188df5232c6e36cabae3c694bd76b1",
-  "pnpm-lock.yaml": "2bcd7237bfee8734f921528f981b456b286bb789278a3f1818dfa173b46194c7",
+  "package.json": "6c8edecf5bead554f385dfc06f4c732150c905d4c9ee077bdf8cbdcdf2a76b47",
+  "pnpm-lock.yaml": "3e2ed82bbb0936a60af71b8a4db359b0bec71a0d9f3154a6305bd675f4f7a8fe",
   "vite.config.ts": "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
   "tsconfig.json": "46145f2477e39d3f2d7048e04a23afbb24b9c529981a8d37dbac09faea5bb808",
   "eslint.config.js": "5c8adc94a29be71c2124aed12738dc5497d844db2225c986b2b1ec5401cbe684",
   "perf-budget.json": "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
   "scripts/perf-runner.mjs": "20cfd927a9a8216c4acdcd8f4b065a980ba2f20e731227b0f9de3171798966a8",
-  "src/App.tsx": "1145a84da77fb08e8b318019790d0fbc2e13dccb423efaeb37a3ff68667ea898",
+  "src/App.tsx": "985cdba983fb04d56e28ea58102b9691fb912f0eb3412feab1f0bb7966332a65",
   "src/components/ErrorBoundary.tsx": "52ce535a42ceaa79e6f8dcf82ae25ea5ac341532cabfeeaff60c2ec4427377b1",
   "src/components/RouteSkeleton.tsx": "f4b4bf51d5f362b2ed7e2fb826677c3202970ee71099fddfd49132e6a6f2473d",
   "src/main.tsx": "0c851c4821d6f502f31ee1535902b01ffc20ee9c3c426bb0a01b9ce09bb1fbe9",

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.24.0
+ * Contract version: 2.25.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -99,6 +99,8 @@ export interface WorkspaceStartOptions {
   maxConcurrentJobs?: number;
   /** Maximum number of queued jobs waiting for execution before backpressure rejects submit. Default: 20 */
   maxQueuedJobs?: number;
+  /** Maximum accepted submit/regenerate requests per minute for a single client IP. Use 0 to disable. Default: 10 */
+  rateLimitPerMinute?: number;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -569,4 +571,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.24.0" as const;
+export const CONTRACT_VERSION = "2.25.0" as const;

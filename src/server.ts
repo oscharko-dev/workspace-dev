@@ -14,7 +14,7 @@ import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
 import { getWorkspaceDefaults } from "./mode-lock.js";
 import { buildApp, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
-import { DEFAULT_HOST, DEFAULT_OUTPUT_ROOT, DEFAULT_PORT } from "./server/constants.js";
+import { DEFAULT_HOST, DEFAULT_OUTPUT_ROOT, DEFAULT_PORT, DEFAULT_RATE_LIMIT_PER_MINUTE } from "./server/constants.js";
 import { createWorkspaceRequestHandler } from "./server/request-handler.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,10 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
   const workDir = options.workDir ?? process.cwd();
+  const rateLimitPerMinute =
+    typeof options.rateLimitPerMinute === "number" && Number.isFinite(options.rateLimitPerMinute)
+      ? Math.max(0, Math.min(1000, Math.trunc(options.rateLimitPerMinute)))
+      : DEFAULT_RATE_LIMIT_PER_MINUTE;
   const outputRoot =
     typeof options.outputRoot === "string" && options.outputRoot.trim().length > 0
       ? options.outputRoot
@@ -146,7 +150,10 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     startedAt,
     absoluteOutputRoot,
     defaults,
-    runtime,
+    runtime: {
+      previewEnabled: runtime.previewEnabled,
+      rateLimitPerMinute
+    },
     jobEngine,
     moduleDir: MODULE_DIR
   });

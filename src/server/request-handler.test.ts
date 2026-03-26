@@ -80,10 +80,12 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
 
 async function createRequestHandlerApp({
   jobEngine = createStubJobEngine(),
-  moduleDir = path.resolve(import.meta.dirname ?? ".", "..")
+  moduleDir = path.resolve(import.meta.dirname ?? ".", ".."),
+  rateLimitPerMinute = 10
 }: {
   jobEngine?: JobEngine;
   moduleDir?: string;
+  rateLimitPerMinute?: number;
 } = {}): Promise<{
   app: WorkspaceServerApp;
   close: () => Promise<void>;
@@ -98,7 +100,10 @@ async function createRequestHandlerApp({
     startedAt: Date.now(),
     absoluteOutputRoot: tempRoot,
     defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
-    runtime: { previewEnabled: false },
+    runtime: {
+      previewEnabled: false,
+      rateLimitPerMinute
+    },
     jobEngine,
     moduleDir
   });
@@ -204,6 +209,102 @@ test("request handler validates cancel bodies before calling cancelJob", async (
     }
 
     assert.equal(cancelJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rate limits submit before parsing the body or calling submitJob", async () => {
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "job-accepted",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+    rateLimitPerMinute: 1
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token"
+      }
+    });
+    assert.equal(accepted.statusCode, 202);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: "{"
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(limited.json<Record<string, unknown>>().error, "RATE_LIMIT_EXCEEDED");
+    assert.equal(submitJob.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler shares the submission rate limit between submit and regenerate routes", async () => {
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "job-accepted",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const submitRegeneration = test.mock.fn(() => {
+    return {
+      jobId: "regen-job",
+      sourceJobId: "source-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    } as ReturnType<JobEngine["submitRegeneration"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob, submitRegeneration }),
+    rateLimitPerMinute: 1
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token"
+      }
+    });
+    assert.equal(accepted.statusCode, 202);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/regenerate",
+      headers: { "content-type": "application/json" },
+      payload: "{"
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(limited.json<Record<string, unknown>>().error, "RATE_LIMIT_EXCEEDED");
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.equal(submitRegeneration.mock.callCount(), 0);
   } finally {
     await close();
   }

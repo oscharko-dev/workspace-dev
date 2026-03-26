@@ -41,6 +41,7 @@ const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
 const DEFAULT_MAX_CONCURRENT_JOBS = 1;
 const DEFAULT_MAX_QUEUED_JOBS = 20;
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 10;
 
 interface CliOptions {
   command: string;
@@ -72,6 +73,7 @@ interface CliOptions {
   skipInstall: boolean;
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
+  rateLimitPerMinute: number;
   enableLintAutofix: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
@@ -271,6 +273,12 @@ const parseArgs = (argv: string[]): CliOptions => {
   let maxQueuedJobs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS,
     fallback: DEFAULT_MAX_QUEUED_JOBS,
+    min: 0,
+    max: 1000
+  });
+  let rateLimitPerMinute = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE,
+    fallback: DEFAULT_RATE_LIMIT_PER_MINUTE,
     min: 0,
     max: 1000
   });
@@ -546,6 +554,17 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--rate-limit") {
+      rateLimitPerMinute = parseIntInRange({
+        raw: args[index + 1],
+        fallback: rateLimitPerMinute,
+        min: 0,
+        max: 1000
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--lint-autofix") {
       enableLintAutofix = parseBooleanLike(args[index + 1], enableLintAutofix);
       index += 1;
@@ -623,6 +642,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     skipInstall,
     maxConcurrentJobs,
     maxQueuedJobs,
+    rateLimitPerMinute,
     enableLintAutofix,
     enablePreview,
     enablePerfValidation,
@@ -688,6 +708,7 @@ Options:
                              Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
   --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
   --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
+  --rate-limit <n>           Max submit/regenerate requests per minute per client IP; 0 disables (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
   --lint-autofix <true|false>
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
@@ -729,6 +750,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
   FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS
   FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS
+  FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE
   FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
@@ -835,6 +857,7 @@ const main = async (): Promise<void> => {
       skipInstall: options.skipInstall,
       maxConcurrentJobs: options.maxConcurrentJobs,
       maxQueuedJobs: options.maxQueuedJobs,
+      rateLimitPerMinute: options.rateLimitPerMinute,
       enablePreview: options.enablePreview
     });
 
@@ -860,6 +883,7 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
     console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
     console.log(`[workspace-dev] Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`);
+    console.log(`[workspace-dev] Rate limit per minute: ${options.rateLimitPerMinute}`);
     console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
     console.log(

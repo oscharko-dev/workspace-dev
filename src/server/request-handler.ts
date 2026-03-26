@@ -10,6 +10,7 @@ import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js"
 import type { ScreenIR } from "../parity/types-ir.js";
 import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
 import { validateWriteRequest } from "./request-security.js";
+import { createIpRateLimiter, resolveRateLimitClientKey } from "./rate-limit.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
@@ -34,6 +35,7 @@ interface CreateWorkspaceRequestHandlerInput {
   };
   runtime: {
     previewEnabled: boolean;
+    rateLimitPerMinute?: number;
   };
   jobEngine: JobEngine;
   moduleDir: string;
@@ -49,6 +51,10 @@ export function createWorkspaceRequestHandler({
   jobEngine,
   moduleDir
 }: CreateWorkspaceRequestHandlerInput): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
+  const rateLimiter = createIpRateLimiter(
+    runtime.rateLimitPerMinute === undefined ? {} : { limitPerWindow: runtime.rateLimitPerMinute }
+  );
+
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
@@ -639,6 +645,24 @@ export function createWorkspaceRequestHandler({
           payload: writeRequestValidation.payload
         });
         return;
+      }
+
+      const isRateLimitedWriteRoute =
+        pathname === "/workspace/submit" || parsedJobRoute?.action === "regenerate";
+      if (isRateLimitedWriteRoute) {
+        const rateLimitResult = rateLimiter.consume(resolveRateLimitClientKey(request));
+        if (!rateLimitResult.allowed) {
+          response.setHeader("retry-after", String(rateLimitResult.retryAfterSeconds));
+          sendJson({
+            response,
+            statusCode: 429,
+            payload: {
+              error: "RATE_LIMIT_EXCEEDED",
+              message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`
+            }
+          });
+          return;
+        }
       }
 
       if (parsedJobRoute?.action === "cancel") {

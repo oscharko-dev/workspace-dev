@@ -20,8 +20,10 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "getProjectInstance",
   "getWorkspaceDefaults",
   "listProjectInstances",
+  "registerIsolationProcessCleanup",
   "removeAllInstances",
   "removeProjectInstance",
+  "unregisterIsolationProcessCleanup",
   "validateModeLock"
 ].sort();
 

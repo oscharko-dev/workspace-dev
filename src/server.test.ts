@@ -1335,3 +1335,59 @@ test("workspace server returns 429 backpressure when queue limit is reached", as
     await rm(outputRoot, { recursive: true, force: true });
   }
 });
+
+test("workspace server returns 429 rate limiting with Retry-After on repeated submits", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    rateLimitPerMinute: 1,
+    fetchImpl: createNeverEndingCancelableFetch()
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(firstSubmit.json<Record<string, unknown>>().jobId);
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    });
+    assert.equal(secondSubmit.statusCode, 429);
+    assert.match(secondSubmit.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(secondSubmit.json<Record<string, unknown>>().error, "RATE_LIMIT_EXCEEDED");
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    const terminal = await waitForJobTerminalState({ server, jobId: firstJobId, timeoutMs: 20_000 });
+    assert.equal(terminal.status, "canceled");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});

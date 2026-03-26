@@ -14,7 +14,7 @@
 
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `2.24.0` |
+| Contract version | `2.25.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=mcp` | Blocked |

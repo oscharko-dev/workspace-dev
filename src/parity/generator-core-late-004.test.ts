@@ -801,11 +801,11 @@ test("deterministic screen rendering maps prototype navigation on container fall
   assert.ok(content.includes("const navigate = useNavigate();"));
   assert.ok(content.includes('role="button"'));
   assert.ok(content.includes("tabIndex={0}"));
-  assert.ok(content.includes('onClick={() => navigate("/target", { replace: true })}'));
+  assert.ok(content.includes("onClick={"));
+  assert.ok(content.includes('void navigate("\\u002Ftarget", { replace: true })'));
   assert.ok(
     content.includes(
-      'onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigate("/target", { replace: true }); } }}'
+      'onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void navigate("\\u002Ftarget", { replace: true });'
     )
   );
 });
-

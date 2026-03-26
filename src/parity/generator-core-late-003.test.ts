@@ -818,8 +818,7 @@ test("deterministic screen rendering maps prototype navigation on link-capable c
   }).content;
 
   assert.ok(content.includes('import { Link as RouterLink } from "react-router-dom";'));
-  assert.ok(content.includes('component={RouterLink} to={"/details"} replace'));
-  assert.ok(content.includes('component={RouterLink} to={"/overlay"}'));
-  assert.equal(content.includes('component={RouterLink} to={"/overlay"} replace'), false);
+  assert.ok(content.includes('component={RouterLink} to={"\\u002Fdetails"} replace'));
+  assert.ok(content.includes('component={RouterLink} to={"\\u002Foverlay"}'));
+  assert.equal(content.includes('component={RouterLink} to={"\\u002Foverlay"} replace'), false);
 });
-

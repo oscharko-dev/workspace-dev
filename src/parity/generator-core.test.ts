@@ -1400,7 +1400,7 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
   });
   assert.ok(themeContent.includes("defaultProps: { elevation: 7 }"));
   assert.ok(cardBlock.includes('borderRadius: "18px"'));
-  assert.ok(themeContent.includes("& .MuiOutlinedInput-root"));
+  assert.ok(themeContent.includes('"\\u0026 .MuiOutlinedInput-root"'));
   assert.ok(themeContent.includes('borderRadius: "10px"'));
   assert.ok(themeContent.includes('defaultProps: { size: "small" }'));
   assert.ok(chipBlock.includes('borderRadius: "14px"'));
@@ -4413,13 +4413,21 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
   });
 
   const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
-  assert.ok(generatedScreenContent.includes('component="img" src={"./images/hero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'));
   assert.ok(
     generatedScreenContent.includes(
-      '<CardMedia component="img" image={"./images/card-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
+      'component="img" src={".\\u002Fimages\\u002Fhero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'
     )
   );
-  assert.ok(generatedScreenContent.includes('component="img" src={"./images/table-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'));
+  assert.ok(
+    generatedScreenContent.includes(
+      '<CardMedia component="img" image={".\\u002Fimages\\u002Fcard-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
+    )
+  );
+  assert.ok(
+    generatedScreenContent.includes(
+      'component="img" src={".\\u002Fimages\\u002Ftable-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'
+    )
+  );
 });
 
 test("generateArtifacts applies lazy loading for below-fold images and fetchpriority for hero images", async () => {
@@ -4472,12 +4480,20 @@ test("generateArtifacts applies lazy loading for below-fold images and fetchprio
   const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Lazy Screen")), "utf8");
 
   // Hero image (y=50): should have fetchPriority="high", decoding="async", no loading="lazy"
-  assert.ok(content.includes('src={"./images/hero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'));
-  assert.ok(!content.includes('./images/hero-banner.png") alt={"Hero Banner"} loading="lazy"'));
+  assert.ok(
+    content.includes(
+      'src={".\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'
+    )
+  );
+  assert.ok(!content.includes('.\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} loading="lazy"'));
 
   // Below-fold image (y=900): should have loading="lazy", decoding="async", no fetchpriority
-  assert.ok(content.includes('src={"./images/gallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'));
-  assert.ok(!content.includes('./images/gallery.png") alt={"Gallery Photo"} decoding="async" fetchpriority'));
+  assert.ok(
+    content.includes(
+      'src={".\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'
+    )
+  );
+  assert.ok(!content.includes('.\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} decoding="async" fetchpriority'));
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
@@ -4593,9 +4609,9 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
   assert.ok(
     generatedScreenContents.some(
       (content) =>
-        content.includes('component={RouterLink} to={"/settings"}') ||
-        content.includes('navigate("/settings")') ||
-        content.includes('navigate("/settings", { replace: true })')
+        content.includes('component={RouterLink} to={"\\u002Fsettings"}') ||
+        content.includes('navigate("\\u002Fsettings")') ||
+        content.includes('navigate("\\u002Fsettings", { replace: true })')
     )
   );
 
@@ -4914,7 +4930,7 @@ test("deterministic screen rendering preserves simple MUI board controls, steppe
 
   assert.ok(content.includes("Bauen oder kaufen"));
   assert.ok(content.includes("<Slider"));
-  assert.ok(content.includes('src={"./images/bauen-oder-kaufen.png"}'));
+  assert.ok(content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'));
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
   assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
   assert.equal(content.includes('data-ir-id="1:32"'), false);
@@ -4936,7 +4952,7 @@ test("deterministic screen rendering resolves detached MUI field labels, relativ
   assert.ok(content.includes("Bitte erfassen Sie die gewünschte monatliche Sparrate und den Zeitraum."));
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
   assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
-  assert.ok(content.includes('src={"./images/bauen-oder-kaufen.png"}'));
+  assert.ok(content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'));
   assert.equal(content.includes('data-ir-id="detached-label-1"'), false);
   assert.equal(content.includes('data-ir-id="detached-label-2"'), false);
   assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
@@ -6317,8 +6333,8 @@ test("generateArtifacts prefers MCP asset references for images and icon wrapper
   });
 
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
-  assert.ok(screenContent.includes('src={"/mcp/assets/hero.png"}'));
+  assert.ok(screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fhero.png"}'));
   assert.equal(screenContent.includes("data:image/svg+xml;utf8"), false);
-  assert.ok(screenContent.includes('src={"/mcp/assets/settings.svg"}'));
+  assert.ok(screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fsettings.svg"}'));
   assert.ok(screenContent.includes('component="img"'));
 });

@@ -58,7 +58,7 @@ export const appTheme = extendTheme({
       styleOverrides: {
         root: {
           borderRadius: 1,
-          "& .MuiOutlinedInput-root": {
+          "\u0026 .MuiOutlinedInput-root": {
             borderRadius: "8px"
           }
         }
