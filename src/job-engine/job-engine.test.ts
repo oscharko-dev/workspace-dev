@@ -525,7 +525,7 @@ test("createJobEngine falls back deterministically when hybrid mode has no MCP e
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
   });
   assert.equal(status.status, "completed");
   assert.equal(
