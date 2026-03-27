@@ -1145,6 +1145,42 @@ test("figmaToDesignIr throws path-aware validation errors for malformed payload"
   );
 });
 
+test("figmaToDesignIr falls back to a deterministic source name when the payload omits name", () => {
+  const { name: _ignored, ...unnamedSample } = createSampleFigmaFile();
+  const ir = figmaToDesignIr(unnamedSample);
+
+  assert.equal(ir.sourceName, "Figma File");
+});
+
+test("figmaToDesignIrWithOptions normalizes degraded geometry diagnostics deterministically", () => {
+  const ir = figmaToDesignIrWithOptions(createSampleFigmaFile(), {
+    sourceMetrics: {
+      fetchedNodes: 12,
+      degradedGeometryNodes: ["node-b", "  ", "node-a", ""]
+    }
+  });
+
+  assert.deepEqual(ir.metrics?.degradedGeometryNodes, ["node-a", "node-b"]);
+  assert.equal(
+    ir.metrics?.nodeDiagnostics?.some(
+      (diagnostic) =>
+        diagnostic.nodeId === "node-a" &&
+        diagnostic.category === "degraded-geometry" &&
+        diagnostic.reason === "Node geometry was degraded during staged fetch."
+    ),
+    true
+  );
+  assert.equal(
+    ir.metrics?.nodeDiagnostics?.some(
+      (diagnostic) =>
+        diagnostic.nodeId === "node-b" &&
+        diagnostic.category === "degraded-geometry" &&
+        diagnostic.reason === "Node geometry was degraded during staged fetch."
+    ),
+    true
+  );
+});
+
 test("figmaToDesignIr maps SECTION-contained screens and prunes hidden subtrees", () => {
   const ir = figmaToDesignIr(createSampleFigmaFile());
 

@@ -148,10 +148,44 @@ jobs:
           path: template/react-mui-app/artifacts/performance
           if-no-files-found: ignore
 
+  mutation-testing:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: quality-matrix
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run mutation baseline (warn-only)
+        run: pnpm run test:mutation
+
+      - name: Summarize mutation report
+        if: always()
+        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
+
+      - name: Upload mutation artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workspace-dev-mutation-${{ github.run_id }}
+          path: artifacts/testing/mutation
+          if-no-files-found: ignore
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [quality-matrix, performance-web]
+    needs: [quality-matrix, performance-web, mutation-testing]
     steps:
       - uses: actions/checkout@v6
 

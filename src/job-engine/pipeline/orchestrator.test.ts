@@ -365,3 +365,36 @@ test("PipelineOrchestrator converts in-flight abort-like errors into pipeline ca
       error.message.includes("abort requested during validation")
   );
 });
+
+test("PipelineOrchestrator preserves explicit service-thrown cancellation errors", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: [
+          {
+            service: {
+              stageName: "figma.source",
+              execute: async () => {
+                throw new PipelineCancellationError({
+                  stage: "figma.source",
+                  reason: "service canceled"
+                });
+              }
+            }
+          }
+        ]
+      });
+    },
+    (error: unknown) =>
+      error instanceof PipelineCancellationError &&
+      error.stage === "figma.source" &&
+      error.message === "service canceled"
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "figma.source")?.status, "failed");
+  assert.match(String(context.job.logs.at(-1)?.message ?? ""), /E_JOB_CANCELED: service canceled/);
+});
