@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.25.0
+ * Contract version: 2.26.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -53,6 +53,10 @@ export interface WorkspaceStartOptions {
   figmaRequestTimeoutMs?: number;
   /** Figma retry attempts. Default: 3 */
   figmaMaxRetries?: number;
+  /** Consecutive transient failures before the Figma REST circuit breaker opens. Default: 3 */
+  figmaCircuitBreakerFailureThreshold?: number;
+  /** Duration in milliseconds that the Figma REST circuit breaker stays open before a probe request is allowed. Default: 30000 */
+  figmaCircuitBreakerResetTimeoutMs?: number;
   /** Bootstrap depth for large-board staged fetch. Default: 5 */
   figmaBootstrapDepth?: number;
   /** Candidate node batch size for staged fetch. Default: 6 */
@@ -571,4 +575,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.25.0" as const;
+export const CONTRACT_VERSION = "2.26.0" as const;

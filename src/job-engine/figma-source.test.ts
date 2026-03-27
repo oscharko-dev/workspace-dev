@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fetchAuthoritativeFigmaSubtrees, fetchFigmaFile } from "./figma-source.js";
+import {
+  createFigmaRestCircuitBreaker,
+  type FigmaRestCircuitBreakerClock
+} from "./figma-rest-circuit-breaker.js";
 
 const jsonResponse = (payload: unknown, init?: ResponseInit): Response => {
   return new Response(JSON.stringify(payload), {
@@ -14,7 +18,17 @@ const jsonResponse = (payload: unknown, init?: ResponseInit): Response => {
   });
 };
 
-const createRequest = (fetchImpl: typeof fetch) => {
+const createRequest = (
+  input:
+    | typeof fetch
+    | {
+        fetchImpl: typeof fetch;
+        figmaRestCircuitBreaker?: ReturnType<typeof createFigmaRestCircuitBreaker>;
+      }
+) => {
+  const fetchImpl = typeof input === "function" ? input : input.fetchImpl;
+  const figmaRestCircuitBreaker = typeof input === "function" ? undefined : input.figmaRestCircuitBreaker;
+
   return {
     fileKey: "abc",
     accessToken: "token",
@@ -29,10 +43,32 @@ const createRequest = (fetchImpl: typeof fetch) => {
     cacheTtlMs: 15 * 60_000,
     cacheDir: path.join(os.tmpdir(), "workspace-dev-figma-source-cache-disabled"),
     fetchImpl,
+    figmaRestCircuitBreaker:
+      figmaRestCircuitBreaker ??
+      createFigmaRestCircuitBreaker({
+        failureThreshold: 3,
+        resetTimeoutMs: 30_000
+      }),
     onLog: () => {
       // no-op
     }
   };
+};
+
+const createBreaker = ({
+  failureThreshold = 3,
+  resetTimeoutMs = 30_000,
+  clock
+}: {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
+  clock?: FigmaRestCircuitBreakerClock;
+} = {}) => {
+  return createFigmaRestCircuitBreaker({
+    failureThreshold,
+    resetTimeoutMs,
+    ...(clock ? { clock } : {})
+  });
 };
 
 const createBootstrapDocument = () => ({
@@ -2062,4 +2098,113 @@ test("fetchFigmaFile returns path-aware schema validation errors for malformed p
       return candidate.code === "E_FIGMA_PARSE" && (candidate.message?.includes("document.children[0].id") ?? false);
     }
   );
+});
+
+test("fetchFigmaFile opens the circuit after repeated transient failures and then fails fast", async () => {
+  let fetchCalls = 0;
+  const breaker = createBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 30_000
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        throw new Error("network down");
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  const callsBeforeCircuitOpen = fetchCalls;
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => {
+      const candidate = error as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "open" &&
+        candidate.diagnostics?.[0]?.details?.consecutiveFailures === 2
+      );
+    }
+  );
+
+  assert.equal(fetchCalls, callsBeforeCircuitOpen);
+});
+
+test("fetchFigmaFile allows one half-open probe and closes the circuit after probe success", async () => {
+  let nowMs = 1_000;
+  let fetchCalls = 0;
+  let releaseProbe: (() => void) | undefined;
+  const breaker = createBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("network down");
+        }
+        if (fetchCalls === 2) {
+          return await new Promise<Response>((resolve) => {
+            releaseProbe = () => {
+              resolve(jsonResponse({ name: "Probe Recovery", document: { id: "0:0", type: "DOCUMENT", children: [] } }));
+            };
+          });
+        }
+        return jsonResponse({ name: "Steady State", document: { id: "0:0", type: "DOCUMENT", children: [] } });
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  nowMs += 5_000;
+  const probePromise = fetchFigmaFile(request);
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => {
+      const candidate = error as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "half-open" &&
+        candidate.diagnostics?.[0]?.details?.probeInFlight === true
+      );
+    }
+  );
+
+  assert.equal(fetchCalls, 2);
+  releaseProbe?.();
+  const probeResult = await probePromise;
+  assert.equal(probeResult.file.name, "Probe Recovery");
+
+  const steadyStateResult = await fetchFigmaFile(request);
+  assert.equal(steadyStateResult.file.name, "Steady State");
+  assert.equal(fetchCalls, 3);
 });

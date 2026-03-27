@@ -893,12 +893,13 @@ export const registerInteractiveField = ({
   const modelLabel = model.labelNode?.text?.trim();
   const resolvedModelLabel = modelLabel && !isInternalImplementationLabel(modelLabel) ? modelLabel : undefined;
   const nearbyLabelNode = resolvedModelLabel ? undefined : resolveNearbyFieldLabel({ context, element });
-  if (!resolvedModelLabel && nearbyLabelNode) {
-    context.consumedFieldLabelNodeIds?.add(nearbyLabelNode.id);
+  const consumedFieldLabelNodeIds = context.consumedFieldLabelNodeIds;
+  if (!resolvedModelLabel && nearbyLabelNode && consumedFieldLabelNodeIds) {
+    consumedFieldLabelNodeIds.add(nearbyLabelNode.id);
   }
   const rawLabel =
     resolvedModelLabel ??
-    nearbyLabelNode?.text?.trim() ??
+    nearbyLabelNode?.text.trim() ??
     modelLabel ??
     element.name;
   const required = inferRequiredFromLabel(rawLabel);

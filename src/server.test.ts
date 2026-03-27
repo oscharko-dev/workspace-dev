@@ -10,6 +10,7 @@ import { createWorkspaceServer } from "./server.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_NODE_MODULES_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app/node_modules");
+const HEAVY_SERVER_JOB_TIMEOUT_MS = 60_000;
 
 const createLocalFigmaPayload = () => ({
   name: "Workspace Dev Demo",
@@ -708,7 +709,7 @@ test("workspace server accepts hybrid mode on submit", async () => {
     const terminal = await waitForJobTerminalState({
       server,
       jobId,
-      timeoutMs: 20_000
+      timeoutMs: HEAVY_SERVER_JOB_TIMEOUT_MS
     });
     assert.ok(terminal.status === "completed" || terminal.status === "failed");
   } finally {

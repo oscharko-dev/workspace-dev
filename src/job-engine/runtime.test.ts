@@ -7,6 +7,9 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
 
   assert.equal(runtime.figmaTimeoutMs, 30_000);
   assert.equal(runtime.figmaMaxRetries, 3);
+  assert.equal(runtime.figmaCircuitBreakerFailureThreshold, 3);
+  assert.equal(runtime.figmaCircuitBreakerResetTimeoutMs, 30_000);
+  assert.equal(runtime.figmaRestCircuitBreaker.getSnapshot().state, "closed");
   assert.equal(runtime.figmaBootstrapDepth, 5);
   assert.equal(runtime.figmaNodeBatchSize, 6);
   assert.equal(runtime.figmaNodeFetchConcurrency, 3);
@@ -38,6 +41,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
 test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   const runtime = resolveRuntimeSettings({
     figmaBootstrapDepth: 999,
+    figmaCircuitBreakerFailureThreshold: 999,
+    figmaCircuitBreakerResetTimeoutMs: 10,
     figmaNodeBatchSize: 0,
     figmaNodeFetchConcurrency: 99,
     figmaAdaptiveBatchingEnabled: false,
@@ -63,6 +68,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   });
 
   assert.equal(runtime.figmaBootstrapDepth, 10);
+  assert.equal(runtime.figmaCircuitBreakerFailureThreshold, 20);
+  assert.equal(runtime.figmaCircuitBreakerResetTimeoutMs, 1_000);
   assert.equal(runtime.figmaNodeBatchSize, 1);
   assert.equal(runtime.figmaNodeFetchConcurrency, 10);
   assert.equal(runtime.figmaAdaptiveBatchingEnabled, false);

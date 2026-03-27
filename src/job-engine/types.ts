@@ -29,6 +29,7 @@ import type {
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
+import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 
 export interface FigmaFileResponse {
   name?: string;
@@ -90,6 +91,9 @@ export interface JobEnginePaths {
 export interface JobEngineRuntime {
   figmaTimeoutMs: number;
   figmaMaxRetries: number;
+  figmaCircuitBreakerFailureThreshold: number;
+  figmaCircuitBreakerResetTimeoutMs: number;
+  figmaRestCircuitBreaker: FigmaRestCircuitBreaker;
   figmaBootstrapDepth: number;
   figmaNodeBatchSize: number;
   figmaNodeFetchConcurrency: number;

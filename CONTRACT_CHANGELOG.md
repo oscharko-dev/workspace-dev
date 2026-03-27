@@ -23,6 +23,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.26.0] - 2026-03-27
+
+### Configurable Figma REST circuit breaker
+
+Added:
+
+- `WorkspaceStartOptions.figmaCircuitBreakerFailureThreshold?: number` (default `3`) to configure how many consecutive transient Figma REST failures open the in-memory circuit breaker.
+- `WorkspaceStartOptions.figmaCircuitBreakerResetTimeoutMs?: number` (default `30000`) to configure how long the breaker remains open before allowing a half-open probe request.
+
+---
+
 ## [2.25.0] - 2026-03-26
 
 ### Per-IP submission rate limiting

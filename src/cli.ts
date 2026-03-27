@@ -21,6 +21,8 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
 const DEFAULT_FIGMA_TIMEOUT_MS = 30_000;
 const DEFAULT_FIGMA_RETRIES = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS = 30_000;
 const DEFAULT_FIGMA_BOOTSTRAP_DEPTH = 5;
 const DEFAULT_FIGMA_NODE_BATCH_SIZE = 6;
 const DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY = 3;
@@ -50,6 +52,8 @@ interface CliOptions {
   outputRoot: string;
   figmaTimeoutMs: number;
   figmaRetries: number;
+  figmaCircuitBreakerFailureThreshold: number;
+  figmaCircuitBreakerResetTimeoutMs: number;
   figmaBootstrapDepth: number;
   figmaNodeBatchSize: number;
   figmaNodeFetchConcurrency: number;
@@ -175,6 +179,18 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_FIGMA_RETRIES,
     min: 1,
     max: 10
+  });
+  let figmaCircuitBreakerFailureThreshold = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    min: 1,
+    max: 20
+  });
+  let figmaCircuitBreakerResetTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
+    min: 1_000,
+    max: 60 * 60_000
   });
   let figmaBootstrapDepth = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH,
@@ -345,6 +361,28 @@ const parseArgs = (argv: string[]): CliOptions => {
         fallback: figmaRetries,
         min: 1,
         max: 10
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-circuit-breaker-failure-threshold") {
+      figmaCircuitBreakerFailureThreshold = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCircuitBreakerFailureThreshold,
+        min: 1,
+        max: 20
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-circuit-breaker-reset-timeout-ms") {
+      figmaCircuitBreakerResetTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaCircuitBreakerResetTimeoutMs,
+        min: 1_000,
+        max: 60 * 60_000
       });
       index += 1;
       continue;
@@ -619,6 +657,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     outputRoot,
     figmaTimeoutMs,
     figmaRetries,
+    figmaCircuitBreakerFailureThreshold,
+    figmaCircuitBreakerResetTimeoutMs,
     figmaBootstrapDepth,
     figmaNodeBatchSize,
     figmaNodeFetchConcurrency,
@@ -669,6 +709,10 @@ Options:
   --output-root <path>       Output root for jobs/repros (default: ${DEFAULT_OUTPUT_ROOT})
   --figma-timeout-ms <ms>    Figma request timeout (default: ${DEFAULT_FIGMA_TIMEOUT_MS})
   --figma-retries <count>    Figma max retries (default: ${DEFAULT_FIGMA_RETRIES})
+  --figma-circuit-breaker-failure-threshold <n>
+                             Consecutive transient Figma failures before the circuit opens (default: ${DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD})
+  --figma-circuit-breaker-reset-timeout-ms <ms>
+                             Time before the Figma circuit breaker allows a probe request (default: ${DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS})
   --figma-bootstrap-depth <n>
                              Bootstrap depth for staged large-board fetch (default: ${DEFAULT_FIGMA_BOOTSTRAP_DEPTH})
   --figma-node-batch-size <n>
@@ -727,6 +771,8 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_OUTPUT_ROOT
   FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_FIGMA_RETRIES
+  FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+  FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS
   FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH
   FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE
   FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY
@@ -832,6 +878,8 @@ const main = async (): Promise<void> => {
       outputRoot: options.outputRoot,
       figmaRequestTimeoutMs: options.figmaTimeoutMs,
       figmaMaxRetries: options.figmaRetries,
+      figmaCircuitBreakerFailureThreshold: options.figmaCircuitBreakerFailureThreshold,
+      figmaCircuitBreakerResetTimeoutMs: options.figmaCircuitBreakerResetTimeoutMs,
       figmaBootstrapDepth: options.figmaBootstrapDepth,
       figmaNodeBatchSize: options.figmaNodeBatchSize,
       figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
@@ -886,6 +934,9 @@ const main = async (): Promise<void> => {
     console.log(`[workspace-dev] Rate limit per minute: ${options.rateLimitPerMinute}`);
     console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
     console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
+    console.log(
+      `[workspace-dev] Figma circuit breaker: threshold=${options.figmaCircuitBreakerFailureThreshold}, resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`
+    );
     console.log(
       `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
     );
