@@ -82,5 +82,11 @@ export default tseslint.config(
       "@typescript-eslint/unbound-method": "off",
       "@typescript-eslint/use-unknown-in-catch-callback-variable": "off"
     }
+  },
+  {
+    files: ["ui-src/src/main.tsx", "src/main.tsx", "**/src/main.tsx"],
+    rules: {
+      "react-refresh/only-export-components": "off"
+    }
   }
 );

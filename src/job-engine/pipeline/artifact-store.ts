@@ -17,6 +17,19 @@ const safeKeyToFileName = (key: string): string => {
   return normalized.length > 0 ? normalized : "artifact";
 };
 
+const isStageArtifactReference = (value: unknown): value is StageArtifactReference => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.key === "string" &&
+    typeof candidate.stage === "string" &&
+    typeof candidate.kind === "string" &&
+    typeof candidate.updatedAt === "string"
+  );
+};
+
 export class StageArtifactStore {
   private readonly rootDir: string;
   private readonly refsDir: string;
@@ -38,12 +51,12 @@ export class StageArtifactStore {
     await mkdir(this.refsDir, { recursive: true });
     try {
       const raw = await readFile(this.indexFile, "utf8");
-      const parsed = JSON.parse(raw) as StageArtifactReference[] | undefined;
+      const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
         return;
       }
       for (const entry of parsed) {
-        if (typeof entry?.key !== "string") {
+        if (!isStageArtifactReference(entry)) {
           continue;
         }
         this.references.set(entry.key, entry);

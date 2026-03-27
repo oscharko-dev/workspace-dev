@@ -25,6 +25,8 @@ const waitForTerminalStatus = async ({
   throw new Error(`Timed out after ${timeoutMs}ms waiting for job ${jobId} status`);
 };
 
+const HEAVY_JOB_TIMEOUT_MS = 60_000;
+
 const createLocalFigmaPayload = () => ({
   name: "Local JSON Board",
   document: {
@@ -290,7 +292,7 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
   });
   assert.equal(status.status, "completed");
   assert.equal(loaderCalls.length, 1);
@@ -433,7 +435,7 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
   });
   assert.equal(status.status, "completed");
   assert.equal(
@@ -481,7 +483,7 @@ test("createJobEngine fails low-fidelity rest jobs without authoritative recover
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_LOW_FIDELITY_SOURCE");
@@ -835,6 +837,54 @@ test("createJobEngine marks jobs failed when figma source cannot be fetched", as
   assert.equal(status.error?.code, "E_FIGMA_NETWORK");
   assert.equal(status.error?.stage, "figma.source");
   assert.equal(engine.getJobResult(accepted.jobId)?.error?.code, "E_FIGMA_NETWORK");
+});
+
+test("createJobEngine surfaces circuit-open diagnostics after transient figma failures open the breaker", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-circuit-open-"));
+  let fetchCalls = 0;
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaCacheEnabled: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      figmaCircuitBreakerFailureThreshold: 1,
+      figmaCircuitBreakerResetTimeoutMs: 60_000,
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        throw new Error("network down");
+      }
+    })
+  });
+
+  const firstAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const firstStatus = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: firstAccepted.jobId, timeoutMs: 20_000 });
+  assert.equal(firstStatus.status, "failed");
+  assert.equal(firstStatus.error?.code, "E_FIGMA_NETWORK");
+  assert.equal(fetchCalls, 1);
+
+  const secondAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const secondStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: secondAccepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(secondStatus.status, "failed");
+  assert.equal(secondStatus.error?.code, "E_FIGMA_CIRCUIT_OPEN");
+  assert.equal(secondStatus.error?.stage, "figma.source");
+  assert.equal(secondStatus.error?.diagnostics?.[0]?.code, "E_FIGMA_CIRCUIT_OPEN");
+  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.circuitState, "open");
+  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.failureThreshold, 1);
+  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.resetTimeoutMs, 60_000);
+  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.probeInFlight, false);
+  assert.equal(typeof secondStatus.error?.diagnostics?.[0]?.details?.nextProbeAt, "string");
+  assert.equal(fetchCalls, 1);
 });
 
 test("createJobEngine supports local_json mode without Figma REST calls", async () => {

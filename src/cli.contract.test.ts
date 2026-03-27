@@ -150,6 +150,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /workspace-dev start/i);
   assert.match(result.stdout, /workspace-dev scan-design-system/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_OUTPUT_ROOT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ICON_MAP_FILE/i);
@@ -165,6 +167,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
+  assert.match(result.stdout, /--figma-circuit-breaker-failure-threshold/i);
+  assert.match(result.stdout, /--figma-circuit-breaker-reset-timeout-ms/i);
   assert.match(result.stdout, /--icon-map-file/i);
   assert.match(result.stdout, /--design-system-file/i);
   assert.match(result.stdout, /--export-images/i);
@@ -491,6 +495,63 @@ test("cli contract: --no-cache disables figma cache and is logged", async () => 
   try {
     const output = await waitForStdout(child, /Figma cache enabled: false/i);
     assert.match(output, /Figma cache enabled: false/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: figma circuit breaker flags are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--figma-circuit-breaker-failure-threshold",
+      "5",
+      "--figma-circuit-breaker-reset-timeout-ms",
+      "45000"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Figma circuit breaker: threshold=5, resetTimeoutMs=45000/i);
+    assert.match(output, /Figma circuit breaker: threshold=5, resetTimeoutMs=45000/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: figma circuit breaker environment variables are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "4",
+      FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS: "60000"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Figma circuit breaker: threshold=4, resetTimeoutMs=60000/i);
+    assert.match(output, /Figma circuit breaker: threshold=4, resetTimeoutMs=60000/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

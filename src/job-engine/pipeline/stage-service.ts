@@ -8,7 +8,7 @@ export interface StageArtifactContract {
   optionalWrites?: StageArtifactKey[];
 }
 
-export interface StageService<TInput = any> {
+export interface StageService<TInput = unknown> {
   stageName: WorkspaceJobStageName;
-  execute: (input: TInput, context: StageRuntimeContext) => Promise<void>;
+  execute(input: TInput, context: StageRuntimeContext): Promise<void>;
 }

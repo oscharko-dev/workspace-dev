@@ -1,10 +1,16 @@
 import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "../contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
+import {
+  createFigmaRestCircuitBreaker,
+  type FigmaRestCircuitBreakerClock
+} from "./figma-rest-circuit-breaker.js";
 import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+const DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS = 30_000;
 const DEFAULT_BOOTSTRAP_DEPTH = 5;
 const DEFAULT_NODE_BATCH_SIZE = 6;
 const DEFAULT_NODE_FETCH_CONCURRENCY = 3;
@@ -52,6 +58,8 @@ const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | u
 export const resolveRuntimeSettings = ({
   figmaRequestTimeoutMs,
   figmaMaxRetries,
+  figmaCircuitBreakerFailureThreshold,
+  figmaCircuitBreakerResetTimeoutMs,
   figmaBootstrapDepth,
   figmaNodeBatchSize,
   figmaNodeFetchConcurrency,
@@ -79,10 +87,13 @@ export const resolveRuntimeSettings = ({
   maxQueuedJobs,
   enablePreview,
   fetchImpl,
-  figmaMcpEnrichmentLoader
+  figmaMcpEnrichmentLoader,
+  figmaCircuitBreakerClock
 }: {
   figmaRequestTimeoutMs?: number;
   figmaMaxRetries?: number;
+  figmaCircuitBreakerFailureThreshold?: number;
+  figmaCircuitBreakerResetTimeoutMs?: number;
   figmaBootstrapDepth?: number;
   figmaNodeBatchSize?: number;
   figmaNodeFetchConcurrency?: number;
@@ -111,7 +122,17 @@ export const resolveRuntimeSettings = ({
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
   figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
+  figmaCircuitBreakerClock?: FigmaRestCircuitBreakerClock;
 }): JobEngineRuntime => {
+  const resolvedFigmaCircuitBreakerFailureThreshold =
+    typeof figmaCircuitBreakerFailureThreshold === "number" && Number.isFinite(figmaCircuitBreakerFailureThreshold)
+      ? Math.max(1, Math.min(20, Math.trunc(figmaCircuitBreakerFailureThreshold)))
+      : DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+  const resolvedFigmaCircuitBreakerResetTimeoutMs =
+    typeof figmaCircuitBreakerResetTimeoutMs === "number" && Number.isFinite(figmaCircuitBreakerResetTimeoutMs)
+      ? Math.max(1_000, Math.min(60 * 60_000, Math.trunc(figmaCircuitBreakerResetTimeoutMs)))
+      : DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS;
+
   return {
     figmaTimeoutMs:
       typeof figmaRequestTimeoutMs === "number" && Number.isFinite(figmaRequestTimeoutMs)
@@ -121,6 +142,13 @@ export const resolveRuntimeSettings = ({
       typeof figmaMaxRetries === "number" && Number.isFinite(figmaMaxRetries)
         ? Math.max(1, Math.min(10, Math.trunc(figmaMaxRetries)))
         : DEFAULT_MAX_RETRIES,
+    figmaCircuitBreakerFailureThreshold: resolvedFigmaCircuitBreakerFailureThreshold,
+    figmaCircuitBreakerResetTimeoutMs: resolvedFigmaCircuitBreakerResetTimeoutMs,
+    figmaRestCircuitBreaker: createFigmaRestCircuitBreaker({
+      failureThreshold: resolvedFigmaCircuitBreakerFailureThreshold,
+      resetTimeoutMs: resolvedFigmaCircuitBreakerResetTimeoutMs,
+      ...(figmaCircuitBreakerClock ? { clock: figmaCircuitBreakerClock } : {})
+    }),
     figmaBootstrapDepth:
       typeof figmaBootstrapDepth === "number" && Number.isFinite(figmaBootstrapDepth)
         ? Math.max(1, Math.min(10, Math.trunc(figmaBootstrapDepth)))

@@ -1,9 +1,43 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider } from "react-router-dom";
-import { appRouter } from "./app/router";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { WorkspacePage } from "./features/workspace/workspace-page";
 import "./app.css";
+
+const LazyInspectorPage = lazy(async () => {
+  const module = await import("./features/workspace/inspector-page");
+  return { default: module.InspectorPage };
+});
+
+const routeFallback = <div aria-hidden="true" className="min-h-screen bg-[#101010]" />;
+
+const appRouter = createBrowserRouter([
+  {
+    path: "/workspace/ui/inspector",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyInspectorPage />
+      </Suspense>
+    )
+  },
+  {
+    path: "/workspace/ui",
+    element: <WorkspacePage />
+  },
+  {
+    path: "/workspace/ui/*",
+    element: <WorkspacePage />
+  },
+  {
+    path: "/workspace/:figmaFileKey",
+    element: <WorkspacePage />
+  },
+  {
+    path: "*",
+    element: <WorkspacePage />
+  }
+]);
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -18,4 +18,4 @@ export const STAGE_ARTIFACT_KEYS = {
   gitPrStatus: "git.pr.status"
 } as const;
 
-export type StageArtifactKey = (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS] | string;
+export type StageArtifactKey = (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS] | (string & {});

@@ -780,7 +780,7 @@ export function WorkspacePage(): JSX.Element {
                 }}
                 className="mt-4"
               >
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   <div className="flex flex-col gap-2">
                     <label htmlFor="figma-source-mode" className="text-xs font-medium uppercase tracking-wider text-[#666]">
                       Source mode
@@ -916,7 +916,7 @@ export function WorkspacePage(): JSX.Element {
           </section>
 
           {/* Runtime Card */}
-          <section data-testid="runtime-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
+          <section data-testid="runtime-card" className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-xl border border-black/10 bg-white p-px">
             <div className="p-6 pb-0">
               <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Runtime</p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
@@ -927,67 +927,69 @@ export function WorkspacePage(): JSX.Element {
               </p>
             </div>
 
-            <div className="p-6 pt-4">
-              {/* Health row */}
-              <div className="flex items-center justify-between border-b border-black/10 py-3">
-                <div>
-                  <p className="m-0 text-sm font-medium text-[#333]">Health</p>
-                  <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data ? runtimeQuery.data.health.status : "---"}</p>
+            <div className="flex min-h-0 flex-1 flex-col p-6 pt-4">
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                {/* Health row */}
+                <div className="flex items-center justify-between border-b border-black/10 py-3">
+                  <div>
+                    <p className="m-0 text-sm font-medium text-[#333]">Health</p>
+                    <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data ? runtimeQuery.data.health.status : "---"}</p>
+                  </div>
+                  <StatusBadge text={healthBadge.text} variant={healthBadge.variant} />
                 </div>
-                <StatusBadge text={healthBadge.text} variant={healthBadge.variant} />
-              </div>
 
-              {/* Workspace row */}
-              <div className="flex items-center justify-between border-b border-black/10 py-3">
-                <div>
-                  <p className="m-0 text-sm font-medium text-[#333]">Workspace</p>
-                  <p className="m-0 font-mono text-xs text-[#666]">
-                    {runtimeData?.url ?? "---"}
-                  </p>
+                {/* Workspace row */}
+                <div className="flex items-center justify-between border-b border-black/10 py-3">
+                  <div>
+                    <p className="m-0 text-sm font-medium text-[#333]">Workspace</p>
+                    <p className="m-0 font-mono text-xs text-[#666]">
+                      {runtimeData?.url ?? "---"}
+                    </p>
+                  </div>
+                  <StatusBadge text={workspaceBadge.text} variant={workspaceBadge.variant} />
                 </div>
-                <StatusBadge text={workspaceBadge.text} variant={workspaceBadge.variant} />
-              </div>
 
-              {/* Submit row */}
-              <div className="border-b border-black/10 py-3">
-                <div className="flex items-center justify-between">
-                  <p className="m-0 text-sm font-medium text-[#333]">Submit:</p>
-                  <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
+                {/* Submit row */}
+                <div className="border-b border-black/10 py-3">
+                  <div className="flex items-center justify-between">
+                    <p className="m-0 text-sm font-medium text-[#333]">Submit:</p>
+                    <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <p className="m-0 text-xs text-[#666]">
+                      <span className="text-[#666]">Mode: </span>
+                      <span className="text-[#333]">
+                        figmaSourceMode={selectedFigmaSourceMode} &nbsp; llmCodegenMode=deterministic
+                      </span>
+                    </p>
+                    <p className="m-0 text-xs text-[#666]">
+                      <span className="text-[#666]">Preview: </span>
+                      <span className="text-[#333]">{runtimeData?.previewEnabled ? "Enabled" : "Disabled"}</span>
+                    </p>
+                    <p className="m-0 text-xs text-[#666]">
+                      <span className="text-[#666]">Uptime: </span>
+                      <span className="text-[#333]">{runtimeData ? formatUptime(runtimeData.uptimeMs) : "---"}</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="mt-2 space-y-1">
-                  <p className="m-0 text-xs text-[#666]">
-                    <span className="text-[#666]">Mode: </span>
-                    <span className="text-[#333]">
-                      figmaSourceMode={selectedFigmaSourceMode} &nbsp; llmCodegenMode=deterministic
-                    </span>
-                  </p>
-                  <p className="m-0 text-xs text-[#666]">
-                    <span className="text-[#666]">Preview: </span>
-                    <span className="text-[#333]">{runtimeData?.previewEnabled ? "Enabled" : "Disabled"}</span>
-                  </p>
-                  <p className="m-0 text-xs text-[#666]">
-                    <span className="text-[#666]">Uptime: </span>
-                    <span className="text-[#333]">{runtimeData ? formatUptime(runtimeData.uptimeMs) : "---"}</span>
-                  </p>
-                </div>
-              </div>
 
-              {/* Runtime diagnostics toggle */}
-              <button
-                type="button"
-                onClick={() => { setShowRuntimeDiag(!showRuntimeDiag); }}
-                className="mt-3 flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium text-[#666] hover:text-[#333]"
-              >
-                <span className={`inline-block transition ${showRuntimeDiag ? "" : "-rotate-90"}`}>
-                  <ChevronDownIcon />
-                </span>
-                Runtime diagnostics
-              </button>
-              {showRuntimeDiag ? (
-                <pre data-testid="runtime-payload" className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]">
-                  {runtimePayloadView}
-                </pre>
-              ) : null}
+                {/* Runtime diagnostics toggle */}
+                <button
+                  type="button"
+                  onClick={() => { setShowRuntimeDiag(!showRuntimeDiag); }}
+                  className="mt-3 flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium text-[#666] hover:text-[#333]"
+                >
+                  <span className={`inline-block transition ${showRuntimeDiag ? "" : "-rotate-90"}`}>
+                    <ChevronDownIcon />
+                  </span>
+                  Runtime diagnostics
+                </button>
+                {showRuntimeDiag ? (
+                  <pre data-testid="runtime-payload" className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]">
+                    {runtimePayloadView}
+                  </pre>
+                ) : null}
+              </div>
             </div>
           </section>
 

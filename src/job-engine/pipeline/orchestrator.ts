@@ -19,7 +19,7 @@ export const isPipelineCancellationError = (error: unknown): error is PipelineCa
   return error instanceof PipelineCancellationError;
 };
 
-export interface PipelineStagePlanEntry<TInput = any> {
+export interface PipelineStagePlanEntry<TInput = unknown> {
   service: StageService<TInput>;
   artifacts?: StageArtifactContract;
   resolveInput?: (context: PipelineExecutionContext) => Promise<TInput> | TInput;
@@ -55,7 +55,7 @@ export class PipelineOrchestrator {
   private resolveArtifactContract({
     entry
   }: {
-    entry: PipelineStagePlanEntry;
+    entry: PipelineStagePlanEntry<unknown>;
   }): { reads: string[]; writes: string[]; optionalWrites: string[] } {
     const contract = entry.artifacts;
     return {
@@ -182,7 +182,7 @@ export class PipelineOrchestrator {
     plan
   }: {
     context: PipelineExecutionContext;
-    plan: PipelineStagePlanEntry[];
+    plan: PipelineStagePlanEntry<unknown>[];
   }): Promise<void> {
     for (const entry of plan) {
       const service = entry.service;

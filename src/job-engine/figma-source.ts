@@ -3,6 +3,10 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../figma-payload-validation.js";
 import { createPipelineError, getErrorMessage } from "./errors.js";
+import type {
+  FigmaRestCircuitBreaker,
+  FigmaRestCircuitBreakerSnapshot
+} from "./figma-rest-circuit-breaker.js";
 import type { FigmaFetchResult, FigmaFileResponse } from "./types.js";
 
 const MIN_SCREEN_WIDTH = 320;
@@ -156,6 +160,75 @@ const toRetryDelay = ({ attempt }: { attempt: number }): number => {
   const base = Math.min(8_000, 500 * 2 ** Math.max(0, attempt - 1));
   const jitter = Math.floor(Math.random() * 250);
   return base + jitter;
+};
+
+const getErrorCode = (error: unknown): string | undefined => {
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+};
+
+const getErrorCause = (error: unknown): unknown => {
+  return error instanceof Error && "cause" in error ? (error as Error & { cause?: unknown }).cause : undefined;
+};
+
+const isTransientFigmaRestFailure = (error: unknown): boolean => {
+  if (error instanceof FigmaTooLargeError) {
+    return false;
+  }
+
+  const code = getErrorCode(error);
+  if (
+    code === "E_FIGMA_NETWORK" ||
+    code === "E_FIGMA_TIMEOUT" ||
+    code === "E_FIGMA_RATE_LIMIT" ||
+    code === "E_FIGMA_UPSTREAM"
+  ) {
+    return true;
+  }
+
+  if (code === "E_FIGMA_PARSE") {
+    return isTimeoutError(error) || isTimeoutError(getErrorCause(error));
+  }
+
+  return false;
+};
+
+const toCircuitOpenError = ({
+  requestLabel,
+  snapshot
+}: {
+  requestLabel: string;
+  snapshot: FigmaRestCircuitBreakerSnapshot;
+}) => {
+  const message =
+    snapshot.state === "half-open" && snapshot.probeInFlight
+      ? `Figma REST circuit breaker is half-open and already probing (${requestLabel}).`
+      : `Figma REST circuit breaker is open (${requestLabel}).`;
+
+  return createPipelineError({
+    code: "E_FIGMA_CIRCUIT_OPEN",
+    stage: "figma.source",
+    message,
+    diagnostics: [
+      {
+        code: "E_FIGMA_CIRCUIT_OPEN",
+        message,
+        suggestion: "Wait for the breaker reset window to elapse or restore Figma API availability before retrying.",
+        stage: "figma.source",
+        severity: "error",
+        details: {
+          circuitState: snapshot.state,
+          consecutiveFailures: snapshot.consecutiveFailures,
+          failureThreshold: snapshot.failureThreshold,
+          resetTimeoutMs: snapshot.resetTimeoutMs,
+          ...(snapshot.nextProbeAt !== undefined
+            ? { nextProbeAt: new Date(snapshot.nextProbeAt).toISOString() }
+            : {}),
+          probeInFlight: snapshot.probeInFlight,
+          requestLabel
+        }
+      }
+    ]
+  });
 };
 
 const isTooLargeBody = (body: string): boolean => {
@@ -333,7 +406,8 @@ const executeFigmaRequest = async ({
   maxRetries,
   fetchImpl,
   onLog,
-  allowTooLargeFallback
+  allowTooLargeFallback,
+  figmaRestCircuitBreaker
 }: {
   url: string;
   requestLabel: string;
@@ -343,7 +417,16 @@ const executeFigmaRequest = async ({
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
   allowTooLargeFallback: boolean;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
 }): Promise<unknown> => {
+  const circuitDecision = figmaRestCircuitBreaker?.beforeRequest();
+  if (circuitDecision && !circuitDecision.allowRequest) {
+    throw toCircuitOpenError({
+      requestLabel,
+      snapshot: circuitDecision.snapshot
+    });
+  }
+
   const performRequest = async (headers: Record<string, string>): Promise<Response> => {
     return await fetchWithTimeout({
       fetchImpl,
@@ -353,103 +436,122 @@ const executeFigmaRequest = async ({
     });
   };
 
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    let response: Response;
-    try {
-      response = await performRequest({
-        "X-Figma-Token": accessToken,
-        Accept: "application/json"
-      });
+  try {
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      let response: Response;
+      try {
+        response = await performRequest({
+          "X-Figma-Token": accessToken,
+          Accept: "application/json"
+        });
 
-      if (response.status === 403) {
-        const bodyText = (await response.clone().text()).toLowerCase();
-        if (bodyText.includes("invalid token")) {
-          onLog("Figma PAT rejected, retrying request with Bearer authorization header.");
-          response = await performRequest({
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/json"
-          });
+        if (response.status === 403) {
+          const bodyText = (await response.clone().text()).toLowerCase();
+          if (bodyText.includes("invalid token")) {
+            onLog("Figma PAT rejected, retrying request with Bearer authorization header.");
+            response = await performRequest({
+              Authorization: `Bearer ${accessToken}`,
+              Accept: "application/json"
+            });
+          }
         }
-      }
-    } catch (error) {
-      const shouldRetry = attempt < maxRetries;
-      if (shouldRetry) {
-        const delayMs = toRetryDelay({ attempt });
-        onLog(
-          `Figma request failed (${requestLabel}, ${isTimeoutError(error) ? "timeout" : "network"}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`
-        );
-        await waitFor(delayMs);
-        continue;
-      }
-      throw createPipelineError({
-        code: isTimeoutError(error) ? "E_FIGMA_TIMEOUT" : "E_FIGMA_NETWORK",
-        stage: "figma.source",
-        message: `Figma REST request failed (${requestLabel}): ${getErrorMessage(error)}`,
-        cause: error
-      });
-    }
-
-    if (!response.ok) {
-      const failureBodyRaw = await response.text();
-      const failureBody = failureBodyRaw.slice(0, MAX_ERROR_BODY_CHARS);
-      const isTooLarge =
-        response.status === 413 || (response.status === 400 && isTooLargeBody(failureBodyRaw));
-      if (allowTooLargeFallback && isTooLarge) {
-        throw new FigmaTooLargeError(
-          `Figma request too large (${requestLabel}, status=${response.status}).`,
-          response.status
-        );
+      } catch (error) {
+        const shouldRetry = attempt < maxRetries;
+        if (shouldRetry) {
+          const delayMs = toRetryDelay({ attempt });
+          onLog(
+            `Figma request failed (${requestLabel}, ${isTimeoutError(error) ? "timeout" : "network"}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`
+          );
+          await waitFor(delayMs);
+          continue;
+        }
+        throw createPipelineError({
+          code: isTimeoutError(error) ? "E_FIGMA_TIMEOUT" : "E_FIGMA_NETWORK",
+          stage: "figma.source",
+          message: `Figma REST request failed (${requestLabel}): ${getErrorMessage(error)}`,
+          cause: error
+        });
       }
 
-      const status = parseFigmaStatus(response.status);
-      if (status.retryable && attempt < maxRetries) {
-        const delayMs = toRetryDelay({ attempt });
-        onLog(
-          `Figma API responded ${response.status} (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`
-        );
-        await waitFor(delayMs);
-        continue;
+      if (!response.ok) {
+        const failureBodyRaw = await response.text();
+        const failureBody = failureBodyRaw.slice(0, MAX_ERROR_BODY_CHARS);
+        const isTooLarge =
+          response.status === 413 || (response.status === 400 && isTooLargeBody(failureBodyRaw));
+        if (allowTooLargeFallback && isTooLarge) {
+          throw new FigmaTooLargeError(
+            `Figma request too large (${requestLabel}, status=${response.status}).`,
+            response.status
+          );
+        }
+
+        const status = parseFigmaStatus(response.status);
+        if (status.retryable && attempt < maxRetries) {
+          const delayMs = toRetryDelay({ attempt });
+          onLog(
+            `Figma API responded ${response.status} (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`
+          );
+          await waitFor(delayMs);
+          continue;
+        }
+        throw createPipelineError({
+          code: status.code,
+          stage: "figma.source",
+          message: `Figma API error (${response.status}) (${requestLabel}): ${failureBody || "no response body"}`
+        });
       }
-      throw createPipelineError({
-        code: status.code,
-        stage: "figma.source",
-        message: `Figma API error (${response.status}) (${requestLabel}): ${failureBody || "no response body"}`
-      });
+
+      try {
+        const payload = await parseJsonWithByteLimit({
+          response,
+          requestLabel,
+          allowTooLargeFallback
+        });
+        figmaRestCircuitBreaker?.recordSuccess();
+        return payload;
+      } catch (error) {
+        if (error instanceof FigmaTooLargeError) {
+          throw error;
+        }
+        if (allowTooLargeFallback && isTooLargeParseError(error)) {
+          throw new FigmaTooLargeError(`Figma response exceeded parser limits (${requestLabel}).`);
+        }
+        if (isTimeoutError(error) && attempt < maxRetries) {
+          const delayMs = toRetryDelay({ attempt });
+          onLog(`Figma response parse timed out (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`);
+          await waitFor(delayMs);
+          continue;
+        }
+        throw createPipelineError({
+          code: "E_FIGMA_PARSE",
+          stage: "figma.source",
+          message: `Could not parse Figma API response (${requestLabel}): ${getErrorMessage(error)}`,
+          cause: error
+        });
+      }
     }
 
-    try {
-      return await parseJsonWithByteLimit({
-        response,
-        requestLabel,
-        allowTooLargeFallback
-      });
-    } catch (error) {
-      if (error instanceof FigmaTooLargeError) {
-        throw error;
-      }
-      if (allowTooLargeFallback && isTooLargeParseError(error)) {
-        throw new FigmaTooLargeError(`Figma response exceeded parser limits (${requestLabel}).`);
-      }
-      if (isTimeoutError(error) && attempt < maxRetries) {
-        const delayMs = toRetryDelay({ attempt });
-        onLog(`Figma response parse timed out (${requestLabel}), retrying in ${delayMs}ms (${attempt}/${maxRetries}).`);
-        await waitFor(delayMs);
-        continue;
-      }
-      throw createPipelineError({
-        code: "E_FIGMA_PARSE",
-        stage: "figma.source",
-        message: `Could not parse Figma API response (${requestLabel}): ${getErrorMessage(error)}`,
-        cause: error
-      });
+    throw createPipelineError({
+      code: "E_FIGMA_RETRY_EXHAUSTED",
+      stage: "figma.source",
+      message: `Figma REST retries exhausted (${requestLabel}).`
+    });
+  } catch (error) {
+    if (error instanceof FigmaTooLargeError) {
+      figmaRestCircuitBreaker?.recordNonTransientOutcome();
+      throw error;
     }
+
+    if (getErrorCode(error) !== "E_FIGMA_CIRCUIT_OPEN") {
+      if (isTransientFigmaRestFailure(error)) {
+        figmaRestCircuitBreaker?.recordTransientFailure();
+      } else {
+        figmaRestCircuitBreaker?.recordNonTransientOutcome();
+      }
+    }
+
+    throw error;
   }
-
-  throw createPipelineError({
-    code: "E_FIGMA_RETRY_EXHAUSTED",
-    stage: "figma.source",
-    message: `Figma REST retries exhausted (${requestLabel}).`
-  });
 };
 
 const toFigmaCacheFilePath = ({
@@ -1320,7 +1422,8 @@ export const fetchAuthoritativeFigmaSubtrees = async ({
   fetchImpl,
   onLog,
   maxScreenCandidates,
-  screenNamePattern
+  screenNamePattern,
+  figmaRestCircuitBreaker
 }: {
   fileKey: string;
   accessToken: string;
@@ -1331,6 +1434,7 @@ export const fetchAuthoritativeFigmaSubtrees = async ({
   onLog: (message: string) => void;
   maxScreenCandidates: number;
   screenNamePattern?: string;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
 }): Promise<Array<{ nodeId: string; document: unknown }>> => {
   const root = isRecord(file.document) ? (file.document as FigmaNodeLike) : undefined;
   if (!root || detectLowFidelityReasons(file).length === 0) {
@@ -1371,7 +1475,8 @@ export const fetchAuthoritativeFigmaSubtrees = async ({
       maxRetries,
       fetchImpl,
       onLog,
-      allowTooLargeFallback: true
+      allowTooLargeFallback: true,
+      ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
     });
     return extractNodeDocuments(payload).get(nodeId);
   };
@@ -1429,7 +1534,8 @@ const fetchBootstrapFile = async ({
   maxRetries,
   fetchImpl,
   onLog,
-  bootstrapDepth
+  bootstrapDepth,
+  figmaRestCircuitBreaker
 }: {
   fileKey: string;
   accessToken: string;
@@ -1438,6 +1544,7 @@ const fetchBootstrapFile = async ({
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
   bootstrapDepth: number;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
 }): Promise<FigmaFileLike> => {
   for (let depth = bootstrapDepth; depth >= 1; depth -= 1) {
     const bootstrapUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}?depth=${depth}`;
@@ -1450,7 +1557,8 @@ const fetchBootstrapFile = async ({
         maxRetries,
         fetchImpl,
         onLog,
-        allowTooLargeFallback: true
+        allowTooLargeFallback: true,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
       });
       return toFigmaFileOrParseError({ payload, requestLabel: `files depth=${depth}` }) as FigmaFileLike;
     } catch (error) {
@@ -1475,7 +1583,8 @@ const fetchLatestFileVersionId = async ({
   timeoutMs,
   maxRetries,
   fetchImpl,
-  onLog
+  onLog,
+  figmaRestCircuitBreaker
 }: {
   fileKey: string;
   accessToken: string;
@@ -1483,6 +1592,7 @@ const fetchLatestFileVersionId = async ({
   maxRetries: number;
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
 }): Promise<string | undefined> => {
   const versionsUrl = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/versions?page_size=1`;
   const payload = await executeFigmaRequest({
@@ -1493,7 +1603,8 @@ const fetchLatestFileVersionId = async ({
     maxRetries,
     fetchImpl,
     onLog,
-    allowTooLargeFallback: false
+    allowTooLargeFallback: false,
+    ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
   });
   const record = toRecordOrParseError({
     payload,
@@ -1514,7 +1625,8 @@ const resolveStagedIncrementalContext = async ({
   timeoutMs,
   maxRetries,
   fetchImpl,
-  onLog
+  onLog,
+  figmaRestCircuitBreaker
 }: {
   cacheDir: string;
   fileKey: string;
@@ -1525,6 +1637,7 @@ const resolveStagedIncrementalContext = async ({
   maxRetries: number;
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
 }): Promise<{ fileVersionId?: string; context?: FigmaStagedIncrementalContext }> => {
   let fileVersionId: string | undefined;
   try {
@@ -1534,7 +1647,8 @@ const resolveStagedIncrementalContext = async ({
       timeoutMs,
       maxRetries,
       fetchImpl,
-      onLog
+      onLog,
+      ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
     });
   } catch (error) {
     onLog(
@@ -1619,6 +1733,7 @@ export const fetchFigmaFile = async ({
   maxRetries,
   fetchImpl,
   onLog,
+  figmaRestCircuitBreaker,
   bootstrapDepth,
   nodeBatchSize,
   nodeFetchConcurrency,
@@ -1635,6 +1750,7 @@ export const fetchFigmaFile = async ({
   maxRetries: number;
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
   bootstrapDepth: number;
   nodeBatchSize: number;
   nodeFetchConcurrency: number;
@@ -1673,7 +1789,8 @@ export const fetchFigmaFile = async ({
         maxRetries,
         fetchImpl,
         onLog,
-        allowTooLargeFallback: true
+        allowTooLargeFallback: true,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
       });
       const file = toFigmaFileOrParseError({ payload, requestLabel: "files geometry=paths" });
       const lowFidelityReasons = detectLowFidelityReasons(file);
@@ -1717,7 +1834,8 @@ export const fetchFigmaFile = async ({
         timeoutMs,
         maxRetries,
         fetchImpl,
-        onLog
+        onLog,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
       });
       stagedFileVersionId = resolvedIncremental.fileVersionId;
       stagedIncrementalContext = resolvedIncremental.context;
@@ -1730,7 +1848,8 @@ export const fetchFigmaFile = async ({
       maxRetries,
       fetchImpl,
       onLog,
-      bootstrapDepth
+      bootstrapDepth,
+      ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
     });
 
     const rootNode = isRecord(bootstrapFile.document) ? bootstrapFile.document : undefined;
@@ -1828,7 +1947,8 @@ export const fetchFigmaFile = async ({
           maxRetries,
           fetchImpl,
           onLog,
-          allowTooLargeFallback: true
+          allowTooLargeFallback: true,
+          ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
         });
 
         const documents = extractNodeDocuments(payload);
@@ -1883,7 +2003,8 @@ export const fetchFigmaFile = async ({
         maxRetries,
         fetchImpl,
         onLog,
-        allowTooLargeFallback: true
+        allowTooLargeFallback: true,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
       });
 
       const documents = extractNodeDocuments(payload);
@@ -1945,7 +2066,8 @@ export const fetchFigmaFile = async ({
         maxRetries,
         fetchImpl,
         onLog,
-        allowTooLargeFallback: false
+        allowTooLargeFallback: false,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
       });
       const documents = extractNodeDocuments(payload);
       const fallbackNode = documents.get(nodeId);
@@ -1990,7 +2112,8 @@ export const fetchFigmaFile = async ({
             maxRetries,
             fetchImpl,
             onLog,
-            allowTooLargeFallback: true
+            allowTooLargeFallback: true,
+            ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
           });
           const documents = extractNodeDocuments(payload);
           for (const id of ids) {
@@ -2160,7 +2283,8 @@ export const fetchFigmaFile = async ({
       maxRetries,
       fetchImpl,
       onLog,
-      allowTooLargeFallback: false
+      allowTooLargeFallback: false,
+      ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {})
     });
     const metadataRecord = toRecordOrParseError({ payload: metadataPayload, requestLabel: "files metadata depth=1" });
     const value = typeof metadataRecord.lastModified === "string" ? metadataRecord.lastModified.trim() : "";

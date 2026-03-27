@@ -168,6 +168,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         nodeFetchConcurrency: context.runtime.figmaNodeFetchConcurrency,
         adaptiveBatchingEnabled: context.runtime.figmaAdaptiveBatchingEnabled,
         maxScreenCandidates: context.runtime.figmaMaxScreenCandidates,
+        figmaRestCircuitBreaker: context.runtime.figmaRestCircuitBreaker,
         ...(context.runtime.figmaScreenNamePattern !== undefined
           ? { screenNamePattern: context.runtime.figmaScreenNamePattern }
           : {}),
