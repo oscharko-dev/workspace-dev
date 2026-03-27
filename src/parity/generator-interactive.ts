@@ -644,7 +644,7 @@ const hasTabNameHint = (element: ScreenElementIR): boolean => {
   return TAB_PATTERN_STRIP_NAME_HINTS.some((hint) => normalizedName.includes(hint));
 };
 
-const hasUnderlineIndicatorInTabStrip = ({
+export const hasUnderlineIndicatorInTabStrip = ({
   tabStripNode,
   tabActionNodeIds
 }: {
@@ -790,7 +790,7 @@ const toTabStripPatternCandidate = ({
   return { tabItems };
 };
 
-const resolveTabPanelNodes = ({
+export const resolveTabPanelNodes = ({
   hostElement,
   tabStripNode,
   tabCount,
@@ -1036,7 +1036,7 @@ const isDialogCloseControlNode = ({
   return hasCloseHint || (isControlLike && isTopRight);
 };
 
-const resolveDialogActionModels = ({
+export const resolveDialogActionModels = ({
   panelNode,
   context
 }: {
@@ -1091,7 +1091,7 @@ const resolveDialogActionModels = ({
   };
 };
 
-const resolveCenteredDialogPanelNode = ({
+export const resolveCenteredDialogPanelNode = ({
   overlayNode,
   context
 }: {

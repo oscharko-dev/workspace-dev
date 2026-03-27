@@ -370,6 +370,80 @@ test("cleanFigmaForCodegen preserves style catalogs, node style ids, and bound v
   });
 });
 
+test("cleanFigmaForCodegen filters invalid style catalog entries and empty node style maps", () => {
+  const input = {
+    name: "Mixed style catalog",
+    styles: {
+      "S:valid": {
+        name: "Body/Default",
+        style_type: "TEXT",
+        key: "style-key",
+        ignored: true
+      },
+      "S:description-only": {
+        description: "kept without a name"
+      },
+      "S:invalid": "drop-me"
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-style-filtering",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: [
+                {
+                  id: "text-valid-style-map",
+                  type: "TEXT",
+                  characters: "Hello",
+                  styles: {
+                    text: "S:valid",
+                    fill: "",
+                    effect: 12
+                  }
+                },
+                {
+                  id: "text-empty-style-map",
+                  type: "TEXT",
+                  characters: "World",
+                  styles: {
+                    text: "   ",
+                    fill: 42
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+
+  assert.deepEqual(result.cleanedFile.styles, {
+    "S:description-only": {
+      description: "kept without a name"
+    },
+    "S:valid": {
+      name: "Body/Default",
+      style_type: "TEXT",
+      key: "style-key"
+    }
+  });
+  assert.deepEqual(findNodeById(result.cleanedFile.document, "text-valid-style-map")?.styles, {
+    text: "S:valid"
+  });
+  assert.equal("styles" in (findNodeById(result.cleanedFile.document, "text-empty-style-map") ?? {}), false);
+});
+
 test("cleanFigmaForCodegen keeps finite letterSpacing style values and drops invalid ones", () => {
   const input = {
     name: "LetterSpacing style",
@@ -785,6 +859,95 @@ test("cleanFigmaForCodegen preserves deterministic interaction payload for proto
     {
       trigger: { type: "ON_CLICK" },
       actions: [{ type: "NODE", navigation: "REPLACE", transitionNodeID: "legacy-target" }]
+    }
+  ]);
+});
+
+test("cleanFigmaForCodegen drops invalid interaction payloads and unsupported effects", () => {
+  const input = {
+    name: "Interaction filtering",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-filtering",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: [
+                {
+                  id: "invalid-interactions-node",
+                  type: "FRAME",
+                  name: "Action cluster",
+                  absoluteBoundingBox: { x: 20, y: 20, width: 200, height: 56 },
+                  effects: [
+                    {
+                      type: "LAYER_BLUR",
+                      radius: 12
+                    },
+                    {
+                      type: "DROP_SHADOW",
+                      offset: { x: 0, y: 4 },
+                      radius: 8,
+                      color: { r: 0, g: 0, b: 0, a: 0.2 }
+                    }
+                  ],
+                  interactions: [
+                    {
+                      trigger: {},
+                      actions: [
+                        {
+                          type: "NODE"
+                        }
+                      ]
+                    },
+                    {
+                      trigger: { type: "on_click" },
+                      actions: [
+                        {
+                          type: "node",
+                          destinationId: "target-screen",
+                          transitionNodeId: "legacy-transition"
+                        }
+                      ]
+                    }
+                  ],
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+  const cleanedNode = findNodeById(result.cleanedFile.document, "invalid-interactions-node");
+
+  assert.deepEqual(cleanedNode?.effects, [
+    {
+      type: "DROP_SHADOW",
+      radius: 8,
+      color: { r: 0, g: 0, b: 0, a: 0.2 },
+      offset: { x: 0, y: 4 }
+    }
+  ]);
+  assert.deepEqual(cleanedNode?.interactions, [
+    {
+      trigger: { type: "ON_CLICK" },
+      actions: [
+        {
+          type: "NODE",
+          destinationId: "target-screen",
+          transitionNodeId: "legacy-transition"
+        }
+      ]
     }
   ]);
 });

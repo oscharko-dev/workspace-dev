@@ -1421,6 +1421,208 @@ test("fetchFigmaFile falls back to fresh fetch when metadata request fails", asy
   }
 });
 
+test("fetchFigmaFile ignores cached entries with malformed low-fidelity diagnostics", async () => {
+  const cacheDir = await createTempCacheDir();
+  const cachePath = toCacheFilePath({
+    cacheDir,
+    fileKey: "abc",
+    lastModified: "2026-03-16T13:00:00Z"
+  });
+  const latestIndexPath = toLatestIndexPath({ cacheDir, fileKey: "abc" });
+  let geometryRequests = 0;
+
+  try {
+    await writeFile(
+      cachePath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:00:00Z",
+          cachedAt: Date.now(),
+          ttlMs: 60_000,
+          diagnostics: {
+            sourceMode: "geometry-paths",
+            fetchedNodes: 0,
+            degradedGeometryNodes: [],
+            lowFidelityReasons: ["valid", 42]
+          },
+          file: {
+            name: "Cached Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          }
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:00:00Z",
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            lastModified: "2026-03-16T13:00:00Z",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          geometryRequests += 1;
+          return jsonResponse({
+            name: "Fresh Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.file.name, "Fresh Demo");
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile ignores cached entries with malformed subtree hash records", async () => {
+  const cacheDir = await createTempCacheDir();
+  const cachePath = toCacheFilePath({
+    cacheDir,
+    fileKey: "abc",
+    lastModified: "2026-03-16T13:10:00Z"
+  });
+  const latestIndexPath = toLatestIndexPath({ cacheDir, fileKey: "abc" });
+  let geometryRequests = 0;
+
+  try {
+    await writeFile(
+      cachePath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:10:00Z",
+          cachedAt: Date.now(),
+          ttlMs: 60_000,
+          fileVersionId: "v1",
+          candidateSubtreeHashes: {
+            "1:1": 10
+          },
+          diagnostics: {
+            sourceMode: "staged-nodes",
+            fetchedNodes: 1,
+            degradedGeometryNodes: []
+          },
+          file: createBootstrapDocument()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          fileKey: "abc",
+          lastModified: "2026-03-16T13:10:00Z",
+          updatedAt: Date.now()
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const result = await fetchFigmaFile({
+      ...createRequest(async (url) => {
+        const asString = String(url);
+        if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+          return jsonResponse({
+            name: "Demo",
+            lastModified: "2026-03-16T13:10:00Z",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+          geometryRequests += 1;
+          return jsonResponse({
+            name: "Fresh Demo",
+            document: { id: "0:0", type: "DOCUMENT", children: [] }
+          });
+        }
+        throw new Error(`Unexpected URL: ${asString}`);
+      }),
+      cacheEnabled: true,
+      cacheDir
+    });
+
+    assert.equal(result.file.name, "Fresh Demo");
+    assert.equal(geometryRequests, 1);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile classifies non-retryable unknown HTTP responses deterministically", async () => {
+  await assert.rejects(
+    async () => {
+      await fetchFigmaFile(
+        createRequest(async () => {
+          return new Response("teapot", { status: 418 });
+        })
+      );
+    },
+    (error: unknown) => {
+      return (error as { code?: string }).code === "E_FIGMA_HTTP";
+    }
+  );
+});
+
+test("fetchFigmaFile retries rate-limited responses before succeeding", async () => {
+  const logs: string[] = [];
+  let callCount = 0;
+
+  const result = await fetchFigmaFile({
+    ...createRequest(async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response("slow down", { status: 429 });
+      }
+      return jsonResponse({
+        name: "Recovered",
+        document: { id: "0:0", type: "DOCUMENT", children: [] }
+      });
+    }),
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result.file.name, "Recovered");
+  assert.equal(callCount, 2);
+  assert.equal(logs.some((entry) => entry.includes("responded 429")), true);
+});
+
 test("fetchFigmaFile reuses cached staged result on repeated runs", async () => {
   const cacheDir = await createTempCacheDir();
   const logs: string[] = [];

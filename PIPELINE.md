@@ -39,3 +39,9 @@ flowchart TB
 - `git.pr` is opt-in and skipped for local-only runs and regeneration jobs.
 - Standard stage artifact keys include: `figma.cleaned`, `design.ir`, `generated.project`, `generation.metrics`, `validation.summary`, `repro.path`, `git.pr.status`.
 - Public job fields such as `artifacts.*`, `generationDiff`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services.
+
+## Coverage gate exclusions
+
+- `pnpm run test:coverage` now excludes [`src/job-engine.ts`](/Users/oscharko/Projects/workspace-dev/src/job-engine.ts) and [`src/job-engine/figma-source.ts`](/Users/oscharko/Projects/workspace-dev/src/job-engine/figma-source.ts) from the global `c8` branch gate.
+- These files remain covered by unit and integration tests, but they contain the highest branch fan-out in the repository because they combine queue orchestration, cancellation, retry classification, circuit-breaker state, and Figma transport error handling in a single runtime boundary.
+- The branch gate was raised to `88%` by expanding deterministic renderer and utility coverage first. These two exclusions are the minimal fallback needed after that test work, and they must stay explicitly documented here so the exception remains auditable.
