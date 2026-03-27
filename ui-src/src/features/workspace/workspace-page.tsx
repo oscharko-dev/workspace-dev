@@ -659,7 +659,7 @@ export function WorkspacePage(): JSX.Element {
     <div className="flex h-screen flex-col overflow-hidden bg-[#fafafa]">
       {/* Header */}
       <header className="shrink-0 border-b border-black/10 bg-white">
-        <div className="flex w-full items-center justify-between px-6 pb-1 pt-4">
+        <div className="flex w-full items-center justify-between px-4 pb-1 pt-2.5">
           <div className="flex items-center gap-3">
             <div className="grid size-8 place-items-center rounded-lg bg-emerald-500/10">
               <img
@@ -709,7 +709,7 @@ export function WorkspacePage(): JSX.Element {
         </div>
 
         {/* Runtime look bar */}
-        <div className="flex items-center gap-2 px-6 pb-3 pt-2">
+        <div className="flex items-center gap-2 px-4 pb-1.5 pt-1.5">
           <span className="font-mono text-xs text-[#666]">Runtime lock</span>
           <code className="rounded bg-[#f5f5f5] px-2 py-1 font-mono text-xs text-[#666]">
             figmaSourceMode=rest|hybrid|local_json &nbsp; llmCodegenMode=deterministic
@@ -730,10 +730,10 @@ export function WorkspacePage(): JSX.Element {
       {/* Main content */}
       <main className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left column — cards */}
-        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6 pr-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 pr-2">
           {/* Generation Flow Card */}
           <section data-testid="input-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
-            <div className="p-6 pb-0">
+            <div className="p-4 pb-0">
               <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Generation Flow</p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Generate a local app without the clutter
@@ -743,9 +743,9 @@ export function WorkspacePage(): JSX.Element {
               </p>
             </div>
 
-            <div className="p-6 pt-4">
+            <div className="p-4 pt-2.5">
               {/* Mode tabs */}
-              <div className="flex gap-2 border-b border-black/10 pb-3">
+              <div className="flex gap-2 border-b border-black/10 pb-2.5">
                 <span
                   className={`rounded-md px-3 py-1 text-sm font-medium ${
                     selectedFigmaSourceMode === "rest"
@@ -780,7 +780,7 @@ export function WorkspacePage(): JSX.Element {
                 }}
                 className="mt-4"
               >
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-2">
                     <label htmlFor="figma-source-mode" className="text-xs font-medium uppercase tracking-wider text-[#666]">
                       Source mode
@@ -844,7 +844,7 @@ export function WorkspacePage(): JSX.Element {
                 </button>
 
                 {showAdvanced ? (
-                  <div className="mt-3 grid grid-cols-2 gap-4">
+                  <div className="mt-3 grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
                       <label htmlFor="enable-git-pr" className="text-xs font-medium uppercase tracking-wider text-[#666]">
                         Enable Git / PR
@@ -917,7 +917,7 @@ export function WorkspacePage(): JSX.Element {
 
           {/* Runtime Card */}
           <section data-testid="runtime-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
-            <div className="p-6 pb-0">
+            <div className="p-4 pb-0">
               <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Runtime</p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Healthy, locked, and ready to generate
@@ -927,9 +927,9 @@ export function WorkspacePage(): JSX.Element {
               </p>
             </div>
 
-            <div className="p-6 pt-4">
+            <div className="p-4 pt-2.5">
               {/* Health row */}
-              <div className="flex items-center justify-between border-b border-black/10 py-3">
+              <div className="flex items-center justify-between border-b border-black/10 py-2">
                 <div>
                   <p className="m-0 text-sm font-medium text-[#333]">Health</p>
                   <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data ? runtimeQuery.data.health.status : "---"}</p>
@@ -938,7 +938,7 @@ export function WorkspacePage(): JSX.Element {
               </div>
 
               {/* Workspace row */}
-              <div className="flex items-center justify-between border-b border-black/10 py-3">
+              <div className="flex items-center justify-between border-b border-black/10 py-2">
                 <div>
                   <p className="m-0 text-sm font-medium text-[#333]">Workspace</p>
                   <p className="m-0 font-mono text-xs text-[#666]">
@@ -949,7 +949,7 @@ export function WorkspacePage(): JSX.Element {
               </div>
 
               {/* Submit row */}
-              <div className="border-b border-black/10 py-3">
+              <div className="border-b border-black/10 py-2">
                 <div className="flex items-center justify-between">
                   <p className="m-0 text-sm font-medium text-[#333]">Submit:</p>
                   <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
@@ -993,7 +993,7 @@ export function WorkspacePage(): JSX.Element {
 
           {/* Job Status Card */}
           <section data-testid="job-status-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
-            <div className="p-6 pb-0">
+            <div className="p-4 pb-0">
               <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Job Status</p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Pipeline progress without the noise
@@ -1003,7 +1003,7 @@ export function WorkspacePage(): JSX.Element {
               </p>
             </div>
 
-            <div className="p-6 pt-4">
+            <div className="p-4 pt-2.5">
               {/* Job summary */}
               <div className="border-b border-black/10 pb-3 pt-2">
                 <p className="m-0 text-sm text-[#666]">{jobSummary}</p>
@@ -1095,9 +1095,9 @@ export function WorkspacePage(): JSX.Element {
         </div>
 
         {/* Right column — Preview panel */}
-        <div className="flex w-[32%] min-w-[320px] shrink-0 flex-col p-6 pl-2">
+        <div className="flex w-[29%] min-w-[288px] shrink-0 flex-col p-3 pl-2">
           <section className="flex flex-1 flex-col rounded-xl border border-black/10 bg-white p-px">
-            <div className="p-6 pb-0">
+            <div className="p-4 pb-0">
               <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Preview</p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 The Inspector takes over after success
@@ -1107,7 +1107,7 @@ export function WorkspacePage(): JSX.Element {
               </p>
             </div>
 
-            <div className="flex flex-1 flex-col gap-4 p-6 pt-4">
+            <div className="flex flex-1 flex-col gap-4 p-4 pt-2.5">
               {/* Preview area */}
               <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-black/10 bg-[#f5f5f5]/30">
                 {canOpenInspector ? (

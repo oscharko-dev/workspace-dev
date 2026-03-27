@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import test from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { MAX_REQUEST_BODY_BYTES } from "./constants.js";
+import {
+  DEFAULT_CONTENT_SECURITY_POLICY,
+  MAX_REQUEST_BODY_BYTES,
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY
+} from "./constants.js";
 import { readJsonBody, sendBuffer, sendJson, sendText } from "./http-helpers.js";
 
 function createMockResponse(): ServerResponse & {
@@ -15,6 +19,10 @@ function createMockResponse(): ServerResponse & {
     headers,
     setHeader(name: string, value: string) {
       headers[name.toLowerCase()] = value;
+      return this;
+    },
+    removeHeader(name: string) {
+      delete headers[name.toLowerCase()];
       return this;
     },
     end(payload?: string | Buffer) {
@@ -31,7 +39,7 @@ function toIncomingMessage(chunks: Array<string | Buffer>): IncomingMessage {
   return Readable.from(chunks) as IncomingMessage;
 }
 
-test("sendJson writes JSON content-type and trailing newline", () => {
+test("sendJson writes JSON content-type, trailing newline, and default security headers", () => {
   const response = createMockResponse();
   sendJson({
     response,
@@ -41,22 +49,30 @@ test("sendJson writes JSON content-type and trailing newline", () => {
 
   assert.equal(response.statusCode, 202);
   assert.equal(response.headers["content-type"], "application/json; charset=utf-8");
+  assert.equal(response.headers["content-security-policy"], DEFAULT_CONTENT_SECURITY_POLICY);
+  assert.equal(response.headers["x-frame-options"], "SAMEORIGIN");
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+  assert.equal(response.headers["referrer-policy"], "no-referrer");
   assert.equal(response.body, "{\"ok\":true}\n");
 });
 
-test("sendText and sendBuffer write payloads with optional cache-control", () => {
+test("sendText supports cache control and an explicit UI CSP override", () => {
   const textResponse = createMockResponse();
   sendText({
     response: textResponse,
     statusCode: 200,
     contentType: "text/plain; charset=utf-8",
     payload: "hello",
-    cacheControl: "no-store"
+    cacheControl: "no-store",
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY
   });
   assert.equal(textResponse.headers["content-type"], "text/plain; charset=utf-8");
   assert.equal(textResponse.headers["cache-control"], "no-store");
+  assert.equal(textResponse.headers["content-security-policy"], WORKSPACE_UI_CONTENT_SECURITY_POLICY);
   assert.equal(textResponse.body, "hello");
+});
 
+test("sendBuffer applies the default CSP when frame embedding is not allowed", () => {
   const bufferResponse = createMockResponse();
   sendBuffer({
     response: bufferResponse,
@@ -65,7 +81,26 @@ test("sendText and sendBuffer write payloads with optional cache-control", () =>
     payload: Buffer.from("ok", "utf8")
   });
   assert.equal(bufferResponse.headers["content-type"], "application/octet-stream");
+  assert.equal(bufferResponse.headers["content-security-policy"], DEFAULT_CONTENT_SECURITY_POLICY);
+  assert.equal(bufferResponse.headers["x-frame-options"], "SAMEORIGIN");
   assert.deepEqual(bufferResponse.body, Buffer.from("ok", "utf8"));
+});
+
+test("sendBuffer omits frame-related headers when frame embedding is allowed", () => {
+  const response = createMockResponse();
+  sendBuffer({
+    response,
+    statusCode: 200,
+    contentType: "text/html; charset=utf-8",
+    payload: Buffer.from("<html></html>", "utf8"),
+    allowFrameEmbedding: true,
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY
+  });
+
+  assert.equal(response.headers["content-security-policy"], undefined);
+  assert.equal(response.headers["x-frame-options"], undefined);
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+  assert.equal(response.headers["referrer-policy"], "no-referrer");
 });
 
 test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize payloads", async () => {

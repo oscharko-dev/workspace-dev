@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { toDeterministicScreenPath } from "./parity/generator-artifacts.js";
+import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./server/constants.js";
 import { createWorkspaceServer } from "./server.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -556,6 +557,7 @@ test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key
     });
     assert.equal(uiResponse.statusCode, 200);
     assert.match(uiResponse.headers["content-type"] ?? "", /text\/html/i);
+    assert.equal(uiResponse.headers["content-security-policy"], WORKSPACE_UI_CONTENT_SECURITY_POLICY);
     assert.match(uiResponse.body, /Workspace Dev/i);
 
     const workspacePathResponse = await server.app.inject({
@@ -564,6 +566,7 @@ test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key
     });
     assert.equal(workspacePathResponse.statusCode, 200);
     assert.match(workspacePathResponse.headers["content-type"] ?? "", /text\/html/i);
+    assert.equal(workspacePathResponse.headers["content-security-policy"], WORKSPACE_UI_CONTENT_SECURITY_POLICY);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

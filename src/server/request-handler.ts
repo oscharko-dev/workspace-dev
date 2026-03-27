@@ -12,6 +12,7 @@ import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, 
 import { validateWriteRequest } from "./request-security.js";
 import { createIpRateLimiter, resolveRateLimitClientKey } from "./rate-limit.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
+import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./constants.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
@@ -611,12 +612,16 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
+          const isUiDocumentResponse =
+            uiAsset.contentType.startsWith("text/html") &&
+            (shouldServeWorkspaceAlias || uiAssetPath === "index.html");
           sendBuffer({
             response,
             statusCode: 200,
             contentType: uiAsset.contentType,
             payload: uiAsset.content,
-            cacheControl: "no-store, no-cache, must-revalidate, max-age=0"
+            cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+            ...(isUiDocumentResponse ? { contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY } : {})
           });
           return;
         } catch {

@@ -1,21 +1,23 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { MAX_REQUEST_BODY_BYTES } from "./constants.js";
+import { DEFAULT_CONTENT_SECURITY_POLICY, MAX_REQUEST_BODY_BYTES } from "./constants.js";
 
 function applySecurityHeaders({
   response,
   allowFrameEmbedding,
-  cacheControl
+  cacheControl,
+  contentSecurityPolicy
 }: {
   response: ServerResponse;
   allowFrameEmbedding?: boolean;
   cacheControl?: string;
+  contentSecurityPolicy?: string;
 }): void {
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("cache-control", cacheControl ?? "no-store");
   if (!allowFrameEmbedding) {
     response.setHeader("x-frame-options", "SAMEORIGIN");
-    response.setHeader("content-security-policy", "frame-ancestors 'self'");
+    response.setHeader("content-security-policy", contentSecurityPolicy ?? DEFAULT_CONTENT_SECURITY_POLICY);
     return;
   }
 
@@ -26,14 +28,19 @@ function applySecurityHeaders({
 export function sendJson({
   response,
   statusCode,
-  payload
+  payload,
+  contentSecurityPolicy
 }: {
   response: ServerResponse;
   statusCode: number;
   payload: unknown;
+  contentSecurityPolicy?: string;
 }): void {
   response.statusCode = statusCode;
-  applySecurityHeaders({ response });
+  applySecurityHeaders({
+    response,
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
+  });
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(payload)}\n`);
 }
@@ -44,7 +51,8 @@ export function sendText({
   contentType,
   payload,
   cacheControl,
-  allowFrameEmbedding
+  allowFrameEmbedding,
+  contentSecurityPolicy
 }: {
   response: ServerResponse;
   statusCode: number;
@@ -52,12 +60,14 @@ export function sendText({
   payload: string;
   cacheControl?: string;
   allowFrameEmbedding?: boolean;
+  contentSecurityPolicy?: string;
 }): void {
   response.statusCode = statusCode;
   applySecurityHeaders({
     response,
     ...(cacheControl === undefined ? {} : { cacheControl }),
-    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding })
+    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding }),
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
   });
   response.setHeader("content-type", contentType);
   response.end(payload);
@@ -69,7 +79,8 @@ export function sendBuffer({
   contentType,
   payload,
   cacheControl,
-  allowFrameEmbedding
+  allowFrameEmbedding,
+  contentSecurityPolicy
 }: {
   response: ServerResponse;
   statusCode: number;
@@ -77,12 +88,14 @@ export function sendBuffer({
   payload: Buffer;
   cacheControl?: string;
   allowFrameEmbedding?: boolean;
+  contentSecurityPolicy?: string;
 }): void {
   response.statusCode = statusCode;
   applySecurityHeaders({
     response,
     ...(cacheControl === undefined ? {} : { cacheControl }),
-    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding })
+    ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding }),
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
   });
   response.setHeader("content-type", contentType);
   response.end(payload);
