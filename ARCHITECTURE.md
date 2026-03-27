@@ -38,6 +38,14 @@ Execution plans:
 - `submission`: all seven stages in canonical order
 - `regeneration`: same order with `figma.source` and `git.pr` skipped by plan rules; `ir.derive` reads seeded regeneration artifacts (`regeneration.source_ir`, `regeneration.overrides`) from the current job store
 
+### Isolation model
+
+- Each project instance runs in its own child process, forked and owned by the parent runtime.
+- The parent process tracks child lifecycle state in the module-level `activeInstances` registry in `src/isolation.ts`.
+- That registry relies on a single-threaded Node.js event loop invariant inside one process. It is not safe for `worker_threads` or any concurrent mutation model without synchronization or an ownership redesign.
+- Targeted instance removal uses graceful IPC shutdown first, waits up to 3 seconds for process exit, then falls back to `SIGKILL`.
+- Host-process cleanup hooks use best-effort `SIGTERM` because they run during parent shutdown and prioritize deterministic teardown over additional coordination state.
+
 ## Hard mode lock
 
 The runtime enforces:

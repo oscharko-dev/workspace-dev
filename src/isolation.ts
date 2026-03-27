@@ -56,6 +56,22 @@ interface ManagedInstance extends ProjectInstance {
   process: ChildProcess;
 }
 
+/**
+ * Parent-process registry of active child instances.
+ *
+ * Architectural invariant: this mutable module-global Map is only safe because
+ * workspace-dev assumes single-threaded access within one Node.js event loop.
+ * It is not safe to share across worker_threads or any other concurrent
+ * mutation model without explicit synchronization or a different ownership
+ * design.
+ *
+ * The registry owns child-process lifecycle state for both targeted removal
+ * and best-effort host cleanup:
+ * - removeProjectInstance() sends IPC shutdown, waits up to 3 seconds, then
+ *   falls back to SIGKILL.
+ * - registerIsolationProcessCleanup() uses best-effort SIGTERM during host
+ *   process shutdown hooks.
+ */
 const activeInstances = new Map<string, ManagedInstance>();
 
 const toPublicInstance = (instance: ManagedInstance): ProjectInstance => ({
