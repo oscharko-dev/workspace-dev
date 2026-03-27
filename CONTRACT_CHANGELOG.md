@@ -15,6 +15,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 | Change response status code | Major (X.0.0) | Change `501` to `202` on submit |
 | Change error code string | Major (X.0.0) | Rename `MODE_LOCK_VIOLATION` |
 
+### Package alignment policy
+
+- `CONTRACT_VERSION` and the npm package version are intentionally independent version tracks.
+- A contract bump requires a `CONTRACT_CHANGELOG.md` entry before merge, but it does not require the checked-in `package.json` version to change immediately.
+- Package version bumps are produced by Changesets and the publish workflow when a release is cut.
+- Consumers pin the package version from npm, not `CONTRACT_VERSION`.
+- See `VERSIONING.md` for the full package-versus-contract versioning policy.
+
 ## Enforcement
 
 - `contract-version.test.ts` guards runtime export surface.
