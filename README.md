@@ -17,6 +17,14 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 - GitHub release notes and signed evidence assets (SBOM/OpenVEX): https://github.com/oscharko-dev/workspace-dev/releases
 - GitHub Packages is intentionally not used for `workspace-dev` distribution.
 
+## Versioning strategy
+
+- Pin the npm package version in your own `package.json` when you depend on `workspace-dev`.
+- Use `CONTRACT_VERSION` for compatibility audits and contract-specific integration reviews, not for dependency pinning.
+- Package version policy and the relationship to `CONTRACT_VERSION` are documented in `VERSIONING.md`.
+- `CHANGELOG.md` tracks package release history, while `CONTRACT_CHANGELOG.md` tracks public contract history.
+- npm and GitHub Releases are the authoritative sources for published package versions.
+
 ## Repository branch flow
 
 - `dev` is the active development branch for feature work and contributor pull requests.

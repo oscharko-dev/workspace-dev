@@ -26,4 +26,5 @@
 ## Notes
 
 - Public compatibility policy for contract changes is documented in `CONTRACT_CHANGELOG.md`.
+- Package-version pinning guidance and the relationship between package version and `CONTRACT_VERSION` are documented in `VERSIONING.md`.
 - Versioned runtime changelog is tracked in `CHANGELOG.md`.

@@ -82,3 +82,31 @@ test("docs: validation and app template source contain expected pipeline pattern
   assert.match(appTemplateSource, /BrowserRouter/);
   assert.match(appTemplateSource, /HashRouter/);
 });
+
+test("docs: versioning policy stays aligned across README and changelogs", async () => {
+  const readmeDoc = await readRepoFile("README.md");
+  const versioningDoc = await readRepoFile("VERSIONING.md");
+  const contractChangelog = await readRepoFile("CONTRACT_CHANGELOG.md");
+  const contractsSource = await readRepoFile("src/contracts/index.ts");
+
+  assert.match(readmeDoc, /## Versioning strategy/i);
+  assert.match(readmeDoc, /`VERSIONING\.md`/);
+  assert.match(readmeDoc, /Pin the npm package version in your own `package\.json`/);
+  assert.match(readmeDoc, /Use `CONTRACT_VERSION` for compatibility audits/i);
+  assert.match(readmeDoc, /`CHANGELOG\.md` tracks package release history/i);
+  assert.match(readmeDoc, /`CONTRACT_CHANGELOG\.md` tracks public contract history/i);
+
+  assert.match(versioningDoc, /two independent version tracks/i);
+  assert.match(versioningDoc, /consumers install and pin in their own `package\.json`/i);
+  assert.match(versioningDoc, /do not need to match numerically/i);
+  assert.match(versioningDoc, /Every public contract change must bump `CONTRACT_VERSION`/);
+  assert.match(versioningDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
+
+  assert.match(contractChangelog, /### Package alignment policy/);
+  assert.match(contractChangelog, /intentionally independent version tracks/i);
+  assert.match(contractChangelog, /does not require the checked-in `package\.json` version to change immediately/i);
+  assert.match(contractChangelog, /Consumers pin the package version from npm, not `CONTRACT_VERSION`\./);
+  assert.match(contractChangelog, /See `VERSIONING\.md` for the full package-versus-contract versioning policy\./);
+
+  assert.match(contractsSource, /VERSIONING\.md/);
+});
