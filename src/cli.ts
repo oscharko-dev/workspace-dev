@@ -6,13 +6,18 @@
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
-import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "./contracts/index.js";
+import type { WorkspaceBrandTheme, WorkspaceLogFormat, WorkspaceRouterMode } from "./contracts/index.js";
 import {
   getDefaultDesignSystemConfigPath,
   inferDesignSystemConfigFromProject,
   writeDesignSystemConfigFile
 } from "./design-system.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "./generation-locale.js";
+import {
+  createWorkspaceLogger,
+  DEFAULT_WORKSPACE_LOG_FORMAT,
+  resolveWorkspaceLogFormat
+} from "./logging.js";
 import { createWorkspaceServer } from "./server.js";
 import path from "node:path";
 
@@ -78,6 +83,7 @@ interface CliOptions {
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
   rateLimitPerMinute: number;
+  logFormat: WorkspaceLogFormat;
   enableLintAutofix: boolean;
   enablePreview: boolean;
   enablePerfValidation: boolean;
@@ -297,6 +303,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_RATE_LIMIT_PER_MINUTE,
     min: 0,
     max: 1000
+  });
+  let logFormat = resolveWorkspaceLogFormat({
+    value: process.env.FIGMAPIPE_WORKSPACE_LOG_FORMAT,
+    fallback: DEFAULT_WORKSPACE_LOG_FORMAT
   });
   let enableLintAutofix = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX,
@@ -603,6 +613,15 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--log-format") {
+      logFormat = resolveWorkspaceLogFormat({
+        value: args[index + 1],
+        fallback: logFormat
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--lint-autofix") {
       enableLintAutofix = parseBooleanLike(args[index + 1], enableLintAutofix);
       index += 1;
@@ -683,6 +702,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     maxConcurrentJobs,
     maxQueuedJobs,
     rateLimitPerMinute,
+    logFormat,
     enableLintAutofix,
     enablePreview,
     enablePerfValidation,
@@ -694,7 +714,7 @@ const parseArgs = (argv: string[]): CliOptions => {
 };
 
 const printHelp = (): void => {
-  console.log(`
+  process.stdout.write(`
 workspace-dev - autonomous local workspace generator
 
 Usage:
@@ -753,6 +773,7 @@ Options:
   --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
   --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
   --rate-limit <n>           Max submit/regenerate requests per minute per client IP; 0 disables (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
+  --log-format <text|json>   Operational runtime log format (default: ${DEFAULT_WORKSPACE_LOG_FORMAT})
   --lint-autofix <true|false>
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
@@ -797,6 +818,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS
   FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS
   FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE
+  FIGMAPIPE_WORKSPACE_LOG_FORMAT
   FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
   FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION
@@ -820,6 +842,9 @@ Mode lock is always enforced:
 
 const main = async (): Promise<void> => {
   const options = parseArgs(process.argv);
+  const logger = createWorkspaceLogger({
+    format: options.logFormat
+  });
 
   if (options.command === "--help" || options.command === "help") {
     printHelp();
@@ -843,29 +868,29 @@ const main = async (): Promise<void> => {
         config: scanResult.config,
         force: options.scanForce
       });
-      console.log(`[workspace-dev] Design system scan completed.`);
-      console.log(`[workspace-dev] Project root: ${projectRoot}`);
-      console.log(`[workspace-dev] Scanned files: ${scanResult.scannedFiles}`);
-      console.log(`[workspace-dev] Selected library: ${scanResult.selectedLibrary}`);
-      console.log(`[workspace-dev] Wrote config: ${outputPath}`);
+      logger.log({ level: "info", message: "Design system scan completed." });
+      logger.log({ level: "info", message: `Project root: ${projectRoot}` });
+      logger.log({ level: "info", message: `Scanned files: ${scanResult.scannedFiles}` });
+      logger.log({ level: "info", message: `Selected library: ${scanResult.selectedLibrary}` });
+      logger.log({ level: "info", message: `Wrote config: ${outputPath}` });
       process.exit(0);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[workspace-dev] Design system scan failed: ${message}`);
+      logger.log({ level: "error", message: `Design system scan failed: ${message}` });
       process.exit(1);
     }
   }
 
   if (options.command !== "start") {
-    console.error(`Unknown command: ${options.command}`);
-    console.error('Use "workspace-dev start" to start the server.');
-    console.error('Use "workspace-dev scan-design-system" to generate a design-system config.');
-    console.error('Use "workspace-dev --help" for usage information.');
+    logger.log({ level: "error", message: `Unknown command: ${options.command}` });
+    logger.log({ level: "error", message: 'Use "workspace-dev start" to start the server.' });
+    logger.log({ level: "error", message: 'Use "workspace-dev scan-design-system" to generate a design-system config.' });
+    logger.log({ level: "error", message: 'Use "workspace-dev --help" for usage information.' });
     process.exit(1);
   }
 
-  console.log(`[workspace-dev] Starting on http://${options.host}:${options.port}/workspace`);
-  console.log("[workspace-dev] Mode lock: figmaSourceMode=rest|hybrid|local_json, llmCodegenMode=deterministic");
+  logger.log({ level: "info", message: `Starting on http://${options.host}:${options.port}/workspace` });
+  logger.log({ level: "info", message: "Mode lock: figmaSourceMode=rest|hybrid|local_json, llmCodegenMode=deterministic" });
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = options.enableLintAutofix ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
@@ -905,12 +930,13 @@ const main = async (): Promise<void> => {
       skipInstall: options.skipInstall,
       maxConcurrentJobs: options.maxConcurrentJobs,
       maxQueuedJobs: options.maxQueuedJobs,
+      logFormat: options.logFormat,
       rateLimitPerMinute: options.rateLimitPerMinute,
       enablePreview: options.enablePreview
     });
 
     const shutdown = async (signal: string): Promise<void> => {
-      console.log(`\n[workspace-dev] Received ${signal}, shutting down...`);
+      logger.log({ level: "info", message: `Received ${signal}, shutting down...` });
       await server.app.close();
       process.exit(0);
     };
@@ -922,38 +948,48 @@ const main = async (): Promise<void> => {
       void shutdown("SIGTERM");
     });
 
-    console.log(`[workspace-dev] Server ready at ${server.url}/workspace`);
-    console.log(`[workspace-dev] Output root: ${options.outputRoot}`);
-    console.log(`[workspace-dev] Preview enabled: ${options.enablePreview}`);
-    console.log(`[workspace-dev] Perf validation enabled: ${options.enablePerfValidation}`);
-    console.log(`[workspace-dev] UI validation enabled: ${options.enableUiValidation}`);
-    console.log(`[workspace-dev] Unit test validation enabled: ${options.enableUnitTestValidation}`);
-    console.log(`[workspace-dev] Install prefer-offline: ${options.installPreferOffline}`);
-    console.log(`[workspace-dev] Skip install: ${options.skipInstall}`);
-    console.log(`[workspace-dev] Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`);
-    console.log(`[workspace-dev] Rate limit per minute: ${options.rateLimitPerMinute}`);
-    console.log(`[workspace-dev] Lint auto-fix enabled: ${options.enableLintAutofix}`);
-    console.log(`[workspace-dev] Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`);
-    console.log(
-      `[workspace-dev] Figma circuit breaker: threshold=${options.figmaCircuitBreakerFailureThreshold}, resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`
-    );
-    console.log(
-      `[workspace-dev] Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
-    );
-    console.log(
-      `[workspace-dev] Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`
-    );
-    console.log(`[workspace-dev] Export images: ${options.exportImages}`);
-    console.log(`[workspace-dev] Figma screen depth max: ${options.figmaScreenElementMaxDepth}`);
-    console.log(`[workspace-dev] Brand theme default: ${options.brandTheme}`);
-    console.log(`[workspace-dev] Generation locale default: ${options.generationLocale}`);
-    console.log(`[workspace-dev] Router mode default: ${options.routerMode}`);
-    console.log(
-      `[workspace-dev] Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
-    );
+    logger.log({ level: "info", message: `Server ready at ${server.url}/workspace` });
+    logger.log({ level: "info", message: `Output root: ${options.outputRoot}` });
+    logger.log({ level: "info", message: `Preview enabled: ${options.enablePreview}` });
+    logger.log({ level: "info", message: `Perf validation enabled: ${options.enablePerfValidation}` });
+    logger.log({ level: "info", message: `UI validation enabled: ${options.enableUiValidation}` });
+    logger.log({ level: "info", message: `Unit test validation enabled: ${options.enableUnitTestValidation}` });
+    logger.log({ level: "info", message: `Install prefer-offline: ${options.installPreferOffline}` });
+    logger.log({ level: "info", message: `Skip install: ${options.skipInstall}` });
+    logger.log({
+      level: "info",
+      message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`
+    });
+    logger.log({ level: "info", message: `Rate limit per minute: ${options.rateLimitPerMinute}` });
+    logger.log({ level: "info", message: `Log format: ${options.logFormat}` });
+    logger.log({ level: "info", message: `Lint auto-fix enabled: ${options.enableLintAutofix}` });
+    logger.log({ level: "info", message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}` });
+    logger.log({
+      level: "info",
+      message:
+        `Figma circuit breaker: threshold=${options.figmaCircuitBreakerFailureThreshold}, ` +
+        `resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`
+    });
+    logger.log({
+      level: "info",
+      message: `Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
+    });
+    logger.log({
+      level: "info",
+      message: `Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`
+    });
+    logger.log({ level: "info", message: `Export images: ${options.exportImages}` });
+    logger.log({ level: "info", message: `Figma screen depth max: ${options.figmaScreenElementMaxDepth}` });
+    logger.log({ level: "info", message: `Brand theme default: ${options.brandTheme}` });
+    logger.log({ level: "info", message: `Generation locale default: ${options.generationLocale}` });
+    logger.log({ level: "info", message: `Router mode default: ${options.routerMode}` });
+    logger.log({
+      level: "info",
+      message: `Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[workspace-dev] Failed to start: ${message}`);
+    logger.log({ level: "error", message: `Failed to start: ${message}` });
     process.exit(1);
   }
 };

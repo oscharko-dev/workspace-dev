@@ -3,6 +3,7 @@ import type {
   WorkspaceCreatePrInput,
   WorkspaceCreatePrResult,
   WorkspaceLocalSyncFileDecisionEntry,
+  WorkspaceLogFormat,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
   WorkspaceLocalSyncApplyResult,
@@ -29,6 +30,7 @@ import type {
   WorkspaceSubmitAccepted
 } from "../contracts/index.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
+import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 
 export interface FigmaFileResponse {
@@ -119,6 +121,8 @@ export interface JobEngineRuntime {
   skipInstall: boolean;
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
+  logFormat: WorkspaceLogFormat;
+  logger: WorkspaceRuntimeLogger;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
   figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;

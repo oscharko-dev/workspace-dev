@@ -7,6 +7,7 @@ import type {
   WorkspaceJobStatus,
   WorkspaceLlmCodegenMode
 } from "../contracts/index.js";
+import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
 import type { JobRecord } from "./types.js";
 
 const LOG_LIMIT = 300;
@@ -108,16 +109,11 @@ export const pushLog = ({
   level: WorkspaceJobLog["level"];
   message: string;
   stage?: WorkspaceJobStageName;
-}): void => {
-  const redactedMessage = message
-    .replace(/(token\s*=\s*)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(authorization\s*:\s*bearer\s+)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(x-access-token:)([^@\s]+)/gi, "$1[REDACTED]");
-
+}): WorkspaceJobLog => {
   const entry: WorkspaceJobLog = {
     at: nowIso(),
     level,
-    message: redactedMessage
+    message: redactLogMessage(message)
   };
   if (stage) {
     entry.stage = stage;
@@ -127,6 +123,35 @@ export const pushLog = ({
   if (job.logs.length > LOG_LIMIT) {
     job.logs.splice(0, job.logs.length - LOG_LIMIT);
   }
+  return entry;
+};
+
+export const pushRuntimeLog = ({
+  job,
+  logger,
+  level,
+  message,
+  stage
+}: {
+  job: JobRecord;
+  logger: WorkspaceRuntimeLogger;
+  level: WorkspaceJobLog["level"];
+  message: string;
+  stage?: WorkspaceJobStageName;
+}): WorkspaceJobLog => {
+  const entry = pushLog({
+    job,
+    level,
+    message,
+    ...(stage ? { stage } : {})
+  });
+  logger.log({
+    level,
+    message: entry.message,
+    jobId: job.jobId,
+    ...(entry.stage ? { stage: entry.stage } : {})
+  });
+  return entry;
 };
 
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {

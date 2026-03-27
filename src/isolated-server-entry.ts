@@ -6,7 +6,7 @@
  * (OS-assigned), and reports the resolved port back to the parent.
  *
  * Protocol:
- *   Parent → Child:  { type: "start", config: { host, workDir, targetPath } }
+ *   Parent → Child:  { type: "start", config: { host, workDir, targetPath, logFormat } }
  *   Child  → Parent: { type: "ready", port: number, instanceId: string }
  *   Child  → Parent: { type: "error", message: string }
  *   Parent → Child:  { type: "shutdown" }
@@ -23,9 +23,15 @@ const handleMessage = async (msg: unknown): Promise<void> => {
   if (message.type === "start") {
     const config = message.config as Record<string, unknown>;
     const host = typeof config.host === "string" ? config.host : "127.0.0.1";
+    const logFormat =
+      config.logFormat === "text" || config.logFormat === "json" ? config.logFormat : undefined;
 
     try {
-      const server = await createWorkspaceServer({ host, port: 0 });
+      const server = await createWorkspaceServer({
+        host,
+        port: 0,
+        ...(logFormat ? { logFormat } : {})
+      });
 
       // Report the OS-assigned port back to parent
       process.send?.({

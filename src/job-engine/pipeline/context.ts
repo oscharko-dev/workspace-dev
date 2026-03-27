@@ -9,7 +9,7 @@ import type {
   WorkspaceRegenerationInput
 } from "../../contracts/index.js";
 import type { PipelineDiagnosticInput } from "../errors.js";
-import { pushLog } from "../stage-state.js";
+import { pushRuntimeLog } from "../stage-state.js";
 import type { JobEnginePaths, JobEngineRuntime, JobRecord } from "../types.js";
 import type { StageArtifactStore } from "./artifact-store.js";
 
@@ -112,8 +112,9 @@ export const createStageRuntimeContext = ({
       ? { figmaFileKeyForDiagnostics: executionContext.figmaFileKeyForDiagnostics }
       : {}),
     log: ({ level, message, stage: overrideStage }) => {
-      pushLog({
+      pushRuntimeLog({
         job: executionContext.job,
+        logger: executionContext.runtime.logger,
         level,
         stage: overrideStage ?? stage,
         message

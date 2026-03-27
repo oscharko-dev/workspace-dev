@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.26.0
+ * Contract version: 2.27.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -19,6 +19,9 @@ export type WorkspaceBrandTheme = "derived" | "sparkasse";
 
 /** Router mode for generated React application shells. */
 export type WorkspaceRouterMode = "browser" | "hash";
+
+/** Output format for operational runtime logs. */
+export type WorkspaceLogFormat = "text" | "json";
 
 /** Form handling mode for generated interactive forms. */
 export type WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state";
@@ -103,6 +106,8 @@ export interface WorkspaceStartOptions {
   maxConcurrentJobs?: number;
   /** Maximum number of queued jobs waiting for execution before backpressure rejects submit. Default: 20 */
   maxQueuedJobs?: number;
+  /** Output format for operational runtime logs. Default: "text" */
+  logFormat?: WorkspaceLogFormat;
   /** Maximum accepted submit/regenerate requests per minute for a single client IP. Use 0 to disable. Default: 10 */
   rateLimitPerMinute?: number;
   /** Enable local preview export and serving. Default: true */
@@ -575,4 +580,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.26.0" as const;
+export const CONTRACT_VERSION = "2.27.0" as const;

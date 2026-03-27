@@ -243,7 +243,8 @@ export const createProjectInstance = async (
           config: {
             host,
             workDir,
-            targetPath: options.targetPath ?? "figma-generated"
+            targetPath: options.targetPath ?? "figma-generated",
+            ...(options.logFormat ? { logFormat: options.logFormat } : {})
           }
         });
       } else if (message.type === "ready") {

@@ -198,6 +198,7 @@ workspace-dev scan-design-system [options]
 - `--max-concurrent-jobs <n>` (default `1`; concurrent running job cap)
 - `--max-queued-jobs <n>` (default `20`; queued job cap before submit backpressure)
 - `--rate-limit <n>` (default `10`; per-IP submit/regenerate budget per minute, `0` disables the limiter)
+- `--log-format <text|json>` (default `text`; operational runtime log output format)
 - `--lint-autofix <true|false>` (default `true`; runs `pnpm lint --fix` before final `pnpm lint`)
 - `--preview <true|false>` (default `true`)
 - `--perf-validation <true|false>` (default `false`, runs template `perf:assert` in `validate.project`)
@@ -247,6 +248,7 @@ Options:
 - `FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS`
 - `FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS`
 - `FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE`
+- `FIGMAPIPE_WORKSPACE_LOG_FORMAT`
 - `FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW`
 - `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION`
