@@ -942,6 +942,8 @@ test("workspace server accepts submit with 202 and job polling reaches completed
     });
     assert.equal(previewResponse.statusCode, 200);
     assert.match(previewResponse.headers["content-type"] ?? "", /text\/html/i);
+    assert.equal(previewResponse.headers["content-security-policy"], undefined, "repro route must omit CSP for iframe embedding");
+    assert.equal(previewResponse.headers["x-frame-options"], undefined, "repro route must omit x-frame-options for iframe embedding");
     assert.equal(previewResponse.body.includes('<div id="root"></div>'), true);
   } finally {
     await server.app.close();
