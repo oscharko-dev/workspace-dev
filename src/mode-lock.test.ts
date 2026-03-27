@@ -82,6 +82,20 @@ test("enforceModeLock throws for blocked modes", () => {
   );
 });
 
+test("enforceModeLock includes full support guidance and bullet formatting", () => {
+  assert.throws(
+    () => enforceModeLock({ figmaSourceMode: "mcp", llmCodegenMode: "hybrid" }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Mode-lock violation in workspace-dev:/);
+      assert.match(error.message, /Only 'rest', 'hybrid', and 'local_json' are supported/);
+      assert.match(error.message, /Only 'deterministic' is supported/);
+      assert.match(error.message, /\n  • /);
+      return true;
+    }
+  );
+});
+
 test("enforceModeLock does not throw for valid modes", () => {
   assert.doesNotThrow(() =>
     enforceModeLock({ figmaSourceMode: "rest", llmCodegenMode: "deterministic" })

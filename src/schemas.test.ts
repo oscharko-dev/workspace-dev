@@ -18,9 +18,9 @@ test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
-    brandTheme: "Sparkasse",
+    brandTheme: " Sparkasse ",
     generationLocale: "en-US",
-    formHandlingMode: "react_hook_form",
+    formHandlingMode: " react_hook_form ",
     figmaSourceMode: "rest",
     llmCodegenMode: "deterministic"
   });
@@ -79,6 +79,19 @@ test("schema: missing required fields fails validation", () => {
     figmaFileKey: "abc123"
   });
   assert.equal(result.success, false);
+});
+
+test("schema: non-object submit bodies report the root issue deterministically", () => {
+  const result = SubmitRequestSchema.safeParse("bad-submit-body");
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
 });
 
 test("schema: empty required values fail validation", () => {
@@ -178,6 +191,42 @@ test("schema: git fields required when enableGitPr=true", () => {
     repoToken: "repo-token"
   });
   assert.equal(valid.success, true);
+});
+
+test("schema: invalid enableGitPr types report exact issue paths", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    enableGitPr: "yes"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["enableGitPr"],
+        message: "enableGitPr must be a boolean"
+      }
+    ]);
+  }
+});
+
+test("schema: rest mode missing credentials report exact required-field issues", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "rest"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["figmaFileKey"],
+        message: "figmaFileKey is required when figmaSourceMode=rest"
+      },
+      {
+        path: ["figmaAccessToken"],
+        message: "figmaAccessToken is required when figmaSourceMode=rest"
+      }
+    ]);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -389,6 +438,32 @@ test("schema: sync apply requires token and explicit confirmation", () => {
     ]
   });
   assert.equal(valid.success, true);
+});
+
+test("schema: sync apply reports exact token, overwrite, and file decision issues", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "",
+    confirmOverwrite: false,
+    fileDecisions: []
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["confirmationToken"],
+        message: "confirmationToken must be a non-empty string."
+      },
+      {
+        path: ["confirmOverwrite"],
+        message: "confirmOverwrite must be true for apply mode."
+      },
+      {
+        path: ["fileDecisions"],
+        message: "fileDecisions must be a non-empty array."
+      }
+    ]);
+  }
 });
 
 test("schema: sync dry_run rejects unexpected properties", () => {
