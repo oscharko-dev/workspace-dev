@@ -111,7 +111,7 @@ interface LocaleNumberFormatSpec {
 
 const localeNumberFormatSpecCache = new Map<string, LocaleNumberFormatSpec>();
 
-const isLikelyGroupingPattern = ({
+export const isLikelyGroupingPattern = ({
   value,
   separator
 }: {
@@ -132,7 +132,7 @@ const isLikelyGroupingPattern = ({
   return rest.every((segment) => segment.length === 3);
 };
 
-const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
+export const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
   const cached = localeNumberFormatSpecCache.get(locale);
   if (cached) {
     return cached;
@@ -156,7 +156,7 @@ const getLocaleNumberFormatSpec = (locale: string): LocaleNumberFormatSpec => {
   return spec;
 };
 
-const parseLocalizedNumber = (value: string, locale: string): number | undefined => {
+export const parseLocalizedNumber = (value: string, locale: string): number | undefined => {
   const { decimalSymbol, separatorPattern, separatorSymbols } = getLocaleNumberFormatSpec(locale);
   const compactRaw = value.replace(/[\s\u00A0\u202F]/g, "").replace(/[−﹣－]/g, "-");
   const compact = Array.from(compactRaw)
@@ -215,7 +215,7 @@ const parseLocalizedNumber = (value: string, locale: string): number | undefined
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string): string => {
+export const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string): string => {
   const safe = Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
@@ -225,7 +225,7 @@ const formatLocalizedNumber = (value: number, fractionDigits = 2, locale: string
 
 const NUMERIC_SELECT_VALUE_PATTERN = /^[+\-−﹣－\d.,'’%€$£¥\s\u00A0\u202F]+$/;
 
-const isNumericSelectValueCandidate = (value: string): boolean => {
+export const isNumericSelectValueCandidate = (value: string): boolean => {
   const trimmed = value.trim();
   if (!trimmed) {
     return false;

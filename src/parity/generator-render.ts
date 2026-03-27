@@ -1416,7 +1416,7 @@ const toUniqueAliasList = ({
   return Array.from(unique).sort((left, right) => left.localeCompare(right));
 };
 
-const compileIconFallbackResolver = ({ map }: { map: IconFallbackMap }): IconFallbackResolver => {
+export const compileIconFallbackResolver = ({ map }: { map: IconFallbackMap }): IconFallbackResolver => {
   const entries: CompiledIconFallbackEntry[] = [];
   const byIconName = new Map<string, CompiledIconFallbackEntry>();
 
@@ -1533,7 +1533,7 @@ export const ICON_FALLBACK_BUILTIN_RESOLVER: IconFallbackResolver = compileIconF
   map: ICON_FALLBACK_BUILTIN_MAP
 });
 
-const parseIconFallbackMapFile = ({ input }: { input: unknown }): IconFallbackMap | undefined => {
+export const parseIconFallbackMapFile = ({ input }: { input: unknown }): IconFallbackMap | undefined => {
   if (!isPlainRecord(input)) {
     return undefined;
   }
@@ -1703,7 +1703,7 @@ const collectInputPhrases = ({ tokens }: { tokens: string[] }): string[] => {
   return phrases;
 };
 
-const toBoundedLevenshteinDistance = ({
+export const toBoundedLevenshteinDistance = ({
   left,
   right,
   maxDistance
@@ -1915,7 +1915,7 @@ const resolveFallbackIconByFuzzyDistance = ({
   return candidates[0]?.entry;
 };
 
-const resolveIconImportSpecFromCatalog = ({
+export const resolveIconImportSpecFromCatalog = ({
   rawInput,
   resolver
 }: {
