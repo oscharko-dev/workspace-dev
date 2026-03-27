@@ -175,6 +175,52 @@ test("createPipelineError truncates diagnostic count and omits non-object detail
   assert.equal(error.diagnostics?.[24]?.code, "W_24");
 });
 
+test("createPipelineError respects injected diagnostic limits", () => {
+  const error = createPipelineError({
+    code: "E_LIMITS",
+    stage: "validate.project",
+    message: "limits",
+    limits: {
+      maxDiagnostics: 1,
+      textMaxLength: 16,
+      detailsMaxKeys: 2,
+      detailsMaxItems: 2,
+      detailsMaxDepth: 2
+    },
+    diagnostics: [
+      {
+        code: "W_LIMITED",
+        message: "0123456789abcdefghi",
+        suggestion: "suggestion length exceeds limit",
+        details: {
+          keepA: [1, 2, 3],
+          keepB: {
+            nested: {
+              value: "trimmed at depth"
+            }
+          },
+          zDropC: "excluded"
+        }
+      },
+      {
+        code: "W_DROPPED",
+        message: "should be dropped",
+        suggestion: "should be dropped"
+      }
+    ]
+  });
+
+  assert.equal(error.diagnostics?.length, 1);
+  assert.equal(error.diagnostics?.[0]?.message, "0123456789abc...");
+  assert.equal(error.diagnostics?.[0]?.suggestion, "suggestion le...");
+  assert.deepEqual(error.diagnostics?.[0]?.details, {
+    keepA: [1, 2],
+    keepB: {
+      nested: "[object Object]"
+    }
+  });
+});
+
 test("createPipelineError sanitizes anonymous functions, deep arrays, and symbol values without descriptions", () => {
   const namelessFunction = function namedFunction() {
     return "ok";

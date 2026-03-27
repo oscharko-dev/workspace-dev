@@ -18,6 +18,7 @@ import {
   DEFAULT_WORKSPACE_LOG_FORMAT,
   resolveWorkspaceLogFormat
 } from "./logging.js";
+import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
 import { createWorkspaceServer } from "./server.js";
 import path from "node:path";
 
@@ -41,6 +42,11 @@ const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics;
+const DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
@@ -76,6 +82,11 @@ interface CliOptions {
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
+  pipelineDiagnosticMaxCount: number;
+  pipelineDiagnosticTextMaxLength: number;
+  pipelineDiagnosticDetailsMaxKeys: number;
+  pipelineDiagnosticDetailsMaxItems: number;
+  pipelineDiagnosticDetailsMaxDepth: number;
   enableUiValidation: boolean;
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
@@ -272,6 +283,36 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_COMMAND_TIMEOUT_MS,
     min: 5_000,
     max: 60 * 60_000
+  });
+  let pipelineDiagnosticMaxCount = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT,
+    min: 1,
+    max: 500
+  });
+  let pipelineDiagnosticTextMaxLength = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
+    min: 16,
+    max: 4_000
+  });
+  let pipelineDiagnosticDetailsMaxKeys = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
+    min: 1,
+    max: 200
+  });
+  let pipelineDiagnosticDetailsMaxItems = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
+    min: 1,
+    max: 200
+  });
+  let pipelineDiagnosticDetailsMaxDepth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
+    fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
+    min: 1,
+    max: 10
   });
   let enableUiValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
@@ -551,6 +592,61 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--pipeline-diagnostic-max-count") {
+      pipelineDiagnosticMaxCount = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticMaxCount,
+        min: 1,
+        max: 500
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-text-max-length") {
+      pipelineDiagnosticTextMaxLength = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticTextMaxLength,
+        min: 16,
+        max: 4_000
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-keys") {
+      pipelineDiagnosticDetailsMaxKeys = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxKeys,
+        min: 1,
+        max: 200
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-items") {
+      pipelineDiagnosticDetailsMaxItems = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxItems,
+        min: 1,
+        max: 200
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--pipeline-diagnostic-details-max-depth") {
+      pipelineDiagnosticDetailsMaxDepth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: pipelineDiagnosticDetailsMaxDepth,
+        min: 1,
+        max: 10
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--ui-validation") {
       enableUiValidation = parseBooleanLike(args[index + 1], enableUiValidation);
       index += 1;
@@ -695,6 +791,11 @@ const parseArgs = (argv: string[]): CliOptions => {
     generationLocale,
     routerMode,
     commandTimeoutMs,
+    pipelineDiagnosticMaxCount,
+    pipelineDiagnosticTextMaxLength,
+    pipelineDiagnosticDetailsMaxKeys,
+    pipelineDiagnosticDetailsMaxItems,
+    pipelineDiagnosticDetailsMaxDepth,
     enableUiValidation,
     enableUnitTestValidation,
     installPreferOffline,
@@ -762,6 +863,16 @@ Options:
                              Locale for deterministic select-option number derivation (default: ${DEFAULT_GENERATION_LOCALE})
   --router <browser|hash>    Router mode for generated App.tsx shell (default: ${DEFAULT_ROUTER_MODE})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
+  --pipeline-diagnostic-max-count <n>
+                             Max structured diagnostics retained per pipeline error (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT})
+  --pipeline-diagnostic-text-max-length <n>
+                             Max message/suggestion characters retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH})
+  --pipeline-diagnostic-details-max-keys <n>
+                             Max detail object keys retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS})
+  --pipeline-diagnostic-details-max-items <n>
+                             Max detail array items retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS})
+  --pipeline-diagnostic-details-max-depth <n>
+                             Max detail nesting depth retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
   --unit-test-validation <true|false>
@@ -811,6 +922,11 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_GENERATION_LOCALE
   FIGMAPIPE_WORKSPACE_ROUTER
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS
+  FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
   FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
@@ -924,6 +1040,11 @@ const main = async (): Promise<void> => {
       generationLocale: options.generationLocale,
       routerMode: options.routerMode,
       commandTimeoutMs: options.commandTimeoutMs,
+      pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount,
+      pipelineDiagnosticTextMaxLength: options.pipelineDiagnosticTextMaxLength,
+      pipelineDiagnosticDetailsMaxKeys: options.pipelineDiagnosticDetailsMaxKeys,
+      pipelineDiagnosticDetailsMaxItems: options.pipelineDiagnosticDetailsMaxItems,
+      pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth,
       enableUiValidation: options.enableUiValidation,
       enableUnitTestValidation: options.enableUnitTestValidation,
       installPreferOffline: options.installPreferOffline,
@@ -983,6 +1104,15 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Brand theme default: ${options.brandTheme}` });
     logger.log({ level: "info", message: `Generation locale default: ${options.generationLocale}` });
     logger.log({ level: "info", message: `Router mode default: ${options.routerMode}` });
+    logger.log({
+      level: "info",
+      message:
+        `Pipeline diagnostic limits: count=${options.pipelineDiagnosticMaxCount}, ` +
+        `text=${options.pipelineDiagnosticTextMaxLength}, ` +
+        `detailKeys=${options.pipelineDiagnosticDetailsMaxKeys}, ` +
+        `detailItems=${options.pipelineDiagnosticDetailsMaxItems}, ` +
+        `detailDepth=${options.pipelineDiagnosticDetailsMaxDepth}`
+    });
     logger.log({
       level: "info",
       message: `Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`

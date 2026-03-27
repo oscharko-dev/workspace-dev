@@ -32,6 +32,7 @@ import type {
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
+import type { PipelineDiagnosticLimits } from "./errors.js";
 
 export interface FigmaFileResponse {
   name?: string;
@@ -115,6 +116,7 @@ export interface JobEngineRuntime {
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
+  pipelineDiagnosticLimits: PipelineDiagnosticLimits;
   enableUiValidation: boolean;
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;

@@ -1457,6 +1457,86 @@ test("createJobEngine surfaces budget truncation diagnostics with figma links", 
   );
 });
 
+test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job failures", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-max-count-"));
+  const payload = {
+    name: "Diagnostics board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-1",
+              type: "FRAME",
+              name: "Main Screen",
+              children: [
+                {
+                  id: "nested-1",
+                  type: "FRAME",
+                  name: "Layer Alpha",
+                  children: [
+                    {
+                      id: "nested-2",
+                      type: "FRAME",
+                      name: "Layer Beta",
+                      children: [{ id: "nested-3", type: "RECTANGLE", name: "Unknown Box", children: [] }]
+                    }
+                  ]
+                },
+                { id: "rect-1", type: "RECTANGLE", name: "Mystery Block", children: [] },
+                { id: "rect-2", type: "RECTANGLE", name: "Mystery Block 2", children: [] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaScreenElementBudget: 2,
+      figmaScreenElementMaxDepth: 1,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      pipelineDiagnosticMaxCount: 1,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+    })
+  });
+
+  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
+  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
+  assert.equal(status.error?.diagnostics?.length, 1);
+  assert.equal(status.error?.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");
+
+  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
+  const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+  };
+  assert.equal(stageTimings.diagnostics?.length, 1);
+  assert.equal(stageTimings.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");
+});
+
 const createImageBoardPayload = () => ({
   name: "Image Board",
   document: {

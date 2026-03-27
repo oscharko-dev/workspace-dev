@@ -95,7 +95,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         throw createPipelineError({
           code: "E_FIGMA_LOCAL_JSON_PATH",
           stage: "figma.source",
-          message: "figmaJsonPath is required when figmaSourceMode=local_json."
+          message: "figmaJsonPath is required when figmaSourceMode=local_json.",
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -108,7 +109,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           code: "E_FIGMA_LOCAL_JSON_READ",
           stage: "figma.source",
           message: `Could not read local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
-          cause: error
+          cause: error,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -120,7 +122,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           code: "E_FIGMA_PARSE",
           stage: "figma.source",
           message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
-          cause: error
+          cause: error,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -131,7 +134,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           stage: "figma.source",
           message:
             `Could not parse local Figma JSON file '${localPath}': invalid Figma payload ` +
-            `(${summarizeFigmaPayloadValidationError({ error: parsedLocalPayload.error })}).`
+            `(${summarizeFigmaPayloadValidationError({ error: parsedLocalPayload.error })}).`,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -155,7 +159,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         throw createPipelineError({
           code: "E_FIGMA_REST_INPUT",
           stage: "figma.source",
-          message: `figmaFileKey and figmaAccessToken are required when figmaSourceMode=${context.resolvedFigmaSourceMode}.`
+          message: `figmaFileKey and figmaAccessToken are required when figmaSourceMode=${context.resolvedFigmaSourceMode}.`,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
       const result = await fetchFigmaFile({
@@ -175,6 +180,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         cacheEnabled: context.runtime.figmaCacheEnabled,
         cacheTtlMs: context.runtime.figmaCacheTtlMs,
         cacheDir: path.join(context.resolvedPaths.outputRoot, "cache", "figma-source"),
+        pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
         fetchImpl: context.fetchWithCancellation,
         onLog: (message) => {
           context.log({
@@ -315,6 +321,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         code: "E_FIGMA_LOW_FIDELITY_SOURCE",
         stage: "figma.source",
         message: `Figma source fidelity is too low to generate a reliable screen. ${summary}`,
+        limits: context.runtime.pipelineDiagnosticLimits,
         diagnostics: [
           {
             code: "E_FIGMA_LOW_FIDELITY_SOURCE",

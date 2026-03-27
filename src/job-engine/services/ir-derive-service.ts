@@ -40,7 +40,8 @@ export const IrDeriveService: StageService<void> = {
         throw createPipelineError({
           code: "E_REGEN_SOURCE_IR_MISSING",
           stage: "ir.derive",
-          message: `Source job '${sourceJobId}' has no Design IR artifact.`
+          message: `Source job '${sourceJobId}' has no Design IR artifact.`,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -51,7 +52,8 @@ export const IrDeriveService: StageService<void> = {
         throw createPipelineError({
           code: "E_REGEN_SOURCE_IR_READ",
           stage: "ir.derive",
-          message: `Could not read Design IR from source job '${sourceJobId}'.`
+          message: `Could not read Design IR from source job '${sourceJobId}'.`,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -62,7 +64,8 @@ export const IrDeriveService: StageService<void> = {
         throw createPipelineError({
           code: "E_REGEN_SOURCE_IR_PARSE",
           stage: "ir.derive",
-          message: `Could not parse Design IR from source job '${sourceJobId}'.`
+          message: `Could not parse Design IR from source job '${sourceJobId}'.`,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 
@@ -105,7 +108,8 @@ export const IrDeriveService: StageService<void> = {
         code: "E_FIGMA_PARSE",
         stage: "ir.derive",
         message: "Figma source payload is missing before IR derivation.",
-        cause: error
+        cause: error,
+        limits: context.runtime.pipelineDiagnosticLimits
       });
     }
 
@@ -358,6 +362,7 @@ export const IrDeriveService: StageService<void> = {
         code: "E_FIGMA_CLEAN_EMPTY",
         stage: "ir.derive",
         message: "Figma cleaning removed all screen candidates.",
+        limits: context.runtime.pipelineDiagnosticLimits,
         diagnostics: [
           {
             code: "E_FIGMA_CLEAN_EMPTY",
@@ -440,6 +445,7 @@ export const IrDeriveService: StageService<void> = {
           stage: "ir.derive",
           message: "No screen found in IR.",
           cause: error,
+          limits: context.runtime.pipelineDiagnosticLimits,
           diagnostics: buildIrEmptyDiagnostics()
         });
       }
@@ -450,6 +456,7 @@ export const IrDeriveService: StageService<void> = {
         code: "E_IR_EMPTY",
         stage: "ir.derive",
         message: "No screen found in IR.",
+        limits: context.runtime.pipelineDiagnosticLimits,
         diagnostics: buildIrEmptyDiagnostics()
       });
     }
