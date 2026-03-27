@@ -30,7 +30,7 @@ import { DEFAULT_GENERATION_LOCALE, normalizeGenerationLocale, resolveGeneration
 import {
   createInitialStages,
   nowIso,
-  pushLog,
+  pushRuntimeLog,
   toAcceptedModes,
   toFileSystemSafe,
   toJobSummary,
@@ -521,8 +521,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       delete job.currentStage;
       await persistStageTimings();
       const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "info",
         message:
           `Job completed. Generated output at ${generatedProjectDir} ` +
@@ -547,8 +548,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         } catch {
           // Ignore stage-timing persistence failures during cancellation handling.
         }
-        pushLog({
+        pushRuntimeLog({
           job,
+          logger: runtime.logger,
           level: "warn",
           stage: error.stage,
           message: `Job canceled: ${error.message}`
@@ -582,8 +584,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       } catch {
         // Ignore stage-timing persistence failures during error handling.
       }
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "error",
         stage: typedError.stage,
         message: `Job failed: ${typedError.code} ${typedError.message}`
@@ -669,15 +672,21 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     jobs.set(jobId, job);
 
-    pushLog({ job, level: "info", message: "Job accepted by workspace-dev runtime." });
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      message: "Job accepted by workspace-dev runtime."
+    });
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
       executeJob({ job, input });
     } else {
       queuedJobIds.push(jobId);
       queuedJobInputs.set(jobId, { ...input });
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "info",
         message: `Job queued with position ${queuedJobIds.length}.`
       });
@@ -857,8 +866,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       delete job.currentStage;
       await persistStageTimings();
       const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "info",
         message:
           `Regeneration job completed. Generated output at ${generatedProjectDir} ` +
@@ -883,8 +893,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         } catch {
           // Ignore
         }
-        pushLog({
+        pushRuntimeLog({
           job,
+          logger: runtime.logger,
           level: "warn",
           stage: error.stage,
           message: `Regeneration job canceled: ${error.message}`
@@ -918,8 +929,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       } catch {
         // Ignore
       }
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "error",
         stage: typedError.stage,
         message: `Regeneration job failed: ${typedError.code} ${typedError.message}`
@@ -1021,15 +1033,21 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
 
     jobs.set(jobId, job);
-    pushLog({ job, level: "info", message: `Regeneration job accepted (source=${input.sourceJobId}, overrides=${input.overrides.length}).` });
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      message: `Regeneration job accepted (source=${input.sourceJobId}, overrides=${input.overrides.length}).`
+    });
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
       executeRegenerationJob({ job, input });
     } else {
       queuedJobIds.push(jobId);
       queuedRegenInputs.set(jobId, { ...input });
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "info",
         message: `Regeneration job queued with position ${queuedJobIds.length}.`
       });
@@ -1220,8 +1238,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         reason: cancellationReason
       });
-      pushLog({
+      pushRuntimeLog({
         job,
+        logger: runtime.logger,
         level: "warn",
         message: `Job canceled while queued: ${cancellationReason}`
       });
@@ -1229,8 +1248,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       return toPublicJob(job);
     }
 
-    pushLog({
+    pushRuntimeLog({
       job,
+      logger: runtime.logger,
       level: "warn",
       ...(job.currentStage ? { stage: job.currentStage } : {}),
       message: `Cancellation requested: ${cancellationReason}`
@@ -1383,7 +1403,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       generatedProjectDir,
       jobDir,
       onLog: (message) => {
-        pushLog({ job, level: "info", stage: "git.pr", message });
+        pushRuntimeLog({
+          job,
+          logger: runtime.logger,
+          level: "info",
+          stage: "git.pr",
+          message
+        });
       },
       commandTimeoutMs: runtime.commandTimeoutMs,
       ...(job.generationDiff ? { generationDiff: job.generationDiff } : {})

@@ -10,6 +10,7 @@ export type {
   WorkspaceLlmCodegenMode,
   WorkspaceBrandTheme,
   WorkspaceFormHandlingMode,
+  WorkspaceLogFormat,
   WorkspaceRouterMode,
   WorkspaceStartOptions,
   WorkspaceStatus,

@@ -23,6 +23,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.27.0] - 2026-03-27
+
+### Configurable structured runtime logging
+
+Added:
+
+- `WorkspaceLogFormat = "text" | "json"` for selecting human-readable or newline-delimited JSON operational logs.
+- `WorkspaceStartOptions.logFormat?: WorkspaceLogFormat` (default `text`) to configure runtime log emission for CLI and programmatic server starts.
+
+---
+
 ## [2.26.0] - 2026-03-27
 
 ### Configurable Figma REST circuit breaker

@@ -165,6 +165,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_LOG_FORMAT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
   assert.match(result.stdout, /--figma-circuit-breaker-failure-threshold/i);
@@ -174,6 +175,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--export-images/i);
   assert.match(result.stdout, /--skip-install/i);
   assert.match(result.stdout, /--rate-limit/i);
+  assert.match(result.stdout, /--log-format/i);
   assert.match(result.stdout, /--lint-autofix/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
   assert.match(result.stdout, /--brand/i);
@@ -771,6 +773,70 @@ test("cli contract: --router flag overrides environment variable", async () => {
   try {
     const output = await waitForStdout(child, /Router mode default: browser/i);
     assert.match(output, /Router mode default: browser/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --log-format json emits structured startup logs", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--log-format", "json"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /"msg":"Server ready at/);
+    const records = output
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, string>);
+
+    assert.equal(records.every((record) => typeof record.ts === "string"), true);
+    assert.equal(records.every((record) => record.level === "info"), true);
+    assert.equal(
+      records.some((record) => record.msg === `Starting on http://127.0.0.1:${port}/workspace`),
+      true
+    );
+    assert.equal(
+      records.some((record) => record.msg === `Server ready at http://127.0.0.1:${port}/workspace`),
+      true
+    );
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: --log-format flag overrides environment variable", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--log-format", "text"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_LOG_FORMAT: "json"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Log format: text/i);
+    assert.match(output, /\[workspace-dev\] Log format: text/i);
+    assert.doesNotMatch(output, /"level":"info"/);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

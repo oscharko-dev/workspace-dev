@@ -1,6 +1,6 @@
 import type { WorkspaceJobStageName } from "../../contracts/index.js";
 import type { WorkspacePipelineError } from "../types.js";
-import { pushLog, updateStage } from "../stage-state.js";
+import { pushRuntimeLog, updateStage } from "../stage-state.js";
 import { createStageRuntimeContext, type PipelineExecutionContext } from "./context.js";
 import type { StageArtifactContract, StageService } from "./stage-service.js";
 
@@ -98,7 +98,13 @@ export class PipelineOrchestrator {
     this.ensureStageNotCanceled({ context, stage });
     context.job.currentStage = stage;
     updateStage({ job: context.job, stage, status: "running" });
-    pushLog({ job: context.job, level: "info", stage, message: `Starting stage '${stage}'.` });
+    pushRuntimeLog({
+      job: context.job,
+      logger: context.runtime.logger,
+      level: "info",
+      stage,
+      message: `Starting stage '${stage}'.`
+    });
 
     try {
       const stageContext = createStageRuntimeContext({
@@ -116,7 +122,13 @@ export class PipelineOrchestrator {
       await context.syncPublicJobProjection();
       this.ensureStageNotCanceled({ context, stage });
       updateStage({ job: context.job, stage, status: "completed" });
-      pushLog({ job: context.job, level: "info", stage, message: `Completed stage '${stage}'.` });
+      pushRuntimeLog({
+        job: context.job,
+        logger: context.runtime.logger,
+        level: "info",
+        stage,
+        message: `Completed stage '${stage}'.`
+      });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
         updateStage({
@@ -125,8 +137,9 @@ export class PipelineOrchestrator {
           status: "failed",
           message: error.message
         });
-        pushLog({
+        pushRuntimeLog({
           job: context.job,
+          logger: context.runtime.logger,
           level: "warn",
           stage,
           message: `${error.code}: ${error.message}`
@@ -148,8 +161,9 @@ export class PipelineOrchestrator {
           status: "failed",
           message: cancellationError.message
         });
-        pushLog({
+        pushRuntimeLog({
           job: context.job,
+          logger: context.runtime.logger,
           level: "warn",
           stage,
           message: `${cancellationError.code}: ${cancellationError.message}`
@@ -167,8 +181,9 @@ export class PipelineOrchestrator {
         status: "failed",
         message: typedError.message
       });
-      pushLog({
+      pushRuntimeLog({
         job: context.job,
+        logger: context.runtime.logger,
         level: "error",
         stage,
         message: `${typedError.code}: ${typedError.message}`
@@ -189,7 +204,13 @@ export class PipelineOrchestrator {
       const skipReason = entry.shouldSkip?.(context);
       if (skipReason) {
         updateStage({ job: context.job, stage: service.stageName, status: "skipped", message: skipReason });
-        pushLog({ job: context.job, level: "info", stage: service.stageName, message: skipReason });
+        pushRuntimeLog({
+          job: context.job,
+          logger: context.runtime.logger,
+          level: "info",
+          stage: service.stageName,
+          message: skipReason
+        });
         await entry.onSkipped?.(context, skipReason);
         await context.syncPublicJobProjection();
         continue;

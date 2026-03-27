@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { createWorkspaceLogger } from "../logging.js";
 
 const waitForTerminalStatus = async ({
   getStatus,
@@ -122,11 +123,13 @@ const createLowFidelityFigmaPayload = () => ({
 const createFastJobEngine = ({
   tempRoot,
   fetchImpl,
-  enablePreview = false
+  enablePreview = false,
+  runtimeOverrides
 }: {
   tempRoot: string;
   fetchImpl?: typeof fetch;
   enablePreview?: boolean;
+  runtimeOverrides?: Partial<Parameters<typeof resolveRuntimeSettings>[0]>;
 }) =>
   createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -142,7 +145,8 @@ const createFastJobEngine = ({
       enableUnitTestValidation: false,
       figmaMaxRetries: 1,
       figmaRequestTimeoutMs: 1_000,
-      ...(fetchImpl ? { fetchImpl } : {})
+      ...(fetchImpl ? { fetchImpl } : {}),
+      ...runtimeOverrides
     })
   });
 
@@ -184,6 +188,72 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
+});
+
+test("createJobEngine emits structured runtime logs without changing stored job log payloads", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-structured-logs-"));
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  const stdoutLines: string[] = [];
+  const stderrLines: string[] = [];
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createFastJobEngine({
+    tempRoot,
+    runtimeOverrides: {
+      logFormat: "json",
+      logger: createWorkspaceLogger({
+        format: "json",
+        now: () => "2026-03-27T12:00:00.000Z",
+        stdoutWriter: (line) => {
+          stdoutLines.push(line);
+        },
+        stderrWriter: (line) => {
+          stderrLines.push(line);
+        }
+      })
+    }
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+  });
+
+  assert.equal(status.status, "completed");
+  assert.equal(stderrLines.length, 0);
+
+  const records = stdoutLines.map((line) => JSON.parse(line) as Record<string, string>);
+  assert.equal(records.length > 0, true);
+  assert.equal(records.every((record) => record.ts === "2026-03-27T12:00:00.000Z"), true);
+  assert.equal(records.every((record) => record.jobId === accepted.jobId), true);
+  assert.equal(
+    records.some(
+      (record) =>
+        record.stage === "figma.source" && record.msg === "Starting stage 'figma.source'."
+    ),
+    true
+  );
+  assert.equal(
+    records.some(
+      (record) =>
+        record.stage === "git.pr" && record.msg === "Git/PR flow disabled by request."
+    ),
+    true
+  );
+  assert.equal(
+    records.some(
+      (record) =>
+        !("stage" in record) && record.msg === "Job accepted by workspace-dev runtime."
+    ),
+    true
+  );
+  assert.equal(status.logs.every((entry) => !Object.hasOwn(entry, "jobId")), true);
+  assert.equal(status.logs.every((entry) => !Object.hasOwn(entry, "ts")), true);
 });
 
 test("createJobEngine supports hybrid mode with MCP enrichment loader output", async () => {

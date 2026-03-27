@@ -128,6 +128,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
     ...(options.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.maxConcurrentJobs } : {}),
     ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
+    ...(options.logFormat !== undefined ? { logFormat: options.logFormat } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
   });

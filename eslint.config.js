@@ -55,7 +55,7 @@ export default tseslint.config(
     },
     rules: {
       ...strictTypeCheckedRules,
-      "no-console": "off"
+      "no-console": "error"
     }
   }
 );

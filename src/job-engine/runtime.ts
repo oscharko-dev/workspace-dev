@@ -1,5 +1,11 @@
 import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "../contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
+import {
+  createWorkspaceLogger,
+  DEFAULT_WORKSPACE_LOG_FORMAT,
+  resolveWorkspaceLogFormat,
+  type WorkspaceRuntimeLogger
+} from "../logging.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import {
   createFigmaRestCircuitBreaker,
@@ -85,6 +91,8 @@ export const resolveRuntimeSettings = ({
   skipInstall,
   maxConcurrentJobs,
   maxQueuedJobs,
+  logFormat,
+  logger,
   enablePreview,
   fetchImpl,
   figmaMcpEnrichmentLoader,
@@ -119,6 +127,8 @@ export const resolveRuntimeSettings = ({
   skipInstall?: boolean;
   maxConcurrentJobs?: number;
   maxQueuedJobs?: number;
+  logFormat?: string;
+  logger?: WorkspaceRuntimeLogger;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
   figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
@@ -132,6 +142,10 @@ export const resolveRuntimeSettings = ({
     typeof figmaCircuitBreakerResetTimeoutMs === "number" && Number.isFinite(figmaCircuitBreakerResetTimeoutMs)
       ? Math.max(1_000, Math.min(60 * 60_000, Math.trunc(figmaCircuitBreakerResetTimeoutMs)))
       : DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS;
+  const resolvedLogFormat = resolveWorkspaceLogFormat({
+    value: logFormat,
+    fallback: DEFAULT_WORKSPACE_LOG_FORMAT
+  });
 
   return {
     figmaTimeoutMs:
@@ -226,6 +240,8 @@ export const resolveRuntimeSettings = ({
       typeof maxQueuedJobs === "number" && Number.isFinite(maxQueuedJobs)
         ? Math.max(0, Math.min(1000, Math.trunc(maxQueuedJobs)))
         : DEFAULT_MAX_QUEUED_JOBS,
+    logFormat: resolvedLogFormat,
+    logger: logger ?? createWorkspaceLogger({ format: resolvedLogFormat }),
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch,
     ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {})

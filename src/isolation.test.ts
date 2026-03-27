@@ -69,6 +69,16 @@ test("isolation: /workspace endpoint returns correct port per instance", async (
   assert.equal(typeof body.port, "number");
 });
 
+test("isolation: instance boot succeeds when logFormat is json", async () => {
+  const inst = await createProjectInstance("project-gamma-json", {
+    workDir: "/tmp",
+    logFormat: "json"
+  });
+
+  const res = await fetch(`http://${inst.host}:${inst.port}/healthz`);
+  assert.equal(res.status, 200);
+});
+
 test("isolation: removeProjectInstance frees the port", async () => {
   const inst = await createProjectInstance("project-delta", { workDir: "/tmp" });
   const port = inst.port;
