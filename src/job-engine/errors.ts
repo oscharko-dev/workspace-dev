@@ -6,11 +6,23 @@ import type {
 } from "../contracts/index.js";
 import type { WorkspacePipelineError } from "./types.js";
 
-const MAX_PIPELINE_DIAGNOSTICS = 25;
-const MAX_DIAGNOSTIC_TEXT_LENGTH = 320;
-const MAX_DIAGNOSTIC_DETAILS_KEYS = 30;
-const MAX_DIAGNOSTIC_DETAILS_ITEMS = 20;
-const MAX_DIAGNOSTIC_DETAILS_DEPTH = 4;
+const DETAIL_VALUE_TEXT_MAX_LENGTH = 500;
+
+export interface PipelineDiagnosticLimits {
+  maxDiagnostics: number;
+  textMaxLength: number;
+  detailsMaxKeys: number;
+  detailsMaxItems: number;
+  detailsMaxDepth: number;
+}
+
+export const DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS: PipelineDiagnosticLimits = {
+  maxDiagnostics: 25,
+  textMaxLength: 320,
+  detailsMaxKeys: 30,
+  detailsMaxItems: 20,
+  detailsMaxDepth: 4
+};
 
 export interface PipelineDiagnosticInput {
   code: string;
@@ -23,7 +35,13 @@ export interface PipelineDiagnosticInput {
   details?: Record<string, unknown>;
 }
 
-const truncateText = (value: string, maxLength = MAX_DIAGNOSTIC_TEXT_LENGTH): string => {
+const truncateText = ({
+  value,
+  maxLength
+}: {
+  value: string;
+  maxLength: number;
+}): string => {
   if (value.length <= maxLength) {
     return value;
   }
@@ -32,16 +50,18 @@ const truncateText = (value: string, maxLength = MAX_DIAGNOSTIC_TEXT_LENGTH): st
 
 const sanitizeDiagnosticValue = ({
   value,
-  depth
+  depth,
+  limits
 }: {
   value: unknown;
   depth: number;
+  limits: PipelineDiagnosticLimits;
 }): WorkspaceJobDiagnosticValue | undefined => {
   if (value === null) {
     return null;
   }
   if (typeof value === "string") {
-    return truncateText(value, 500);
+    return truncateText({ value, maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH });
   }
   if (typeof value === "boolean") {
     return value;
@@ -53,12 +73,18 @@ const sanitizeDiagnosticValue = ({
     return value;
   }
   if (Array.isArray(value)) {
-    if (depth >= MAX_DIAGNOSTIC_DETAILS_DEPTH) {
+    if (depth >= limits.detailsMaxDepth) {
       return value.length;
     }
     const normalizedItems = value
-      .slice(0, MAX_DIAGNOSTIC_DETAILS_ITEMS)
-      .map((entry) => sanitizeDiagnosticValue({ value: entry, depth: depth + 1 }))
+      .slice(0, limits.detailsMaxItems)
+      .map((entry) =>
+        sanitizeDiagnosticValue({
+          value: entry,
+          depth: depth + 1,
+          limits
+        })
+      )
       .filter((entry): entry is WorkspaceJobDiagnosticValue => entry !== undefined);
     return normalizedItems;
   }
@@ -67,26 +93,41 @@ const sanitizeDiagnosticValue = ({
       return "undefined";
     }
     if (typeof value === "function") {
-      return truncateText(`[Function ${value.name || "anonymous"}]`, 500);
+      return truncateText({
+        value: `[Function ${value.name || "anonymous"}]`,
+        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+      });
     }
     if (typeof value === "symbol") {
-      return truncateText(value.description ? `Symbol(${value.description})` : "Symbol()", 500);
+      return truncateText({
+        value: value.description ? `Symbol(${value.description})` : "Symbol()",
+        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+      });
     }
     if (typeof value === "bigint") {
-      return truncateText(`${value.toString()}n`, 500);
+      return truncateText({
+        value: `${value.toString()}n`,
+        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+      });
     }
     return undefined;
   }
-  if (depth >= MAX_DIAGNOSTIC_DETAILS_DEPTH) {
-    return truncateText(Object.prototype.toString.call(value), 500);
+  if (depth >= limits.detailsMaxDepth) {
+    return truncateText({
+      value: Object.prototype.toString.call(value),
+      maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+    });
   }
   const record = value as Record<string, unknown>;
   const output: Record<string, WorkspaceJobDiagnosticValue> = {};
-  const keys = Object.keys(record).sort((left, right) => left.localeCompare(right)).slice(0, MAX_DIAGNOSTIC_DETAILS_KEYS);
+  const keys = Object.keys(record)
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, limits.detailsMaxKeys);
   for (const key of keys) {
     const normalized = sanitizeDiagnosticValue({
       value: record[key],
-      depth: depth + 1
+      depth: depth + 1,
+      limits
     });
     if (normalized !== undefined) {
       output[key] = normalized;
@@ -97,10 +138,12 @@ const sanitizeDiagnosticValue = ({
 
 const normalizePipelineDiagnostics = ({
   diagnostics,
-  fallbackStage
+  fallbackStage,
+  limits = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS
 }: {
   diagnostics: PipelineDiagnosticInput[] | undefined;
   fallbackStage: WorkspaceJobStageName;
+  limits?: PipelineDiagnosticLimits;
 }): WorkspaceJobDiagnostic[] | undefined => {
   if (!diagnostics || diagnostics.length === 0) {
     return undefined;
@@ -111,11 +154,17 @@ const normalizePipelineDiagnostics = ({
     if (code.length === 0) {
       continue;
     }
-    const message = truncateText(candidate.message.trim(), MAX_DIAGNOSTIC_TEXT_LENGTH);
+    const message = truncateText({
+      value: candidate.message.trim(),
+      maxLength: limits.textMaxLength
+    });
     if (message.length === 0) {
       continue;
     }
-    const suggestion = truncateText(candidate.suggestion.trim(), MAX_DIAGNOSTIC_TEXT_LENGTH);
+    const suggestion = truncateText({
+      value: candidate.suggestion.trim(),
+      maxLength: limits.textMaxLength
+    });
     if (suggestion.length === 0) {
       continue;
     }
@@ -124,7 +173,8 @@ const normalizePipelineDiagnostics = ({
         ? undefined
         : sanitizeDiagnosticValue({
             value: candidate.details,
-            depth: 0
+            depth: 0,
+            limits
           });
     normalized.push({
       code,
@@ -133,12 +183,19 @@ const normalizePipelineDiagnostics = ({
       stage: candidate.stage ?? fallbackStage,
       severity: candidate.severity ?? "error",
       ...(candidate.figmaNodeId?.trim() ? { figmaNodeId: candidate.figmaNodeId.trim() } : {}),
-      ...(candidate.figmaUrl?.trim() ? { figmaUrl: truncateText(candidate.figmaUrl.trim(), 500) } : {}),
+      ...(candidate.figmaUrl?.trim()
+        ? {
+            figmaUrl: truncateText({
+              value: candidate.figmaUrl.trim(),
+              maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+            })
+          }
+        : {}),
       ...(detailsValue && typeof detailsValue === "object" && !Array.isArray(detailsValue)
         ? { details: detailsValue as Record<string, WorkspaceJobDiagnosticValue> }
         : {})
     });
-    if (normalized.length >= MAX_PIPELINE_DIAGNOSTICS) {
+    if (normalized.length >= limits.maxDiagnostics) {
       break;
     }
   }
@@ -148,7 +205,7 @@ const normalizePipelineDiagnostics = ({
 export const mergePipelineDiagnostics = ({
   first,
   second,
-  max = MAX_PIPELINE_DIAGNOSTICS
+  max = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics
 }: {
   first?: WorkspaceJobDiagnostic[];
   second?: WorkspaceJobDiagnostic[];
@@ -175,20 +232,23 @@ export const createPipelineError = ({
   stage,
   message,
   cause,
-  diagnostics
+  diagnostics,
+  limits
 }: {
   code: string;
   stage: WorkspaceJobStageName;
   message: string;
   cause?: unknown;
   diagnostics?: PipelineDiagnosticInput[];
+  limits?: PipelineDiagnosticLimits;
 }): WorkspacePipelineError => {
   const error = new Error(message) as WorkspacePipelineError;
   error.code = code;
   error.stage = stage;
   const normalizedDiagnostics = normalizePipelineDiagnostics({
     diagnostics,
-    fallbackStage: stage
+    fallbackStage: stage,
+    ...(limits ? { limits } : {})
   });
   if (normalizedDiagnostics) {
     error.diagnostics = normalizedDiagnostics;

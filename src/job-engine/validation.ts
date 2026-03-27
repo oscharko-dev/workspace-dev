@@ -3,7 +3,7 @@ import { lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobDiagnostic } from "../contracts/index.js";
 import { runCommand as runCommandImpl } from "./command-runner.js";
-import { createPipelineError, type PipelineDiagnosticInput } from "./errors.js";
+import { createPipelineError, type PipelineDiagnosticInput, type PipelineDiagnosticLimits } from "./errors.js";
 import {
   parseValidationDiagnostics,
   runValidationFeedback as runValidationFeedbackImpl,
@@ -54,12 +54,14 @@ const prepareValidationNodeModules = async ({
   generatedProjectDir,
   seedNodeModulesDir,
   skipInstall,
-  onLog
+  onLog,
+  pipelineDiagnosticLimits
 }: {
   generatedProjectDir: string;
   seedNodeModulesDir?: string;
   skipInstall: boolean;
   onLog: (message: string) => void;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
 }): Promise<{ installRequired: boolean; cleanup?: () => Promise<void> }> => {
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
 
@@ -70,6 +72,7 @@ const prepareValidationNodeModules = async ({
         code: "E_VALIDATE_PROJECT",
         stage: "validate.project",
         message: `skipInstall=true requires an existing node_modules directory at ${nodeModulesDir}.`,
+        ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
         diagnostics: [
           {
             code: "E_VALIDATE_PROJECT",
@@ -291,7 +294,8 @@ const toValidationPipelineError = async ({
   output,
   generatedProjectDir,
   diagnostics,
-  summary
+  summary,
+  limits
 }: {
   commandName: string;
   timeoutSuffix: string;
@@ -300,6 +304,7 @@ const toValidationPipelineError = async ({
   generatedProjectDir: string;
   diagnostics: ValidationDiagnostic[];
   summary: string | undefined;
+  limits?: PipelineDiagnosticLimits;
 }) => {
   const hintSuffix = failureHint ? ` (${failureHint})` : "";
   const detailDiagnostics = await toValidationDetailDiagnostics({
@@ -323,6 +328,7 @@ const toValidationPipelineError = async ({
     code: "E_VALIDATE_PROJECT",
     stage: "validate.project",
     message: `${commandName} failed${timeoutSuffix}${hintSuffix}: ${output.slice(0, 2000)}`,
+    ...(limits ? { limits } : {}),
     diagnostics: [
       primaryDiagnostic,
       ...detailDiagnostics.map((entry) => ({
@@ -347,6 +353,7 @@ export const runProjectValidationWithDeps = async ({
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false,
+  pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir,
   deps
@@ -360,6 +367,7 @@ export const runProjectValidationWithDeps = async ({
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
   deps?: Partial<ValidationDeps>;
@@ -377,6 +385,7 @@ export const runProjectValidationWithDeps = async ({
     generatedProjectDir,
     skipInstall,
     onLog,
+    ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
     ...(seedNodeModulesDir ? { seedNodeModulesDir } : {})
   });
 
@@ -466,6 +475,7 @@ export const runProjectValidationWithDeps = async ({
           code: "E_VALIDATE_PROJECT",
           stage: "validate.project",
           message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`,
+          ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
           diagnostics: [
             {
               code: "E_VALIDATE_PROJECT",
@@ -562,7 +572,8 @@ export const runProjectValidationWithDeps = async ({
             output: result.combined,
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
-            summary: undefined
+            summary: undefined,
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
           });
         }
 
@@ -573,7 +584,8 @@ export const runProjectValidationWithDeps = async ({
             output: result.combined,
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
-            summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`
+            summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`,
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
           });
         }
 
@@ -596,7 +608,8 @@ export const runProjectValidationWithDeps = async ({
             output: result.combined,
             generatedProjectDir,
             diagnostics: feedback.diagnostics,
-            summary: feedback.summary
+            summary: feedback.summary,
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
           });
         }
 
@@ -626,6 +639,7 @@ export const runProjectValidation = async ({
   commandTimeoutMs = 15 * 60_000,
   installPreferOffline = true,
   skipInstall = false,
+  pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir
 }: {
@@ -638,6 +652,7 @@ export const runProjectValidation = async ({
   commandTimeoutMs?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
 }): Promise<void> => {
@@ -651,6 +666,7 @@ export const runProjectValidation = async ({
     commandTimeoutMs,
     installPreferOffline,
     skipInstall,
+    ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
     ...(seedNodeModulesDir ? { seedNodeModulesDir } : {}),
     ...(abortSignal ? { abortSignal } : {})
   });

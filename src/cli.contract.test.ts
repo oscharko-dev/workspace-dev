@@ -164,6 +164,11 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ROUTER/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_LOG_FORMAT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
@@ -181,6 +186,11 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--generation-locale/i);
   assert.match(result.stdout, /--router/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-max-count/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-text-max-length/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-keys/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-items/i);
+  assert.match(result.stdout, /--pipeline-diagnostic-details-max-depth/i);
   assert.match(result.stdout, /--unit-test-validation/i);
   assert.match(result.stdout, /--figma-screen-element-budget/i);
   assert.match(result.stdout, /--figma-screen-element-max-depth/i);
@@ -861,6 +871,41 @@ test("cli contract: --figma-screen-element-max-depth is applied and logged", asy
   try {
     const output = await waitForStdout(child, /Figma screen depth max: 7/i);
     assert.match(output, /Figma screen depth max: 7/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: pipeline diagnostic limit flags override env vars and are logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--pipeline-diagnostic-max-count",
+      "7"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT: "12",
+        FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH: "333"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Pipeline diagnostic limits: count=7, text=333/i);
+    assert.match(output, /Pipeline diagnostic limits: count=7, text=333, detailKeys=30, detailItems=20, detailDepth=4/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

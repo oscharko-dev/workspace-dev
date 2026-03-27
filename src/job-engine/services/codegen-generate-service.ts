@@ -43,7 +43,8 @@ export const createCodegenGenerateService = ({
           code: "E_IR_EMPTY",
           stage: "codegen.generate",
           message: "Design IR is missing before code generation.",
-          cause: error
+          cause: error,
+          limits: context.runtime.pipelineDiagnosticLimits
         });
       }
 

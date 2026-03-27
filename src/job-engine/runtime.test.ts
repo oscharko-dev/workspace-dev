@@ -29,6 +29,11 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.generationLocale, "de-DE");
   assert.equal(runtime.routerMode, "browser");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
+  assert.equal(runtime.pipelineDiagnosticLimits.maxDiagnostics, 25);
+  assert.equal(runtime.pipelineDiagnosticLimits.textMaxLength, 320);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 30);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 20);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 4);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
@@ -59,6 +64,11 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     generationLocale: "EN-us",
     routerMode: "HASH",
     commandTimeoutMs: 10,
+    pipelineDiagnosticMaxCount: 999,
+    pipelineDiagnosticTextMaxLength: 5,
+    pipelineDiagnosticDetailsMaxKeys: 0,
+    pipelineDiagnosticDetailsMaxItems: 999,
+    pipelineDiagnosticDetailsMaxDepth: -1,
     enableUiValidation: false,
     enableUnitTestValidation: true,
     installPreferOffline: false,
@@ -86,6 +96,11 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.generationLocale, "en-US");
   assert.equal(runtime.routerMode, "hash");
   assert.equal(runtime.commandTimeoutMs, 5_000);
+  assert.equal(runtime.pipelineDiagnosticLimits.maxDiagnostics, 500);
+  assert.equal(runtime.pipelineDiagnosticLimits.textMaxLength, 16);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 1);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 200);
+  assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 1);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);

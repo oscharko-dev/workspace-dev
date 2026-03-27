@@ -23,6 +23,20 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.28.0] - 2026-03-27
+
+### Configurable pipeline diagnostic limits
+
+Added:
+
+- `WorkspaceStartOptions.pipelineDiagnosticMaxCount?: number` (default `25`) to configure how many structured diagnostics are retained per pipeline error.
+- `WorkspaceStartOptions.pipelineDiagnosticTextMaxLength?: number` (default `320`) to configure the maximum message and suggestion length retained per structured diagnostic.
+- `WorkspaceStartOptions.pipelineDiagnosticDetailsMaxKeys?: number` (default `30`) to configure how many keys are retained per structured diagnostic details object.
+- `WorkspaceStartOptions.pipelineDiagnosticDetailsMaxItems?: number` (default `20`) to configure how many items are retained per structured diagnostic details array.
+- `WorkspaceStartOptions.pipelineDiagnosticDetailsMaxDepth?: number` (default `4`) to configure how deeply structured diagnostic details are traversed before deterministic truncation.
+
+---
+
 ## [2.27.0] - 2026-03-27
 
 ### Configurable structured runtime logging

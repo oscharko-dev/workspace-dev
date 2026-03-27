@@ -19,7 +19,8 @@ import {
   createPipelineError,
   getErrorMessage,
   mergePipelineDiagnostics,
-  type PipelineDiagnosticInput
+  type PipelineDiagnosticInput,
+  type PipelineDiagnosticLimits
 } from "./job-engine/errors.js";
 import { resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { resolveBoardKey } from "./parity/board-key.js";
@@ -118,10 +119,12 @@ const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefin
 
 const toPipelineError = ({
   error,
-  fallbackStage
+  fallbackStage,
+  limits
 }: {
   error: unknown;
   fallbackStage: WorkspaceJobStageName;
+  limits: PipelineDiagnosticLimits;
 }): WorkspacePipelineError => {
   if (isPipelineError(error)) {
     return error;
@@ -138,6 +141,7 @@ const toPipelineError = ({
       stage: isWorkspaceJobStageName(candidate.stage) ? candidate.stage : fallbackStage,
       message: candidate.message,
       cause: error,
+      limits,
       ...(diagnostics ? { diagnostics } : {})
     });
   }
@@ -145,7 +149,8 @@ const toPipelineError = ({
     code: "E_PIPELINE_UNKNOWN",
     stage: fallbackStage,
     message: getErrorMessage(error),
-    cause: error
+    cause: error,
+    limits
   });
 };
 
@@ -455,11 +460,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         code: "E_PIPELINE_DIAGNOSTICS_INTERNAL",
         stage,
         message: "Collected pipeline diagnostics.",
-        diagnostics
+        diagnostics,
+        limits: runtime.pipelineDiagnosticLimits
       }).diagnostics;
       collectedDiagnostics = mergePipelineDiagnostics({
         ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
-        ...(normalized ? { second: normalized } : {})
+        ...(normalized ? { second: normalized } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
       });
     };
 
@@ -508,7 +515,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       };
 
       const orchestrator = new PipelineOrchestrator({
-        toPipelineError,
+        toPipelineError: ({ error, fallbackStage }) =>
+          toPipelineError({
+            error,
+            fallbackStage,
+            limits: runtime.pipelineDiagnosticLimits
+          }),
         isAbortLikeError
       });
       await orchestrator.execute({
@@ -560,11 +572,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
       const typedError = toPipelineError({
         error,
-        fallbackStage: job.currentStage ?? "figma.source"
+        fallbackStage: job.currentStage ?? "figma.source",
+        limits: runtime.pipelineDiagnosticLimits
       });
       const mergedDiagnostics = mergePipelineDiagnostics({
         ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
-        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {})
+        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
       });
       if (mergedDiagnostics) {
         collectedDiagnostics = mergedDiagnostics;
@@ -785,11 +799,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         code: "E_PIPELINE_DIAGNOSTICS_INTERNAL",
         stage,
         message: "Collected pipeline diagnostics.",
-        diagnostics
+        diagnostics,
+        limits: runtime.pipelineDiagnosticLimits
       }).diagnostics;
       collectedDiagnostics = mergePipelineDiagnostics({
         ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
-        ...(normalized ? { second: normalized } : {})
+        ...(normalized ? { second: normalized } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
       });
     };
 
@@ -853,7 +869,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       };
 
       const orchestrator = new PipelineOrchestrator({
-        toPipelineError,
+        toPipelineError: ({ error, fallbackStage }) =>
+          toPipelineError({
+            error,
+            fallbackStage,
+            limits: runtime.pipelineDiagnosticLimits
+          }),
         isAbortLikeError
       });
       await orchestrator.execute({
@@ -905,11 +926,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
       const typedError = toPipelineError({
         error,
-        fallbackStage: job.currentStage ?? "ir.derive"
+        fallbackStage: job.currentStage ?? "ir.derive",
+        limits: runtime.pipelineDiagnosticLimits
       });
       const mergedDiagnostics = mergePipelineDiagnostics({
         ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
-        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {})
+        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
       });
       if (mergedDiagnostics) {
         collectedDiagnostics = mergedDiagnostics;

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.27.0
+ * Contract version: 2.28.0
  * See CONTRACT_CHANGELOG.md for change history and versioning rules.
  */
 
@@ -92,8 +92,18 @@ export interface WorkspaceStartOptions {
   generationLocale?: string;
   /** Router mode for generated App.tsx shell. Default: "browser" */
   routerMode?: WorkspaceRouterMode;
-  /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
+ /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
+  /** Maximum structured diagnostics retained per pipeline error. Default: 25 */
+  pipelineDiagnosticMaxCount?: number;
+  /** Maximum message/suggestion characters retained per structured diagnostic. Default: 320 */
+  pipelineDiagnosticTextMaxLength?: number;
+  /** Maximum object keys retained per structured diagnostic details object. Default: 30 */
+  pipelineDiagnosticDetailsMaxKeys?: number;
+  /** Maximum array items retained per structured diagnostic details array. Default: 20 */
+  pipelineDiagnosticDetailsMaxItems?: number;
+  /** Maximum nesting depth retained when sanitizing structured diagnostic details. Default: 4 */
+  pipelineDiagnosticDetailsMaxDepth?: number;
   /** Run static UI validation in validate.project. Default: false */
   enableUiValidation?: boolean;
   /** Run generated-project unit tests in validate.project. Default: false */
@@ -580,4 +590,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  */
-export const CONTRACT_VERSION = "2.27.0" as const;
+export const CONTRACT_VERSION = "2.28.0" as const;

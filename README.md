@@ -192,6 +192,11 @@ workspace-dev scan-design-system [options]
 - `--generation-locale <locale>` (default `de-DE`)
 - `--router <browser|hash>` (default `browser`)
 - `--command-timeout-ms <ms>` (default `900000`)
+- `--pipeline-diagnostic-max-count <n>` (default `25`)
+- `--pipeline-diagnostic-text-max-length <n>` (default `320`)
+- `--pipeline-diagnostic-details-max-keys <n>` (default `30`)
+- `--pipeline-diagnostic-details-max-items <n>` (default `20`)
+- `--pipeline-diagnostic-details-max-depth <n>` (default `4`)
 - `--ui-validation <true|false>` (default `false`)
 - `--install-prefer-offline <true|false>` (default `true`)
 - `--skip-install <true|false>` (default `false`; expert mode, requires pre-existing `generated-app/node_modules`)
@@ -242,6 +247,11 @@ Options:
 - `FIGMAPIPE_WORKSPACE_GENERATION_LOCALE`
 - `FIGMAPIPE_WORKSPACE_ROUTER`
 - `FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS`
+- `FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT`
+- `FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH`
+- `FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS`
+- `FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS`
+- `FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH`
 - `FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION`
 - `FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE`
 - `FIGMAPIPE_WORKSPACE_SKIP_INSTALL`

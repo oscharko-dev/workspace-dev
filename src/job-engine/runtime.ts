@@ -8,6 +8,10 @@ import {
 } from "../logging.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import {
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS,
+  type PipelineDiagnosticLimits
+} from "./errors.js";
+import {
   createFigmaRestCircuitBreaker,
   type FigmaRestCircuitBreakerClock
 } from "./figma-rest-circuit-breaker.js";
@@ -38,6 +42,23 @@ const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_MAX_CONCURRENT_JOBS = 1;
 const DEFAULT_MAX_QUEUED_JOBS = 20;
+
+const clampInteger = ({
+  value,
+  min,
+  max,
+  fallback
+}: {
+  value: number | undefined;
+  min: number;
+  max: number;
+  fallback: number;
+}): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(value)));
+};
 
 const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
   if (!value) {
@@ -85,6 +106,11 @@ export const resolveRuntimeSettings = ({
   generationLocale,
   routerMode,
   commandTimeoutMs,
+  pipelineDiagnosticMaxCount,
+  pipelineDiagnosticTextMaxLength,
+  pipelineDiagnosticDetailsMaxKeys,
+  pipelineDiagnosticDetailsMaxItems,
+  pipelineDiagnosticDetailsMaxDepth,
   enableUiValidation,
   enableUnitTestValidation,
   installPreferOffline,
@@ -121,6 +147,11 @@ export const resolveRuntimeSettings = ({
   generationLocale?: string;
   routerMode?: string;
   commandTimeoutMs?: number;
+  pipelineDiagnosticMaxCount?: number;
+  pipelineDiagnosticTextMaxLength?: number;
+  pipelineDiagnosticDetailsMaxKeys?: number;
+  pipelineDiagnosticDetailsMaxItems?: number;
+  pipelineDiagnosticDetailsMaxDepth?: number;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
   installPreferOffline?: boolean;
@@ -146,6 +177,38 @@ export const resolveRuntimeSettings = ({
     value: logFormat,
     fallback: DEFAULT_WORKSPACE_LOG_FORMAT
   });
+  const resolvedPipelineDiagnosticLimits: PipelineDiagnosticLimits = {
+    maxDiagnostics: clampInteger({
+      value: pipelineDiagnosticMaxCount,
+      min: 1,
+      max: 500,
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics
+    }),
+    textMaxLength: clampInteger({
+      value: pipelineDiagnosticTextMaxLength,
+      min: 16,
+      max: 4_000,
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength
+    }),
+    detailsMaxKeys: clampInteger({
+      value: pipelineDiagnosticDetailsMaxKeys,
+      min: 1,
+      max: 200,
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys
+    }),
+    detailsMaxItems: clampInteger({
+      value: pipelineDiagnosticDetailsMaxItems,
+      min: 1,
+      max: 200,
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems
+    }),
+    detailsMaxDepth: clampInteger({
+      value: pipelineDiagnosticDetailsMaxDepth,
+      min: 1,
+      max: 10,
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth
+    })
+  };
 
   return {
     figmaTimeoutMs:
@@ -223,6 +286,7 @@ export const resolveRuntimeSettings = ({
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))
         : DEFAULT_COMMAND_TIMEOUT_MS,
+    pipelineDiagnosticLimits: resolvedPipelineDiagnosticLimits,
     enableUiValidation:
       typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
     enableUnitTestValidation:

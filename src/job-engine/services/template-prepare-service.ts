@@ -12,7 +12,8 @@ export const TemplatePrepareService: StageService<void> = {
       throw createPipelineError({
         code: "E_TEMPLATE_MISSING",
         stage: "template.prepare",
-        message: `Template not found at ${context.paths.templateRoot}`
+        message: `Template not found at ${context.paths.templateRoot}`,
+        limits: context.runtime.pipelineDiagnosticLimits
       });
     }
     await rm(context.paths.generatedProjectDir, { recursive: true, force: true });

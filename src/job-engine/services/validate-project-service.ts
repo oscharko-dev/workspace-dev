@@ -51,6 +51,7 @@ export const createValidateProjectService = ({
         commandTimeoutMs: context.runtime.commandTimeoutMs,
         installPreferOffline: context.runtime.installPreferOffline,
         skipInstall: context.runtime.skipInstall,
+        pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
         seedNodeModulesDir: path.join(context.paths.templateRoot, "node_modules"),
         abortSignal: context.abortSignal,
         onLog: (message) => {
