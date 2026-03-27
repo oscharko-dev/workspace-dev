@@ -51,6 +51,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
   assert.doesNotMatch(complianceDoc, /npm-publish\.yml/);
   assert.match(compatibilityDoc, new RegExp(`\\| Contract version \\| \`${escapedContractVersion}\` \\|`));
+  assert.match(compatibilityDoc, /\| TypeScript consumer compiler \| 5\.0\.0 \| >=5\.0\.0 \|/);
+  assert.match(compatibilityDoc, /TypeScript 4\.x consumers are unsupported and must upgrade to TypeScript `>=5\.0\.0`/);
   assert.match(compatibilityDoc, /\| `figmaSourceMode=hybrid` \| Supported \|/);
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
@@ -67,6 +69,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
   assert.match(readmeDoc, /`main` is the release branch/i);
+  assert.match(readmeDoc, /TypeScript `>=5\.0\.0` for typed package consumption/);
+  assert.match(readmeDoc, /published dual ESM\/CJS type surface is validated only for TypeScript 5\+ consumers/i);
   assert.equal(defaults.figmaSourceMode, "rest");
   assert.equal(defaults.llmCodegenMode, "deterministic");
 });

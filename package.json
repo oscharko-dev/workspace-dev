@@ -110,6 +110,14 @@
     "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:airgap",
     "prepublishOnly": "pnpm run release:quality-gates:publish-lifecycle"
   },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
     "@changesets/cli": "^2.30.0",

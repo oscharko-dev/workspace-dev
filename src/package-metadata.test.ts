@@ -9,3 +9,8 @@ test("package manifest exposes repository metadata for npm consumers", () => {
   assert.equal(packageJson.homepage, "https://github.com/oscharko-dev/workspace-dev#readme");
   assert.equal(packageJson.bugs.url, "https://github.com/oscharko-dev/workspace-dev/issues");
 });
+
+test("package manifest declares the supported TypeScript consumer floor", () => {
+  assert.equal(packageJson.peerDependencies.typescript, ">=5.0.0");
+  assert.equal(packageJson.peerDependenciesMeta.typescript.optional, true);
+});

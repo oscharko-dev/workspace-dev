@@ -96,12 +96,22 @@ test("package distribution includes template lockfile but excludes template node
       bugs: {
         url: string;
       };
+      peerDependencies: {
+        typescript: string;
+      };
+      peerDependenciesMeta: {
+        typescript: {
+          optional: boolean;
+        };
+      };
     };
 
     assert.equal(packagedManifest.repository.type, "git");
     assert.equal(packagedManifest.repository.url, expectedRepositoryUrl);
     assert.equal(packagedManifest.homepage, expectedHomepageUrl);
     assert.equal(packagedManifest.bugs.url, expectedBugsUrl);
+    assert.equal(packagedManifest.peerDependencies.typescript, ">=5.0.0");
+    assert.equal(packagedManifest.peerDependenciesMeta.typescript.optional, true);
   } finally {
     await rm(packDir, { recursive: true, force: true });
     await rm(extractDir, { recursive: true, force: true });
