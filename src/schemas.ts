@@ -1,7 +1,18 @@
 /**
  * Runtime validation schemas for workspace-dev.
  *
- * These lightweight validators intentionally avoid external runtime
+ * Validation conventions in this module:
+ * - Guard unknown input with `isRecord` before reading object fields.
+ * - Define an explicit `allowedKeys` set for each object schema and reject
+ *   unexpected properties.
+ * - Reuse shared field parsers such as `parseStringField` when possible and
+ *   keep schema-specific normalization close to the owning schema.
+ * - Collect failures in `ValidationIssue[]` with stable paths and messages
+ *   instead of throwing on the first invalid field.
+ * - Construct the typed output object only after validation finishes without
+ *   issues.
+ *
+ * These lightweight validators intentionally avoid external runtime schema
  * dependencies to keep the package air-gap compatible.
  */
 
