@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(MODULE_DIR, "..");
+const expectedRepositoryUrl = "git+https://github.com/oscharko-dev/workspace-dev.git";
+const expectedHomepageUrl = "https://github.com/oscharko-dev/workspace-dev#readme";
+const expectedBugsUrl = "https://github.com/oscharko-dev/workspace-dev/issues";
 
 const run = async ({
   command,
@@ -53,6 +56,7 @@ const run = async ({
 
 test("package distribution includes template lockfile but excludes template node_modules", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-"));
+  const extractDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-extract-"));
 
   try {
     await run({
@@ -74,7 +78,32 @@ test("package distribution includes template lockfile but excludes template node
     assert.match(tarballListing, /package\/template\/react-mui-app\/package\.json/);
     assert.match(tarballListing, /package\/template\/react-mui-app\/pnpm-lock\.yaml/);
     assert.doesNotMatch(tarballListing, /package\/template\/react-mui-app\/node_modules\//);
+
+    await run({
+      command: "tar",
+      args: ["-xzf", path.join(packDir, tarball), "-C", extractDir, "package/package.json"],
+      cwd: packageRoot
+    });
+
+    const packagedManifest = JSON.parse(
+      await readFile(path.join(extractDir, "package", "package.json"), "utf8")
+    ) as {
+      repository: {
+        type: string;
+        url: string;
+      };
+      homepage: string;
+      bugs: {
+        url: string;
+      };
+    };
+
+    assert.equal(packagedManifest.repository.type, "git");
+    assert.equal(packagedManifest.repository.url, expectedRepositoryUrl);
+    assert.equal(packagedManifest.homepage, expectedHomepageUrl);
+    assert.equal(packagedManifest.bugs.url, expectedBugsUrl);
   } finally {
     await rm(packDir, { recursive: true, force: true });
+    await rm(extractDir, { recursive: true, force: true });
   }
 });
