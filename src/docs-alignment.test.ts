@@ -36,6 +36,10 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   }
 
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
+  assert.match(architectureDoc, /single-threaded Node\.js event loop invariant/i);
+  assert.match(architectureDoc, /not safe for `worker_threads`/i);
+  assert.match(architectureDoc, /waits up to 3 seconds for process exit, then falls back to `SIGKILL`/i);
+  assert.match(architectureDoc, /best-effort `SIGTERM`/i);
   assert.match(claudeDoc, /figmaSourceMode=rest\|hybrid\|local_json/);
   assert.match(claudeDoc, /module resolution `node16`/);
   assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
