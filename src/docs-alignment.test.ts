@@ -24,6 +24,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const readmeDoc = await readRepoFile("README.md");
+  const schemasSource = await readRepoFile("src/schemas.ts");
   const docsToCheck = [architectureDoc, claudeDoc];
   const defaults = getWorkspaceDefaults();
   const figmaModeLock = `figmaSourceMode=${getAllowedFigmaSourceModes().join("|")}`;
@@ -54,6 +55,14 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
   assert.match(contributingDoc, /dev -> dev-gate -> main/);
+  assert.match(contributingDoc, /## Adding new validated fields/);
+  assert.match(contributingDoc, /allowedKeys/);
+  assert.match(contributingDoc, /formatZodError/);
+  assert.match(contributingDoc, /unexpected-property rejection/);
+  assert.match(schemasSource, /Validation conventions in this module:/);
+  assert.match(schemasSource, /Guard unknown input with `isRecord` before reading object fields\./);
+  assert.match(schemasSource, /Define an explicit `allowedKeys` set for each object schema and reject/);
+  assert.match(schemasSource, /Collect failures in `ValidationIssue\[\]` with stable paths and messages/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);

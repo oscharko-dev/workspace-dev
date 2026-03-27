@@ -35,3 +35,15 @@ Any public API change requires:
 1. `CONTRACT_CHANGELOG.md` entry
 2. Snapshot updates in `src/contract-version.test.ts` when runtime exports change
 3. Passing tests and type checks
+
+## Adding new validated fields
+
+Request validation in `src/schemas.ts` uses project-local lightweight validators
+instead of a runtime schema dependency so the package stays air-gap compatible.
+
+When adding a new validated request field:
+
+1. Update the schema's `allowedKeys` set so strict unknown-property rejection remains intact.
+2. Add parsing and normalization near related fields, reusing shared helpers such as `parseStringField` when possible.
+3. Keep validation messages and issue paths consistent with the shapes emitted through `formatZodError`.
+4. Add or update schema tests for valid input, invalid input, and unexpected-property rejection.

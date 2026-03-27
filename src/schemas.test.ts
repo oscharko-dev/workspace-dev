@@ -318,6 +318,23 @@ test("schema: regeneration request rejects invalid layout values", () => {
   assert.equal(result.success, false);
 });
 
+test("schema: regeneration request rejects unexpected top-level properties", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [{ nodeId: "node-1", field: "width", value: 320 }],
+    unexpected: true
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["unexpected"],
+        message: "Unexpected property 'unexpected'."
+      }
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // formatZodError
 // ---------------------------------------------------------------------------
@@ -372,6 +389,49 @@ test("schema: sync apply requires token and explicit confirmation", () => {
     ]
   });
   assert.equal(valid.success, true);
+});
+
+test("schema: sync dry_run rejects unexpected properties", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "dry_run",
+    targetPath: "apps/generated",
+    unexpected: true
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["unexpected"],
+        message: "Unexpected property 'unexpected'."
+      }
+    ]);
+  }
+});
+
+test("schema: sync apply rejects unexpected properties", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "src/App.tsx",
+        decision: "write"
+      }
+    ],
+    unexpected: true
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["unexpected"],
+        message: "Unexpected property 'unexpected'."
+      }
+    ]);
+  }
 });
 
 // ---------------------------------------------------------------------------
