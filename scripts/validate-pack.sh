@@ -56,6 +56,8 @@ REQUIRED_FILES=(
   "dist/contracts/index.d.ts"
   "dist/contracts/index.d.cts"
   "dist/ui/index.html"
+  "template/react-mui-app/package.json"
+  "template/react-mui-app/pnpm-lock.yaml"
 )
 
 MISSING=()

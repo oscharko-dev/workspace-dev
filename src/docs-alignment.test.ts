@@ -40,6 +40,11 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(architectureDoc, /not safe for `worker_threads`/i);
   assert.match(architectureDoc, /waits up to 3 seconds for process exit, then falls back to `SIGKILL`/i);
   assert.match(architectureDoc, /best-effort `SIGTERM`/i);
+  assert.match(architectureDoc, /template\/react-mui-app\/pnpm-lock\.yaml/);
+  assert.match(architectureDoc, /package\.json[` ]+`files`|`package\.json` `files`|package\.json `files`/);
+  assert.match(architectureDoc, /template:install|--frozen-lockfile/);
+  assert.match(architectureDoc, /verify:airgap/);
+  assert.match(architectureDoc, /verify:reproducible-build/);
   assert.match(claudeDoc, /figmaSourceMode=rest\|hybrid\|local_json/);
   assert.match(claudeDoc, /module resolution `node16`/);
   assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
