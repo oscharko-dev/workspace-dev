@@ -35,12 +35,15 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 
 - Node.js `>=22.0.0`
 - npm `>=10` or pnpm `>=10`
+- TypeScript `>=5.0.0` for typed package consumption
 
 ## Installation
 
 ```bash
 npm install --save-dev workspace-dev
 ```
+
+For projects that import `workspace-dev` types or compile against the published package declarations, use TypeScript `>=5.0.0`. The published dual ESM/CJS type surface is validated only for TypeScript 5+ consumers.
 
 ## Quickstart
 
