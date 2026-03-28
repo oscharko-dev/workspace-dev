@@ -1363,3 +1363,157 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
     await close();
   }
 });
+
+// --- Issue #582: Safe URI decoding regression tests ---
+
+test("malformed percent-encoded job ID returns 400 INVALID_PATH_ENCODING on GET status", async () => {
+  const { app, close } = await createRequestHandlerApp();
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/bad%2job/result"
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");
+  } finally {
+    await close();
+  }
+});
+
+test("malformed percent-encoded job ID returns 400 on POST cancel", async () => {
+  const { app, close } = await createRequestHandlerApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/bad%2job/cancel",
+      headers: { "content-type": "application/json" },
+      payload: {}
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");
+  } finally {
+    await close();
+  }
+});
+
+test("malformed percent-encoded file path returns 400 on GET file content", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          status: "completed",
+          artifacts: { generatedProjectDir: tempRoot }
+        }) as ReturnType<JobEngine["getJobRecord"]>
+    })
+  });
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/files/src%2FApp%2.tsx"
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");
+  } finally {
+    await close();
+  }
+});
+
+test("malformed percent-encoded repro job ID returns 400", async () => {
+  const { app, close } = await createRequestHandlerApp();
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/workspace/repros/bad%2id/index.html"
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");
+  } finally {
+    await close();
+  }
+});
+
+// --- Issue #582: Windows path normalization regression tests ---
+
+test("backslash traversal in file path returns 403", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          status: "completed",
+          artifacts: { generatedProjectDir: tempRoot }
+        }) as ReturnType<JobEngine["getJobRecord"]>
+    })
+  });
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files/${encodeURIComponent("..\\..\\etc\\passwd")}`
+    });
+    assert.equal(res.statusCode, 403);
+  } finally {
+    await close();
+  }
+});
+
+test("backslash-based blocked prefix (node_modules) in file path returns 403", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          status: "completed",
+          artifacts: { generatedProjectDir: tempRoot }
+        }) as ReturnType<JobEngine["getJobRecord"]>
+    })
+  });
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files/${encodeURIComponent("node_modules\\react\\index.ts")}`
+    });
+    assert.equal(res.statusCode, 403);
+  } finally {
+    await close();
+  }
+});
+
+test("Windows absolute path (C:\\) in file path returns 403", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          status: "completed",
+          artifacts: { generatedProjectDir: tempRoot }
+        }) as ReturnType<JobEngine["getJobRecord"]>
+    })
+  });
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files/${encodeURIComponent("C:\\Windows\\System32\\cmd.ts")}`
+    });
+    assert.equal(res.statusCode, 403);
+  } finally {
+    await close();
+  }
+});
+
+test("backslash-based blocked prefix in directory listing ?dir= returns 403", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          status: "completed",
+          artifacts: { generatedProjectDir: tempRoot }
+        }) as ReturnType<JobEngine["getJobRecord"]>
+    })
+  });
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files?dir=${encodeURIComponent("node_modules\\react")}`
+    });
+    assert.equal(res.statusCode, 403);
+  } finally {
+    await close();
+  }
+});
