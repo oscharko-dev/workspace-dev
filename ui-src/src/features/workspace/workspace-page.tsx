@@ -381,6 +381,7 @@ export function WorkspacePage(): JSX.Element {
     defaultValues: {
       figmaFileKey: initialFigmaKey,
       figmaAccessToken: "",
+      figmaJsonPath: "",
       figmaSourceMode: "rest",
       enableGitPr: false,
       repoUrl: "",
@@ -792,43 +793,64 @@ export function WorkspacePage(): JSX.Element {
                     >
                       <option value="rest">REST</option>
                       <option value="hybrid">Hybrid (REST + MCP enrich)</option>
+                      <option value="local_json">Local JSON</option>
                     </select>
                     <FieldHint
                       message={
                         selectedFigmaSourceMode === "hybrid"
                           ? "Hybrid keeps REST as the source of structure and applies additive MCP enrichment when available."
-                          : undefined
+                          : selectedFigmaSourceMode === "local_json"
+                            ? "Reads Figma data from a local JSON file. No Figma API credentials required."
+                            : undefined
                       }
                     />
                   </div>
 
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="figma-file-key" className="text-xs font-medium uppercase tracking-wider text-[#666]">
-                      Figma File Key
-                    </label>
-                    <input
-                      id="figma-file-key"
-                      autoComplete="off"
-                      placeholder="11kmnrt..."
-                      className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
-                      {...register("figmaFileKey")}
-                    />
-                    <FieldHint message={errors.figmaFileKey?.message} />
-                  </div>
+                  {selectedFigmaSourceMode === "local_json" ? (
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="figma-json-path" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                        Figma JSON Path
+                      </label>
+                      <input
+                        id="figma-json-path"
+                        autoComplete="off"
+                        placeholder="/path/to/figma-export.json"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                        {...register("figmaJsonPath")}
+                      />
+                      <FieldHint message={errors.figmaJsonPath?.message} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="figma-file-key" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                          Figma File Key
+                        </label>
+                        <input
+                          id="figma-file-key"
+                          autoComplete="off"
+                          placeholder="11kmnrt..."
+                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                          {...register("figmaFileKey")}
+                        />
+                        <FieldHint message={errors.figmaFileKey?.message} />
+                      </div>
 
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="figma-access-token" className="text-xs font-medium uppercase tracking-wider text-[#666]">
-                      Figma Access Token
-                    </label>
-                    <input
-                      id="figma-access-token"
-                      type="password"
-                      autoComplete="off"
-                      className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
-                      {...register("figmaAccessToken")}
-                    />
-                    <FieldHint message={errors.figmaAccessToken?.message} />
-                  </div>
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="figma-access-token" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                          Figma Access Token
+                        </label>
+                        <input
+                          id="figma-access-token"
+                          type="password"
+                          autoComplete="off"
+                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                          {...register("figmaAccessToken")}
+                        />
+                        <FieldHint message={errors.figmaAccessToken?.message} />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Collapsible advanced section */}

@@ -1,13 +1,13 @@
 import { z } from "zod";
 
-const requiredString = z.string().trim().min(1, "This field is required.");
 const optionalString = z.string().trim().optional().or(z.literal(""));
 
 export const workspaceSubmitSchema = z
   .object({
-    figmaFileKey: requiredString,
-    figmaAccessToken: requiredString,
-    figmaSourceMode: z.enum(["rest", "hybrid"]).default("rest"),
+    figmaFileKey: optionalString,
+    figmaAccessToken: optionalString,
+    figmaJsonPath: optionalString,
+    figmaSourceMode: z.enum(["rest", "hybrid", "local_json"]).default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
     repoToken: optionalString,
@@ -15,6 +15,32 @@ export const workspaceSubmitSchema = z
     targetPath: optionalString
   })
   .superRefine((value, context) => {
+    if (value.figmaSourceMode === "local_json") {
+      if (!value.figmaJsonPath || !value.figmaJsonPath.trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figmaJsonPath"],
+          message: "Figma JSON path is required for local_json mode."
+        });
+      }
+    } else {
+      if (!value.figmaFileKey || !value.figmaFileKey.trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figmaFileKey"],
+          message: "This field is required."
+        });
+      }
+
+      if (!value.figmaAccessToken || !value.figmaAccessToken.trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figmaAccessToken"],
+          message: "This field is required."
+        });
+      }
+    }
+
     if (!value.enableGitPr) {
       return;
     }
@@ -39,14 +65,15 @@ export const workspaceSubmitSchema = z
 export type WorkspaceSubmitFormData = z.input<typeof workspaceSubmitSchema>;
 
 export interface WorkspaceSubmitPayload {
-  figmaFileKey: string;
-  figmaAccessToken: string;
+  figmaFileKey?: string | undefined;
+  figmaAccessToken?: string | undefined;
+  figmaJsonPath?: string | undefined;
   repoUrl?: string | undefined;
   repoToken?: string | undefined;
   enableGitPr: boolean;
   projectName?: string | undefined;
   targetPath?: string | undefined;
-  figmaSourceMode: "rest" | "hybrid";
+  figmaSourceMode: "rest" | "hybrid" | "local_json";
   llmCodegenMode: "deterministic";
 }
 
@@ -68,10 +95,25 @@ export function toWorkspaceSubmitPayload({
 }: {
   formData: WorkspaceSubmitFormData;
 }): WorkspaceSubmitPayload {
+  const mode = formData.figmaSourceMode ?? "rest";
+
+  if (mode === "local_json") {
+    return {
+      figmaSourceMode: "local_json",
+      figmaJsonPath: toOptionalString({ value: formData.figmaJsonPath }),
+      enableGitPr: formData.enableGitPr,
+      repoUrl: toOptionalString({ value: formData.repoUrl }),
+      repoToken: toOptionalString({ value: formData.repoToken }),
+      projectName: toOptionalString({ value: formData.projectName }),
+      targetPath: toOptionalString({ value: formData.targetPath }),
+      llmCodegenMode: "deterministic"
+    };
+  }
+
   return {
-    figmaFileKey: formData.figmaFileKey.trim(),
-    figmaAccessToken: formData.figmaAccessToken.trim(),
-    figmaSourceMode: formData.figmaSourceMode ?? "rest",
+    figmaFileKey: toOptionalString({ value: formData.figmaFileKey }),
+    figmaAccessToken: toOptionalString({ value: formData.figmaAccessToken }),
+    figmaSourceMode: mode,
     repoUrl: toOptionalString({ value: formData.repoUrl }),
     repoToken: toOptionalString({ value: formData.repoToken }),
     enableGitPr: formData.enableGitPr,
