@@ -40,10 +40,55 @@ function passesLuhnChecksum(candidate: string): boolean {
   return checksum % 10 === 0;
 }
 
+/** Lightweight IIN/BIN prefix check for major card networks. */
+function hasKnownIssuerPrefix(candidate: string): boolean {
+  const d1 = candidate.charCodeAt(0) - 48;
+  const d2 = d1 * 10 + (candidate.charCodeAt(1) - 48);
+
+  // Visa: starts with 4
+  if (d1 === 4) return true;
+  // Amex: 34, 37
+  if (d2 === 34 || d2 === 37) return true;
+  // Mastercard: 51-55
+  if (d2 >= 51 && d2 <= 55) return true;
+  // UnionPay: 62
+  if (d2 === 62) return true;
+  // Discover: 65
+  if (d2 === 65) return true;
+  // Diners Club: 36, 38
+  if (d2 === 36 || d2 === 38) return true;
+
+  if (candidate.length >= 3) {
+    const d3 = d2 * 10 + (candidate.charCodeAt(2) - 48);
+    // Diners Club: 300-305
+    if (d3 >= 300 && d3 <= 305) return true;
+    // Discover: 644-649
+    if (d3 >= 644 && d3 <= 649) return true;
+  }
+
+  if (candidate.length >= 4) {
+    const d4 =
+      (candidate.charCodeAt(0) - 48) * 1000 +
+      (candidate.charCodeAt(1) - 48) * 100 +
+      (candidate.charCodeAt(2) - 48) * 10 +
+      (candidate.charCodeAt(3) - 48);
+    // Mastercard: 2221-2720
+    if (d4 >= 2221 && d4 <= 2720) return true;
+    // JCB: 3528-3589
+    if (d4 >= 3528 && d4 <= 3589) return true;
+    // Discover: 6011
+    if (d4 === 6011) return true;
+  }
+
+  return false;
+}
+
 function redact(input: string): string {
   return input
     .replace(EMAIL_PATTERN, "[redacted-email]")
-    .replace(PAN_PATTERN, (candidate) => (passesLuhnChecksum(candidate) ? "[redacted-pan]" : candidate))
+    .replace(PAN_PATTERN, (candidate) =>
+      passesLuhnChecksum(candidate) && hasKnownIssuerPrefix(candidate) ? "[redacted-pan]" : candidate
+    )
     .replace(SECRET_TOKEN_PATTERN, "[redacted-secret]");
 }
 

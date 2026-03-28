@@ -34,6 +34,54 @@ test("error sanitization preserves long numeric values that fail the Luhn checks
   }
 });
 
+test("error sanitization preserves Luhn-valid numbers that lack a known card issuer prefix", async (t) => {
+  // These pass the Luhn checksum but start with non-card-network prefixes
+  const luhnValidNonCards = ["1000000000009", "9000000000001", "8000000000002"] as const;
+
+  for (const candidate of luhnValidNonCards) {
+    await t.test(`preserves Luhn-valid non-card ${candidate}`, () => {
+      const message = sanitizeErrorMessage({
+        error: new Error(`Identifier ${candidate}`),
+        fallback: "fallback"
+      });
+
+      assert.equal(message, `Identifier ${candidate}`);
+      assert.equal(message.includes("[redacted-pan]"), false);
+    });
+  }
+});
+
+test("error sanitization redacts multiple PANs in a single message", () => {
+  const message = sanitizeErrorMessage({
+    error: new Error("Cards 4242424242424242 and 378282246310005 found"),
+    fallback: "fallback"
+  });
+
+  assert.equal(message.includes("4242424242424242"), false);
+  assert.equal(message.includes("378282246310005"), false);
+  assert.equal(message, "Cards [redacted-pan] and [redacted-pan] found");
+});
+
+test("error sanitization redacts PAN at message boundaries", async (t) => {
+  await t.test("PAN at start", () => {
+    const message = sanitizeErrorMessage({
+      error: new Error("4242424242424242 was leaked"),
+      fallback: "fallback"
+    });
+
+    assert.equal(message, "[redacted-pan] was leaked");
+  });
+
+  await t.test("PAN at end", () => {
+    const message = sanitizeErrorMessage({
+      error: new Error("leaked card 4242424242424242"),
+      fallback: "fallback"
+    });
+
+    assert.equal(message, "leaked card [redacted-pan]");
+  });
+});
+
 test("error sanitization redacts mixed sensitive content without over-redacting non-pan long numbers", () => {
   const message = sanitizeErrorMessage({
     error: new Error(
