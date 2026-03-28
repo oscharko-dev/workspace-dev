@@ -1468,10 +1468,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       status: "completed",
       message: toGitPrStageMessage({ gitPrStatus: job.gitPr })
     });
-    await persistTerminalSnapshot({
-      job,
-      ...(job.error?.diagnostics ? { diagnostics: job.error.diagnostics } : {})
-    });
+    await persistTerminalSnapshot({ job });
 
     return {
       jobId,
