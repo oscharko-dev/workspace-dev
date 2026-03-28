@@ -764,9 +764,11 @@ test("request handler file listing and file reads enforce filters and path safet
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-request-handler-files-"));
   const projectDir = path.join(tempRoot, "generated-project");
   await mkdir(path.join(projectDir, "src"), { recursive: true });
+  await mkdir(path.join(projectDir, "src", "screens"), { recursive: true });
   await mkdir(path.join(projectDir, "node_modules"), { recursive: true });
   await mkdir(path.join(projectDir, "dist"), { recursive: true });
   await writeFile(path.join(projectDir, "src", "App.tsx"), "export const App = () => null;\n", "utf8");
+  await writeFile(path.join(projectDir, "src", "screens", "Home.tsx"), "export const Home = () => 'home';\n", "utf8");
   await writeFile(path.join(projectDir, "styles.css"), "body { margin: 0; }\n", "utf8");
   await writeFile(path.join(projectDir, ".hidden.ts"), "hidden\n", "utf8");
   await writeFile(path.join(projectDir, "README.md"), "# ignored\n", "utf8");
@@ -805,6 +807,7 @@ test("request handler file listing and file reads enforce filters and path safet
       assert.equal(response.statusCode, 200);
       assert.deepEqual(response.json<{ files: Array<{ path: string }> }>().files, [
         { path: "src/App.tsx", sizeBytes: Buffer.byteLength("export const App = () => null;\n") },
+        { path: "src/screens/Home.tsx", sizeBytes: Buffer.byteLength("export const Home = () => 'home';\n") },
         { path: "styles.css", sizeBytes: Buffer.byteLength("body { margin: 0; }\n") }
       ]);
     });
@@ -827,6 +830,36 @@ test("request handler file listing and file reads enforce filters and path safet
 
       assert.equal(response.statusCode, 200);
       assert.equal(response.body, "export const App = () => null;\n");
+    });
+
+    await t.test("file reads normalize valid Windows-style relative paths to the same file", async () => {
+      const posixResponse = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-1/files/src/screens/Home.tsx"
+      });
+      const windowsResponse = await app.inject({
+        method: "GET",
+        url: `/workspace/jobs/job-1/files/${encodeURIComponent("src\\screens\\Home.tsx")}`
+      });
+
+      assert.equal(posixResponse.statusCode, 200);
+      assert.equal(windowsResponse.statusCode, 200);
+      assert.equal(windowsResponse.body, posixResponse.body);
+    });
+
+    await t.test("directory listing normalizes valid Windows-style dir filters to the same target", async () => {
+      const posixResponse = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-1/files?dir=src/screens"
+      });
+      const windowsResponse = await app.inject({
+        method: "GET",
+        url: `/workspace/jobs/job-1/files?dir=${encodeURIComponent("src\\screens")}`
+      });
+
+      assert.equal(posixResponse.statusCode, 200);
+      assert.equal(windowsResponse.statusCode, 200);
+      assert.deepEqual(windowsResponse.json<{ jobId: string; files: Array<{ path: string; sizeBytes: number }> }>(), posixResponse.json<{ jobId: string; files: Array<{ path: string; sizeBytes: number }> }>());
     });
 
     await t.test("symlink file reads are rejected", async () => {
@@ -1424,6 +1457,20 @@ test("malformed percent-encoded repro job ID returns 400", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/workspace/repros/bad%2id/index.html"
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");
+  } finally {
+    await close();
+  }
+});
+
+test("malformed percent-encoded repro preview path returns 400", async () => {
+  const { app, close } = await createRequestHandlerApp();
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/workspace/repros/job-1/assets%2"
     });
     assert.equal(res.statusCode, 400);
     assert.equal(res.json<Record<string, unknown>>().error, "INVALID_PATH_ENCODING");

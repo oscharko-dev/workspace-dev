@@ -448,7 +448,7 @@ export function createWorkspaceRequestHandler({
         // Directory listing
         if (parsedFilesRoute.filePath === undefined) {
           const dirFilterParam = requestUrl.searchParams.get("dir");
-          const dirFilter: string | undefined = dirFilterParam !== null ? dirFilterParam : undefined;
+          let dirFilter: string | undefined = dirFilterParam !== null ? dirFilterParam : undefined;
 
           if (dirFilter !== undefined) {
             const dirValidation = validateSourceFilePath(`${dirFilter}/placeholder.ts`);
@@ -463,6 +463,7 @@ export function createWorkspaceRequestHandler({
               });
               return;
             }
+            dirFilter = path.posix.dirname(dirValidation.normalizedPath);
           }
 
           let fileEntries: Array<{ path: string; sizeBytes: number }>;
@@ -507,7 +508,8 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        const absolutePath = path.join(projectDir, filePath);
+        const safeFilePath = validation.normalizedPath;
+        const absolutePath = path.join(projectDir, safeFilePath);
 
         // Ensure resolved path stays within projectDir (belt-and-suspenders)
         const resolved = path.resolve(absolutePath);
@@ -544,7 +546,7 @@ export function createWorkspaceRequestHandler({
             statusCode: 404,
             payload: {
               error: "FILE_NOT_FOUND",
-              message: `File '${filePath}' not found in job '${jobId}'.`
+              message: `File '${safeFilePath}' not found in job '${jobId}'.`
             }
           });
           return;
@@ -559,7 +561,7 @@ export function createWorkspaceRequestHandler({
             statusCode: 404,
             payload: {
               error: "FILE_NOT_FOUND",
-              message: `File '${filePath}' not found in job '${jobId}'.`
+              message: `File '${safeFilePath}' not found in job '${jobId}'.`
             }
           });
           return;
