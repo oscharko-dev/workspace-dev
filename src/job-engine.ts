@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -24,7 +24,8 @@ import {
 } from "./job-engine/errors.js";
 import { resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { resolveBoardKey } from "./parity/board-key.js";
-import { runGitPrFlow } from "./job-engine/git-pr.js";
+import { executePersistedGitPr, toGitPrStageMessage } from "./job-engine/git-pr-persistence.js";
+import { loadRehydratedJobs, writeTerminalJobSnapshot, writeTerminalJobSnapshotSync } from "./job-engine/job-snapshot.js";
 import { getContentType, hasSymlinkInPath, isWithinRoot, normalizePathPart } from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
 import { DEFAULT_GENERATION_LOCALE, normalizeGenerationLocale, resolveGenerationLocale } from "./generation-locale.js";
@@ -268,11 +269,51 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     };
   };
 
+  const toTerminalQueueSnapshot = ({ jobId }: { jobId: string }): WorkspaceJobStatus["queue"] => {
+    const position = queuedJobIds.indexOf(jobId);
+    return {
+      runningCount: Math.max(0, runningJobIds.size - (runningJobIds.has(jobId) ? 1 : 0)),
+      queuedCount: Math.max(0, queuedJobIds.length - (position >= 0 ? 1 : 0)),
+      maxConcurrentJobs: runtime.maxConcurrentJobs,
+      maxQueuedJobs: runtime.maxQueuedJobs
+    };
+  };
+
   const refreshQueueSnapshots = (): void => {
     for (const [jobId, job] of jobs.entries()) {
       job.queue = toQueueSnapshot({ jobId });
     }
   };
+
+  const persistTerminalSnapshot = async ({
+    job,
+    diagnostics
+  }: {
+    job: JobRecord;
+    diagnostics?: WorkspaceJobDiagnostic[] | undefined;
+  }): Promise<void> => {
+    job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
+    await writeTerminalJobSnapshot({ job, diagnostics });
+  };
+
+  const persistTerminalSnapshotSync = ({
+    job,
+    diagnostics
+  }: {
+    job: JobRecord;
+    diagnostics?: WorkspaceJobDiagnostic[] | undefined;
+  }): void => {
+    job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
+    writeTerminalJobSnapshotSync({ job, diagnostics });
+  };
+
+  for (const rehydratedJob of loadRehydratedJobs({
+    jobsRoot: resolvedPaths.jobsRoot,
+    resolveBaseUrl
+  })) {
+    jobs.set(rehydratedJob.jobId, rehydratedJob);
+  }
+  refreshQueueSnapshots();
 
   const createSyncError = ({
     code,
@@ -419,32 +460,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
 
     let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
-    const persistStageTimings = async (): Promise<void> => {
-      const payload: {
-        jobId: string;
-        status: WorkspaceJobStatus["status"];
-        generatedAt: string;
-        stages: WorkspaceJobStatus["stages"];
-        diagnostics?: WorkspaceJobDiagnostic[];
-        cancellation?: WorkspaceJobStatus["cancellation"];
-        error?: WorkspaceJobStatus["error"];
-      } = {
-        jobId: job.jobId,
-        status: job.status,
-        generatedAt: nowIso(),
-        stages: job.stages
-      };
-      if (collectedDiagnostics && collectedDiagnostics.length > 0) {
-        payload.diagnostics = collectedDiagnostics;
-      }
-      if (job.cancellation) {
-        payload.cancellation = job.cancellation;
-      }
-      if (job.error) {
-        payload.error = job.error;
-      }
-      await writeFile(stageTimingsFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    };
 
     const appendDiagnostics = ({
       stage,
@@ -531,7 +546,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
-      await persistStageTimings();
       const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
         job,
@@ -540,6 +554,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message:
           `Job completed. Generated output at ${generatedProjectDir} ` +
           `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
+      });
+      await persistTerminalSnapshot({
+        job,
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
       });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
@@ -555,11 +573,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         }
         job.cancellation.completedAt = nowIso();
         markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
-        try {
-          await persistStageTimings();
-        } catch {
-          // Ignore stage-timing persistence failures during cancellation handling.
-        }
         pushRuntimeLog({
           job,
           logger: runtime.logger,
@@ -567,6 +580,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           stage: error.stage,
           message: `Job canceled: ${error.message}`
         });
+        try {
+          await persistTerminalSnapshot({
+            job,
+            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+          });
+        } catch {
+          // Ignore stage-timing persistence failures during cancellation handling.
+        }
         return;
       }
 
@@ -593,11 +614,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
       };
       job.currentStage = typedError.stage;
-      try {
-        await persistStageTimings();
-      } catch {
-        // Ignore stage-timing persistence failures during error handling.
-      }
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -605,6 +621,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: typedError.stage,
         message: `Job failed: ${typedError.code} ${typedError.message}`
       });
+      try {
+        await persistTerminalSnapshot({
+          job,
+          ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+        });
+      } catch {
+        // Ignore stage-timing persistence failures during error handling.
+      }
     } finally {
       delete job.abortController;
     }
@@ -720,23 +744,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const jobAbortController = new AbortController();
     job.abortController = jobAbortController;
 
-    const sourceRecord = jobs.get(regenInput.sourceJobId);
-    if (!sourceRecord) {
-      job.status = "failed";
-      job.finishedAt = nowIso();
-      job.error = {
-        code: "E_REGEN_SOURCE_NOT_FOUND",
-        stage: "figma.source",
-        message: `Source job '${regenInput.sourceJobId}' not found.`
-      };
-      return;
-    }
-
-    const resolvedFormHandlingMode = sourceRecord.request.formHandlingMode;
-    const resolvedGenerationLocale = sourceRecord.request.generationLocale;
-    const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
-    const resolvedBrandTheme = sourceRecord.request.brandTheme;
-
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
     const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
@@ -758,32 +765,31 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
 
     let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
-    const persistStageTimings = async (): Promise<void> => {
-      const payload: {
-        jobId: string;
-        status: WorkspaceJobStatus["status"];
-        generatedAt: string;
-        stages: WorkspaceJobStatus["stages"];
-        lineage?: WorkspaceJobStatus["lineage"];
-        diagnostics?: WorkspaceJobDiagnostic[];
-        error?: WorkspaceJobStatus["error"];
-      } = {
-        jobId: job.jobId,
-        status: job.status,
-        generatedAt: nowIso(),
-        stages: job.stages
+
+    const sourceRecord = jobs.get(regenInput.sourceJobId);
+    if (!sourceRecord) {
+      job.status = "failed";
+      job.finishedAt = nowIso();
+      job.error = {
+        code: "E_REGEN_SOURCE_NOT_FOUND",
+        stage: "figma.source",
+        message: `Source job '${regenInput.sourceJobId}' not found.`
       };
-      if (job.lineage) {
-        payload.lineage = job.lineage;
-      }
-      if (collectedDiagnostics && collectedDiagnostics.length > 0) {
-        payload.diagnostics = collectedDiagnostics;
-      }
-      if (job.error) {
-        payload.error = job.error;
-      }
-      await writeFile(stageTimingsFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    };
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "error",
+        stage: "figma.source",
+        message: `Regeneration job failed: E_REGEN_SOURCE_NOT_FOUND Source job '${regenInput.sourceJobId}' not found.`
+      });
+      await persistTerminalSnapshot({ job });
+      return;
+    }
+
+    const resolvedFormHandlingMode = sourceRecord.request.formHandlingMode;
+    const resolvedGenerationLocale = sourceRecord.request.generationLocale;
+    const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
+    const resolvedBrandTheme = sourceRecord.request.brandTheme;
 
     const appendDiagnostics = ({
       stage,
@@ -885,7 +891,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
-      await persistStageTimings();
       const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
         job,
@@ -894,6 +899,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message:
           `Regeneration job completed. Generated output at ${generatedProjectDir} ` +
           `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
+      });
+      await persistTerminalSnapshot({
+        job,
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
       });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
@@ -909,11 +918,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         }
         job.cancellation.completedAt = nowIso();
         markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
-        try {
-          await persistStageTimings();
-        } catch {
-          // Ignore
-        }
         pushRuntimeLog({
           job,
           logger: runtime.logger,
@@ -921,6 +925,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           stage: error.stage,
           message: `Regeneration job canceled: ${error.message}`
         });
+        try {
+          await persistTerminalSnapshot({
+            job,
+            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+          });
+        } catch {
+          // Ignore
+        }
         return;
       }
 
@@ -947,11 +959,6 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
       };
       job.currentStage = typedError.stage;
-      try {
-        await persistStageTimings();
-      } catch {
-        // Ignore
-      }
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -959,6 +966,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: typedError.stage,
         message: `Regeneration job failed: ${typedError.code} ${typedError.message}`
       });
+      try {
+        await persistTerminalSnapshot({
+          job,
+          ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+        });
+      } catch {
+        // Ignore
+      }
     } finally {
       delete job.abortController;
     }
@@ -1268,6 +1283,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message: `Job canceled while queued: ${cancellationReason}`
       });
       refreshQueueSnapshots();
+      persistTerminalSnapshotSync({ job });
       return toPublicJob(job);
     }
 
@@ -1404,19 +1420,23 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       throw err;
     }
 
-    const generatedProjectDir = job.artifacts.generatedProjectDir;
+    const artifactStore = new StageArtifactStore({ jobDir: job.artifacts.jobDir });
+    const generatedProjectDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject);
     if (!generatedProjectDir) {
       const err = new Error(`Job '${jobId}' has no generated project directory.`);
       (err as Error & { code: string }).code = "E_PR_NO_GENERATED_PROJECT";
       throw err;
     }
-    if (!job.generationDiff) {
+    const generationDiff = await artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff);
+    if (!generationDiff) {
       const err = new Error(`Job '${jobId}' is missing final generation diff provenance.`);
       (err as Error & { code: string }).code = "E_PR_GENERATION_DIFF_MISSING";
       throw err;
     }
+    if (!job.generationDiff) {
+      job.generationDiff = generationDiff as NonNullable<JobRecord["generationDiff"]>;
+    }
 
-    const jobDir = job.artifacts.jobDir;
     const input: WorkspaceJobInput = {
       ...job.request,
       repoUrl: prInput.repoUrl,
@@ -1425,11 +1445,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       ...(prInput.targetPath !== undefined ? { targetPath: prInput.targetPath } : {})
     };
 
-    const prResult = await runGitPrFlow({
+    job.gitPr = await executePersistedGitPr({
+      artifactStore,
       input,
+      jobDir: job.artifacts.jobDir,
       jobId,
-      generatedProjectDir,
-      jobDir,
+      commandTimeoutMs: runtime.commandTimeoutMs,
       onLog: (message) => {
         pushRuntimeLog({
           job,
@@ -1438,28 +1459,19 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           stage: "git.pr",
           message
         });
-      },
-      commandTimeoutMs: runtime.commandTimeoutMs,
-      generationDiff: job.generationDiff
+      }
     });
 
-    job.gitPr = {
-      status: "executed",
-      ...(prResult.prUrl ? { prUrl: prResult.prUrl } : {}),
-      branchName: prResult.branchName,
-      scopePath: prResult.scopePath,
-      changedFiles: prResult.changedFiles
-    };
-
-    // Update the git.pr stage to completed
-    const gitPrStage = job.stages.find((s) => s.name === "git.pr");
-    if (gitPrStage) {
-      gitPrStage.status = "completed";
-      gitPrStage.completedAt = nowIso();
-      gitPrStage.message = prResult.prUrl
-        ? `PR created: ${prResult.prUrl}`
-        : `Branch pushed: ${prResult.branchName}`;
-    }
+    updateStage({
+      job,
+      stage: "git.pr",
+      status: "completed",
+      message: toGitPrStageMessage({ gitPrStatus: job.gitPr })
+    });
+    await persistTerminalSnapshot({
+      job,
+      ...(job.error?.diagnostics ? { diagnostics: job.error.diagnostics } : {})
+    });
 
     return {
       jobId,

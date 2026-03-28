@@ -779,6 +779,135 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
   assert.equal(engine.getJobResult(accepted.jobId)?.cancellation?.reason, "Manual stop requested.");
 });
 
+test("createJobEngine rehydrates completed regeneration jobs and keeps local sync helpers available", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-regen-"));
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createFastJobEngine({ tempRoot });
+  const { accepted: sourceAccepted } = await submitCompletedLocalJsonJob({
+    engine,
+    figmaJsonPath
+  });
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title", field: "fontSize", value: 28 }],
+    draftId: "draft-1",
+    baseFingerprint: "fnv1a64:rehydrate"
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: regenAccepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+  });
+  assert.equal(regenStatus.status, "completed");
+
+  const rehydratedEngine = createFastJobEngine({ tempRoot });
+  const rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
+  assert.equal(rehydrated?.status, "completed");
+  assert.deepEqual(rehydrated?.request, regenStatus.request);
+  assert.deepEqual(rehydrated?.lineage, regenStatus.lineage);
+  assert.deepEqual(rehydrated?.generationDiff, regenStatus.generationDiff);
+  assert.deepEqual(rehydrated?.gitPr, regenStatus.gitPr);
+  assert.equal(rehydrated?.artifacts.generatedProjectDir, regenStatus.artifacts.generatedProjectDir);
+
+  const syncPreview = await rehydratedEngine.previewLocalSync({
+    jobId: regenAccepted.jobId,
+    targetPath: "rehydrated-sync"
+  });
+  assert.equal(syncPreview.jobId, regenAccepted.jobId);
+  assert.equal(syncPreview.sourceJobId, sourceAccepted.jobId);
+  assert.equal(syncPreview.files.length > 0, true);
+});
+
+test("createJobEngine rehydrates failed and canceled jobs while skipping legacy snapshots", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-terminal-"));
+  const validFigmaPath = path.join(tempRoot, "valid-input.json");
+  const invalidFigmaPath = path.join(tempRoot, "invalid-input.json");
+  await writeFile(validFigmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    invalidFigmaPath,
+    JSON.stringify({
+      name: "Broken Board",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [{ type: "CANVAS", children: [] }]
+      }
+    }),
+    "utf8"
+  );
+
+  const engine = createFastJobEngine({
+    tempRoot,
+    fetchImpl: async (_input, init) =>
+      await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal instanceof AbortSignal) {
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("aborted", "AbortError"));
+            },
+            { once: true }
+          );
+        }
+      }),
+    runtimeOverrides: {
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 2
+    }
+  });
+
+  const failedAccepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: invalidFigmaPath
+  });
+  const failedStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: failedAccepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(failedStatus.status, "failed");
+
+  const runningAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const queuedAccepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: validFigmaPath
+  });
+  const canceledQueued = engine.cancelJob({
+    jobId: queuedAccepted.jobId,
+    reason: "Persist canceled queue state."
+  });
+  assert.equal(canceledQueued?.status, "canceled");
+
+  const legacyJobDir = path.join(tempRoot, "jobs", "legacy-job");
+  await mkdir(legacyJobDir, { recursive: true });
+  await writeFile(
+    path.join(legacyJobDir, "stage-timings.json"),
+    `${JSON.stringify({ jobId: "legacy-job", status: "completed", stages: [] }, null, 2)}\n`,
+    "utf8"
+  );
+
+  engine.cancelJob({ jobId: runningAccepted.jobId, reason: "cleanup" });
+  await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: runningAccepted.jobId,
+    timeoutMs: 20_000
+  });
+
+  const rehydratedEngine = createFastJobEngine({ tempRoot });
+  const rehydratedFailed = rehydratedEngine.getJob(failedAccepted.jobId);
+  const rehydratedCanceled = rehydratedEngine.getJob(queuedAccepted.jobId);
+
+  assert.equal(rehydratedFailed?.status, "failed");
+  assert.equal(rehydratedFailed?.error?.code, failedStatus.error?.code);
+  assert.equal(rehydratedCanceled?.status, "canceled");
+  assert.equal(rehydratedCanceled?.cancellation?.reason, "Persist canceled queue state.");
+  assert.equal(rehydratedEngine.getJob("legacy-job"), undefined);
+});
+
 test("createJobEngine resolves request brandTheme and generationLocale with submit override precedence", () => {
   const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-brand-theme");
   const engine = createJobEngine({
