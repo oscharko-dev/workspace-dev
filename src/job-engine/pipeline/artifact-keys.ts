@@ -11,6 +11,7 @@ export const STAGE_ARTIFACT_KEYS = {
   codegenSummary: "codegen.summary",
   generationMetrics: "generation.metrics",
   componentManifest: "component.manifest",
+  generationDiffContext: "generation.diff.context",
   generationDiff: "generation.diff",
   generationDiffFile: "generation.diff.file",
   validationSummary: "validation.summary",

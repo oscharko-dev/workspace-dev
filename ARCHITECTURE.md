@@ -27,8 +27,8 @@ It provides deterministic HTTP behavior for:
   - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
   - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
   - `template.prepare` (template reset/copy)
-  - `codegen.generate` (deterministic generation stream, optional image export, manifest/diff)
-  - `validate.project` (validation gate and feedback loop)
+  - `codegen.generate` (deterministic generation stream, optional image export, manifest, diff context)
+  - `validate.project` (validation gate, feedback loop, canonical final diff persistence)
   - `repro.export` (generated `dist` export)
   - `git.pr` (optional git/pr automation)
 - integrated preview file serving from generated artifacts

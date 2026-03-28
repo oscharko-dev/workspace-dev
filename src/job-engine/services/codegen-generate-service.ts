@@ -2,7 +2,7 @@ import path from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
-import { runGenerationDiff } from "../generation-diff.js";
+import type { GenerationDiffContext } from "../generation-diff.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import { buildComponentManifest } from "../../parity/component-manifest.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
@@ -21,14 +21,12 @@ interface CodegenGenerateServiceDeps {
   exportImageAssetsFromFigmaFn: typeof exportImageAssetsFromFigma;
   generateArtifactsStreamingFn: typeof generateArtifactsStreaming;
   buildComponentManifestFn: typeof buildComponentManifest;
-  runGenerationDiffFn: typeof runGenerationDiff;
 }
 
 export const createCodegenGenerateService = ({
   exportImageAssetsFromFigmaFn = exportImageAssetsFromFigma,
   generateArtifactsStreamingFn = generateArtifactsStreaming,
-  buildComponentManifestFn = buildComponentManifest,
-  runGenerationDiffFn = runGenerationDiff
+  buildComponentManifestFn = buildComponentManifest
 }: Partial<CodegenGenerateServiceDeps> = {}): StageService<CodegenGenerateStageInput> => {
   return {
     stageName: "codegen.generate",
@@ -176,36 +174,14 @@ export const createCodegenGenerateService = ({
         });
       }
 
-      try {
-        const boardKey = resolveBoardKey(input.boardKeySeed);
-        const diffReport = await runGenerationDiffFn({
-          generatedProjectDir: context.paths.generatedProjectDir,
-          jobDir: context.paths.jobDir,
-          outputRoot: context.resolvedPaths.outputRoot,
-          boardKey,
-          jobId: context.jobId
-        });
-        const diffReportPath = path.join(context.paths.jobDir, "generation-diff.json");
-        await context.artifactStore.setValue({
-          key: STAGE_ARTIFACT_KEYS.generationDiff,
-          stage: "codegen.generate",
-          value: diffReport
-        });
-        await context.artifactStore.setPath({
-          key: STAGE_ARTIFACT_KEYS.generationDiffFile,
-          stage: "codegen.generate",
-          absolutePath: diffReportPath
-        });
-        context.log({
-          level: "info",
-          message: `Generation diff: ${diffReport.summary}`
-        });
-      } catch (error) {
-        context.log({
-          level: "warn",
-          message: `Generation diff computation failed: ${getErrorMessage(error)}`
-        });
-      }
+      const diffContext: GenerationDiffContext = {
+        boardKey: resolveBoardKey(input.boardKeySeed)
+      };
+      await context.artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+        stage: "codegen.generate",
+        value: diffContext
+      });
     }
   };
 };

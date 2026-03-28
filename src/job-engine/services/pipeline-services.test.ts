@@ -108,9 +108,10 @@ test("submission pipeline plan keeps all seven stages in canonical order", () =>
   ]);
 });
 
-test("submission pipeline plan declares store contracts for codegen and git.pr", async () => {
+test("submission pipeline plan declares diff ownership across codegen, validate, and git.pr", async () => {
   const plan = buildSubmissionPipelinePlan();
   const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
+  const validateEntry = plan.find((entry) => entry.service.stageName === "validate.project");
   const gitPrEntry = plan.find((entry) => entry.service.stageName === "git.pr");
   const context = await createPlanContext({
     input: {
@@ -124,6 +125,23 @@ test("submission pipeline plan declares store contracts for codegen and git.pr",
   assert.deepEqual(codegenEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.codegenSummary
+  ]);
+  assert.deepEqual(codegenEntry?.artifacts?.optionalWrites, [
+    STAGE_ARTIFACT_KEYS.generationMetrics,
+    STAGE_ARTIFACT_KEYS.componentManifest,
+    STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
+  assert.deepEqual(validateEntry?.artifacts?.reads, [
+    STAGE_ARTIFACT_KEYS.generatedProject,
+    STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
+  assert.deepEqual(validateEntry?.artifacts?.optionalWrites, [
+    STAGE_ARTIFACT_KEYS.generationDiff,
+    STAGE_ARTIFACT_KEYS.generationDiffFile
+  ]);
+  assert.deepEqual(gitPrEntry?.artifacts?.reads, [
+    STAGE_ARTIFACT_KEYS.generatedProject,
+    STAGE_ARTIFACT_KEYS.generationDiff
   ]);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),
@@ -173,6 +191,7 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
   const irEntry = plan.find((entry) => entry.service.stageName === "ir.derive");
   const gitPrEntry = plan.find((entry) => entry.service.stageName === "git.pr");
   const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
+  const validateEntry = plan.find((entry) => entry.service.stageName === "validate.project");
 
   assert.deepEqual(toStageNames(plan), [
     "figma.source",
@@ -195,6 +214,15 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     codegenEntry?.resolveInput?.(context as PipelineExecutionContext) instanceof Promise,
     false
   );
+  assert.deepEqual(codegenEntry?.artifacts?.optionalWrites, [
+    STAGE_ARTIFACT_KEYS.generationMetrics,
+    STAGE_ARTIFACT_KEYS.componentManifest,
+    STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
+  assert.deepEqual(validateEntry?.artifacts?.reads, [
+    STAGE_ARTIFACT_KEYS.generatedProject,
+    STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),
     "Git/PR flow not applicable for regeneration jobs."

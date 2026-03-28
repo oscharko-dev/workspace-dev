@@ -96,15 +96,14 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationMetrics,
           STAGE_ARTIFACT_KEYS.componentManifest,
-          STAGE_ARTIFACT_KEYS.generationDiff,
-          STAGE_ARTIFACT_KEYS.generationDiffFile
+          STAGE_ARTIFACT_KEYS.generationDiffContext
         ]
       }
     },
     {
       service: ValidateProjectService,
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject],
+        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
@@ -179,15 +178,14 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationMetrics,
           STAGE_ARTIFACT_KEYS.componentManifest,
-          STAGE_ARTIFACT_KEYS.generationDiff,
-          STAGE_ARTIFACT_KEYS.generationDiffFile
+          STAGE_ARTIFACT_KEYS.generationDiffContext
         ]
       }
     },
     {
       service: ValidateProjectService,
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject],
+        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }

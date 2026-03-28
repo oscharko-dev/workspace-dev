@@ -10,8 +10,10 @@ import type {
   WorkspaceJobInput,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
+import { resolveBoardKey } from "../../parity/board-key.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
+import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { resolveRuntimeSettings } from "../runtime.js";
@@ -357,7 +359,7 @@ test("TemplatePrepareService maps missing template to E_TEMPLATE_MISSING", async
   );
 });
 
-test("CodegenGenerateService reads design.ir and stores summary, manifest, metrics, and diff artifacts", async () => {
+test("CodegenGenerateService reads design.ir and stores summary, manifest, metrics, and diff context", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createMinimalIr();
   await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
@@ -367,9 +369,6 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
     absolutePath: executionContext.paths.designIrFile
   });
   await writeFile(path.join(executionContext.paths.generatedProjectDir, "generation-metrics.json"), "{}\n", "utf8");
-  await writeFile(path.join(executionContext.paths.jobDir, "generation-diff.json"), "{}\n", "utf8");
-
-  let diffInputJobId = "";
   const service = createCodegenGenerateService({
     exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
     generateArtifactsStreamingFn: async function* () {
@@ -380,13 +379,7 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
       ({
         screens: [],
         generatedAt: new Date().toISOString()
-      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>,
-    runGenerationDiffFn: async (input) => {
-      diffInputJobId = input.jobId;
-      return {
-        summary: "ok"
-      } as Awaited<ReturnType<typeof import("../generation-diff.js").runGenerationDiff>>;
-    }
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
   });
 
   await service.execute(
@@ -396,7 +389,6 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
     stageContextFor("codegen.generate")
   );
 
-  assert.equal(diffInputJobId, executionContext.job.jobId);
   assert.equal(
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
     executionContext.paths.generatedProjectDir
@@ -412,13 +404,11 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentManifest),
     path.join(executionContext.paths.generatedProjectDir, "component-manifest.json")
   );
-  assert.deepEqual(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), {
-    summary: "ok"
+  assert.deepEqual(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiffContext), {
+    boardKey: resolveBoardKey("demo-board")
   });
-  assert.equal(
-    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile),
-    path.join(executionContext.paths.jobDir, "generation-diff.json")
-  );
+  assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), undefined);
+  assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
 });
 
 test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async () => {
@@ -449,6 +439,13 @@ test("ValidateProjectService reads generated.project and writes validation.summa
     key: STAGE_ARTIFACT_KEYS.generatedProject,
     stage: "template.prepare",
     absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-abc1234567"
+    } satisfies GenerationDiffContext
   });
   let calledWithDir = "";
   const service = createValidateProjectService({
@@ -555,19 +552,11 @@ test("ValidateProjectService recomputes generation diff after validation", async
     absolutePath: executionContext.paths.generatedProjectDir
   });
   await executionContext.artifactStore.setValue({
-    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
     stage: "codegen.generate",
     value: {
-      boardKey: "test-board-abc1234567",
-      currentJobId: "job-stage-test",
-      previousJobId: null,
-      generatedAt: new Date().toISOString(),
-      added: ["src/App.tsx"],
-      modified: [],
-      removed: [],
-      unchanged: [],
-      summary: "1 files added (first generation)"
-    }
+      boardKey: "test-board-abc1234567"
+    } satisfies GenerationDiffContext
   });
 
   let diffCallArgs: { boardKey: string; jobId: string } | undefined;
@@ -587,9 +576,23 @@ test("ValidateProjectService recomputes generation diff after validation", async
     runProjectValidationFn: async () => {
       // simulate lint --fix mutating a file
     },
-    runGenerationDiffFn: async (input) => {
+    prepareGenerationDiffFn: async (input) => {
       diffCallArgs = { boardKey: input.boardKey, jobId: input.jobId };
-      return updatedDiff;
+      return {
+        report: updatedDiff,
+        snapshot: {
+          boardKey: input.boardKey,
+          jobId: input.jobId,
+          generatedAt: new Date().toISOString(),
+          files: []
+        }
+      };
+    },
+    writeGenerationDiffReportFn: async ({ jobDir }) => {
+      return path.join(jobDir, "generation-diff.json");
+    },
+    saveCurrentSnapshotFn: async () => {
+      // no-op for this contract test
     }
   });
 
@@ -606,7 +609,7 @@ test("ValidateProjectService recomputes generation diff after validation", async
   assert.equal(diffFilePath, path.join(executionContext.paths.jobDir, "generation-diff.json"));
 });
 
-test("ValidateProjectService skips diff recomputation when no prior diff exists", async () => {
+test("ValidateProjectService fails when generation diff context is missing", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.generatedProject,
@@ -614,23 +617,19 @@ test("ValidateProjectService skips diff recomputation when no prior diff exists"
     absolutePath: executionContext.paths.generatedProjectDir
   });
 
-  let diffCalled = false;
   const service = createValidateProjectService({
-    runProjectValidationFn: async () => {},
-    runGenerationDiffFn: async () => {
-      diffCalled = true;
-      return {} as Awaited<ReturnType<typeof import("../generation-diff.js").runGenerationDiff>>;
-    }
+    runProjectValidationFn: async () => {}
   });
 
-  await service.execute(undefined, stageContextFor("validate.project"));
-
-  assert.equal(diffCalled, false);
-  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
-  assert.equal(summary?.status, "ok");
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /generation\.diff\.context/
+  );
 });
 
-test("ValidateProjectService handles diff recomputation failure gracefully", async () => {
+test("ValidateProjectService failure preserves the previous successful diff baseline", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.generatedProject,
@@ -638,30 +637,172 @@ test("ValidateProjectService handles diff recomputation failure gracefully", asy
     absolutePath: executionContext.paths.generatedProjectDir
   });
   await executionContext.artifactStore.setValue({
-    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
     stage: "codegen.generate",
     value: {
+      boardKey: "test-board-abc1234567"
+    } satisfies GenerationDiffContext
+  });
+  await saveCurrentSnapshot({
+    outputRoot: executionContext.resolvedPaths.outputRoot,
+    snapshot: {
       boardKey: "test-board-abc1234567",
-      currentJobId: "job-stage-test",
-      previousJobId: null,
+      jobId: "job-previous-success",
       generatedAt: new Date().toISOString(),
-      added: [],
-      modified: [],
-      removed: [],
-      unchanged: [],
-      summary: "No changes detected"
+      files: [{ relativePath: "src/App.tsx", sha256: "aaa", sizeBytes: 1 }]
     }
   });
 
   const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      throw new Error("lint failed");
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /lint failed/
+  );
+
+  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary, undefined);
+  const preservedSnapshot = await loadPreviousSnapshot({
+    outputRoot: executionContext.resolvedPaths.outputRoot,
+    boardKey: "test-board-abc1234567"
+  });
+  assert.ok(preservedSnapshot !== null);
+  assert.equal(preservedSnapshot.jobId, "job-previous-success");
+});
+
+test("ValidateProjectService fails fast when final diff persistence fails", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-abc1234567"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
     runProjectValidationFn: async () => {},
-    runGenerationDiffFn: async () => {
+    prepareGenerationDiffFn: async (input) => {
+      return {
+        report: {
+          boardKey: input.boardKey,
+          currentJobId: input.jobId,
+          previousJobId: "job-previous-success",
+          generatedAt: new Date().toISOString(),
+          added: ["src/App.tsx"],
+          modified: [],
+          removed: [],
+          unchanged: [],
+          summary: "1 added"
+        },
+        snapshot: {
+          boardKey: input.boardKey,
+          jobId: input.jobId,
+          generatedAt: new Date().toISOString(),
+          files: []
+        }
+      };
+    },
+    writeGenerationDiffReportFn: async () => {
       throw new Error("disk full");
     }
   });
 
-  await service.execute(undefined, stageContextFor("validate.project"));
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /disk full/
+  );
 
-  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
-  assert.equal(summary?.status, "ok");
+  assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.validationSummary), undefined);
+  assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), undefined);
+  assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
+});
+
+test("GitPrService receives the final validation-owned generation diff", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const boardKey = "test-board-final-diff";
+  const generatedProjectDir = executionContext.paths.generatedProjectDir;
+  const utilsFile = path.join(generatedProjectDir, "src", "utils.ts");
+
+  await mkdir(path.dirname(utilsFile), { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "src", "App.tsx"), "export default function App() {}\n", "utf8");
+  await writeFile(utilsFile, "export const add = (a: number, b: number) => a + b;\n", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: { boardKey } satisfies GenerationDiffContext
+  });
+  await saveCurrentSnapshot({
+    outputRoot: executionContext.resolvedPaths.outputRoot,
+    snapshot: {
+      boardKey,
+      jobId: "job-previous-success",
+      generatedAt: new Date().toISOString(),
+      files: [{ relativePath: "src/utils.ts", sha256: "old-utils", sizeBytes: 1 }]
+    }
+  });
+
+  const validateService = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      await writeFile(utilsFile, "export const add = (a: number, b: number): number => a + b;\n", "utf8");
+    }
+  });
+  await validateService.execute(undefined, stageContextFor("validate.project"));
+
+  let receivedGenerationDiff: unknown;
+  const gitPrService = createGitPrService({
+    runGitPrFlowFn: async (input) => {
+      receivedGenerationDiff = input.generationDiff;
+      return {
+        status: "executed",
+        branchName: "feature/final-diff",
+        scopePath: "src",
+        changedFiles: 2
+      };
+    }
+  });
+  await gitPrService.execute(
+    {
+      enableGitPr: true,
+      repoUrl: "https://example.invalid/repo.git"
+    },
+    stageContextFor("git.pr")
+  );
+
+  assert.ok(receivedGenerationDiff);
+  assert.deepEqual(receivedGenerationDiff, {
+    boardKey,
+    currentJobId: executionContext.job.jobId,
+    previousJobId: "job-previous-success",
+    generatedAt: (receivedGenerationDiff as { generatedAt: string }).generatedAt,
+    added: ["src/App.tsx"],
+    modified: [
+      {
+        file: "src/utils.ts",
+        previousHash: "old-utils",
+        currentHash: (receivedGenerationDiff as { modified: Array<{ currentHash: string }> }).modified[0]?.currentHash
+      }
+    ],
+    removed: [],
+    unchanged: [],
+    summary: "1 file modified, 1 added"
+  });
 });

@@ -1410,6 +1410,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       (err as Error & { code: string }).code = "E_PR_NO_GENERATED_PROJECT";
       throw err;
     }
+    if (!job.generationDiff) {
+      const err = new Error(`Job '${jobId}' is missing final generation diff provenance.`);
+      (err as Error & { code: string }).code = "E_PR_GENERATION_DIFF_MISSING";
+      throw err;
+    }
 
     const jobDir = job.artifacts.jobDir;
     const input: WorkspaceJobInput = {
@@ -1435,7 +1440,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         });
       },
       commandTimeoutMs: runtime.commandTimeoutMs,
-      ...(job.generationDiff ? { generationDiff: job.generationDiff } : {})
+      generationDiff: job.generationDiff
     });
 
     job.gitPr = {

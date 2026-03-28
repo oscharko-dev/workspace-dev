@@ -14,7 +14,7 @@ export const createGitPrService = ({ runGitPrFlowFn = runGitPrFlow }: Partial<Gi
     stageName: "git.pr",
     execute: async (input, context) => {
       const generatedProjectDir = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.generatedProject);
-      const generationDiff = await context.artifactStore.getValue<WorkspaceGenerationDiffReport>(
+      const generationDiff = await context.artifactStore.requireValue<WorkspaceGenerationDiffReport>(
         STAGE_ARTIFACT_KEYS.generationDiff
       );
       const gitResult = await runGitPrFlowFn({
@@ -23,7 +23,7 @@ export const createGitPrService = ({ runGitPrFlowFn = runGitPrFlow }: Partial<Gi
         generatedProjectDir,
         jobDir: context.paths.jobDir,
         commandTimeoutMs: context.runtime.commandTimeoutMs,
-        ...(generationDiff ? { generationDiff } : {}),
+        generationDiff,
         onLog: (message) => {
           context.log({
             level: "info",

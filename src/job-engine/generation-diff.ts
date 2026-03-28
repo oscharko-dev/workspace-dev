@@ -49,6 +49,21 @@ export interface GenerationDiffReport {
   summary: string;
 }
 
+/**
+ * Internal pipeline context required to compute a canonical generation diff.
+ */
+export interface GenerationDiffContext {
+  boardKey: string;
+}
+
+/**
+ * Prepared final diff data that can be persisted once validation succeeds.
+ */
+export interface PreparedGenerationDiff {
+  report: GenerationDiffReport;
+  snapshot: GenerationHashSnapshot;
+}
+
 const HASH_STORE_DIR_NAME = "generation-hashes";
 const DIFF_REPORT_FILE_NAME = "generation-diff.json";
 
@@ -265,6 +280,74 @@ export const computeGenerationDiff = ({
 };
 
 /**
+ * Prepares a generation diff report and final snapshot without persisting either artifact.
+ */
+export const prepareGenerationDiff = async ({
+  generatedProjectDir,
+  outputRoot,
+  boardKey,
+  jobId
+}: {
+  generatedProjectDir: string;
+  outputRoot: string;
+  boardKey: string;
+  jobId: string;
+}): Promise<PreparedGenerationDiff> => {
+  const currentFiles = await collectFileHashes({ projectDir: generatedProjectDir });
+  const previousSnapshot = await loadPreviousSnapshot({ outputRoot, boardKey });
+
+  return {
+    report: computeGenerationDiff({
+      boardKey,
+      currentJobId: jobId,
+      previousSnapshot,
+      currentFiles
+    }),
+    snapshot: {
+      boardKey,
+      jobId,
+      generatedAt: new Date().toISOString(),
+      files: currentFiles
+    }
+  };
+};
+
+/**
+ * Writes a prepared generation diff report to the job directory.
+ */
+export const writeGenerationDiffReport = async ({
+  jobDir,
+  report
+}: {
+  jobDir: string;
+  report: GenerationDiffReport;
+}): Promise<string> => {
+  const reportPath = path.join(jobDir, DIFF_REPORT_FILE_NAME);
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  return reportPath;
+};
+
+/**
+ * Persists a prepared generation diff report and promotes its snapshot to the next baseline.
+ */
+export const persistPreparedGenerationDiff = async ({
+  jobDir,
+  outputRoot,
+  preparedDiff
+}: {
+  jobDir: string;
+  outputRoot: string;
+  preparedDiff: PreparedGenerationDiff;
+}): Promise<string> => {
+  const reportPath = await writeGenerationDiffReport({
+    jobDir,
+    report: preparedDiff.report
+  });
+  await saveCurrentSnapshot({ outputRoot, snapshot: preparedDiff.snapshot });
+  return reportPath;
+};
+
+/**
  * Full generation diff pipeline: collect hashes, load previous, compute diff, persist.
  */
 export const runGenerationDiff = async ({
@@ -280,28 +363,18 @@ export const runGenerationDiff = async ({
   boardKey: string;
   jobId: string;
 }): Promise<GenerationDiffReport> => {
-  const currentFiles = await collectFileHashes({ projectDir: generatedProjectDir });
-  const previousSnapshot = await loadPreviousSnapshot({ outputRoot, boardKey });
-
-  const report = computeGenerationDiff({
+  const preparedDiff = await prepareGenerationDiff({
+    generatedProjectDir,
+    outputRoot,
     boardKey,
-    currentJobId: jobId,
-    previousSnapshot,
-    currentFiles
+    jobId
   });
-
-  const reportPath = path.join(jobDir, DIFF_REPORT_FILE_NAME);
-  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-
-  const currentSnapshot: GenerationHashSnapshot = {
-    boardKey,
-    jobId,
-    generatedAt: new Date().toISOString(),
-    files: currentFiles
-  };
-  await saveCurrentSnapshot({ outputRoot, snapshot: currentSnapshot });
-
-  return report;
+  await persistPreparedGenerationDiff({
+    jobDir,
+    outputRoot,
+    preparedDiff
+  });
+  return preparedDiff.report;
 };
 
 /**

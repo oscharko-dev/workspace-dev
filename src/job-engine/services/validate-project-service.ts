@@ -1,6 +1,10 @@
 import path from "node:path";
-import { getErrorMessage } from "../errors.js";
-import { runGenerationDiff, type GenerationDiffReport } from "../generation-diff.js";
+import {
+  prepareGenerationDiff,
+  saveCurrentSnapshot,
+  type GenerationDiffContext,
+  writeGenerationDiffReport
+} from "../generation-diff.js";
 import { runProjectValidation } from "../validation.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
@@ -31,14 +35,18 @@ const isLintAutofixEnabled = (): boolean => {
 
 interface ValidateProjectServiceDeps {
   runProjectValidationFn: typeof runProjectValidation;
-  runGenerationDiffFn: typeof runGenerationDiff;
+  prepareGenerationDiffFn: typeof prepareGenerationDiff;
+  writeGenerationDiffReportFn: typeof writeGenerationDiffReport;
+  saveCurrentSnapshotFn: typeof saveCurrentSnapshot;
   isLintAutofixEnabledFn: () => boolean;
   isPerfValidationEnabledFn: () => boolean;
 }
 
 export const createValidateProjectService = ({
   runProjectValidationFn = runProjectValidation,
-  runGenerationDiffFn = runGenerationDiff,
+  prepareGenerationDiffFn = prepareGenerationDiff,
+  writeGenerationDiffReportFn = writeGenerationDiffReport,
+  saveCurrentSnapshotFn = saveCurrentSnapshot,
   isLintAutofixEnabledFn = isLintAutofixEnabled,
   isPerfValidationEnabledFn = isPerfValidationEnabled
 }: Partial<ValidateProjectServiceDeps> = {}): StageService<void> => {
@@ -66,46 +74,42 @@ export const createValidateProjectService = ({
         }
       });
 
+      const diffContext = await context.artifactStore.requireValue<GenerationDiffContext>(
+        STAGE_ARTIFACT_KEYS.generationDiffContext
+      );
+      const preparedDiff = await prepareGenerationDiffFn({
+        generatedProjectDir,
+        outputRoot: context.resolvedPaths.outputRoot,
+        boardKey: diffContext.boardKey,
+        jobId: context.jobId
+      });
+      const diffReportPath = await writeGenerationDiffReportFn({
+        jobDir: context.paths.jobDir,
+        report: preparedDiff.report
+      });
+      await context.artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.generationDiff,
+        stage: "validate.project",
+        value: preparedDiff.report
+      });
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.generationDiffFile,
+        stage: "validate.project",
+        absolutePath: diffReportPath
+      });
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.validationSummary,
         stage: "validate.project",
         value: { status: "ok", validatedAt: new Date().toISOString() }
       });
-
-      try {
-        const existingDiff = await context.artifactStore.getValue<GenerationDiffReport>(
-          STAGE_ARTIFACT_KEYS.generationDiff
-        );
-        if (existingDiff) {
-          const updatedDiff = await runGenerationDiffFn({
-            generatedProjectDir,
-            jobDir: context.paths.jobDir,
-            outputRoot: context.resolvedPaths.outputRoot,
-            boardKey: existingDiff.boardKey,
-            jobId: context.jobId
-          });
-          const diffReportPath = path.join(context.paths.jobDir, "generation-diff.json");
-          await context.artifactStore.setValue({
-            key: STAGE_ARTIFACT_KEYS.generationDiff,
-            stage: "validate.project",
-            value: updatedDiff
-          });
-          await context.artifactStore.setPath({
-            key: STAGE_ARTIFACT_KEYS.generationDiffFile,
-            stage: "validate.project",
-            absolutePath: diffReportPath
-          });
-          context.log({
-            level: "info",
-            message: `Post-validation generation diff: ${updatedDiff.summary}`
-          });
-        }
-      } catch (error) {
-        context.log({
-          level: "warn",
-          message: `Post-validation diff recomputation failed: ${getErrorMessage(error)}`
-        });
-      }
+      await saveCurrentSnapshotFn({
+        outputRoot: context.resolvedPaths.outputRoot,
+        snapshot: preparedDiff.snapshot
+      });
+      context.log({
+        level: "info",
+        message: `Post-validation generation diff: ${preparedDiff.report.summary}`
+      });
     }
   };
 };
