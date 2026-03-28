@@ -627,73 +627,78 @@ export const runValidationFeedback = async ({
 
   let correctionsApplied = 0;
 
-  const program = language.languageService.getProgram();
-  if (program) {
-    for (const diagnostic of diagnostics) {
-      if (!diagnostic.filePath || !diagnostic.line || !diagnostic.column) {
-        continue;
-      }
-      const numericCode = extractNumericCode({ code: diagnostic.code });
-      if (numericCode === undefined || !SAFE_CODEFIX_CODES.has(numericCode)) {
-        continue;
-      }
-      if (!candidateFiles.includes(path.normalize(diagnostic.filePath))) {
-        continue;
-      }
+  try {
+    const program = language.languageService.getProgram();
+    if (program) {
+      for (const diagnostic of diagnostics) {
+        if (!diagnostic.filePath || !diagnostic.line || !diagnostic.column) {
+          continue;
+        }
+        const numericCode = extractNumericCode({ code: diagnostic.code });
+        if (numericCode === undefined || !SAFE_CODEFIX_CODES.has(numericCode)) {
+          continue;
+        }
+        if (!candidateFiles.includes(path.normalize(diagnostic.filePath))) {
+          continue;
+        }
 
-      const sourceFile = program.getSourceFile(path.normalize(diagnostic.filePath));
-      if (!sourceFile) {
-        continue;
-      }
+        const sourceFile = program.getSourceFile(path.normalize(diagnostic.filePath));
+        if (!sourceFile) {
+          continue;
+        }
 
-      const position = toPosition({
-        sourceFile,
-        line: diagnostic.line,
-        column: diagnostic.column
-      });
-
-      const fixes = language.languageService.getCodeFixesAtPosition(
-        path.normalize(diagnostic.filePath),
-        position,
-        position,
-        [numericCode],
-        formatOptions,
-        preferences
-      );
-
-      if (fixes.length === 0) {
-        continue;
-      }
-
-      for (const fix of fixes) {
-        correctionsApplied += await applyFileTextChanges({
-          fileChanges: fix.changes,
-          generatedProjectDir,
-          description: fix.description,
-          correctionMap
+        const position = toPosition({
+          sourceFile,
+          line: diagnostic.line,
+          column: diagnostic.column
         });
+
+        const fixes = language.languageService.getCodeFixesAtPosition(
+          path.normalize(diagnostic.filePath),
+          position,
+          position,
+          [numericCode],
+          formatOptions,
+          preferences
+        );
+
+        if (fixes.length === 0) {
+          continue;
+        }
+
+        for (const fix of fixes) {
+          correctionsApplied += await applyFileTextChanges({
+            fileChanges: fix.changes,
+            generatedProjectDir,
+            description: fix.description,
+            correctionMap
+          });
+        }
       }
     }
+  } finally {
+    language.dispose();
   }
-
-  language.dispose();
 
   const languageForImports = toLanguageService({ ts: typescript, generatedProjectDir });
   if (languageForImports) {
-    for (const filePath of candidateFiles) {
-      const importChanges = languageForImports.languageService.organizeImports(
-        { type: "file", fileName: filePath },
-        formatOptions,
-        preferences
-      );
-      correctionsApplied += await applyFileTextChanges({
-        fileChanges: importChanges,
-        generatedProjectDir,
-        description: "Organized imports",
-        correctionMap
-      });
+    try {
+      for (const filePath of candidateFiles) {
+        const importChanges = languageForImports.languageService.organizeImports(
+          { type: "file", fileName: filePath },
+          formatOptions,
+          preferences
+        );
+        correctionsApplied += await applyFileTextChanges({
+          fileChanges: importChanges,
+          generatedProjectDir,
+          description: "Organized imports",
+          correctionMap
+        });
+      }
+    } finally {
+      languageForImports.dispose();
     }
-    languageForImports.dispose();
   }
 
   const fileCorrections = toFileCorrections({ correctionMap, generatedProjectDir });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -42,6 +43,149 @@ const writeMinimalProject = async ({
   await mkdir(path.join(generatedProjectDir, "src"), { recursive: true });
   await writeFile(path.join(generatedProjectDir, "src", "math.ts"), "export const add = (a: number, b: number): number => a + b;\n", "utf8");
   await writeFile(path.join(generatedProjectDir, "src", "main.ts"), source, "utf8");
+};
+
+interface StubTypescriptState {
+  createLanguageServiceCalls: number;
+  disposeCalls: number[];
+  getCodeFixesAtPositionCalls: number;
+  organizeImportsCalls: number;
+}
+
+const writeStubTypescriptModule = async ({
+  generatedProjectDir,
+  mode
+}: {
+  generatedProjectDir: string;
+  mode: "codefix-throw" | "organize-imports-throw";
+}): Promise<void> => {
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+  const typescriptDir = path.join(nodeModulesDir, "typescript");
+  const mainFilePath = path.join(generatedProjectDir, "src", "main.ts");
+  const missingFilePath = path.join(generatedProjectDir, "src", "missing.ts");
+  const tsconfigPath = path.join(generatedProjectDir, "tsconfig.json");
+
+  await mkdir(typescriptDir, { recursive: true });
+  await writeFile(path.join(typescriptDir, "package.json"), '{"name":"typescript","main":"./index.js"}\n', "utf8");
+  await writeFile(
+    path.join(typescriptDir, "index.js"),
+    `"use strict";
+const fs = require("node:fs");
+
+const state = {
+  createLanguageServiceCalls: 0,
+  disposeCalls: [],
+  getCodeFixesAtPositionCalls: 0,
+  organizeImportsCalls: 0
+};
+
+const mode = ${JSON.stringify(mode)};
+const mainFilePath = ${JSON.stringify(mainFilePath)};
+const missingFilePath = ${JSON.stringify(missingFilePath)};
+const tsconfigPath = ${JSON.stringify(tsconfigPath)};
+
+const createSourceFile = (fileName) => ({
+  fileName,
+  end: 200,
+  getLineStarts: () => [0]
+});
+
+module.exports = {
+  sys: {
+    fileExists: (filePath) => fs.existsSync(filePath),
+    readFile: (filePath) => {
+      try {
+        return fs.readFileSync(filePath, "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+    readDirectory: () => [mainFilePath],
+    directoryExists: (directoryPath) => {
+      try {
+        return fs.statSync(directoryPath).isDirectory();
+      } catch {
+        return false;
+      }
+    },
+    getDirectories: () => []
+  },
+  findConfigFile: () => tsconfigPath,
+  readConfigFile: (configPath) => ({
+    config: JSON.parse(fs.readFileSync(configPath, "utf8"))
+  }),
+  parseJsonConfigFileContent: () => ({
+    options: {},
+    fileNames: [mainFilePath],
+    errors: []
+  }),
+  ScriptSnapshot: {
+    fromString: (content) => ({
+      getText: (start, end) => content.slice(start, end),
+      getLength: () => content.length,
+      getChangeRange: () => undefined
+    })
+  },
+  getDefaultLibFilePath: () => "lib.d.ts",
+  createDocumentRegistry: () => ({}),
+  createLanguageService: () => {
+    state.createLanguageServiceCalls += 1;
+    const serviceId = state.createLanguageServiceCalls;
+    return {
+      getProgram: () => ({
+        getSourceFile: (fileName) => createSourceFile(fileName)
+      }),
+      getCodeFixesAtPosition: () => {
+        state.getCodeFixesAtPositionCalls += 1;
+        if (mode === "codefix-throw" && serviceId === 1) {
+          return [
+            {
+              description: "Stub failing codefix",
+              changes: [
+                {
+                  fileName: missingFilePath,
+                  textChanges: [{ span: { start: 0, length: 0 }, newText: "export const injected = 1;\\n" }]
+                }
+              ]
+            }
+          ];
+        }
+        return [];
+      },
+      organizeImports: () => {
+        state.organizeImportsCalls += 1;
+        if (mode === "organize-imports-throw" && serviceId === 2) {
+          return [
+            {
+              fileName: missingFilePath,
+              textChanges: [{ span: { start: 0, length: 0 }, newText: "import { injected } from \\"./math\\";\\n" }]
+            }
+          ];
+        }
+        return [];
+      },
+      dispose: () => {
+        state.disposeCalls.push(serviceId);
+      }
+    };
+  },
+  getDefaultFormatCodeSettings: () => ({}),
+  __getState: () => ({
+    createLanguageServiceCalls: state.createLanguageServiceCalls,
+    disposeCalls: [...state.disposeCalls],
+    getCodeFixesAtPositionCalls: state.getCodeFixesAtPositionCalls,
+    organizeImportsCalls: state.organizeImportsCalls
+  })
+};
+`,
+    "utf8"
+  );
+};
+
+const getStubTypescriptState = ({ generatedProjectDir }: { generatedProjectDir: string }): StubTypescriptState => {
+  const requireFromProject = createRequire(path.join(generatedProjectDir, "package.json"));
+  const loaded = requireFromProject("typescript") as { __getState: () => StubTypescriptState };
+  return loaded.__getState();
 };
 
 test("parseValidationDiagnostics parses eslint stylish diagnostics", () => {
@@ -432,6 +576,78 @@ test("runValidationFeedback falls back to project files and logs overflow when o
     assert.equal(result.correctionsApplied > 0, true);
     assert.equal(logs.some((entry) => entry.includes("Auto-correction src/extra-00.ts")), true);
     assert.equal(logs.includes("Auto-correction: +2 additional file(s) updated."), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("runValidationFeedback disposes the code-fix language service when applying text changes throws", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-feedback-dispose-codefix-"));
+
+  try {
+    await writeMinimalProject({
+      generatedProjectDir,
+      source: "const value = add(1, 2);\nconsole.log(value);\n"
+    });
+    await writeStubTypescriptModule({
+      generatedProjectDir,
+      mode: "codefix-throw"
+    });
+
+    await assert.rejects(
+      () =>
+        runValidationFeedback({
+          generatedProjectDir,
+          stage: "typecheck",
+          output: "src/main.ts(1,15): error TS2304: Cannot find name 'add'.",
+          onLog: () => {
+            // no-op
+          }
+        }),
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT"
+    );
+
+    const state = getStubTypescriptState({ generatedProjectDir });
+    assert.equal(state.createLanguageServiceCalls, 1);
+    assert.deepEqual(state.disposeCalls, [1]);
+    assert.equal(state.getCodeFixesAtPositionCalls, 1);
+    assert.equal(state.organizeImportsCalls, 0);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("runValidationFeedback disposes the organize-imports language service when applying text changes throws", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-feedback-dispose-imports-"));
+
+  try {
+    await writeMinimalProject({
+      generatedProjectDir,
+      source: "export const value = 1;\n"
+    });
+    await writeStubTypescriptModule({
+      generatedProjectDir,
+      mode: "organize-imports-throw"
+    });
+
+    await assert.rejects(
+      () =>
+        runValidationFeedback({
+          generatedProjectDir,
+          stage: "lint",
+          output: "lint failed without structured diagnostics",
+          onLog: () => {
+            // no-op
+          }
+        }),
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT"
+    );
+
+    const state = getStubTypescriptState({ generatedProjectDir });
+    assert.equal(state.createLanguageServiceCalls, 2);
+    assert.deepEqual(state.disposeCalls, [1, 2]);
+    assert.equal(state.getCodeFixesAtPositionCalls, 0);
+    assert.equal(state.organizeImportsCalls, 1);
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });
   }

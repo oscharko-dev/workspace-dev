@@ -1,9 +1,46 @@
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readlink, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runProjectValidationWithDeps } from "./validation.js";
+
+const linkLocalTypescript = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<void> => {
+  const repositoryTypescriptPath = path.resolve(process.cwd(), "node_modules", "typescript");
+  await access(repositoryTypescriptPath);
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+  await mkdir(nodeModulesDir, { recursive: true });
+  await symlink(repositoryTypescriptPath, path.join(nodeModulesDir, "typescript"));
+};
+
+const writeValidationFeedbackProject = async ({
+  generatedProjectDir
+}: {
+  generatedProjectDir: string;
+}): Promise<void> => {
+  await writeFile(path.join(generatedProjectDir, "package.json"), '{"name":"generated-app","private":true}\n', "utf8");
+  await writeFile(
+    path.join(generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          strict: true,
+          noUnusedLocals: true
+        },
+        include: ["src/**/*.ts", "src/**/*.tsx"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await mkdir(path.join(generatedProjectDir, "src"), { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "src", "math.ts"), "export const add = (a: number, b: number): number => a + b;\n", "utf8");
+  await writeFile(path.join(generatedProjectDir, "src", "main.ts"), "const value = add(1, 2);\nconsole.log(value);\n", "utf8");
+};
 
 test("runProjectValidationWithDeps executes deterministic pnpm command sequence", async () => {
   const calls: string[] = [];
@@ -441,6 +478,78 @@ test("runProjectValidationWithDeps retries lint/typecheck/build after successful
     "pnpm typecheck",
     "pnpm build"
   ]);
+});
+
+test("runProjectValidationWithDeps integrates real validation feedback for retryable typecheck failures", async (t) => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-real-feedback-"));
+  const logs: string[] = [];
+  const calls: string[] = [];
+  let typecheckInvocations = 0;
+
+  try {
+    await writeValidationFeedbackProject({ generatedProjectDir });
+
+    try {
+      await linkLocalTypescript({ generatedProjectDir });
+    } catch {
+      t.skip("Local TypeScript runtime unavailable for validation integration tests.");
+      return;
+    }
+
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      skipInstall: true,
+      onLog: (message) => {
+        logs.push(message);
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          if (args[0] === "typecheck") {
+            typecheckInvocations += 1;
+            if (typecheckInvocations === 1) {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "typecheck failed",
+                combined: "src/main.ts(1,15): error TS2304: Cannot find name 'add'."
+              };
+            }
+          }
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    const content = await readFile(path.join(generatedProjectDir, "src", "main.ts"), "utf8");
+    assert.equal(content.includes('import { add } from "./math";'), true);
+    assert.equal(typecheckInvocations, 2);
+    assert.deepEqual(calls, [
+      "pnpm lint --fix",
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm lint --fix",
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm build"
+    ]);
+    assert.equal(logs.includes("Validation attempt 1/3"), true);
+    assert.equal(logs.includes("Validation attempt 2/3"), true);
+    assert.equal(
+      logs.some((entry) => /Applied \d+ correction edit\(s\) across 1 file\(s\) after typecheck failure\./.test(entry)),
+      true
+    );
+    assert.equal(logs.includes("Retrying validation after typecheck corrections (2/3)."), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
 });
 
 test("runProjectValidationWithDeps aborts retry loop when feedback cannot apply corrections", async () => {
