@@ -326,6 +326,14 @@ function formatUptime(ms: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+function getModeChipClasses({ isActive }: { isActive: boolean }): string {
+  return `rounded-md px-3 py-1 text-sm font-medium ${
+    isActive
+      ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
+      : "text-[#333]"
+  }`;
+}
+
 function ChevronDownIcon(): JSX.Element {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
@@ -747,23 +755,14 @@ export function WorkspacePage(): JSX.Element {
             <div className="p-6 pt-4">
               {/* Mode tabs */}
               <div className="flex gap-2 border-b border-black/10 pb-3">
-                <span
-                  className={`rounded-md px-3 py-1 text-sm font-medium ${
-                    selectedFigmaSourceMode === "rest"
-                      ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
-                      : "text-[#333]"
-                  }`}
-                >
+                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "rest" })}>
                   REST mode
                 </span>
-                <span
-                  className={`rounded-md px-3 py-1 text-sm font-medium ${
-                    selectedFigmaSourceMode === "hybrid"
-                      ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
-                      : "text-[#333]"
-                  }`}
-                >
+                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "hybrid" })}>
                   Hybrid mode
+                </span>
+                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "local_json" })}>
+                  Local JSON mode
                 </span>
                 <span className="rounded-md px-3 py-1 text-sm font-medium text-[#333]">
                   Deterministic codegen
