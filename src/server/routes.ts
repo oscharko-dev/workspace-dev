@@ -212,7 +212,7 @@ const BLOCKED_PATH_PREFIXES = ["node_modules/", "dist/", ".env"];
 
 export function validateSourceFilePath(
   filePath: string
-): { valid: true } | { valid: false; reason: string } {
+): { valid: true; normalizedPath: string } | { valid: false; reason: string } {
   if (filePath.length === 0) {
     return { valid: false, reason: "Empty file path." };
   }
@@ -256,7 +256,7 @@ export function validateSourceFilePath(
     return { valid: false, reason: `Extension '${ext}' is not allowed.` };
   }
 
-  return { valid: true };
+  return { valid: true, normalizedPath: normalized };
 }
 
 export function parseReproRoute(pathname: string): { jobId: string; previewPath: string } | undefined {

@@ -125,13 +125,13 @@ test("parseJobFilesRoute parses directory listing and file content routes", () =
 });
 
 test("validateSourceFilePath allows valid source paths", () => {
-  assert.deepEqual(validateSourceFilePath("src/App.tsx"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("src/screens/Home.tsx"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("src/theme/theme.ts"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("src/theme/tokens.json"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("public/index.html"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("src/styles/main.css"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("public/logo.svg"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src/App.tsx"), { valid: true, normalizedPath: "src/App.tsx" });
+  assert.deepEqual(validateSourceFilePath("src/screens/Home.tsx"), { valid: true, normalizedPath: "src/screens/Home.tsx" });
+  assert.deepEqual(validateSourceFilePath("src/theme/theme.ts"), { valid: true, normalizedPath: "src/theme/theme.ts" });
+  assert.deepEqual(validateSourceFilePath("src/theme/tokens.json"), { valid: true, normalizedPath: "src/theme/tokens.json" });
+  assert.deepEqual(validateSourceFilePath("public/index.html"), { valid: true, normalizedPath: "public/index.html" });
+  assert.deepEqual(validateSourceFilePath("src/styles/main.css"), { valid: true, normalizedPath: "src/styles/main.css" });
+  assert.deepEqual(validateSourceFilePath("public/logo.svg"), { valid: true, normalizedPath: "public/logo.svg" });
 });
 
 test("validateSourceFilePath rejects path traversal attempts", () => {
@@ -206,6 +206,6 @@ test("validateSourceFilePath rejects UNC paths", () => {
 });
 
 test("validateSourceFilePath normalizes valid backslash paths to POSIX equivalents", () => {
-  assert.deepEqual(validateSourceFilePath("src\\App.tsx"), { valid: true });
-  assert.deepEqual(validateSourceFilePath("src\\screens\\Home.tsx"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src\\App.tsx"), { valid: true, normalizedPath: "src/App.tsx" });
+  assert.deepEqual(validateSourceFilePath("src\\screens\\Home.tsx"), { valid: true, normalizedPath: "src/screens/Home.tsx" });
 });
