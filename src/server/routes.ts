@@ -1,4 +1,5 @@
 import { JOB_ROUTE_PREFIX, REPRO_ROUTE_PREFIX, UI_ROUTE_PREFIX, type UiAssetPath } from "./constants.js";
+import { normalizePlatformPath } from "./route-params.js";
 
 export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
   if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
@@ -216,38 +217,41 @@ export function validateSourceFilePath(
     return { valid: false, reason: "Empty file path." };
   }
 
-  // Reject absolute paths
-  if (filePath.startsWith("/")) {
-    return { valid: false, reason: "Absolute paths are not allowed." };
+  // Cross-platform normalization: reject Windows absolute/UNC paths and
+  // canonicalize backslash separators before any security check.
+  const platformResult = normalizePlatformPath(filePath);
+  if (!platformResult.ok) {
+    return { valid: false, reason: platformResult.reason };
   }
+  const normalized = platformResult.normalized;
 
   // Reject path traversal
-  if (filePath.includes("..")) {
+  if (normalized.includes("..")) {
     return { valid: false, reason: "Path traversal is not allowed." };
   }
 
   // Reject null bytes
-  if (filePath.includes("\0")) {
+  if (normalized.includes("\0")) {
     return { valid: false, reason: "Null bytes in path are not allowed." };
   }
 
   // Reject blocked prefixes
   for (const blocked of BLOCKED_PATH_PREFIXES) {
-    if (filePath === blocked || filePath.startsWith(blocked)) {
+    if (normalized === blocked || normalized.startsWith(blocked)) {
       return { valid: false, reason: `Access to '${blocked}' is forbidden.` };
     }
     // Also block when nested (e.g. "src/node_modules/...")
-    if (filePath.includes(`/${blocked}`)) {
+    if (normalized.includes(`/${blocked}`)) {
       return { valid: false, reason: `Access to '${blocked}' is forbidden.` };
     }
   }
 
   // Reject files not in the allowlist
-  const dotIndex = filePath.lastIndexOf(".");
+  const dotIndex = normalized.lastIndexOf(".");
   if (dotIndex === -1) {
     return { valid: false, reason: "File extension required." };
   }
-  const ext = filePath.slice(dotIndex);
+  const ext = normalized.slice(dotIndex);
   if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
     return { valid: false, reason: `Extension '${ext}' is not allowed.` };
   }

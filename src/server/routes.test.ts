@@ -183,3 +183,29 @@ test("validateSourceFilePath rejects empty and null-byte paths", () => {
   const result2 = validateSourceFilePath("src/App\0.tsx");
   assert.equal(result2.valid, false);
 });
+
+test("validateSourceFilePath rejects backslash-based traversal", () => {
+  assert.equal(validateSourceFilePath("..\\..\\etc\\passwd").valid, false);
+  assert.equal(validateSourceFilePath("src\\..\\..\\etc\\passwd").valid, false);
+});
+
+test("validateSourceFilePath rejects blocked directories via backslash", () => {
+  assert.equal(validateSourceFilePath("node_modules\\react\\index.ts").valid, false);
+  assert.equal(validateSourceFilePath("dist\\bundle.ts").valid, false);
+  assert.equal(validateSourceFilePath("src\\node_modules\\evil.ts").valid, false);
+});
+
+test("validateSourceFilePath rejects Windows absolute paths", () => {
+  assert.equal(validateSourceFilePath("C:\\Windows\\System32\\cmd.ts").valid, false);
+  assert.equal(validateSourceFilePath("c:/Users/evil.ts").valid, false);
+});
+
+test("validateSourceFilePath rejects UNC paths", () => {
+  assert.equal(validateSourceFilePath("\\\\server\\share\\file.ts").valid, false);
+  assert.equal(validateSourceFilePath("//server/share/file.ts").valid, false);
+});
+
+test("validateSourceFilePath normalizes valid backslash paths to POSIX equivalents", () => {
+  assert.deepEqual(validateSourceFilePath("src\\App.tsx"), { valid: true });
+  assert.deepEqual(validateSourceFilePath("src\\screens\\Home.tsx"), { valid: true });
+});

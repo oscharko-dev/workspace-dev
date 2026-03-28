@@ -13,8 +13,33 @@ import { validateWriteRequest } from "./request-security.js";
 import { createIpRateLimiter, resolveRateLimitClientKey } from "./rate-limit.js";
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./constants.js";
+import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
 import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
+
+/**
+ * Decode a URI component safely, sending a 400 response on malformed input.
+ * Returns the decoded string or `null` (after sending the response).
+ */
+function safeDecodeParam(
+  value: string,
+  paramLabel: string,
+  response: ServerResponse,
+): string | null {
+  const decoded = safeDecode(value);
+  if (decoded === INVALID_PATH_ENCODING) {
+    sendJson({
+      response,
+      statusCode: 400,
+      payload: {
+        error: "INVALID_PATH_ENCODING",
+        message: `Malformed percent-encoding in ${paramLabel}.`
+      }
+    });
+    return null;
+  }
+  return decoded;
+}
 
 const PROTECTED_POST_ACTIONS = new Set([
   "cancel",
@@ -104,7 +129,8 @@ export function createWorkspaceRequestHandler({
     if (method === "GET") {
       const parsedJobRoute = parseJobRoute(pathname);
       if (parsedJobRoute) {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         if (parsedJobRoute.action === "result") {
           const jobResult = jobEngine.getJobResult(jobId);
           if (!jobResult) {
@@ -378,7 +404,8 @@ export function createWorkspaceRequestHandler({
 
       const parsedFilesRoute = parseJobFilesRoute(pathname);
       if (parsedFilesRoute) {
-        const jobId = decodeURIComponent(parsedFilesRoute.jobId);
+        const jobId = safeDecodeParam(parsedFilesRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const record = jobEngine.getJobRecord(jobId);
 
         if (!record) {
@@ -465,7 +492,8 @@ export function createWorkspaceRequestHandler({
         }
 
         // Single file content
-        const filePath = decodeURIComponent(parsedFilesRoute.filePath);
+        const filePath = safeDecodeParam(parsedFilesRoute.filePath, "file path", response);
+        if (filePath === null) return;
         const validation = validateSourceFilePath(filePath);
         if (!validation.valid) {
           sendJson({
@@ -548,9 +576,13 @@ export function createWorkspaceRequestHandler({
 
       const parsedReproRoute = parseReproRoute(pathname);
       if (parsedReproRoute) {
+        const reproJobId = safeDecodeParam(parsedReproRoute.jobId, "repro job ID", response);
+        if (reproJobId === null) return;
+        const reproPreviewPath = safeDecodeParam(parsedReproRoute.previewPath, "repro preview path", response);
+        if (reproPreviewPath === null) return;
         const previewAsset = await jobEngine.resolvePreviewAsset(
-          decodeURIComponent(parsedReproRoute.jobId),
-          decodeURIComponent(parsedReproRoute.previewPath)
+          reproJobId,
+          reproPreviewPath
         );
 
         if (!previewAsset) {
@@ -711,7 +743,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "cancel") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
@@ -799,7 +832,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "sync") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
@@ -982,7 +1016,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "regenerate") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
@@ -1070,7 +1105,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "create-pr") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
@@ -1165,7 +1201,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "stale-check") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
@@ -1209,7 +1246,8 @@ export function createWorkspaceRequestHandler({
       }
 
       if (parsedJobRoute?.action === "remap-suggest") {
-        const jobId = decodeURIComponent(parsedJobRoute.jobId);
+        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
+        if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
           sendJson({
