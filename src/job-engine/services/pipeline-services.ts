@@ -105,7 +105,8 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary]
+        writes: [STAGE_ARTIFACT_KEYS.validationSummary],
+        optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
     },
     {
@@ -138,7 +139,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         });
       },
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject],
+        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiff],
         writes: [STAGE_ARTIFACT_KEYS.gitPrStatus]
       }
     }
@@ -187,7 +188,8 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary]
+        writes: [STAGE_ARTIFACT_KEYS.validationSummary],
+        optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
     },
     {

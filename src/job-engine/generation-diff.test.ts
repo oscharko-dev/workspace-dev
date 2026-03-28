@@ -198,6 +198,56 @@ test("formatDiffForPrDescription includes diff sections", () => {
   assert.ok(formatted.includes("Previous job: `job-1`"));
 });
 
+test("runGenerationDiff reflects post-mutation state when recomputed", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gendiff-recompute-"));
+  const projectDir = path.join(tempDir, "generated-app");
+  const jobDir = path.join(tempDir, "job");
+  await mkdir(path.join(projectDir, "src"), { recursive: true });
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(path.join(projectDir, "src", "App.tsx"), "export default function App() {}", "utf8");
+  await writeFile(path.join(projectDir, "src", "utils.ts"), "export const add = (a: number, b: number) => a + b;", "utf8");
+
+  const firstReport = await runGenerationDiff({
+    generatedProjectDir: projectDir,
+    jobDir,
+    outputRoot: tempDir,
+    boardKey: "recompute-board-abc123",
+    jobId: "job-pre-validation"
+  });
+
+  assert.equal(firstReport.previousJobId, null);
+  assert.equal(firstReport.added.length, 2);
+
+  // Simulate lint --fix mutating a file after codegen
+  await writeFile(path.join(projectDir, "src", "utils.ts"), "export const add = (a: number, b: number): number => a + b;\n", "utf8");
+
+  // Recompute diff (same boardKey, same jobDir to overwrite report)
+  const recomputedReport = await runGenerationDiff({
+    generatedProjectDir: projectDir,
+    jobDir,
+    outputRoot: tempDir,
+    boardKey: "recompute-board-abc123",
+    jobId: "job-post-validation"
+  });
+
+  assert.equal(recomputedReport.previousJobId, "job-pre-validation");
+  assert.ok(recomputedReport.modified.some((m) => m.file === "src/utils.ts"));
+  assert.ok(recomputedReport.unchanged.includes("src/App.tsx"));
+
+  // Verify the persisted snapshot reflects the post-mutation hashes
+  const finalSnapshot = await loadPreviousSnapshot({ outputRoot: tempDir, boardKey: "recompute-board-abc123" });
+  assert.ok(finalSnapshot !== null);
+  assert.equal(finalSnapshot.jobId, "job-post-validation");
+  const utilsEntry = finalSnapshot.files.find((f) => f.relativePath === "src/utils.ts");
+  assert.ok(utilsEntry);
+  // The hash should reflect the mutated content, not the original
+  const reportFile = await readFile(path.join(jobDir, "generation-diff.json"), "utf8");
+  const parsedReport = JSON.parse(reportFile) as { modified: Array<{ file: string; currentHash: string }> };
+  const mutatedEntry = parsedReport.modified.find((m) => m.file === "src/utils.ts");
+  assert.ok(mutatedEntry);
+  assert.equal(utilsEntry.sha256, mutatedEntry.currentHash);
+});
+
 test("formatDiffForPrDescription truncates long file lists", () => {
   const addedFiles: FileHashEntry[] = [];
   for (let i = 0; i < 25; i++) {

@@ -546,3 +546,122 @@ test("GitPrService reads generation diff from the store and writes git.pr.status
   const gitStatus = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.gitPrStatus);
   assert.equal(gitStatus?.status, "executed");
 });
+
+test("ValidateProjectService recomputes generation diff after validation", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-abc1234567",
+      currentJobId: "job-stage-test",
+      previousJobId: null,
+      generatedAt: new Date().toISOString(),
+      added: ["src/App.tsx"],
+      modified: [],
+      removed: [],
+      unchanged: [],
+      summary: "1 files added (first generation)"
+    }
+  });
+
+  let diffCallArgs: { boardKey: string; jobId: string } | undefined;
+  const updatedDiff = {
+    boardKey: "test-board-abc1234567",
+    currentJobId: "job-stage-test",
+    previousJobId: null,
+    generatedAt: new Date().toISOString(),
+    added: ["src/App.tsx"],
+    modified: [{ file: "src/App.tsx", previousHash: "aaa", currentHash: "bbb" }],
+    removed: [],
+    unchanged: [],
+    summary: "1 file modified, 1 added"
+  };
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      // simulate lint --fix mutating a file
+    },
+    runGenerationDiffFn: async (input) => {
+      diffCallArgs = { boardKey: input.boardKey, jobId: input.jobId };
+      return updatedDiff;
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.ok(diffCallArgs);
+  assert.equal(diffCallArgs.boardKey, "test-board-abc1234567");
+  assert.equal(diffCallArgs.jobId, "job-stage-test");
+
+  const storedDiff = await executionContext.artifactStore.getValue<{ summary: string }>(STAGE_ARTIFACT_KEYS.generationDiff);
+  assert.equal(storedDiff?.summary, "1 file modified, 1 added");
+
+  const diffFilePath = await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile);
+  assert.equal(diffFilePath, path.join(executionContext.paths.jobDir, "generation-diff.json"));
+});
+
+test("ValidateProjectService skips diff recomputation when no prior diff exists", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+
+  let diffCalled = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {},
+    runGenerationDiffFn: async () => {
+      diffCalled = true;
+      return {} as Awaited<ReturnType<typeof import("../generation-diff.js").runGenerationDiff>>;
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(diffCalled, false);
+  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+});
+
+test("ValidateProjectService handles diff recomputation failure gracefully", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-abc1234567",
+      currentJobId: "job-stage-test",
+      previousJobId: null,
+      generatedAt: new Date().toISOString(),
+      added: [],
+      modified: [],
+      removed: [],
+      unchanged: [],
+      summary: "No changes detected"
+    }
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {},
+    runGenerationDiffFn: async () => {
+      throw new Error("disk full");
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+});

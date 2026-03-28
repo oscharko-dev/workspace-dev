@@ -1,4 +1,6 @@
 import path from "node:path";
+import { getErrorMessage } from "../errors.js";
+import { runGenerationDiff, type GenerationDiffReport } from "../generation-diff.js";
 import { runProjectValidation } from "../validation.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
@@ -29,12 +31,14 @@ const isLintAutofixEnabled = (): boolean => {
 
 interface ValidateProjectServiceDeps {
   runProjectValidationFn: typeof runProjectValidation;
+  runGenerationDiffFn: typeof runGenerationDiff;
   isLintAutofixEnabledFn: () => boolean;
   isPerfValidationEnabledFn: () => boolean;
 }
 
 export const createValidateProjectService = ({
   runProjectValidationFn = runProjectValidation,
+  runGenerationDiffFn = runGenerationDiff,
   isLintAutofixEnabledFn = isLintAutofixEnabled,
   isPerfValidationEnabledFn = isPerfValidationEnabled
 }: Partial<ValidateProjectServiceDeps> = {}): StageService<void> => {
@@ -67,6 +71,41 @@ export const createValidateProjectService = ({
         stage: "validate.project",
         value: { status: "ok", validatedAt: new Date().toISOString() }
       });
+
+      try {
+        const existingDiff = await context.artifactStore.getValue<GenerationDiffReport>(
+          STAGE_ARTIFACT_KEYS.generationDiff
+        );
+        if (existingDiff) {
+          const updatedDiff = await runGenerationDiffFn({
+            generatedProjectDir,
+            jobDir: context.paths.jobDir,
+            outputRoot: context.resolvedPaths.outputRoot,
+            boardKey: existingDiff.boardKey,
+            jobId: context.jobId
+          });
+          const diffReportPath = path.join(context.paths.jobDir, "generation-diff.json");
+          await context.artifactStore.setValue({
+            key: STAGE_ARTIFACT_KEYS.generationDiff,
+            stage: "validate.project",
+            value: updatedDiff
+          });
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.generationDiffFile,
+            stage: "validate.project",
+            absolutePath: diffReportPath
+          });
+          context.log({
+            level: "info",
+            message: `Post-validation generation diff: ${updatedDiff.summary}`
+          });
+        }
+      } catch (error) {
+        context.log({
+          level: "warn",
+          message: `Post-validation diff recomputation failed: ${getErrorMessage(error)}`
+        });
+      }
     }
   };
 };
