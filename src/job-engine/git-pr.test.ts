@@ -3,7 +3,10 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { executePersistedGitPr } from "./git-pr-persistence.js";
 import { runGitPrFlowWithDeps } from "./git-pr.js";
+import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
+import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import type { JobRecord } from "./types.js";
 
 const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRecord => ({
@@ -32,6 +35,73 @@ const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRec
     maxConcurrentJobs: 1,
     maxQueuedJobs: 20
   }
+});
+
+test("executePersistedGitPr loads persisted inputs and stores gitPrStatus", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-persisted-"));
+  const jobDir = path.join(tempRoot, "job");
+  const generatedProjectDir = path.join(jobDir, "generated");
+  const artifactStore = new StageArtifactStore({ jobDir });
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: generatedProjectDir
+  });
+  await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiff,
+    stage: "validate.project",
+    value: {
+      boardKey: "demo-file",
+      currentJobId: "job-1",
+      previousJobId: null,
+      generatedAt: new Date().toISOString(),
+      added: ["README.md"],
+      modified: [],
+      removed: [],
+      unchanged: [],
+      summary: "1 added"
+    }
+  });
+
+  const gitPrStatus = await executePersistedGitPr({
+    artifactStore,
+    input: {
+      figmaFileKey: "demo-file",
+      figmaAccessToken: "pat",
+      enableGitPr: true,
+      repoUrl: "https://github.com/acme/repo.git",
+      repoToken: "token"
+    },
+    jobId: "job-1",
+    jobDir,
+    commandTimeoutMs: 1_000,
+    onLog: () => {
+      // no-op
+    },
+    deps: {
+      runGitPrFlowFn: async () => ({
+        status: "executed",
+        prUrl: "https://example.invalid/pr/1",
+        branchName: "feature/test",
+        scopePath: "generated/demo-file",
+        changedFiles: ["generated/demo-file/README.md"]
+      })
+    }
+  });
+
+  assert.deepEqual(gitPrStatus, {
+    status: "executed",
+    prUrl: "https://example.invalid/pr/1",
+    branchName: "feature/test",
+    scopePath: "generated/demo-file",
+    changedFiles: ["generated/demo-file/README.md"]
+  });
+
+  const reloadedStore = new StageArtifactStore({ jobDir });
+  const storedStatus = await reloadedStore.getValue(STAGE_ARTIFACT_KEYS.gitPrStatus);
+  assert.deepEqual(storedStatus, gitPrStatus);
 });
 
 test("runGitPrFlowWithDeps validates repo configuration early", async () => {
