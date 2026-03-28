@@ -11,10 +11,39 @@ const SECRET_TOKEN_PATTERN =
 
 const MAX_MESSAGE_LENGTH = 240;
 
+function passesLuhnChecksum(candidate: string): boolean {
+  if (candidate.length < 13 || candidate.length > 19) {
+    return false;
+  }
+
+  let checksum = 0;
+  let shouldDouble = false;
+
+  for (let index = candidate.length - 1; index >= 0; index -= 1) {
+    const digit = candidate.charCodeAt(index) - 48;
+    if (digit < 0 || digit > 9) {
+      return false;
+    }
+
+    let contribution = digit;
+    if (shouldDouble) {
+      contribution *= 2;
+      if (contribution > 9) {
+        contribution -= 9;
+      }
+    }
+
+    checksum += contribution;
+    shouldDouble = !shouldDouble;
+  }
+
+  return checksum % 10 === 0;
+}
+
 function redact(input: string): string {
   return input
     .replace(EMAIL_PATTERN, "[redacted-email]")
-    .replace(PAN_PATTERN, "[redacted-pan]")
+    .replace(PAN_PATTERN, (candidate) => (passesLuhnChecksum(candidate) ? "[redacted-pan]" : candidate))
     .replace(SECRET_TOKEN_PATTERN, "[redacted-secret]");
 }
 

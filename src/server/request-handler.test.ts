@@ -1373,6 +1373,33 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
       }
     });
 
+    await t.test("submit sanitizes PANs without over-redacting non-pan numeric values", async () => {
+      const failingSubmit = () => {
+        throw new Error("submit failure with pan 4242424242424242 and timestamp 1712345678901");
+      };
+      const scoped = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({ submitJob: failingSubmit })
+      });
+
+      try {
+        const response = await scoped.app.inject({
+          method: "POST",
+          url: "/workspace/submit",
+          payload: {
+            figmaFileKey: "file-key",
+            figmaAccessToken: "token"
+          }
+        });
+
+        assert.equal(response.statusCode, 500);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.error, "INTERNAL_ERROR");
+        assert.equal(body.message, "submit failure with pan [redacted-pan] and timestamp 1712345678901");
+      } finally {
+        await scoped.close();
+      }
+    });
+
     await t.test("cancel trims reasons and returns 404 for unknown jobs", async () => {
       const success = await app.inject({
         method: "POST",
