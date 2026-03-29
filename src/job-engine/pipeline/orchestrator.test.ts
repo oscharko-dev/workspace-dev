@@ -431,6 +431,63 @@ test("PipelineOrchestrator marks skipped stages failed when required skip artifa
   assert.equal("gitPr" in context.job, false);
 });
 
+test("PipelineOrchestrator marks skipped stage failed when onSkipped throws an unexpected error", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "git.pr": {
+            execute: async () => {},
+            shouldSkip: () => "Git/PR flow disabled by request.",
+            onSkipped: async () => {
+              throw new Error("onSkipped callback failure");
+            }
+          }
+        })
+      });
+    },
+    /onSkipped callback failure/
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "git.pr")?.status, "failed");
+});
+
+test("PipelineOrchestrator raises cancellation when stage is canceled during skip path", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "git.pr": {
+            execute: async () => {},
+            shouldSkip: () => "Git/PR flow disabled by request.",
+            onSkipped: async () => {
+              context.job.cancellation = {
+                requestedAt: nowIso(),
+                requestedBy: "api",
+                reason: "cancel during skip"
+              };
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) =>
+      error instanceof PipelineCancellationError &&
+      error.stage === "git.pr" &&
+      error.message === "cancel during skip"
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "git.pr")?.status, "failed");
+});
+
 test("PipelineOrchestrator marks stage failed on service errors", async () => {
   const context = await createContext();
   const orchestrator = createOrchestrator();
