@@ -411,6 +411,105 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
 });
 
+test("CodegenGenerateService accepts all streaming artifact event variants without special-case handling", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "generation-metrics.json"), "{}\n", "utf8");
+
+  const generationSummary = {
+    generatedPaths: [
+      "src/theme/tokens.json",
+      "src/theme/theme.ts",
+      "src/ErrorBoundary.tsx",
+      "src/screens/Screen.tsx",
+      "src/App.tsx",
+      "generation-metrics.json"
+    ],
+    generationMetrics: {
+      fetchedNodes: 0,
+      skippedHidden: 0,
+      skippedPlaceholders: 0,
+      screenElementCounts: [],
+      truncatedScreens: [],
+      degradedGeometryNodes: [],
+      prototypeNavigationDetected: 0,
+      prototypeNavigationResolved: 0,
+      prototypeNavigationUnresolved: 0,
+      prototypeNavigationRendered: 0
+    },
+    themeApplied: false,
+    screenApplied: 0,
+    screenTotal: 1,
+    screenRejected: [],
+    llmWarnings: [],
+    mappingCoverage: {
+      usedMappings: 0,
+      fallbackNodes: 0,
+      totalCandidateNodes: 0
+    },
+    mappingDiagnostics: {
+      missingMappingCount: 0,
+      contractMismatchCount: 0,
+      disabledMappingCount: 0
+    },
+    mappingWarnings: []
+  };
+
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      yield {
+        type: "theme",
+        files: [
+          { path: "src/theme/tokens.json", content: "{}" },
+          { path: "src/theme/theme.ts", content: "export const theme = {};\n" }
+        ]
+      } as const;
+      yield {
+        type: "screen",
+        screenName: "Screen 1",
+        files: [{ path: "src/screens/Screen.tsx", content: "export function Screen() { return null; }\n" }]
+      } as const;
+      yield { type: "progress", screenIndex: 1, screenCount: 1, screenName: "Screen 1" } as const;
+      yield { type: "app", file: { path: "src/App.tsx", content: "export default function App() { return null; }\n" } } as const;
+      yield { type: "metrics", file: { path: "generation-metrics.json", content: "{}\n" } } as const;
+      return generationSummary;
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
+    executionContext.paths.generatedProjectDir
+  );
+  assert.deepEqual(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary), generationSummary);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationMetrics),
+    path.join(executionContext.paths.generatedProjectDir, "generation-metrics.json")
+  );
+  assert.ok(
+    executionContext.job.logs.some((entry) => entry.message.includes("Screen 1/1 completed: 'Screen 1'")),
+    "progress events should still be logged"
+  );
+});
+
 test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   await writeFile(executionContext.paths.designIrFile, "{", "utf8");

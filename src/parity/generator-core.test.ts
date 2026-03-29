@@ -9,6 +9,7 @@ import {
   createDeterministicThemeFile,
   deriveSelectOptions,
   generateArtifacts,
+  generateArtifactsStreaming,
   toDeterministicScreenPath,
   detectFormGroups,
   normalizeIconImports,
@@ -3048,6 +3049,120 @@ test("generateArtifacts keeps mixed fallback files byte-stable across repeated g
   assert.equal(first.screenContent, second.screenContent);
   assert.deepEqual(first.componentContents, second.componentContents);
   assert.deepEqual(first.contextContents, second.contextContents);
+});
+
+test("generateArtifactsStreaming emits theme content first and keeps output byte-equivalent to the batch wrapper", async () => {
+  const streamingProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-streaming-theme-"));
+  const batchProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-batch-theme-"));
+  const ir = createIr();
+  const generator = generateArtifactsStreaming({
+    projectDir: streamingProjectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const eventTypes: string[] = [];
+  let themeEvent:
+    | {
+        type: "theme";
+        files: Array<{ path: string; content: string }>;
+      }
+    | undefined;
+  let iterResult = await generator.next();
+  while (!iterResult.done) {
+    eventTypes.push(iterResult.value.type);
+    if (iterResult.value.type === "theme") {
+      themeEvent = iterResult.value;
+    }
+    iterResult = await generator.next();
+  }
+  const streamingResult = iterResult.value;
+
+  assert.equal(eventTypes[0], "theme");
+  assert.ok(themeEvent, "streaming generation must emit a theme event");
+  assert.deepEqual(
+    themeEvent.files.map((file) => file.path).sort((left, right) => left.localeCompare(right)),
+    [
+      "src/components/ErrorBoundary.tsx",
+      "src/components/ScreenSkeleton.tsx",
+      "src/theme/theme.ts",
+      "src/theme/tokens.json"
+    ]
+  );
+
+  for (const file of themeEvent.files) {
+    assert.ok(file.content.length > 0, `theme file '${file.path}' must have non-empty content`);
+    const diskContent = await readFile(path.join(streamingProjectDir, file.path), "utf8");
+    assert.equal(file.content, diskContent, `theme file '${file.path}' must match disk content`);
+  }
+
+  const batchResult = await generateArtifacts({
+    projectDir: batchProjectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.deepEqual(
+    [...streamingResult.generatedPaths].sort((left, right) => left.localeCompare(right)),
+    [...batchResult.generatedPaths].sort((left, right) => left.localeCompare(right))
+  );
+  assert.deepEqual(
+    await collectDeterministicSnapshot({
+      projectDir: streamingProjectDir,
+      screenName: "Übersicht"
+    }),
+    await collectDeterministicSnapshot({
+      projectDir: batchProjectDir,
+      screenName: "Übersicht"
+    })
+  );
+});
+
+test("generateArtifactsStreaming keeps content-bearing event payloads non-empty while progress stays metadata-only", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-streaming-payloads-"));
+  const generator = generateArtifactsStreaming({
+    projectDir,
+    ir: createIr(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const seenEventTypes = new Set<string>();
+  let iterResult = await generator.next();
+  while (!iterResult.done) {
+    const event = iterResult.value;
+    seenEventTypes.add(event.type);
+
+    if (event.type === "theme" || event.type === "screen") {
+      assert.ok(event.files.length > 0, `${event.type} events must include at least one file`);
+      for (const file of event.files) {
+        assert.ok(file.content.length > 0, `${event.type} file '${file.path}' must have non-empty content`);
+      }
+    } else if (event.type === "app" || event.type === "metrics") {
+      assert.ok(event.file.content.length > 0, `${event.type} file '${event.file.path}' must have non-empty content`);
+    } else {
+      assert.equal(event.type, "progress");
+      assert.equal("file" in event, false);
+      assert.equal("files" in event, false);
+      assert.ok(event.screenIndex > 0);
+      assert.ok(event.screenCount > 0);
+    }
+
+    iterResult = await generator.next();
+  }
+
+  assert.deepEqual([...seenEventTypes].sort(), ["app", "metrics", "progress", "screen", "theme"]);
 });
 
 test("generateArtifacts uses injected runtime adapters for filesystem, design-system and icon seams", async () => {
