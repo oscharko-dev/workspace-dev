@@ -3098,6 +3098,9 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
     assert.ok(file.content.length > 0, `theme file '${file.path}' must have non-empty content`);
     const diskContent = await readFile(path.join(streamingProjectDir, file.path), "utf8");
     assert.equal(file.content, diskContent, `theme file '${file.path}' must match disk content`);
+    if (file.path.endsWith(".json")) {
+      assert.doesNotThrow(() => JSON.parse(file.content), `theme file '${file.path}' must contain valid JSON`);
+    }
   }
 
   const batchResult = await generateArtifacts({
