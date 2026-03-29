@@ -350,6 +350,146 @@ export const SharedButton = () => <Button>Save</Button>;
   assert.equal(transformed, content);
 });
 
+test("applyDesignSystemMappingsToGeneratedTsx replaces sole MUI import when all specifiers are mapped (#674)", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/screens/Checkout.tsx",
+    content: `import { Button, Card } from "@mui/material";
+
+export const Checkout = () => (
+  <>
+    <Button>Click</Button>
+    <Card>Content</Card>
+  </>
+);
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: { component: "PrimaryButton" },
+        Card: { component: "ContentCard", import: "@acme/layout" },
+      },
+    },
+  });
+
+  assert.equal(transformed.includes("@mui/material"), false);
+  assert.match(transformed, /import \{ ContentCard \} from "@acme\/layout";/);
+  assert.match(transformed, /import \{ PrimaryButton \} from "@acme\/ui";/);
+  assert.match(transformed, /<PrimaryButton>Click<\/PrimaryButton>/);
+  assert.match(transformed, /<ContentCard>Content<\/ContentCard>/);
+  assert.equal(
+    transformed.indexOf("import"),
+    0,
+    "Design imports should start at the beginning of the file",
+  );
+});
+
+test("applyDesignSystemMappingsToGeneratedTsx handles two separate MUI import declarations (#674)", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/screens/Checkout.tsx",
+    content: `import React from "react";
+import { type Theme, Button } from "@mui/material";
+import { Card } from "@mui/material";
+
+const t = {} as Theme;
+export const Checkout = () => (
+  <>
+    <Button>Click</Button>
+    <Card />
+  </>
+);
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: { component: "PrimaryButton" },
+        Card: { component: "ContentCard" },
+      },
+    },
+  });
+
+  assert.match(transformed, /import \{ type Theme \} from "@mui\/material";/);
+  assert.equal(
+    (transformed.match(/@mui\/material/g) ?? []).length,
+    1,
+    "Only the type-only residual MUI import should remain",
+  );
+  assert.match(
+    transformed,
+    /import \{ ContentCard, PrimaryButton \} from "@acme\/ui";/,
+  );
+  assert.match(transformed, /<PrimaryButton>Click<\/PrimaryButton>/);
+  assert.match(transformed, /<ContentCard \/>/);
+});
+
+test("applyDesignSystemMappingsToGeneratedTsx transforms pattern component files (#674)", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/components/PromoPattern1.tsx",
+    content: `import { Button } from "@mui/material";
+
+export const PromoPattern1 = () => <Button>Buy</Button>;
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: { component: "PrimaryButton" },
+      },
+    },
+  });
+
+  assert.match(transformed, /import \{ PrimaryButton \} from "@acme\/ui";/);
+  assert.match(transformed, /<PrimaryButton>Buy<\/PrimaryButton>/);
+  assert.equal(transformed.includes("@mui/material"), false);
+});
+
+test("applyDesignSystemMappingsToGeneratedTsx skips namespace and default MUI imports (#674)", () => {
+  const namespaceContent = `import * as MUI from "@mui/material";
+export const Checkout = () => <MUI.Button>Click</MUI.Button>;
+`;
+  const namespaceResult = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/screens/Checkout.tsx",
+    content: namespaceContent,
+    config: {
+      library: "@acme/ui",
+      mappings: { Button: { component: "PrimaryButton" } },
+    },
+  });
+  assert.equal(
+    namespaceResult,
+    namespaceContent,
+    "Namespace imports from MUI should be left unchanged",
+  );
+});
+
+test("applyDesignSystemMappingsToGeneratedTsx deduplicates design local for same-component aliases (#674)", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/screens/Checkout.tsx",
+    content: `import { Button as Btn1, Button as Btn2 } from "@mui/material";
+
+export const Checkout = () => (
+  <>
+    <Btn1>Save</Btn1>
+    <Btn2>Cancel</Btn2>
+  </>
+);
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: { component: "PrimaryButton" },
+      },
+    },
+  });
+
+  assert.equal(transformed.includes("@mui/material"), false);
+  assert.match(transformed, /<PrimaryButton>Save<\/PrimaryButton>/);
+  assert.match(
+    transformed,
+    /<PrimaryButton>Cancel<\/PrimaryButton>/,
+    "Both aliases of the same component resolve to the same design local",
+  );
+  assert.match(transformed, /import \{ PrimaryButton \} from "@acme\/ui";/);
+});
+
 test("inferDesignSystemConfigFromProject infers the dominant library, ignores excluded directories, and derives MUI bases", async () => {
   const projectRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-design-system-scan-"),
