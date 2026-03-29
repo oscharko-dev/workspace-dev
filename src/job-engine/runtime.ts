@@ -13,7 +13,8 @@ import {
 } from "./errors.js";
 import {
   createFigmaRestCircuitBreaker,
-  type FigmaRestCircuitBreakerClock
+  type FigmaRestCircuitBreakerClock,
+  type FigmaRestCircuitTransitionEvent
 } from "./figma-rest-circuit-breaker.js";
 import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
 
@@ -82,6 +83,23 @@ const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | u
     return normalized;
   }
   return undefined;
+};
+
+const toFigmaRestCircuitTransitionLogMessage = ({
+  fromState,
+  toState,
+  trigger,
+  snapshot
+}: FigmaRestCircuitTransitionEvent): string => {
+  const details = [
+    `trigger=${trigger}`,
+    `consecutiveFailures=${snapshot.consecutiveFailures}`,
+    `probeInFlight=${snapshot.probeInFlight}`
+  ];
+  if (snapshot.nextProbeAt !== undefined) {
+    details.push(`nextProbeAt=${snapshot.nextProbeAt}`);
+  }
+  return `Figma REST circuit breaker transitioned ${fromState} -> ${toState} (${details.join(", ")}).`;
 };
 
 export const resolveRuntimeSettings = ({
@@ -183,6 +201,7 @@ export const resolveRuntimeSettings = ({
     value: logFormat,
     fallback: DEFAULT_WORKSPACE_LOG_FORMAT
   });
+  const resolvedLogger = logger ?? createWorkspaceLogger({ format: resolvedLogFormat });
   const resolvedPipelineDiagnosticLimits: PipelineDiagnosticLimits = {
     maxDiagnostics: clampInteger({
       value: pipelineDiagnosticMaxCount,
@@ -230,7 +249,14 @@ export const resolveRuntimeSettings = ({
     figmaRestCircuitBreaker: createFigmaRestCircuitBreaker({
       failureThreshold: resolvedFigmaCircuitBreakerFailureThreshold,
       resetTimeoutMs: resolvedFigmaCircuitBreakerResetTimeoutMs,
-      ...(figmaCircuitBreakerClock ? { clock: figmaCircuitBreakerClock } : {})
+      ...(figmaCircuitBreakerClock ? { clock: figmaCircuitBreakerClock } : {}),
+      onStateTransition: (event) => {
+        resolvedLogger.log({
+          level: "info",
+          stage: "figma.source",
+          message: toFigmaRestCircuitTransitionLogMessage(event)
+        });
+      }
     }),
     figmaBootstrapDepth:
       typeof figmaBootstrapDepth === "number" && Number.isFinite(figmaBootstrapDepth)
@@ -319,7 +345,7 @@ export const resolveRuntimeSettings = ({
         ? Math.max(0, Math.min(1000, Math.trunc(maxQueuedJobs)))
         : DEFAULT_MAX_QUEUED_JOBS,
     logFormat: resolvedLogFormat,
-    logger: logger ?? createWorkspaceLogger({ format: resolvedLogFormat }),
+    logger: resolvedLogger,
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch,
     ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {})

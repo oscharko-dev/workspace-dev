@@ -2410,3 +2410,79 @@ test("fetchFigmaFile allows one half-open probe and closes the circuit after pro
   assert.equal(steadyStateResult.file.name, "Steady State");
   assert.equal(fetchCalls, 3);
 });
+
+test("fetchFigmaFile allows exactly one half-open probe across concurrent callers", async () => {
+  let nowMs = 1_000;
+  let fetchCalls = 0;
+  let releaseProbe: (() => void) | undefined;
+  const breaker = createBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+  const request = {
+    ...createRequest({
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("network down");
+        }
+        if (fetchCalls === 2) {
+          return await new Promise<Response>((resolve) => {
+            releaseProbe = () => {
+              resolve(jsonResponse({ name: "Probe Recovery", document: { id: "0:0", type: "DOCUMENT", children: [] } }));
+            };
+          });
+        }
+        return jsonResponse({ name: `unexpected-${fetchCalls}`, document: { id: "0:0", type: "DOCUMENT", children: [] } });
+      },
+      figmaRestCircuitBreaker: breaker
+    }),
+    maxRetries: 1
+  };
+
+  await assert.rejects(
+    () => fetchFigmaFile(request),
+    (error: unknown) => (error as { code?: string }).code === "E_FIGMA_NETWORK"
+  );
+
+  nowMs += 5_000;
+  const requests = Array.from({ length: 20 }, () => Promise.resolve().then(() => fetchFigmaFile(request)));
+  const resultsPromise = Promise.allSettled(requests);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(fetchCalls, 2);
+
+  releaseProbe?.();
+  const results = await resultsPromise;
+  const fulfilled = results.filter((result) => result.status === "fulfilled");
+  const rejected = results.filter((result) => result.status === "rejected");
+
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 19);
+  assert.equal(fetchCalls, 2);
+  assert.equal(fulfilled[0]?.status, "fulfilled");
+  if (fulfilled[0]?.status === "fulfilled") {
+    assert.equal(fulfilled[0].value.file.name, "Probe Recovery");
+  }
+
+  assert.equal(
+    rejected.every((result) => {
+      if (result.status !== "rejected") {
+        return false;
+      }
+      const candidate = result.reason as {
+        code?: string;
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      return (
+        candidate.code === "E_FIGMA_CIRCUIT_OPEN" &&
+        candidate.diagnostics?.[0]?.details?.circuitState === "half-open" &&
+        candidate.diagnostics?.[0]?.details?.probeInFlight === true
+      );
+    }),
+    true
+  );
+});

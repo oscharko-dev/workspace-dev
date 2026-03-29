@@ -167,3 +167,166 @@ test("figma rest circuit breaker resets on non-transient outcomes", () => {
   assert.equal(snapshot.consecutiveFailures, 0);
   assert.equal(snapshot.probeInFlight, false);
 });
+
+test("figma rest circuit breaker allows exactly one probe across 100 concurrent microtask callers", async () => {
+  let nowMs = 10_000;
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  nowMs += 5_000;
+  const decisions = await Promise.all(
+    Array.from({ length: 100 }, () => Promise.resolve().then(() => breaker.beforeRequest()))
+  );
+
+  assert.equal(
+    decisions.filter((decision) => decision.allowRequest).length,
+    1
+  );
+  assert.equal(decisions.every((decision) => decision.snapshot.state === "half-open"), true);
+  assert.equal(decisions.every((decision) => decision.snapshot.probeInFlight), true);
+});
+
+test("figma rest circuit breaker version guard ignores stale half-open transitions after a reset cycle", () => {
+  let nowMs = 1_000;
+  let reentered = false;
+  let breaker: ReturnType<typeof createFigmaRestCircuitBreaker>;
+
+  breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => {
+        if (nowMs === 6_000 && !reentered) {
+          reentered = true;
+          const resetSnapshot = breaker.recordNonTransientOutcome();
+          assert.equal(resetSnapshot.state, "closed");
+
+          breaker.beforeRequest();
+          const reopenedSnapshot = breaker.recordTransientFailure();
+          assert.equal(reopenedSnapshot.state, "open");
+
+          nowMs = 11_000;
+        }
+        return nowMs;
+      }
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  nowMs = 6_000;
+  const decision = breaker.beforeRequest();
+
+  assert.equal(reentered, true);
+  assert.equal(decision.allowRequest, true);
+  assert.equal(decision.snapshot.state, "half-open");
+  assert.equal(decision.snapshot.probeInFlight, true);
+  assert.equal(decision.snapshot.nextProbeAt, 11_000);
+  assert.equal(breaker.getSnapshot().probeInFlight, true);
+});
+
+test("figma rest circuit breaker emits transition callbacks in order", () => {
+  let nowMs = 2_000;
+  const transitions: Array<{ fromState: string; toState: string; trigger: string; atMs: number }> = [];
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 4_000,
+    clock: {
+      now: () => nowMs
+    },
+    onStateTransition: (event) => {
+      transitions.push({
+        fromState: event.fromState,
+        toState: event.toState,
+        trigger: event.trigger,
+        atMs: event.atMs
+      });
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  nowMs += 4_000;
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  nowMs += 4_000;
+  breaker.beforeRequest();
+  breaker.recordSuccess();
+
+  assert.deepEqual(transitions, [
+    {
+      fromState: "closed",
+      toState: "open",
+      trigger: "failure-threshold-reached",
+      atMs: 2_000
+    },
+    {
+      fromState: "open",
+      toState: "half-open",
+      trigger: "reset-timeout-elapsed",
+      atMs: 6_000
+    },
+    {
+      fromState: "half-open",
+      toState: "open",
+      trigger: "probe-failed",
+      atMs: 6_000
+    },
+    {
+      fromState: "open",
+      toState: "half-open",
+      trigger: "reset-timeout-elapsed",
+      atMs: 10_000
+    },
+    {
+      fromState: "half-open",
+      toState: "closed",
+      trigger: "probe-succeeded",
+      atMs: 10_000
+    }
+  ]);
+});
+
+test("figma rest circuit breaker snapshots remain internally consistent under concurrent callers", async () => {
+  let nowMs = 10_000;
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  nowMs += 5_000;
+  const decisions = await Promise.all(
+    Array.from({ length: 100 }, () => Promise.resolve().then(() => breaker.beforeRequest()))
+  );
+
+  const snapshots = decisions.map((decision) => decision.snapshot);
+  assert.equal(
+    snapshots.every((snapshot) => {
+      if (snapshot.state === "closed") {
+        return snapshot.probeInFlight === false && snapshot.nextProbeAt === undefined;
+      }
+      if (snapshot.state === "open") {
+        return snapshot.probeInFlight === false && snapshot.nextProbeAt !== undefined;
+      }
+      return snapshot.probeInFlight === true && snapshot.nextProbeAt !== undefined;
+    }),
+    true
+  );
+});

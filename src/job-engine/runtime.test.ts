@@ -159,3 +159,51 @@ test("resolveRuntimeSettings preserves an optional hybrid MCP enrichment loader"
 
   assert.equal(runtime.figmaMcpEnrichmentLoader, loader);
 });
+
+test("resolveRuntimeSettings logs shared circuit breaker transitions with figma.source stage", () => {
+  const logs: Array<{ level: string; message: string; stage?: string; jobId?: string }> = [];
+  let nowMs = 1_000;
+  const runtime = resolveRuntimeSettings({
+    figmaCircuitBreakerFailureThreshold: 1,
+    figmaCircuitBreakerResetTimeoutMs: 5_000,
+    figmaCircuitBreakerClock: {
+      now: () => nowMs
+    },
+    logger: {
+      log: (input) => {
+        logs.push(input);
+      }
+    }
+  });
+
+  runtime.figmaRestCircuitBreaker.beforeRequest();
+  runtime.figmaRestCircuitBreaker.recordTransientFailure();
+
+  nowMs += 5_000;
+  runtime.figmaRestCircuitBreaker.beforeRequest();
+  runtime.figmaRestCircuitBreaker.recordSuccess();
+
+  assert.deepEqual(logs, [
+    {
+      level: "info",
+      stage: "figma.source",
+      message:
+        "Figma REST circuit breaker transitioned closed -> open " +
+        "(trigger=failure-threshold-reached, consecutiveFailures=1, probeInFlight=false, nextProbeAt=6000)."
+    },
+    {
+      level: "info",
+      stage: "figma.source",
+      message:
+        "Figma REST circuit breaker transitioned open -> half-open " +
+        "(trigger=reset-timeout-elapsed, consecutiveFailures=1, probeInFlight=false, nextProbeAt=6000)."
+    },
+    {
+      level: "info",
+      stage: "figma.source",
+      message:
+        "Figma REST circuit breaker transitioned half-open -> closed " +
+        "(trigger=probe-succeeded, consecutiveFailures=0, probeInFlight=false)."
+    }
+  ]);
+});
