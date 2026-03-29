@@ -241,6 +241,58 @@ test("schema: unsupported generationLocale reports exact field path issue", () =
   }
 });
 
+test("schema: combined invalid llmCodegenMode and generationLocale reports both field path issues", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    llmCodegenMode: "hybrid",
+    generationLocale: "not-a-locale"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const paths = result.error.issues.map((i) => i.path.join("."));
+    assert.ok(paths.includes("llmCodegenMode"), "expected llmCodegenMode issue");
+    assert.ok(paths.includes("generationLocale"), "expected generationLocale issue");
+    assert.equal(result.error.issues.length, 2);
+  }
+});
+
+test("schema: empty string llmCodegenMode is rejected at field level", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    llmCodegenMode: ""
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues[0]?.path, ["llmCodegenMode"]);
+  }
+});
+
+test("schema: empty string generationLocale is rejected at field level", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    generationLocale: ""
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues[0]?.path, ["generationLocale"]);
+  }
+});
+
+test("schema: omitted llmCodegenMode and generationLocale produce valid parse with undefined fields", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token"
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.llmCodegenMode, undefined);
+    assert.equal(result.data.generationLocale, undefined);
+  }
+});
+
 test("schema: git fields required when enableGitPr=true", () => {
   const invalid = SubmitRequestSchema.safeParse({
     figmaFileKey: "key-1",
