@@ -623,7 +623,43 @@ test("request handler serves design IR and component manifest success and missin
   const designIrPath = path.join(tempRoot, "design-ir.json");
   const manifestPath = path.join(tempRoot, "component-manifest.json");
   await writeFile(designIrPath, JSON.stringify({ screens: [] }, null, 2), "utf8");
-  await writeFile(manifestPath, JSON.stringify({ screens: [{ screenId: "screen-1" }] }, null, 2), "utf8");
+  const manifestPayload = {
+    screens: [
+      {
+        screenId: "screen-1",
+        screenName: "Offers",
+        file: "src/screens/Offers.tsx",
+        components: [
+          {
+            irNodeId: "offers-root",
+            irNodeName: "Offers Root",
+            irNodeType: "FRAME",
+            file: "src/screens/Offers.tsx",
+            startLine: 10,
+            endLine: 30
+          },
+          {
+            irNodeId: "offer-card-a",
+            irNodeName: "Offer Card",
+            irNodeType: "INSTANCE",
+            file: "src/components/OffersPattern1.tsx",
+            startLine: 5,
+            endLine: 18,
+            extractedComponent: true
+          },
+          {
+            irNodeId: "offer-form",
+            irNodeName: "Offer Form",
+            irNodeType: "FRAME",
+            file: "src/context/OffersPatternContext.tsx",
+            startLine: 3,
+            endLine: 8
+          }
+        ]
+      }
+    ]
+  };
+  await writeFile(manifestPath, JSON.stringify(manifestPayload, null, 2), "utf8");
 
   const records: Record<string, ReturnType<JobEngine["getJobRecord"]>> = {
     "job-design-ir-ok": {
@@ -731,7 +767,7 @@ test("request handler serves design IR and component manifest success and missin
       assert.equal(response.statusCode, 200);
       assert.deepEqual(response.json<Record<string, unknown>>(), {
         jobId: "job-manifest-ok",
-        screens: [{ screenId: "screen-1" }]
+        ...manifestPayload
       });
     });
 
