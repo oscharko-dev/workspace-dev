@@ -29,6 +29,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.generationLocale, "de-DE");
   assert.equal(runtime.routerMode, "browser");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
+  assert.equal(runtime.commandStdoutMaxBytes, 1_048_576);
+  assert.equal(runtime.commandStderrMaxBytes, 1_048_576);
   assert.equal(runtime.pipelineDiagnosticLimits.maxDiagnostics, 25);
   assert.equal(runtime.pipelineDiagnosticLimits.textMaxLength, 320);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 30);
@@ -64,6 +66,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     generationLocale: "EN-us",
     routerMode: "HASH",
     commandTimeoutMs: 10,
+    commandStdoutMaxBytes: 50_000_000,
+    commandStderrMaxBytes: 1,
     pipelineDiagnosticMaxCount: 999,
     pipelineDiagnosticTextMaxLength: 5,
     pipelineDiagnosticDetailsMaxKeys: 0,
@@ -96,6 +100,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.generationLocale, "en-US");
   assert.equal(runtime.routerMode, "hash");
   assert.equal(runtime.commandTimeoutMs, 5_000);
+  assert.equal(runtime.commandStdoutMaxBytes, 16_777_216);
+  assert.equal(runtime.commandStderrMaxBytes, 4_096);
   assert.equal(runtime.pipelineDiagnosticLimits.maxDiagnostics, 500);
   assert.equal(runtime.pipelineDiagnosticLimits.textMaxLength, 16);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 1);

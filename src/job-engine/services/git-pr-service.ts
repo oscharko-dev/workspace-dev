@@ -19,6 +19,8 @@ export const createGitPrService = ({ runGitPrFlowFn = runGitPrFlow }: Partial<Gi
         jobId: context.jobId,
         jobDir: context.paths.jobDir,
         commandTimeoutMs: context.runtime.commandTimeoutMs,
+        commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,
+        commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
         onLog: (message) => {
           context.log({
             level: "info",

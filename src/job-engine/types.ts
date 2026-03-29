@@ -116,6 +116,8 @@ export interface JobEngineRuntime {
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
   pipelineDiagnosticLimits: PipelineDiagnosticLimits;
   enableUiValidation: boolean;
   enableUnitTestValidation: boolean;
@@ -145,6 +147,31 @@ export interface CreateJobEngineInput {
   runtime: JobEngineRuntime;
 }
 
+export interface CommandOutputCaptureOptions {
+  jobDir: string;
+  key: string;
+  stdoutMaxBytes: number;
+  stderrMaxBytes: number;
+}
+
+export interface CommandOutputMetadata {
+  observedBytes: number;
+  retainedBytes: number;
+  truncated: boolean;
+  artifactPath?: string;
+}
+
+export interface CommandExecutionInput {
+  cwd: string;
+  command: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+  redactions?: string[];
+  timeoutMs?: number;
+  abortSignal?: AbortSignal;
+  outputCapture?: CommandOutputCaptureOptions;
+}
+
 export interface CommandResult {
   success: boolean;
   code: number | null;
@@ -154,6 +181,8 @@ export interface CommandResult {
   timedOut?: boolean;
   canceled?: boolean;
   durationMs?: number;
+  stdoutMetadata?: CommandOutputMetadata;
+  stderrMetadata?: CommandOutputMetadata;
 }
 
 export interface GitPrExecutionResult {

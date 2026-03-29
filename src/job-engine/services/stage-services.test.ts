@@ -434,7 +434,12 @@ test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async (
 });
 
 test("ValidateProjectService reads generated.project and writes validation.summary", async () => {
-  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      commandStdoutMaxBytes: 12_345,
+      commandStderrMaxBytes: 54_321
+    }
+  });
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.generatedProject,
     stage: "template.prepare",
@@ -447,16 +452,31 @@ test("ValidateProjectService reads generated.project and writes validation.summa
       boardKey: "test-board-abc1234567"
     } satisfies GenerationDiffContext
   });
-  let calledWithDir = "";
+  let calledInput:
+    | {
+        generatedProjectDir: string;
+        jobDir?: string;
+        commandStdoutMaxBytes?: number;
+        commandStderrMaxBytes?: number;
+      }
+    | undefined;
   const service = createValidateProjectService({
     runProjectValidationFn: async (input) => {
-      calledWithDir = input.generatedProjectDir;
+      calledInput = {
+        generatedProjectDir: input.generatedProjectDir,
+        jobDir: input.jobDir,
+        commandStdoutMaxBytes: input.commandStdoutMaxBytes,
+        commandStderrMaxBytes: input.commandStderrMaxBytes
+      };
     }
   });
 
   await service.execute(undefined, stageContextFor("validate.project"));
 
-  assert.equal(calledWithDir, executionContext.paths.generatedProjectDir);
+  assert.equal(calledInput?.generatedProjectDir, executionContext.paths.generatedProjectDir);
+  assert.equal(calledInput?.jobDir, executionContext.paths.jobDir);
+  assert.equal(calledInput?.commandStdoutMaxBytes, 12_345);
+  assert.equal(calledInput?.commandStderrMaxBytes, 54_321);
   const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
 });

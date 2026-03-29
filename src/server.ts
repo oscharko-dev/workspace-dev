@@ -120,6 +120,8 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
     ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
+    ...(options.commandStdoutMaxBytes !== undefined ? { commandStdoutMaxBytes: options.commandStdoutMaxBytes } : {}),
+    ...(options.commandStderrMaxBytes !== undefined ? { commandStderrMaxBytes: options.commandStderrMaxBytes } : {}),
     ...(options.pipelineDiagnosticMaxCount !== undefined
       ? { pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount }
       : {}),

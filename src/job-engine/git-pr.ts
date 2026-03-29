@@ -5,17 +5,10 @@ import { resolveBoardKey } from "../parity/board-key.js";
 import { redactValue, runCommand as runCommandImpl } from "./command-runner.js";
 import { formatDiffForPrDescription } from "./generation-diff.js";
 import { sanitizeTargetPath, toScopePath } from "./target-path.js";
-import type { CommandResult, GitPrExecutionResult } from "./types.js";
+import type { CommandExecutionInput, CommandResult, GitPrExecutionResult } from "./types.js";
 
 interface GitPrDeps {
-  runCommand: (input: {
-    cwd: string;
-    command: string;
-    args: string[];
-    env?: NodeJS.ProcessEnv;
-    redactions?: string[];
-    timeoutMs?: number;
-  }) => Promise<CommandResult>;
+  runCommand: (input: CommandExecutionInput) => Promise<CommandResult>;
   fetchImpl: typeof fetch;
 }
 
@@ -67,6 +60,25 @@ const parseDefaultBranchFromSymref = (raw: string): string | undefined => {
   return match?.[1];
 };
 
+const toGitCommandOutputCapture = ({
+  jobDir,
+  key,
+  commandStdoutMaxBytes,
+  commandStderrMaxBytes
+}: {
+  jobDir: string;
+  key: string;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
+}): NonNullable<CommandExecutionInput["outputCapture"]> => {
+  return {
+    jobDir,
+    key,
+    stdoutMaxBytes: commandStdoutMaxBytes,
+    stderrMaxBytes: commandStderrMaxBytes
+  };
+};
+
 const copyGeneratedProjectIntoRepo = async ({
   generatedProjectDir,
   destinationDir
@@ -94,6 +106,8 @@ export const runGitPrFlowWithDeps = async ({
   jobDir,
   onLog,
   commandTimeoutMs = 15 * 60_000,
+  commandStdoutMaxBytes = 1_048_576,
+  commandStderrMaxBytes = 1_048_576,
   generationDiff,
   deps
 }: {
@@ -103,6 +117,8 @@ export const runGitPrFlowWithDeps = async ({
   jobDir: string;
   onLog: (message: string) => void;
   commandTimeoutMs?: number;
+  commandStdoutMaxBytes?: number;
+  commandStderrMaxBytes?: number;
   generationDiff?: WorkspaceGenerationDiffReport;
   deps?: Partial<GitPrDeps>;
 }): Promise<GitPrExecutionResult> => {
@@ -132,7 +148,15 @@ export const runGitPrFlowWithDeps = async ({
     command: "git",
     args: ["ls-remote", "--symref", authedUrl, "HEAD"],
     redactions,
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.ls-remote",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
 
   const defaultBranch = parseDefaultBranchFromSymref(defaultBranchProbe.stdout) ?? "main";
@@ -142,7 +166,15 @@ export const runGitPrFlowWithDeps = async ({
     command: "git",
     args: ["clone", "--depth", "1", "--branch", defaultBranch, authedUrl, repoDir],
     redactions,
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.clone",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
 
   if (!cloneResult.success) {
@@ -154,7 +186,15 @@ export const runGitPrFlowWithDeps = async ({
     cwd: repoDir,
     command: "git",
     args: ["checkout", "-b", branchName],
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.checkout",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
   if (!checkoutResult.success) {
     throw new Error(`git checkout failed: ${checkoutResult.combined.slice(0, 2000)}`);
@@ -173,7 +213,15 @@ export const runGitPrFlowWithDeps = async ({
     cwd: repoDir,
     command: "git",
     args: ["add", "-A", scopePath],
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.add",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
   if (!addResult.success) {
     throw new Error(`git add failed: ${addResult.combined.slice(0, 2000)}`);
@@ -183,7 +231,15 @@ export const runGitPrFlowWithDeps = async ({
     cwd: repoDir,
     command: "git",
     args: ["diff", "--cached", "--name-only"],
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.diff",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
   if (!changedFilesResult.success) {
     throw new Error(`git diff failed: ${changedFilesResult.combined.slice(0, 2000)}`);
@@ -221,7 +277,15 @@ export const runGitPrFlowWithDeps = async ({
     cwd: repoDir,
     command: "git",
     args: ["commit", "-m", `chore(figma): deterministic update ${boardKey}`],
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.commit",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
   if (!commitResult.success) {
     throw new Error(`git commit failed: ${commitResult.combined.slice(0, 2000)}`);
@@ -232,7 +296,15 @@ export const runGitPrFlowWithDeps = async ({
     command: "git",
     args: ["push", "-u", "origin", branchName],
     redactions,
-    timeoutMs: commandTimeoutMs
+    timeoutMs: commandTimeoutMs,
+    ...{
+      outputCapture: toGitCommandOutputCapture({
+        jobDir,
+        key: "git.pr.push",
+        commandStdoutMaxBytes,
+        commandStderrMaxBytes
+      })
+    }
   });
   if (!pushResult.success) {
     throw new Error(`git push failed: ${pushResult.combined.slice(0, 2000)}`);
@@ -288,6 +360,8 @@ export const runGitPrFlow = async ({
   jobDir,
   onLog,
   commandTimeoutMs = 15 * 60_000,
+  commandStdoutMaxBytes = 1_048_576,
+  commandStderrMaxBytes = 1_048_576,
   generationDiff
 }: {
   input: WorkspaceJobInput;
@@ -296,6 +370,8 @@ export const runGitPrFlow = async ({
   jobDir: string;
   onLog: (message: string) => void;
   commandTimeoutMs?: number;
+  commandStdoutMaxBytes?: number;
+  commandStderrMaxBytes?: number;
   generationDiff?: WorkspaceGenerationDiffReport;
 }): Promise<GitPrExecutionResult> => {
   return await runGitPrFlowWithDeps({
@@ -305,6 +381,8 @@ export const runGitPrFlow = async ({
     jobDir,
     onLog,
     commandTimeoutMs,
+    commandStdoutMaxBytes,
+    commandStderrMaxBytes,
     ...(generationDiff ? { generationDiff } : {})
   });
 };

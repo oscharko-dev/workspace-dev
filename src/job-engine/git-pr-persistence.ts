@@ -27,6 +27,8 @@ export const executePersistedGitPr = async ({
   jobId,
   jobDir,
   commandTimeoutMs,
+  commandStdoutMaxBytes,
+  commandStderrMaxBytes,
   onLog,
   deps
 }: {
@@ -35,6 +37,8 @@ export const executePersistedGitPr = async ({
   jobId: string;
   jobDir: string;
   commandTimeoutMs: number;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
   onLog: (message: string) => void;
   deps?: ExecutePersistedGitPrDeps;
 }): Promise<WorkspaceGitPrStatus> => {
@@ -46,6 +50,8 @@ export const executePersistedGitPr = async ({
     generatedProjectDir,
     jobDir,
     commandTimeoutMs,
+    commandStdoutMaxBytes,
+    commandStderrMaxBytes,
     generationDiff,
     onLog
   });

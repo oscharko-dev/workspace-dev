@@ -36,6 +36,8 @@ const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
+const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
@@ -106,6 +108,8 @@ export const resolveRuntimeSettings = ({
   generationLocale,
   routerMode,
   commandTimeoutMs,
+  commandStdoutMaxBytes,
+  commandStderrMaxBytes,
   pipelineDiagnosticMaxCount,
   pipelineDiagnosticTextMaxLength,
   pipelineDiagnosticDetailsMaxKeys,
@@ -147,6 +151,8 @@ export const resolveRuntimeSettings = ({
   generationLocale?: string;
   routerMode?: string;
   commandTimeoutMs?: number;
+  commandStdoutMaxBytes?: number;
+  commandStderrMaxBytes?: number;
   pipelineDiagnosticMaxCount?: number;
   pipelineDiagnosticTextMaxLength?: number;
   pipelineDiagnosticDetailsMaxKeys?: number;
@@ -286,6 +292,14 @@ export const resolveRuntimeSettings = ({
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))
         : DEFAULT_COMMAND_TIMEOUT_MS,
+    commandStdoutMaxBytes:
+      typeof commandStdoutMaxBytes === "number" && Number.isFinite(commandStdoutMaxBytes)
+        ? Math.max(4_096, Math.min(16_777_216, Math.trunc(commandStdoutMaxBytes)))
+        : DEFAULT_COMMAND_STDOUT_MAX_BYTES,
+    commandStderrMaxBytes:
+      typeof commandStderrMaxBytes === "number" && Number.isFinite(commandStderrMaxBytes)
+        ? Math.max(4_096, Math.min(16_777_216, Math.trunc(commandStderrMaxBytes)))
+        : DEFAULT_COMMAND_STDERR_MAX_BYTES,
     pipelineDiagnosticLimits: resolvedPipelineDiagnosticLimits,
     enableUiValidation:
       typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,

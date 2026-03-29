@@ -1451,6 +1451,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       jobDir: job.artifacts.jobDir,
       jobId,
       commandTimeoutMs: runtime.commandTimeoutMs,
+      commandStdoutMaxBytes: runtime.commandStdoutMaxBytes,
+      commandStderrMaxBytes: runtime.commandStderrMaxBytes,
       onLog: (message) => {
         pushRuntimeLog({
           job,

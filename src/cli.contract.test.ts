@@ -162,6 +162,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_GENERATION_LOCALE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ROUTER/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_SKIP_INSTALL/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT/i);
@@ -186,6 +188,8 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--generation-locale/i);
   assert.match(result.stdout, /--router/i);
+  assert.match(result.stdout, /--command-stdout-max-bytes/i);
+  assert.match(result.stdout, /--command-stderr-max-bytes/i);
   assert.match(result.stdout, /--pipeline-diagnostic-max-count/i);
   assert.match(result.stdout, /--pipeline-diagnostic-text-max-length/i);
   assert.match(result.stdout, /--pipeline-diagnostic-details-max-keys/i);
@@ -438,6 +442,65 @@ test("cli contract: --unit-test-validation is applied and logged", async () => {
   try {
     const output = await waitForStdout(child, /Unit test validation enabled: true/i);
     assert.match(output, /Unit test validation enabled: true/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: command output cap environment variables are applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES: "8192",
+      FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES: "16384"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Command output caps: stdout=8192, stderr=16384/i);
+    assert.match(output, /Command output caps: stdout=8192, stderr=16384/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: command output cap flags override environment variables", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cliSourcePath,
+      "start",
+      "--port",
+      String(port),
+      "--command-stdout-max-bytes",
+      "4096",
+      "--command-stderr-max-bytes",
+      "12288"
+    ],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+        FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES: "9999",
+        FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES: "9999"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    }
+  );
+
+  try {
+    const output = await waitForStdout(child, /Command output caps: stdout=4096, stderr=12288/i);
+    assert.match(output, /Command output caps: stdout=4096, stderr=12288/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

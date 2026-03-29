@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 2.28.0
+ * Contract version: 2.29.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -93,8 +93,12 @@ export interface WorkspaceStartOptions {
   generationLocale?: string;
   /** Router mode for generated App.tsx shell. Default: "browser" */
   routerMode?: WorkspaceRouterMode;
- /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
+  /** Timeout for external commands (pnpm/git) in milliseconds. Default: 900000 */
   commandTimeoutMs?: number;
+  /** Maximum retained stdout bytes per external command before truncation/spooling. Default: 1048576 */
+  commandStdoutMaxBytes?: number;
+  /** Maximum retained stderr bytes per external command before truncation/spooling. Default: 1048576 */
+  commandStderrMaxBytes?: number;
   /** Maximum structured diagnostics retained per pipeline error. Default: 25 */
   pipelineDiagnosticMaxCount?: number;
   /** Maximum message/suggestion characters retained per structured diagnostic. Default: 320 */
@@ -592,4 +596,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "2.28.0" as const;
+export const CONTRACT_VERSION = "2.29.0" as const;

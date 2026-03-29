@@ -42,6 +42,8 @@ const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
 const DEFAULT_BRAND_THEME: WorkspaceBrandTheme = "derived";
 const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
+const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
 const DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics;
 const DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength;
 const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys;
@@ -82,6 +84,8 @@ interface CliOptions {
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
   pipelineDiagnosticMaxCount: number;
   pipelineDiagnosticTextMaxLength: number;
   pipelineDiagnosticDetailsMaxKeys: number;
@@ -283,6 +287,18 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_COMMAND_TIMEOUT_MS,
     min: 5_000,
     max: 60 * 60_000
+  });
+  let commandStdoutMaxBytes = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES,
+    fallback: DEFAULT_COMMAND_STDOUT_MAX_BYTES,
+    min: 4_096,
+    max: 16_777_216
+  });
+  let commandStderrMaxBytes = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES,
+    fallback: DEFAULT_COMMAND_STDERR_MAX_BYTES,
+    min: 4_096,
+    max: 16_777_216
   });
   let pipelineDiagnosticMaxCount = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT,
@@ -592,6 +608,28 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--command-stdout-max-bytes") {
+      commandStdoutMaxBytes = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandStdoutMaxBytes,
+        min: 4_096,
+        max: 16_777_216
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--command-stderr-max-bytes") {
+      commandStderrMaxBytes = parseIntInRange({
+        raw: args[index + 1],
+        fallback: commandStderrMaxBytes,
+        min: 4_096,
+        max: 16_777_216
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--pipeline-diagnostic-max-count") {
       pipelineDiagnosticMaxCount = parseIntInRange({
         raw: args[index + 1],
@@ -791,6 +829,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     generationLocale,
     routerMode,
     commandTimeoutMs,
+    commandStdoutMaxBytes,
+    commandStderrMaxBytes,
     pipelineDiagnosticMaxCount,
     pipelineDiagnosticTextMaxLength,
     pipelineDiagnosticDetailsMaxKeys,
@@ -863,6 +903,10 @@ Options:
                              Locale for deterministic select-option number derivation (default: ${DEFAULT_GENERATION_LOCALE})
   --router <browser|hash>    Router mode for generated App.tsx shell (default: ${DEFAULT_ROUTER_MODE})
   --command-timeout-ms <ms>  Timeout for pnpm/git commands (default: ${DEFAULT_COMMAND_TIMEOUT_MS})
+  --command-stdout-max-bytes <n>
+                             Max retained stdout bytes per pnpm/git command (default: ${DEFAULT_COMMAND_STDOUT_MAX_BYTES})
+  --command-stderr-max-bytes <n>
+                             Max retained stderr bytes per pnpm/git command (default: ${DEFAULT_COMMAND_STDERR_MAX_BYTES})
   --pipeline-diagnostic-max-count <n>
                              Max structured diagnostics retained per pipeline error (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT})
   --pipeline-diagnostic-text-max-length <n>
@@ -922,6 +966,8 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_GENERATION_LOCALE
   FIGMAPIPE_WORKSPACE_ROUTER
   FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS
+  FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES
+  FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES
   FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT
   FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH
   FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS
@@ -1040,6 +1086,8 @@ const main = async (): Promise<void> => {
       generationLocale: options.generationLocale,
       routerMode: options.routerMode,
       commandTimeoutMs: options.commandTimeoutMs,
+      commandStdoutMaxBytes: options.commandStdoutMaxBytes,
+      commandStderrMaxBytes: options.commandStderrMaxBytes,
       pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount,
       pipelineDiagnosticTextMaxLength: options.pipelineDiagnosticTextMaxLength,
       pipelineDiagnosticDetailsMaxKeys: options.pipelineDiagnosticDetailsMaxKeys,
@@ -1104,6 +1152,12 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Brand theme default: ${options.brandTheme}` });
     logger.log({ level: "info", message: `Generation locale default: ${options.generationLocale}` });
     logger.log({ level: "info", message: `Router mode default: ${options.routerMode}` });
+    logger.log({
+      level: "info",
+      message:
+        `Command output caps: stdout=${options.commandStdoutMaxBytes}, ` +
+        `stderr=${options.commandStderrMaxBytes}`
+    });
     logger.log({
       level: "info",
       message:

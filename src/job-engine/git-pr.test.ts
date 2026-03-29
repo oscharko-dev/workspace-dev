@@ -65,6 +65,8 @@ test("executePersistedGitPr loads persisted inputs and stores gitPrStatus", asyn
     }
   });
 
+  let forwardedCommandStdoutMaxBytes: number | undefined;
+  let forwardedCommandStderrMaxBytes: number | undefined;
   const gitPrStatus = await executePersistedGitPr({
     artifactStore,
     input: {
@@ -77,17 +79,23 @@ test("executePersistedGitPr loads persisted inputs and stores gitPrStatus", asyn
     jobId: "job-1",
     jobDir,
     commandTimeoutMs: 1_000,
+    commandStdoutMaxBytes: 8_192,
+    commandStderrMaxBytes: 16_384,
     onLog: () => {
       // no-op
     },
     deps: {
-      runGitPrFlowFn: async () => ({
-        status: "executed",
-        prUrl: "https://example.invalid/pr/1",
-        branchName: "feature/test",
-        scopePath: "generated/demo-file",
-        changedFiles: ["generated/demo-file/README.md"]
-      })
+      runGitPrFlowFn: async (input) => {
+        forwardedCommandStdoutMaxBytes = input.commandStdoutMaxBytes;
+        forwardedCommandStderrMaxBytes = input.commandStderrMaxBytes;
+        return {
+          status: "executed",
+          prUrl: "https://example.invalid/pr/1",
+          branchName: "feature/test",
+          scopePath: "generated/demo-file",
+          changedFiles: ["generated/demo-file/README.md"]
+        };
+      }
     }
   });
 
@@ -102,6 +110,8 @@ test("executePersistedGitPr loads persisted inputs and stores gitPrStatus", asyn
   const reloadedStore = new StageArtifactStore({ jobDir });
   const storedStatus = await reloadedStore.getValue(STAGE_ARTIFACT_KEYS.gitPrStatus);
   assert.deepEqual(storedStatus, gitPrStatus);
+  assert.equal(forwardedCommandStdoutMaxBytes, 8_192);
+  assert.equal(forwardedCommandStderrMaxBytes, 16_384);
 });
 
 test("runGitPrFlowWithDeps validates repo configuration early", async () => {
@@ -252,6 +262,94 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
   assert.equal(result.prUrl, undefined);
   assert.equal(result.changedFiles.length, 1);
   assert.ok(logs.some((entry) => entry.includes("[REDACTED]")));
+});
+
+test("runGitPrFlowWithDeps forwards deterministic output capture keys to git commands", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-output-capture-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+  const repoDir = path.join(tempRoot, "job", "repo");
+  const captures: Array<{ step: string; key?: string; stdoutMaxBytes?: number; stderrMaxBytes?: number; cwd: string }> = [];
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  const result = await runGitPrFlowWithDeps({
+    input: {
+      figmaFileKey: "demo-file",
+      figmaAccessToken: "pat",
+      enableGitPr: true,
+      repoUrl: "https://github.com/acme/repo.git",
+      repoToken: "secret"
+    },
+    jobId: createJobRecord("cccccccc-dddd-eeee-ffff-000000000000").jobId,
+    generatedProjectDir,
+    jobDir: path.join(tempRoot, "job"),
+    onLog: () => {
+      // no-op
+    },
+    commandStdoutMaxBytes: 4_096,
+    commandStderrMaxBytes: 2_048,
+    deps: {
+      runCommand: async ({ cwd, args, outputCapture }) => {
+        captures.push({
+          step: args[0] ?? "unknown",
+          ...(outputCapture
+            ? {
+                key: outputCapture.key,
+                stdoutMaxBytes: outputCapture.stdoutMaxBytes,
+                stderrMaxBytes: outputCapture.stderrMaxBytes
+              }
+            : {}),
+          cwd
+        });
+        if (args[0] === "ls-remote") {
+          return {
+            success: true,
+            code: 0,
+            stdout: "ref: refs/heads/main HEAD\n",
+            stderr: "",
+            combined: ""
+          };
+        }
+        if (args[0] === "clone") {
+          await mkdir(repoDir, { recursive: true });
+          return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+        }
+        if (args[0] === "diff") {
+          return {
+            success: true,
+            code: 0,
+            stdout: "demo-file-1668f4f0ae/README.md\n",
+            stderr: "",
+            combined: ""
+          };
+        }
+        return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+      },
+      fetchImpl: async () => new Response(JSON.stringify({ html_url: "https://github.com/acme/repo/pull/1" }), { status: 201 })
+    }
+  });
+
+  assert.equal(result.prUrl, "https://github.com/acme/repo/pull/1");
+  assert.deepEqual(
+    captures
+      .filter((entry) => entry.key)
+      .map((entry) => ({
+        step: entry.step,
+        key: entry.key,
+        stdoutMaxBytes: entry.stdoutMaxBytes,
+        stderrMaxBytes: entry.stderrMaxBytes
+      })),
+    [
+      { step: "ls-remote", key: "git.pr.ls-remote", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "clone", key: "git.pr.clone", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "checkout", key: "git.pr.checkout", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "add", key: "git.pr.add", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "diff", key: "git.pr.diff", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "commit", key: "git.pr.commit", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 },
+      { step: "push", key: "git.pr.push", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 }
+    ]
+  );
 });
 
 test("runGitPrFlowWithDeps rejects unsafe targetPath", async () => {
@@ -483,4 +581,72 @@ test("runGitPrFlowWithDeps surfaces deterministic git step failures", async (t) 
       );
     });
   }
+});
+
+test("runGitPrFlowWithDeps includes artifact hints in truncated git-step failures", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-truncated-failure-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  const artifactPath = path.join(tempRoot, "job", ".stage-store", "cmd-output", "git_pr_clone.stdout.log");
+
+  await assert.rejects(
+    () =>
+      runGitPrFlowWithDeps({
+        input: {
+          figmaFileKey: "demo-file",
+          figmaAccessToken: "pat",
+          enableGitPr: true,
+          repoUrl: "https://github.com/acme/repo.git",
+          repoToken: "secret"
+        },
+        jobId: createJobRecord().jobId,
+        generatedProjectDir,
+        jobDir: path.join(tempRoot, "job"),
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "ls-remote") {
+              return {
+                success: true,
+                code: 0,
+                stdout: "ref: refs/heads/main HEAD\n",
+                stderr: "",
+                combined: ""
+              };
+            }
+            if (args[0] === "clone") {
+              return {
+                success: false,
+                code: 1,
+                stdout: "clone failed prefix",
+                stderr: "",
+                combined: [
+                  "clone failed prefix",
+                  `stdout truncated after retaining 64 of 256 bytes; full output stored at ${artifactPath}`
+                ].join("\n"),
+                stdoutMetadata: {
+                  observedBytes: 256,
+                  retainedBytes: 64,
+                  truncated: true,
+                  artifactPath
+                }
+              };
+            }
+            return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+          },
+          fetchImpl: async () => new Response("", { status: 201 })
+        }
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      assert.equal(String((error as Error).message).includes("git clone failed"), true);
+      assert.equal(String((error as Error).message).includes(artifactPath), true);
+      return true;
+    }
+  );
 });

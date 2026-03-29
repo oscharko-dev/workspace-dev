@@ -31,6 +31,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [2.29.0] - 2026-03-29
+
+### Command output cap runtime controls
+
+Added:
+
+- `WorkspaceStartOptions.commandStdoutMaxBytes?: number` (default `1048576`) to configure the retained stdout byte budget per pnpm/git command before deterministic truncation and artifact spooling.
+- `WorkspaceStartOptions.commandStderrMaxBytes?: number` (default `1048576`) to configure the retained stderr byte budget per pnpm/git command before deterministic truncation and artifact spooling.
+
+---
+
 ## [2.28.0] - 2026-03-27
 
 ### Configurable pipeline diagnostic limits

@@ -11,18 +11,10 @@ import {
   type ValidationDiagnostic,
   type ValidationFeedbackResult
 } from "./validation-feedback.js";
-import type { CommandResult } from "./types.js";
+import type { CommandExecutionInput, CommandResult } from "./types.js";
 
 interface ValidationDeps {
-  runCommand: (input: {
-    cwd: string;
-    command: string;
-    args: string[];
-    env?: NodeJS.ProcessEnv;
-    redactions?: string[];
-    timeoutMs?: number;
-    abortSignal?: AbortSignal;
-  }) => Promise<CommandResult>;
+  runCommand: (input: CommandExecutionInput) => Promise<CommandResult>;
   runValidationFeedback: (input: {
     generatedProjectDir: string;
     stage: RetryableValidationStage;
@@ -287,11 +279,52 @@ const toValidationDetailDiagnostics = async ({
   return detailed;
 };
 
+const toCommandCaptureDetails = ({
+  result
+}: {
+  result: CommandResult;
+}): Record<string, unknown> | undefined => {
+  const details: Record<string, unknown> = {};
+
+  if (result.stdoutMetadata) {
+    details.stdout = result.stdoutMetadata;
+  }
+  if (result.stderrMetadata) {
+    details.stderr = result.stderrMetadata;
+  }
+
+  return Object.keys(details).length > 0 ? details : undefined;
+};
+
+const toValidationOutputCapture = ({
+  jobDir,
+  key,
+  commandStdoutMaxBytes,
+  commandStderrMaxBytes
+}: {
+  jobDir: string | undefined;
+  key: string;
+  commandStdoutMaxBytes: number;
+  commandStderrMaxBytes: number;
+}): CommandExecutionInput["outputCapture"] => {
+  if (!jobDir) {
+    return undefined;
+  }
+
+  return {
+    jobDir,
+    key,
+    stdoutMaxBytes: commandStdoutMaxBytes,
+    stderrMaxBytes: commandStderrMaxBytes
+  };
+};
+
 const toValidationPipelineError = async ({
   commandName,
   timeoutSuffix,
   failureHint,
   output,
+  result,
   generatedProjectDir,
   diagnostics,
   summary,
@@ -301,6 +334,7 @@ const toValidationPipelineError = async ({
   timeoutSuffix: string;
   failureHint?: string;
   output: string;
+  result?: CommandResult;
   generatedProjectDir: string;
   diagnostics: ValidationDiagnostic[];
   summary: string | undefined;
@@ -321,6 +355,7 @@ const toValidationPipelineError = async ({
       ...(summary ? { summary } : {}),
       ...(failureHint ? { failureHint } : {}),
       output: output.slice(0, 2000),
+      ...(result ? { outputCapture: toCommandCaptureDetails({ result }) } : {}),
       generatedProjectDir
     }
   };
@@ -345,12 +380,15 @@ const toValidationPipelineError = async ({
 
 export const runProjectValidationWithDeps = async ({
   generatedProjectDir,
+  jobDir,
   onLog,
   enableLintAutofix = true,
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
   commandTimeoutMs = 15 * 60_000,
+  commandStdoutMaxBytes = 1_048_576,
+  commandStderrMaxBytes = 1_048_576,
   installPreferOffline = true,
   skipInstall = false,
   pipelineDiagnosticLimits,
@@ -359,12 +397,15 @@ export const runProjectValidationWithDeps = async ({
   deps
 }: {
   generatedProjectDir: string;
+  jobDir?: string;
   onLog: (message: string) => void;
   enableLintAutofix?: boolean;
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
   commandTimeoutMs?: number;
+  commandStdoutMaxBytes?: number;
+  commandStderrMaxBytes?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
@@ -464,6 +505,16 @@ export const runProjectValidationWithDeps = async ({
         command: "pnpm",
         args: installCommand.args,
         ...(installCommand.timeoutMs ? { timeoutMs: installCommand.timeoutMs } : {}),
+        ...(jobDir
+          ? {
+              outputCapture: toValidationOutputCapture({
+                jobDir,
+                key: "validate.project.install",
+                commandStdoutMaxBytes,
+                commandStderrMaxBytes
+              }) as NonNullable<CommandExecutionInput["outputCapture"]>
+            }
+          : {}),
         ...(abortSignal ? { abortSignal } : {})
       });
       if (installResult.canceled) {
@@ -471,6 +522,7 @@ export const runProjectValidationWithDeps = async ({
       }
       if (!installResult.success) {
         const timeoutSuffix = installResult.timedOut ? " (command timeout)" : "";
+        const outputCaptureDetails = toCommandCaptureDetails({ result: installResult });
         throw createPipelineError({
           code: "E_VALIDATE_PROJECT",
           stage: "validate.project",
@@ -485,7 +537,8 @@ export const runProjectValidationWithDeps = async ({
               severity: "error",
               details: {
                 command: installCommand.name,
-                output: installResult.combined.slice(0, 2000)
+                output: installResult.combined.slice(0, 2000),
+                ...(outputCaptureDetails ? { outputCapture: outputCaptureDetails } : {})
               }
             }
           ]
@@ -519,6 +572,16 @@ export const runProjectValidationWithDeps = async ({
           args: command.args,
           ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
           ...(command.env ? { env: command.env } : {}),
+          ...(jobDir
+            ? {
+                outputCapture: toValidationOutputCapture({
+                  jobDir,
+                  key: `validate.project.attempt-${attempt}.${command.name}`,
+                  commandStdoutMaxBytes,
+                  commandStderrMaxBytes
+                }) as NonNullable<CommandExecutionInput["outputCapture"]>
+              }
+            : {}),
           ...(abortSignal ? { abortSignal } : {})
         });
         if (result.canceled) {
@@ -570,6 +633,7 @@ export const runProjectValidationWithDeps = async ({
             commandName: command.name,
             timeoutSuffix,
             output: result.combined,
+            result,
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
             summary: undefined,
@@ -582,6 +646,7 @@ export const runProjectValidationWithDeps = async ({
             commandName: command.name,
             timeoutSuffix: `${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts`,
             output: result.combined,
+            result,
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
             summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`,
@@ -606,6 +671,7 @@ export const runProjectValidationWithDeps = async ({
             timeoutSuffix,
             failureHint: "no auto-corrections were applied",
             output: result.combined,
+            result,
             generatedProjectDir,
             diagnostics: feedback.diagnostics,
             summary: feedback.summary,
@@ -631,12 +697,15 @@ export const runProjectValidationWithDeps = async ({
 
 export const runProjectValidation = async ({
   generatedProjectDir,
+  jobDir,
   onLog,
   enableLintAutofix = true,
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
   commandTimeoutMs = 15 * 60_000,
+  commandStdoutMaxBytes = 1_048_576,
+  commandStderrMaxBytes = 1_048_576,
   installPreferOffline = true,
   skipInstall = false,
   pipelineDiagnosticLimits,
@@ -644,12 +713,15 @@ export const runProjectValidation = async ({
   seedNodeModulesDir
 }: {
   generatedProjectDir: string;
+  jobDir?: string;
   onLog: (message: string) => void;
   enableLintAutofix?: boolean;
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
   commandTimeoutMs?: number;
+  commandStdoutMaxBytes?: number;
+  commandStderrMaxBytes?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
@@ -658,12 +730,15 @@ export const runProjectValidation = async ({
 }): Promise<void> => {
   return await runProjectValidationWithDeps({
     generatedProjectDir,
+    ...(jobDir ? { jobDir } : {}),
     onLog,
     enableLintAutofix,
     enablePerfValidation,
     enableUiValidation,
     enableUnitTestValidation,
     commandTimeoutMs,
+    commandStdoutMaxBytes,
+    commandStderrMaxBytes,
     installPreferOffline,
     skipInstall,
     ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),

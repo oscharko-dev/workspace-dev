@@ -56,11 +56,14 @@ export const createValidateProjectService = ({
       const generatedProjectDir = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.generatedProject);
       await runProjectValidationFn({
         generatedProjectDir,
+        jobDir: context.paths.jobDir,
         enableLintAutofix: isLintAutofixEnabledFn(),
         enablePerfValidation: isPerfValidationEnabledFn(),
         enableUiValidation: context.runtime.enableUiValidation,
         enableUnitTestValidation: context.runtime.enableUnitTestValidation,
         commandTimeoutMs: context.runtime.commandTimeoutMs,
+        commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,
+        commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
         installPreferOffline: context.runtime.installPreferOffline,
         skipInstall: context.runtime.skipInstall,
         pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,

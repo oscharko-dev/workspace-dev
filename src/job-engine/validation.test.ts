@@ -73,6 +73,73 @@ test("runProjectValidationWithDeps executes deterministic pnpm command sequence"
   ]);
 });
 
+test("runProjectValidationWithDeps forwards output capture settings and abort signal", async () => {
+  const abortController = new AbortController();
+  const captures: Array<{
+    command: string;
+    outputCapture?: {
+      jobDir: string;
+      key: string;
+      stdoutMaxBytes: number;
+      stderrMaxBytes: number;
+    };
+    abortSignal?: AbortSignal;
+  }> = [];
+
+  await runProjectValidationWithDeps({
+    generatedProjectDir: "/tmp/generated-project",
+    jobDir: "/tmp/workspace-dev-job",
+    commandStdoutMaxBytes: 4_096,
+    commandStderrMaxBytes: 8_192,
+    abortSignal: abortController.signal,
+    onLog: () => {
+      // no-op
+    },
+    deps: {
+      runCommand: async ({ args, outputCapture, abortSignal: receivedAbortSignal }) => {
+        captures.push({
+          command: args.join(" "),
+          ...(outputCapture
+            ? {
+                outputCapture: {
+                  jobDir: outputCapture.jobDir,
+                  key: outputCapture.key,
+                  stdoutMaxBytes: outputCapture.stdoutMaxBytes,
+                  stderrMaxBytes: outputCapture.stderrMaxBytes
+                }
+              }
+            : {}),
+          ...(receivedAbortSignal ? { abortSignal: receivedAbortSignal } : {})
+        });
+        return {
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        };
+      }
+    }
+  });
+
+  assert.deepEqual(
+    captures.map((entry) => entry.outputCapture?.key),
+    [
+      "validate.project.install",
+      "validate.project.attempt-1.lint-autofix",
+      "validate.project.attempt-1.lint",
+      "validate.project.attempt-1.typecheck",
+      "validate.project.attempt-1.build"
+    ]
+  );
+  for (const capture of captures) {
+    assert.equal(capture.outputCapture?.jobDir, "/tmp/workspace-dev-job");
+    assert.equal(capture.outputCapture?.stdoutMaxBytes, 4_096);
+    assert.equal(capture.outputCapture?.stderrMaxBytes, 8_192);
+    assert.equal(capture.abortSignal, abortController.signal);
+  }
+});
+
 test("runProjectValidationWithDeps can disable lint autofix", async () => {
   const calls: string[] = [];
 
@@ -733,6 +800,93 @@ test("runProjectValidationWithDeps emits structured diagnostics for failed retry
         assert.equal(typed.diagnostics?.[1]?.code, "E_VALIDATE_PROJECT_DETAIL");
         assert.equal(typed.diagnostics?.[1]?.details?.filePath, sourceFile);
         assert.equal(String(typed.diagnostics?.[1]?.details?.codeContext ?? "").includes("1: const unused = 1;"), true);
+        return true;
+      }
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("runProjectValidationWithDeps preserves bounded truncation diagnostics for failed commands", async () => {
+  const artifactPath = "/tmp/workspace-dev-job/.stage-store/cmd-output/validate_project_attempt-1_lint.stdout.log";
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-truncated-output-"));
+
+  await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
+
+  try {
+    await assert.rejects(
+      () =>
+        runProjectValidationWithDeps({
+          generatedProjectDir,
+          jobDir: "/tmp/workspace-dev-job",
+          skipInstall: true,
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async ({ args }) => {
+              if (args[0] === "lint" && args.length === 1) {
+                return {
+                  success: false,
+                  code: 1,
+                  stdout: "lint failed prefix",
+                  stderr: "",
+                  combined: [
+                    "lint failed prefix",
+                    `stdout truncated after retaining 64 of 256 bytes; full output stored at ${artifactPath}`
+                  ].join("\n"),
+                  stdoutMetadata: {
+                    observedBytes: 256,
+                    retainedBytes: 64,
+                    truncated: true,
+                    artifactPath
+                  },
+                  stderrMetadata: {
+                    observedBytes: 0,
+                    retainedBytes: 0,
+                    truncated: false
+                  }
+                };
+              }
+              return {
+                success: true,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                combined: ""
+              };
+            },
+            runValidationFeedback: async () => ({
+              diagnostics: [],
+              changedFiles: [],
+              correctionsApplied: 0,
+              fileCorrections: [],
+              summary: "lint failed"
+            })
+          }
+        }),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        const typed = error as Error & {
+          diagnostics?: Array<{
+            details?: Record<string, unknown>;
+          }>;
+        };
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(artifactPath), true);
+        assert.deepEqual(typed.diagnostics?.[0]?.details?.outputCapture, {
+          stdout: {
+            observedBytes: 256,
+            retainedBytes: 64,
+            truncated: true,
+            artifactPath
+          },
+          stderr: {
+            observedBytes: 0,
+            retainedBytes: 0,
+            truncated: false
+          }
+        });
         return true;
       }
     );
