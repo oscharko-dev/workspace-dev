@@ -604,6 +604,7 @@ const initializeGenerateArtifactsStatePhase = ({
 interface GenerateArtifactsBasePhase {
   iconResolver: IconFallbackResolver;
   themeComponentDefaults: ThemeComponentDefaults | undefined;
+  themeFiles: StreamingArtifactFile[];
 }
 
 const runGenerateArtifactsBasePhase = async ({
@@ -634,9 +635,10 @@ const runGenerateArtifactsBasePhase = async ({
     ir,
     generationLocale: resolvedGenerationLocale.locale
   });
+  const tokensContent = JSON.stringify(ir.tokens, null, 2);
   await runtimeAdapters.writeTextFile({
     filePath: path.join(projectDir, "src", "theme", "tokens.json"),
-    content: JSON.stringify(ir.tokens, null, 2)
+    content: tokensContent
   });
   generatedPaths.add("src/theme/tokens.json");
   const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults, resolvedGenerationLocale.locale);
@@ -648,9 +650,16 @@ const runGenerateArtifactsBasePhase = async ({
   const deterministicScreenSkeleton = makeScreenSkeletonFile();
   await runtimeAdapters.writeGeneratedFile(projectDir, deterministicScreenSkeleton);
   generatedPaths.add(deterministicScreenSkeleton.path);
+  const themeFiles: StreamingArtifactFile[] = [
+    { path: "src/theme/tokens.json", content: tokensContent },
+    { path: deterministicTheme.path, content: deterministicTheme.content },
+    { path: deterministicErrorBoundary.path, content: deterministicErrorBoundary.content },
+    { path: deterministicScreenSkeleton.path, content: deterministicScreenSkeleton.content }
+  ];
   return {
     iconResolver,
-    themeComponentDefaults
+    themeComponentDefaults,
+    themeFiles
   };
 };
 
@@ -764,7 +773,7 @@ export async function* generateArtifactsStreaming(
   });
 
   // ── Phase 1: Theme & shared base files (yield immediately) ────────────
-  const { iconResolver, themeComponentDefaults } = await runGenerateArtifactsBasePhase({
+  const { iconResolver, themeComponentDefaults, themeFiles } = await runGenerateArtifactsBasePhase({
     projectDir,
     ir,
     iconMapFilePath,
@@ -774,10 +783,6 @@ export async function* generateArtifactsStreaming(
     onLog
   });
 
-  const themeFiles: StreamingArtifactFile[] = [];
-  for (const p of generatedPaths) {
-    themeFiles.push({ path: p, content: "" });
-  }
   yield { type: "theme", files: themeFiles };
 
   // ── Phase 2: Per-screen generation in parallel batches ────────────────

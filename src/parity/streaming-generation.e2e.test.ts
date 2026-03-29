@@ -347,3 +347,86 @@ test("E2E: streaming generator return value has valid structure", { skip: skipRe
   assert.ok(Array.isArray(result.llmWarnings), "llmWarnings must be an array");
   assert.ok(typeof result.mappingDiagnostics === "object", "mappingDiagnostics must be an object");
 });
+
+// ── Theme event content verification (issue #663) ────────────────────────────
+
+test("E2E: theme event files carry real content, not empty-string placeholders", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-stream-theme-content-"));
+
+  const generator = generateArtifactsStreaming({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  let themeEvent: StreamingArtifactEvent | undefined;
+  let iterResult = await generator.next();
+  while (!iterResult.done) {
+    if (iterResult.value.type === "theme") {
+      themeEvent = iterResult.value;
+    }
+    iterResult = await generator.next();
+  }
+
+  assert.ok(themeEvent, "Must yield a theme event");
+  assert.equal(themeEvent.type, "theme");
+
+  // Type narrowing for theme event
+  if (themeEvent.type !== "theme") {
+    throw new Error("unreachable");
+  }
+
+  assert.ok(themeEvent.files.length > 0, "Theme event must contain at least one file");
+
+  for (const file of themeEvent.files) {
+    assert.ok(file.path.length > 0, `Theme file must have a non-empty path`);
+    assert.ok(file.content.length > 0, `Theme file '${file.path}' must have non-empty content`);
+
+    // Verify the streamed content matches what was written to disk
+    const diskContent = await readFile(path.join(projectDir, file.path), "utf-8");
+    assert.equal(
+      file.content,
+      diskContent,
+      `Theme file '${file.path}' streamed content must match disk content`
+    );
+  }
+});
+
+// ── All event types carry content (issue #663) ───────────────────────────────
+
+test("E2E: no streamed event claims file content while providing empty strings", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-e2e-stream-no-empty-"));
+
+  const generator = generateArtifactsStreaming({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => { /* no-op */ }
+  });
+
+  let iterResult = await generator.next();
+  while (!iterResult.done) {
+    const event = iterResult.value;
+    if (event.type === "theme") {
+      for (const file of event.files) {
+        assert.ok(file.content.length > 0, `theme file '${file.path}' must not have empty content`);
+      }
+    } else if (event.type === "screen") {
+      for (const file of event.files) {
+        assert.ok(file.content.length > 0, `screen file '${file.path}' must not have empty content`);
+      }
+    } else if (event.type === "app") {
+      assert.ok(event.file.content.length > 0, `app file '${event.file.path}' must not have empty content`);
+    } else if (event.type === "metrics") {
+      assert.ok(event.file.content.length > 0, `metrics file '${event.file.path}' must not have empty content`);
+    }
+    iterResult = await generator.next();
+  }
+});
