@@ -6,54 +6,77 @@
  * (OS-assigned), and reports the resolved port back to the parent.
  *
  * Protocol:
- *   Parent → Child:  { type: "start", config: { host, workDir, targetPath, logFormat } }
+ *   Parent → Child:  { type: "start", config: { host, workDir, logFormat? } }
  *   Child  → Parent: { type: "ready", port: number, instanceId: string }
  *   Child  → Parent: { type: "error", message: string }
  *   Parent → Child:  { type: "shutdown" }
  */
 
 import { randomUUID } from "node:crypto";
-import { createWorkspaceServer } from "./server.js";
+import { createWorkspaceServer, type WorkspaceServer } from "./server.js";
+import {
+  isIsolatedChildShutdownMessage,
+  isIsolatedChildStartMessage
+} from "./isolation-startup-contract.js";
 
 const instanceId = randomUUID();
+let activeServer: WorkspaceServer | undefined;
+let hasStarted = false;
+
+const shutdown = async (): Promise<void> => {
+  const server = activeServer;
+  activeServer = undefined;
+
+  if (!server) {
+    process.exit(0);
+    return;
+  }
+
+  try {
+    await server.app.close();
+  } catch {
+    // Ignore shutdown errors during child teardown.
+  }
+
+  process.exit(0);
+};
 
 const handleMessage = async (msg: unknown): Promise<void> => {
-  const message = msg as Record<string, unknown>;
+  if (isIsolatedChildShutdownMessage(msg)) {
+    await shutdown();
+    return;
+  }
 
-  if (message.type === "start") {
-    const config = message.config as Record<string, unknown>;
-    const host = typeof config.host === "string" ? config.host : "127.0.0.1";
-    const logFormat =
-      config.logFormat === "text" || config.logFormat === "json" ? config.logFormat : undefined;
+  if (!isIsolatedChildStartMessage(msg)) {
+    return;
+  }
 
-    try {
-      const server = await createWorkspaceServer({
-        host,
-        port: 0,
-        ...(logFormat ? { logFormat } : {})
-      });
+  if (hasStarted) {
+    process.send?.({ type: "error", message: "Isolated workspace server already started." });
+    process.exit(1);
+    return;
+  }
 
-      // Report the OS-assigned port back to parent
-      process.send?.({
-        type: "ready",
-        port: server.port,
-        instanceId
-      });
+  hasStarted = true;
+  const { host, workDir, logFormat } = msg.config;
 
-      // Listen for shutdown signal
-      process.on("message", (shutdownMsg: unknown) => {
-        const sm = shutdownMsg as Record<string, unknown>;
-        if (sm.type === "shutdown") {
-          void server.app.close().then(() => {
-            process.exit(0);
-          });
-        }
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      process.send?.({ type: "error", message });
-      process.exit(1);
-    }
+  try {
+    activeServer = await createWorkspaceServer({
+      host,
+      port: 0,
+      workDir,
+      ...(logFormat ? { logFormat } : {})
+    });
+
+    process.send?.({
+      type: "ready",
+      port: activeServer.port,
+      instanceId
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.send?.({ type: "error", message });
+    process.exit(1);
   }
 };
 
@@ -63,7 +86,7 @@ process.on("message", (message: unknown) => {
 
 // Handle parent disconnect (parent crashed or was killed)
 process.on("disconnect", () => {
-  process.exit(0);
+  void shutdown();
 });
 
 // Signal readiness to receive config

@@ -129,7 +129,11 @@ export interface WorkspaceStartOptions {
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
   fetchImpl?: typeof fetch;
-  /** Reserved for project-level isolation helpers. */
+  /**
+   * @deprecated Reserved for backward compatibility with callers that reuse
+   * submit-time option objects. Isolated child startup ignores this field and
+   * it does not define any server-start target-root behavior.
+   */
   targetPath?: string;
 }
 

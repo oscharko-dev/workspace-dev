@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test, { afterEach } from "node:test";
 import {
+  buildIsolatedChildProcessEnv,
   createProjectInstance,
   removeProjectInstance,
   removeAllInstances,
@@ -12,10 +16,28 @@ import {
   unregisterIsolationProcessCleanup
 } from "./isolation.js";
 
+const temporaryIsolationRoots = new Set<string>();
+
+const createIsolationBaseDir = async (): Promise<string> => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-isolation-"));
+  temporaryIsolationRoots.add(rootDir);
+  return rootDir;
+};
+
+const hasTsxRuntimeArg = (value: string): boolean => {
+  return value === "tsx" || value.includes("/tsx/") || value.includes("\\tsx\\");
+};
+
 // Clean up after each test to avoid leaked processes
 afterEach(async () => {
   await removeAllInstances();
   unregisterIsolationProcessCleanup();
+  await Promise.all(
+    [...temporaryIsolationRoots].map(async (rootDir) => {
+      await rm(rootDir, { recursive: true, force: true });
+    })
+  );
+  temporaryIsolationRoots.clear();
 });
 
 test("isolation: two instances run in parallel on different ports", async () => {
@@ -46,10 +68,7 @@ test("isolation: entrypoint resolver supports dist and source execution modes", 
   assert.equal(existsSync(resolved.path), true);
 
   if (resolved.path.endsWith(".ts")) {
-    const hasTsxImport = resolved.execArgv.some(
-      (arg, index) => arg === "--import" && resolved.execArgv[index + 1] === "tsx"
-    );
-    assert.equal(hasTsxImport, true);
+    assert.equal(resolved.execArgv.some((arg) => hasTsxRuntimeArg(arg)), true);
     return;
   }
 
@@ -57,7 +76,8 @@ test("isolation: entrypoint resolver supports dist and source execution modes", 
 });
 
 test("isolation: /workspace endpoint returns correct port per instance", async () => {
-  const inst = await createProjectInstance("project-gamma", { workDir: "/tmp" });
+  const baseDir = await createIsolationBaseDir();
+  const inst = await createProjectInstance("project-gamma", { workDir: baseDir });
 
   const res = await fetch(`http://${inst.host}:${inst.port}/workspace`);
   assert.equal(res.status, 200);
@@ -67,9 +87,10 @@ test("isolation: /workspace endpoint returns correct port per instance", async (
   assert.equal(body.host, inst.host);
   // Port 0 was used for creation, but the OS assigned a real port
   assert.equal(typeof body.port, "number");
+  assert.equal(body.outputRoot, path.resolve(inst.workDir, ".workspace-dev"));
 });
 
-test("isolation: instance boot succeeds when logFormat is json", async () => {
+test("isolation: restricted child env still boots when logFormat is json", async () => {
   const inst = await createProjectInstance("project-gamma-json", {
     workDir: "/tmp",
     logFormat: "json"
@@ -77,6 +98,49 @@ test("isolation: instance boot succeeds when logFormat is json", async () => {
 
   const res = await fetch(`http://${inst.host}:${inst.port}/healthz`);
   assert.equal(res.status, 200);
+});
+
+test("isolation: deprecated targetPath is ignored during isolated child startup", async () => {
+  const baseDir = await createIsolationBaseDir();
+  const inst = await createProjectInstance("project-targetpath", {
+    workDir: baseDir,
+    targetPath: "legacy-sync-target"
+  });
+
+  const res = await fetch(`http://${inst.host}:${inst.port}/workspace`);
+  assert.equal(res.status, 200);
+
+  const body = await res.json() as Record<string, unknown>;
+  assert.equal(body.outputRoot, path.resolve(inst.workDir, ".workspace-dev"));
+});
+
+test("isolation: child env allowlist excludes parent-only secrets", () => {
+  const childEnv = buildIsolatedChildProcessEnv({
+    parentEnv: {
+      NODE_ENV: "development",
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/tester",
+      USER: "tester",
+      LANG: "en_US.UTF-8",
+      TMPDIR: "/tmp/workspace-dev",
+      PNPM_HOME: "/Users/tester/.local/share/pnpm",
+      SSL_CERT_FILE: "/etc/ssl/certs/custom.pem",
+      CUSTOM_SECRET: "super-secret-token",
+      CI: "true",
+      HTTPS_PROXY: "http://proxy.internal:8080"
+    }
+  });
+
+  assert.deepEqual(childEnv, {
+    NODE_ENV: "production",
+    PATH: "/usr/bin:/bin",
+    HOME: "/Users/tester",
+    USER: "tester",
+    LANG: "en_US.UTF-8",
+    TMPDIR: "/tmp/workspace-dev",
+    PNPM_HOME: "/Users/tester/.local/share/pnpm",
+    SSL_CERT_FILE: "/etc/ssl/certs/custom.pem"
+  });
 });
 
 test("isolation: removeProjectInstance frees the port", async () => {
