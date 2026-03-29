@@ -506,7 +506,7 @@ export const runCommand = async ({
 
     abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-    child.stdout?.on("data", (chunk: Buffer | string) => {
+    child.stdout.on("data", (chunk: Buffer | string) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       consumeDecodedText({
         state: stdoutState,
@@ -514,7 +514,7 @@ export const runCommand = async ({
       });
     });
 
-    child.stderr?.on("data", (chunk: Buffer | string) => {
+    child.stderr.on("data", (chunk: Buffer | string) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       consumeDecodedText({
         state: stderrState,
