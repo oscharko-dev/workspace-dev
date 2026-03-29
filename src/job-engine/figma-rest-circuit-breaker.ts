@@ -198,6 +198,7 @@ export const createFigmaRestCircuitBreaker = ({
             if (!transition.committed) {
               continue;
             }
+            // Re-enter the loop to evaluate the new half-open state.
             continue;
           }
 
