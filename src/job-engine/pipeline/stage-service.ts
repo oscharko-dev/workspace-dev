@@ -5,6 +5,7 @@ import type { StageRuntimeContext } from "./context.js";
 export interface StageArtifactContract {
   reads?: StageArtifactKey[];
   writes?: StageArtifactKey[];
+  skipWrites?: StageArtifactKey[];
   optionalWrites?: StageArtifactKey[];
 }
 

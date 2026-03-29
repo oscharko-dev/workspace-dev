@@ -139,7 +139,8 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       },
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiff],
-        writes: [STAGE_ARTIFACT_KEYS.gitPrStatus]
+        writes: [STAGE_ARTIFACT_KEYS.gitPrStatus],
+        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
       }
     }
   ];
@@ -214,7 +215,8 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
         });
       },
       artifacts: {
-        writes: [STAGE_ARTIFACT_KEYS.gitPrStatus]
+        writes: [STAGE_ARTIFACT_KEYS.gitPrStatus],
+        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
       }
     }
   ];

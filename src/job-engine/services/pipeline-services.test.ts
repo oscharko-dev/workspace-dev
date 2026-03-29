@@ -6,6 +6,7 @@ import test from "node:test";
 import type { PipelineExecutionContext } from "../pipeline/context.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { STAGE_ORDER } from "../stage-state.js";
 import { buildRegenerationPipelinePlan, buildSubmissionPipelinePlan } from "./pipeline-services.js";
 
 const toStageNames = (plan: ReturnType<typeof buildSubmissionPipelinePlan>): string[] => {
@@ -97,21 +98,14 @@ const createPlanContext = async (
 
 test("submission pipeline plan keeps all seven stages in canonical order", () => {
   const plan = buildSubmissionPipelinePlan();
-  assert.deepEqual(toStageNames(plan), [
-    "figma.source",
-    "ir.derive",
-    "template.prepare",
-    "codegen.generate",
-    "validate.project",
-    "repro.export",
-    "git.pr"
-  ]);
+  assert.deepEqual(toStageNames(plan), STAGE_ORDER);
 });
 
 test("submission pipeline plan declares diff ownership across codegen, validate, and git.pr", async () => {
   const plan = buildSubmissionPipelinePlan();
   const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
   const validateEntry = plan.find((entry) => entry.service.stageName === "validate.project");
+  const reproExportEntry = plan.find((entry) => entry.service.stageName === "repro.export");
   const gitPrEntry = plan.find((entry) => entry.service.stageName === "git.pr");
   const context = await createPlanContext({
     input: {
@@ -143,6 +137,8 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.generationDiff
   ]);
+  assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
+  assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),
     "Git/PR flow disabled by request."
@@ -189,19 +185,12 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
   });
   const figmaEntry = plan.find((entry) => entry.service.stageName === "figma.source");
   const irEntry = plan.find((entry) => entry.service.stageName === "ir.derive");
+  const reproExportEntry = plan.find((entry) => entry.service.stageName === "repro.export");
   const gitPrEntry = plan.find((entry) => entry.service.stageName === "git.pr");
   const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
   const validateEntry = plan.find((entry) => entry.service.stageName === "validate.project");
 
-  assert.deepEqual(toStageNames(plan), [
-    "figma.source",
-    "ir.derive",
-    "template.prepare",
-    "codegen.generate",
-    "validate.project",
-    "repro.export",
-    "git.pr"
-  ]);
+  assert.deepEqual(toStageNames(plan), STAGE_ORDER);
   assert.equal(
     figmaEntry?.shouldSkip?.(context),
     "Reusing source from job 'source-1'."
@@ -227,4 +216,6 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     gitPrEntry?.shouldSkip?.(context),
     "Git/PR flow not applicable for regeneration jobs."
   );
+  assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
+  assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
 });

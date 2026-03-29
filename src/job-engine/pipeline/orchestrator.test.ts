@@ -5,12 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { createPipelineError } from "../errors.js";
 import { resolveRuntimeSettings } from "../runtime.js";
-import { createInitialStages, nowIso } from "../stage-state.js";
+import { createInitialStages, nowIso, STAGE_ORDER } from "../stage-state.js";
 import type { JobRecord, WorkspacePipelineError } from "../types.js";
 import type { PipelineExecutionContext } from "./context.js";
 import { StageArtifactStore } from "./artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
-import { PipelineCancellationError, PipelineOrchestrator } from "./orchestrator.js";
+import { PipelineCancellationError, PipelineOrchestrator, type PipelineStagePlanEntry } from "./orchestrator.js";
 import { syncPublicJobProjection } from "./public-job-projection.js";
 
 const createContext = async (): Promise<PipelineExecutionContext> => {
@@ -109,6 +109,28 @@ const createOrchestrator = (): PipelineOrchestrator => {
   });
 };
 
+type CanonicalPlanOverride = Omit<PipelineStagePlanEntry<unknown>, "service"> & {
+  execute?: PipelineStagePlanEntry<unknown>["service"]["execute"];
+};
+
+const createCanonicalPlan = (
+  overrides: Partial<Record<(typeof STAGE_ORDER)[number], CanonicalPlanOverride>> = {}
+): PipelineStagePlanEntry<unknown>[] => {
+  return STAGE_ORDER.map((stageName) => {
+    const override = overrides[stageName];
+    return {
+      service: {
+        stageName,
+        execute: override?.execute ?? (async () => {})
+      },
+      ...(override?.artifacts ? { artifacts: override.artifacts } : {}),
+      ...(override?.resolveInput ? { resolveInput: override.resolveInput } : {}),
+      ...(override?.shouldSkip ? { shouldSkip: override.shouldSkip } : {}),
+      ...(override?.onSkipped ? { onSkipped: override.onSkipped } : {})
+    };
+  });
+};
+
 test("PipelineOrchestrator runs stages in order and honors plan-level skip rules", async () => {
   const context = await createContext();
   const events: string[] = [];
@@ -116,39 +138,151 @@ test("PipelineOrchestrator runs stages in order and honors plan-level skip rules
 
   await orchestrator.execute({
     context,
-    plan: [
-      {
-        service: {
-          stageName: "figma.source",
-          execute: async () => {
-            events.push("figma");
-          }
+    plan: createCanonicalPlan({
+      "figma.source": {
+        execute: async () => {
+          events.push("figma");
         }
       },
-      {
-        service: {
-          stageName: "ir.derive",
-          execute: async () => {
-            events.push("ir");
-          }
+      "ir.derive": {
+        execute: async () => {
+          events.push("ir");
         },
         shouldSkip: () => "skip ir"
       },
-      {
-        service: {
-          stageName: "template.prepare",
-          execute: async () => {
-            events.push("template");
-          }
+      "template.prepare": {
+        execute: async () => {
+          events.push("template");
         }
       }
-    ]
+    })
   });
 
   assert.deepEqual(events, ["figma", "template"]);
   assert.equal(context.job.stages.find((stage) => stage.name === "figma.source")?.status, "completed");
   assert.equal(context.job.stages.find((stage) => stage.name === "ir.derive")?.status, "skipped");
   assert.equal(context.job.stages.find((stage) => stage.name === "template.prepare")?.status, "completed");
+});
+
+test("PipelineOrchestrator rejects duplicate stages before execution starts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  plan[2] = {
+    service: {
+      stageName: "ir.derive",
+      execute: async () => {}
+    }
+  };
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
+      (error as WorkspacePipelineError).stage === "template.prepare" &&
+      error.message.includes("duplicates stage 'ir.derive'")
+  );
+});
+
+test("PipelineOrchestrator rejects out-of-order stage plans before execution starts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  const templateStage = plan[2];
+  const codegenStage = plan[3];
+  if (!templateStage || !codegenStage) {
+    throw new Error("Canonical stage plan is incomplete.");
+  }
+  plan[2] = codegenStage;
+  plan[3] = templateStage;
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
+      (error as WorkspacePipelineError).stage === "template.prepare" &&
+      error.message.includes("out of canonical order")
+  );
+});
+
+test("PipelineOrchestrator rejects invalid stage names before execution starts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  plan[1] = {
+    service: {
+      stageName: "invalid.stage" as unknown as (typeof STAGE_ORDER)[number],
+      execute: async () => {}
+    }
+  };
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
+      (error as WorkspacePipelineError).stage === "ir.derive" &&
+      error.message.includes("invalid stage 'invalid.stage'")
+  );
+});
+
+test("PipelineOrchestrator rejects missing canonical stages before execution starts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  plan.pop();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
+      (error as WorkspacePipelineError).stage === "git.pr" &&
+      error.message.includes("missing canonical stage 'git.pr'")
+  );
+});
+
+test("PipelineOrchestrator rejects unexpected extra stages before execution starts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  plan.push({
+    service: {
+      stageName: "git.pr",
+      execute: async () => {}
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
+      (error as WorkspacePipelineError).stage === "git.pr" &&
+      error.message.includes("unexpected extra stage 'git.pr'")
+  );
 });
 
 test("PipelineOrchestrator projects artifact-backed public fields after each stage", async () => {
@@ -158,40 +292,34 @@ test("PipelineOrchestrator projects artifact-backed public fields after each sta
 
   await orchestrator.execute({
     context,
-    plan: [
-      {
-        service: {
-          stageName: "codegen.generate",
-          execute: async (_input, stageContext) => {
-            await stageContext.artifactStore.setPath({
-              key: STAGE_ARTIFACT_KEYS.generatedProject,
-              stage: "codegen.generate",
-              absolutePath: context.paths.generatedProjectDir
-            });
-            await stageContext.artifactStore.setValue({
-              key: STAGE_ARTIFACT_KEYS.generationDiff,
-              stage: "codegen.generate",
-              value: {
-                summary: "diff ready"
-              }
-            });
-            await stageContext.artifactStore.setPath({
-              key: STAGE_ARTIFACT_KEYS.generationDiffFile,
-              stage: "codegen.generate",
-              absolutePath: diffPath
-            });
-          }
+    plan: createCanonicalPlan({
+      "codegen.generate": {
+        execute: async (_input, stageContext) => {
+          await stageContext.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.generatedProject,
+            stage: "codegen.generate",
+            absolutePath: context.paths.generatedProjectDir
+          });
+          await stageContext.artifactStore.setValue({
+            key: STAGE_ARTIFACT_KEYS.generationDiff,
+            stage: "codegen.generate",
+            value: {
+              summary: "diff ready"
+            }
+          });
+          await stageContext.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.generationDiffFile,
+            stage: "codegen.generate",
+            absolutePath: diffPath
+          });
         },
         artifacts: {
           writes: [STAGE_ARTIFACT_KEYS.generatedProject]
         }
       },
-      {
-        service: {
-          stageName: "git.pr",
-          execute: async () => {
-            // no-op; skip handler persists public git PR status
-          }
+      "git.pr": {
+        execute: async () => {
+          // no-op; skip handler persists public git PR status
         },
         shouldSkip: () => "Git/PR flow disabled by request.",
         onSkipped: async (executionContext, reason) => {
@@ -205,10 +333,10 @@ test("PipelineOrchestrator projects artifact-backed public fields after each sta
           });
         },
         artifacts: {
-          writes: [STAGE_ARTIFACT_KEYS.gitPrStatus]
+          skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
         }
       }
-    ]
+    })
   });
 
   assert.equal(context.job.artifacts.generatedProjectDir, context.paths.generatedProjectDir);
@@ -229,19 +357,16 @@ test("PipelineOrchestrator rejects missing required read artifacts before stage 
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "codegen.generate",
-              execute: async () => {
-                executed = true;
-              }
+        plan: createCanonicalPlan({
+          "codegen.generate": {
+            execute: async () => {
+              executed = true;
             },
             artifacts: {
               reads: [STAGE_ARTIFACT_KEYS.designIr]
             }
           }
-        ]
+        })
       });
     },
     /requires missing artifact 'design\.ir'/
@@ -258,25 +383,52 @@ test("PipelineOrchestrator marks stage failed when a required write artifact is 
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "template.prepare",
-              execute: async () => {
-                // intentionally do not write required artifact
-              }
+        plan: createCanonicalPlan({
+          "template.prepare": {
+            execute: async () => {
+              // intentionally do not write required artifact
             },
             artifacts: {
               writes: [STAGE_ARTIFACT_KEYS.generatedProject]
             }
           }
-        ]
+        })
       });
     },
     /did not persist required artifact 'generated\.project'/
   );
 
   assert.equal(context.job.stages.find((stage) => stage.name === "template.prepare")?.status, "failed");
+});
+
+test("PipelineOrchestrator marks skipped stages failed when required skip artifacts are missing", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "git.pr": {
+            execute: async () => {},
+            shouldSkip: () => "Git/PR flow disabled by request.",
+            onSkipped: async () => {
+              // intentionally do not persist gitPrStatus
+            },
+            artifacts: {
+              skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
+            }
+          }
+        })
+      });
+    },
+    /did not persist required artifact 'git\.pr\.status'/
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "git.pr")?.status, "failed");
+  assert.equal(context.job.stages.find((stage) => stage.name === "git.pr")?.message?.includes("git.pr.status"), true);
+  assert.equal("gitPr" in context.job, false);
 });
 
 test("PipelineOrchestrator marks stage failed on service errors", async () => {
@@ -287,16 +439,13 @@ test("PipelineOrchestrator marks stage failed on service errors", async () => {
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "figma.source",
-              execute: async () => {
-                throw new Error("boom");
-              }
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              throw new Error("boom");
             }
           }
-        ]
+        })
       });
     },
     /boom/
@@ -318,16 +467,13 @@ test("PipelineOrchestrator raises cancellation when stage is canceled before exe
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "figma.source",
-              execute: async () => {
-                // no-op
-              }
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              // no-op
             }
           }
-        ]
+        })
       });
     },
     (error: unknown) => error instanceof PipelineCancellationError && error.stage === "figma.source"
@@ -342,21 +488,18 @@ test("PipelineOrchestrator converts in-flight abort-like errors into pipeline ca
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "validate.project",
-              execute: async () => {
-                context.job.cancellation = {
-                  requestedAt: nowIso(),
-                  requestedBy: "api",
-                  reason: "abort requested during validation"
-                };
-                throw new DOMException("aborted", "AbortError");
-              }
+        plan: createCanonicalPlan({
+          "validate.project": {
+            execute: async () => {
+              context.job.cancellation = {
+                requestedAt: nowIso(),
+                requestedBy: "api",
+                reason: "abort requested during validation"
+              };
+              throw new DOMException("aborted", "AbortError");
             }
           }
-        ]
+        })
       });
     },
     (error: unknown) =>
@@ -374,19 +517,16 @@ test("PipelineOrchestrator preserves explicit service-thrown cancellation errors
     async () => {
       await orchestrator.execute({
         context,
-        plan: [
-          {
-            service: {
-              stageName: "figma.source",
-              execute: async () => {
-                throw new PipelineCancellationError({
-                  stage: "figma.source",
-                  reason: "service canceled"
-                });
-              }
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              throw new PipelineCancellationError({
+                stage: "figma.source",
+                reason: "service canceled"
+              });
             }
           }
-        ]
+        })
       });
     },
     (error: unknown) =>

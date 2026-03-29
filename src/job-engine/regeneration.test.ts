@@ -129,6 +129,45 @@ test("submitRegeneration throws when source job is not completed", async () => {
   engine.cancelJob({ jobId: accepted.jobId });
 });
 
+test("submitJob completes when preview-disabled repro export and git.pr are skipped", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-preview-disabled-skip-contracts-"));
+  const figmaPayload = createLocalFigmaPayload();
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(figmaPayload), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    enableGitPr: false
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: accepted.jobId
+  });
+
+  assert.equal(status.status, "completed", `Job should complete, got: ${status.status} — ${status.error?.message ?? "no error"}`);
+  assert.equal(status.error, undefined);
+  assert.equal(status.gitPr?.status, "skipped");
+  assert.equal(status.stages.find((stage) => stage.name === "repro.export")?.status, "skipped");
+  assert.equal(status.stages.find((stage) => stage.name === "git.pr")?.status, "skipped");
+});
+
 test("submitRegeneration creates a queued job with lineage metadata from a completed source", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-lineage-"));
   const figmaPayload = createLocalFigmaPayload();
