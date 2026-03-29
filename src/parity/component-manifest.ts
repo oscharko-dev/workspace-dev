@@ -26,6 +26,7 @@ export interface ComponentManifest {
 
 const IR_START_PATTERN = /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
 const IR_END_PATTERN = /\{\/\* @ir:end (\S+) \*\/\}/;
+const GENERATED_ARTIFACT_ROOTS = ["src/screens/", "src/components/", "src/context/"] as const;
 
 export function parseIrMarkersFromSource(
   content: string,
@@ -99,7 +100,7 @@ export async function buildComponentManifest({
   const entriesByFile = new Map<string, ComponentManifestEntry[]>();
 
   for (const absolutePath of tsxFiles) {
-    const relativePath = path.relative(projectDir, absolutePath);
+    const relativePath = normalizeManifestFilePath(path.relative(projectDir, absolutePath));
     let content: string;
     try {
       content = await readFile(absolutePath, "utf8");
@@ -129,7 +130,7 @@ export async function buildComponentManifest({
 
     // Gather entries from associated component files (extracted patterns)
     for (const [file, entries] of entriesByFile) {
-      if (file !== screenFile && file.startsWith("src/screens/")) {
+      if (isAssociatedArtifactFile({ file, screenFile })) {
         // Check if any entries reference children of this screen
         for (const entry of entries) {
           if (hasNodeInScreen(screen, entry.irNodeId)) {
@@ -148,6 +149,24 @@ export async function buildComponentManifest({
   }
 
   return { screens: result };
+}
+
+function normalizeManifestFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/");
+}
+
+function isAssociatedArtifactFile({
+  file,
+  screenFile
+}: {
+  file: string;
+  screenFile: string;
+}): boolean {
+  if (file === screenFile) {
+    return false;
+  }
+
+  return GENERATED_ARTIFACT_ROOTS.some((root) => file.startsWith(root));
 }
 
 function hasNodeInScreen(screen: ScreenIR, nodeId: string): boolean {
