@@ -330,3 +330,100 @@ test("figma rest circuit breaker snapshots remain internally consistent under co
     true
   );
 });
+
+test("figma rest circuit breaker recovers correctly after a full open-halfopen-close cycle", () => {
+  let nowMs = 1_000;
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  assert.equal(breaker.getSnapshot().state, "open");
+
+  nowMs += 5_000;
+  breaker.beforeRequest();
+  breaker.recordSuccess();
+
+  assert.equal(breaker.getSnapshot().state, "closed");
+  assert.equal(breaker.getSnapshot().consecutiveFailures, 0);
+
+  const decision = breaker.beforeRequest();
+  assert.equal(decision.allowRequest, true);
+  assert.equal(decision.snapshot.state, "closed");
+});
+
+test("figma rest circuit breaker getSnapshot reflects current state without side effects", () => {
+  let nowMs = 1_000;
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 1,
+    resetTimeoutMs: 5_000,
+    clock: {
+      now: () => nowMs
+    }
+  });
+
+  const before = breaker.getSnapshot();
+  assert.equal(before.state, "closed");
+  assert.equal(before.probeInFlight, false);
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  const afterOpen = breaker.getSnapshot();
+  assert.equal(afterOpen.state, "open");
+  assert.equal(afterOpen.consecutiveFailures, 1);
+
+  nowMs += 5_000;
+  // getSnapshot does NOT trigger the open→half-open transition — only beforeRequest does
+  const stillOpen = breaker.getSnapshot();
+  assert.equal(stillOpen.state, "open");
+});
+
+test("figma rest circuit breaker does not emit transition event for same-state mutations", () => {
+  const transitions: Array<{ fromState: string; toState: string }> = [];
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 3,
+    resetTimeoutMs: 30_000,
+    onStateTransition: (event) => {
+      transitions.push({ fromState: event.fromState, toState: event.toState });
+    }
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  // Two failures below threshold should not emit any transition
+  assert.equal(transitions.length, 0);
+  assert.equal(breaker.getSnapshot().state, "closed");
+  assert.equal(breaker.getSnapshot().consecutiveFailures, 2);
+});
+
+test("figma rest circuit breaker recordSuccess resets failures in closed state", () => {
+  const breaker = createFigmaRestCircuitBreaker({
+    failureThreshold: 3,
+    resetTimeoutMs: 30_000
+  });
+
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+  breaker.beforeRequest();
+  breaker.recordTransientFailure();
+
+  assert.equal(breaker.getSnapshot().consecutiveFailures, 2);
+
+  breaker.beforeRequest();
+  const snapshot = breaker.recordSuccess();
+
+  assert.equal(snapshot.consecutiveFailures, 0);
+  assert.equal(snapshot.state, "closed");
+});
