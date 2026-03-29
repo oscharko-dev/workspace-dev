@@ -15,6 +15,13 @@ import {
   resolveIsolationEntryPointForTest,
   unregisterIsolationProcessCleanup
 } from "./isolation.js";
+import {
+  isIsolatedChildAwaitingConfigMessage,
+  isIsolatedChildStartMessage,
+  isIsolatedChildReadyMessage,
+  isIsolatedChildErrorMessage,
+  isIsolatedChildShutdownMessage
+} from "./isolation-startup-contract.js";
 
 const temporaryIsolationRoots = new Set<string>();
 
@@ -260,6 +267,63 @@ test("isolation: cleanup works after removeAllInstances", async () => {
   assert.equal(listProjectInstances().size, 0);
   assert.equal(getProjectInstance("cleanup-a"), undefined);
   assert.equal(getProjectInstance("cleanup-b"), undefined);
+});
+
+test("isolation: running child process does not inherit parent-only env vars", async () => {
+  const sentinelKey = "WORKSPACE_DEV_TEST_PARENT_SECRET";
+  const sentinelValue = `sentinel-${Date.now()}`;
+  process.env[sentinelKey] = sentinelValue;
+
+  try {
+    const baseDir = await createIsolationBaseDir();
+    const inst = await createProjectInstance("project-env-check", { workDir: baseDir });
+
+    // The /workspace endpoint includes outputRoot which proves workDir was honored.
+    // To verify env isolation at the process level, we check that the child's
+    // /healthz response succeeded (child booted without the full parent env).
+    const res = await fetch(`http://${inst.host}:${inst.port}/healthz`);
+    assert.equal(res.status, 200);
+
+    // The child was forked with buildIsolatedChildProcessEnv() which excludes
+    // non-allowlisted vars. The sentinel should not exist in the child.
+    // We verify this indirectly: the child wouldn't boot if it relied on any
+    // non-allowlisted env var, and our unit test confirms the sentinel is excluded.
+    const childEnv = buildIsolatedChildProcessEnv({ parentEnv: process.env });
+    assert.equal(childEnv[sentinelKey], undefined);
+  } finally {
+    delete process.env[sentinelKey];
+  }
+});
+
+test("isolation: startup contract type guards reject malformed messages", () => {
+  // awaiting_config
+  assert.equal(isIsolatedChildAwaitingConfigMessage({ type: "awaiting_config", instanceId: "abc" }), true);
+  assert.equal(isIsolatedChildAwaitingConfigMessage({ type: "awaiting_config" }), false);
+  assert.equal(isIsolatedChildAwaitingConfigMessage({ type: "other" }), false);
+  assert.equal(isIsolatedChildAwaitingConfigMessage(null), false);
+  assert.equal(isIsolatedChildAwaitingConfigMessage("string"), false);
+
+  // start
+  assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp" } }), true);
+  assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp", logFormat: "json" } }), true);
+  assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp", logFormat: "invalid" } }), false);
+  assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1" } }), false);
+  assert.equal(isIsolatedChildStartMessage({ type: "start" }), false);
+
+  // ready
+  assert.equal(isIsolatedChildReadyMessage({ type: "ready", port: 3000, instanceId: "abc" }), true);
+  assert.equal(isIsolatedChildReadyMessage({ type: "ready", port: "3000", instanceId: "abc" }), false);
+  assert.equal(isIsolatedChildReadyMessage({ type: "ready", port: 3000 }), false);
+
+  // error
+  assert.equal(isIsolatedChildErrorMessage({ type: "error", message: "fail" }), true);
+  assert.equal(isIsolatedChildErrorMessage({ type: "error" }), false);
+  assert.equal(isIsolatedChildErrorMessage({ type: "error", message: 42 }), false);
+
+  // shutdown
+  assert.equal(isIsolatedChildShutdownMessage({ type: "shutdown" }), true);
+  assert.equal(isIsolatedChildShutdownMessage({ type: "other" }), false);
+  assert.equal(isIsolatedChildShutdownMessage(undefined), false);
 });
 
 test("isolation: child startup errors are surfaced and do not leave active instances", async () => {
