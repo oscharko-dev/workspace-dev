@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,12 @@ import { runGitPrFlowWithDeps } from "./git-pr.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import type { JobRecord } from "./types.js";
+
+interface CommandInvocation {
+  step: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+}
 
 const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRecord => ({
   jobId,
@@ -36,6 +42,10 @@ const createJobRecord = (jobId = "11111111-2222-3333-4444-555555555555"): JobRec
     maxQueuedJobs: 20
   }
 });
+
+const assertPathMissing = async (targetPath: string): Promise<void> => {
+  await assert.rejects(() => access(targetPath), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
+};
 
 test("executePersistedGitPr loads persisted inputs and stores gitPrStatus", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-persisted-"));
@@ -155,10 +165,13 @@ test("runGitPrFlowWithDeps returns executed without commit when no changes", asy
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-nochange-"));
   const generatedProjectDir = path.join(tempRoot, "generated");
   const repoDir = path.join(tempRoot, "job", "repo");
+  const capturedCommands: CommandInvocation[] = [];
   await mkdir(generatedProjectDir, { recursive: true });
   await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
 
   const logs: string[] = [];
+  const repoToken = "secret";
+  const encodedRepoToken = encodeURIComponent(repoToken);
 
   const result = await runGitPrFlowWithDeps({
     input: {
@@ -166,7 +179,7 @@ test("runGitPrFlowWithDeps returns executed without commit when no changes", asy
       figmaAccessToken: "pat",
       enableGitPr: true,
       repoUrl: "https://github.com/acme/repo.git",
-      repoToken: "secret"
+      repoToken
     },
     jobId: createJobRecord().jobId,
     generatedProjectDir,
@@ -175,7 +188,12 @@ test("runGitPrFlowWithDeps returns executed without commit when no changes", asy
       logs.push(message);
     },
     deps: {
-      runCommand: async ({ args }) => {
+      runCommand: async ({ args, env }) => {
+        capturedCommands.push({
+          step: args[0] ?? "unknown",
+          args,
+          ...(env ? { env } : {})
+        });
         if (args[0] === "clone") {
           await mkdir(repoDir, { recursive: true });
           return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
@@ -201,16 +219,38 @@ test("runGitPrFlowWithDeps returns executed without commit when no changes", asy
   assert.equal(result.status, "executed");
   assert.deepEqual(result.changedFiles, []);
   assert.ok(logs.some((entry) => entry.includes("No repository delta detected")));
+
+  const authenticatedCommands = capturedCommands.filter((command) => command.step === "ls-remote" || command.step === "clone");
+  assert.equal(authenticatedCommands.length, 2);
+  for (const command of authenticatedCommands) {
+    assert.equal(command.args.some((entry) => entry.includes(repoToken)), false);
+    assert.equal(command.args.some((entry) => entry.includes(encodedRepoToken)), false);
+    assert.equal(command.args.includes("https://github.com/acme/repo.git"), true);
+    assert.equal(typeof command.env?.GIT_ASKPASS, "string");
+    assert.equal(command.env?.WORKSPACE_DEV_GIT_USERNAME, "x-access-token");
+    assert.equal(command.env?.WORKSPACE_DEV_GIT_TOKEN, repoToken);
+  }
+
+  const askPassPath = authenticatedCommands[0]?.env?.GIT_ASKPASS;
+  const askPassScriptPath = authenticatedCommands[0]?.env?.WORKSPACE_DEV_GIT_ASKPASS_SCRIPT;
+  assert.equal(typeof askPassPath, "string");
+  assert.equal(typeof askPassScriptPath, "string");
+  await assertPathMissing(repoDir);
+  await assertPathMissing(String(askPassPath));
+  await assertPathMissing(String(askPassScriptPath));
 });
 
 test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-success-"));
   const generatedProjectDir = path.join(tempRoot, "generated");
   const repoDir = path.join(tempRoot, "job", "repo");
+  const capturedCommands: CommandInvocation[] = [];
   await mkdir(generatedProjectDir, { recursive: true });
   await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
 
   const logs: string[] = [];
+  const repoToken = "tok/en?=%25";
+  const encodedRepoToken = encodeURIComponent(repoToken);
 
   const result = await runGitPrFlowWithDeps({
     input: {
@@ -218,7 +258,7 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
       figmaAccessToken: "pat",
       enableGitPr: true,
       repoUrl: "https://github.com/acme/repo.git",
-      repoToken: "my-secret-token",
+      repoToken,
       targetPath: "generated"
     },
     jobId: createJobRecord("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").jobId,
@@ -228,7 +268,12 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
       logs.push(message);
     },
     deps: {
-      runCommand: async ({ args }) => {
+      runCommand: async ({ args, env }) => {
+        capturedCommands.push({
+          step: args[0] ?? "unknown",
+          args,
+          ...(env ? { env } : {})
+        });
         if (args[0] === "ls-remote") {
           return {
             success: true,
@@ -253,7 +298,7 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
         }
         return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
       },
-      fetchImpl: async () => new Response("my-secret-token should be redacted", { status: 500 })
+      fetchImpl: async () => new Response(`${repoToken} and ${encodedRepoToken} should both be redacted`, { status: 500 })
     }
   });
 
@@ -262,6 +307,18 @@ test("runGitPrFlowWithDeps executes full PR flow and redacts failed PR response"
   assert.equal(result.prUrl, undefined);
   assert.equal(result.changedFiles.length, 1);
   assert.ok(logs.some((entry) => entry.includes("[REDACTED]")));
+  assert.equal(logs.some((entry) => entry.includes(repoToken)), false);
+  assert.equal(logs.some((entry) => entry.includes(encodedRepoToken)), false);
+
+  const authenticatedCommands = capturedCommands.filter(
+    (command) => command.step === "ls-remote" || command.step === "clone" || command.step === "push"
+  );
+  for (const command of authenticatedCommands) {
+    assert.equal(command.args.some((entry) => entry.includes(repoToken)), false);
+    assert.equal(command.args.some((entry) => entry.includes(encodedRepoToken)), false);
+  }
+
+  await assertPathMissing(repoDir);
 });
 
 test("runGitPrFlowWithDeps forwards deterministic output capture keys to git commands", async () => {
@@ -350,6 +407,7 @@ test("runGitPrFlowWithDeps forwards deterministic output capture keys to git com
       { step: "push", key: "git.pr.push", stdoutMaxBytes: 4_096, stderrMaxBytes: 2_048 }
     ]
   );
+  await assertPathMissing(repoDir);
 });
 
 test("runGitPrFlowWithDeps rejects unsafe targetPath", async () => {
@@ -402,8 +460,10 @@ test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successf
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-ssh-success-"));
   const generatedProjectDir = path.join(tempRoot, "generated");
   const repoDir = path.join(tempRoot, "job", "repo");
+  const capturedCommands: CommandInvocation[] = [];
   let requestBody = "";
   let requestUrl = "";
+  let requestSignal: AbortSignal | undefined;
 
   await mkdir(generatedProjectDir, { recursive: true });
   await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
@@ -434,7 +494,12 @@ test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successf
       summary: "1 file added, 1 file modified"
     },
     deps: {
-      runCommand: async ({ args }) => {
+      runCommand: async ({ args, env }) => {
+        capturedCommands.push({
+          step: args[0] ?? "unknown",
+          args,
+          ...(env ? { env } : {})
+        });
         if (args[0] === "ls-remote") {
           return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
         }
@@ -456,6 +521,7 @@ test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successf
       fetchImpl: async (input, init) => {
         requestUrl = typeof input === "string" ? input : input.toString();
         requestBody = String(init?.body ?? "");
+        requestSignal = init?.signal;
         return new Response(JSON.stringify({ html_url: "https://github.com/acme/repo/pull/123" }), { status: 201 });
       }
     }
@@ -466,6 +532,169 @@ test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successf
   assert.equal(requestUrl, "https://api.github.com/repos/acme/repo/pulls");
   assert.equal(requestBody.includes("### Generation Diff Report"), true);
   assert.equal(requestBody.includes('"base":"main"'), true);
+  assert.equal(requestSignal instanceof AbortSignal, true);
+
+  const lsRemoteCommand = capturedCommands.find((command) => command.step === "ls-remote");
+  const cloneCommand = capturedCommands.find((command) => command.step === "clone");
+  assert.equal(lsRemoteCommand?.args.includes("https://github.com/acme/repo.git"), true);
+  assert.equal(cloneCommand?.args.includes("https://github.com/acme/repo.git"), true);
+  await assertPathMissing(repoDir);
+});
+
+test("runGitPrFlowWithDeps applies fetch timeout signals and cleans temporary auth artifacts on timeout", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-fetch-timeout-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+  const repoDir = path.join(tempRoot, "job", "repo");
+  let askPassPath: string | undefined;
+  let askPassScriptPath: string | undefined;
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  await assert.rejects(
+    () =>
+      runGitPrFlowWithDeps({
+        input: {
+          figmaFileKey: "demo-file",
+          figmaAccessToken: "pat",
+          enableGitPr: true,
+          repoUrl: "https://github.com/acme/repo.git",
+          repoToken: "timeout-secret"
+        },
+        jobId: createJobRecord("dddddddd-eeee-ffff-0000-111111111111").jobId,
+        generatedProjectDir,
+        jobDir: path.join(tempRoot, "job"),
+        onLog: () => {
+          // no-op
+        },
+        commandTimeoutMs: 1_000,
+        deps: {
+          runCommand: async ({ args, env }) => {
+            if (env?.GIT_ASKPASS) {
+              askPassPath = env.GIT_ASKPASS;
+              askPassScriptPath = env.WORKSPACE_DEV_GIT_ASKPASS_SCRIPT;
+            }
+            if (args[0] === "ls-remote") {
+              return {
+                success: true,
+                code: 0,
+                stdout: "ref: refs/heads/main HEAD\n",
+                stderr: "",
+                combined: ""
+              };
+            }
+            if (args[0] === "clone") {
+              await mkdir(repoDir, { recursive: true });
+              return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+            }
+            if (args[0] === "diff") {
+              return {
+                success: true,
+                code: 0,
+                stdout: "demo-file-1668f4f0ae/README.md\n",
+                stderr: "",
+                combined: ""
+              };
+            }
+            return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+          },
+          fetchImpl: async (_input, init) =>
+            await new Promise<Response>((_resolve, reject) => {
+              assert.equal(init?.signal instanceof AbortSignal, true);
+              const keepAliveHandle = setTimeout(() => {
+                reject(new Error("Expected fetch timeout signal to abort"));
+              }, 1_500);
+              init?.signal?.addEventListener(
+                "abort",
+                () => {
+                  clearTimeout(keepAliveHandle);
+                  reject(new DOMException("timed out", "AbortError"));
+                },
+                { once: true }
+              );
+            })
+        }
+      }),
+    /timed out|AbortError/
+  );
+
+  assert.equal(typeof askPassPath, "string");
+  assert.equal(typeof askPassScriptPath, "string");
+  await assertPathMissing(repoDir);
+  await assertPathMissing(String(askPassPath));
+  await assertPathMissing(String(askPassScriptPath));
+});
+
+test("runGitPrFlowWithDeps cleans temporary repo and askpass files after git failures", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-cleanup-failure-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+  const repoDir = path.join(tempRoot, "job", "repo");
+  let askPassPath: string | undefined;
+  let askPassScriptPath: string | undefined;
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  await assert.rejects(
+    () =>
+      runGitPrFlowWithDeps({
+        input: {
+          figmaFileKey: "demo-file",
+          figmaAccessToken: "pat",
+          enableGitPr: true,
+          repoUrl: "https://github.com/acme/repo.git",
+          repoToken: "push-secret"
+        },
+        jobId: createJobRecord("eeeeeeee-ffff-0000-1111-222222222222").jobId,
+        generatedProjectDir,
+        jobDir: path.join(tempRoot, "job"),
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args, env }) => {
+            if (env?.GIT_ASKPASS) {
+              askPassPath = env.GIT_ASKPASS;
+              askPassScriptPath = env.WORKSPACE_DEV_GIT_ASKPASS_SCRIPT;
+            }
+            if (args[0] === "ls-remote") {
+              return {
+                success: true,
+                code: 0,
+                stdout: "ref: refs/heads/main HEAD\n",
+                stderr: "",
+                combined: ""
+              };
+            }
+            if (args[0] === "clone") {
+              await mkdir(repoDir, { recursive: true });
+              return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+            }
+            if (args[0] === "diff") {
+              return {
+                success: true,
+                code: 0,
+                stdout: "demo-file-1668f4f0ae/README.md\n",
+                stderr: "",
+                combined: ""
+              };
+            }
+            if (args[0] === "push") {
+              return { success: false, code: 1, stdout: "", stderr: "push failed", combined: "push failed" };
+            }
+            return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+          },
+          fetchImpl: async () => new Response("", { status: 201 })
+        }
+      }),
+    /git push failed/
+  );
+
+  assert.equal(typeof askPassPath, "string");
+  assert.equal(typeof askPassScriptPath, "string");
+  await assertPathMissing(repoDir);
+  await assertPathMissing(String(askPassPath));
+  await assertPathMissing(String(askPassScriptPath));
 });
 
 test("runGitPrFlowWithDeps rejects malformed GitHub repository URLs before running git commands", async () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -77,21 +77,40 @@ const createFastJobEngine = ({ tempRoot }: { tempRoot: string }) =>
     })
   });
 
-const writeFakeGitBinary = async ({ tempRoot }: { tempRoot: string }): Promise<string> => {
+const assertPathMissing = async (targetPath: string): Promise<void> => {
+  await assert.rejects(() => access(targetPath), (error: NodeJS.ErrnoException) => error.code === "ENOENT");
+};
+
+const writeFakeGitBinary = async ({
+  tempRoot
+}: {
+  tempRoot: string;
+}): Promise<{ binDir: string; argsLogPath: string; envLogPath: string }> => {
   const binDir = path.join(tempRoot, "bin");
   const gitPath = path.join(binDir, "git");
+  const argsLogPath = path.join(tempRoot, "git-args.log");
+  const envLogPath = path.join(tempRoot, "git-env.log");
   await mkdir(binDir, { recursive: true });
   await writeFile(
     gitPath,
     `#!/bin/sh
 set -eu
+args_log_path=${JSON.stringify(argsLogPath)}
+env_log_path=${JSON.stringify(envLogPath)}
 cmd="$1"
+printf '%s\\n' "$*" >> "$args_log_path"
+printf 'GIT_ASKPASS=%s | WORKSPACE_DEV_GIT_USERNAME=%s | WORKSPACE_DEV_GIT_ASKPASS_SCRIPT=%s\\n' "\${GIT_ASKPASS-}" "\${WORKSPACE_DEV_GIT_USERNAME-}" "\${WORKSPACE_DEV_GIT_ASKPASS_SCRIPT-}" >> "$env_log_path"
 case "$cmd" in
   ls-remote)
     printf 'ref: refs/heads/main HEAD\\n'
     ;;
   clone)
-    mkdir -p "$7"
+    repo_dir=""
+    for arg in "$@"; do
+      repo_dir="$arg"
+    done
+    mkdir -p "$repo_dir/.git"
+    printf '[remote "origin"]\\n\turl = %s\\n' "$6" > "$repo_dir/.git/config"
     ;;
   diff)
     printf 'generated/manual-pr/README.md\\n'
@@ -103,7 +122,11 @@ esac
     "utf8"
   );
   await chmod(gitPath, 0o755);
-  return binDir;
+  return {
+    binDir,
+    argsLogPath,
+    envLogPath
+  };
 };
 
 test("createPrFromJob throws E_PR_JOB_NOT_FOUND when job does not exist", async () => {
@@ -237,7 +260,7 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
   assert.equal(regenStatus.status, "completed");
   assert.equal(regenStatus.gitPr?.status, "skipped");
 
-  const fakeGitBin = await writeFakeGitBinary({ tempRoot });
+  const { binDir: fakeGitBin, argsLogPath, envLogPath } = await writeFakeGitBinary({ tempRoot });
   const originalPath = process.env.PATH;
   const originalFetch = globalThis.fetch;
   process.env.PATH = `${fakeGitBin}:${originalPath ?? ""}`;
@@ -291,6 +314,15 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
       ),
       true
     );
+
+    const gitArgsLog = await readFile(argsLogPath, "utf8");
+    const gitEnvLog = await readFile(envLogPath, "utf8");
+    assert.equal(gitArgsLog.includes("secret-token"), false);
+    assert.equal(gitArgsLog.includes("x-access-token"), false);
+    assert.equal(gitArgsLog.includes("https://github.com/acme/repo.git"), true);
+    assert.equal(gitEnvLog.includes("GIT_ASKPASS="), true);
+    assert.equal(gitEnvLog.includes("WORKSPACE_DEV_GIT_USERNAME=x-access-token"), true);
+    await assertPathMissing(path.join(String(regenStatus.artifacts.jobDir), "repo"));
   } finally {
     globalThis.fetch = originalFetch;
     process.env.PATH = originalPath;
