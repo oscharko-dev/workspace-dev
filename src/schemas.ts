@@ -27,6 +27,7 @@ import type {
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
 } from "./contracts/index.js";
+import { normalizeGenerationLocale } from "./generation-locale.js";
 import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
 
 type PathSegment = string | number;
@@ -106,6 +107,46 @@ function parseStringField({
   return value;
 }
 
+function parseSubmitLlmCodegenMode({
+  value,
+  issues
+}: {
+  value: string | undefined;
+  issues: ValidationIssue[];
+}): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized !== "deterministic") {
+    pushIssue(issues, ["llmCodegenMode"], "llmCodegenMode must equal 'deterministic'");
+    return undefined;
+  }
+
+  return "deterministic";
+}
+
+function parseSubmitGenerationLocale({
+  value,
+  issues
+}: {
+  value: string | undefined;
+  issues: ValidationIssue[];
+}): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = normalizeGenerationLocale(value);
+  if (!normalized) {
+    pushIssue(issues, ["generationLocale"], "generationLocale must be a valid supported locale");
+    return undefined;
+  }
+
+  return normalized;
+}
+
 function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput> {
   const issues: ValidationIssue[] = [];
 
@@ -182,7 +223,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
-  const llmCodegenMode = parseStringField({
+  const rawLlmCodegenMode = parseStringField({
     input,
     key: "llmCodegenMode",
     required: false,
@@ -206,7 +247,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     required: false,
     issues
   });
-  const generationLocale = parseStringField({
+  const rawGenerationLocale = parseStringField({
     input,
     key: "generationLocale",
     required: false,
@@ -240,6 +281,14 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     pushIssue(issues, ["formHandlingMode"], "formHandlingMode must be one of: react_hook_form, legacy_use_state");
     return undefined;
   })();
+  const llmCodegenMode = parseSubmitLlmCodegenMode({
+    value: rawLlmCodegenMode,
+    issues
+  });
+  const generationLocale = parseSubmitGenerationLocale({
+    value: rawGenerationLocale,
+    issues
+  });
 
   const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
   const resolvedFigmaSourceMode: WorkspaceFigmaSourceMode | undefined = (() => {

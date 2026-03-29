@@ -947,7 +947,7 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
   assert.equal(overrideRequest?.formHandlingMode, "legacy_use_state");
 });
 
-test("createJobEngine falls back invalid submit generationLocale and emits deterministic warning log", async () => {
+test("createJobEngine defensively falls back invalid direct-submit generationLocale and emits deterministic warning log", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"));
   const payload = {
     name: "Locale board",

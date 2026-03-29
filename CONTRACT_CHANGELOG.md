@@ -31,6 +31,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.0.0] - 2026-03-29
+
+### Submit schema validation for codegen mode and generation locale
+
+Changed:
+
+- `POST /workspace/submit` now rejects unsupported `llmCodegenMode` values at the submit schema boundary with `VALIDATION_ERROR` instead of deferring malformed values to downstream mode-lock handling.
+- `POST /workspace/submit` now rejects invalid or unsupported `generationLocale` values at the submit schema boundary with `VALIDATION_ERROR` instead of silently falling back at request ingestion time.
+- Accepted submit-time locale overrides are canonicalized before they enter the job engine request payload.
+
+---
+
 ## [2.29.0] - 2026-03-29
 
 ### Command output cap runtime controls

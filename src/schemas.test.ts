@@ -31,6 +31,7 @@ test("schema: valid submit body parses correctly", () => {
     assert.equal(result.data.generationLocale, "en-US");
     assert.equal(result.data.formHandlingMode, "react_hook_form");
     assert.equal(result.data.figmaSourceMode, "rest");
+    assert.equal(result.data.llmCodegenMode, "deterministic");
     assert.equal(result.data.enableGitPr, false);
   }
 });
@@ -60,6 +61,20 @@ test("schema: valid hybrid submit body parses correctly", () => {
   assert.equal(result.success, true);
   if (result.success) {
     assert.equal(result.data.figmaSourceMode, "hybrid");
+  }
+});
+
+test("schema: submit canonicalizes llmCodegenMode and generationLocale", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    generationLocale: " EN-us ",
+    llmCodegenMode: " Deterministic "
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.generationLocale, "en-US");
+    assert.equal(result.data.llmCodegenMode, "deterministic");
   }
 });
 
@@ -173,6 +188,57 @@ test("schema: formHandlingMode must be a supported enum value", () => {
     formHandlingMode: "formik"
   });
   assert.equal(result.success, false);
+});
+
+test("schema: invalid llmCodegenMode reports exact field path issue", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    llmCodegenMode: "hybrid"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["llmCodegenMode"],
+        message: "llmCodegenMode must equal 'deterministic'"
+      }
+    ]);
+  }
+});
+
+test("schema: invalid generationLocale syntax reports exact field path issue", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    generationLocale: "en-XYZ"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["generationLocale"],
+        message: "generationLocale must be a valid supported locale"
+      }
+    ]);
+  }
+});
+
+test("schema: unsupported generationLocale reports exact field path issue", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    generationLocale: "zz-ZZ"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["generationLocale"],
+        message: "generationLocale must be a valid supported locale"
+      }
+    ]);
+  }
 });
 
 test("schema: git fields required when enableGitPr=true", () => {

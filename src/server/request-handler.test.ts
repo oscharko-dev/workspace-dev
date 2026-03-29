@@ -1214,7 +1214,7 @@ test("request handler preserves 404 semantics for unknown OPTIONS routes", async
   }
 });
 
-test("request handler stale-check, remap-suggest, submit, and cancel routes cover normalization and fallback errors", async (t) => {
+test("request handler stale-check, remap-suggest, submit, and cancel routes cover normalization, validation, and fallback errors", async (t) => {
   const checkStaleDraft = test.mock.fn(async ({ jobId, draftNodeIds }: { jobId: string; draftNodeIds: string[] }) => ({
     stale: draftNodeIds.length > 0,
     sourceJobId: jobId,
@@ -1363,6 +1363,129 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
 
         assert.equal(response.statusCode, 500);
         assert.equal(response.json<Record<string, unknown>>().error, "INTERNAL_ERROR");
+      } finally {
+        await scoped.close();
+      }
+    });
+
+    await t.test("submit rejects malformed llmCodegenMode before mode lock or submitJob", async () => {
+      const submitJob = test.mock.fn((_input: Parameters<JobEngine["submitJob"]>[0]) => {
+        return {
+          jobId: "job-accepted",
+          status: "queued",
+          acceptedModes: {
+            figmaSourceMode: "rest",
+            llmCodegenMode: "deterministic"
+          }
+        } as ReturnType<JobEngine["submitJob"]>;
+      });
+      const scoped = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({ submitJob })
+      });
+
+      try {
+        const response = await scoped.app.inject({
+          method: "POST",
+          url: "/workspace/submit",
+          headers: { "content-type": "application/json" },
+          payload: {
+            figmaFileKey: "file-key",
+            figmaAccessToken: "token",
+            llmCodegenMode: "hybrid"
+          }
+        });
+
+        assert.equal(response.statusCode, 400);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.deepEqual(body.issues, [
+          {
+            path: "llmCodegenMode",
+            message: "llmCodegenMode must equal 'deterministic'"
+          }
+        ]);
+        assert.equal(submitJob.mock.callCount(), 0);
+      } finally {
+        await scoped.close();
+      }
+    });
+
+    await t.test("submit rejects invalid generationLocale before submitJob", async () => {
+      const submitJob = test.mock.fn((_input: Parameters<JobEngine["submitJob"]>[0]) => {
+        return {
+          jobId: "job-accepted",
+          status: "queued",
+          acceptedModes: {
+            figmaSourceMode: "rest",
+            llmCodegenMode: "deterministic"
+          }
+        } as ReturnType<JobEngine["submitJob"]>;
+      });
+      const scoped = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({ submitJob })
+      });
+
+      try {
+        const response = await scoped.app.inject({
+          method: "POST",
+          url: "/workspace/submit",
+          headers: { "content-type": "application/json" },
+          payload: {
+            figmaFileKey: "file-key",
+            figmaAccessToken: "token",
+            generationLocale: "zz-ZZ"
+          }
+        });
+
+        assert.equal(response.statusCode, 400);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.deepEqual(body.issues, [
+          {
+            path: "generationLocale",
+            message: "generationLocale must be a valid supported locale"
+          }
+        ]);
+        assert.equal(submitJob.mock.callCount(), 0);
+      } finally {
+        await scoped.close();
+      }
+    });
+
+    await t.test("submit canonicalizes generationLocale and llmCodegenMode before submitJob", async () => {
+      const submitJob = test.mock.fn((_input: Parameters<JobEngine["submitJob"]>[0]) => {
+        return {
+          jobId: "job-accepted",
+          status: "queued",
+          acceptedModes: {
+            figmaSourceMode: "rest",
+            llmCodegenMode: "deterministic"
+          }
+        } as ReturnType<JobEngine["submitJob"]>;
+      });
+      const scoped = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({ submitJob })
+      });
+
+      try {
+        const response = await scoped.app.inject({
+          method: "POST",
+          url: "/workspace/submit",
+          headers: { "content-type": "application/json" },
+          payload: {
+            figmaFileKey: "file-key",
+            figmaAccessToken: "token",
+            generationLocale: " EN-us ",
+            llmCodegenMode: " Deterministic "
+          }
+        });
+
+        assert.equal(response.statusCode, 202);
+        assert.equal(submitJob.mock.callCount(), 1);
+        const input = submitJob.mock.calls[0]?.arguments[0];
+        assert.equal(input?.generationLocale, "en-US");
+        assert.equal(input?.llmCodegenMode, "deterministic");
+        assert.equal(input?.figmaSourceMode, "rest");
       } finally {
         await scoped.close();
       }

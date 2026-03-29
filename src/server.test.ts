@@ -835,6 +835,80 @@ test("workspace server rejects submit requests without required fields", async (
   }
 });
 
+test("workspace server rejects invalid llmCodegenMode at the submit schema boundary", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "demo",
+        figmaAccessToken: "figd_xxx",
+        llmCodegenMode: "hybrid"
+      }
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.deepEqual(body.issues, [
+      {
+        path: "llmCodegenMode",
+        message: "llmCodegenMode must equal 'deterministic'"
+      }
+    ]);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server rejects unsupported generationLocale at the submit schema boundary", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "demo",
+        figmaAccessToken: "figd_xxx",
+        generationLocale: "zz-ZZ"
+      }
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.deepEqual(body.issues, [
+      {
+        path: "generationLocale",
+        message: "generationLocale must be a valid supported locale"
+      }
+    ]);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server rejects ambiguous source inputs that mix rest and local_json fields", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -1066,10 +1140,10 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
         figmaFileKey: "test-key",
         figmaAccessToken: "figd_xxx",
         brandTheme: "derived",
-        generationLocale: "en-US",
+        generationLocale: " EN-us ",
         formHandlingMode: "legacy_use_state",
         figmaSourceMode: "rest",
-        llmCodegenMode: "deterministic"
+        llmCodegenMode: " Deterministic "
       }
     });
 
