@@ -23,8 +23,8 @@ Audit-relevant records may also include:
 ## Request Correlation
 
 - Every HTTP response includes `X-Request-Id`.
-- If the incoming request already provides a non-empty `X-Request-Id`, `workspace-dev` reuses it.
-- Otherwise `workspace-dev` generates a UUID v4 request ID.
+- If the incoming request already provides a non-empty `X-Request-Id`, `workspace-dev` reuses it, provided it passes validation: maximum 128 characters, containing only word characters (`a-z`, `A-Z`, `0-9`, `_`), dots, colons, hyphens, and forward slashes.
+- If the client-provided ID is missing, empty, oversized, or contains disallowed characters, `workspace-dev` generates a UUID v4 request ID instead.
 - JSON error envelopes include `requestId` so clients can correlate failed requests with runtime logs.
 
 ## Covered Audit Events

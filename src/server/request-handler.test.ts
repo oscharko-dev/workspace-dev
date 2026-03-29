@@ -296,6 +296,73 @@ test("request handler emits and echoes request IDs for successful responses", as
   }
 });
 
+test("request handler rejects unsafe or oversized client-provided request IDs and generates a new UUID", async (t) => {
+  const unsafeIds = [
+    { name: "JSON-breaking characters", value: 'req","injected":"value' },
+    { name: "oversized (129 chars)", value: "a".repeat(129) },
+    { name: "spaces", value: "req id with spaces" },
+    { name: "angle brackets", value: "req-<script>alert(1)</script>" },
+    { name: "backtick", value: "req-`echo`-injection" },
+    { name: "semicolons", value: "req;DROP TABLE logs;--" },
+    { name: "equals and ampersand", value: "req=1&evil=2" }
+  ];
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  for (const scenario of unsafeIds) {
+    await t.test(`discards ${scenario.name}`, async () => {
+      const { app, close } = await createRequestHandlerApp();
+
+      try {
+        const response = await app.inject({
+          method: "GET",
+          url: "/healthz",
+          headers: {
+            "x-request-id": scenario.value
+          }
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.match(
+          response.headers["x-request-id"] ?? "",
+          uuidPattern,
+          `Expected a generated UUID for unsafe input: ${scenario.name}`
+        );
+        assert.notEqual(response.headers["x-request-id"], scenario.value);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  await t.test("accepts safe request IDs with allowed characters", async () => {
+    const { app, close } = await createRequestHandlerApp();
+
+    try {
+      const safeIds = [
+        "req-upstream-123",
+        "trace_id:abc-def/ghi",
+        "a".repeat(128),
+        "my.service.request-42"
+      ];
+
+      for (const safeId of safeIds) {
+        const response = await app.inject({
+          method: "GET",
+          url: "/healthz",
+          headers: {
+            "x-request-id": safeId
+          }
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.headers["x-request-id"], safeId);
+      }
+    } finally {
+      await close();
+    }
+  });
+});
+
 test("request handler injects requestId into validation, security, and internal-error envelopes", async (t) => {
   await t.test("validation errors include requestId", async () => {
     const { app, close } = await createRequestHandlerApp();

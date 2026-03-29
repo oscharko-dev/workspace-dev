@@ -60,6 +60,8 @@ type WorkspaceAuditEvent =
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
+const MAX_REQUEST_ID_LENGTH = 128;
+const SAFE_REQUEST_ID_PATTERN = /^[\w.:\-/]+$/;
 
 const getHeaderValue = (value: string | string[] | undefined): string | undefined => {
   if (typeof value === "string") {
@@ -73,7 +75,12 @@ const getHeaderValue = (value: string | string[] | undefined): string | undefine
 
 const resolveRequestId = (value: string | string[] | undefined): string => {
   const requestId = getHeaderValue(value)?.trim();
-  if (requestId && requestId.length > 0) {
+  if (
+    requestId &&
+    requestId.length > 0 &&
+    requestId.length <= MAX_REQUEST_ID_LENGTH &&
+    SAFE_REQUEST_ID_PATTERN.test(requestId)
+  ) {
     return requestId;
   }
   return randomUUID();
