@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -5,6 +6,7 @@ import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/ind
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
+import type { WorkspaceRuntimeLogLevel, WorkspaceRuntimeLogger } from "../logging.js";
 import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
@@ -24,7 +26,7 @@ import { getUiAsset, getUiAssets } from "./ui-assets.js";
 function safeDecodeParam(
   value: string,
   paramLabel: string,
-  response: ServerResponse,
+  response: ServerResponse
 ): string | null {
   const decoded = safeDecode(value);
   if (decoded === INVALID_PATH_ENCODING) {
@@ -40,6 +42,56 @@ function safeDecodeParam(
   }
   return decoded;
 }
+
+type WorkspaceAuditEvent =
+  | "security.request.rejected_origin"
+  | "security.request.unsupported_media_type"
+  | "security.request.rate_limited"
+  | "workspace.request.validation_failed"
+  | "workspace.request.failed"
+  | "workspace.submit.accepted"
+  | "workspace.cancel.accepted"
+  | "workspace.sync.previewed"
+  | "workspace.sync.applied"
+  | "workspace.regenerate.accepted"
+  | "workspace.create_pr.completed"
+  | "workspace.stale_check.completed"
+  | "workspace.remap_suggest.completed";
+
+const REQUEST_ID_HEADER = "x-request-id";
+const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
+
+const getHeaderValue = (value: string | string[] | undefined): string | undefined => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.find((candidate) => typeof candidate === "string");
+  }
+  return undefined;
+};
+
+const resolveRequestId = (value: string | string[] | undefined): string => {
+  const requestId = getHeaderValue(value)?.trim();
+  if (requestId && requestId.length > 0) {
+    return requestId;
+  }
+  return randomUUID();
+};
+
+const resolveAuditMessage = ({
+  payload,
+  fallback
+}: {
+  payload: unknown;
+  fallback: string;
+}): string => {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return fallback;
+  }
+  const message = (payload as { message?: unknown }).message;
+  return typeof message === "string" && message.trim().length > 0 ? message : fallback;
+};
 
 const PROTECTED_POST_ACTIONS = new Set([
   "cancel",
@@ -79,6 +131,7 @@ interface CreateWorkspaceRequestHandlerInput {
   runtime: {
     previewEnabled: boolean;
     rateLimitPerMinute?: number;
+    logger?: WorkspaceRuntimeLogger;
   };
   jobEngine: JobEngine;
   moduleDir: string;
@@ -99,12 +152,107 @@ export function createWorkspaceRequestHandler({
   );
 
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const requestId = resolveRequestId(request.headers[REQUEST_ID_HEADER]);
+    response.setHeader(REQUEST_ID_HEADER, requestId);
+    const requestLogger = runtime.logger ?? {
+      log: () => {}
+    };
+
     const method = request.method ?? "GET";
     const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
     const pathname = requestUrl.pathname;
     const protectedWriteRoute = resolveProtectedWriteRoute(pathname);
+    const logAuditEvent = ({
+      event,
+      message,
+      level = "info",
+      jobId,
+      statusCode
+    }: {
+      event: WorkspaceAuditEvent;
+      message: string;
+      level?: WorkspaceRuntimeLogLevel;
+      jobId?: string;
+      statusCode?: number;
+    }): void => {
+      requestLogger.log({
+        level,
+        message,
+        requestId,
+        event,
+        method,
+        path: pathname,
+        ...(jobId ? { jobId } : {}),
+        ...(statusCode !== undefined ? { statusCode } : {})
+      });
+    };
+    const sendAuditedError = ({
+      statusCode,
+      payload,
+      event,
+      level,
+      jobId,
+      fallbackMessage
+    }: {
+      statusCode: number;
+      payload: unknown;
+      event: WorkspaceAuditEvent;
+      level?: WorkspaceRuntimeLogLevel;
+      jobId?: string;
+      fallbackMessage: string;
+    }): void => {
+      logAuditEvent({
+        event,
+        statusCode,
+        message: resolveAuditMessage({ payload, fallback: fallbackMessage }),
+        ...(level ? { level } : {}),
+        ...(jobId ? { jobId } : {})
+      });
+      sendJson({ response, statusCode, payload });
+    };
+    const sendValidationError = ({
+      statusCode = 400,
+      payload,
+      jobId,
+      fallbackMessage = "Request validation failed."
+    }: {
+      statusCode?: number;
+      payload: unknown;
+      jobId?: string;
+      fallbackMessage?: string;
+    }): void => {
+      sendAuditedError({
+        statusCode,
+        payload,
+        event: "workspace.request.validation_failed",
+        level: "warn",
+        fallbackMessage,
+        ...(jobId ? { jobId } : {})
+      });
+    };
+    const sendRequestFailure = ({
+      statusCode,
+      payload,
+      jobId,
+      fallbackMessage = "Request failed."
+    }: {
+      statusCode: number;
+      payload: unknown;
+      jobId?: string;
+      fallbackMessage?: string;
+    }): void => {
+      sendAuditedError({
+        statusCode,
+        payload,
+        event: "workspace.request.failed",
+        level: statusCode >= 500 ? "error" : "warn",
+        fallbackMessage,
+        ...(jobId ? { jobId } : {})
+      });
+    };
 
-    if (method === "GET" && pathname === "/workspace") {
+    try {
+      if (method === "GET" && pathname === "/workspace") {
       const resolvedPort = getResolvedPort();
       const status: WorkspaceStatus = {
         running: true,
@@ -718,10 +866,15 @@ export function createWorkspaceRequestHandler({
         port: getResolvedPort()
       });
       if (!writeRequestValidation.ok) {
-        sendJson({
-          response,
+        sendAuditedError({
           statusCode: writeRequestValidation.statusCode,
-          payload: writeRequestValidation.payload
+          payload: writeRequestValidation.payload,
+          event:
+            writeRequestValidation.payload.error === "UNSUPPORTED_MEDIA_TYPE"
+              ? "security.request.unsupported_media_type"
+              : "security.request.rejected_origin",
+          level: "warn",
+          fallbackMessage: "Write request rejected."
         });
         return;
       }
@@ -732,13 +885,15 @@ export function createWorkspaceRequestHandler({
         const rateLimitResult = rateLimiter.consume(resolveRateLimitClientKey(request));
         if (!rateLimitResult.allowed) {
           response.setHeader("retry-after", String(rateLimitResult.retryAfterSeconds));
-          sendJson({
-            response,
+          sendAuditedError({
             statusCode: 429,
             payload: {
               error: "RATE_LIMIT_EXCEEDED",
               message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`
-            }
+            },
+            event: "security.request.rate_limited",
+            level: "warn",
+            fallbackMessage: "Write request rate limited."
           });
           return;
         }
@@ -749,14 +904,14 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Cancel request validation failed."
           });
           return;
         }
@@ -768,14 +923,14 @@ export function createWorkspaceRequestHandler({
             rawBody.value === null ||
             Array.isArray(rawBody.value)
           ) {
-            sendJson({
-              response,
-              statusCode: 400,
+            sendValidationError({
               payload: {
                 error: "VALIDATION_ERROR",
                 message: "Request validation failed.",
                 issues: [{ path: "(root)", message: "Cancel request must be an object when body is provided." }]
-              }
+              },
+              jobId,
+              fallbackMessage: "Cancel request validation failed."
             });
             return;
           }
@@ -784,28 +939,28 @@ export function createWorkspaceRequestHandler({
           const allowedKeys = new Set(["reason"]);
           const unknownKey = Object.keys(payload).find((key) => !allowedKeys.has(key));
           if (unknownKey) {
-            sendJson({
-              response,
-              statusCode: 400,
+            sendValidationError({
               payload: {
                 error: "VALIDATION_ERROR",
                 message: "Request validation failed.",
                 issues: [{ path: unknownKey, message: `Unexpected property '${unknownKey}'.` }]
-              }
+              },
+              jobId,
+              fallbackMessage: "Cancel request validation failed."
             });
             return;
           }
 
           if (payload.reason !== undefined) {
             if (typeof payload.reason !== "string" || payload.reason.trim().length === 0) {
-              sendJson({
-                response,
-                statusCode: 400,
+              sendValidationError({
                 payload: {
                   error: "VALIDATION_ERROR",
                   message: "Request validation failed.",
                   issues: [{ path: "reason", message: "reason must be a non-empty string when provided." }]
-                }
+                },
+                jobId,
+                fallbackMessage: "Cancel request validation failed."
               });
               return;
             }
@@ -815,16 +970,23 @@ export function createWorkspaceRequestHandler({
 
         const canceledJob = jobEngine.cancelJob({ jobId, ...(reason ? { reason } : {}) });
         if (!canceledJob) {
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 404,
             payload: {
               error: "JOB_NOT_FOUND",
               message: `Unknown job '${jobId}'.`
-            }
+            },
+            jobId,
+            fallbackMessage: `Cancel request failed for job '${jobId}'.`
           });
           return;
         }
+        logAuditEvent({
+          event: "workspace.cancel.accepted",
+          statusCode: 202,
+          jobId,
+          message: `Cancellation accepted for job '${jobId}'.`
+        });
         sendJson({
           response,
           statusCode: 202,
@@ -838,21 +1000,25 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Sync request validation failed."
           });
           return;
         }
 
         const parsed = SyncRequestSchema.safeParse(rawBody.value);
         if (!parsed.success) {
-          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          sendValidationError({
+            payload: formatZodError(parsed.error),
+            jobId,
+            fallbackMessage: "Sync request validation failed."
+          });
           return;
         }
 
@@ -861,6 +1027,12 @@ export function createWorkspaceRequestHandler({
             const preview = await jobEngine.previewLocalSync({
               jobId,
               ...(parsed.data.targetPath ? { targetPath: parsed.data.targetPath } : {})
+            });
+            logAuditEvent({
+              event: "workspace.sync.previewed",
+              statusCode: 200,
+              jobId,
+              message: `Local sync preview completed for job '${jobId}'.`
             });
             sendJson({
               response,
@@ -876,6 +1048,12 @@ export function createWorkspaceRequestHandler({
             confirmOverwrite: parsed.data.confirmOverwrite,
             fileDecisions: parsed.data.fileDecisions
           });
+          logAuditEvent({
+            event: "workspace.sync.applied",
+            statusCode: 200,
+            jobId,
+            message: `Local sync applied for job '${jobId}'.`
+          });
           sendJson({
             response,
             statusCode: 200,
@@ -886,68 +1064,74 @@ export function createWorkspaceRequestHandler({
           if (error instanceof Error && "code" in error) {
             const code = (error as { code?: string }).code;
             if (code === "E_SYNC_JOB_NOT_FOUND") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 404,
                 payload: {
                   error: "JOB_NOT_FOUND",
                   message: sanitizeErrorMessage({ error, fallback: `Unknown job '${jobId}'.` })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_SYNC_JOB_NOT_COMPLETED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "SYNC_JOB_NOT_COMPLETED",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for completed jobs." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_SYNC_REGEN_REQUIRED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "SYNC_REGEN_REQUIRED",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for regeneration jobs." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_SYNC_CONFIRMATION_REQUIRED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "SYNC_CONFIRMATION_REQUIRED",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync apply requires explicit confirmation." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_SYNC_CONFIRMATION_INVALID" || code === "E_SYNC_CONFIRMATION_EXPIRED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: code === "E_SYNC_CONFIRMATION_EXPIRED" ? "SYNC_CONFIRMATION_EXPIRED" : "SYNC_CONFIRMATION_INVALID",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync confirmation token is invalid." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_SYNC_PREVIEW_STALE") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "SYNC_PREVIEW_STALE",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync preview is stale. Request a new dry-run preview." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
@@ -955,24 +1139,25 @@ export function createWorkspaceRequestHandler({
 
           if (error instanceof LocalSyncError) {
             if (error.code === "E_SYNC_TARGET_PATH_INVALID") {
-              sendJson({
-                response,
-                statusCode: 400,
+              sendValidationError({
                 payload: {
                   error: "INVALID_TARGET_PATH",
                   message: sanitizeErrorMessage({ error, fallback: "targetPath is invalid." })
-                }
+                },
+                jobId,
+                fallbackMessage: "Sync request validation failed."
               });
               return;
             }
             if (error.code === "E_SYNC_GENERATED_DIR_MISSING") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 404,
                 payload: {
                   error: "SYNC_GENERATED_OUTPUT_NOT_FOUND",
                   message: sanitizeErrorMessage({ error, fallback: "Generated output was not found." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Sync request failed for job '${jobId}'.`
               });
               return;
             }
@@ -982,36 +1167,37 @@ export function createWorkspaceRequestHandler({
               error.code === "E_SYNC_DESTINATION_CONFLICT" ||
               error.code === "E_SYNC_SOURCE_SYMLINK"
             ) {
-              sendJson({
-                response,
-                statusCode: 400,
+              sendValidationError({
                 payload: {
                   error: "SYNC_DESTINATION_UNSAFE",
                   message: sanitizeErrorMessage({ error, fallback: "Sync destination is not safe for writes." })
-                }
+                },
+                jobId,
+                fallbackMessage: "Sync request validation failed."
               });
               return;
             }
             if (error.code === "E_SYNC_FILE_DECISIONS_INVALID") {
-              sendJson({
-                response,
-                statusCode: 400,
+              sendValidationError({
                 payload: {
                   error: "SYNC_FILE_DECISIONS_INVALID",
                   message: sanitizeErrorMessage({ error, fallback: "Local sync file decisions are invalid." })
-                }
+                },
+                jobId,
+                fallbackMessage: "Sync request validation failed."
               });
               return;
             }
           }
 
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
               message: sanitizeErrorMessage({ error, fallback: "Could not perform local sync." })
-            }
+            },
+            jobId,
+            fallbackMessage: `Sync request failed for job '${jobId}'.`
           });
           return;
         }
@@ -1022,21 +1208,25 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Regeneration request validation failed."
           });
           return;
         }
 
         const parsed = RegenerationRequestSchema.safeParse(rawBody.value);
         if (!parsed.success) {
-          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          sendValidationError({
+            payload: formatZodError(parsed.error),
+            jobId,
+            fallbackMessage: "Regeneration request validation failed."
+          });
           return;
         }
 
@@ -1053,51 +1243,63 @@ export function createWorkspaceRequestHandler({
             const code = (error as { code?: string }).code;
             if (code === "E_JOB_QUEUE_FULL") {
               const queueValue = (error as { queue?: unknown }).queue;
-              sendJson({
-                response,
+              sendAuditedError({
                 statusCode: 429,
                 payload: {
                   error: "QUEUE_BACKPRESSURE",
                   message: sanitizeErrorMessage({ error, fallback: "Job queue limit reached." }),
                   queue: typeof queueValue === "object" && queueValue !== null ? queueValue : undefined
-                }
+                },
+                event: "security.request.rate_limited",
+                level: "warn",
+                jobId,
+                fallbackMessage: `Regeneration request rate limited for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_REGEN_SOURCE_NOT_FOUND") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 404,
                 payload: {
                   error: "SOURCE_JOB_NOT_FOUND",
                   message: `Source job '${jobId}' not found.`
-                }
+                },
+                jobId,
+                fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
               });
               return;
             }
             if (code === "E_REGEN_SOURCE_NOT_COMPLETED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "SOURCE_JOB_NOT_COMPLETED",
                   message: sanitizeErrorMessage({ error, fallback: "Source job is not completed." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
               });
               return;
             }
           }
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
               message: sanitizeErrorMessage({ error, fallback: "Could not submit regeneration job." })
-            }
+            },
+            jobId,
+            fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
           });
           return;
         }
 
+        logAuditEvent({
+          event: "workspace.regenerate.accepted",
+          statusCode: 202,
+          jobId: accepted.jobId,
+          message: `Regeneration accepted for source job '${jobId}' as job '${accepted.jobId}'.`
+        });
         sendJson({
           response,
           statusCode: 202,
@@ -1111,21 +1313,25 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Create PR request validation failed."
           });
           return;
         }
 
         const parsed = CreatePrRequestSchema.safeParse(rawBody.value);
         if (!parsed.success) {
-          sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+          sendValidationError({
+            payload: formatZodError(parsed.error),
+            jobId,
+            fallbackMessage: "Create PR request validation failed."
+          });
           return;
         }
 
@@ -1139,61 +1345,72 @@ export function createWorkspaceRequestHandler({
           if (error instanceof Error && "code" in error) {
             const code = (error as { code?: string }).code;
             if (code === "E_PR_JOB_NOT_FOUND") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 404,
                 payload: {
                   error: "JOB_NOT_FOUND",
                   message: `Job '${jobId}' not found.`
-                }
+                },
+                jobId,
+                fallbackMessage: `Create PR request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_PR_JOB_NOT_COMPLETED") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "JOB_NOT_COMPLETED",
                   message: sanitizeErrorMessage({ error, fallback: "Job is not completed." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Create PR request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_PR_NOT_REGENERATION_JOB") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "NOT_REGENERATION_JOB",
                   message: sanitizeErrorMessage({ error, fallback: "Only regeneration jobs support PR creation." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Create PR request failed for job '${jobId}'.`
               });
               return;
             }
             if (code === "E_PR_NO_GENERATED_PROJECT") {
-              sendJson({
-                response,
+              sendRequestFailure({
                 statusCode: 409,
                 payload: {
                   error: "NO_GENERATED_PROJECT",
                   message: sanitizeErrorMessage({ error, fallback: "Job has no generated project." })
-                }
+                },
+                jobId,
+                fallbackMessage: `Create PR request failed for job '${jobId}'.`
               });
               return;
             }
           }
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
               message: sanitizeErrorMessage({ error, fallback: "Could not create PR." })
-            }
+            },
+            jobId,
+            fallbackMessage: `Create PR request failed for job '${jobId}'.`
           });
           return;
         }
 
+        logAuditEvent({
+          event: "workspace.create_pr.completed",
+          statusCode: 200,
+          jobId,
+          message: `Create PR completed for job '${jobId}'.`
+        });
         sendJson({
           response,
           statusCode: 200,
@@ -1207,14 +1424,14 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Stale-check request validation failed."
           });
           return;
         }
@@ -1228,17 +1445,24 @@ export function createWorkspaceRequestHandler({
         try {
           checkResult = await jobEngine.checkStaleDraft({ jobId, draftNodeIds });
         } catch (error) {
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
               message: sanitizeErrorMessage({ error, fallback: "Could not check draft staleness." })
-            }
+            },
+            jobId,
+            fallbackMessage: `Stale-check request failed for job '${jobId}'.`
           });
           return;
         }
 
+        logAuditEvent({
+          event: "workspace.stale_check.completed",
+          statusCode: 200,
+          jobId,
+          message: `Stale-check completed for job '${jobId}'.`
+        });
         sendJson({
           response,
           statusCode: 200,
@@ -1252,14 +1476,14 @@ export function createWorkspaceRequestHandler({
         if (jobId === null) return;
         const rawBody = await readJsonBody(request);
         if (!rawBody.ok) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
               issues: [{ path: "(root)", message: rawBody.error }]
-            }
+            },
+            jobId,
+            fallbackMessage: "Remap-suggest request validation failed."
           });
           return;
         }
@@ -1277,13 +1501,13 @@ export function createWorkspaceRequestHandler({
           : [];
 
         if (!latestJobId) {
-          sendJson({
-            response,
-            statusCode: 400,
+          sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "latestJobId is required."
-            }
+            },
+            jobId,
+            fallbackMessage: "Remap-suggest request validation failed."
           });
           return;
         }
@@ -1296,17 +1520,24 @@ export function createWorkspaceRequestHandler({
             unmappedNodeIds
           });
         } catch (error) {
-          sendJson({
-            response,
+          sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
               message: sanitizeErrorMessage({ error, fallback: "Could not generate remap suggestions." })
-            }
+            },
+            jobId,
+            fallbackMessage: `Remap-suggest request failed for job '${jobId}'.`
           });
           return;
         }
 
+        logAuditEvent({
+          event: "workspace.remap_suggest.completed",
+          statusCode: 200,
+          jobId,
+          message: `Remap suggestions completed for job '${jobId}'.`
+        });
         sendJson({
           response,
           statusCode: 200,
@@ -1319,21 +1550,23 @@ export function createWorkspaceRequestHandler({
     if (method === "POST" && pathname === "/workspace/submit") {
       const rawBody = await readJsonBody(request);
       if (!rawBody.ok) {
-        sendJson({
-          response,
-          statusCode: 400,
+        sendValidationError({
           payload: {
             error: "VALIDATION_ERROR",
             message: "Request validation failed.",
             issues: [{ path: "(root)", message: rawBody.error }]
-          }
+          },
+          fallbackMessage: "Submit request validation failed."
         });
         return;
       }
 
       const parsed = SubmitRequestSchema.safeParse(rawBody.value);
       if (!parsed.success) {
-        sendJson({ response, statusCode: 400, payload: formatZodError(parsed.error) });
+        sendValidationError({
+          payload: formatZodError(parsed.error),
+          fallbackMessage: "Submit request validation failed."
+        });
         return;
       }
 
@@ -1349,9 +1582,7 @@ export function createWorkspaceRequestHandler({
       try {
         enforceModeLock(modeLockInput);
       } catch (error) {
-        sendJson({
-          response,
-          statusCode: 400,
+        sendValidationError({
           payload: {
             error: "MODE_LOCK_VIOLATION",
             message: sanitizeErrorMessage({
@@ -1363,7 +1594,8 @@ export function createWorkspaceRequestHandler({
               figmaSourceModes: [...getAllowedFigmaSourceModes()],
               llmCodegenMode: defaults.llmCodegenMode
             }
-          }
+          },
+          fallbackMessage: "Submit request validation failed."
         });
         return;
       }
@@ -1382,8 +1614,7 @@ export function createWorkspaceRequestHandler({
           (error as { code?: string }).code === "E_JOB_QUEUE_FULL"
         ) {
           const queueValue = (error as { queue?: unknown }).queue;
-          sendJson({
-            response,
+          sendAuditedError({
             statusCode: 429,
             payload: {
               error: "QUEUE_BACKPRESSURE",
@@ -1396,12 +1627,14 @@ export function createWorkspaceRequestHandler({
                 queueValue !== null
                   ? queueValue
                   : undefined
-            }
+            },
+            event: "security.request.rate_limited",
+            level: "warn",
+            fallbackMessage: "Submit request rate limited."
           });
           return;
         }
-        sendJson({
-          response,
+        sendRequestFailure({
           statusCode: 500,
           payload: {
             error: "INTERNAL_ERROR",
@@ -1409,11 +1642,18 @@ export function createWorkspaceRequestHandler({
               error,
               fallback: "Could not submit job."
             })
-          }
+          },
+          fallbackMessage: "Submit request failed."
         });
         return;
       }
 
+      logAuditEvent({
+        event: "workspace.submit.accepted",
+        statusCode: 202,
+        jobId: accepted.jobId,
+        message: `Submission accepted as job '${accepted.jobId}'.`
+      });
       sendJson({
         response,
         statusCode: 202,
@@ -1430,6 +1670,28 @@ export function createWorkspaceRequestHandler({
         message: `Unknown route: ${method} ${pathname}`
       }
     });
+    } catch (error) {
+      const sanitizedMessage = sanitizeErrorMessage({
+        error,
+        fallback: DEFAULT_REQUEST_FAILURE_MESSAGE
+      });
+      logAuditEvent({
+        event: "workspace.request.failed",
+        level: "error",
+        statusCode: 500,
+        message: sanitizedMessage
+      });
+      if (!response.writableEnded) {
+        sendJson({
+          response,
+          statusCode: 500,
+          payload: {
+            error: "INTERNAL_ERROR",
+            message: sanitizedMessage
+          }
+        });
+      }
+    }
   };
 }
 

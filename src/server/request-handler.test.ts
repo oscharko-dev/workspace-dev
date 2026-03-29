@@ -8,6 +8,7 @@ import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import type { JobEngine } from "../job-engine.js";
+import type { WorkspaceRuntimeLogInput, WorkspaceRuntimeLogger } from "../logging.js";
 
 function createCodedError(code: string, message: string, extra: Record<string, unknown> = {}): Error & { code: string } {
   return Object.assign(new Error(message), { code, ...extra });
@@ -78,14 +79,25 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
   } as unknown as JobEngine;
 }
 
+function createStubLogger(
+  overrides: Partial<WorkspaceRuntimeLogger> = {}
+): WorkspaceRuntimeLogger {
+  return {
+    log: () => {},
+    ...overrides
+  };
+}
+
 async function createRequestHandlerApp({
   jobEngine = createStubJobEngine(),
   moduleDir = path.resolve(import.meta.dirname ?? ".", ".."),
-  rateLimitPerMinute = 10
+  rateLimitPerMinute = 10,
+  logger = createStubLogger()
 }: {
   jobEngine?: JobEngine;
   moduleDir?: string;
   rateLimitPerMinute?: number;
+  logger?: WorkspaceRuntimeLogger;
 } = {}): Promise<{
   app: WorkspaceServerApp;
   close: () => Promise<void>;
@@ -102,7 +114,8 @@ async function createRequestHandlerApp({
     defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
     runtime: {
       previewEnabled: false,
-      rateLimitPerMinute
+      rateLimitPerMinute,
+      logger
     },
     jobEngine,
     moduleDir
@@ -150,9 +163,11 @@ test("request handler returns UI_ASSETS_UNAVAILABLE when UI assets cannot be res
     });
 
     assert.equal(response.statusCode, 503);
-    assert.deepEqual(response.json<Record<string, unknown>>(), {
+    const body = response.json<Record<string, unknown>>();
+    assert.deepEqual(body, {
       error: "UI_ASSETS_UNAVAILABLE",
-      message: "workspace-dev UI assets are not available in this runtime."
+      message: "workspace-dev UI assets are not available in this runtime.",
+      requestId: response.headers["x-request-id"]
     });
   } finally {
     await close();
@@ -251,6 +266,227 @@ test("request handler rate limits submit before parsing the body or calling subm
     assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
     assert.equal(limited.json<Record<string, unknown>>().error, "RATE_LIMIT_EXCEEDED");
     assert.equal(submitJob.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler emits and echoes request IDs for successful responses", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const generatedResponse = await app.inject({
+      method: "GET",
+      url: "/workspace"
+    });
+    assert.equal(generatedResponse.statusCode, 200);
+    assert.match(generatedResponse.headers["x-request-id"] ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+    const echoedResponse = await app.inject({
+      method: "GET",
+      url: "/healthz",
+      headers: {
+        "x-request-id": "req-upstream-healthz"
+      }
+    });
+    assert.equal(echoedResponse.statusCode, 200);
+    assert.equal(echoedResponse.headers["x-request-id"], "req-upstream-healthz");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler injects requestId into validation, security, and internal-error envelopes", async (t) => {
+  await t.test("validation errors include requestId", async () => {
+    const { app, close } = await createRequestHandlerApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "req-validation-1"
+        },
+        payload: "{"
+      });
+
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.headers["x-request-id"], "req-validation-1");
+      assert.equal(response.json<Record<string, unknown>>().requestId, "req-validation-1");
+    } finally {
+      await close();
+    }
+  });
+
+  await t.test("security errors include requestId", async () => {
+    const { app, close } = await createRequestHandlerApp();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        headers: {
+          origin: "https://evil.example",
+          "sec-fetch-site": "cross-site",
+          "content-type": "application/json",
+          "x-request-id": "req-security-1"
+        },
+        payload: JSON.stringify({
+          figmaFileKey: "file-key",
+          figmaAccessToken: "secret-token"
+        })
+      });
+
+      assert.equal(response.statusCode, 403);
+      assert.equal(response.headers["x-request-id"], "req-security-1");
+      assert.equal(response.json<Record<string, unknown>>().requestId, "req-security-1");
+    } finally {
+      await close();
+    }
+  });
+
+  await t.test("internal errors include requestId", async () => {
+    const { app, close } = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        submitJob: () => {
+          throw new Error("submit failure");
+        }
+      })
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        headers: {
+          "x-request-id": "req-internal-1"
+        },
+        payload: {
+          figmaFileKey: "file-key",
+          figmaAccessToken: "token"
+        }
+      });
+
+      assert.equal(response.statusCode, 500);
+      assert.equal(response.headers["x-request-id"], "req-internal-1");
+      assert.equal(response.json<Record<string, unknown>>().requestId, "req-internal-1");
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("request handler emits request-scoped audit logs for covered write routes", async () => {
+  const capturedLogs: WorkspaceRuntimeLogInput[] = [];
+  const logger = createStubLogger({
+    log: (input) => {
+      capturedLogs.push(input);
+    }
+  });
+  const { app, close } = await createRequestHandlerApp({
+    logger,
+    rateLimitPerMinute: 1
+  });
+
+  try {
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "x-request-id": "req-submit-1"
+      },
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token"
+      }
+    });
+    assert.equal(submitResponse.statusCode, 202);
+
+    const cancelResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/job-1/cancel",
+      headers: {
+        "x-request-id": "req-cancel-1"
+      },
+      payload: {
+        reason: "cleanup"
+      }
+    });
+    assert.equal(cancelResponse.statusCode, 202);
+
+    const rateLimitedResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "x-request-id": "req-rate-1"
+      },
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token"
+      }
+    });
+    assert.equal(rateLimitedResponse.statusCode, 429);
+
+    const rejectedResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        origin: "https://evil.example",
+        "sec-fetch-site": "cross-site",
+        "content-type": "application/json",
+        "x-request-id": "req-rejected-1"
+      },
+      payload: JSON.stringify({
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token"
+      })
+    });
+    assert.equal(rejectedResponse.statusCode, 403);
+
+    const submitLog = capturedLogs.find((entry) => entry.event === "workspace.submit.accepted");
+    assert.deepEqual(submitLog, {
+      level: "info",
+      message: "Submission accepted as job 'job-accepted'.",
+      requestId: "req-submit-1",
+      event: "workspace.submit.accepted",
+      method: "POST",
+      path: "/workspace/submit",
+      jobId: "job-accepted",
+      statusCode: 202
+    });
+
+    const cancelLog = capturedLogs.find((entry) => entry.event === "workspace.cancel.accepted");
+    assert.deepEqual(cancelLog, {
+      level: "info",
+      message: "Cancellation accepted for job 'job-1'.",
+      requestId: "req-cancel-1",
+      event: "workspace.cancel.accepted",
+      method: "POST",
+      path: "/workspace/jobs/job-1/cancel",
+      jobId: "job-1",
+      statusCode: 202
+    });
+
+    const rateLimitLog = capturedLogs.find((entry) => entry.event === "security.request.rate_limited");
+    assert.equal(rateLimitLog?.level, "warn");
+    assert.equal(rateLimitLog?.requestId, "req-rate-1");
+    assert.equal(rateLimitLog?.event, "security.request.rate_limited");
+    assert.equal(rateLimitLog?.method, "POST");
+    assert.equal(rateLimitLog?.path, "/workspace/submit");
+    assert.equal(rateLimitLog?.statusCode, 429);
+    assert.match(String(rateLimitLog?.message ?? ""), /^Too many job submissions from this client\. Retry after \d+ seconds\.$/);
+
+    const rejectedLog = capturedLogs.find((entry) => entry.event === "security.request.rejected_origin");
+    assert.deepEqual(rejectedLog, {
+      level: "warn",
+      message: "Cross-site browser requests to workspace-dev write routes are blocked.",
+      requestId: "req-rejected-1",
+      event: "security.request.rejected_origin",
+      method: "POST",
+      path: "/workspace/submit",
+      statusCode: 403
+    });
   } finally {
     await close();
   }
@@ -552,7 +788,8 @@ test("request handler returns INTERNAL_ERROR for invalid component manifest JSON
     assert.equal(response.statusCode, 500);
     assert.deepEqual(response.json<Record<string, unknown>>(), {
       error: "INTERNAL_ERROR",
-      message: "Failed to parse component manifest for job 'job-1'."
+      message: "Failed to parse component manifest for job 'job-1'.",
+      requestId: response.headers["x-request-id"]
     });
   } finally {
     await close();
@@ -609,7 +846,8 @@ test("request handler GET job routes expose results and reject POST-only actions
         assert.equal(response.statusCode, 405);
         assert.deepEqual(response.json<Record<string, unknown>>(), {
           error: "METHOD_NOT_ALLOWED",
-          message
+          message,
+          requestId: response.headers["x-request-id"]
         });
       });
     }
@@ -1182,7 +1420,8 @@ test("request handler rejects OPTIONS on protected write routes without CORS hea
 
         assert.deepEqual(response.json<Record<string, unknown>>(), {
           error: "METHOD_NOT_ALLOWED",
-          message: `Write route '${url}' only supports POST and does not support cross-origin browser preflight requests.`
+          message: `Write route '${url}' only supports POST and does not support cross-origin browser preflight requests.`,
+          requestId: response.headers["x-request-id"]
         });
       });
     }

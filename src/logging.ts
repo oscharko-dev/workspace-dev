@@ -2,13 +2,20 @@ import type { WorkspaceJobStageName, WorkspaceLogFormat } from "./contracts/inde
 
 export type WorkspaceRuntimeLogLevel = "debug" | "info" | "warn" | "error";
 
+export interface WorkspaceRuntimeLogInput {
+  level: WorkspaceRuntimeLogLevel;
+  message: string;
+  jobId?: string;
+  stage?: WorkspaceJobStageName;
+  requestId?: string;
+  event?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+}
+
 export interface WorkspaceRuntimeLogger {
-  log: (input: {
-    level: WorkspaceRuntimeLogLevel;
-    message: string;
-    jobId?: string;
-    stage?: WorkspaceJobStageName;
-  }) => void;
+  log: (input: WorkspaceRuntimeLogInput) => void;
 }
 
 export const DEFAULT_WORKSPACE_LOG_FORMAT: WorkspaceLogFormat = "text";
@@ -22,13 +29,23 @@ const formatTextLine = ({
   label,
   message,
   jobId,
-  stage
+  stage,
+  requestId,
+  event,
+  method,
+  path,
+  statusCode
 }: {
   level: WorkspaceRuntimeLogLevel;
   label: string;
   message: string;
   jobId?: string;
   stage?: WorkspaceJobStageName;
+  requestId?: string;
+  event?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
 }): string => {
   const segments = [`[${label}]`];
   if (level !== "info") {
@@ -39,6 +56,21 @@ const formatTextLine = ({
   }
   if (stage) {
     segments.push(`[stage=${stage}]`);
+  }
+  if (requestId) {
+    segments.push(`[request=${requestId}]`);
+  }
+  if (event) {
+    segments.push(`[event=${event}]`);
+  }
+  if (method) {
+    segments.push(`[method=${method}]`);
+  }
+  if (path) {
+    segments.push(`[path=${path}]`);
+  }
+  if (statusCode !== undefined) {
+    segments.push(`[status=${statusCode}]`);
   }
   return `${segments.join("")} ${message}\n`;
 };
@@ -85,7 +117,7 @@ export const createWorkspaceLogger = ({
   label?: string;
 } = {}): WorkspaceRuntimeLogger => {
   return {
-    log: ({ level, message, jobId, stage }) => {
+    log: ({ level, message, jobId, stage, requestId, event, method, path, statusCode }) => {
       const sanitizedMessage = redactLogMessage(message);
       const line =
         format === "json"
@@ -94,14 +126,24 @@ export const createWorkspaceLogger = ({
               level,
               msg: sanitizedMessage,
               ...(jobId ? { jobId } : {}),
-              ...(stage ? { stage } : {})
+              ...(stage ? { stage } : {}),
+              ...(requestId ? { requestId } : {}),
+              ...(event ? { event } : {}),
+              ...(method ? { method } : {}),
+              ...(path ? { path } : {}),
+              ...(statusCode !== undefined ? { statusCode } : {})
             })}\n`
           : formatTextLine({
               level,
               label,
               message: sanitizedMessage,
               ...(jobId ? { jobId } : {}),
-              ...(stage ? { stage } : {})
+              ...(stage ? { stage } : {}),
+              ...(requestId ? { requestId } : {}),
+              ...(event ? { event } : {}),
+              ...(method ? { method } : {}),
+              ...(path ? { path } : {}),
+              ...(statusCode !== undefined ? { statusCode } : {})
             });
 
       if (level === "warn" || level === "error") {

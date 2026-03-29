@@ -541,6 +541,48 @@ test("workspace server healthz endpoint", async () => {
   }
 });
 
+test("workspace server propagates request IDs on success and error responses", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch()
+  });
+
+  try {
+    const successResponse = await server.app.inject({
+      method: "GET",
+      url: "/workspace"
+    });
+    assert.equal(successResponse.statusCode, 200);
+    assert.match(
+      successResponse.headers["x-request-id"] ?? "",
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+
+    const errorResponse = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-server-error-1"
+      },
+      payload: "{\"figmaFileKey\":"
+    });
+
+    assert.equal(errorResponse.statusCode, 400);
+    assert.equal(errorResponse.headers["x-request-id"], "req-server-error-1");
+    const errorBody = errorResponse.json<Record<string, unknown>>();
+    assert.equal(errorBody.error, "VALIDATION_ERROR");
+    assert.equal(errorBody.requestId, "req-server-error-1");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);

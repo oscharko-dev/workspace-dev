@@ -71,9 +71,11 @@ test("e2e: protected write routes reject cross-origin preflight with explicit 40
       assert.equal(response.headers.get("access-control-max-age"), null);
 
       const body = (await response.json()) as Record<string, unknown>;
+      assert.match(response.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
       assert.deepEqual(body, {
         error: "METHOD_NOT_ALLOWED",
-        message: `Write route '${route}' only supports POST and does not support cross-origin browser preflight requests.`
+        message: `Write route '${route}' only supports POST and does not support cross-origin browser preflight requests.`,
+        requestId: response.headers.get("x-request-id")
       });
     }
 

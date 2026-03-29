@@ -20,7 +20,12 @@ test("createWorkspaceLogger emits newline-delimited JSON records with correlatio
     level: "info",
     message: "Stage started",
     jobId: "job-123",
-    stage: "ir.derive"
+    stage: "ir.derive",
+    requestId: "req-123",
+    event: "workspace.submit.accepted",
+    method: "POST",
+    path: "/workspace/submit",
+    statusCode: 202
   });
   logger.log({
     level: "error",
@@ -37,7 +42,12 @@ test("createWorkspaceLogger emits newline-delimited JSON records with correlatio
     level: "info",
     msg: "Stage started",
     jobId: "job-123",
-    stage: "ir.derive"
+    stage: "ir.derive",
+    requestId: "req-123",
+    event: "workspace.submit.accepted",
+    method: "POST",
+    path: "/workspace/submit",
+    statusCode: 202
   });
 
   const errorRecord = JSON.parse(stderrLines[0]) as Record<string, string>;
@@ -61,10 +71,18 @@ test("createWorkspaceLogger keeps text mode human-readable with correlation pref
     level: "info",
     message: "Completed stage 'figma.source'.",
     jobId: "job-abc",
-    stage: "figma.source"
+    stage: "figma.source",
+    requestId: "req-abc",
+    event: "workspace.sync.applied",
+    method: "POST",
+    path: "/workspace/jobs/job-abc/sync",
+    statusCode: 200
   });
 
-  assert.equal(stdoutLines[0], "[workspace-dev][job=job-abc][stage=figma.source] Completed stage 'figma.source'.\n");
+  assert.equal(
+    stdoutLines[0],
+    "[workspace-dev][job=job-abc][stage=figma.source][request=req-abc][event=workspace.sync.applied][method=POST][path=/workspace/jobs/job-abc/sync][status=200] Completed stage 'figma.source'.\n"
+  );
 });
 
 test("createWorkspaceLogger routes warnings to stderr in text mode", () => {

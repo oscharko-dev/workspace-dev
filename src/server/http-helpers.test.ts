@@ -21,6 +21,9 @@ function createMockResponse(): ServerResponse & {
       headers[name.toLowerCase()] = value;
       return this;
     },
+    getHeader(name: string) {
+      return headers[name.toLowerCase()];
+    },
     removeHeader(name: string) {
       delete headers[name.toLowerCase()];
       return this;
@@ -54,6 +57,24 @@ test("sendJson writes JSON content-type, trailing newline, and default security 
   assert.equal(response.headers["x-content-type-options"], "nosniff");
   assert.equal(response.headers["referrer-policy"], "no-referrer");
   assert.equal(response.body, "{\"ok\":true}\n");
+});
+
+test("sendJson appends x-request-id to JSON error envelopes only", () => {
+  const response = createMockResponse();
+  response.setHeader("x-request-id", "req-helper-1");
+  sendJson({
+    response,
+    statusCode: 400,
+    payload: {
+      error: "VALIDATION_ERROR",
+      message: "Request validation failed."
+    }
+  });
+
+  assert.equal(
+    response.body,
+    "{\"error\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"requestId\":\"req-helper-1\"}\n"
+  );
 });
 
 test("sendText supports cache control and an explicit UI CSP override", () => {
