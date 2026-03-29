@@ -420,8 +420,12 @@ export const runGitPrFlowWithDeps = async ({
 
     let prUrl: string | undefined;
     if (prResponse.ok) {
-      const payload = (await prResponse.json()) as { html_url?: string };
-      prUrl = payload.html_url;
+      try {
+        const payload = (await prResponse.json()) as { html_url?: string };
+        prUrl = payload.html_url;
+      } catch {
+        onLog(`PR created (${prResponse.status}) but response body could not be parsed; prUrl unavailable.`);
+      }
     } else {
       const failureText = (await prResponse.text()).slice(0, 500);
       onLog(`PR creation failed (${prResponse.status}): ${redactGitPrValue({ value: failureText, redactions })}`);

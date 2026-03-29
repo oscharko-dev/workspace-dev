@@ -879,3 +879,102 @@ test("runGitPrFlowWithDeps includes artifact hints in truncated git-step failure
     }
   );
 });
+
+test("runGitPrFlowWithDeps handles malformed PR response body without throwing", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-malformed-pr-response-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+  const repoDir = path.join(tempRoot, "job", "repo");
+  const logs: string[] = [];
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  const result = await runGitPrFlowWithDeps({
+    input: {
+      figmaFileKey: "demo-file",
+      figmaAccessToken: "pat",
+      enableGitPr: true,
+      repoUrl: "https://github.com/acme/repo.git",
+      repoToken: "secret"
+    },
+    jobId: createJobRecord("ffffffff-0000-1111-2222-333333333333").jobId,
+    generatedProjectDir,
+    jobDir: path.join(tempRoot, "job"),
+    onLog: (message) => {
+      logs.push(message);
+    },
+    deps: {
+      runCommand: async ({ args }) => {
+        if (args[0] === "ls-remote") {
+          return { success: true, code: 0, stdout: "ref: refs/heads/main HEAD\n", stderr: "", combined: "" };
+        }
+        if (args[0] === "clone") {
+          await mkdir(repoDir, { recursive: true });
+          return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+        }
+        if (args[0] === "diff") {
+          return { success: true, code: 0, stdout: "demo-file-1668f4f0ae/README.md\n", stderr: "", combined: "" };
+        }
+        return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+      },
+      fetchImpl: async () => new Response("not-json", { status: 201 })
+    }
+  });
+
+  assert.equal(result.status, "executed");
+  assert.equal(result.prUrl, undefined);
+  assert.ok(logs.some((entry) => entry.includes("response body could not be parsed")));
+  await assertPathMissing(repoDir);
+});
+
+test("runGitPrFlowWithDeps enforces minimum timeout of 1000ms", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gitpr-min-timeout-"));
+  const generatedProjectDir = path.join(tempRoot, "generated");
+  const repoDir = path.join(tempRoot, "job", "repo");
+  let capturedSignal: AbortSignal | undefined;
+
+  await mkdir(generatedProjectDir, { recursive: true });
+  await writeFile(path.join(generatedProjectDir, "README.md"), "content\n", "utf8");
+
+  const result = await runGitPrFlowWithDeps({
+    input: {
+      figmaFileKey: "demo-file",
+      figmaAccessToken: "pat",
+      enableGitPr: true,
+      repoUrl: "https://github.com/acme/repo.git",
+      repoToken: "secret"
+    },
+    jobId: createJobRecord().jobId,
+    generatedProjectDir,
+    jobDir: path.join(tempRoot, "job"),
+    onLog: () => {
+      // no-op
+    },
+    commandTimeoutMs: 50,
+    deps: {
+      runCommand: async ({ args }) => {
+        if (args[0] === "ls-remote") {
+          return { success: true, code: 0, stdout: "ref: refs/heads/main HEAD\n", stderr: "", combined: "" };
+        }
+        if (args[0] === "clone") {
+          await mkdir(repoDir, { recursive: true });
+          return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+        }
+        if (args[0] === "diff") {
+          return { success: true, code: 0, stdout: "demo-file-1668f4f0ae/README.md\n", stderr: "", combined: "" };
+        }
+        return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+      },
+      fetchImpl: async (_input, init) => {
+        capturedSignal = init?.signal;
+        return new Response(JSON.stringify({ html_url: "https://github.com/acme/repo/pull/1" }), { status: 201 });
+      }
+    }
+  });
+
+  assert.equal(result.status, "executed");
+  assert.equal(result.prUrl, "https://github.com/acme/repo/pull/1");
+  assert.equal(capturedSignal instanceof AbortSignal, true);
+  assert.equal(capturedSignal?.aborted, false);
+  await assertPathMissing(repoDir);
+});
