@@ -1,6 +1,33 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DEFAULT_CONTENT_SECURITY_POLICY, MAX_REQUEST_BODY_BYTES } from "./constants.js";
 
+function appendRequestIdToErrorPayload({
+  response,
+  payload
+}: {
+  response: ServerResponse;
+  payload: unknown;
+}): unknown {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const payloadRecord = payload as Record<string, unknown>;
+  if (typeof payloadRecord.error !== "string" || "requestId" in payloadRecord) {
+    return payload;
+  }
+
+  const requestId = response.getHeader("x-request-id");
+  if (typeof requestId !== "string" || requestId.trim().length === 0) {
+    return payload;
+  }
+
+  return {
+    ...payloadRecord,
+    requestId
+  };
+}
+
 function applySecurityHeaders({
   response,
   allowFrameEmbedding,
@@ -42,7 +69,7 @@ export function sendJson({
     ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
   });
   response.setHeader("content-type", "application/json; charset=utf-8");
-  response.end(`${JSON.stringify(payload)}\n`);
+  response.end(`${JSON.stringify(appendRequestIdToErrorPayload({ response, payload }))}\n`);
 }
 
 export function sendText({

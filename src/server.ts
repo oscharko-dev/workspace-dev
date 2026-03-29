@@ -176,7 +176,8 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     defaults,
     runtime: {
       previewEnabled: runtime.previewEnabled,
-      rateLimitPerMinute
+      rateLimitPerMinute,
+      logger: runtime.logger
     },
     jobEngine,
     moduleDir: MODULE_DIR
