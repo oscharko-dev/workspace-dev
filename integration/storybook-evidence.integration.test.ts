@@ -5,7 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { getStorybookEvidenceOutputFileName } from "../src/storybook/evidence.js";
+import {
+  getDefaultVersionedStorybookEvidencePath,
+  getStorybookEvidenceOutputFileName
+} from "../src/storybook/evidence.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -118,16 +121,20 @@ const createIntegrationStorybookBuild = async (): Promise<string> => {
 test("storybook evidence integration: CLI generates deterministic evidence from a synthetic build", async () => {
   const buildDir = await createIntegrationStorybookBuild();
   const generatorEntrypoint = path.resolve(process.cwd(), "src", "storybook", "generate-artifact.ts");
-  const artifactPath = path.join(buildDir, getStorybookEvidenceOutputFileName());
+  const artifactPath = path.join(buildDir, "reference-output", getStorybookEvidenceOutputFileName());
 
   const runGenerator = async (): Promise<{
     outputPath: string;
-    evidenceCount: number;
-    entryCount: number;
-  }> => {
-    const { stdout, stderr } = await execFile("pnpm", ["exec", "tsx", generatorEntrypoint, buildDir], {
-      cwd: process.cwd()
-    });
+      evidenceCount: number;
+      entryCount: number;
+    }> => {
+    const { stdout, stderr } = await execFile(
+      "pnpm",
+      ["exec", "tsx", generatorEntrypoint, buildDir, artifactPath],
+      {
+        cwd: process.cwd()
+      }
+    );
 
     assert.equal(stderr, "");
     return JSON.parse(stdout) as {
@@ -157,6 +164,7 @@ test("storybook evidence integration: CLI generates deterministic evidence from 
   };
 
   assert.equal(firstSummary.outputPath, artifactPath);
+  assert.equal(path.basename(getDefaultVersionedStorybookEvidencePath()), getStorybookEvidenceOutputFileName());
   assert.equal(firstSummary.entryCount, 2);
   assert.equal(firstArtifact.stats.entryCount, 2);
   assert.equal(firstArtifact.stats.byType.story_componentPath, 1);

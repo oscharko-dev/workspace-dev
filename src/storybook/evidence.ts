@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   extractCssCustomProperties,
@@ -539,23 +539,32 @@ export const buildStorybookEvidenceArtifact = async ({
 
 export const writeStorybookEvidenceArtifact = async ({
   buildDir,
-  artifact
+  artifact,
+  outputFilePath
 }: {
   buildDir: string;
   artifact: StorybookEvidenceArtifact;
+  outputFilePath?: string;
 }): Promise<string> => {
-  const outputPath = path.join(buildDir, STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME);
+  const outputPath = outputFilePath ?? path.join(buildDir, STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME);
+  await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, toStableJsonString(artifact as unknown as JsonValue), "utf8");
   return outputPath;
 };
 
 export const generateStorybookEvidenceArtifact = async ({
-  buildDir
+  buildDir,
+  outputFilePath
 }: {
   buildDir: string;
+  outputFilePath?: string;
 }): Promise<{ artifact: StorybookEvidenceArtifact; outputPath: string }> => {
   const artifact = await buildStorybookEvidenceArtifact({ buildDir });
-  const outputPath = await writeStorybookEvidenceArtifact({ buildDir, artifact });
+  const outputPath = await writeStorybookEvidenceArtifact({
+    buildDir,
+    artifact,
+    ...(outputFilePath ? { outputFilePath } : {})
+  });
   return { artifact, outputPath };
 };
 
@@ -565,4 +574,8 @@ export const getDefaultStorybookBuildDir = (): string => {
 
 export const getStorybookEvidenceOutputFileName = (): string => {
   return STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME;
+};
+
+export const getDefaultVersionedStorybookEvidencePath = (): string => {
+  return path.resolve(process.cwd(), "reference", "storybook", STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME);
 };

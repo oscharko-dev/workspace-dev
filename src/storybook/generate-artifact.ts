@@ -1,8 +1,16 @@
-import { generateStorybookEvidenceArtifact, getDefaultStorybookBuildDir } from "./evidence.js";
+import path from "node:path";
+import {
+  generateStorybookEvidenceArtifact,
+  getDefaultStorybookBuildDir
+} from "./evidence.js";
 
 const run = async (): Promise<void> => {
   const buildDir = process.argv[2] ?? getDefaultStorybookBuildDir();
-  const { artifact, outputPath } = await generateStorybookEvidenceArtifact({ buildDir });
+  const outputFilePath = process.argv[3] ? path.resolve(process.cwd(), process.argv[3]) : undefined;
+  const { artifact, outputPath } = await generateStorybookEvidenceArtifact({
+    buildDir,
+    ...(outputFilePath ? { outputFilePath } : {})
+  });
   process.stdout.write(
     `${JSON.stringify(
       {

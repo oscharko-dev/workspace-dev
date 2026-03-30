@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   buildStorybookEvidenceArtifact,
+  getDefaultVersionedStorybookEvidencePath,
   getStorybookEvidenceOutputFileName,
   writeStorybookEvidenceArtifact
 } from "./evidence.js";
@@ -245,4 +246,24 @@ test("writeStorybookEvidenceArtifact emits byte-identical JSON across repeated w
   assert.equal(firstOutputPath, path.join(buildDir, getStorybookEvidenceOutputFileName()));
   assert.equal(secondOutputPath, firstOutputPath);
   assert.equal(firstBytes, secondBytes);
+});
+
+test("writeStorybookEvidenceArtifact supports explicit output paths outside the Storybook build directory", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+  const outputFilePath = path.join(buildDir, "reference", "storybook", getStorybookEvidenceOutputFileName());
+
+  const writtenPath = await writeStorybookEvidenceArtifact({
+    buildDir,
+    artifact,
+    outputFilePath
+  });
+  const writtenBytes = await readFile(writtenPath, "utf8");
+
+  assert.equal(writtenPath, outputFilePath);
+  assert.equal(
+    path.basename(getDefaultVersionedStorybookEvidencePath()),
+    getStorybookEvidenceOutputFileName()
+  );
+  assert.ok(writtenBytes.includes("\"artifact\": \"storybook.evidence\""));
 });
