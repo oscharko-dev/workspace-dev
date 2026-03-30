@@ -12,6 +12,7 @@ import type { PipelineDiagnosticInput } from "../errors.js";
 import { pushRuntimeLog } from "../stage-state.js";
 import type { JobEnginePaths, JobEngineRuntime, JobRecord } from "../types.js";
 import type { StageArtifactStore } from "./artifact-store.js";
+import type { ResolvedCustomerProfile } from "../../customer-profile.js";
 
 export type PipelineExecutionMode = "submission" | "regeneration";
 
@@ -47,6 +48,7 @@ export interface PipelineExecutionContext {
   resolvedBrandTheme: WorkspaceBrandTheme;
   resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   resolvedFormHandlingMode: WorkspaceFormHandlingMode;
+  resolvedCustomerProfile?: ResolvedCustomerProfile;
   generationLocaleResolution: {
     locale: string;
     warningMessage?: string;
@@ -70,6 +72,7 @@ export interface StageRuntimeContext {
   readonly resolvedBrandTheme: WorkspaceBrandTheme;
   readonly resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   readonly resolvedFormHandlingMode: WorkspaceFormHandlingMode;
+  readonly resolvedCustomerProfile?: ResolvedCustomerProfile;
   readonly generationLocaleResolution: Readonly<{
     locale: string;
     warningMessage?: string;
@@ -106,6 +109,9 @@ export const createStageRuntimeContext = ({
     resolvedBrandTheme: executionContext.resolvedBrandTheme,
     resolvedFigmaSourceMode: executionContext.resolvedFigmaSourceMode,
     resolvedFormHandlingMode: executionContext.resolvedFormHandlingMode,
+    ...(executionContext.resolvedCustomerProfile
+      ? { resolvedCustomerProfile: executionContext.resolvedCustomerProfile }
+      : {}),
     generationLocaleResolution: executionContext.generationLocaleResolution,
     resolvedGenerationLocale: executionContext.resolvedGenerationLocale,
     ...(executionContext.figmaFileKeyForDiagnostics

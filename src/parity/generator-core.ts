@@ -22,6 +22,11 @@ import {
   getDefaultDesignSystemConfigPath,
   loadDesignSystemConfigFile
 } from "../design-system.js";
+import {
+  collectCustomerProfileImportIssuesFromSource,
+  toCustomerProfileDesignSystemConfig,
+  type ResolvedCustomerProfile
+} from "../customer-profile.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
@@ -233,6 +238,7 @@ interface GenerateArtifactsInput {
   projectDir: string;
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
+  customerProfile?: ResolvedCustomerProfile;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   imageAssetMap?: Record<string, string>;
@@ -443,6 +449,7 @@ interface GenerateArtifactsResolvedPhase {
   resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+  customerProfile?: ResolvedCustomerProfile;
   designSystemConfig?: LoadedDesignSystemConfig;
 }
 
@@ -453,6 +460,7 @@ const resolveGenerateArtifactsPhase = async ({
   llmModelName,
   llmCodegenMode,
   designSystemFilePath,
+  customerProfile,
   onLog
 }: {
   input: GenerateArtifactsInput;
@@ -461,6 +469,7 @@ const resolveGenerateArtifactsPhase = async ({
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
   designSystemFilePath: string;
+  customerProfile: ResolvedCustomerProfile | undefined;
   onLog: (message: string) => void;
 }): Promise<GenerateArtifactsResolvedPhase> => {
   void llmModelName;
@@ -486,19 +495,36 @@ const resolveGenerateArtifactsPhase = async ({
   const resolvedFormHandlingMode = resolveFormHandlingMode({
     requestedMode: formHandlingMode
   });
+  const customerProfileConfig = customerProfile ? toCustomerProfileDesignSystemConfig({ profile: customerProfile }) : undefined;
   const designSystemConfig = await runtimeAdapters.loadDesignSystemConfig({
     designSystemFilePath,
     onLog
   });
   const transformGeneratedFileWithDesignSystem = (file: GeneratedFile): GeneratedFile => {
-    if (!designSystemConfig) {
-      return file;
+    let transformedContent = file.content;
+    if (customerProfileConfig) {
+      transformedContent = runtimeAdapters.applyDesignSystemMappings({
+        filePath: file.path,
+        content: transformedContent,
+        config: customerProfileConfig
+      });
     }
-    const transformedContent = runtimeAdapters.applyDesignSystemMappings({
-      filePath: file.path,
-      content: file.content,
-      config: designSystemConfig
-    });
+    if (designSystemConfig) {
+      transformedContent = runtimeAdapters.applyDesignSystemMappings({
+        filePath: file.path,
+        content: transformedContent,
+        config: designSystemConfig
+      });
+    }
+    if (customerProfile) {
+      for (const issue of collectCustomerProfileImportIssuesFromSource({
+        content: transformedContent,
+        filePath: file.path,
+        profile: customerProfile
+      })) {
+        onLog(`Customer profile import policy warning in ${file.path}: ${issue.message}`);
+      }
+    }
     return transformedContent === file.content
       ? file
       : {
@@ -511,6 +537,7 @@ const resolveGenerateArtifactsPhase = async ({
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
     transformGeneratedFileWithDesignSystem,
+    ...(customerProfile ? { customerProfile } : {}),
     ...(designSystemConfig ? { designSystemConfig } : {})
   };
 };
@@ -735,6 +762,7 @@ export async function* generateArtifactsStreaming(
     projectDir,
     ir,
     componentMappings,
+    customerProfile,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
     designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
     imageAssetMap = {},
@@ -758,6 +786,7 @@ export async function* generateArtifactsStreaming(
     llmModelName,
     llmCodegenMode,
     designSystemFilePath,
+    customerProfile: customerProfile ?? input.context?.config.customerProfile,
     onLog
   });
   const {

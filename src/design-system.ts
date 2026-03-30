@@ -6,6 +6,7 @@ import type * as TypeScript from "typescript";
 export interface DesignSystemMappingEntry {
   import?: string;
   component: string;
+  export?: string;
   propMappings?: Record<string, string>;
 }
 
@@ -253,6 +254,13 @@ export const parseDesignSystemConfig = ({
         rawMapping.import.trim().length > 0
           ? rawMapping.import.trim()
           : undefined;
+      const exportedName =
+        typeof rawMapping.export === "string" && rawMapping.export.trim().length > 0
+          ? rawMapping.export.trim()
+          : undefined;
+      if (exportedName !== undefined && !isValidIdentifier(exportedName)) {
+        return undefined;
+      }
       const propMappings = normalizePropMappings({
         input: rawMapping.propMappings,
       });
@@ -262,6 +270,7 @@ export const parseDesignSystemConfig = ({
         {
           ...(importPath ? { import: importPath } : {}),
           component,
+          ...(exportedName ? { export: exportedName } : {}),
           ...(propMappings ? { propMappings } : {}),
         } satisfies DesignSystemMappingEntry,
       ] as const;
@@ -715,13 +724,13 @@ export const applyDesignSystemMappingsToGeneratedTsx = ({
       continue;
     }
 
-    const designImportedName = pending.mapping.component;
+    const designImportedName = pending.mapping.export?.trim() || pending.mapping.component;
     const importedKey = `${modulePath}::${designImportedName}`;
     const existingAssignedLocal = assignedDesignLocals.get(importedKey);
     let designLocalName = existingAssignedLocal;
     if (!designLocalName) {
       const preferredName = toSafeIdentifier({
-        value: designImportedName,
+        value: pending.mapping.component,
         fallback: "DesignSystemComponent",
       });
       let candidate = preferredName;
@@ -1074,6 +1083,7 @@ export const writeDesignSystemConfigFile = async ({
               {
                 ...(mapping.import ? { import: mapping.import } : {}),
                 component: mapping.component,
+                ...(mapping.export ? { export: mapping.export } : {}),
                 ...(mapping.propMappings
                   ? {
                       propMappings: Object.fromEntries(

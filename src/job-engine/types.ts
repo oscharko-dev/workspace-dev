@@ -33,6 +33,7 @@ import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 import type { PipelineDiagnosticLimits } from "./errors.js";
+import type { ResolvedCustomerProfile } from "../customer-profile.js";
 
 export interface FigmaFileResponse {
   name?: string;
@@ -129,6 +130,7 @@ export interface JobEngineRuntime {
   logger: WorkspaceRuntimeLogger;
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
+  customerProfile?: ResolvedCustomerProfile;
   figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
 }
 

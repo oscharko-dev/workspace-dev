@@ -17,6 +17,7 @@ import {
   getDefaultDesignSystemConfigPath,
   loadDesignSystemConfigFile
 } from "../design-system.js";
+import type { ResolvedCustomerProfile } from "../customer-profile.js";
 import type { ThemeComponentDefaults } from "./generator-design-system.js";
 import type { AccessibilityWarning } from "./generator-a11y.js";
 import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
@@ -60,6 +61,7 @@ export interface GeneratorConfig {
   readonly projectDir: string;
   readonly ir: DesignIR;
   readonly componentMappings: ComponentMappingRule[];
+  readonly customerProfile: ResolvedCustomerProfile | undefined;
   readonly iconMapFilePath: string;
   readonly designSystemFilePath: string;
   readonly imageAssetMap: Record<string, string>;
@@ -143,6 +145,7 @@ export interface CreateGeneratorContextInput {
   projectDir: string;
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
+  customerProfile?: ResolvedCustomerProfile;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   imageAssetMap?: Record<string, string>;
@@ -220,6 +223,7 @@ export const createGeneratorContext = (input: CreateGeneratorContextInput): Gene
     projectDir,
     ir,
     componentMappings = [],
+    customerProfile,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
     designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
     imageAssetMap = {},
@@ -244,6 +248,7 @@ export const createGeneratorContext = (input: CreateGeneratorContextInput): Gene
     projectDir,
     ir,
     componentMappings,
+    customerProfile,
     iconMapFilePath,
     designSystemFilePath,
     imageAssetMap,
