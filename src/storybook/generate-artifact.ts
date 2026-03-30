@@ -1,22 +1,27 @@
 import path from "node:path";
 import {
-  generateStorybookEvidenceArtifact,
+  generateStorybookPublicArtifacts,
+  getDefaultStorybookPublicOutputDir
+} from "./public-extracts.js";
+import {
   getDefaultStorybookBuildDir
 } from "./evidence.js";
 
 const run = async (): Promise<void> => {
   const buildDir = process.argv[2] ?? getDefaultStorybookBuildDir();
-  const outputFilePath = process.argv[3] ? path.resolve(process.cwd(), process.argv[3]) : undefined;
-  const { artifact, outputPath } = await generateStorybookEvidenceArtifact({
+  const outputDirPath = process.argv[3] ? path.resolve(process.cwd(), process.argv[3]) : getDefaultStorybookPublicOutputDir();
+  const { artifacts, outputDir, writtenFiles } = await generateStorybookPublicArtifacts({
     buildDir,
-    ...(outputFilePath ? { outputFilePath } : {})
+    outputDirPath
   });
   process.stdout.write(
     `${JSON.stringify(
       {
-        outputPath,
-        evidenceCount: artifact.stats.evidenceCount,
-        entryCount: artifact.stats.entryCount
+        outputDir,
+        writtenFiles,
+        tokenCount: artifacts.tokensArtifact.$extensions["io.github.oscharko-dev.workspace-dev"].stats.tokenCount,
+        themeCount: artifacts.themesArtifact.$extensions["io.github.oscharko-dev.workspace-dev"].stats.themeCount,
+        componentCount: artifacts.componentsArtifact.stats.componentCount
       },
       null,
       2

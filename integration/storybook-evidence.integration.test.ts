@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { getStorybookEvidenceOutputFileName } from "../src/storybook/evidence.js";
+import { getStorybookPublicArtifactFileNames } from "../src/storybook/public-extracts.js";
+import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../src/storybook/types.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -93,14 +94,46 @@ const createIntegrationStorybookBuild = async (): Promise<string> => {
   `;
 
   const sharedThemeBundle = `
-    const appTheme = createTheme({ palette: { primary: { main: "#ff0000" } } });
+    const FONT_DATA = "data:application/font-ttf;base64,${"A".repeat(1500)}";
+    const paletteRefs = { light: { "warning-01": "#ffc900" } };
+    const keepName = ((fn, name) => fn);
+    const createFont = keepName((family, weight, src) => ({
+      fontFamily: \`\${family}\`,
+      fontWeight: weight,
+      src: \`url('\${src}') format('truetype')\`
+    }), "createFont");
+    const regular = createFont("Brand Sans", 400, FONT_DATA);
+    const bold = createFont("Brand Sans Bold", 700, FONT_DATA);
+    const appTheme = createTheme({
+      spacing: 8,
+      shape: { borderRadius: 12 },
+      palette: {
+        primary: { main: "#ff0000", contrastText: "#ffffff" },
+        warning: { main: paletteRefs.light["warning-01"] },
+        text: { primary: "#444444" }
+      },
+      typography: {
+        fontFamily: "Brand Sans, sans-serif",
+        fontSize: 16,
+        body1: { fontSize: 14, lineHeight: 1.5, fontFamily: "Brand Sans" },
+        h1: { fontSize: 30, lineHeight: 1.2, fontFamily: "Brand Sans Bold" }
+      },
+      components: {
+        MuiCssBaseline: {
+          styleOverrides: {
+            "@font-face": [regular],
+            fallbacks: [{ "@font-face": [bold] }]
+          }
+        }
+      },
+      zIndex: { drawer: 1200 }
+    });
     export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
   `;
 
   const cssText = `
     :root {
-      --fi-color-brand: #ff0000;
-      --fi-color-surface: #ffffff;
+      --fi-space-base: 8px;
     }
   `;
 
@@ -115,19 +148,26 @@ const createIntegrationStorybookBuild = async (): Promise<string> => {
   return buildDir;
 };
 
-test("storybook evidence integration: CLI generates deterministic evidence from a synthetic build", async () => {
+test("storybook public artifact integration: CLI generates deterministic sanitized artifacts from a synthetic build", async () => {
   const buildDir = await createIntegrationStorybookBuild();
   const generatorEntrypoint = path.resolve(process.cwd(), "src", "storybook", "generate-artifact.ts");
-  const artifactPath = path.join(buildDir, "reference-output", getStorybookEvidenceOutputFileName());
+  const outputDirPath = path.join(buildDir, "reference-output");
+  const fileNames = getStorybookPublicArtifactFileNames();
 
   const runGenerator = async (): Promise<{
-    outputPath: string;
-      evidenceCount: number;
-      entryCount: number;
-    }> => {
+    outputDir: string;
+    writtenFiles: {
+      tokens: string;
+      themes: string;
+      components: string;
+    };
+    tokenCount: number;
+    themeCount: number;
+    componentCount: number;
+  }> => {
     const { stdout, stderr } = await execFile(
       "pnpm",
-      ["exec", "tsx", generatorEntrypoint, buildDir, artifactPath],
+      ["exec", "tsx", generatorEntrypoint, buildDir, outputDirPath],
       {
         cwd: process.cwd()
       }
@@ -135,55 +175,160 @@ test("storybook evidence integration: CLI generates deterministic evidence from 
 
     assert.equal(stderr, "");
     return JSON.parse(stdout) as {
-      outputPath: string;
-      evidenceCount: number;
-      entryCount: number;
+      outputDir: string;
+      writtenFiles: {
+        tokens: string;
+        themes: string;
+        components: string;
+      };
+      tokenCount: number;
+      themeCount: number;
+      componentCount: number;
     };
   };
 
   const firstSummary = await runGenerator();
-  const firstBytes = await readFile(artifactPath, "utf8");
-  const firstArtifact = JSON.parse(firstBytes) as {
-    stats: {
-      entryCount: number;
-      byType: Record<string, number>;
-    };
-    evidence: Array<{
-      type: string;
-      reliability: string;
-      usage: {
-        canDriveTokens: boolean;
-        canDriveProps: boolean;
-        canDriveImports: boolean;
-        canDriveStyling: boolean;
+  const firstTokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
+  const firstThemesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
+  const firstComponentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
+  const firstTokensArtifact = JSON.parse(firstTokensBytes) as {
+    $extensions: {
+      [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+        stats: {
+          tokenCount: number;
+          errorCount: number;
+        };
       };
+    };
+    theme: {
+      default: {
+        color: {
+          primary: {
+            main: {
+              $type: string;
+            };
+          };
+        };
+        spacing: {
+          base: {
+            $type: string;
+          };
+        };
+      };
+    };
+  };
+  const firstThemesArtifact = JSON.parse(firstThemesBytes) as {
+    modifiers: {
+      theme: {
+        default: string;
+        contexts: Record<string, Array<{ $ref: string }>>;
+      };
+    };
+    sets: Record<string, { sources: Array<{ $ref: string }> }>;
+  };
+  const firstComponentsArtifact = JSON.parse(firstComponentsBytes) as {
+    stats: {
+      componentCount: number;
+      componentWithDesignReferenceCount: number;
+      propKeyCount: number;
+    };
+    components: Array<{
+      title: string;
+      propKeys: string[];
     }>;
   };
 
-  assert.equal(firstSummary.outputPath, artifactPath);
-  assert.equal(firstSummary.entryCount, 2);
-  assert.equal(firstArtifact.stats.entryCount, 2);
-  assert.equal(firstArtifact.stats.byType.story_componentPath, 1);
-  assert.equal(firstArtifact.stats.byType.story_argTypes, 1);
-  assert.equal(firstArtifact.stats.byType.story_args, 1);
-  assert.equal(firstArtifact.stats.byType.story_design_link, 1);
-  assert.equal(firstArtifact.stats.byType.theme_bundle, 1);
-  assert.equal(firstArtifact.stats.byType.css, 1);
-  assert.equal(firstArtifact.stats.byType.mdx_link, 2);
-  assert.equal(firstArtifact.stats.byType.docs_image, 1);
-  assert.ok(firstArtifact.stats.byType.docs_text > 0);
+  assert.equal(firstSummary.outputDir, outputDirPath);
+  assert.deepEqual(firstSummary.writtenFiles, {
+    tokens: path.join(outputDirPath, fileNames.tokens),
+    themes: path.join(outputDirPath, fileNames.themes),
+    components: path.join(outputDirPath, fileNames.components)
+  });
+  assert.ok(firstSummary.tokenCount >= 8);
+  assert.equal(firstSummary.themeCount, 1);
+  assert.equal(firstSummary.componentCount, 1);
 
-  for (const evidenceItem of firstArtifact.evidence.filter((item) => item.type === "docs_image")) {
-    assert.equal(evidenceItem.reliability, "reference_only");
-    assert.equal(evidenceItem.usage.canDriveTokens, false);
-    assert.equal(evidenceItem.usage.canDriveProps, false);
-    assert.equal(evidenceItem.usage.canDriveImports, false);
-    assert.equal(evidenceItem.usage.canDriveStyling, false);
-  }
+  assert.equal(
+    firstTokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].stats.errorCount,
+    0
+  );
+  assert.ok(firstTokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].stats.tokenCount >= 8);
+  assert.equal(firstTokensArtifact.theme.default.color.primary.main.$type, "color");
+  assert.equal(firstTokensArtifact.theme.default.spacing.base.$type, "dimension");
+  assert.equal(firstThemesArtifact.modifiers.theme.default, "default");
+  assert.deepEqual(firstThemesArtifact.modifiers.theme.contexts.default, [{ $ref: "#/sets/default" }]);
+  assert.deepEqual(firstThemesArtifact.sets.default, {
+    sources: [{ $ref: "./tokens.json#/theme/default" }]
+  });
+  assert.equal(firstComponentsArtifact.stats.componentCount, 1);
+  assert.equal(firstComponentsArtifact.stats.componentWithDesignReferenceCount, 1);
+  assert.equal(firstComponentsArtifact.stats.propKeyCount, 2);
+  assert.equal(firstComponentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
+  assert.deepEqual(firstComponentsArtifact.components[0]?.propKeys, ["infos", "title"]);
 
   const secondSummary = await runGenerator();
-  const secondBytes = await readFile(artifactPath, "utf8");
+  const secondTokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
+  const secondThemesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
+  const secondComponentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
 
   assert.deepEqual(secondSummary, firstSummary);
-  assert.equal(secondBytes, firstBytes);
+  assert.equal(secondTokensBytes, firstTokensBytes);
+  assert.equal(secondThemesBytes, firstThemesBytes);
+  assert.equal(secondComponentsBytes, firstComponentsBytes);
+  assert.equal(firstTokensBytes.includes("bundlePath"), false);
+  assert.equal(firstTokensBytes.includes("importPath"), false);
+  assert.equal(firstTokensBytes.includes("iframeBundlePath"), false);
+  assert.equal(firstTokensBytes.includes("buildRoot"), false);
+  assert.equal(firstTokensBytes.includes("static/assets/images"), false);
+  assert.equal(firstThemesBytes.includes("bundlePath"), false);
+  assert.equal(firstComponentsBytes.includes("importPath"), false);
 });
+
+test(
+  "storybook public artifact integration: local customer build smoke test stays sanitized",
+  {
+    skip: process.env.CI === "true"
+  },
+  async (context) => {
+    const localBuildDir = path.resolve(process.cwd(), "storybook-static", "storybook-static");
+    try {
+      await access(path.join(localBuildDir, "index.json"));
+    } catch {
+      context.skip("Local Storybook build is not available in this worktree.");
+      return;
+    }
+
+    const generatorEntrypoint = path.resolve(process.cwd(), "src", "storybook", "generate-artifact.ts");
+    const outputDirPath = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-local-smoke-"));
+    const fileNames = getStorybookPublicArtifactFileNames();
+    const { stdout, stderr } = await execFile(
+      "pnpm",
+      ["exec", "tsx", generatorEntrypoint, localBuildDir, outputDirPath],
+      {
+        cwd: process.cwd()
+      }
+    );
+
+    assert.equal(stderr, "");
+    const summary = JSON.parse(stdout) as {
+      tokenCount: number;
+      themeCount: number;
+      componentCount: number;
+    };
+    const tokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
+    const themesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
+    const componentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
+
+    assert.ok(summary.tokenCount > 0);
+    assert.ok(summary.themeCount > 0);
+    assert.ok(summary.componentCount > 0);
+    assert.equal(tokensBytes.includes("bundlePath"), false);
+    assert.equal(tokensBytes.includes("importPath"), false);
+    assert.equal(tokensBytes.includes("buildRoot"), false);
+    assert.equal(tokensBytes.includes("iframeBundlePath"), false);
+    assert.equal(tokensBytes.includes("static/assets/images"), false);
+    assert.equal(tokensBytes.includes("data:application/font"), false);
+    assert.equal(themesBytes.includes("bundlePath"), false);
+    assert.equal(componentsBytes.includes("importPath"), false);
+  }
+);

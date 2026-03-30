@@ -8,6 +8,7 @@ import {
   stripStringsAndComments,
   uniqueSorted
 } from "./text.js";
+import type { StorybookCssCustomPropertyDefinition } from "./types.js";
 
 const DOCS_IMAGE_EXTENSIONS = /\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#].*)?$/iu;
 
@@ -130,4 +131,36 @@ export const extractCssCustomProperties = (cssText: string): string[] => {
     properties.add(`--${match[1]}`);
   }
   return [...properties].sort((left, right) => left.localeCompare(right));
+};
+
+export const extractCssCustomPropertyDefinitions = (cssText: string): StorybookCssCustomPropertyDefinition[] => {
+  const definitionsByName = new Map<string, Set<string>>();
+  const propertyMatches = cssText.matchAll(/(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+?)\s*;/gu);
+
+  for (const match of propertyMatches) {
+    const propertyName = normalizeWhitespace(match[1] ?? "");
+    const propertyValue = normalizeWhitespace(match[2] ?? "");
+    if (propertyName.length === 0 || propertyValue.length === 0) {
+      continue;
+    }
+
+    const existingValues = definitionsByName.get(propertyName) ?? new Set<string>();
+    existingValues.add(propertyValue);
+    definitionsByName.set(propertyName, existingValues);
+  }
+
+  const definitions: StorybookCssCustomPropertyDefinition[] = [];
+  for (const [name, values] of definitionsByName.entries()) {
+    for (const value of uniqueSorted(values)) {
+      definitions.push({ name, value });
+    }
+  }
+
+  return definitions.sort((left, right) => {
+    const byName = left.name.localeCompare(right.name);
+    if (byName !== 0) {
+      return byName;
+    }
+    return left.value.localeCompare(right.value);
+  });
 };
