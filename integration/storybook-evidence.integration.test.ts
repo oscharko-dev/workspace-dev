@@ -5,10 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import {
-  getDefaultVersionedStorybookEvidencePath,
-  getStorybookEvidenceOutputFileName
-} from "../src/storybook/evidence.js";
+import { getStorybookEvidenceOutputFileName } from "../src/storybook/evidence.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -164,7 +161,6 @@ test("storybook evidence integration: CLI generates deterministic evidence from 
   };
 
   assert.equal(firstSummary.outputPath, artifactPath);
-  assert.equal(path.basename(getDefaultVersionedStorybookEvidencePath()), getStorybookEvidenceOutputFileName());
   assert.equal(firstSummary.entryCount, 2);
   assert.equal(firstArtifact.stats.entryCount, 2);
   assert.equal(firstArtifact.stats.byType.story_componentPath, 1);

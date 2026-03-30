@@ -575,7 +575,3 @@ export const getDefaultStorybookBuildDir = (): string => {
 export const getStorybookEvidenceOutputFileName = (): string => {
   return STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME;
 };
-
-export const getDefaultVersionedStorybookEvidencePath = (): string => {
-  return path.resolve(process.cwd(), "reference", "storybook", STORYBOOK_EVIDENCE_OUTPUT_FILE_NAME);
-};
