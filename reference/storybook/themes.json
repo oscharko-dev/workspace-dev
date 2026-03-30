@@ -1,0 +1,31 @@
+{
+  "artifact": "storybook.themes",
+  "stats": {
+    "componentLinkedThemeCount": 0,
+    "entryCount": 499,
+    "markerCount": 2,
+    "themeCount": 2
+  },
+  "themes": [
+    {
+      "componentCount": 0,
+      "componentTitles": [],
+      "id": "theme:066b7c92f94d90af",
+      "markers": [
+        "CssVarsProvider",
+        "ThemeProvider"
+      ],
+      "occurrenceCount": 1
+    },
+    {
+      "componentCount": 0,
+      "componentTitles": [],
+      "id": "theme:585f8ed297c3553f",
+      "markers": [
+        "ThemeProvider"
+      ],
+      "occurrenceCount": 6
+    }
+  ],
+  "version": 1
+}

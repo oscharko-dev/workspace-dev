@@ -8,6 +8,11 @@ import {
   getStorybookEvidenceOutputFileName,
   writeStorybookEvidenceArtifact
 } from "./evidence.js";
+import {
+  buildStorybookPublicArtifacts,
+  getStorybookPublicArtifactFileNames,
+  writeStorybookPublicArtifacts
+} from "./public-extracts.js";
 
 const createMiniStorybookBuild = async (): Promise<string> => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-evidence-"));
@@ -98,6 +103,8 @@ const createMiniStorybookBuild = async (): Promise<string> => {
     :root {
       --fi-color-brand: #ff0000;
       --fi-color-surface: #ffffff;
+      --fi-space-md: 16px;
+      --fi-font-body: "Inter", sans-serif;
     }
   `;
 
@@ -261,4 +268,99 @@ test("writeStorybookEvidenceArtifact supports explicit output paths outside the 
 
   assert.equal(writtenPath, outputFilePath);
   assert.ok(writtenBytes.includes("\"artifact\": \"storybook.evidence\""));
+});
+
+test("buildStorybookPublicArtifacts emits curated tokens, themes, and components without leaking docs or build metadata", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const { tokensArtifact, themesArtifact, componentsArtifact } = await buildStorybookPublicArtifacts({ buildDir });
+
+  assert.equal(tokensArtifact.stats.entryCount, 2);
+  assert.equal(tokensArtifact.stats.tokenCount, 4);
+  assert.equal(tokensArtifact.stats.byCategory.color, 2);
+  assert.equal(tokensArtifact.stats.byCategory.spacing, 1);
+  assert.equal(tokensArtifact.stats.byCategory.font, 1);
+  assert.deepEqual(
+    tokensArtifact.tokens.map((token) => ({
+      name: token.name,
+      category: token.category,
+      values: token.values
+    })),
+    [
+      { name: "--fi-color-brand", category: "color", values: ["#ff0000"] },
+      { name: "--fi-color-surface", category: "color", values: ["#ffffff"] },
+      { name: "--fi-font-body", category: "font", values: ["\"Inter\", sans-serif"] },
+      { name: "--fi-space-md", category: "spacing", values: ["16px"] }
+    ]
+  );
+
+  assert.equal(themesArtifact.stats.themeCount, 1);
+  assert.equal(themesArtifact.stats.markerCount, 2);
+  assert.equal(themesArtifact.stats.componentLinkedThemeCount, 1);
+  assert.deepEqual(themesArtifact.themes[0]?.markers, ["createTheme", "ThemeProvider"]);
+  assert.deepEqual(themesArtifact.themes[0]?.componentTitles, ["ReactUI/Core/Tooltip"]);
+
+  assert.equal(componentsArtifact.stats.componentCount, 1);
+  assert.equal(componentsArtifact.stats.componentWithDesignReferenceCount, 1);
+  assert.equal(componentsArtifact.stats.propKeyCount, 2);
+  assert.deepEqual(componentsArtifact.components, [
+    {
+      id: componentsArtifact.components[0]?.id ?? "",
+      name: "Tooltip",
+      title: "ReactUI/Core/Tooltip",
+      componentPath: "./src/core/Tooltip/Tooltip.tsx",
+      propKeys: ["infos", "title"],
+      storyCount: 1,
+      hasDesignReference: true
+    }
+  ]);
+
+  const serialized = JSON.stringify({
+    tokensArtifact,
+    themesArtifact,
+    componentsArtifact
+  });
+  for (const forbiddenSnippet of [
+    "\"docs_text\"",
+    "\"docs_image\"",
+    "\"mdx_link\"",
+    "\"bundlePath\"",
+    "\"importPath\"",
+    "\"buildRoot\"",
+    "\"iframeBundlePath\"",
+    "https://www.figma.com/design/demo",
+    "Tokens sind Farbnamen, denen HEX-Werte zugeordnet sind."
+  ]) {
+    assert.equal(serialized.includes(forbiddenSnippet), false, `${forbiddenSnippet} must not leak into public extracts`);
+  }
+});
+
+test("writeStorybookPublicArtifacts emits byte-identical curated JSON files across repeated writes", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifacts = await buildStorybookPublicArtifacts({ buildDir });
+  const outputDirPath = path.join(buildDir, "reference", "storybook");
+
+  const firstWrite = await writeStorybookPublicArtifacts({
+    artifacts,
+    outputDirPath
+  });
+  const fileNames = getStorybookPublicArtifactFileNames();
+  const firstTokensBytes = await readFile(firstWrite.writtenFiles.tokens, "utf8");
+  const firstThemesBytes = await readFile(firstWrite.writtenFiles.themes, "utf8");
+  const firstComponentsBytes = await readFile(firstWrite.writtenFiles.components, "utf8");
+
+  const secondWrite = await writeStorybookPublicArtifacts({
+    artifacts,
+    outputDirPath
+  });
+  const secondTokensBytes = await readFile(secondWrite.writtenFiles.tokens, "utf8");
+  const secondThemesBytes = await readFile(secondWrite.writtenFiles.themes, "utf8");
+  const secondComponentsBytes = await readFile(secondWrite.writtenFiles.components, "utf8");
+
+  assert.deepEqual(secondWrite, firstWrite);
+  assert.equal(path.basename(firstWrite.writtenFiles.tokens), fileNames.tokens);
+  assert.equal(path.basename(firstWrite.writtenFiles.themes), fileNames.themes);
+  assert.equal(path.basename(firstWrite.writtenFiles.components), fileNames.components);
+  assert.equal(firstTokensBytes, secondTokensBytes);
+  assert.equal(firstThemesBytes, secondThemesBytes);
+  assert.equal(firstComponentsBytes, secondComponentsBytes);
 });

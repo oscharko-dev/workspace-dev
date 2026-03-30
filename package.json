@@ -101,7 +101,7 @@
     "verify:fips": "node scripts/fips-smoke.mjs",
     "figma:export:visible": "node scripts/export-visible-figma-json.mjs",
     "storybook:evidence": "pnpm exec tsx src/storybook/generate-artifact.ts",
-    "storybook:evidence:extract": "pnpm exec tsx src/storybook/generate-artifact.ts storybook-static/storybook-static artifacts/storybook/storybook.evidence.json",
+    "storybook:evidence:extract": "pnpm exec tsx src/storybook/generate-artifact.ts storybook-static/storybook-static reference/storybook",
     "perf:web:baseline": "pnpm --dir template/react-mui-app run perf:baseline",
     "perf:web:assert": "pnpm --dir template/react-mui-app run perf:assert",
     "sbom:cyclonedx": "node scripts/generate-cyclonedx.mjs artifacts/sbom/workspace-dev.cdx.json",
