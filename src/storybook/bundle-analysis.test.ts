@@ -1,0 +1,92 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  collectTopLevelFieldKeys,
+  extractCssCustomProperties,
+  extractMdxImageSources,
+  extractMdxLinks,
+  extractMdxTextBlocks,
+  extractStoryDesignUrls,
+  extractThemeMarkers
+} from "./bundle-analysis.js";
+
+test("story bundle analysis extracts args, argTypes, and design links without executing code", () => {
+  const storyBundle = `
+    const meta = {
+      title: "ReactUI/Core/Tooltip",
+      args: { title: "Einfach", infos: "Ohne Infos" },
+      argTypes: {
+        title: { control: { type: "select" } },
+        infos: { control: { type: "select" } }
+      },
+      parameters: {
+        design: {
+          type: "figma",
+          url: "https://www.figma.com/design/demo"
+        }
+      }
+    };
+    const variant = {
+      name: "Mit Infos",
+      args: {
+        infos: "Mit Infos"
+      }
+    };
+  `;
+
+  assert.deepEqual(collectTopLevelFieldKeys({ bundleText: storyBundle, fieldName: "args" }), ["infos", "title"]);
+  assert.deepEqual(
+    collectTopLevelFieldKeys({ bundleText: storyBundle, fieldName: "argTypes" }),
+    ["infos", "title"]
+  );
+  assert.deepEqual(extractStoryDesignUrls(storyBundle), ["https://www.figma.com/design/demo"]);
+});
+
+test("MDX bundle analysis extracts links, images, and normalized text blocks", () => {
+  const mdxBundle = `
+    function content() {
+      return e.jsxs(e.Fragment, {
+        children: [
+          e.jsx(h1, { children: "Color Tokens" }),
+          e.jsx(p, { children: "Tokens sind Farbnamen, denen HEX-Werte zugeordnet sind." }),
+          e.jsxs(p, {
+            children: [
+              "Weitere Details unter ",
+              e.jsx("a", { href: "/docs/base-colors-sk-theme--docs", children: "SK-Theme" }),
+              " sowie ",
+              e.jsx("a", { href: "https://example.com/design", children: "extern" })
+            ]
+          }),
+          e.jsx("img", { src: "static/assets/images/Base/Color_Tokens_1.png", alt: "Tokens" }),
+          e.jsx(code, { children: "export const Template = () => <Chip />;" })
+        ]
+      });
+    }
+  `;
+
+  assert.deepEqual(extractMdxLinks(mdxBundle), ["/docs/base-colors-sk-theme--docs", "https://example.com/design"]);
+  assert.deepEqual(extractMdxImageSources(mdxBundle), ["static/assets/images/Base/Color_Tokens_1.png"]);
+  assert.deepEqual(extractMdxTextBlocks(mdxBundle), [
+    "Color Tokens",
+    "extern",
+    "SK-Theme",
+    "Tokens sind Farbnamen, denen HEX-Werte zugeordnet sind.",
+    "Weitere Details unter sowie"
+  ]);
+});
+
+test("theme and css analysis only surfaces machine-readable runtime markers", () => {
+  const runtimeBundle = `
+    const appTheme = createTheme({ palette: { primary: { main: "#ff0000" } } });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+  const cssText = `
+    :root {
+      --fi-color-brand: #ff0000;
+      --fi-color-surface: #ffffff;
+    }
+  `;
+
+  assert.deepEqual(extractThemeMarkers(runtimeBundle), ["createTheme", "ThemeProvider"]);
+  assert.deepEqual(extractCssCustomProperties(cssText), ["--fi-color-brand", "--fi-color-surface"]);
+});
