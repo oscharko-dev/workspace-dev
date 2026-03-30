@@ -275,6 +275,53 @@ const normalizeDependencyRecord = ({
   return toSortedRecord(normalized);
 };
 
+const normalizeImportAliasRecord = ({
+  input,
+  path,
+  issues
+}: {
+  input: unknown;
+  path: string;
+  issues: CustomerProfileParseIssue[];
+}): Record<string, string> => {
+  if (input === undefined) {
+    return {};
+  }
+  if (!isPlainRecord(input)) {
+    pushIssue({
+      issues,
+      path,
+      message: "Expected an object mapping alias keys to package targets."
+    });
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawAlias, rawTarget] of Object.entries(input)) {
+    const alias = rawAlias.trim();
+    const target = typeof rawTarget === "string" ? rawTarget.trim() : "";
+    if (!isValidPackageName(alias)) {
+      pushIssue({
+        issues,
+        path: `${path}.${rawAlias}`,
+        message: "Import alias key must be a valid package name."
+      });
+      continue;
+    }
+    if (!target || !isValidPackageName(target)) {
+      pushIssue({
+        issues,
+        path: `${path}.${rawAlias}`,
+        message: "Import alias target must be a valid non-empty package name."
+      });
+      continue;
+    }
+    normalized[alias] = target;
+  }
+
+  return toSortedRecord(normalized);
+};
+
 const parseStrictnessValue = ({
   input,
   path,
@@ -767,7 +814,7 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       path: "template.devDependencies",
       issues
     }),
-    importAliases: normalizeDependencyRecord({
+    importAliases: normalizeImportAliasRecord({
       input: rawTemplate?.importAliases,
       path: "template.importAliases",
       issues
