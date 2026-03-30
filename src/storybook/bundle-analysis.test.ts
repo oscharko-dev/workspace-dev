@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   collectTopLevelFieldKeys,
+  extractCssCustomPropertyDefinitions,
   extractCssCustomProperties,
   extractMdxImageSources,
   extractMdxLinks,
@@ -89,4 +90,8 @@ test("theme and css analysis only surfaces machine-readable runtime markers", ()
 
   assert.deepEqual(extractThemeMarkers(runtimeBundle), ["createTheme", "ThemeProvider"]);
   assert.deepEqual(extractCssCustomProperties(cssText), ["--fi-color-brand", "--fi-color-surface"]);
+  assert.deepEqual(extractCssCustomPropertyDefinitions(cssText), [
+    { name: "--fi-color-brand", value: "#ff0000" },
+    { name: "--fi-color-surface", value: "#ffffff" }
+  ]);
 });

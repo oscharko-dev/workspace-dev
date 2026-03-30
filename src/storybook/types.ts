@@ -13,6 +13,11 @@ export type StorybookEvidenceType =
 
 export type StorybookEvidenceReliability = "authoritative" | "reference_only" | "derived";
 
+export interface StorybookCssCustomPropertyDefinition {
+  name: string;
+  value: string;
+}
+
 export interface StorybookEvidenceUsage {
   canDriveTokens: boolean;
   canDriveProps: boolean;
@@ -84,4 +89,172 @@ export interface StorybookBuildContext {
   iframeBundlePath: string;
   importPathToBundlePath: ReadonlyMap<string, string>;
   indexEntries: StorybookIndexEntry[];
+}
+
+export type StorybookThemeDiagnosticSeverity = "warning" | "error";
+
+export interface StorybookThemeDiagnostic {
+  severity: StorybookThemeDiagnosticSeverity;
+  code: string;
+  message: string;
+  bundlePath?: string;
+  themeId?: string;
+  tokenPath?: string[];
+}
+
+export interface StorybookThemeCandidate {
+  id: string;
+  bundlePath: string;
+  score: number;
+  topLevelKeys: string[];
+  objectText: string;
+}
+
+export type StorybookTokenValueType =
+  | "color"
+  | "dimension"
+  | "fontFamily"
+  | "fontWeight"
+  | "number"
+  | "typography";
+
+export interface StorybookTokenAliasReference {
+  path: string[];
+}
+
+export interface StorybookTokenGraphEntry {
+  id: string;
+  themeId: string;
+  path: string[];
+  tokenType: StorybookTokenValueType;
+  value: unknown;
+  aliases?: StorybookTokenAliasReference[];
+  cssVariableNames?: string[];
+  description?: string;
+}
+
+export interface StorybookExtractedTheme {
+  id: string;
+  name: string;
+  context: string;
+  categories: string[];
+  tokenCount: number;
+}
+
+export interface StorybookTokenGraph {
+  tokens: StorybookTokenGraphEntry[];
+  themes: StorybookExtractedTheme[];
+  diagnostics: StorybookThemeDiagnostic[];
+}
+
+export interface StorybookThemeAdapterInput {
+  bundlePath: string;
+  bundleText: string;
+}
+
+export interface StorybookThemeAdapter {
+  name: string;
+  collectCandidates(input: StorybookThemeAdapterInput): StorybookThemeCandidate[];
+  extractTokenGraph(args: {
+    bundlePath: string;
+    bundleText: string;
+    candidate: StorybookThemeCandidate;
+  }): StorybookTokenGraph;
+}
+
+export interface StorybookThemeCatalog {
+  themes: StorybookExtractedTheme[];
+  tokenGraph: StorybookTokenGraphEntry[];
+  diagnostics: StorybookThemeDiagnostic[];
+}
+
+export const STORYBOOK_PUBLIC_EXTENSION_KEY = "io.github.oscharko-dev.workspace-dev";
+
+export interface StorybookPublicTokenStats {
+  tokenCount: number;
+  themeCount: number;
+  byType: Record<StorybookTokenValueType, number>;
+  diagnosticCount: number;
+  errorCount: number;
+}
+
+export interface StorybookPublicThemeStats {
+  themeCount: number;
+  contextCount: number;
+  diagnosticCount: number;
+  errorCount: number;
+}
+
+export interface StorybookPublicComponent {
+  id: string;
+  name: string;
+  title: string;
+  componentPath?: string;
+  propKeys: string[];
+  storyCount: number;
+  hasDesignReference: boolean;
+}
+
+export interface StorybookPublicComponentsArtifact {
+  artifact: "storybook.components";
+  version: 1;
+  stats: {
+    entryCount: number;
+    componentCount: number;
+    componentWithDesignReferenceCount: number;
+    propKeyCount: number;
+  };
+  components: StorybookPublicComponent[];
+}
+
+export interface StorybookPublicTokensArtifact {
+  $schema: string;
+  $extensions: {
+    [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+      artifact: "storybook.tokens";
+      version: 2;
+      stats: StorybookPublicTokenStats;
+      diagnostics: Array<Pick<StorybookThemeDiagnostic, "code" | "message" | "severity" | "themeId" | "tokenPath">>;
+      themes: Array<Pick<StorybookExtractedTheme, "id" | "name" | "context" | "categories" | "tokenCount">>;
+    };
+  };
+  theme?: Record<string, unknown>;
+  font?: Record<string, unknown>;
+}
+
+export interface StorybookPublicThemesArtifact {
+  $schema: string;
+  name: "storybook.themes";
+  version: "2025.10";
+  sets: Record<string, { sources: Array<{ $ref: string }> }>;
+  modifiers: {
+    theme: {
+      default: string;
+      contexts: Record<string, Array<{ $ref: string }>>;
+    };
+  };
+  resolutionOrder: Array<{ $ref: string }>;
+  $extensions: {
+    [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+      artifact: "storybook.themes";
+      version: 2;
+      stats: StorybookPublicThemeStats;
+      diagnostics: Array<Pick<StorybookThemeDiagnostic, "code" | "message" | "severity" | "themeId" | "tokenPath">>;
+      themes: Array<Pick<StorybookExtractedTheme, "id" | "name" | "context" | "categories" | "tokenCount">>;
+    };
+  };
+}
+
+export interface StorybookPublicArtifacts {
+  tokensArtifact: StorybookPublicTokensArtifact;
+  themesArtifact: StorybookPublicThemesArtifact;
+  componentsArtifact: StorybookPublicComponentsArtifact;
+}
+
+export type StorybookPublicArtifactFileKey = "tokens" | "themes" | "components";
+
+export interface StorybookPublicArtifactFilePaths {
+  tokens: string;
+  themes: string;
+  components: string;
 }
