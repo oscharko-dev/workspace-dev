@@ -429,3 +429,88 @@ import { useState } from "react";
 
   assert.deepEqual(issues, []);
 });
+
+test("safeParseCustomerProfileConfig rejects invalid import alias targets with descriptive messages", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      template: {
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        importAliases: {
+          "@customer/ui": "",
+          "bad alias!": "@customer/components"
+        }
+      }
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (parsed.success) {
+    assert.fail("Expected invalid import aliases to fail parsing.");
+  }
+
+  const messages = parsed.issues.map((issue) => issue.message);
+  assert.equal(messages.some((message) => message.includes("Import alias target must be a valid non-empty package name")), true);
+  assert.equal(messages.some((message) => message.includes("Import alias key must be a valid package name")), true);
+  assert.equal(messages.every((message) => !message.includes("Dependency version")), true);
+  assert.equal(messages.every((message) => !message.includes("Dependency name")), true);
+});
+
+test("collectCustomerProfileImportIssuesFromSource handles multiline imports correctly", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const issues = collectCustomerProfileImportIssuesFromSource({
+    content: `import {
+  Button,
+  Card
+} from "@mui/material";
+`,
+    filePath: "src/screens/Dashboard.tsx",
+    profile: parsed.config
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.code, "E_CUSTOMER_PROFILE_MUI_FALLBACK");
+  assert.equal(issues[0]?.message.includes("Button"), true);
+});
+
+test("toCustomerProfileDesignSystemConfig includes propMappings only when non-empty", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const config = toCustomerProfileDesignSystemConfig({ profile: parsed.config });
+  assert.notEqual(config, undefined);
+  if (!config) {
+    assert.fail("Expected design system config to be defined.");
+  }
+
+  assert.notEqual(config.mappings.Button?.propMappings, undefined);
+  assert.equal(config.mappings.Card?.propMappings, undefined);
+});
+
+test("resolveCustomerProfileFamily is case-insensitive and trims whitespace", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  assert.equal(resolveCustomerProfileFamily({ profile: parsed.config, candidate: "  REACT UI  " })?.id, "ReactUI");
+  assert.equal(resolveCustomerProfileFamily({ profile: parsed.config, candidate: "components" })?.id, "Components");
+  assert.equal(resolveCustomerProfileFamily({ profile: parsed.config, candidate: "@CUSTOMER/REACT-UI" })?.id, "ReactUI");
+});
