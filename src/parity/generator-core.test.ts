@@ -19,6 +19,7 @@ import {
 import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
+import { parseCustomerProfileConfig } from "../customer-profile.js";
 
 const toRgba = (hex: string): { r: number; g: number; b: number } => {
   const normalized = hex.replace("#", "");
@@ -113,6 +114,67 @@ const writeGeneratedFileFromRuntimeAdapter = async ({
   }
   await mkdir(path.dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, content, "utf8");
+};
+
+const createCustomerProfileForGeneratorTests = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse"
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton",
+            importAlias: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          components: {
+            Card: "allow"
+          }
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        }
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create customer profile generator test fixture.");
+  }
+  return customerProfile;
 };
 
 const collectDeterministicSnapshot = async ({
@@ -3767,6 +3829,196 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
   assert.ok(screenContent.includes("CustomActionButton"));
   assert.ok(screenContent.includes("<CustomActionButton"));
   assert.equal(screenContent.includes("PrimaryButton"), false);
+});
+
+test("generateArtifacts applies customer profile imports before design-system mappings", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-"));
+  const designSystemFilePath = path.join(projectDir, "design-system.json");
+  await writeFile(
+    designSystemFilePath,
+    `${JSON.stringify(
+      {
+        library: "@acme/ui",
+        mappings: {
+          Button: {
+            component: "FallbackButton"
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "customer-profile-screen",
+      name: "Customer Profile",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "customer-profile-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Customer Profile")), "utf8");
+  assert.ok(screenContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  assert.ok(screenContent.includes("<CustomerButton"));
+  assert.ok(screenContent.includes("appearance="));
+  assert.equal(screenContent.includes("FallbackButton"), false);
+});
+
+test("generateArtifacts keeps node-level componentMappings precedence over customer profile imports", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-priority-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "customer-priority-screen",
+      name: "Customer Priority",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "customer-priority-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeId: "customer-priority-button",
+        componentName: "ManualActionButton",
+        importPath: "@manual/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ],
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Customer Priority")), "utf8");
+  assert.ok(screenContent.includes('from "@manual/ui";'));
+  assert.ok(screenContent.includes("ManualActionButton"));
+  assert.equal(screenContent.includes("CustomerButton"), false);
+});
+
+test("generateArtifacts logs customer profile diagnostics when denied MUI fallbacks remain", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-diagnostics-"));
+  const logs: string[] = [];
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "customer-diagnostics-screen",
+      name: "Customer Diagnostics",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "customer-diagnostics-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse"
+        }
+      ],
+      imports: {
+        components: {}
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny"
+        }
+      },
+      template: {
+        dependencies: {}
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    assert.fail("Expected diagnostics customer profile fixture to parse.");
+  }
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: (message) => logs.push(message)
+  });
+
+  assert.equal(
+    logs.some((entry) => entry.includes("Customer profile import policy warning") && entry.includes("MUI fallback import 'Button'")),
+    true
+  );
 });
 
 test("generateArtifacts keeps componentMappings precedence over pattern dispatch and remains byte-stable", async () => {

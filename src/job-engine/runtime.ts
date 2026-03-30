@@ -17,6 +17,7 @@ import {
   type FigmaRestCircuitTransitionEvent
 } from "./figma-rest-circuit-breaker.js";
 import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
+import type { ResolvedCustomerProfile } from "../customer-profile.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -143,6 +144,7 @@ export const resolveRuntimeSettings = ({
   logger,
   enablePreview,
   fetchImpl,
+  customerProfile,
   figmaMcpEnrichmentLoader,
   figmaCircuitBreakerClock
 }: {
@@ -186,6 +188,7 @@ export const resolveRuntimeSettings = ({
   logger?: WorkspaceRuntimeLogger;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
+  customerProfile?: ResolvedCustomerProfile;
   figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
   figmaCircuitBreakerClock?: FigmaRestCircuitBreakerClock;
 }): JobEngineRuntime => {
@@ -348,6 +351,7 @@ export const resolveRuntimeSettings = ({
     logger: resolvedLogger,
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch,
+    ...(customerProfile ? { customerProfile } : {}),
     ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {})
   };
 };

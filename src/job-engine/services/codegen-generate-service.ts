@@ -106,6 +106,7 @@ export const createCodegenGenerateService = ({
         ir,
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
+        ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
         generationLocale: context.resolvedGenerationLocale,
         routerMode: context.runtime.routerMode,

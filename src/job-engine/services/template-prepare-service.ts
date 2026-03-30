@@ -3,6 +3,7 @@ import { createPipelineError } from "../errors.js";
 import { copyDir, pathExists } from "../fs-helpers.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
 
 export const TemplatePrepareService: StageService<void> = {
   stageName: "template.prepare",
@@ -22,6 +23,16 @@ export const TemplatePrepareService: StageService<void> = {
       targetDir: context.paths.generatedProjectDir,
       filter: context.paths.templateCopyFilter
     });
+    if (context.resolvedCustomerProfile) {
+      await applyCustomerProfileToTemplate({
+        generatedProjectDir: context.paths.generatedProjectDir,
+        customerProfile: context.resolvedCustomerProfile
+      });
+      context.log({
+        level: "info",
+        message: "Applied customer profile template dependencies and import aliases."
+      });
+    }
     await context.artifactStore.setPath({
       key: STAGE_ARTIFACT_KEYS.generatedProject,
       stage: "template.prepare",

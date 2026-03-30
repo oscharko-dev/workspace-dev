@@ -1,0 +1,431 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import {
+  collectCustomerProfileImportIssuesFromSource,
+  getCustomerProfileFamiliesByPriority,
+  isCustomerProfileMuiFallbackAllowed,
+  loadCustomerProfileConfigFile,
+  parseCustomerProfileConfig,
+  resolveCustomerProfileBrandMapping,
+  resolveCustomerProfileComponentImport,
+  resolveCustomerProfileFamily,
+  safeParseCustomerProfileConfig,
+  toCustomerProfileDesignSystemConfig
+} from "./customer-profile.js";
+
+const createRawCustomerProfile = () => ({
+  version: 1,
+  families: [
+    {
+      id: "ReactUI",
+      tierPriority: 20,
+      aliases: {
+        figma: [" React UI "],
+        storybook: ["React-UI"],
+        code: ["@customer/react-ui"]
+      }
+    },
+    {
+      id: "Components",
+      tierPriority: 10,
+      aliases: {
+        figma: ["Components"],
+        storybook: ["components"],
+        code: ["@customer/components"]
+      }
+    }
+  ],
+  brandMappings: [
+    {
+      id: "sparkasse",
+      aliases: [" Sparkasse ", "SK"],
+      brandTheme: "sparkasse"
+    }
+  ],
+  imports: {
+    components: {
+      Button: {
+        family: "Components",
+        package: "@customer/components",
+        export: "PrimaryButton",
+        importAlias: "CustomerButton",
+        propMappings: {
+          variant: "appearance"
+        }
+      },
+      Card: {
+        family: "ReactUI",
+        package: "@customer/react-ui",
+        export: "ContentCard"
+      }
+    }
+  },
+  fallbacks: {
+    mui: {
+      defaultPolicy: "deny",
+      components: {
+        Card: "allow"
+      }
+    }
+  },
+  template: {
+    dependencies: {
+      "@customer/components": "^1.2.3"
+    },
+    devDependencies: {
+      "@types/customer-components": "^1.0.0"
+    },
+    importAliases: {
+      "@customer/ui": "@customer/components"
+    }
+  },
+  strictness: {
+    match: "warn",
+    token: "off",
+    import: "error"
+  }
+});
+
+test("safeParseCustomerProfileConfig normalizes valid profile data and exposes resolvers", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const profile = parsed.config;
+  assert.equal(getCustomerProfileFamiliesByPriority({ profile })[0]?.id, "Components");
+  assert.equal(resolveCustomerProfileFamily({ profile, candidate: "react ui" })?.id, "ReactUI");
+  assert.equal(resolveCustomerProfileBrandMapping({ profile, candidate: "sk" })?.brandTheme, "sparkasse");
+  assert.equal(resolveCustomerProfileComponentImport({ profile, componentKey: "Button" })?.localName, "CustomerButton");
+  assert.equal(isCustomerProfileMuiFallbackAllowed({ profile, componentKey: "Card" }), true);
+  assert.equal(isCustomerProfileMuiFallbackAllowed({ profile, componentKey: "Button" }), false);
+
+  assert.deepEqual(toCustomerProfileDesignSystemConfig({ profile }), {
+    library: "__customer_profile__",
+    mappings: {
+      Button: {
+        import: "@customer/components",
+        export: "PrimaryButton",
+        component: "CustomerButton",
+        propMappings: {
+          variant: "appearance"
+        }
+      },
+      Card: {
+        import: "@customer/react-ui",
+        export: "ContentCard",
+        component: "ContentCard"
+      }
+    }
+  });
+});
+
+test("safeParseCustomerProfileConfig rejects duplicate aliases and duplicate import bindings", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["shared"],
+            storybook: [],
+            code: []
+          }
+        },
+        {
+          id: "ReactUI",
+          tierPriority: 20,
+          aliases: {
+            figma: ["shared"],
+            storybook: [],
+            code: []
+          }
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton"
+          },
+          ButtonAlias: {
+            family: "ReactUI",
+            package: "@customer/components",
+            export: "PrimaryButton"
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (parsed.success) {
+    assert.fail("Expected duplicate aliases and bindings to fail parsing.");
+  }
+  assert.equal(parsed.issues.some((issue) => issue.message.includes("already assigned")), true);
+  assert.equal(parsed.issues.some((issue) => issue.message.includes("Import binding")), true);
+});
+
+test("safeParseCustomerProfileConfig rejects invalid section shapes", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: {},
+      brandMappings: {},
+      imports: [],
+      fallbacks: [],
+      template: [],
+      strictness: []
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (parsed.success) {
+    assert.fail("Expected malformed section shapes to fail parsing.");
+  }
+
+  assert.equal(parsed.issues.some((issue) => issue.path === "families"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "brandMappings"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "imports"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "imports.components"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "fallbacks"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "fallbacks.mui"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "template"), true);
+  assert.equal(parsed.issues.some((issue) => issue.path === "strictness"), true);
+});
+
+test("safeParseCustomerProfileConfig rejects malformed values across sections", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      version: 2,
+      families: [
+        123,
+        {
+          id: "",
+          tierPriority: "high",
+          aliases: null
+        },
+        {
+          id: "Shared",
+          tierPriority: 1,
+          aliases: {
+            figma: ["Shared", " shared ", ""],
+            storybook: ["Story"],
+            code: ["@customer/shared"]
+          }
+        }
+      ],
+      brandMappings: [
+        456,
+        {
+          id: "",
+          aliases: ["Story"],
+          brandTheme: "unknown"
+        }
+      ],
+      imports: {
+        components: {
+          "bad key": 5,
+          Button: {
+            family: "Missing",
+            package: "bad package!",
+            export: "",
+            importAlias: "123Invalid",
+            propMappings: ["bad"]
+          },
+          Card: {
+            family: "Shared",
+            package: "@customer/shared",
+            export: "SharedCard"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "block",
+          components: {
+            "bad key": "allow",
+            Card: "maybe"
+          }
+        }
+      },
+      template: {
+        dependencies: {
+          "bad package!": "^1.0.0",
+          "@customer/shared": ""
+        },
+        devDependencies: [],
+        importAliases: {
+          "bad alias key": "123Invalid"
+        }
+      },
+      strictness: {
+        match: "loud",
+        token: 123,
+        import: "error"
+      }
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (parsed.success) {
+    assert.fail("Expected malformed customer profile values to fail parsing.");
+  }
+
+  const messages = parsed.issues.map((issue) => issue.message);
+  assert.equal(messages.some((message) => message.includes("version must be 1")), true);
+  assert.equal(messages.some((message) => message.includes("Family entry must be an object")), true);
+  assert.equal(messages.some((message) => message.includes("Family id must match")), true);
+  assert.equal(messages.some((message) => message.includes("tierPriority must be a finite integer")), true);
+  assert.equal(messages.some((message) => message.includes("aliases must be an object")), true);
+  assert.equal(messages.some((message) => message.includes("Aliases must be non-empty strings")), true);
+  assert.equal(messages.some((message) => message.includes("Brand mapping entry must be an object")), true);
+  assert.equal(messages.some((message) => message.includes("brandTheme must be one of")), true);
+  assert.equal(messages.some((message) => message.includes("already assigned")), true);
+  assert.equal(messages.some((message) => message.includes("Component key must be a valid identifier")), true);
+  assert.equal(messages.some((message) => message.includes("Unknown family")), true);
+  assert.equal(messages.some((message) => message.includes("package must be a valid package name")), true);
+  assert.equal(messages.some((message) => message.includes("export must be a valid identifier")), true);
+  assert.equal(messages.some((message) => message.includes("importAlias must be a valid identifier")), true);
+  assert.equal(messages.some((message) => message.includes("Expected an object with string values")), true);
+  assert.equal(messages.some((message) => message.includes("Fallback policy must be one of")), true);
+  assert.equal(messages.some((message) => message.includes("Fallback component key must be a valid identifier")), true);
+  assert.equal(messages.some((message) => message.includes("Dependency name must be a valid package name")), true);
+  assert.equal(messages.some((message) => message.includes("Dependency version must be a non-empty string")), true);
+  assert.equal(messages.some((message) => message.includes("Expected an object with dependency versions")), true);
+  assert.equal(messages.some((message) => message.includes("Strictness must be one of")), true);
+});
+
+test("loadCustomerProfileConfigFile returns undefined for missing and invalid files", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-profile-"));
+  const missingPath = path.join(tempDir, "missing.json");
+  const invalidPath = path.join(tempDir, "invalid.json");
+  const logs: string[] = [];
+
+  try {
+    await writeFile(invalidPath, JSON.stringify({ version: 2 }), "utf8");
+
+    assert.equal(
+      await loadCustomerProfileConfigFile({
+        customerProfileFilePath: missingPath,
+        onLog: (message) => logs.push(message)
+      }),
+      undefined
+    );
+    assert.equal(
+      await loadCustomerProfileConfigFile({
+        customerProfileFilePath: invalidPath,
+        onLog: (message) => logs.push(message)
+      }),
+      undefined
+    );
+    assert.equal(logs.some((entry) => entry.includes("is invalid")), true);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("parseCustomerProfileConfig returns undefined for invalid input and helpers return undefined for unknown lookups", () => {
+  assert.equal(parseCustomerProfileConfig({ input: null }), undefined);
+
+  const parsed = parseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      imports: {
+        components: {}
+      }
+    }
+  });
+  assert.notEqual(parsed, undefined);
+  if (!parsed) {
+    assert.fail("Expected profile without component imports to parse successfully.");
+  }
+
+  assert.equal(resolveCustomerProfileFamily({ profile: parsed, candidate: "missing family" }), undefined);
+  assert.equal(resolveCustomerProfileBrandMapping({ profile: parsed, candidate: "missing brand" }), undefined);
+  assert.equal(resolveCustomerProfileComponentImport({ profile: parsed, componentKey: "MissingComponent" }), undefined);
+  assert.equal(toCustomerProfileDesignSystemConfig({ profile: parsed }), undefined);
+});
+
+test("loadCustomerProfileConfigFile loads valid profiles and logs malformed json errors", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-profile-load-"));
+  const validPath = path.join(tempDir, "valid.json");
+  const malformedPath = path.join(tempDir, "malformed.json");
+  const logs: string[] = [];
+
+  try {
+    await writeFile(validPath, JSON.stringify(createRawCustomerProfile()), "utf8");
+    await writeFile(malformedPath, "{", "utf8");
+
+    const loaded = await loadCustomerProfileConfigFile({
+      customerProfileFilePath: validPath,
+      onLog: (message) => logs.push(message)
+    });
+    const malformed = await loadCustomerProfileConfigFile({
+      customerProfileFilePath: malformedPath,
+      onLog: (message) => logs.push(message)
+    });
+
+    assert.notEqual(loaded, undefined);
+    assert.equal(loaded?.strictness.import, "error");
+    assert.equal(malformed, undefined);
+    assert.equal(logs.some((entry) => entry.includes("Failed to load customer profile config")), true);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("collectCustomerProfileImportIssuesFromSource reports disallowed MUI fallbacks and unknown exports", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const issues = collectCustomerProfileImportIssuesFromSource({
+    content: `import { Button, Card } from "@mui/material";
+import { UnknownThing } from "@customer/components";
+import { PrimaryButton as CustomerButton } from "@customer/ui";
+`,
+    filePath: "src/screens/Profile.tsx",
+    profile: parsed.config
+  });
+
+  assert.deepEqual(
+    issues.map((issue) => issue.code),
+    ["E_CUSTOMER_PROFILE_MUI_FALLBACK", "E_CUSTOMER_PROFILE_IMPORT_EXPORT"]
+  );
+});
+
+test("collectCustomerProfileImportIssuesFromSource ignores default imports, empty named clauses, and valid aliased specifiers", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const issues = collectCustomerProfileImportIssuesFromSource({
+    content: `import CustomerComponents from "@customer/components";
+import { type PrimaryButton as PrimaryButtonType, PrimaryButton as CustomerButton, Invalid-Specifier } from "@customer/ui";
+import { } from "@mui/material";
+import { useState } from "react";
+`,
+    filePath: "src/screens/Profile.tsx",
+    profile: parsed.config
+  });
+
+  assert.deepEqual(issues, []);
+});

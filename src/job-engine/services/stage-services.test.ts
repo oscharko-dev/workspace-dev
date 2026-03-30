@@ -10,6 +10,7 @@ import type {
   WorkspaceJobInput,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
+import { parseCustomerProfileConfig } from "../../customer-profile.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
@@ -100,6 +101,67 @@ const createMinimalIr = (): DesignIR =>
       typography: {}
     }
   }) as DesignIR;
+
+const createCustomerProfileForStageServices = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse"
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton",
+            importAlias: "CustomerButton"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          components: {
+            Card: "allow"
+          }
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        importAliases: {
+          "@customer/ui": "@customer/components"
+        }
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create stage-service customer profile fixture.");
+  }
+  return customerProfile;
+};
 
 const createJobRecord = ({
   runtime,
@@ -211,6 +273,7 @@ const createExecutionContext = async ({
     resolvedBrandTheme,
     resolvedFigmaSourceMode,
     resolvedFormHandlingMode,
+    ...(runtime.customerProfile ? { resolvedCustomerProfile: runtime.customerProfile } : {}),
     generationLocaleResolution: { locale: "en-US" },
     resolvedGenerationLocale: "en-US",
     appendDiagnostics: () => {
@@ -345,6 +408,74 @@ test("TemplatePrepareService copies template and stores generated.project artifa
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
     executionContext.paths.generatedProjectDir
   );
+});
+
+test("TemplatePrepareService applies customer profile template dependencies and aliases when configured", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      customerProfile: createCustomerProfileForStageServices()
+    }
+  });
+  await mkdir(executionContext.paths.templateRoot, { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.templateRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {},
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.templateRoot, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.templateRoot, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+const normalizedBasePath = "./";
+
+export default defineConfig({
+  base: normalizedBasePath,
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+
+  await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+
+  const packageJson = JSON.parse(
+    await readFile(path.join(executionContext.paths.generatedProjectDir, "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  assert.equal(packageJson.dependencies?.["@customer/components"], "^1.2.3");
+
+  const tsconfig = JSON.parse(
+    await readFile(path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"), "utf8")
+  ) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
+  assert.equal(tsconfig.compilerOptions?.baseUrl, ".");
+  assert.deepEqual(tsconfig.compilerOptions?.paths?.["@customer/ui"], ["@customer/components"]);
+
+  const viteConfig = await readFile(path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"), "utf8");
+  assert.equal(viteConfig.includes('"@customer/ui": "@customer/components"'), true);
 });
 
 test("TemplatePrepareService maps missing template to E_TEMPLATE_MISSING", async () => {
@@ -578,6 +709,97 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   assert.equal(calledInput?.commandStderrMaxBytes, 54_321);
   const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
+});
+
+test("ValidateProjectService persists failed customer profile import policy before project validation", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      customerProfile: createCustomerProfileForStageServices()
+    }
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {},
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+const normalizedBasePath = "./";
+
+export default defineConfig({
+  base: normalizedBasePath,
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'import { Button } from "@mui/material";\nexport const App = () => <Button />;\n',
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-abc1234567"
+    } satisfies GenerationDiffContext
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Customer profile import policy failed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status: string;
+    customerProfile?: { import?: { issueCount?: number } };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal((summary?.customerProfile?.import?.issueCount ?? 0) > 0, true);
 });
 
 test("ValidateProjectService forwards aborted signal to project validation", async () => {

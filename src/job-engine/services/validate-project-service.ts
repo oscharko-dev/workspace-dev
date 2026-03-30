@@ -8,6 +8,8 @@ import {
 import { runProjectValidation } from "../validation.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { createPipelineError } from "../errors.js";
+import { validateGeneratedProjectCustomerProfile } from "../../customer-profile-validation.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -54,6 +56,60 @@ export const createValidateProjectService = ({
     stageName: "validate.project",
     execute: async (_input, context) => {
       const generatedProjectDir = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.generatedProject);
+      const validatedAt = new Date().toISOString();
+
+      let customerProfileSummary:
+        | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
+        | undefined;
+      if (context.resolvedCustomerProfile) {
+        customerProfileSummary = await validateGeneratedProjectCustomerProfile({
+          generatedProjectDir,
+          customerProfile: context.resolvedCustomerProfile
+        });
+        if (customerProfileSummary.import.issueCount > 0) {
+          const logLevel =
+            customerProfileSummary.import.policy === "warn"
+              ? "warn"
+              : customerProfileSummary.import.policy === "error"
+                ? "error"
+                : "info";
+          context.log({
+            level: logLevel,
+            message:
+              `Customer profile import policy reported ${customerProfileSummary.import.issueCount} issue(s) ` +
+              `(policy=${customerProfileSummary.import.policy}).`
+          });
+        }
+        if (customerProfileSummary.status === "failed") {
+          await context.artifactStore.setValue({
+            key: STAGE_ARTIFACT_KEYS.validationSummary,
+            stage: "validate.project",
+            value: {
+              status: "failed",
+              validatedAt,
+              customerProfile: customerProfileSummary
+            }
+          });
+          throw createPipelineError({
+            code: "E_CUSTOMER_PROFILE_IMPORT_POLICY",
+            stage: "validate.project",
+            message: `Customer profile import policy failed with ${customerProfileSummary.import.issueCount} issue(s).`,
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: customerProfileSummary.import.issues.map((issue) => ({
+              code: issue.code,
+              message: issue.message,
+              suggestion: "Update the customer profile import matrix, template config, or generated imports so they agree.",
+              stage: "validate.project",
+              severity: "error",
+              details: {
+                ...(issue.filePath ? { filePath: issue.filePath } : {}),
+                ...(issue.modulePath ? { modulePath: issue.modulePath } : {})
+              }
+            }))
+          });
+        }
+      }
+
       await runProjectValidationFn({
         generatedProjectDir,
         jobDir: context.paths.jobDir,
@@ -103,7 +159,11 @@ export const createValidateProjectService = ({
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.validationSummary,
         stage: "validate.project",
-        value: { status: "ok", validatedAt: new Date().toISOString() }
+        value: {
+          status: customerProfileSummary?.status === "warn" ? "warn" : "ok",
+          validatedAt,
+          ...(customerProfileSummary ? { customerProfile: customerProfileSummary } : {})
+        }
       });
       await saveCurrentSnapshotFn({
         outputRoot: context.resolvedPaths.outputRoot,
