@@ -139,6 +139,100 @@ test("buildStorybookEvidenceArtifact assigns reliability and usage gates determi
   assert.equal(docsImage?.usage.canProvideMatchHints, true);
 });
 
+test("every evidence item is classified as authoritative or reference_only with no derived items", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+
+  for (const item of artifact.evidence) {
+    assert.ok(
+      item.reliability === "authoritative" || item.reliability === "reference_only",
+      `Evidence item '${item.id}' has unexpected reliability '${item.reliability}'`
+    );
+  }
+
+  assert.ok(artifact.stats.byReliability.authoritative > 0);
+  assert.ok(artifact.stats.byReliability.reference_only > 0);
+  assert.equal(artifact.stats.byReliability.derived, 0);
+});
+
+test("docs_image and docs_text never drive tokens, props, imports, or styling", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+
+  const referenceOnlyItems = artifact.evidence.filter(
+    (item) => item.type === "docs_image" || item.type === "docs_text"
+  );
+  assert.ok(referenceOnlyItems.length > 0);
+
+  for (const item of referenceOnlyItems) {
+    assert.equal(item.reliability, "reference_only");
+    assert.equal(item.usage.canDriveTokens, false, `${item.type} must not drive tokens`);
+    assert.equal(item.usage.canDriveProps, false, `${item.type} must not drive props`);
+    assert.equal(item.usage.canDriveImports, false, `${item.type} must not drive imports`);
+    assert.equal(item.usage.canDriveStyling, false, `${item.type} must not drive styling`);
+    assert.equal(item.usage.canProvideMatchHints, true, `${item.type} must provide match hints`);
+  }
+});
+
+test("authoritative evidence types can drive their designated capabilities", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+
+  const componentPath = artifact.evidence.find((item) => item.type === "story_componentPath");
+  assert.ok(componentPath);
+  assert.equal(componentPath.reliability, "authoritative");
+  assert.equal(componentPath.usage.canDriveImports, true);
+
+  const argTypes = artifact.evidence.find((item) => item.type === "story_argTypes");
+  assert.ok(argTypes);
+  assert.equal(argTypes.reliability, "authoritative");
+  assert.equal(argTypes.usage.canDriveTokens, true);
+  assert.equal(argTypes.usage.canDriveProps, true);
+
+  const themeBundle = artifact.evidence.find((item) => item.type === "theme_bundle");
+  assert.ok(themeBundle);
+  assert.equal(themeBundle.reliability, "authoritative");
+  assert.equal(themeBundle.usage.canDriveTokens, true);
+  assert.equal(themeBundle.usage.canDriveStyling, true);
+
+  const css = artifact.evidence.find((item) => item.type === "css");
+  assert.ok(css);
+  assert.equal(css.reliability, "authoritative");
+  assert.equal(css.usage.canDriveTokens, true);
+  assert.equal(css.usage.canDriveStyling, true);
+});
+
+test("artifact stats match actual evidence counts by type and reliability", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+
+  let totalByType = 0;
+  for (const count of Object.values(artifact.stats.byType)) {
+    totalByType += count;
+  }
+  assert.equal(totalByType, artifact.stats.evidenceCount);
+
+  let totalByReliability = 0;
+  for (const count of Object.values(artifact.stats.byReliability)) {
+    totalByReliability += count;
+  }
+  assert.equal(totalByReliability, artifact.stats.evidenceCount);
+  assert.equal(artifact.evidence.length, artifact.stats.evidenceCount);
+});
+
+test("evidence IDs are unique and stable across builds", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  const firstArtifact = await buildStorybookEvidenceArtifact({ buildDir });
+  const secondArtifact = await buildStorybookEvidenceArtifact({ buildDir });
+
+  const firstIds = firstArtifact.evidence.map((item) => item.id);
+  const uniqueIds = new Set(firstIds);
+  assert.equal(uniqueIds.size, firstIds.length, "Evidence IDs must be unique");
+
+  const secondIds = secondArtifact.evidence.map((item) => item.id);
+  assert.deepEqual(firstIds, secondIds, "Evidence IDs must be stable across builds");
+});
+
 test("writeStorybookEvidenceArtifact emits byte-identical JSON across repeated writes", async () => {
   const buildDir = await createMiniStorybookBuild();
   const artifact = await buildStorybookEvidenceArtifact({ buildDir });

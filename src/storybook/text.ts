@@ -224,7 +224,7 @@ const decodeStringLiteral = (literal: string): string => {
     if (literal.startsWith("`")) {
       return literal.slice(1, -1);
     }
-    return JSON.parse(literal);
+    return JSON.parse(literal) as string;
   } catch {
     return literal.slice(1, -1);
   }
@@ -468,7 +468,7 @@ export const stripStringsAndComments = (source: string): string => {
       continue;
     }
 
-    output += current;
+    output += current ?? "";
     cursor += 1;
   }
 
