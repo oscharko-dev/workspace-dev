@@ -9,7 +9,8 @@ import { resolveRuntimeSettings } from "./runtime.js";
 import {
   createJobStorybookArtifactPaths,
   generateStorybookArtifactsForJob,
-  resolveStorybookStaticDir
+  resolveStorybookStaticDir,
+  reuseStorybookArtifactsFromSourceJob
 } from "./storybook-artifacts.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../storybook/types.js";
 
@@ -215,4 +216,127 @@ test("generateStorybookArtifactsForJob fails when the Storybook build is incompl
       }),
     /index\.json/
   );
+});
+
+test("reuseStorybookArtifactsFromSourceJob copies all required artifacts and registers them in the target store", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir: sourceJobDir,
+    artifactStore: sourceArtifactStore,
+    stage: "ir.derive"
+  });
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  const targetPaths = await reuseStorybookArtifactsFromSourceJob({
+    sourceArtifactStore,
+    targetArtifactStore,
+    sourceJobId: "source-job",
+    sourceRequestedStorybookStaticDir: buildDir,
+    targetJobDir,
+    stage: "ir.derive"
+  });
+
+  const expectedTargetPaths = createJobStorybookArtifactPaths({ jobDir: targetJobDir });
+  assert.deepEqual(targetPaths, expectedTargetPaths);
+
+  assert.equal(await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog), expectedTargetPaths.catalogFile);
+  assert.equal(await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence), expectedTargetPaths.evidenceFile);
+  assert.equal(await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens), expectedTargetPaths.tokensFile);
+  assert.equal(await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes), expectedTargetPaths.themesFile);
+  assert.equal(await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents), expectedTargetPaths.componentsFile);
+
+  const sourceTokens = await readFile(
+    (await sourceArtifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens)) as string,
+    "utf8"
+  );
+  const targetTokens = await readFile(expectedTargetPaths.tokensFile, "utf8");
+  assert.equal(targetTokens, sourceTokens, "Reused token artifact should be byte-identical to source");
+});
+
+test("reuseStorybookArtifactsFromSourceJob throws when a required artifact is missing in the source store", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-missing-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  await assert.rejects(
+    () =>
+      reuseStorybookArtifactsFromSourceJob({
+        sourceArtifactStore,
+        targetArtifactStore,
+        sourceJobId: "source-job",
+        sourceRequestedStorybookStaticDir: "/fake/storybook-static",
+        targetJobDir,
+        stage: "ir.derive"
+      }),
+    /is missing/
+  );
+});
+
+test("reuseStorybookArtifactsFromSourceJob skips optional artifacts without error when absent", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-opt-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir: sourceJobDir,
+    artifactStore: sourceArtifactStore,
+    stage: "ir.derive"
+  });
+
+  assert.equal(
+    await sourceArtifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution),
+    undefined,
+    "Optional artifact figmaLibraryResolution should not be in source"
+  );
+  assert.equal(
+    await sourceArtifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport),
+    undefined,
+    "Optional artifact componentMatchReport should not be in source"
+  );
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  const targetPaths = await reuseStorybookArtifactsFromSourceJob({
+    sourceArtifactStore,
+    targetArtifactStore,
+    sourceJobId: "source-job",
+    sourceRequestedStorybookStaticDir: buildDir,
+    targetJobDir,
+    stage: "ir.derive"
+  });
+
+  assert.equal(
+    await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution),
+    undefined,
+    "Optional artifact should not appear in target when absent from source"
+  );
+  assert.equal(
+    await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport),
+    undefined,
+    "Optional artifact should not appear in target when absent from source"
+  );
+
+  assert.ok(targetPaths.catalogFile, "Required artifact path should still be returned");
 });
