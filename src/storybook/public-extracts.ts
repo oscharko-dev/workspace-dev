@@ -15,9 +15,12 @@ import type {
   StorybookPublicArtifactFilePaths,
   StorybookPublicArtifacts,
   StorybookPublicComponent,
+  StorybookPublicProvenanceByThemeContext,
+  StorybookPublicProvenanceByTokenClass,
   StorybookPublicComponentsArtifact,
   StorybookPublicThemesArtifact,
   StorybookPublicTokensArtifact,
+  StorybookSanitizedEvidenceReference,
   StorybookThemeDiagnostic,
   StorybookTokenGraphEntry,
   StorybookTokenValueType
@@ -97,6 +100,66 @@ const createInitialTokenCountRecord = (): Record<StorybookTokenValueType, number
   number: 0,
   typography: 0
 });
+
+const compareSanitizedEvidenceReference = (
+  left: StorybookSanitizedEvidenceReference,
+  right: StorybookSanitizedEvidenceReference
+): number => {
+  return JSON.stringify(left).localeCompare(JSON.stringify(right));
+};
+
+const mergeSanitizedEvidenceReferences = (
+  first: StorybookSanitizedEvidenceReference[] | undefined,
+  second: StorybookSanitizedEvidenceReference[]
+): StorybookSanitizedEvidenceReference[] => {
+  const byKey = new Map<string, StorybookSanitizedEvidenceReference>();
+  for (const reference of [...(first ?? []), ...second]) {
+    byKey.set(JSON.stringify(reference), reference);
+  }
+  return [...byKey.values()].sort(compareSanitizedEvidenceReference);
+};
+
+const buildTokenProvenance = ({
+  tokens
+}: {
+  tokens: StorybookTokenGraphEntry[];
+}): StorybookPublicProvenanceByTokenClass => {
+  const provenance: StorybookPublicProvenanceByTokenClass = {};
+  for (const token of tokens) {
+    provenance[token.tokenClass] = mergeSanitizedEvidenceReferences(provenance[token.tokenClass], token.provenance);
+  }
+  return provenance;
+};
+
+const buildThemeProvenance = ({
+  themes,
+  tokens
+}: {
+  themes: StorybookExtractedTheme[];
+  tokens: StorybookTokenGraphEntry[];
+}): StorybookPublicProvenanceByThemeContext => {
+  const contextByThemeId = new Map(themes.map((theme) => [theme.id, theme.context]));
+  const provenance: StorybookPublicProvenanceByThemeContext = {};
+
+  for (const token of tokens) {
+    if (token.path[0] !== THEME_CONTEXT_PREFIX) {
+      continue;
+    }
+    const themeId = token.path[1];
+    if (!themeId) {
+      continue;
+    }
+    const context = contextByThemeId.get(themeId);
+    if (!context) {
+      continue;
+    }
+    const contextRecord = provenance[context] ?? {};
+    contextRecord[token.tokenClass] = mergeSanitizedEvidenceReferences(contextRecord[token.tokenClass], token.provenance);
+    provenance[context] = contextRecord;
+  }
+
+  return provenance;
+};
 
 const setNestedRecordValue = ({
   target,
@@ -212,7 +275,7 @@ const buildTokensArtifact = ({
     $extensions: {
       [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
         artifact: "storybook.tokens",
-        version: 2,
+        version: 3,
         stats: {
           tokenCount: tokens.length,
           themeCount: themes.length,
@@ -221,16 +284,21 @@ const buildTokensArtifact = ({
           errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
         },
         diagnostics: toSanitizedDiagnostics(diagnostics),
-        themes: toThemeSummaries(themes)
+        themes: toThemeSummaries(themes),
+        provenance: buildTokenProvenance({
+          tokens
+        })
       }
     }
   };
 };
 
 const buildThemesArtifact = ({
+  tokens,
   themes,
   diagnostics
 }: {
+  tokens: StorybookTokenGraphEntry[];
   themes: StorybookExtractedTheme[];
   diagnostics: StorybookThemeDiagnostic[];
 }): StorybookPublicThemesArtifact => {
@@ -242,7 +310,7 @@ const buildThemesArtifact = ({
     sets[setName] = {
       sources: [{ $ref: `./${STORYBOOK_PUBLIC_TOKENS_FILE_NAME}#/${THEME_CONTEXT_PREFIX}/${theme.id}` }]
     };
-    contexts[theme.context] = [{ $ref: `#/sets/${setName}` }];
+    contexts[theme.context] = [...(contexts[theme.context] ?? []), { $ref: `#/sets/${setName}` }];
   }
 
   const defaultThemeContext = themes.find((theme) => theme.context === "default")?.context ?? themes[0]?.context ?? "default";
@@ -262,7 +330,7 @@ const buildThemesArtifact = ({
     $extensions: {
       [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
         artifact: "storybook.themes",
-        version: 2,
+        version: 3,
         stats: {
           themeCount: themes.length,
           contextCount: Object.keys(contexts).length,
@@ -270,7 +338,11 @@ const buildThemesArtifact = ({
           errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
         },
         diagnostics: toSanitizedDiagnostics(diagnostics),
-        themes: toThemeSummaries(themes)
+        themes: toThemeSummaries(themes),
+        provenance: buildThemeProvenance({
+          themes,
+          tokens
+        })
       }
     }
   };
@@ -321,6 +393,7 @@ export const buildStorybookPublicArtifacts = async ({
       diagnostics: themeCatalog.diagnostics
     }),
     themesArtifact: buildThemesArtifact({
+      tokens: themeCatalog.tokenGraph,
       themes: themeCatalog.themes,
       diagnostics: themeCatalog.diagnostics
     }),

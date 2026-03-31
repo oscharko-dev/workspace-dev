@@ -42,7 +42,8 @@ export const IrDeriveService: StageService<void> = {
           storybookStaticDir: context.resolvedStorybookStaticDir,
           jobDir: context.paths.jobDir,
           artifactStore: context.artifactStore,
-          stage: "ir.derive"
+          stage: "ir.derive",
+          limits: context.runtime.pipelineDiagnosticLimits
         });
         context.log({
           level: "info",
@@ -51,6 +52,14 @@ export const IrDeriveService: StageService<void> = {
             `into '${path.relative(context.paths.jobDir, artifactPaths.rootDir) || "."}'.`
         });
       } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "E_STORYBOOK_TOKEN_EXTRACTION_INVALID"
+        ) {
+          throw error;
+        }
         throw createPipelineError({
           code: "E_STORYBOOK_ARTIFACTS_FAILED",
           stage: "ir.derive",

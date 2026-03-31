@@ -158,9 +158,18 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   const artifacts = await buildStorybookPublicArtifacts({ buildDir });
 
   const tokenMetadata = artifacts.tokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  assert.equal(tokenMetadata.version, 3);
   assert.equal(tokenMetadata.stats.themeCount, 1);
   assert.ok(tokenMetadata.stats.tokenCount >= 8);
   assert.equal(tokenMetadata.stats.errorCount, 0);
+  assert.deepEqual(Object.keys(tokenMetadata.provenance).sort(), ["color", "font", "radius", "spacing", "typography", "z-index"]);
+  assert.deepEqual(tokenMetadata.provenance.color, [
+    {
+      type: "theme_bundle",
+      reliability: "authoritative",
+      themeMarkers: ["createTheme", "ThemeProvider"]
+    }
+  ]);
 
   const tokenTheme = artifacts.tokensArtifact.theme as Record<string, unknown>;
   const defaultTheme = tokenTheme.default as Record<string, unknown>;
@@ -176,11 +185,63 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(((((fontFamilyGroup["brand-sans"] as Record<string, unknown>).$type) as string)), "fontFamily");
 
   const themeMetadata = artifacts.themesArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  assert.equal(themeMetadata.version, 3);
   assert.equal(themeMetadata.stats.themeCount, 1);
   assert.equal(artifacts.themesArtifact.modifiers.theme.default, "default");
   assert.deepEqual(artifacts.themesArtifact.modifiers.theme.contexts.default, [{ $ref: "#/sets/default" }]);
   assert.deepEqual(artifacts.themesArtifact.sets.default, {
     sources: [{ $ref: "./tokens.json#/theme/default" }]
+  });
+  assert.deepEqual(themeMetadata.provenance, {
+    default: {
+      color: [
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ],
+      font: [
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ],
+      radius: [
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ],
+      spacing: [
+        {
+          type: "css",
+          reliability: "authoritative",
+          customProperties: ["--fi-space-base"]
+        },
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ],
+      typography: [
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ],
+      "z-index": [
+        {
+          type: "theme_bundle",
+          reliability: "authoritative",
+          themeMarkers: ["createTheme", "ThemeProvider"]
+        }
+      ]
+    }
   });
 
   assert.equal(artifacts.componentsArtifact.stats.componentCount, 1);
@@ -188,10 +249,20 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(artifacts.componentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
   assert.deepEqual(artifacts.componentsArtifact.components[0]?.propKeys, ["infos", "title"]);
 
+  const serializedTokens = JSON.stringify(artifacts.tokensArtifact);
+  const serializedThemes = JSON.stringify(artifacts.themesArtifact);
   const serializedComponents = JSON.stringify(artifacts.componentsArtifact);
   assert.equal(serializedComponents.includes("importPath"), false);
   assert.equal(serializedComponents.includes("storiesImports"), false);
   assert.equal(serializedComponents.includes("bundlePath"), false);
   assert.equal(serializedComponents.includes("iframeBundlePath"), false);
   assert.equal(serializedComponents.includes("buildRoot"), false);
+  assert.equal(serializedTokens.includes("bundlePath"), false);
+  assert.equal(serializedTokens.includes("importPath"), false);
+  assert.equal(serializedTokens.includes("buildRoot"), false);
+  assert.equal(serializedTokens.includes("data:application/font-ttf"), false);
+  assert.equal(serializedTokens.includes("ignored-font"), false);
+  assert.equal(serializedThemes.includes("bundlePath"), false);
+  assert.equal(serializedThemes.includes("importPath"), false);
+  assert.equal(serializedThemes.includes("buildRoot"), false);
 });

@@ -7,13 +7,8 @@ import {
   getDefaultStorybookBuildDir,
   loadStorybookBuildContext
 } from "./evidence.js";
-import {
-  createEvaluationState,
-  createJsEvaluationEnvironment,
-  evaluateJsExpression,
-  type JsStaticValue
-} from "./js-subset-evaluator.js";
-import { findObjectLiteralValuesByFieldName, normalizePosixPath, uniqueSorted } from "./text.js";
+import { extractStaticObjectField } from "./static-object-field.js";
+import { normalizePosixPath, uniqueSorted } from "./text.js";
 import type {
   StorybookBuildContext,
   StorybookCatalogArtifact,
@@ -212,109 +207,6 @@ const toCatalogSignalType = (evidenceType: StorybookEvidenceArtifact["evidence"]
       throw new Error(`Unhandled evidence type: ${String(_exhaustive)}`);
     }
   }
-};
-
-const isCatalogJsonRecord = (
-  value: StorybookCatalogJsonValue | undefined
-): value is Record<string, StorybookCatalogJsonValue> => {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-const toCatalogJsonValue = (value: JsStaticValue): StorybookCatalogJsonValue | undefined => {
-  switch (value.kind) {
-    case "unknown":
-    case "undefined":
-    case "function":
-      return undefined;
-    case "null":
-      return null;
-    case "boolean":
-    case "number":
-    case "string":
-      return value.value;
-    case "array":
-      return value.values
-        .map((entryValue) => toCatalogJsonValue(entryValue))
-        .filter((entryValue): entryValue is StorybookCatalogJsonValue => entryValue !== undefined);
-    case "object": {
-      const record: Record<string, StorybookCatalogJsonValue> = {};
-      const entries = [...value.properties.entries()].sort(([left], [right]) => left.localeCompare(right));
-      for (const [key, propertyValue] of entries) {
-        const normalized = toCatalogJsonValue(propertyValue);
-        if (normalized !== undefined) {
-          record[key] = normalized;
-        }
-      }
-      return record;
-    }
-  }
-};
-
-const extractStaticObjectField = ({
-  bundleText,
-  fieldName
-}: {
-  bundleText: string;
-  fieldName: string;
-}): Record<string, StorybookCatalogJsonValue> | undefined => {
-  const env = createJsEvaluationEnvironment(bundleText);
-  const normalizedObjects = findObjectLiteralValuesByFieldName({
-    source: bundleText,
-    fieldName
-  })
-    .map((objectLiteral) =>
-      toCatalogJsonValue(
-        evaluateJsExpression({
-          source: objectLiteral,
-          env,
-          state: createEvaluationState()
-        })
-      )
-    )
-    .filter(isCatalogJsonRecord);
-
-  if (normalizedObjects.length === 0) {
-    return undefined;
-  }
-
-  if (normalizedObjects.length === 1) {
-    return normalizedObjects[0];
-  }
-
-  const occurrenceCount = new Map<string, number>();
-  const serializedByKey = new Map<string, string>();
-  const valueByKey = new Map<string, StorybookCatalogJsonValue>();
-  const inconsistentKeys = new Set<string>();
-
-  for (const objectValue of normalizedObjects) {
-    for (const [key, propertyValue] of Object.entries(objectValue)) {
-      occurrenceCount.set(key, (occurrenceCount.get(key) ?? 0) + 1);
-      const serialized = JSON.stringify(propertyValue);
-      const existingSerialized = serializedByKey.get(key);
-      if (existingSerialized === undefined) {
-        serializedByKey.set(key, serialized);
-        valueByKey.set(key, propertyValue);
-        continue;
-      }
-      if (existingSerialized !== serialized) {
-        inconsistentKeys.add(key);
-      }
-    }
-  }
-
-  const commonRecord: Record<string, StorybookCatalogJsonValue> = {};
-  for (const key of [...occurrenceCount.keys()].sort((left, right) => left.localeCompare(right))) {
-    if (occurrenceCount.get(key) !== normalizedObjects.length || inconsistentKeys.has(key)) {
-      continue;
-    }
-
-    const propertyValue = valueByKey.get(key);
-    if (propertyValue !== undefined) {
-      commonRecord[key] = propertyValue;
-    }
-  }
-
-  return Object.keys(commonRecord).length > 0 ? commonRecord : undefined;
 };
 
 const normalizeDocsRoutePath = (value: string): string => {

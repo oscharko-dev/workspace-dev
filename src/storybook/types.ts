@@ -228,16 +228,45 @@ export type StorybookTokenValueType =
   | "number"
   | "typography";
 
+export type StorybookTokenClass =
+  | "color"
+  | "dimension"
+  | "font"
+  | "radius"
+  | "spacing"
+  | "typography"
+  | "z-index";
+
 export interface StorybookTokenAliasReference {
   path: string[];
+}
+
+export interface StorybookSanitizedEvidenceReference {
+  type: StorybookEvidenceType;
+  reliability: StorybookEvidenceReliability;
+  entryId?: string;
+  entryIds?: string[];
+  entryType?: StorybookEntryType;
+  title?: string;
+  keys?: string[];
+  themeMarkers?: string[];
+  customProperties?: string[];
+}
+
+export interface StorybookTokenCompletenessMetadata {
+  isBackfilled: boolean;
+  satisfiesRequiredClass: boolean;
 }
 
 export interface StorybookTokenGraphEntry {
   id: string;
   themeId: string;
   path: string[];
+  tokenClass: StorybookTokenClass;
   tokenType: StorybookTokenValueType;
   value: unknown;
+  provenance: StorybookSanitizedEvidenceReference[];
+  completeness: StorybookTokenCompletenessMetadata;
   aliases?: StorybookTokenAliasReference[];
   cssVariableNames?: string[];
   description?: string;
@@ -295,6 +324,9 @@ export interface StorybookPublicThemeStats {
   errorCount: number;
 }
 
+export type StorybookPublicProvenanceByTokenClass = Record<string, StorybookSanitizedEvidenceReference[]>;
+export type StorybookPublicProvenanceByThemeContext = Record<string, StorybookPublicProvenanceByTokenClass>;
+
 export interface StorybookPublicComponent {
   id: string;
   name: string;
@@ -322,10 +354,11 @@ export interface StorybookPublicTokensArtifact {
   $extensions: {
     [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
       artifact: "storybook.tokens";
-      version: 2;
+      version: 3;
       stats: StorybookPublicTokenStats;
       diagnostics: Array<Pick<StorybookThemeDiagnostic, "code" | "message" | "severity" | "themeId" | "tokenPath">>;
       themes: Array<Pick<StorybookExtractedTheme, "id" | "name" | "context" | "categories" | "tokenCount">>;
+      provenance: StorybookPublicProvenanceByTokenClass;
     };
   };
   theme?: Record<string, unknown>;
@@ -347,10 +380,11 @@ export interface StorybookPublicThemesArtifact {
   $extensions: {
     [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
       artifact: "storybook.themes";
-      version: 2;
+      version: 3;
       stats: StorybookPublicThemeStats;
       diagnostics: Array<Pick<StorybookThemeDiagnostic, "code" | "message" | "severity" | "themeId" | "tokenPath">>;
       themes: Array<Pick<StorybookExtractedTheme, "id" | "name" | "context" | "categories" | "tokenCount">>;
+      provenance: StorybookPublicProvenanceByThemeContext;
     };
   };
 }

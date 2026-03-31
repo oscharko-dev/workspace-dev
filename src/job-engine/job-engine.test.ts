@@ -122,6 +122,75 @@ const createLowFidelityFigmaPayload = () => ({
   }
 });
 
+const createInvalidStorybookBuild = async (): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-invalid-storybook-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "reactui-tooltip--default": {
+        id: "reactui-tooltip--default",
+        title: "ReactUI/Core/Tooltip",
+        name: "Default",
+        importPath: "./src/core/Tooltip/stories/Tooltip.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+      }
+    }
+  };
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(
+    path.join(buildDir, "iframe.html"),
+    `
+      <!doctype html>
+      <html>
+        <body>
+          <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+        </body>
+      </html>
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(assetsDir, "iframe-test.js"),
+    `
+      const gq0 = {
+        "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
+      };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(assetsDir, "Tooltip.stories-test.js"),
+    `
+      const meta = {
+        title: "ReactUI/Core/Tooltip"
+      };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(assetsDir, "shared-theme.js"),
+    `
+      const appTheme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#444444" }
+        }
+      });
+      export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+    `,
+    "utf8"
+  );
+
+  return buildDir;
+};
+
 const createCustomerProfileFixture = ({
   packageName = "@customer/components",
   dependencyVersion = "^1.2.3"
@@ -265,6 +334,32 @@ test("createJobEngine stores a trimmed storybookStaticDir in request metadata", 
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_STORYBOOK_ARTIFACTS_FAILED");
+});
+
+test("createJobEngine surfaces E_STORYBOOK_TOKEN_EXTRACTION_INVALID for fatal Storybook token extraction diagnostics", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-token-invalid-"));
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  const storybookBuildDir = await createInvalidStorybookBuild();
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createFastJobEngine({ tempRoot });
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath,
+    storybookStaticDir: storybookBuildDir
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId
+  });
+
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_STORYBOOK_TOKEN_EXTRACTION_INVALID");
+  assert.equal(
+    Array.isArray(status.error?.diagnostics) && (status.error?.diagnostics?.length ?? 0) > 0,
+    true
+  );
 });
 
 test("createJobEngine rejects storybookStaticDir traversal outside the configured workspace root", async () => {

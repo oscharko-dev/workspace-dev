@@ -152,18 +152,81 @@ const createSyntheticStorybookBuild = async (): Promise<string> => {
   return buildDir;
 };
 
+const createInvalidStorybookBuild = async (): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-artifacts-invalid-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "reactui-tooltip--default": {
+        id: "reactui-tooltip--default",
+        title: "ReactUI/Core/Tooltip",
+        name: "Default",
+        importPath: "./src/core/Tooltip/stories/Tooltip.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+      }
+    }
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeBundle = `
+    const gq0 = {
+      "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
+    };
+  `;
+
+  const storyBundle = `
+    const meta = {
+      title: "ReactUI/Core/Tooltip"
+    };
+  `;
+
+  const incompleteThemeBundle = `
+    const appTheme = createTheme({
+      palette: {
+        primary: { main: "#ff0000", contrastText: "#ffffff" },
+        text: { primary: "#444444" }
+      }
+    });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "Tooltip.stories-test.js"), storyBundle, "utf8");
+  await writeFile(path.join(assetsDir, "shared-theme.js"), incompleteThemeBundle, "utf8");
+
+  return buildDir;
+};
+
 test("generateStorybookArtifactsForJob writes deterministic internal and public outputs", async () => {
   const buildDir = await createSyntheticStorybookBuild();
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-job-"));
   const jobDir = path.join(root, "jobs", "job-1");
   await mkdir(jobDir, { recursive: true });
   const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
 
   const artifactPaths = await generateStorybookArtifactsForJob({
     storybookStaticDir: buildDir,
     jobDir,
     artifactStore,
-    stage: "ir.derive"
+    stage: "ir.derive",
+    limits: runtime.pipelineDiagnosticLimits
   });
 
   const expectedPaths = createJobStorybookArtifactPaths({ jobDir });
@@ -205,6 +268,7 @@ test("generateStorybookArtifactsForJob fails when the Storybook build is incompl
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-incomplete-"));
   const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-incomplete-job-"));
   const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
 
   await assert.rejects(
     () =>
@@ -212,9 +276,38 @@ test("generateStorybookArtifactsForJob fails when the Storybook build is incompl
         storybookStaticDir: buildDir,
         jobDir,
         artifactStore,
-        stage: "ir.derive"
+        stage: "ir.derive",
+        limits: runtime.pipelineDiagnosticLimits
       }),
     /index\.json/
+  );
+});
+
+test("generateStorybookArtifactsForJob fails with E_STORYBOOK_TOKEN_EXTRACTION_INVALID when fatal extraction diagnostics are present", async () => {
+  const buildDir = await createInvalidStorybookBuild();
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-invalid-job-"));
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
+
+  await assert.rejects(
+    () =>
+      generateStorybookArtifactsForJob({
+        storybookStaticDir: buildDir,
+        jobDir,
+        artifactStore,
+        stage: "ir.derive",
+        limits: runtime.pipelineDiagnosticLimits
+      }),
+    (error: unknown) => {
+      assert.equal(typeof error, "object");
+      assert.equal((error as { code?: string }).code, "E_STORYBOOK_TOKEN_EXTRACTION_INVALID");
+      assert.equal(
+        Array.isArray((error as { diagnostics?: unknown[] }).diagnostics) &&
+          ((error as { diagnostics?: unknown[] }).diagnostics?.length ?? 0) > 0,
+        true
+      );
+      return true;
+    }
   );
 });
 
@@ -230,7 +323,8 @@ test("reuseStorybookArtifactsFromSourceJob copies all required artifacts and reg
     storybookStaticDir: buildDir,
     jobDir: sourceJobDir,
     artifactStore: sourceArtifactStore,
-    stage: "ir.derive"
+    stage: "ir.derive",
+    limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
   });
 
   const targetJobDir = path.join(root, "jobs", "target-job");
@@ -300,7 +394,8 @@ test("reuseStorybookArtifactsFromSourceJob skips optional artifacts without erro
     storybookStaticDir: buildDir,
     jobDir: sourceJobDir,
     artifactStore: sourceArtifactStore,
-    stage: "ir.derive"
+    stage: "ir.derive",
+    limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
   });
 
   assert.equal(
