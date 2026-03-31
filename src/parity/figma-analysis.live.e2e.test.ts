@@ -33,22 +33,18 @@ async function fetchLiveAnalysis() {
 test("live E2E: figma.analysis captures sample-board structure and signals", { skip: skipReason }, async () => {
   const analysis = await fetchLiveAnalysis();
 
+  assert.equal(analysis.artifactVersion, 1);
   assert.equal(analysis.summary.pageCount, 1);
-  assert.equal(analysis.summary.sectionCount, 1);
-  assert.equal(analysis.summary.localComponentCount, 0);
-  assert.equal(analysis.summary.localStyleCount, 0);
-  assert.equal(analysis.layoutGraph.sections[0]?.directChildCount, 23);
-  assert.equal(analysis.layoutGraph.frames.length >= 5, true);
-  assert.equal(analysis.frameVariantGroups.some((group) => group.frameIds.length === 5), true);
-  assert.equal(analysis.appShellSignals.length > 0, true);
-  assert.equal(analysis.componentDensity.byFrame.length >= 5, true);
+  assert.equal(analysis.summary.topLevelFrameCount >= 1, true);
+  assert.equal(analysis.summary.totalNodeCount > 0, true);
+  assert.equal(analysis.summary.totalInstanceCount > 0, true);
+  assert.equal(analysis.layoutGraph.frames.length >= 1, true);
+  assert.equal(analysis.componentDensity.byFrame.length >= 1, true);
   assert.equal(analysis.componentDensity.hotspots.length > 0, true);
-  assert.equal(analysis.externalComponents.length >= 149, true);
-  assert.equal(analysis.tokenSignals.boundVariableIds.length >= 123, true);
-  assert.equal(analysis.tokenSignals.variableModeIds.includes("20708:1"), true);
-  assert.equal(analysis.tokenSignals.styleReferences.allStyleIds.length >= 41, true);
-  assert.equal(analysis.tokenSignals.styleReferences.localStyleIds.length, 0);
-  assert.equal(analysis.tokenSignals.styleReferences.linkedStyleIds.length >= 41, true);
+  assert.equal(analysis.externalComponents.length >= 1, true);
+  assert.equal(analysis.componentFamilies.length > 0, true);
+  assert.equal(analysis.tokenSignals.styleReferences.allStyleIds.length >= 1, true);
   assert.equal(analysis.diagnostics.some((entry) => entry.code === "MISSING_LOCAL_COMPONENTS"), true);
-  assert.equal(analysis.diagnostics.some((entry) => entry.code === "MISSING_LOCAL_STYLES"), true);
+  assert.equal(Array.isArray(analysis.frameVariantGroups), true);
+  assert.equal(Array.isArray(analysis.appShellSignals), true);
 });

@@ -930,6 +930,8 @@ test("request handler serves design IR and component manifest success and missin
   const manifestPath = path.join(tempRoot, "component-manifest.json");
   await writeFile(designIrPath, JSON.stringify({ screens: [] }, null, 2), "utf8");
   await writeFile(figmaAnalysisPath, JSON.stringify({ artifactVersion: 1, sourceName: "Board", summary: {} }, null, 2), "utf8");
+  const figmaAnalysisSpoofedPath = path.join(tempRoot, "figma-analysis-spoofed.json");
+  await writeFile(figmaAnalysisSpoofedPath, JSON.stringify({ artifactVersion: 1, sourceName: "Board", summary: {}, jobId: "spoofed-id" }, null, 2), "utf8");
   const manifestPayload = {
     screens: [
       {
@@ -986,6 +988,13 @@ test("request handler serves design IR and component manifest success and missin
       status: "completed",
       artifacts: {
         figmaAnalysisFile: figmaAnalysisPath
+      }
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-spoofed-jobid": {
+      jobId: "job-figma-analysis-spoofed-jobid",
+      status: "completed",
+      artifacts: {
+        figmaAnalysisFile: figmaAnalysisSpoofedPath
       }
     } as ReturnType<JobEngine["getJobRecord"]>,
     "job-figma-analysis-pending": {
@@ -1122,6 +1131,18 @@ test("request handler serves design IR and component manifest success and missin
 
       assert.equal(response.statusCode, 404);
       assert.equal(response.json<Record<string, unknown>>().error, "FIGMA_ANALYSIS_NOT_FOUND");
+    });
+
+    await t.test("figma analysis jobId cannot be overridden by file content", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-figma-analysis-spoofed-jobid/figma-analysis"
+      });
+
+      assert.equal(response.statusCode, 200);
+      const payload = response.json<Record<string, unknown>>();
+      assert.equal(payload.jobId, "job-figma-analysis-spoofed-jobid");
+      assert.notEqual(payload.jobId, "spoofed-id");
     });
 
     await t.test("figma analysis missing file returns 404", async () => {

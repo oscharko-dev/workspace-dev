@@ -518,8 +518,8 @@ export function createWorkspaceRequestHandler({
             response,
             statusCode: 200,
             payload: {
-              jobId,
-              ...(figmaAnalysis && typeof figmaAnalysis === "object" ? (figmaAnalysis as Record<string, unknown>) : {})
+              ...(figmaAnalysis && typeof figmaAnalysis === "object" ? (figmaAnalysis as Record<string, unknown>) : {}),
+              jobId
             }
           });
           return;

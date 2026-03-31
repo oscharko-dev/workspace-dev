@@ -581,13 +581,13 @@ const collectVariantProperties = (node: FigmaNode): Record<string, string> => {
     mergeProperty(key, value);
   }
   for (const [rawKey, property] of Object.entries(node.componentProperties ?? {})) {
-    if (property?.type !== "VARIANT" || typeof property.value !== "string") {
+    if (property.type !== "VARIANT" || typeof property.value !== "string") {
       continue;
     }
     mergeProperty(rawKey, property.value);
   }
   for (const [rawKey, definition] of Object.entries(node.componentPropertyDefinitions ?? {})) {
-    const definitionType = typeof definition?.type === "string" ? definition.type.toUpperCase() : "";
+    const definitionType = typeof definition.type === "string" ? definition.type.toUpperCase() : "";
     if (definitionType !== "VARIANT") {
       continue;
     }
@@ -1378,7 +1378,7 @@ export const buildFigmaAnalysis = ({
 };
 
 export const buildRegenerationFallbackFigmaAnalysis = ({ ir }: { ir: DesignIR }): FigmaAnalysis => {
-  const totalElements = ir.screens.reduce((sum, screen) => sum + (screen.children?.length ?? 0), 0);
+  const totalElements = ir.screens.reduce((sum, screen) => sum + screen.children.length, 0);
   return {
     artifactVersion: 1,
     sourceName: ir.sourceName,
@@ -1420,8 +1420,8 @@ export const buildRegenerationFallbackFigmaAnalysis = ({ ir }: { ir: DesignIR })
           layoutMode: screen.layoutMode,
           width: roundTo(asFiniteNumber(screen.width), 2),
           height: roundTo(asFiniteNumber(screen.height), 2),
-          directChildCount: screen.children?.length ?? 0,
-          subtreeNodeCount: screen.children?.length ?? 0,
+          directChildCount: screen.children.length,
+          subtreeNodeCount: screen.children.length,
           instanceCount: 0
         }))
         .sort((left, right) => compareStrings(left.id, right.id)),
@@ -1437,7 +1437,7 @@ export const buildRegenerationFallbackFigmaAnalysis = ({ ir }: { ir: DesignIR })
         .map((screen) => ({
           frameId: screen.id,
           frameName: screen.name,
-          subtreeNodeCount: screen.children?.length ?? 0,
+          subtreeNodeCount: screen.children.length,
           instanceCount: 0,
           density: 0,
           dominantFamilies: []
