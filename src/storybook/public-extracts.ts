@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { buildStorybookEvidenceArtifact } from "./evidence.js";
+import { buildStorybookCatalogArtifact } from "./catalog.js";
+import { buildStorybookEvidenceArtifact, loadStorybookBuildContext } from "./evidence.js";
 import { buildStorybookThemeCatalog } from "./theme-catalog.js";
 import { uniqueSorted } from "./text.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "./types.js";
 import type {
-  StorybookEvidenceItem,
+  StorybookBuildContext,
+  StorybookCatalogArtifact,
+  StorybookCatalogFamily,
   StorybookExtractedTheme,
+  StorybookEvidenceArtifact,
   StorybookPublicArtifactFilePaths,
   StorybookPublicArtifacts,
   StorybookPublicComponent,
@@ -28,14 +32,6 @@ const THEME_CONTEXT_PREFIX = "theme";
 
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
-
-interface ComponentAccumulator {
-  title: string;
-  componentPath?: string;
-  storyIds: Set<string>;
-  propKeys: Set<string>;
-  hasDesignReference: boolean;
-}
 
 const toStableJsonValue = (value: JsonValue): JsonValue => {
   if (Array.isArray(value)) {
@@ -152,76 +148,26 @@ const buildTokenNode = (token: StorybookTokenGraphEntry): Record<string, unknown
 
 const buildComponentsArtifact = ({
   entryCount,
-  evidenceItems
+  catalogArtifact
 }: {
   entryCount: number;
-  evidenceItems: StorybookEvidenceItem[];
+  catalogArtifact: StorybookCatalogArtifact;
 }): StorybookPublicComponentsArtifact => {
-  const componentsByImportPath = new Map<string, ComponentAccumulator>();
-
-  for (const item of evidenceItems) {
-    if (item.type !== "story_componentPath") {
-      continue;
-    }
-    const importPath = item.source.importPath;
-    const title = item.source.title;
-    if (typeof importPath !== "string" || typeof title !== "string") {
-      continue;
-    }
-    const existing = componentsByImportPath.get(importPath) ?? {
-      title,
-      storyIds: new Set<string>(),
-      propKeys: new Set<string>(),
-      hasDesignReference: false
-    };
-    if (typeof item.summary.componentPath === "string") {
-      existing.componentPath = item.summary.componentPath;
-    }
-    const entryId = item.source.entryId;
-    if (typeof entryId === "string") {
-      existing.storyIds.add(entryId);
-    }
-    componentsByImportPath.set(importPath, existing);
-  }
-
-  for (const item of evidenceItems) {
-    const importPath = item.source.importPath;
-    if (typeof importPath !== "string") {
-      continue;
-    }
-    const component = componentsByImportPath.get(importPath);
-    if (!component) {
-      continue;
-    }
-
-    if (item.type === "story_argTypes" || item.type === "story_args") {
-      for (const key of item.summary.keys ?? []) {
-        component.propKeys.add(key);
-      }
-    }
-    if (item.type === "story_design_link") {
-      component.hasDesignReference = true;
-    }
-    for (const entryId of item.source.entryIds ?? []) {
-      component.storyIds.add(entryId);
-    }
-  }
-
-  const components = [...componentsByImportPath.values()]
-    .map((component) => {
-      const name = component.title.split("/").at(-1) ?? component.title;
+  const components = catalogArtifact.families
+    .filter((family): family is StorybookCatalogFamily & { componentPath: string } => typeof family.componentPath === "string")
+    .map((family) => {
       return {
         id: buildStableId("component", {
-          title: component.title,
-          componentPath: component.componentPath ?? "",
-          propKeys: [...component.propKeys].sort((left, right) => left.localeCompare(right))
+          title: family.title,
+          componentPath: family.componentPath,
+          propKeys: family.propKeys
         }),
-        name,
-        title: component.title,
-        ...(component.componentPath ? { componentPath: component.componentPath } : {}),
-        propKeys: [...component.propKeys].sort((left, right) => left.localeCompare(right)),
-        storyCount: component.storyIds.size,
-        hasDesignReference: component.hasDesignReference
+        name: family.name,
+        title: family.title,
+        componentPath: family.componentPath,
+        propKeys: family.propKeys,
+        storyCount: family.storyCount,
+        hasDesignReference: family.hasDesignReference
       } satisfies StorybookPublicComponent;
     })
     .sort(compareComponents);
@@ -343,14 +289,29 @@ export const getDefaultStorybookPublicOutputDir = (): string => {
 };
 
 export const buildStorybookPublicArtifacts = async ({
-  buildDir
+  buildDir,
+  buildContext,
+  evidenceArtifact,
+  catalogArtifact
 }: {
   buildDir: string;
+  buildContext?: StorybookBuildContext;
+  evidenceArtifact?: StorybookEvidenceArtifact;
+  catalogArtifact?: StorybookCatalogArtifact;
 }): Promise<StorybookPublicArtifacts> => {
-  const evidenceArtifact = await buildStorybookEvidenceArtifact({ buildDir });
+  const resolvedBuildContext = buildContext ?? (await loadStorybookBuildContext({ buildDir }));
+  const resolvedEvidenceArtifact =
+    evidenceArtifact ?? (await buildStorybookEvidenceArtifact({ buildDir, buildContext: resolvedBuildContext }));
+  const resolvedCatalogArtifact =
+    catalogArtifact ??
+    (await buildStorybookCatalogArtifact({
+      buildDir,
+      buildContext: resolvedBuildContext,
+      evidenceArtifact: resolvedEvidenceArtifact
+    }));
   const themeCatalog = await buildStorybookThemeCatalog({
     buildDir,
-    evidenceItems: evidenceArtifact.evidence
+    evidenceItems: resolvedEvidenceArtifact.evidence
   });
 
   return {
@@ -364,8 +325,8 @@ export const buildStorybookPublicArtifacts = async ({
       diagnostics: themeCatalog.diagnostics
     }),
     componentsArtifact: buildComponentsArtifact({
-      entryCount: evidenceArtifact.stats.entryCount,
-      evidenceItems: evidenceArtifact.evidence
+      entryCount: resolvedCatalogArtifact.stats.entryCount,
+      catalogArtifact: resolvedCatalogArtifact
     })
   };
 };

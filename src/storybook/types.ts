@@ -91,6 +91,116 @@ export interface StorybookBuildContext {
   indexEntries: StorybookIndexEntry[];
 }
 
+export type StorybookCatalogDocsAttachment = "attached" | "unattached" | "not_applicable";
+
+export type StorybookCatalogSignalType =
+  | "componentPath"
+  | "args"
+  | "argTypes"
+  | "designLinks"
+  | "mdxLinks"
+  | "docsImages"
+  | "docsText"
+  | "themeBundles"
+  | "css";
+
+export type StorybookCatalogJsonValue =
+  | boolean
+  | number
+  | string
+  | null
+  | StorybookCatalogJsonValue[]
+  | { [key: string]: StorybookCatalogJsonValue };
+
+export interface StorybookCatalogSignalReferences {
+  componentPath: string[];
+  args: string[];
+  argTypes: string[];
+  designLinks: string[];
+  mdxLinks: string[];
+  docsImages: string[];
+  docsText: string[];
+  themeBundles: string[];
+  css: string[];
+}
+
+export interface StorybookCatalogResolvedDocsLink {
+  path: string;
+  entryId?: string;
+  familyId?: string;
+  familyTitle?: string;
+}
+
+export interface StorybookCatalogLinkMetadata {
+  internal: StorybookCatalogResolvedDocsLink[];
+  external: string[];
+}
+
+export interface StorybookCatalogEntryMetadata {
+  args?: Record<string, StorybookCatalogJsonValue>;
+  argTypes?: Record<string, StorybookCatalogJsonValue>;
+  designUrls: string[];
+  mdxLinks: StorybookCatalogLinkMetadata;
+}
+
+export interface StorybookCatalogEntry {
+  id: string;
+  title: string;
+  name: string;
+  type: StorybookEntryType;
+  tier: string;
+  tags: string[];
+  importPath: string;
+  storiesImports: string[];
+  docsAttachment: StorybookCatalogDocsAttachment;
+  familyId: string;
+  familyTitle: string;
+  isDocsOnlyTier: boolean;
+  componentPath?: string;
+  signalReferences: StorybookCatalogSignalReferences;
+  metadata: StorybookCatalogEntryMetadata;
+}
+
+export interface StorybookCatalogFamilyMetadata {
+  designUrls: string[];
+  mdxLinks: StorybookCatalogLinkMetadata;
+}
+
+export interface StorybookCatalogFamily {
+  id: string;
+  title: string;
+  name: string;
+  tier: string;
+  isDocsOnlyTier: boolean;
+  entryIds: string[];
+  storyEntryIds: string[];
+  docsEntryIds: string[];
+  storyCount: number;
+  propKeys: string[];
+  hasDesignReference: boolean;
+  componentPath?: string;
+  signalReferences: StorybookCatalogSignalReferences;
+  metadata: StorybookCatalogFamilyMetadata;
+}
+
+export interface StorybookCatalogStats {
+  entryCount: number;
+  familyCount: number;
+  byEntryType: Record<StorybookEntryType, number>;
+  byTier: Record<string, number>;
+  byDocsAttachment: Record<StorybookCatalogDocsAttachment, number>;
+  docsOnlyTiers: string[];
+  byReferencedSignal: Record<StorybookCatalogSignalType, number>;
+}
+
+export interface StorybookCatalogArtifact {
+  artifact: "storybook.catalog";
+  version: 1;
+  stats: StorybookCatalogStats;
+  entries: StorybookCatalogEntry[];
+  families: StorybookCatalogFamily[];
+}
+
 export type StorybookThemeDiagnosticSeverity = "warning" | "error";
 
 export interface StorybookThemeDiagnostic {

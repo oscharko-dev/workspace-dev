@@ -32,6 +32,15 @@ const createMiniStorybookBuild = async (): Promise<string> => {
         storiesImports: ["./src/core/Tooltip/stories/Tooltip.stories.tsx"],
         type: "docs",
         tags: ["dev", "test", "attached-mdx"]
+      },
+      "if-components-button--docs": {
+        id: "if-components-button--docs",
+        title: "IF-Components/Button",
+        name: "Docs",
+        importPath: "./docs/IF-Components/Button.mdx",
+        storiesImports: [],
+        type: "docs",
+        tags: ["dev", "test", "unattached-mdx"]
       }
     }
   };
@@ -47,6 +56,7 @@ const createMiniStorybookBuild = async (): Promise<string> => {
 
   const iframeBundle = `
     const gq0 = {
+      "./docs/IF-Components/Button.mdx": n(() => c0(() => import("./if-button-test.js"), true ? __vite__mapDeps([3]) : void 0, import.meta.url), "./docs/IF-Components/Button.mdx"),
       "./docs/Base/Colors/colors.mdx": n(() => c0(() => import("./colors-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./docs/Base/Colors/colors.mdx"),
       "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([2]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
     };
@@ -78,6 +88,12 @@ const createMiniStorybookBuild = async (): Promise<string> => {
           e.jsx("img", { src: "static/assets/images/Base/Color_Tokens_1.png", alt: "Tokens" })
         ]
       });
+    }
+  `;
+
+  const docsOnlyBundle = `
+    function content() {
+      return e.jsx(p, { children: "IF Button docs" });
     }
   `;
 
@@ -130,6 +146,7 @@ const createMiniStorybookBuild = async (): Promise<string> => {
   await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
   await writeFile(path.join(assetsDir, "Tooltip.stories-test.js"), storyBundle, "utf8");
   await writeFile(path.join(assetsDir, "colors-test.js"), docsBundle, "utf8");
+  await writeFile(path.join(assetsDir, "if-button-test.js"), docsOnlyBundle, "utf8");
   await writeFile(path.join(assetsDir, "shared-theme.js"), themeBundle, "utf8");
   await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
 
@@ -170,4 +187,11 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(artifacts.componentsArtifact.stats.componentWithDesignReferenceCount, 1);
   assert.equal(artifacts.componentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
   assert.deepEqual(artifacts.componentsArtifact.components[0]?.propKeys, ["infos", "title"]);
+
+  const serializedComponents = JSON.stringify(artifacts.componentsArtifact);
+  assert.equal(serializedComponents.includes("importPath"), false);
+  assert.equal(serializedComponents.includes("storiesImports"), false);
+  assert.equal(serializedComponents.includes("bundlePath"), false);
+  assert.equal(serializedComponents.includes("iframeBundlePath"), false);
+  assert.equal(serializedComponents.includes("buildRoot"), false);
 });

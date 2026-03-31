@@ -227,7 +227,7 @@ const validateStorybookIndexEntry = (id: string, value: unknown): StorybookIndex
   };
 };
 
-const loadBuildContext = async ({
+export const loadStorybookBuildContext = async ({
   buildDir
 }: {
   buildDir: string;
@@ -297,11 +297,13 @@ const createDocsSource = ({
 };
 
 export const buildStorybookEvidenceArtifact = async ({
-  buildDir
+  buildDir,
+  buildContext
 }: {
   buildDir: string;
+  buildContext?: StorybookBuildContext;
 }): Promise<StorybookEvidenceArtifact> => {
-  const context = await loadBuildContext({ buildDir });
+  const context = buildContext ?? (await loadStorybookBuildContext({ buildDir }));
   const evidenceItems: StorybookEvidenceItem[] = [];
 
   const storyEntries = context.indexEntries.filter((entry) => entry.type === "story");
