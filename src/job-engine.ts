@@ -139,7 +139,7 @@ const describeCustomerProfileSnapshot = ({
   if (snapshot.origin === "request") {
     return (
       `request path '${snapshot.submittedPath ?? "<missing>"}'` +
-      `${snapshot.resolvedPath ? ` (resolved '${snapshot.resolvedPath}')` : ""}`
+      (snapshot.resolvedPath ? ` (resolved '${snapshot.resolvedPath}')` : "")
     );
   }
   return "runtime.customerProfile fallback";

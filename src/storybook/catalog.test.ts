@@ -264,6 +264,72 @@ test("buildStorybookCatalogArtifact captures normalized entries, families, and d
   assert.equal(tooltipFamily?.metadata.mdxLinks.internal[0]?.entryId, "if-components-button--docs");
 });
 
+test("buildStorybookCatalogArtifact produces correct byTier breakdown and storiesImports normalization", async () => {
+  const buildDir = await createCatalogFixtureBuild();
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+
+  assert.deepEqual(artifact.stats.byTier, {
+    Components: 1,
+    "IF-Components": 1,
+    "OSPlus_neo-Components": 1,
+    ReactUI: 2
+  });
+
+  const tooltipDocs = artifact.entries.find((entry) => entry.id === "reactui-tooltip--docs");
+  assert.ok(tooltipDocs);
+  assert.deepEqual(
+    tooltipDocs.storiesImports,
+    ["src/core/Tooltip/stories/Tooltip.stories.tsx"]
+  );
+  assert.ok(!tooltipDocs.storiesImports.some((path) => path.startsWith("./")));
+});
+
+test("buildStorybookCatalogArtifact catalog does not leak build-internal paths (bundlePath, iframeBundlePath, buildRoot)", async () => {
+  const buildDir = await createCatalogFixtureBuild();
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+  const serialized = JSON.stringify(artifact);
+
+  assert.equal(serialized.includes("bundlePath"), false, "catalog must not contain bundlePath");
+  assert.equal(serialized.includes("iframeBundlePath"), false, "catalog must not contain iframeBundlePath");
+  assert.equal(serialized.includes("buildRoot"), false, "catalog must not contain buildRoot");
+});
+
+test("buildStorybookCatalogArtifact family signalReferences aggregate entry-level signals", async () => {
+  const buildDir = await createCatalogFixtureBuild();
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+
+  const tooltipFamily = artifact.families.find((family) => family.title === "ReactUI/Core/Tooltip");
+  assert.ok(tooltipFamily);
+  assert.ok(tooltipFamily.signalReferences.componentPath.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.args.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.argTypes.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.designLinks.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.mdxLinks.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.themeBundles.length >= 1);
+  assert.ok(tooltipFamily.signalReferences.css.length >= 1);
+
+  const ifFamily = artifact.families.find((family) => family.title === "IF-Components/Button");
+  assert.ok(ifFamily);
+  assert.equal(ifFamily.isDocsOnlyTier, true);
+  assert.equal(ifFamily.storyCount, 0);
+  assert.deepEqual(ifFamily.storyEntryIds, []);
+  assert.equal(ifFamily.docsEntryIds.length, 1);
+});
+
+test("buildStorybookCatalogArtifact all signal reference IDs are non-empty strings with a colon-separated prefix", async () => {
+  const buildDir = await createCatalogFixtureBuild();
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+
+  for (const entry of artifact.entries) {
+    for (const [signalType, refs] of Object.entries(entry.signalReferences)) {
+      for (const ref of refs as string[]) {
+        assert.ok(ref.length > 0, `empty signal ref in entry ${entry.id} signal ${signalType}`);
+        assert.ok(ref.includes(":"), `signal ref '${ref}' in entry ${entry.id} signal ${signalType} missing colon-separated prefix`);
+      }
+    }
+  }
+});
+
 test("writeStorybookCatalogArtifact emits stable JSON into the build directory by default", async () => {
   const buildDir = await createCatalogFixtureBuild();
   const artifact = await buildStorybookCatalogArtifact({ buildDir });
