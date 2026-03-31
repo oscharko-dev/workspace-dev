@@ -21,6 +21,7 @@ import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso } from "../stage-state.js";
 import type { JobEngineRuntime, JobRecord } from "../types.js";
+import type { ProjectValidationResult } from "../validation.js";
 import { createCodegenGenerateService } from "./codegen-generate-service.js";
 import { FigmaSourceService } from "./figma-source-service.js";
 import { createGitPrService } from "./git-pr-service.js";
@@ -103,6 +104,49 @@ const createMinimalIr = (): DesignIR =>
     }
   }) as DesignIR;
 
+const createSuccessfulValidationResult = ({
+  attempts = 1
+}: {
+  attempts?: number;
+} = {}): ProjectValidationResult => {
+  return {
+    attempts,
+    install: {
+      status: "skipped",
+      strategy: "reused_seeded_node_modules"
+    },
+    lintAutofix: {
+      status: "completed",
+      command: "pnpm",
+      args: ["lint", "--fix"],
+      attempt: attempts,
+      timedOut: false,
+      changedFiles: ["src/App.tsx"]
+    },
+    lint: {
+      status: "passed",
+      command: "pnpm",
+      args: ["lint"],
+      attempt: attempts,
+      timedOut: false
+    },
+    typecheck: {
+      status: "passed",
+      command: "pnpm",
+      args: ["typecheck"],
+      attempt: attempts,
+      timedOut: false
+    },
+    build: {
+      status: "passed",
+      command: "pnpm",
+      args: ["build"],
+      attempt: attempts,
+      timedOut: false
+    }
+  };
+};
+
 const createCustomerProfileForStageServices = () => {
   const customerProfile = parseCustomerProfileConfig({
     input: {
@@ -158,6 +202,49 @@ const createCustomerProfileForStageServices = () => {
       }
     }
   });
+
+const createSuccessfulValidationResult = ({
+  attempts = 1
+}: {
+  attempts?: number;
+} = {}): ProjectValidationResult => {
+  return {
+    attempts,
+    install: {
+      status: "skipped",
+      strategy: "reused_seeded_node_modules"
+    },
+    lintAutofix: {
+      status: "completed",
+      command: "pnpm",
+      args: ["lint", "--fix"],
+      attempt: attempts,
+      timedOut: false,
+      changedFiles: ["src/App.tsx"]
+    },
+    lint: {
+      status: "passed",
+      command: "pnpm",
+      args: ["lint"],
+      attempt: attempts,
+      timedOut: false
+    },
+    typecheck: {
+      status: "passed",
+      command: "pnpm",
+      args: ["typecheck"],
+      attempt: attempts,
+      timedOut: false
+    },
+    build: {
+      status: "passed",
+      command: "pnpm",
+      args: ["build"],
+      attempt: attempts,
+      timedOut: false
+    }
+  };
+};
   if (!customerProfile) {
     throw new Error("Failed to create stage-service customer profile fixture.");
   }
@@ -806,6 +893,7 @@ test("ValidateProjectService reads generated.project and writes validation.summa
         commandStdoutMaxBytes: input.commandStdoutMaxBytes,
         commandStderrMaxBytes: input.commandStderrMaxBytes
       };
+      return createSuccessfulValidationResult();
     }
   });
 
@@ -815,8 +903,17 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   assert.equal(calledInput?.jobDir, executionContext.paths.jobDir);
   assert.equal(calledInput?.commandStdoutMaxBytes, 12_345);
   assert.equal(calledInput?.commandStderrMaxBytes, 54_321);
-  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  const summary = await executionContext.artifactStore.getValue<{
+    status: string;
+    generatedApp?: { status?: string; lint?: { args?: string[] } };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
+  assert.equal(summary?.generatedApp?.status, "ok");
+  assert.deepEqual(summary?.generatedApp?.lint?.args, ["lint"]);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
+  );
 });
 
 test("ValidateProjectService persists failed customer profile import policy before project validation", async () => {
@@ -891,6 +988,7 @@ export default defineConfig({
   const service = createValidateProjectService({
     runProjectValidationFn: async () => {
       validationInvoked = true;
+      return createSuccessfulValidationResult();
     }
   });
 
@@ -904,10 +1002,18 @@ export default defineConfig({
   assert.equal(validationInvoked, false);
   const summary = await executionContext.artifactStore.getValue<{
     status: string;
-    customerProfile?: { import?: { issueCount?: number } };
+    import?: {
+      status?: string;
+      customerProfile?: { import?: { issueCount?: number } };
+    };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "failed");
-  assert.equal((summary?.customerProfile?.import?.issueCount ?? 0) > 0, true);
+  assert.equal(summary?.import?.status, "failed");
+  assert.equal((summary?.import?.customerProfile?.import?.issueCount ?? 0) > 0, true);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
+  );
 });
 
 test("ValidateProjectService forwards aborted signal to project validation", async () => {
@@ -1024,6 +1130,7 @@ test("ValidateProjectService recomputes generation diff after validation", async
   const service = createValidateProjectService({
     runProjectValidationFn: async () => {
       // simulate lint --fix mutating a file
+      return createSuccessfulValidationResult();
     },
     prepareGenerationDiffFn: async (input) => {
       diffCallArgs = { boardKey: input.boardKey, jobId: input.jobId };
@@ -1056,6 +1163,10 @@ test("ValidateProjectService recomputes generation diff after validation", async
 
   const diffFilePath = await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile);
   assert.equal(diffFilePath, path.join(executionContext.paths.jobDir, "generation-diff.json"));
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
+  );
 });
 
 test("ValidateProjectService fails when generation diff context is missing", async () => {
@@ -1067,7 +1178,7 @@ test("ValidateProjectService fails when generation diff context is missing", asy
   });
 
   const service = createValidateProjectService({
-    runProjectValidationFn: async () => {}
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
   });
 
   await assert.rejects(
@@ -1075,6 +1186,17 @@ test("ValidateProjectService fails when generation diff context is missing", asy
       await service.execute(undefined, stageContextFor("validate.project"));
     },
     /generation\.diff\.context/
+  );
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status: string;
+    generatedApp?: { status?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.generatedApp?.status, "ok");
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
 });
 
@@ -1141,7 +1263,7 @@ test("ValidateProjectService fails fast when final diff persistence fails", asyn
   });
 
   const service = createValidateProjectService({
-    runProjectValidationFn: async () => {},
+    runProjectValidationFn: async () => createSuccessfulValidationResult(),
     prepareGenerationDiffFn: async (input) => {
       return {
         report: {
@@ -1175,7 +1297,12 @@ test("ValidateProjectService fails fast when final diff persistence fails", asyn
     /disk full/
   );
 
-  assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.validationSummary), undefined);
+  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
+  );
   assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), undefined);
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
 });
@@ -1212,6 +1339,7 @@ test("GitPrService receives the final validation-owned generation diff", async (
   const validateService = createValidateProjectService({
     runProjectValidationFn: async () => {
       await writeFile(utilsFile, "export const add = (a: number, b: number): number => a + b;\n", "utf8");
+      return createSuccessfulValidationResult();
     }
   });
   await validateService.execute(undefined, stageContextFor("validate.project"));

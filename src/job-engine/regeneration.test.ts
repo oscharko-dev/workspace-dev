@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -120,6 +120,144 @@ const createCustomerProfileFixture = ({
     import: "error"
   }
 });
+
+const createSyntheticStorybookBuild = async (): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-build-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "reactui-tooltip--default": {
+        id: "reactui-tooltip--default",
+        title: "ReactUI/Core/Tooltip",
+        name: "Default",
+        importPath: "./src/core/Tooltip/stories/Tooltip.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+      },
+      "base-colors--docs": {
+        id: "base-colors--docs",
+        title: "Base/Colors/Color Tokens",
+        name: "Docs",
+        importPath: "./docs/Base/Colors/colors.mdx",
+        storiesImports: ["./src/core/Tooltip/stories/Tooltip.stories.tsx"],
+        type: "docs",
+        tags: ["dev", "test", "attached-mdx"]
+      }
+    }
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeBundle = `
+    const gq0 = {
+      "./docs/Base/Colors/colors.mdx": n(() => c0(() => import("./colors-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./docs/Base/Colors/colors.mdx"),
+      "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([2]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
+    };
+  `;
+
+  const storyBundle = `
+    const meta = {
+      title: "ReactUI/Core/Tooltip",
+      args: { title: "Einfach", infos: "Ohne Infos" },
+      argTypes: {
+        title: { control: { type: "select" } },
+        infos: { control: { type: "select" } }
+      },
+      parameters: {
+        design: {
+          type: "figma",
+          url: "https://www.figma.com/design/demo"
+        }
+      }
+    };
+  `;
+
+  const docsBundle = `
+    function content() {
+      return e.jsxs(e.Fragment, {
+        children: [
+          e.jsx(h1, { children: "Color Tokens" }),
+          e.jsx(p, { children: "Tokens sind Farbnamen, denen HEX-Werte zugeordnet sind." }),
+          e.jsxs(p, {
+            children: [
+              "Weitere Details unter ",
+              e.jsx("a", { href: "/docs/base-colors-sk-theme--docs", children: "SK-Theme" }),
+              " sowie ",
+              e.jsx("a", { href: "https://example.com/design", children: "extern" })
+            ]
+          }),
+          e.jsx("img", { src: "static/assets/images/Base/Color_Tokens_1.png", alt: "Tokens" })
+        ]
+      });
+    }
+  `;
+
+  const sharedThemeBundle = `
+    const FONT_DATA = "data:application/font-ttf;base64,${"A".repeat(1500)}";
+    const paletteRefs = { light: { "warning-01": "#ffc900" } };
+    const keepName = ((fn, name) => fn);
+    const createFont = keepName((family, weight, src) => ({
+      fontFamily: \`\${family}\`,
+      fontWeight: weight,
+      src: \`url('\${src}') format('truetype')\`
+    }), "createFont");
+    const regular = createFont("Brand Sans", 400, FONT_DATA);
+    const bold = createFont("Brand Sans Bold", 700, FONT_DATA);
+    const appTheme = createTheme({
+      spacing: 8,
+      shape: { borderRadius: 12 },
+      palette: {
+        primary: { main: "#ff0000", contrastText: "#ffffff" },
+        warning: { main: paletteRefs.light["warning-01"] },
+        text: { primary: "#444444" }
+      },
+      typography: {
+        fontFamily: "Brand Sans, sans-serif",
+        fontSize: 16,
+        body1: { fontSize: 14, lineHeight: 1.5, fontFamily: "Brand Sans" },
+        h1: { fontSize: 30, lineHeight: 1.2, fontFamily: "Brand Sans Bold" }
+      },
+      components: {
+        MuiCssBaseline: {
+          styleOverrides: {
+            "@font-face": [regular],
+            fallbacks: [{ "@font-face": [bold] }]
+          }
+        }
+      },
+      zIndex: { drawer: 1200 }
+    });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+
+  const cssText = `
+    :root {
+      --fi-space-base: 8px;
+    }
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "Tooltip.stories-test.js"), storyBundle, "utf8");
+  await writeFile(path.join(assetsDir, "colors-test.js"), docsBundle, "utf8");
+  await writeFile(path.join(assetsDir, "shared-theme.js"), sharedThemeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
+
+  return buildDir;
+};
 
 test("submitRegeneration throws when source job does not exist", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-notfound-"));
@@ -575,4 +713,113 @@ test("queued regeneration jobs drain when a running job releases the only queue 
   assert.equal(regenStatus.status, "completed", `Queued regeneration should drain, got ${regenStatus.status}`);
   assert.equal(regenStatus.lineage?.sourceJobId, sourceAccepted.jobId);
   assert.equal(regenStatus.lineage?.overrideCount, 1);
+});
+
+test("regeneration reuses Storybook artifacts from the source job after the original Storybook build is removed", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-reuse-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const storybookBuildDir = await createSyntheticStorybookBuild();
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    storybookStaticDir: storybookBuildDir
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
+  assert.equal(typeof sourceStatus.artifacts.storybookTokensFile, "string");
+  assert.equal(typeof sourceStatus.artifacts.storybookThemesFile, "string");
+  assert.equal(typeof sourceStatus.artifacts.storybookComponentsFile, "string");
+
+  const sourceTokensBytes = await readFile(String(sourceStatus.artifacts.storybookTokensFile), "utf8");
+  const sourceThemesBytes = await readFile(String(sourceStatus.artifacts.storybookThemesFile), "utf8");
+  const sourceComponentsBytes = await readFile(String(sourceStatus.artifacts.storybookComponentsFile), "utf8");
+
+  await rm(storybookBuildDir, { recursive: true, force: true });
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title-1", field: "fontSize", value: 32 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+
+  assert.equal(regenStatus.status, "completed", `Expected completed regeneration, got ${regenStatus.status}`);
+  assert.equal(typeof regenStatus.artifacts.storybookTokensFile, "string");
+  assert.equal(typeof regenStatus.artifacts.storybookThemesFile, "string");
+  assert.equal(typeof regenStatus.artifacts.storybookComponentsFile, "string");
+  assert.equal(await readFile(String(regenStatus.artifacts.storybookTokensFile), "utf8"), sourceTokensBytes);
+  assert.equal(await readFile(String(regenStatus.artifacts.storybookThemesFile), "utf8"), sourceThemesBytes);
+  assert.equal(await readFile(String(regenStatus.artifacts.storybookComponentsFile), "utf8"), sourceComponentsBytes);
+});
+
+test("regeneration fails when a source job declared Storybook input but a reusable Storybook artifact is missing", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-missing-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const storybookBuildDir = await createSyntheticStorybookBuild();
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    storybookStaticDir: storybookBuildDir
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
+  assert.equal(typeof sourceStatus.artifacts.storybookComponentsFile, "string");
+
+  await rm(String(sourceStatus.artifacts.storybookComponentsFile), { force: true });
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title-1", field: "fontSize", value: 20 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+
+  assert.equal(regenStatus.status, "failed");
+  assert.equal(regenStatus.error?.code, "E_STORYBOOK_ARTIFACTS_MISSING");
+  assert.equal(regenStatus.error?.stage, "ir.derive");
+  assert.match(regenStatus.error?.message ?? "", /storybook\.components/i);
 });

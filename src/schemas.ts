@@ -159,6 +159,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "figmaFileKey",
     "figmaAccessToken",
     "figmaJsonPath",
+    "storybookStaticDir",
     "customerProfilePath",
     "repoUrl",
     "repoToken",
@@ -193,6 +194,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const figmaJsonPath = parseStringField({
     input,
     key: "figmaJsonPath",
+    required: false,
+    issues
+  });
+  const storybookStaticDir = parseStringField({
+    input,
+    key: "storybookStaticDir",
     required: false,
     issues
   });
@@ -377,6 +384,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (figmaJsonPath !== undefined) {
     data.figmaJsonPath = figmaJsonPath;
+  }
+  if (storybookStaticDir !== undefined) {
+    data.storybookStaticDir = storybookStaticDir.trim();
   }
   if (customerProfilePath !== undefined) {
     data.customerProfilePath = customerProfilePath.trim();

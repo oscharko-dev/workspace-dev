@@ -1,6 +1,7 @@
+import path from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import type { WorkspaceRegenerationInput } from "../../contracts/index.js";
-import { createPipelineError, type PipelineDiagnosticInput } from "../errors.js";
+import { createPipelineError, getErrorMessage, type PipelineDiagnosticInput } from "../errors.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "../ir-cache.js";
 import { applyIrOverrides } from "../ir-overrides.js";
 import { buildFigmaAnalysis, buildRegenerationFallbackFigmaAnalysis } from "../../parity/figma-analysis.js";
@@ -20,6 +21,7 @@ import {
   toMcpCoverageDiagnostics,
   toSortedReasonCounts
 } from "./ir-diagnostics.js";
+import { generateStorybookArtifactsForJob } from "../storybook-artifacts.js";
 
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
@@ -30,6 +32,37 @@ interface RegenerationSourceIrSeed {
 export const IrDeriveService: StageService<void> = {
   stageName: "ir.derive",
   execute: async (_input, context) => {
+    const persistStorybookArtifactsIfRequested = async (): Promise<void> => {
+      if (!context.resolvedStorybookStaticDir) {
+        return;
+      }
+
+      try {
+        const artifactPaths = await generateStorybookArtifactsForJob({
+          storybookStaticDir: context.resolvedStorybookStaticDir,
+          jobDir: context.paths.jobDir,
+          artifactStore: context.artifactStore,
+          stage: "ir.derive"
+        });
+        context.log({
+          level: "info",
+          message:
+            `Generated Storybook artifacts from '${context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir}' ` +
+            `into '${path.relative(context.paths.jobDir, artifactPaths.rootDir) || "."}'.`
+        });
+      } catch (error) {
+        throw createPipelineError({
+          code: "E_STORYBOOK_ARTIFACTS_FAILED",
+          stage: "ir.derive",
+          message:
+            `Failed to generate Storybook artifacts from '${context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir}' ` +
+            `(resolved '${context.resolvedStorybookStaticDir}'): ${getErrorMessage(error)}`,
+          cause: error,
+          limits: context.runtime.pipelineDiagnosticLimits
+        });
+      }
+    };
+
     if (context.mode === "regeneration") {
       const sourceReference = await context.artifactStore.requireValue<RegenerationSourceIrSeed>(
         STAGE_ARTIFACT_KEYS.regenerationSourceIr
@@ -451,6 +484,7 @@ export const IrDeriveService: StageService<void> = {
           stage: "ir.derive",
           absolutePath: context.paths.figmaAnalysisFile
         });
+        await persistStorybookArtifactsIfRequested();
         return;
       }
     }
@@ -527,5 +561,6 @@ export const IrDeriveService: StageService<void> = {
       stage: "ir.derive",
       absolutePath: context.paths.figmaAnalysisFile
     });
+    await persistStorybookArtifactsIfRequested();
   }
 };

@@ -214,6 +214,9 @@ describe("WorkspacePage", () => {
       target: { value: " /data/figma-export.json " }
     });
     fireEvent.click(screen.getByRole("button", { name: /advanced destination and git \/ pr options/i }));
+    fireEvent.change(screen.getByLabelText("Storybook static dir"), {
+      target: { value: " storybook-static/customer " }
+    });
     fireEvent.change(screen.getByLabelText("Customer profile path"), {
       target: { value: " profiles/customer-profile.json " }
     });
@@ -232,6 +235,7 @@ describe("WorkspacePage", () => {
     expect(submittedPayloads[0]).toMatchObject({
       figmaSourceMode: "local_json",
       figmaJsonPath: "/data/figma-export.json",
+      storybookStaticDir: "storybook-static/customer",
       customerProfilePath: "profiles/customer-profile.json",
       enableGitPr: false,
       llmCodegenMode: "deterministic"

@@ -7,6 +7,7 @@ export const workspaceSubmitSchema = z
     figmaFileKey: optionalString,
     figmaAccessToken: optionalString,
     figmaJsonPath: optionalString,
+    storybookStaticDir: optionalString,
     customerProfilePath: optionalString,
     figmaSourceMode: z.enum(["rest", "hybrid", "local_json"]).default("rest"),
     enableGitPr: z.boolean(),
@@ -69,6 +70,7 @@ export interface WorkspaceSubmitPayload {
   figmaFileKey?: string | undefined;
   figmaAccessToken?: string | undefined;
   figmaJsonPath?: string | undefined;
+  storybookStaticDir?: string | undefined;
   customerProfilePath?: string | undefined;
   repoUrl?: string | undefined;
   repoToken?: string | undefined;
@@ -103,6 +105,7 @@ export function toWorkspaceSubmitPayload({
     return {
       figmaSourceMode: "local_json",
       figmaJsonPath: toOptionalString({ value: formData.figmaJsonPath }),
+      storybookStaticDir: toOptionalString({ value: formData.storybookStaticDir }),
       customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
       enableGitPr: formData.enableGitPr,
       repoUrl: toOptionalString({ value: formData.repoUrl }),
@@ -117,6 +120,7 @@ export function toWorkspaceSubmitPayload({
     figmaFileKey: toOptionalString({ value: formData.figmaFileKey }),
     figmaAccessToken: toOptionalString({ value: formData.figmaAccessToken }),
     figmaSourceMode: mode,
+    storybookStaticDir: toOptionalString({ value: formData.storybookStaticDir }),
     customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
     repoUrl: toOptionalString({ value: formData.repoUrl }),
     repoToken: toOptionalString({ value: formData.repoToken }),

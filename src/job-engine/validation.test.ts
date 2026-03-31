@@ -45,7 +45,7 @@ const writeValidationFeedbackProject = async ({
 test("runProjectValidationWithDeps executes deterministic pnpm command sequence", async () => {
   const calls: string[] = [];
 
-  await runProjectValidationWithDeps({
+  const result = await runProjectValidationWithDeps({
     generatedProjectDir: "/tmp/generated-project",
     onLog: () => {
       // no-op
@@ -71,6 +71,13 @@ test("runProjectValidationWithDeps executes deterministic pnpm command sequence"
     "pnpm typecheck",
     "pnpm build"
   ]);
+  assert.equal(result.attempts, 1);
+  assert.equal(result.install.status, "completed");
+  assert.equal(result.install.strategy, "fresh_install");
+  assert.equal(result.lintAutofix?.status, "completed");
+  assert.deepEqual(result.lint.args, ["lint"]);
+  assert.deepEqual(result.typecheck.args, ["typecheck"]);
+  assert.deepEqual(result.build.args, ["build"]);
 });
 
 test("runProjectValidationWithDeps forwards output capture settings and abort signal", async () => {
@@ -1137,7 +1144,7 @@ test("runProjectValidationWithDeps truncates lint-autofix changed-file logs when
 test("runProjectValidationWithDeps runs ui validation when enabled", async () => {
   const calls: string[] = [];
 
-  await runProjectValidationWithDeps({
+  const result = await runProjectValidationWithDeps({
     generatedProjectDir: "/tmp/generated-project",
     onLog: () => {
       // no-op
@@ -1158,12 +1165,13 @@ test("runProjectValidationWithDeps runs ui validation when enabled", async () =>
   });
 
   assert.equal(calls.includes("pnpm run validate:ui"), true);
+  assert.deepEqual(result.validateUi?.args, ["run", "validate:ui"]);
 });
 
 test("runProjectValidationWithDeps runs unit tests when enabled", async () => {
   const calls: string[] = [];
 
-  await runProjectValidationWithDeps({
+  const result = await runProjectValidationWithDeps({
     generatedProjectDir: "/tmp/generated-project",
     onLog: () => {
       // no-op
@@ -1184,6 +1192,7 @@ test("runProjectValidationWithDeps runs unit tests when enabled", async () => {
   });
 
   assert.equal(calls.includes("pnpm run test"), true);
+  assert.deepEqual(result.test?.args, ["run", "test"]);
 });
 
 test("runProjectValidationWithDeps does not retry test failures", async () => {

@@ -62,6 +62,7 @@ import { PipelineOrchestrator, isPipelineCancellationError } from "./job-engine/
 import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
 import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
 import { buildRegenerationPipelinePlan, buildSubmissionPipelinePlan } from "./job-engine/services/pipeline-services.js";
+import { resolveStorybookStaticDir, reuseStorybookArtifactsFromSourceJob } from "./job-engine/storybook-artifacts.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
@@ -687,6 +688,38 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     return activation.profile;
   };
 
+  const activateSubmissionStorybookStaticDir = ({
+    job,
+    input
+  }: {
+    job: JobRecord;
+    input: WorkspaceJobInput;
+  }): { requestedStorybookStaticDir: string; resolvedStorybookStaticDir: string } | undefined => {
+    const requestedStorybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
+    if (!requestedStorybookStaticDir) {
+      return undefined;
+    }
+
+    const resolvedStorybookStaticDir = resolveStorybookStaticDir({
+      storybookStaticDir: requestedStorybookStaticDir,
+      resolvedWorkspaceRoot,
+      limits: runtime.pipelineDiagnosticLimits
+    });
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      stage: "figma.source",
+      message:
+        `Activated Storybook static dir '${requestedStorybookStaticDir}' ` +
+        `(resolved '${resolvedStorybookStaticDir}').`
+    });
+    return {
+      requestedStorybookStaticDir,
+      resolvedStorybookStaticDir
+    };
+  };
+
   const activateRegenerationCustomerProfile = async ({
     job,
     artifactStore,
@@ -741,6 +774,53 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         `${describeCustomerProfileSnapshot({ snapshot: restored.value.snapshot })}.`
     });
     return restored.value.profile;
+  };
+
+  const activateRegenerationStorybookArtifacts = async ({
+    job,
+    artifactStore,
+    sourceJob
+  }: {
+    job: JobRecord;
+    artifactStore: StageArtifactStore;
+    sourceJob: JobRecord;
+  }): Promise<string | undefined> => {
+    const sourceRequestedStorybookStaticDir = normalizeOptionalInputString(sourceJob.request.storybookStaticDir);
+    if (!sourceRequestedStorybookStaticDir) {
+      return undefined;
+    }
+
+    const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJob.artifacts.jobDir });
+    try {
+      await reuseStorybookArtifactsFromSourceJob({
+        sourceArtifactStore,
+        targetArtifactStore: artifactStore,
+        sourceJobId: sourceJob.jobId,
+        sourceRequestedStorybookStaticDir,
+        targetJobDir: job.artifacts.jobDir,
+        stage: "ir.derive"
+      });
+    } catch (error) {
+      throw createPipelineError({
+        code: "E_STORYBOOK_ARTIFACTS_MISSING",
+        stage: "ir.derive",
+        message: getErrorMessage(error),
+        cause: error,
+        limits: runtime.pipelineDiagnosticLimits
+      });
+    }
+
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      stage: "ir.derive",
+      message:
+        `Reused Storybook artifacts from source job '${sourceJob.jobId}' ` +
+        `(storybookStaticDir='${sourceRequestedStorybookStaticDir}').`
+    });
+
+    return sourceRequestedStorybookStaticDir;
   };
 
   const runJob = async (job: JobRecord, input: WorkspaceJobInput): Promise<void> => {
@@ -830,6 +910,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
       const artifactStore = new StageArtifactStore({ jobDir });
+      const storybookActivation = activateSubmissionStorybookStaticDir({
+        job,
+        input
+      });
       const resolvedCustomerProfile = await activateSubmissionCustomerProfile({
         job,
         artifactStore,
@@ -864,6 +948,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         resolvedBrandTheme,
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
+        ...(storybookActivation
+          ? {
+              requestedStorybookStaticDir: storybookActivation.requestedStorybookStaticDir,
+              resolvedStorybookStaticDir: storybookActivation.resolvedStorybookStaticDir
+            }
+          : {}),
         ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
         generationLocaleResolution,
         resolvedGenerationLocale,
@@ -1011,6 +1101,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       runtimeGenerationLocale: runtime.generationLocale
     });
     const customerProfilePath = normalizeOptionalInputString(input.customerProfilePath);
+    const storybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
     });
@@ -1030,6 +1121,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
     if (customerProfilePath) {
       request.customerProfilePath = customerProfilePath;
+    }
+    if (storybookStaticDir) {
+      request.storybookStaticDir = storybookStaticDir;
     }
     if (input.repoUrl) {
       request.repoUrl = input.repoUrl;
@@ -1186,6 +1280,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: "ir.derive",
         value: regenInput.overrides
       });
+      const requestedStorybookStaticDir = await activateRegenerationStorybookArtifacts({
+        job,
+        artifactStore,
+        sourceJob: sourceRecord
+      });
       const resolvedCustomerProfile = await activateRegenerationCustomerProfile({
         job,
         artifactStore,
@@ -1221,6 +1320,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         resolvedBrandTheme,
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
+        ...(requestedStorybookStaticDir ? { requestedStorybookStaticDir } : {}),
         ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
         generationLocaleResolution: { locale: resolvedGenerationLocale },
         resolvedGenerationLocale,

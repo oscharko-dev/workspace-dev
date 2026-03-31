@@ -9,6 +9,13 @@ export const STAGE_ARTIFACT_KEYS = {
   regenerationOverrides: "regeneration.overrides",
   designIr: "design.ir",
   figmaAnalysis: "figma.analysis",
+  storybookCatalog: "storybook.catalog",
+  storybookEvidence: "storybook.evidence",
+  storybookTokens: "storybook.tokens",
+  storybookThemes: "storybook.themes",
+  storybookComponents: "storybook.components",
+  figmaLibraryResolution: "figma.library_resolution",
+  componentMatchReport: "component.match_report",
   generatedProject: "generated.project",
   codegenSummary: "codegen.summary",
   generationMetrics: "generation.metrics",
@@ -17,6 +24,7 @@ export const STAGE_ARTIFACT_KEYS = {
   generationDiff: "generation.diff",
   generationDiffFile: "generation.diff.file",
   validationSummary: "validation.summary",
+  validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",
   gitPrStatus: "git.pr.status"
 } as const;

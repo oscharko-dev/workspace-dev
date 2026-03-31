@@ -31,6 +31,27 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.3.0] - 2026-03-31
+
+### Storybook-first submit metadata and artifact paths
+
+Added:
+
+- `WorkspaceJobInput.storybookStaticDir?: string` for supplying an optional local Storybook static build directory during submission.
+- `WorkspaceJobRequestMetadata.storybookStaticDir?: string` so public job metadata preserves the submitted Storybook static directory without exposing secrets.
+- `WorkspaceJobArtifacts.storybookTokensFile?: string` for the curated `storybook.tokens` artifact path.
+- `WorkspaceJobArtifacts.storybookThemesFile?: string` for the curated `storybook.themes` artifact path.
+- `WorkspaceJobArtifacts.storybookComponentsFile?: string` for the curated `storybook.components` artifact path.
+- `WorkspaceJobArtifacts.figmaLibraryResolutionFile?: string` for a future public `figma.library_resolution` artifact path when present.
+- `WorkspaceJobArtifacts.componentMatchReportFile?: string` for a future public `component.match_report` artifact path when present.
+- `WorkspaceJobArtifacts.validationSummaryFile?: string` for the structured `validation-summary.json` artifact path produced by `validate.project`.
+
+Changed:
+
+- Submit-time `storybookStaticDir` values are trimmed before they enter persisted request metadata.
+
+---
+
 ## [3.2.0] - 2026-03-31
 
 ### Public figma.analysis artifact
