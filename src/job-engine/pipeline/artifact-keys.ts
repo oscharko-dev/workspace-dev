@@ -4,6 +4,7 @@ export const STAGE_ARTIFACT_KEYS = {
   figmaCleanedReport: "figma.cleaned.report",
   figmaFetchDiagnostics: "figma.fetch_diagnostics",
   figmaHybridEnrichment: "figma.hybrid.enrichment",
+  customerProfileResolved: "customer.profile.resolved",
   regenerationSourceIr: "regeneration.source_ir",
   regenerationOverrides: "regeneration.overrides",
   designIr: "design.ir",

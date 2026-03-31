@@ -213,6 +213,10 @@ describe("WorkspacePage", () => {
     fireEvent.change(screen.getByLabelText("Figma JSON Path"), {
       target: { value: " /data/figma-export.json " }
     });
+    fireEvent.click(screen.getByRole("button", { name: /advanced destination and git \/ pr options/i }));
+    fireEvent.change(screen.getByLabelText("Customer profile path"), {
+      target: { value: " profiles/customer-profile.json " }
+    });
 
     const form = document.getElementById("workspace-submit-form");
     if (!(form instanceof HTMLFormElement)) {
@@ -228,6 +232,7 @@ describe("WorkspacePage", () => {
     expect(submittedPayloads[0]).toMatchObject({
       figmaSourceMode: "local_json",
       figmaJsonPath: "/data/figma-export.json",
+      customerProfilePath: "profiles/customer-profile.json",
       enableGitPr: false,
       llmCodegenMode: "deterministic"
     });

@@ -18,6 +18,7 @@ test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
+    customerProfilePath: " ./profiles/acme.json ",
     brandTheme: " Sparkasse ",
     generationLocale: "en-US",
     formHandlingMode: " react_hook_form ",
@@ -27,6 +28,7 @@ test("schema: valid submit body parses correctly", () => {
   assert.equal(result.success, true);
   if (result.success) {
     assert.equal(result.data.figmaFileKey, "abc123");
+    assert.equal(result.data.customerProfilePath, "./profiles/acme.json");
     assert.equal(result.data.brandTheme, "sparkasse");
     assert.equal(result.data.generationLocale, "en-US");
     assert.equal(result.data.formHandlingMode, "react_hook_form");
@@ -166,6 +168,7 @@ test("schema: optional fields must be strings when provided", () => {
     figmaFileKey: "key-1",
     figmaAccessToken: "token",
     projectName: 123,
+    customerProfilePath: true,
     generationLocale: 5,
     formHandlingMode: 7
   });

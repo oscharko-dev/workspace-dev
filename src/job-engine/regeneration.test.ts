@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
+import { StageArtifactStore } from "./pipeline/artifact-store.js";
 
 const waitForTerminalStatus = async ({
   getStatus,
@@ -63,6 +65,59 @@ const createLocalFigmaPayload = () => ({
         ]
       }
     ]
+  }
+});
+
+const createCustomerProfileFixture = ({
+  packageName = "@customer/components",
+  dependencyVersion = "^1.2.3"
+}: {
+  packageName?: string;
+  dependencyVersion?: string;
+} = {}) => ({
+  version: 1,
+  families: [
+    {
+      id: "Components",
+      tierPriority: 10,
+      aliases: {
+        figma: ["components"],
+        storybook: ["components"],
+        code: [packageName]
+      }
+    }
+  ],
+  brandMappings: [],
+  imports: {
+    components: {
+      Button: {
+        family: "Components",
+        package: packageName,
+        export: "PrimaryButton",
+        importAlias: "CustomerButton",
+        propMappings: {}
+      }
+    }
+  },
+  fallbacks: {
+    mui: {
+      defaultPolicy: "allow",
+      components: {}
+    }
+  },
+  template: {
+    dependencies: {
+      [packageName]: dependencyVersion
+    },
+    devDependencies: {},
+    importAliases: {
+      "@customer/ui": packageName
+    }
+  },
+  strictness: {
+    match: "warn",
+    token: "warn",
+    import: "error"
   }
 });
 
@@ -299,6 +354,147 @@ test("submitRegeneration result endpoint includes lineage", async () => {
   assert.ok(result.lineage);
   assert.equal(result.lineage?.sourceJobId, sourceAccepted.jobId);
   assert.equal(result.lineage?.overrideCount, 1);
+});
+
+test("submitRegeneration reuses the stored customer profile snapshot even when the source profile file changes", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-profile-reuse-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
+  const customerProfileDir = path.join(workspaceRoot, "profiles");
+  const customerProfilePath = path.join(customerProfileDir, "customer-profile.json");
+  await mkdir(customerProfileDir, { recursive: true });
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@customer/components-initial" })),
+    "utf8"
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    customerProfilePath: "profiles/customer-profile.json"
+  });
+
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
+
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@customer/components-updated", dependencyVersion: "^9.9.9" })),
+    "utf8"
+  );
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title-1", field: "fontSize", value: 30 }]
+  });
+
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed", `Regen job should complete, got: ${regenStatus.status} — ${regenStatus.error?.message ?? "no error"}`);
+
+  const generatedPackage = JSON.parse(
+    await readFile(path.join(String(regenStatus.artifacts.generatedProjectDir), "package.json"), "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  assert.equal(generatedPackage.dependencies?.["@customer/components-initial"], "^1.2.3");
+  assert.equal(generatedPackage.dependencies?.["@customer/components-updated"], undefined);
+
+  const regenArtifactStore = new StageArtifactStore({ jobDir: String(regenStatus.artifacts.jobDir) });
+  const regenSnapshot = await regenArtifactStore.getValue<{
+    origin: string;
+    profile?: {
+      template?: {
+        dependencies?: Record<string, string>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.customerProfileResolved);
+  assert.equal(regenSnapshot?.origin, "request");
+  assert.deepEqual(regenSnapshot?.profile?.template?.dependencies, {
+    "@customer/components-initial": "^1.2.3"
+  });
+});
+
+test("submitRegeneration fails with E_CUSTOMER_PROFILE_SNAPSHOT_MISSING when an explicit source snapshot is corrupt", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-profile-corrupt-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
+  const customerProfileDir = path.join(workspaceRoot, "profiles");
+  const customerProfilePath = path.join(customerProfileDir, "customer-profile.json");
+  await mkdir(customerProfileDir, { recursive: true });
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(customerProfilePath, JSON.stringify(createCustomerProfileFixture()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    customerProfilePath: "profiles/customer-profile.json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
+
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: String(sourceStatus.artifacts.jobDir) });
+  await sourceArtifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.customerProfileResolved,
+    stage: "figma.source",
+    value: "corrupt-snapshot"
+  });
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "title-1", field: "fontSize", value: 32 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+
+  assert.equal(regenStatus.status, "failed");
+  assert.equal(regenStatus.error?.code, "E_CUSTOMER_PROFILE_SNAPSHOT_MISSING");
+  assert.equal(regenStatus.error?.stage, "ir.derive");
+  assert.match(regenStatus.error?.message ?? "", /customer profile snapshot is invalid/i);
 });
 
 test("queued regeneration jobs drain when a running job releases the only queue slot", async () => {

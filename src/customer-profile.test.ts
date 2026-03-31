@@ -13,6 +13,7 @@ import {
   resolveCustomerProfileComponentImport,
   resolveCustomerProfileFamily,
   safeParseCustomerProfileConfig,
+  toCustomerProfileConfigSnapshot,
   toCustomerProfileDesignSystemConfig
 } from "./customer-profile.js";
 
@@ -382,6 +383,29 @@ test("loadCustomerProfileConfigFile loads valid profiles and logs malformed json
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("toCustomerProfileConfigSnapshot round-trips resolved profiles through safeParseCustomerProfileConfig", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  const reparsed = safeParseCustomerProfileConfig({
+    input: toCustomerProfileConfigSnapshot({
+      profile: parsed.config
+    })
+  });
+
+  assert.equal(reparsed.success, true);
+  if (!reparsed.success) {
+    assert.fail("Expected serialized customer profile snapshot to parse successfully.");
+  }
+  assert.equal(reparsed.config.strictness.import, parsed.config.strictness.import);
+  assert.equal(reparsed.config.imports.components.Button.package, parsed.config.imports.components.Button.package);
 });
 
 test("collectCustomerProfileImportIssuesFromSource reports disallowed MUI fallbacks and unknown exports", () => {

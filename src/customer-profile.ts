@@ -23,6 +23,48 @@ interface CustomerProfileFamilyAliases {
   code: string[];
 }
 
+export interface CustomerProfileConfigSnapshot {
+  version: typeof CUSTOMER_PROFILE_VERSION;
+  families: Array<{
+    id: string;
+    tierPriority: number;
+    aliases: CustomerProfileFamilyAliases;
+  }>;
+  brandMappings: Array<{
+    id: string;
+    aliases: string[];
+    brandTheme: WorkspaceBrandTheme;
+  }>;
+  imports: {
+    components: Record<
+      string,
+      {
+        family: string;
+        package: string;
+        export: string;
+        importAlias: string;
+        propMappings: Record<string, string>;
+      }
+    >;
+  };
+  fallbacks: {
+    mui: {
+      defaultPolicy: CustomerProfileMuiFallbackPolicy;
+      components: Record<string, CustomerProfileMuiFallbackPolicy>;
+    };
+  };
+  template: {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+    importAliases: Record<string, string>;
+  };
+  strictness: {
+    match: CustomerProfileStrictness;
+    token: CustomerProfileStrictness;
+    import: CustomerProfileStrictness;
+  };
+}
+
 export interface ResolvedCustomerProfileFamily {
   id: string;
   tierPriority: number;
@@ -953,6 +995,60 @@ export const loadCustomerProfileConfigFile = async ({
     onLog(`Failed to load customer profile config at '${customerProfileFilePath}': ${message}; using generic defaults.`);
     return undefined;
   }
+};
+
+export const toCustomerProfileConfigSnapshot = ({
+  profile
+}: {
+  profile: ResolvedCustomerProfile;
+}): CustomerProfileConfigSnapshot => {
+  return {
+    version: profile.version,
+    families: profile.families.map((family) => ({
+      id: family.id,
+      tierPriority: family.tierPriority,
+      aliases: {
+        figma: [...family.aliases.figma],
+        storybook: [...family.aliases.storybook],
+        code: [...family.aliases.code]
+      }
+    })),
+    brandMappings: profile.brandMappings.map((brandMapping) => ({
+      id: brandMapping.id,
+      aliases: [...brandMapping.aliases],
+      brandTheme: brandMapping.brandTheme
+    })),
+    imports: {
+      components: Object.fromEntries(
+        Object.entries(profile.imports.components).map(([componentKey, componentImport]) => [
+          componentKey,
+          {
+            family: componentImport.family,
+            package: componentImport.package,
+            export: componentImport.exportName,
+            importAlias: componentImport.localName,
+            propMappings: { ...componentImport.propMappings }
+          }
+        ])
+      )
+    },
+    fallbacks: {
+      mui: {
+        defaultPolicy: profile.fallbacks.mui.defaultPolicy,
+        components: { ...profile.fallbacks.mui.components }
+      }
+    },
+    template: {
+      dependencies: { ...profile.template.dependencies },
+      devDependencies: { ...profile.template.devDependencies },
+      importAliases: { ...profile.template.importAliases }
+    },
+    strictness: {
+      match: profile.strictness.match,
+      token: profile.strictness.token,
+      import: profile.strictness.import
+    }
+  };
 };
 
 export const resolveCustomerProfileFamily = ({

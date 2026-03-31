@@ -159,6 +159,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "figmaFileKey",
     "figmaAccessToken",
     "figmaJsonPath",
+    "customerProfilePath",
     "repoUrl",
     "repoToken",
     "enableGitPr",
@@ -192,6 +193,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const figmaJsonPath = parseStringField({
     input,
     key: "figmaJsonPath",
+    required: false,
+    issues
+  });
+  const customerProfilePath = parseStringField({
+    input,
+    key: "customerProfilePath",
     required: false,
     issues
   });
@@ -370,6 +377,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (figmaJsonPath !== undefined) {
     data.figmaJsonPath = figmaJsonPath;
+  }
+  if (customerProfilePath !== undefined) {
+    data.customerProfilePath = customerProfilePath.trim();
   }
   if (repoUrl !== undefined) {
     data.repoUrl = repoUrl;

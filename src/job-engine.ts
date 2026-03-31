@@ -16,6 +16,12 @@ import type {
   WorkspaceRegenerationInput
 } from "./contracts/index.js";
 import {
+  safeParseCustomerProfileConfig,
+  toCustomerProfileConfigSnapshot,
+  type CustomerProfileConfigSnapshot,
+  type ResolvedCustomerProfile
+} from "./customer-profile.js";
+import {
   createPipelineError,
   getErrorMessage,
   mergePipelineDiagnostics,
@@ -82,12 +88,207 @@ interface LocalSyncConfirmationRecord {
   planFingerprint: string;
 }
 
+interface StoredCustomerProfileSnapshot {
+  origin: "request" | "runtime";
+  submittedPath?: string;
+  resolvedPath?: string;
+  profile: CustomerProfileConfigSnapshot;
+}
+
+interface ResolvedCustomerProfileActivation {
+  snapshot: StoredCustomerProfileSnapshot;
+  profile: ResolvedCustomerProfile;
+}
+
 const isWorkspaceJobStageName = (value: unknown): value is WorkspaceJobStageName => {
   return typeof value === "string" && WORKSPACE_JOB_STAGE_SET.has(value as WorkspaceJobStageName);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const normalizeOptionalInputString = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const isStoredCustomerProfileOrigin = (value: unknown): value is StoredCustomerProfileSnapshot["origin"] => {
+  return value === "request" || value === "runtime";
+};
+
+const formatCustomerProfileParseFailure = ({
+  snapshotLabel,
+  issues
+}: {
+  snapshotLabel: string;
+  issues: Array<{ path: string; message: string }>;
+}): string => {
+  const firstIssue = issues[0];
+  return firstIssue ? `${snapshotLabel} (${firstIssue.path}: ${firstIssue.message})` : snapshotLabel;
+};
+
+const describeCustomerProfileSnapshot = ({
+  snapshot
+}: {
+  snapshot: StoredCustomerProfileSnapshot;
+}): string => {
+  if (snapshot.origin === "request") {
+    return (
+      `request path '${snapshot.submittedPath ?? "<missing>"}'` +
+      `${snapshot.resolvedPath ? ` (resolved '${snapshot.resolvedPath}')` : ""}`
+    );
+  }
+  return "runtime.customerProfile fallback";
+};
+
+const toRuntimeCustomerProfileActivation = ({
+  profile
+}: {
+  profile: ResolvedCustomerProfile;
+}): ResolvedCustomerProfileActivation => {
+  return {
+    snapshot: {
+      origin: "runtime",
+      profile: toCustomerProfileConfigSnapshot({ profile })
+    },
+    profile
+  };
+};
+
+const restoreCustomerProfileActivation = ({
+  snapshot
+}: {
+  snapshot: unknown;
+}):
+  | {
+      success: true;
+      value: ResolvedCustomerProfileActivation;
+    }
+  | {
+      success: false;
+      message: string;
+    } => {
+  if (!isRecord(snapshot)) {
+    return {
+      success: false,
+      message: "stored customer profile snapshot is not an object"
+    };
+  }
+
+  const origin = snapshot.origin;
+  if (!isStoredCustomerProfileOrigin(origin)) {
+    return {
+      success: false,
+      message: "stored customer profile snapshot origin is invalid"
+    };
+  }
+
+  const submittedPath = normalizeOptionalInputString(
+    typeof snapshot.submittedPath === "string" ? snapshot.submittedPath : undefined
+  );
+  const resolvedPath = normalizeOptionalInputString(
+    typeof snapshot.resolvedPath === "string" ? snapshot.resolvedPath : undefined
+  );
+  if (origin === "request" && (!submittedPath || !resolvedPath)) {
+    return {
+      success: false,
+      message: "stored customer profile snapshot is missing request path metadata"
+    };
+  }
+
+  const parsed = safeParseCustomerProfileConfig({ input: snapshot.profile });
+  if (!parsed.success) {
+    return {
+      success: false,
+      message: formatCustomerProfileParseFailure({
+        snapshotLabel: "stored customer profile snapshot is invalid",
+        issues: parsed.issues
+      })
+    };
+  }
+
+  return {
+    success: true,
+    value: {
+      snapshot: {
+        origin,
+        ...(submittedPath ? { submittedPath } : {}),
+        ...(resolvedPath ? { resolvedPath } : {}),
+        profile: toCustomerProfileConfigSnapshot({ profile: parsed.config })
+      },
+      profile: parsed.config
+    }
+  };
+};
+
+const loadCustomerProfileActivationFromRequest = async ({
+  customerProfilePath,
+  resolvedWorkspaceRoot,
+  limits
+}: {
+  customerProfilePath: string;
+  resolvedWorkspaceRoot: string;
+  limits: PipelineDiagnosticLimits;
+}): Promise<ResolvedCustomerProfileActivation> => {
+  const resolvedPath = path.resolve(resolvedWorkspaceRoot, customerProfilePath);
+
+  let rawContent: string;
+  try {
+    rawContent = await readFile(resolvedPath, "utf8");
+  } catch (error) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message:
+        `Could not read customer profile '${customerProfilePath}' ` +
+        `(resolved '${resolvedPath}'): ${getErrorMessage(error)}`,
+      cause: error,
+      limits
+    });
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(rawContent);
+  } catch (error) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message:
+        `Could not parse customer profile '${customerProfilePath}' ` +
+        `(resolved '${resolvedPath}'): ${getErrorMessage(error)}`,
+      cause: error,
+      limits
+    });
+  }
+
+  const parsed = safeParseCustomerProfileConfig({ input: parsedJson });
+  if (!parsed.success) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message: formatCustomerProfileParseFailure({
+        snapshotLabel:
+          `Customer profile '${customerProfilePath}' (resolved '${resolvedPath}') is invalid`,
+        issues: parsed.issues
+      }),
+      limits
+    });
+  }
+
+  return {
+    snapshot: {
+      origin: "request",
+      submittedPath: customerProfilePath,
+      resolvedPath,
+      profile: toCustomerProfileConfigSnapshot({ profile: parsed.config })
+    },
+    profile: parsed.config
+  };
 };
 
 const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefined => {
@@ -406,6 +607,131 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
   };
 
+  const persistCustomerProfileActivation = async ({
+    artifactStore,
+    stage,
+    activation
+  }: {
+    artifactStore: StageArtifactStore;
+    stage: WorkspaceJobStageName;
+    activation: ResolvedCustomerProfileActivation;
+  }): Promise<void> => {
+    await artifactStore.setValue({
+      key: STAGE_ARTIFACT_KEYS.customerProfileResolved,
+      stage,
+      value: activation.snapshot
+    });
+  };
+
+  const activateSubmissionCustomerProfile = async ({
+    job,
+    artifactStore,
+    input
+  }: {
+    job: JobRecord;
+    artifactStore: StageArtifactStore;
+    input: WorkspaceJobInput;
+  }): Promise<ResolvedCustomerProfile | undefined> => {
+    const explicitPath = normalizeOptionalInputString(input.customerProfilePath);
+    if (explicitPath) {
+      const activation = await loadCustomerProfileActivationFromRequest({
+        customerProfilePath: explicitPath,
+        resolvedWorkspaceRoot,
+        limits: runtime.pipelineDiagnosticLimits
+      });
+      await persistCustomerProfileActivation({
+        artifactStore,
+        stage: "figma.source",
+        activation
+      });
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "info",
+        stage: "figma.source",
+        message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`
+      });
+      return activation.profile;
+    }
+
+    if (!runtime.customerProfile) {
+      return undefined;
+    }
+
+    const activation = toRuntimeCustomerProfileActivation({
+      profile: runtime.customerProfile
+    });
+    await persistCustomerProfileActivation({
+      artifactStore,
+      stage: "figma.source",
+      activation
+    });
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      stage: "figma.source",
+      message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`
+    });
+    return activation.profile;
+  };
+
+  const activateRegenerationCustomerProfile = async ({
+    job,
+    artifactStore,
+    sourceJob
+  }: {
+    job: JobRecord;
+    artifactStore: StageArtifactStore;
+    sourceJob: JobRecord;
+  }): Promise<ResolvedCustomerProfile | undefined> => {
+    const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJob.artifacts.jobDir });
+    const sourceSnapshot = await sourceArtifactStore.getValue<unknown>(STAGE_ARTIFACT_KEYS.customerProfileResolved);
+    const sourceDeclaredExplicitProfile = normalizeOptionalInputString(sourceJob.request.customerProfilePath);
+
+    if (sourceSnapshot === undefined) {
+      if (!sourceDeclaredExplicitProfile) {
+        return undefined;
+      }
+      throw createPipelineError({
+        code: "E_CUSTOMER_PROFILE_SNAPSHOT_MISSING",
+        stage: "ir.derive",
+        message:
+          `Source job '${sourceJob.jobId}' declared customerProfilePath '${sourceDeclaredExplicitProfile}' ` +
+          "but no resolved customer profile snapshot was persisted.",
+        limits: runtime.pipelineDiagnosticLimits
+      });
+    }
+
+    const restored = restoreCustomerProfileActivation({
+      snapshot: sourceSnapshot
+    });
+    if (!restored.success) {
+      throw createPipelineError({
+        code: "E_CUSTOMER_PROFILE_SNAPSHOT_MISSING",
+        stage: "ir.derive",
+        message: `Source job '${sourceJob.jobId}' customer profile snapshot is invalid: ${restored.message}.`,
+        limits: runtime.pipelineDiagnosticLimits
+      });
+    }
+
+    await persistCustomerProfileActivation({
+      artifactStore,
+      stage: "ir.derive",
+      activation: restored.value
+    });
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      stage: "ir.derive",
+      message:
+        `Reused customer profile snapshot from source job '${sourceJob.jobId}' via ` +
+        `${describeCustomerProfileSnapshot({ snapshot: restored.value.snapshot })}.`
+    });
+    return restored.value.profile;
+  };
+
   const runJob = async (job: JobRecord, input: WorkspaceJobInput): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
@@ -491,6 +817,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
       const artifactStore = new StageArtifactStore({ jobDir });
+      const resolvedCustomerProfile = await activateSubmissionCustomerProfile({
+        job,
+        artifactStore,
+        input
+      });
       const context: PipelineExecutionContext = {
         mode: "submission",
         job,
@@ -519,7 +850,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         resolvedBrandTheme,
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
-        ...(runtime.customerProfile ? { resolvedCustomerProfile: runtime.customerProfile } : {}),
+        ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
         generationLocaleResolution,
         resolvedGenerationLocale,
         appendDiagnostics,
@@ -665,6 +996,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       submitGenerationLocale: input.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale
     });
+    const customerProfilePath = normalizeOptionalInputString(input.customerProfilePath);
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
     });
@@ -681,6 +1013,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
     if (input.figmaJsonPath) {
       request.figmaJsonPath = input.figmaJsonPath;
+    }
+    if (customerProfilePath) {
+      request.customerProfilePath = customerProfilePath;
     }
     if (input.repoUrl) {
       request.repoUrl = input.repoUrl;
@@ -834,6 +1169,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: "ir.derive",
         value: regenInput.overrides
       });
+      const resolvedCustomerProfile = await activateRegenerationCustomerProfile({
+        job,
+        artifactStore,
+        sourceJob: sourceRecord
+      });
       const context: PipelineExecutionContext = {
         mode: "regeneration",
         job,
@@ -863,7 +1203,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         resolvedBrandTheme,
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
-        ...(runtime.customerProfile ? { resolvedCustomerProfile: runtime.customerProfile } : {}),
+        ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
         generationLocaleResolution: { locale: resolvedGenerationLocale },
         resolvedGenerationLocale,
         appendDiagnostics,

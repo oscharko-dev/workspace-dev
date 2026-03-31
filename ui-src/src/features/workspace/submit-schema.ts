@@ -7,6 +7,7 @@ export const workspaceSubmitSchema = z
     figmaFileKey: optionalString,
     figmaAccessToken: optionalString,
     figmaJsonPath: optionalString,
+    customerProfilePath: optionalString,
     figmaSourceMode: z.enum(["rest", "hybrid", "local_json"]).default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
@@ -68,6 +69,7 @@ export interface WorkspaceSubmitPayload {
   figmaFileKey?: string | undefined;
   figmaAccessToken?: string | undefined;
   figmaJsonPath?: string | undefined;
+  customerProfilePath?: string | undefined;
   repoUrl?: string | undefined;
   repoToken?: string | undefined;
   enableGitPr: boolean;
@@ -101,6 +103,7 @@ export function toWorkspaceSubmitPayload({
     return {
       figmaSourceMode: "local_json",
       figmaJsonPath: toOptionalString({ value: formData.figmaJsonPath }),
+      customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
       enableGitPr: formData.enableGitPr,
       repoUrl: toOptionalString({ value: formData.repoUrl }),
       repoToken: toOptionalString({ value: formData.repoToken }),
@@ -114,6 +117,7 @@ export function toWorkspaceSubmitPayload({
     figmaFileKey: toOptionalString({ value: formData.figmaFileKey }),
     figmaAccessToken: toOptionalString({ value: formData.figmaAccessToken }),
     figmaSourceMode: mode,
+    customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
     repoUrl: toOptionalString({ value: formData.repoUrl }),
     repoToken: toOptionalString({ value: formData.repoToken }),
     enableGitPr: formData.enableGitPr,

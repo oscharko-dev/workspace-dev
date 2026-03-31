@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.1.0] - 2026-03-31
+
+### Customer profile submit metadata
+
+Added:
+
+- `WorkspaceJobInput.customerProfilePath?: string` for supplying an optional customer profile file path during submission.
+- `WorkspaceJobRequestMetadata.customerProfilePath?: string` so public job metadata preserves the submitted customer profile path without exposing secrets.
+
+Changed:
+
+- Submit-time `customerProfilePath` values are trimmed before they enter persisted request metadata.
+
+---
+
 ## [3.0.0] - 2026-03-29
 
 ### Submit schema validation for codegen mode and generation locale

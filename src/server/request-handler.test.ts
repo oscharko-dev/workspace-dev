@@ -1781,6 +1781,7 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
           payload: {
             figmaFileKey: "file-key",
             figmaAccessToken: "token",
+            customerProfilePath: " ./profiles/acme.json ",
             generationLocale: " EN-us ",
             llmCodegenMode: " Deterministic "
           }
@@ -1792,6 +1793,7 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
         assert.equal(input?.generationLocale, "en-US");
         assert.equal(input?.llmCodegenMode, "deterministic");
         assert.equal(input?.figmaSourceMode, "rest");
+        assert.equal(input?.customerProfilePath, "./profiles/acme.json");
       } finally {
         await scoped.close();
       }

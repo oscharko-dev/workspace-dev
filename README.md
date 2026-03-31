@@ -126,6 +126,10 @@ Optional Git/PR input:
 - `projectName` (optional)
 - `targetPath` (optional, defaults to `figma-generated`)
 
+Optional customer profile input:
+
+- `customerProfilePath` (optional local filesystem path; relative paths resolve from the workspace root)
+
 Optional token branding input:
 
 - `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
@@ -333,6 +337,7 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
   -d '{
     "figmaSourceMode":"local_json",
     "figmaJsonPath":"./fixtures/figma-export.json",
+    "customerProfilePath":"./profiles/customer-profile.json",
     "enableGitPr": false,
     "llmCodegenMode":"deterministic"
   }'

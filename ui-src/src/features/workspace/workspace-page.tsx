@@ -390,6 +390,7 @@ export function WorkspacePage(): JSX.Element {
       figmaFileKey: initialFigmaKey,
       figmaAccessToken: "",
       figmaJsonPath: "",
+      customerProfilePath: "",
       figmaSourceMode: "rest",
       enableGitPr: false,
       repoUrl: "",
@@ -929,6 +930,20 @@ export function WorkspacePage(): JSX.Element {
                         className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
                         {...register("targetPath")}
                       />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="customer-profile-path" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                        Customer profile path
+                      </label>
+                      <input
+                        id="customer-profile-path"
+                        autoComplete="off"
+                        placeholder="profiles/customer-profile.json"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        {...register("customerProfilePath")}
+                      />
+                      <FieldHint message={errors.customerProfilePath?.message ?? "Optional. Relative paths resolve from the workspace root."} />
                     </div>
                   </div>
                 ) : null}

@@ -18,6 +18,7 @@ describe("workspaceSubmitSchema", () => {
     const parsed = workspaceSubmitSchema.parse({
       figmaFileKey: " file-key ",
       figmaAccessToken: " figd_token ",
+      customerProfilePath: " profiles/customer-profile.json ",
       enableGitPr: false,
       repoUrl: "",
       repoToken: "",
@@ -30,6 +31,7 @@ describe("workspaceSubmitSchema", () => {
     expect(payload).toEqual({
       figmaFileKey: "file-key",
       figmaAccessToken: "figd_token",
+      customerProfilePath: "profiles/customer-profile.json",
       repoUrl: undefined,
       repoToken: undefined,
       enableGitPr: false,
@@ -120,6 +122,7 @@ describe("workspaceSubmitSchema", () => {
     const parsed = workspaceSubmitSchema.parse({
       figmaSourceMode: "local_json",
       figmaJsonPath: " /data/export.json ",
+      customerProfilePath: " profiles/customer-profile.json ",
       enableGitPr: false,
       repoUrl: "",
       repoToken: ""
@@ -130,6 +133,7 @@ describe("workspaceSubmitSchema", () => {
     expect(payload).toEqual({
       figmaSourceMode: "local_json",
       figmaJsonPath: "/data/export.json",
+      customerProfilePath: "profiles/customer-profile.json",
       enableGitPr: false,
       repoUrl: undefined,
       repoToken: undefined,
