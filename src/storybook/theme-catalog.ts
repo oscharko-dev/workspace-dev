@@ -404,15 +404,33 @@ const parseRgbColor = (value: string): { colorSpace: "srgb"; components: [number
   if (!match?.[1]) {
     return undefined;
   }
-  const parts = match[1].split(",").map((part) => part.trim());
-  if (parts.length !== 3 && parts.length !== 4) {
-    return undefined;
+  const inner = match[1].trim();
+
+  let rgbParts: string[];
+  let alphaRaw: string | undefined;
+
+  if (inner.includes(",")) {
+    const parts = inner.split(",").map((part) => part.trim());
+    if (parts.length !== 3 && parts.length !== 4) {
+      return undefined;
+    }
+    rgbParts = parts.slice(0, 3);
+    alphaRaw = parts[3];
+  } else {
+    const slashIndex = inner.indexOf("/");
+    const colorPart = slashIndex === -1 ? inner : inner.slice(0, slashIndex);
+    alphaRaw = slashIndex === -1 ? undefined : inner.slice(slashIndex + 1).trim();
+    rgbParts = colorPart.trim().split(/\s+/u);
+    if (rgbParts.length !== 3) {
+      return undefined;
+    }
   }
-  const components = parts.slice(0, 3).map((part) => Number(part) / 255);
+
+  const components = rgbParts.map((part) => Number(part) / 255);
   if (components.some((component) => Number.isNaN(component))) {
     return undefined;
   }
-  const alpha = parts[3] === undefined ? undefined : Number(parts[3]);
+  const alpha = alphaRaw === undefined ? undefined : Number(alphaRaw);
   return {
     colorSpace: "srgb",
     components: [components[0] ?? 0, components[1] ?? 0, components[2] ?? 0],
@@ -1295,7 +1313,7 @@ const extractFontFaceTokens = ({
         tokenGraphByPath,
         diagnostics,
         themeId,
-        weight: isJsStaticNumberValue(fontWeightValue) ? fontWeightValue.value : fontWeightValue.value,
+        weight: fontWeightValue.value,
         evidenceItems
       });
     }
@@ -1518,7 +1536,7 @@ const extractComponentSurfaceTokens = ({
           (isSpacingPropertyKey(key) || key === "borderRadius" || isDimensionPropertyKey(key)) &&
           (isJsStaticNumberValue(nestedValue) || isJsStaticStringValue(nestedValue))
         ) {
-          const rawValue = isJsStaticNumberValue(nestedValue) ? nestedValue.value : nestedValue.value;
+          const rawValue = nestedValue.value;
           const dimension = parseDimensionValue(rawValue);
           if (dimension) {
             const tokenClass: StorybookTokenClass =
