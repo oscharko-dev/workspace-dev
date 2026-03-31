@@ -18,6 +18,7 @@ describe("workspaceSubmitSchema", () => {
     const parsed = workspaceSubmitSchema.parse({
       figmaFileKey: " file-key ",
       figmaAccessToken: " figd_token ",
+      storybookStaticDir: " storybook-static/customer ",
       customerProfilePath: " profiles/customer-profile.json ",
       enableGitPr: false,
       repoUrl: "",
@@ -31,6 +32,7 @@ describe("workspaceSubmitSchema", () => {
     expect(payload).toEqual({
       figmaFileKey: "file-key",
       figmaAccessToken: "figd_token",
+      storybookStaticDir: "storybook-static/customer",
       customerProfilePath: "profiles/customer-profile.json",
       repoUrl: undefined,
       repoToken: undefined,
@@ -122,6 +124,7 @@ describe("workspaceSubmitSchema", () => {
     const parsed = workspaceSubmitSchema.parse({
       figmaSourceMode: "local_json",
       figmaJsonPath: " /data/export.json ",
+      storybookStaticDir: " storybook-static/customer ",
       customerProfilePath: " profiles/customer-profile.json ",
       enableGitPr: false,
       repoUrl: "",
@@ -133,6 +136,7 @@ describe("workspaceSubmitSchema", () => {
     expect(payload).toEqual({
       figmaSourceMode: "local_json",
       figmaJsonPath: "/data/export.json",
+      storybookStaticDir: "storybook-static/customer",
       customerProfilePath: "profiles/customer-profile.json",
       enableGitPr: false,
       repoUrl: undefined,

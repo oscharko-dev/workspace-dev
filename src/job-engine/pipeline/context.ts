@@ -49,6 +49,8 @@ export interface PipelineExecutionContext {
   resolvedBrandTheme: WorkspaceBrandTheme;
   resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   resolvedFormHandlingMode: WorkspaceFormHandlingMode;
+  requestedStorybookStaticDir?: string;
+  resolvedStorybookStaticDir?: string;
   resolvedCustomerProfile?: ResolvedCustomerProfile;
   generationLocaleResolution: {
     locale: string;
@@ -73,6 +75,8 @@ export interface StageRuntimeContext {
   readonly resolvedBrandTheme: WorkspaceBrandTheme;
   readonly resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   readonly resolvedFormHandlingMode: WorkspaceFormHandlingMode;
+  readonly requestedStorybookStaticDir?: string;
+  readonly resolvedStorybookStaticDir?: string;
   readonly resolvedCustomerProfile?: ResolvedCustomerProfile;
   readonly generationLocaleResolution: Readonly<{
     locale: string;
@@ -110,6 +114,12 @@ export const createStageRuntimeContext = ({
     resolvedBrandTheme: executionContext.resolvedBrandTheme,
     resolvedFigmaSourceMode: executionContext.resolvedFigmaSourceMode,
     resolvedFormHandlingMode: executionContext.resolvedFormHandlingMode,
+    ...(executionContext.requestedStorybookStaticDir
+      ? { requestedStorybookStaticDir: executionContext.requestedStorybookStaticDir }
+      : {}),
+    ...(executionContext.resolvedStorybookStaticDir
+      ? { resolvedStorybookStaticDir: executionContext.resolvedStorybookStaticDir }
+      : {}),
     ...(executionContext.resolvedCustomerProfile
       ? { resolvedCustomerProfile: executionContext.resolvedCustomerProfile }
       : {}),

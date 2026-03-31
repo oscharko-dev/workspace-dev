@@ -121,6 +121,18 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
     plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.writes,
     [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
   );
+  assert.deepEqual(
+    plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.optionalWrites,
+    [
+      STAGE_ARTIFACT_KEYS.storybookCatalog,
+      STAGE_ARTIFACT_KEYS.storybookEvidence,
+      STAGE_ARTIFACT_KEYS.storybookTokens,
+      STAGE_ARTIFACT_KEYS.storybookThemes,
+      STAGE_ARTIFACT_KEYS.storybookComponents,
+      STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+      STAGE_ARTIFACT_KEYS.componentMatchReport
+    ]
+  );
   assert.deepEqual(codegenEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.codegenSummary
@@ -133,6 +145,10 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   assert.deepEqual(validateEntry?.artifacts?.reads, [
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
+  assert.deepEqual(validateEntry?.artifacts?.writes, [
+    STAGE_ARTIFACT_KEYS.validationSummary,
+    STAGE_ARTIFACT_KEYS.validationSummaryFile
   ]);
   assert.deepEqual(validateEntry?.artifacts?.optionalWrites, [
     STAGE_ARTIFACT_KEYS.generationDiff,
@@ -205,6 +221,15 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.regenerationOverrides
   ]);
   assert.deepEqual(irEntry?.artifacts?.writes, [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]);
+  assert.deepEqual(irEntry?.artifacts?.optionalWrites, [
+    STAGE_ARTIFACT_KEYS.storybookCatalog,
+    STAGE_ARTIFACT_KEYS.storybookEvidence,
+    STAGE_ARTIFACT_KEYS.storybookTokens,
+    STAGE_ARTIFACT_KEYS.storybookThemes,
+    STAGE_ARTIFACT_KEYS.storybookComponents,
+    STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    STAGE_ARTIFACT_KEYS.componentMatchReport
+  ]);
   assert.equal(
     codegenEntry?.resolveInput?.(context as PipelineExecutionContext) instanceof Promise,
     false
@@ -218,10 +243,24 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.generationDiffContext
   ]);
+  assert.deepEqual(validateEntry?.artifacts?.writes, [
+    STAGE_ARTIFACT_KEYS.validationSummary,
+    STAGE_ARTIFACT_KEYS.validationSummaryFile
+  ]);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),
     "Git/PR flow not applicable for regeneration jobs."
   );
   assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
   assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
+});
+
+test("pipeline plans keep the canonical seven stages without introducing a customer_storybook plan", () => {
+  const submissionStageNames = toStageNames(buildSubmissionPipelinePlan());
+  const regenerationStageNames = toStageNames(buildRegenerationPipelinePlan());
+
+  assert.deepEqual(submissionStageNames, STAGE_ORDER);
+  assert.deepEqual(regenerationStageNames, STAGE_ORDER);
+  assert.equal(submissionStageNames.includes("customer_storybook"), false);
+  assert.equal(regenerationStageNames.includes("customer_storybook"), false);
 });

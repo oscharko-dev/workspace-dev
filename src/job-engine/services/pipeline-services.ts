@@ -74,7 +74,16 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
           STAGE_ARTIFACT_KEYS.figmaCleanedReport
         ],
-        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
+        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis],
+        optionalWrites: [
+          STAGE_ARTIFACT_KEYS.storybookCatalog,
+          STAGE_ARTIFACT_KEYS.storybookEvidence,
+          STAGE_ARTIFACT_KEYS.storybookTokens,
+          STAGE_ARTIFACT_KEYS.storybookThemes,
+          STAGE_ARTIFACT_KEYS.storybookComponents,
+          STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+          STAGE_ARTIFACT_KEYS.componentMatchReport
+        ]
       }
     },
     {
@@ -104,7 +113,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary],
+        writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
     },
@@ -156,7 +165,16 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: IrDeriveService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.regenerationSourceIr, STAGE_ARTIFACT_KEYS.regenerationOverrides],
-        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
+        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis],
+        optionalWrites: [
+          STAGE_ARTIFACT_KEYS.storybookCatalog,
+          STAGE_ARTIFACT_KEYS.storybookEvidence,
+          STAGE_ARTIFACT_KEYS.storybookTokens,
+          STAGE_ARTIFACT_KEYS.storybookThemes,
+          STAGE_ARTIFACT_KEYS.storybookComponents,
+          STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+          STAGE_ARTIFACT_KEYS.componentMatchReport
+        ]
       }
     },
     {
@@ -187,7 +205,7 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary],
+        writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
     },

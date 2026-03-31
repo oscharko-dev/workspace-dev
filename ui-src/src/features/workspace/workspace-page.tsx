@@ -390,6 +390,7 @@ export function WorkspacePage(): JSX.Element {
       figmaFileKey: initialFigmaKey,
       figmaAccessToken: "",
       figmaJsonPath: "",
+      storybookStaticDir: "",
       customerProfilePath: "",
       figmaSourceMode: "rest",
       enableGitPr: false,
@@ -930,6 +931,20 @@ export function WorkspacePage(): JSX.Element {
                         className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
                         {...register("targetPath")}
                       />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="storybook-static-dir" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                        Storybook static dir
+                      </label>
+                      <input
+                        id="storybook-static-dir"
+                        autoComplete="off"
+                        placeholder="storybook-static/customer"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        {...register("storybookStaticDir")}
+                      />
+                      <FieldHint message={errors.storybookStaticDir?.message ?? "Optional. Relative paths resolve from the workspace root."} />
                     </div>
 
                     <div className="flex flex-col gap-1">

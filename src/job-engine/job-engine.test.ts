@@ -245,6 +245,65 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
 
+test("createJobEngine stores a trimmed storybookStaticDir in request metadata", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-request-"));
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createFastJobEngine({ tempRoot });
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath,
+    storybookStaticDir: "  storybook-static/build  "
+  });
+
+  assert.equal(engine.getJob(accepted.jobId)?.request.storybookStaticDir, "storybook-static/build");
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId
+  });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_STORYBOOK_ARTIFACTS_FAILED");
+});
+
+test("createJobEngine rejects storybookStaticDir traversal outside the configured workspace root", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-traversal-"));
+  const outputRoot = path.join(tempRoot, "output");
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros"),
+      workspaceRoot: tempRoot
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath,
+    storybookStaticDir: "../outside-storybook"
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId
+  });
+
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_STORYBOOK_STATIC_DIR_INVALID");
+  assert.equal(status.error?.stage, "figma.source");
+});
+
 test("createJobEngine emits structured runtime logs without changing stored job log payloads", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-structured-logs-"));
   const figmaJsonPath = path.join(tempRoot, "input.json");

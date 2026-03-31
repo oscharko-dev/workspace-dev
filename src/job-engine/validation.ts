@@ -23,6 +23,44 @@ interface ValidationDeps {
   }) => Promise<ValidationFeedbackResult>;
 }
 
+type ValidationNodeModulesStrategy =
+  | "skip_install"
+  | "fresh_install"
+  | "existing_node_modules"
+  | "reused_seeded_node_modules";
+
+export interface ValidationCommandResult {
+  status: "passed";
+  command: "pnpm";
+  args: string[];
+  attempt: number;
+  timedOut: boolean;
+  outputCaptureKey?: string;
+}
+
+export interface ValidationLintAutofixResult extends Omit<ValidationCommandResult, "status"> {
+  status: "completed" | "failed_ignored";
+  changedFiles: string[];
+}
+
+export interface ValidationInstallResult {
+  status: "completed" | "skipped";
+  strategy: ValidationNodeModulesStrategy;
+  command?: ValidationCommandResult;
+}
+
+export interface ProjectValidationResult {
+  attempts: number;
+  install: ValidationInstallResult;
+  lintAutofix?: ValidationLintAutofixResult;
+  lint: ValidationCommandResult;
+  typecheck: ValidationCommandResult;
+  build: ValidationCommandResult;
+  test?: ValidationCommandResult;
+  validateUi?: ValidationCommandResult;
+  perfAssert?: ValidationCommandResult;
+}
+
 const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<boolean> => {
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
   try {
@@ -54,7 +92,11 @@ const prepareValidationNodeModules = async ({
   skipInstall: boolean;
   onLog: (message: string) => void;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
-}): Promise<{ installRequired: boolean; cleanup?: () => Promise<void> }> => {
+}): Promise<{
+  installRequired: boolean;
+  strategy: ValidationNodeModulesStrategy;
+  cleanup?: () => Promise<void>;
+}> => {
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
 
   if (skipInstall) {
@@ -81,19 +123,22 @@ const prepareValidationNodeModules = async ({
     }
     onLog("Skipping install because skipInstall=true.");
     return {
-      installRequired: false
+      installRequired: false,
+      strategy: "skip_install"
     };
   }
 
   if (!seedNodeModulesDir) {
     return {
-      installRequired: true
+      installRequired: true,
+      strategy: "fresh_install"
     };
   }
 
   if (await hasExistingNodeModules({ generatedProjectDir })) {
     return {
-      installRequired: true
+      installRequired: true,
+      strategy: "existing_node_modules"
     };
   }
 
@@ -102,13 +147,15 @@ const prepareValidationNodeModules = async ({
     seedNodeModulesMetadata = await stat(seedNodeModulesDir);
   } catch {
     return {
-      installRequired: true
+      installRequired: true,
+      strategy: "fresh_install"
     };
   }
 
   if (!seedNodeModulesMetadata.isDirectory()) {
     return {
-      installRequired: true
+      installRequired: true,
+      strategy: "fresh_install"
     };
   }
 
@@ -121,6 +168,7 @@ const prepareValidationNodeModules = async ({
 
   return {
     installRequired: false,
+    strategy: "reused_seeded_node_modules",
     cleanup: async () => {
       await rm(nodeModulesDir, { recursive: true, force: true });
     }
@@ -414,7 +462,7 @@ export const runProjectValidationWithDeps = async ({
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
   deps?: Partial<ValidationDeps>;
-}): Promise<void> => {
+}): Promise<ProjectValidationResult> => {
   const runCommand = deps?.runCommand ?? runCommandImpl;
   const runValidationFeedback = deps?.runValidationFeedback ?? runValidationFeedbackImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
@@ -491,6 +539,34 @@ export const runProjectValidationWithDeps = async ({
     return value === "lint" || value === "typecheck" || value === "build";
   };
 
+  const validationResult: Partial<ProjectValidationResult> & Pick<ProjectValidationResult, "install"> = {
+    install: {
+      status: installCommand ? "completed" : "skipped",
+      strategy: nodeModulesPreparation.strategy
+    }
+  };
+
+  const toSuccessfulCommandResult = ({
+    args,
+    attempt,
+    timedOut,
+    outputCaptureKey
+  }: {
+    args: string[];
+    attempt: number;
+    timedOut: boolean;
+    outputCaptureKey?: string;
+  }): ValidationCommandResult => {
+    return {
+      status: "passed",
+      command: "pnpm",
+      args,
+      attempt,
+      timedOut,
+      ...(outputCaptureKey ? { outputCaptureKey } : {})
+    };
+  };
+
   const throwIfCanceled = (): void => {
     if (!abortSignal?.aborted) {
       return;
@@ -520,6 +596,12 @@ export const runProjectValidationWithDeps = async ({
             }
           : {}),
         ...(abortSignal ? { abortSignal } : {})
+      });
+      validationResult.install.command = toSuccessfulCommandResult({
+        args: installCommand.args,
+        attempt: 1,
+        timedOut: installResult.timedOut === true,
+        ...(jobDir ? { outputCaptureKey: "validate.project.install" } : {})
       });
       if (installResult.canceled) {
         throw new Error(`${installCommand.name} canceled by job cancellation request.`);
@@ -551,6 +633,7 @@ export const runProjectValidationWithDeps = async ({
     }
 
     for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
+      validationResult.attempts = attempt;
       onLog(`Validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS}`);
       let shouldRetry = false;
 
@@ -560,6 +643,7 @@ export const runProjectValidationWithDeps = async ({
 
         let beforeAutofix = new Map<string, string>();
         let shouldDiffAutofixChanges = command.name === "lint-autofix";
+        let changedFiles: string[] = [];
         if (command.name === "lint-autofix") {
           try {
             beforeAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
@@ -596,7 +680,7 @@ export const runProjectValidationWithDeps = async ({
           if (shouldDiffAutofixChanges) {
             try {
               const afterAutofix = await collectLintRelevantFingerprints({ generatedProjectDir });
-              const changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
+              changedFiles = toChangedFiles({ before: beforeAutofix, after: afterAutofix });
               if (changedFiles.length === 0) {
                 onLog("Lint auto-fix changed 0 lint-relevant file(s).");
               } else {
@@ -610,10 +694,43 @@ export const runProjectValidationWithDeps = async ({
             }
           }
 
+          validationResult.lintAutofix = {
+            command: "pnpm",
+            args: command.args,
+            attempt,
+            timedOut: result.timedOut === true,
+            status: result.success ? "completed" : "failed_ignored",
+            changedFiles,
+            ...(jobDir ? { outputCaptureKey: `validate.project.attempt-${attempt}.lint-autofix` } : {})
+          };
+
           if (!result.success) {
             const timeoutSuffix = result.timedOut ? " (command timeout)" : "";
             const output = result.combined.slice(0, 600);
             onLog(`Lint auto-fix failed${timeoutSuffix}; continuing with final lint check. Output: ${output}`);
+          }
+        }
+
+        const successfulCommandResult = toSuccessfulCommandResult({
+          args: command.args,
+          attempt,
+          timedOut: result.timedOut === true,
+          ...(jobDir ? { outputCaptureKey: `validate.project.attempt-${attempt}.${command.name}` } : {})
+        });
+
+        if (result.success) {
+          if (command.name === "lint") {
+            validationResult.lint = successfulCommandResult;
+          } else if (command.name === "typecheck") {
+            validationResult.typecheck = successfulCommandResult;
+          } else if (command.name === "build") {
+            validationResult.build = successfulCommandResult;
+          } else if (command.name === "test") {
+            validationResult.test = successfulCommandResult;
+          } else if (command.name === "validate-ui") {
+            validationResult.validateUi = successfulCommandResult;
+          } else if (command.name === "perf-assert") {
+            validationResult.perfAssert = successfulCommandResult;
           }
         }
 
@@ -691,12 +808,14 @@ export const runProjectValidationWithDeps = async ({
       }
 
       if (!shouldRetry) {
-        return;
+        return validationResult as ProjectValidationResult;
       }
     }
   } finally {
     await nodeModulesPreparation.cleanup?.();
   }
+
+  throw new Error("Validation loop exited without producing a result.");
 };
 
 export const runProjectValidation = async ({
@@ -733,7 +852,7 @@ export const runProjectValidation = async ({
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
-}): Promise<void> => {
+}): Promise<ProjectValidationResult> => {
   return await runProjectValidationWithDeps({
     generatedProjectDir,
     ...(jobDir ? { jobDir } : {}),
