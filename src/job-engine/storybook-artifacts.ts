@@ -17,6 +17,7 @@ import {
   getStorybookPublicArtifactFileNames,
   writeStorybookPublicArtifacts
 } from "../storybook/public-extracts.js";
+import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../storybook/types.js";
 
 export interface JobStorybookArtifactPaths {
   rootDir: string;
@@ -129,12 +130,14 @@ export const generateStorybookArtifactsForJob = async ({
   storybookStaticDir,
   jobDir,
   artifactStore,
-  stage
+  stage,
+  limits
 }: {
   storybookStaticDir: string;
   jobDir: string;
   artifactStore: StageArtifactStore;
   stage: WorkspaceJobStageName;
+  limits: PipelineDiagnosticLimits;
 }): Promise<JobStorybookArtifactPaths> => {
   const artifactPaths = createJobStorybookArtifactPaths({ jobDir });
   const buildContext = await loadStorybookBuildContext({
@@ -155,6 +158,26 @@ export const generateStorybookArtifactsForJob = async ({
     evidenceArtifact,
     catalogArtifact
   });
+  const fatalDiagnostics = publicArtifacts.tokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error"
+  );
+  if (fatalDiagnostics.length > 0) {
+    throw createPipelineError({
+      code: "E_STORYBOOK_TOKEN_EXTRACTION_INVALID",
+      stage,
+      message: `Storybook token extraction failed with ${fatalDiagnostics.length} fatal diagnostic(s).`,
+      diagnostics: fatalDiagnostics.map((diagnostic) => ({
+        code: diagnostic.code,
+        message: diagnostic.message,
+        suggestion:
+          "Fix the authoritative Storybook theme, CSS, or story token surfaces so all required classes resolve to static tokens.",
+        stage,
+        severity: "error",
+        ...(diagnostic.themeId ? { details: { themeId: diagnostic.themeId, tokenPath: diagnostic.tokenPath ?? [] } } : {})
+      })),
+      limits
+    });
+  }
 
   const evidenceFile = await writeStorybookEvidenceArtifact({
     buildDir: storybookStaticDir,
