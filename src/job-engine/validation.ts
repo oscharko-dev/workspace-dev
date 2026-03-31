@@ -391,6 +391,7 @@ export const runProjectValidationWithDeps = async ({
   commandStderrMaxBytes = 1_048_576,
   installPreferOffline = true,
   skipInstall = false,
+  lockfileMutable = false,
   pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir,
@@ -408,6 +409,7 @@ export const runProjectValidationWithDeps = async ({
   commandStderrMaxBytes?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  lockfileMutable?: boolean;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
@@ -417,7 +419,9 @@ export const runProjectValidationWithDeps = async ({
   const runValidationFeedback = deps?.runValidationFeedback ?? runValidationFeedbackImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
-  const installArgs = ["install", "--frozen-lockfile", "--reporter", "append-only"];
+  const installArgs = lockfileMutable
+    ? ["install", "--reporter", "append-only"]
+    : ["install", "--frozen-lockfile", "--reporter", "append-only"];
   if (installPreferOffline) {
     installArgs.push("--prefer-offline");
   }
@@ -708,6 +712,7 @@ export const runProjectValidation = async ({
   commandStderrMaxBytes = 1_048_576,
   installPreferOffline = true,
   skipInstall = false,
+  lockfileMutable = false,
   pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir
@@ -724,6 +729,7 @@ export const runProjectValidation = async ({
   commandStderrMaxBytes?: number;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
+  lockfileMutable?: boolean;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
@@ -741,6 +747,7 @@ export const runProjectValidation = async ({
     commandStderrMaxBytes,
     installPreferOffline,
     skipInstall,
+    lockfileMutable,
     ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
     ...(seedNodeModulesDir ? { seedNodeModulesDir } : {}),
     ...(abortSignal ? { abortSignal } : {})

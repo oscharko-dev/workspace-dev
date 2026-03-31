@@ -110,6 +110,11 @@ export const createValidateProjectService = ({
         }
       }
 
+      const hasCustomerProfileDeps = context.resolvedCustomerProfile
+        ? Object.keys(context.resolvedCustomerProfile.template.dependencies).length > 0 ||
+          Object.keys(context.resolvedCustomerProfile.template.devDependencies).length > 0
+        : false;
+
       await runProjectValidationFn({
         generatedProjectDir,
         jobDir: context.paths.jobDir,
@@ -122,6 +127,7 @@ export const createValidateProjectService = ({
         commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
         installPreferOffline: context.runtime.installPreferOffline,
         skipInstall: context.runtime.skipInstall,
+        lockfileMutable: hasCustomerProfileDeps,
         pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
         seedNodeModulesDir: path.join(context.paths.templateRoot, "node_modules"),
         abortSignal: context.abortSignal,

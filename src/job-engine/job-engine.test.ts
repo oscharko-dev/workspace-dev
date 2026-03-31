@@ -1110,6 +1110,45 @@ test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_P
   assert.match(status.error?.message ?? "", /profiles\/missing\.json/);
 });
 
+test("createJobEngine rejects customerProfilePath that traverses outside the workspace root", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-traversal-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaJsonPath = path.join(workspaceRoot, "figma.json");
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath,
+    customerProfilePath: "../../etc/passwd"
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_CUSTOMER_PROFILE_LOAD_FAILED");
+  assert.equal(status.error?.stage, "figma.source");
+  assert.match(status.error?.message ?? "", /resolves outside the workspace root/);
+});
+
 test("createJobEngine defensively falls back invalid direct-submit generationLocale and emits deterministic warning log", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"));
   const payload = {

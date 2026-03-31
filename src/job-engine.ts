@@ -236,6 +236,17 @@ const loadCustomerProfileActivationFromRequest = async ({
 }): Promise<ResolvedCustomerProfileActivation> => {
   const resolvedPath = path.resolve(resolvedWorkspaceRoot, customerProfilePath);
 
+  if (!isWithinRoot({ candidatePath: resolvedPath, rootPath: resolvedWorkspaceRoot })) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message:
+        `Customer profile path '${customerProfilePath}' resolves outside the workspace root ` +
+        `('${resolvedWorkspaceRoot}').`,
+      limits
+    });
+  }
+
   let rawContent: string;
   try {
     rawContent = await readFile(resolvedPath, "utf8");
