@@ -8,6 +8,7 @@ export const STAGE_ARTIFACT_KEYS = {
   regenerationSourceIr: "regeneration.source_ir",
   regenerationOverrides: "regeneration.overrides",
   designIr: "design.ir",
+  figmaAnalysis: "figma.analysis",
   generatedProject: "generated.project",
   codegenSummary: "codegen.summary",
   generationMetrics: "generation.metrics",

@@ -460,6 +460,71 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedJobRoute.action === "figma-analysis") {
+          const record = jobEngine.getJobRecord(jobId);
+          if (!record) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          if (record.status === "queued" || record.status === "running") {
+            sendJson({
+              response,
+              statusCode: 409,
+              payload: {
+                error: "JOB_NOT_COMPLETED",
+                message: `Job '${jobId}' has status '${record.status}' — figma analysis is only available after the job finishes.`
+              }
+            });
+            return;
+          }
+
+          const figmaAnalysisPath = record.artifacts.figmaAnalysisFile;
+          if (!figmaAnalysisPath) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "FIGMA_ANALYSIS_NOT_FOUND",
+                message: `Figma analysis artifact not available for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          let figmaAnalysis: unknown;
+          try {
+            figmaAnalysis = JSON.parse(await readFile(figmaAnalysisPath, "utf8")) as unknown;
+          } catch {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "FIGMA_ANALYSIS_NOT_FOUND",
+                message: `Figma analysis file not found on disk for job '${jobId}'.`
+              }
+            });
+            return;
+          }
+
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              jobId,
+              ...(figmaAnalysis && typeof figmaAnalysis === "object" ? (figmaAnalysis as Record<string, unknown>) : {})
+            }
+          });
+          return;
+        }
+
         if (parsedJobRoute.action === "component-manifest") {
           const record = jobEngine.getJobRecord(jobId);
           if (!record) {

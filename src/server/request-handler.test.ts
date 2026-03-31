@@ -926,8 +926,10 @@ test("request handler GET job routes expose results and reject POST-only actions
 test("request handler serves design IR and component manifest success and missing-artifact variants", async (t) => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-request-handler-artifacts-"));
   const designIrPath = path.join(tempRoot, "design-ir.json");
+  const figmaAnalysisPath = path.join(tempRoot, "figma-analysis.json");
   const manifestPath = path.join(tempRoot, "component-manifest.json");
   await writeFile(designIrPath, JSON.stringify({ screens: [] }, null, 2), "utf8");
+  await writeFile(figmaAnalysisPath, JSON.stringify({ artifactVersion: 1, sourceName: "Board", summary: {} }, null, 2), "utf8");
   const manifestPayload = {
     screens: [
       {
@@ -978,6 +980,30 @@ test("request handler serves design IR and component manifest success and missin
       jobId: "job-design-ir-pending",
       status: "queued",
       artifacts: {}
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-ok": {
+      jobId: "job-figma-analysis-ok",
+      status: "completed",
+      artifacts: {
+        figmaAnalysisFile: figmaAnalysisPath
+      }
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-pending": {
+      jobId: "job-figma-analysis-pending",
+      status: "queued",
+      artifacts: {}
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-missing-artifact": {
+      jobId: "job-figma-analysis-missing-artifact",
+      status: "completed",
+      artifacts: {}
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-missing-file": {
+      jobId: "job-figma-analysis-missing-file",
+      status: "completed",
+      artifacts: {
+        figmaAnalysisFile: path.join(tempRoot, "missing-figma-analysis.json")
+      }
     } as ReturnType<JobEngine["getJobRecord"]>,
     "job-design-ir-missing-artifact": {
       jobId: "job-design-ir-missing-artifact",
@@ -1061,6 +1087,51 @@ test("request handler serves design IR and component manifest success and missin
 
       assert.equal(response.statusCode, 404);
       assert.equal(response.json<Record<string, unknown>>().error, "DESIGN_IR_NOT_FOUND");
+    });
+
+    await t.test("figma analysis success returns parsed payload", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-figma-analysis-ok/figma-analysis"
+      });
+
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json<Record<string, unknown>>(), {
+        jobId: "job-figma-analysis-ok",
+        artifactVersion: 1,
+        sourceName: "Board",
+        summary: {}
+      });
+    });
+
+    await t.test("figma analysis pending jobs return 409", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-figma-analysis-pending/figma-analysis"
+      });
+
+      assert.equal(response.statusCode, 409);
+      assert.equal(response.json<Record<string, unknown>>().error, "JOB_NOT_COMPLETED");
+    });
+
+    await t.test("figma analysis missing artifact returns 404", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-figma-analysis-missing-artifact/figma-analysis"
+      });
+
+      assert.equal(response.statusCode, 404);
+      assert.equal(response.json<Record<string, unknown>>().error, "FIGMA_ANALYSIS_NOT_FOUND");
+    });
+
+    await t.test("figma analysis missing file returns 404", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-figma-analysis-missing-file/figma-analysis"
+      });
+
+      assert.equal(response.statusCode, 404);
+      assert.equal(response.json<Record<string, unknown>>().error, "FIGMA_ANALYSIS_NOT_FOUND");
     });
 
     await t.test("component manifest success returns parsed payload", async () => {

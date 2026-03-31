@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { WorkspaceRegenerationOverrideEntry } from "../contracts/index.js";
 import { cleanFigmaForCodegen } from "../job-engine/figma-clean.js";
 import { applyIrOverrides } from "../job-engine/ir-overrides.js";
+import { buildFigmaAnalysis } from "./figma-analysis.js";
 import { generateArtifacts } from "./generator-core.js";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 
@@ -122,10 +123,12 @@ const assertActualFileExists = async ({
 
 const generateFixtureArtifacts = async ({
   fixture,
-  ir
+  ir,
+  cleanedFile
 }: {
   fixture: GoldenFixtureSpec;
   ir: ReturnType<typeof figmaToDesignIrWithOptions>;
+  cleanedFile: ReturnType<typeof cleanFigmaForCodegen>["cleanedFile"];
 }): Promise<string> => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-${fixture.id}-`));
   await generateArtifacts({
@@ -138,7 +141,9 @@ const generateFixtureArtifacts = async ({
     }
   });
   const actualDesignIrPath = path.join(projectDir, "design-ir.json");
+  const actualFigmaAnalysisPath = path.join(projectDir, "figma-analysis.json");
   await writeFile(actualDesignIrPath, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await writeFile(actualFigmaAnalysisPath, `${JSON.stringify(buildFigmaAnalysis({ file: cleanedFile }), null, 2)}\n`, "utf8");
   return projectDir;
 };
 
@@ -173,11 +178,13 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
 
       const firstProjectDir = await generateFixtureArtifacts({
         fixture,
-        ir
+        ir,
+        cleanedFile: cleaned.cleanedFile
       });
       const secondProjectDir = await generateFixtureArtifacts({
         fixture,
-        ir
+        ir,
+        cleanedFile: cleaned.cleanedFile
       });
 
       for (const artifact of fixture.artifacts) {

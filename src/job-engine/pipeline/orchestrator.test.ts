@@ -67,6 +67,7 @@ const createContext = async (): Promise<PipelineExecutionContext> => {
       figmaRawJsonFile: path.join(jobDir, "figma.raw.json"),
       figmaJsonFile: path.join(jobDir, "figma.json"),
       designIrFile: path.join(jobDir, "design-ir.json"),
+      figmaAnalysisFile: path.join(jobDir, "figma-analysis.json"),
       stageTimingsFile: path.join(jobDir, "stage-timings.json"),
       reproDir,
       iconMapFilePath: path.join(root, "icon-map.json"),

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.1.0
+ * Contract version: 3.2.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -242,6 +242,7 @@ export interface WorkspaceJobArtifacts {
   jobDir: string;
   generatedProjectDir?: string;
   designIrFile?: string;
+  figmaAnalysisFile?: string;
   figmaJsonFile?: string;
   generationMetricsFile?: string;
   componentManifestFile?: string;
@@ -602,4 +603,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.1.0" as const;
+export const CONTRACT_VERSION = "3.2.0" as const;

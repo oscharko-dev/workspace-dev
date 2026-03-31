@@ -1,0 +1,763 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Variant Shell Signals Board",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 1,
+    "topLevelFrameCount": 5,
+    "totalNodeCount": 54,
+    "totalInstanceCount": 25,
+    "localComponentCount": 0,
+    "localStyleCount": 1,
+    "externalComponentCount": 2
+  },
+  "tokenSignals": {
+    "boundVariableIds": [
+      "120:1"
+    ],
+    "variableModeIds": [
+      "20708:1"
+    ],
+    "styleReferences": {
+      "allStyleIds": [
+        "style-linked-card",
+        "style-linked-fill",
+        "style-local-text"
+      ],
+      "byType": {
+        "fill": [
+          "style-linked-card",
+          "style-linked-fill"
+        ],
+        "stroke": [],
+        "effect": [],
+        "text": [
+          "style-local-text"
+        ],
+        "generic": []
+      },
+      "localStyleIds": [
+        "style-local-text"
+      ],
+      "linkedStyleIds": [
+        "style-linked-card",
+        "style-linked-fill"
+      ]
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "sectionIds": [
+          "1:100"
+        ],
+        "frameIds": []
+      }
+    ],
+    "sections": [
+      {
+        "id": "1:100",
+        "name": "Bedarfsermittlung Investitionskredit Flow ID-003",
+        "pageId": "0:1",
+        "directChildCount": 5,
+        "childSectionIds": [],
+        "frameIds": [
+          "1:63230",
+          "1:64644",
+          "1:66050",
+          "1:67464",
+          "1:68884"
+        ]
+      }
+    ],
+    "frames": [
+      {
+        "id": "1:63230",
+        "name": "ID-003.5 Brutto + Betriebsmittel alle Cluster eingeklappt",
+        "pageId": "0:1",
+        "parentSectionId": "1:100",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1336,
+        "height": 2354,
+        "directChildCount": 2,
+        "subtreeNodeCount": 10,
+        "instanceCount": 5
+      },
+      {
+        "id": "1:64644",
+        "name": "ID-003.4 Netto + Betriebsmittel alle Cluster expanded",
+        "pageId": "0:1",
+        "parentSectionId": "1:100",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1336,
+        "height": 3718,
+        "directChildCount": 2,
+        "subtreeNodeCount": 10,
+        "instanceCount": 5
+      },
+      {
+        "id": "1:66050",
+        "name": "ID-003.3 Netto + Betriebsmittel alle Cluster eingeklappt",
+        "pageId": "0:1",
+        "parentSectionId": "1:100",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1336,
+        "height": 2378,
+        "directChildCount": 2,
+        "subtreeNodeCount": 10,
+        "instanceCount": 5
+      },
+      {
+        "id": "1:67464",
+        "name": "ID-003.2 Netto + Betriebsmittel alle Cluster eingeklappt v1",
+        "pageId": "0:1",
+        "parentSectionId": "1:100",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1336,
+        "height": 2134,
+        "directChildCount": 2,
+        "subtreeNodeCount": 10,
+        "instanceCount": 5
+      },
+      {
+        "id": "1:68884",
+        "name": "ID-003.1 Fehlermeldungen",
+        "pageId": "0:1",
+        "parentSectionId": "1:100",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1336,
+        "height": 2406,
+        "directChildCount": 2,
+        "subtreeNodeCount": 11,
+        "instanceCount": 5
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "1:100",
+        "childType": "section"
+      },
+      {
+        "parentId": "1:100",
+        "parentType": "section",
+        "childId": "1:63230",
+        "childType": "frame"
+      },
+      {
+        "parentId": "1:100",
+        "parentType": "section",
+        "childId": "1:64644",
+        "childType": "frame"
+      },
+      {
+        "parentId": "1:100",
+        "parentType": "section",
+        "childId": "1:66050",
+        "childType": "frame"
+      },
+      {
+        "parentId": "1:100",
+        "parentType": "section",
+        "childId": "1:67464",
+        "childType": "frame"
+      },
+      {
+        "parentId": "1:100",
+        "parentType": "section",
+        "childId": "1:68884",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [
+    {
+      "familyKey": "component:component-card",
+      "familyName": "Card / Summary",
+      "componentIds": [
+        "component-card"
+      ],
+      "componentSetIds": [],
+      "referringNodeIds": [
+        "1:63230-accordion-card-a",
+        "1:63230-accordion-card-b",
+        "1:63230-accordion-card-c",
+        "1:63230-card-1",
+        "1:64644-accordion-card-a",
+        "1:64644-accordion-card-b",
+        "1:64644-accordion-card-c",
+        "1:64644-card-1",
+        "1:66050-accordion-card-a",
+        "1:66050-accordion-card-b",
+        "1:66050-accordion-card-c",
+        "1:66050-card-1",
+        "1:67464-accordion-card-a",
+        "1:67464-accordion-card-b",
+        "1:67464-accordion-card-c",
+        "1:67464-card-1",
+        "1:68884-accordion-card-a",
+        "1:68884-accordion-card-b",
+        "1:68884-accordion-card-c",
+        "1:68884-card-1"
+      ],
+      "nodeCount": 20,
+      "variantProperties": []
+    },
+    {
+      "familyKey": "component-set:set-accordion",
+      "familyName": "Accordion State=Collapsed",
+      "componentIds": [
+        "component-accordion"
+      ],
+      "componentSetIds": [
+        "set-accordion"
+      ],
+      "referringNodeIds": [
+        "1:63230-accordion-1",
+        "1:64644-accordion-1",
+        "1:66050-accordion-1",
+        "1:67464-accordion-1",
+        "1:68884-accordion-1"
+      ],
+      "nodeCount": 5,
+      "variantProperties": [
+        {
+          "property": "state",
+          "values": [
+            "Collapsed",
+            "Expanded"
+          ]
+        }
+      ]
+    }
+  ],
+  "externalComponents": [
+    {
+      "componentId": "component-accordion",
+      "componentSetId": "set-accordion",
+      "familyKey": "component-set:set-accordion",
+      "familyName": "Accordion State=Collapsed",
+      "referringNodeIds": [
+        "1:63230-accordion-1",
+        "1:64644-accordion-1",
+        "1:66050-accordion-1",
+        "1:67464-accordion-1",
+        "1:68884-accordion-1"
+      ]
+    },
+    {
+      "componentId": "component-card",
+      "familyKey": "component:component-card",
+      "familyName": "Card / Detail",
+      "referringNodeIds": [
+        "1:63230-accordion-card-a",
+        "1:63230-accordion-card-b",
+        "1:63230-accordion-card-c",
+        "1:63230-card-1",
+        "1:64644-accordion-card-a",
+        "1:64644-accordion-card-b",
+        "1:64644-accordion-card-c",
+        "1:64644-card-1",
+        "1:66050-accordion-card-a",
+        "1:66050-accordion-card-b",
+        "1:66050-accordion-card-c",
+        "1:66050-card-1",
+        "1:67464-accordion-card-a",
+        "1:67464-accordion-card-b",
+        "1:67464-accordion-card-c",
+        "1:67464-card-1",
+        "1:68884-accordion-card-a",
+        "1:68884-accordion-card-b",
+        "1:68884-accordion-card-c",
+        "1:68884-card-1"
+      ]
+    }
+  ],
+  "frameVariantGroups": [
+    {
+      "groupId": "id-003-1-fehlermeldungen-5",
+      "frameIds": [
+        "1:63230",
+        "1:64644",
+        "1:66050",
+        "1:67464",
+        "1:68884"
+      ],
+      "frameNames": [
+        "ID-003.1 Fehlermeldungen",
+        "ID-003.2 Netto + Betriebsmittel alle Cluster eingeklappt v1",
+        "ID-003.3 Netto + Betriebsmittel alle Cluster eingeklappt",
+        "ID-003.4 Netto + Betriebsmittel alle Cluster expanded",
+        "ID-003.5 Brutto + Betriebsmittel alle Cluster eingeklappt"
+      ],
+      "canonicalFrameId": "1:66050",
+      "confidence": 0.84,
+      "similarityReasons": [
+        "matching-width",
+        "shared-component-families",
+        "shared-name-tokens",
+        "shared-text-signals",
+        "shared-top-level-structure"
+      ],
+      "fallbackReasons": [
+        "Frame grouping is heuristic and based on structural similarity across top-level frames."
+      ],
+      "variantAxes": [
+        {
+          "axis": "expansion-state",
+          "values": [
+            "collapsed",
+            "expanded"
+          ],
+          "source": "structure"
+        },
+        {
+          "axis": "name-variants",
+          "values": [
+            "alle",
+            "betriebsmittel",
+            "brutto",
+            "cluster",
+            "eingeklappt",
+            "expanded",
+            "fehlermeldungen",
+            "netto"
+          ],
+          "source": "name"
+        },
+        {
+          "axis": "pricing-mode",
+          "values": [
+            "brutto",
+            "netto"
+          ],
+          "source": "text"
+        },
+        {
+          "axis": "validation-state",
+          "values": [
+            "default",
+            "error"
+          ],
+          "source": "text"
+        }
+      ]
+    }
+  ],
+  "appShellSignals": [
+    {
+      "signalId": "id-003-1-fehlermeldungen-5-shell-1",
+      "groupId": "id-003-1-fehlermeldungen-5",
+      "role": "header",
+      "fingerprint": "header|FRAME|HORIZONTAL|28|3",
+      "frameIds": [
+        "1:63230",
+        "1:64644",
+        "1:66050",
+        "1:67464",
+        "1:68884"
+      ],
+      "nodeIds": [
+        "1:63230-header",
+        "1:64644-header",
+        "1:66050-header",
+        "1:67464-header",
+        "1:68884-header"
+      ],
+      "confidence": 1,
+      "reasons": [
+        "Fingerprint repeated in 5 of 5 grouped frames.",
+        "Shell detection is based on repeated top-level structure and positional heuristics."
+      ]
+    }
+  ],
+  "componentDensity": {
+    "boardDominantFamilies": [
+      {
+        "familyKey": "component:component-card",
+        "familyName": "Card / Summary",
+        "count": 20,
+        "ratio": 0.8
+      },
+      {
+        "familyKey": "component-set:set-accordion",
+        "familyName": "Accordion State=Collapsed",
+        "count": 5,
+        "ratio": 0.2
+      }
+    ],
+    "byFrame": [
+      {
+        "frameId": "1:63230",
+        "frameName": "ID-003.5 Brutto + Betriebsmittel alle Cluster eingeklappt",
+        "subtreeNodeCount": 10,
+        "instanceCount": 5,
+        "density": 0.5,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "frameId": "1:64644",
+        "frameName": "ID-003.4 Netto + Betriebsmittel alle Cluster expanded",
+        "subtreeNodeCount": 10,
+        "instanceCount": 5,
+        "density": 0.5,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "frameId": "1:66050",
+        "frameName": "ID-003.3 Netto + Betriebsmittel alle Cluster eingeklappt",
+        "subtreeNodeCount": 10,
+        "instanceCount": 5,
+        "density": 0.5,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "frameId": "1:67464",
+        "frameName": "ID-003.2 Netto + Betriebsmittel alle Cluster eingeklappt v1",
+        "subtreeNodeCount": 10,
+        "instanceCount": 5,
+        "density": 0.5,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "frameId": "1:68884",
+        "frameName": "ID-003.1 Fehlermeldungen",
+        "subtreeNodeCount": 11,
+        "instanceCount": 5,
+        "density": 0.455,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      }
+    ],
+    "hotspots": [
+      {
+        "hotspotId": "1:63230:1:63230-body",
+        "frameId": "1:63230",
+        "nodeId": "1:63230-body",
+        "nodeName": "Form Body",
+        "subtreeNodeCount": 6,
+        "instanceCount": 5,
+        "density": 0.833,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:64644:1:64644-body",
+        "frameId": "1:64644",
+        "nodeId": "1:64644-body",
+        "nodeName": "Form Body",
+        "subtreeNodeCount": 6,
+        "instanceCount": 5,
+        "density": 0.833,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:66050:1:66050-body",
+        "frameId": "1:66050",
+        "nodeId": "1:66050-body",
+        "nodeName": "Form Body",
+        "subtreeNodeCount": 6,
+        "instanceCount": 5,
+        "density": 0.833,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:67464:1:67464-body",
+        "frameId": "1:67464",
+        "nodeId": "1:67464-body",
+        "nodeName": "Form Body",
+        "subtreeNodeCount": 6,
+        "instanceCount": 5,
+        "density": 0.833,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:68884:1:68884-body",
+        "frameId": "1:68884",
+        "nodeId": "1:68884-body",
+        "nodeName": "Form Body",
+        "subtreeNodeCount": 7,
+        "instanceCount": 5,
+        "density": 0.714,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 4,
+            "ratio": 0.8
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.2
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:63230:1:63230-accordion-1",
+        "frameId": "1:63230",
+        "nodeId": "1:63230-accordion-1",
+        "nodeName": "Accordion State=Collapsed",
+        "subtreeNodeCount": 4,
+        "instanceCount": 4,
+        "density": 1,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 3,
+            "ratio": 0.75
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.25
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:64644:1:64644-accordion-1",
+        "frameId": "1:64644",
+        "nodeId": "1:64644-accordion-1",
+        "nodeName": "Accordion State=Expanded",
+        "subtreeNodeCount": 4,
+        "instanceCount": 4,
+        "density": 1,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 3,
+            "ratio": 0.75
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.25
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:66050:1:66050-accordion-1",
+        "frameId": "1:66050",
+        "nodeId": "1:66050-accordion-1",
+        "nodeName": "Accordion State=Collapsed",
+        "subtreeNodeCount": 4,
+        "instanceCount": 4,
+        "density": 1,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 3,
+            "ratio": 0.75
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.25
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:67464:1:67464-accordion-1",
+        "frameId": "1:67464",
+        "nodeId": "1:67464-accordion-1",
+        "nodeName": "Accordion State=Collapsed",
+        "subtreeNodeCount": 4,
+        "instanceCount": 4,
+        "density": 1,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 3,
+            "ratio": 0.75
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.25
+          }
+        ]
+      },
+      {
+        "hotspotId": "1:68884:1:68884-accordion-1",
+        "frameId": "1:68884",
+        "nodeId": "1:68884-accordion-1",
+        "nodeName": "Accordion State=Collapsed",
+        "subtreeNodeCount": 4,
+        "instanceCount": 4,
+        "density": 1,
+        "dominantFamilies": [
+          {
+            "familyKey": "component:component-card",
+            "familyName": "Card / Summary",
+            "count": 3,
+            "ratio": 0.75
+          },
+          {
+            "familyKey": "component-set:set-accordion",
+            "familyName": "Accordion State=Collapsed",
+            "count": 1,
+            "ratio": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "MISSING_LOCAL_COMPONENTS",
+      "severity": "warning",
+      "message": "Detected 2 external component reference(s) without a local component definition.",
+      "reasons": [
+        "Referenced componentId values are not present as local COMPONENT or COMPONENT_SET nodes in the cleaned board."
+      ],
+      "componentIds": [
+        "component-accordion",
+        "component-card"
+      ]
+    },
+    {
+      "code": "MISSING_LOCAL_STYLES",
+      "severity": "warning",
+      "message": "Detected 2 referenced style ID(s) without a local style definition.",
+      "reasons": [
+        "Referenced style IDs are used by nodes but are absent from the cleaned file-level style catalog."
+      ],
+      "styleIds": [
+        "style-linked-card",
+        "style-linked-fill"
+      ]
+    }
+  ]
+}

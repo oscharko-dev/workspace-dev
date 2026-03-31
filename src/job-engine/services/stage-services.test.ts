@@ -15,6 +15,7 @@ import { resolveBoardKey } from "../../parity/board-key.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
 import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
+import { computeContentHash, computeOptionsHash, saveCachedIr } from "../ir-cache.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { resolveRuntimeSettings } from "../runtime.js";
@@ -205,19 +206,23 @@ const createExecutionContext = async ({
   mode = "submission",
   input,
   runtimeOverrides,
-  requestOverrides
+  requestOverrides,
+  rootDir,
+  jobId = "job-stage-test"
 }: {
   mode?: "submission" | "regeneration";
   input?: WorkspaceJobInput;
   runtimeOverrides?: Partial<Parameters<typeof resolveRuntimeSettings>[0]>;
   requestOverrides?: Partial<JobRecord["request"]>;
+  rootDir?: string;
+  jobId?: string;
 }): Promise<{
   executionContext: PipelineExecutionContext;
   stageContextFor: (stage: WorkspaceJobStageName) => StageRuntimeContext;
 }> => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-"));
+  const root = rootDir ?? (await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-")));
   const jobsRoot = path.join(root, "jobs");
-  const jobDir = path.join(jobsRoot, "job-stage-test");
+  const jobDir = path.join(jobsRoot, jobId);
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const runtime = resolveRuntimeSettings({
     enablePreview: false,
@@ -261,8 +266,9 @@ const createExecutionContext = async ({
       figmaRawJsonFile: path.join(jobDir, "figma.raw.json"),
       figmaJsonFile: path.join(jobDir, "figma.json"),
       designIrFile: path.join(jobDir, "design-ir.json"),
+      figmaAnalysisFile: path.join(jobDir, "figma-analysis.json"),
       stageTimingsFile: path.join(jobDir, "stage-timings.json"),
-      reproDir: path.join(root, "repros", "job-stage-test"),
+      reproDir: path.join(root, "repros", jobId),
       iconMapFilePath: path.join(root, "icon-map.json"),
       designSystemFilePath: path.join(root, "design-system.json"),
       irCacheDir: path.join(root, "cache", "ir"),
@@ -295,11 +301,13 @@ const seedRegenerationArtifacts = async ({
   executionContext,
   sourceJobId,
   sourceIrFile,
+  sourceAnalysisFile,
   overrides = []
 }: {
   executionContext: PipelineExecutionContext;
   sourceJobId: string;
   sourceIrFile?: string;
+  sourceAnalysisFile?: string;
   overrides?: Array<{ field: string; nodeId: string; value: unknown }>;
 }): Promise<void> => {
   await executionContext.artifactStore.setValue({
@@ -307,7 +315,8 @@ const seedRegenerationArtifacts = async ({
     stage: "ir.derive",
     value: {
       sourceJobId,
-      ...(sourceIrFile ? { sourceIrFile } : {})
+      ...(sourceIrFile ? { sourceIrFile } : {}),
+      ...(sourceAnalysisFile ? { sourceAnalysisFile } : {})
     }
   });
   await executionContext.artifactStore.setValue({
@@ -357,22 +366,121 @@ test("FigmaSourceService maps missing local_json path to E_FIGMA_LOCAL_JSON_PATH
   );
 });
 
-test("IrDeriveService regeneration reads seeded artifacts and writes design.ir", async () => {
+test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json input", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma.json");
+  await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr), executionContext.paths.designIrFile);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaAnalysis),
+    executionContext.paths.figmaAnalysisFile
+  );
+  assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
+});
+
+test("IrDeriveService cache hits still write and register figma.analysis", async () => {
+  const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-cache-"));
+  const first = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-cache-seed"
+  });
+  const second = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-cache-hit"
+  });
+  const payload = createLocalFigmaPayload();
+  const firstLocalPayloadPath = path.join(first.executionContext.paths.jobDir, "local-figma.json");
+  const secondLocalPayloadPath = path.join(second.executionContext.paths.jobDir, "local-figma.json");
+  await writeFile(firstLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(secondLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: firstLocalPayloadPath
+    },
+    first.stageContextFor("figma.source")
+  );
+  const cleanedFile = JSON.parse(await readFile(first.executionContext.paths.figmaJsonFile, "utf8")) as unknown;
+  await saveCachedIr({
+    cacheDir: first.executionContext.paths.irCacheDir,
+    contentHash: computeContentHash(cleanedFile),
+    optionsHash: computeOptionsHash({
+      screenElementBudget: first.executionContext.runtime.figmaScreenElementBudget,
+      screenElementMaxDepth: first.executionContext.runtime.figmaScreenElementMaxDepth,
+      brandTheme: first.executionContext.resolvedBrandTheme,
+      figmaSourceMode: first.executionContext.resolvedFigmaSourceMode
+    }),
+    ttlMs: first.executionContext.runtime.irCacheTtlMs,
+    ir: createMinimalIr(),
+    onLog: () => {
+      // no-op for cache seeding in tests
+    }
+  });
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: secondLocalPayloadPath
+    },
+    second.stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, second.stageContextFor("ir.derive"));
+
+  assert.equal(await second.executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr), second.executionContext.paths.designIrFile);
+  assert.equal(
+    await second.executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaAnalysis),
+    second.executionContext.paths.figmaAnalysisFile
+  );
+  assert.equal((await readFile(second.executionContext.paths.designIrFile, "utf8")).includes("Screen 1"), true);
+  assert.equal((await readFile(second.executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
+});
+
+test("IrDeriveService regeneration reads seeded artifacts and writes design.ir and figma.analysis", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     mode: "regeneration"
   });
   const sourceIrPath = path.join(executionContext.paths.jobDir, "source-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-figma-analysis.json");
   await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
+  await writeFile(
+    sourceAnalysisPath,
+    `${JSON.stringify({ artifactVersion: 1, sourceName: "test", summary: { topLevelFrameCount: 1 } }, null, 2)}\n`,
+    "utf8"
+  );
   await seedRegenerationArtifacts({
     executionContext,
     sourceJobId: "source-job",
-    sourceIrFile: sourceIrPath
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath
   });
 
   await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
 
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr), executionContext.paths.designIrFile);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaAnalysis),
+    executionContext.paths.figmaAnalysisFile
+  );
   assert.equal((await readFile(executionContext.paths.designIrFile, "utf8")).includes("Screen 1"), true);
+  assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
 test("IrDeriveService maps missing source design IR to E_REGEN_SOURCE_IR_MISSING", async () => {

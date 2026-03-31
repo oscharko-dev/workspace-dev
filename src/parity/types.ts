@@ -115,6 +115,18 @@ export type {
 } from "./types-ir.js";
 
 export type {
+  FigmaAnalysis,
+  FigmaAnalysisAppShellSignal,
+  FigmaAnalysisComponentDensity,
+  FigmaAnalysisComponentFamily,
+  FigmaAnalysisDiagnostic,
+  FigmaAnalysisExternalComponent,
+  FigmaAnalysisFrameVariantGroup,
+  FigmaAnalysisLayoutGraph,
+  FigmaAnalysisTokenSignals
+} from "./figma-analysis.js";
+
+export type {
   EditSessionEvent,
   EditSessionGitStatus,
   EditSessionRecord,
