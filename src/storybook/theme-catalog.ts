@@ -341,7 +341,7 @@ const parseRgbColor = (value: string): { colorSpace: "srgb"; components: [number
   };
 };
 
-const toColorTokenValue = (value: string): unknown | undefined => {
+const toColorTokenValue = (value: string): unknown => {
   return parseHexColor(value) ?? parseRgbColor(value);
 };
 
@@ -644,7 +644,7 @@ const buildTypographyCompositeValue = ({
   variantValue: JsStaticValue;
   defaultFontFamilyAlias?: StorybookTokenAliasReference;
   defaultFontWeightAlias?: StorybookTokenAliasReference;
-}): unknown | undefined => {
+}): unknown => {
   if (!isJsStaticObjectValue(variantValue)) {
     return undefined;
   }

@@ -207,6 +207,10 @@ const toCatalogSignalType = (evidenceType: StorybookEvidenceArtifact["evidence"]
       return "themeBundles";
     case "css":
       return "css";
+    default: {
+      const _exhaustive: never = evidenceType;
+      throw new Error(`Unhandled evidence type: ${String(_exhaustive)}`);
+    }
   }
 };
 
@@ -707,11 +711,19 @@ export const buildStorybookCatalogArtifact = async ({
   const entryById = new Map(resolvedBuildContext.indexEntries.map((entry) => [entry.id, entry] as const));
   const storyEntries = resolvedBuildContext.indexEntries.filter((entry) => entry.type === "story");
   const docsEntries = resolvedBuildContext.indexEntries.filter((entry) => entry.type === "docs");
+  const tierHasNonDocs = new Map<string, boolean>();
+  for (const entry of resolvedBuildContext.indexEntries) {
+    const tier = resolveTier(entry.title);
+    if (entry.type !== "docs") {
+      tierHasNonDocs.set(tier, true);
+    } else if (!tierHasNonDocs.has(tier)) {
+      tierHasNonDocs.set(tier, false);
+    }
+  }
   const docsOnlyTiers = uniqueSorted(
-    [...new Set(resolvedBuildContext.indexEntries.map((entry) => resolveTier(entry.title)))].filter((tier) => {
-      const tierEntries = resolvedBuildContext.indexEntries.filter((entry) => resolveTier(entry.title) === tier);
-      return tierEntries.length > 0 && tierEntries.every((entry) => entry.type === "docs");
-    })
+    [...tierHasNonDocs.entries()]
+      .filter(([, hasNonDocs]) => !hasNonDocs)
+      .map(([tier]) => tier)
   );
 
   const storyMetadataByImportPath = await buildStoryMetadataByImportPath({
