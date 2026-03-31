@@ -1,0 +1,137 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Prototype Navigation Board",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 0,
+    "topLevelFrameCount": 2,
+    "totalNodeCount": 10,
+    "totalInstanceCount": 1,
+    "localComponentCount": 0,
+    "localStyleCount": 0,
+    "externalComponentCount": 0
+  },
+  "tokenSignals": {
+    "boundVariableIds": [],
+    "variableModeIds": [],
+    "styleReferences": {
+      "allStyleIds": [],
+      "byType": {
+        "fill": [],
+        "stroke": [],
+        "effect": [],
+        "text": [],
+        "generic": []
+      },
+      "localStyleIds": [],
+      "linkedStyleIds": []
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Main",
+        "sectionIds": [],
+        "frameIds": [
+          "screen-details",
+          "screen-home"
+        ]
+      }
+    ],
+    "sections": [],
+    "frames": [
+      {
+        "id": "screen-details",
+        "name": "Details",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-home",
+        "name": "Home",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 5,
+        "instanceCount": 1
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-details",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-home",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [
+    {
+      "familyKey": "name:placeholder-instance",
+      "familyName": "Placeholder Instance",
+      "componentIds": [],
+      "componentSetIds": [],
+      "referringNodeIds": [
+        "decorative-instance"
+      ],
+      "nodeCount": 1,
+      "variantProperties": []
+    }
+  ],
+  "externalComponents": [],
+  "frameVariantGroups": [],
+  "appShellSignals": [],
+  "componentDensity": {
+    "boardDominantFamilies": [
+      {
+        "familyKey": "name:placeholder-instance",
+        "familyName": "Placeholder Instance",
+        "count": 1,
+        "ratio": 1
+      }
+    ],
+    "byFrame": [
+      {
+        "frameId": "screen-details",
+        "frameName": "Details",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-home",
+        "frameName": "Home",
+        "subtreeNodeCount": 5,
+        "instanceCount": 1,
+        "density": 0.2,
+        "dominantFamilies": [
+          {
+            "familyKey": "name:placeholder-instance",
+            "familyName": "Placeholder Instance",
+            "count": 1,
+            "ratio": 1
+          }
+        ]
+      }
+    ],
+    "hotspots": []
+  },
+  "diagnostics": []
+}

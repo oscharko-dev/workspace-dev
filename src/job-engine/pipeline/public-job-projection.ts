@@ -20,6 +20,13 @@ export const syncPublicJobProjection = async ({
     job.artifacts.designIrFile = designIrFile;
   }
 
+  const figmaAnalysisFile = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaAnalysis);
+  if (figmaAnalysisFile) {
+    job.artifacts.figmaAnalysisFile = figmaAnalysisFile;
+  } else {
+    delete job.artifacts.figmaAnalysisFile;
+  }
+
   const generatedProjectDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject);
   if (generatedProjectDir) {
     job.artifacts.generatedProjectDir = generatedProjectDir;

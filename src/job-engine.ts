@@ -780,6 +780,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
     const figmaJsonFile = path.join(jobDir, "figma.json");
     const designIrFile = path.join(jobDir, "design-ir.json");
+    const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
     const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
@@ -790,6 +791,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     job.artifacts.generatedProjectDir = generatedProjectDir;
     job.artifacts.figmaJsonFile = figmaJsonFile;
     job.artifacts.designIrFile = designIrFile;
+    job.artifacts.figmaAnalysisFile = figmaAnalysisFile;
     job.artifacts.stageTimingsFile = stageTimingsFile;
     if (runtime.previewEnabled) {
       job.artifacts.reproDir = reproDir;
@@ -849,6 +851,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           figmaRawJsonFile,
           figmaJsonFile,
           designIrFile,
+          figmaAnalysisFile,
           stageTimingsFile,
           reproDir,
           iconMapFilePath,
@@ -1096,6 +1099,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
     const figmaJsonFile = path.join(jobDir, "figma.json");
     const designIrFile = path.join(jobDir, "design-ir.json");
+    const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
     const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
@@ -1105,6 +1109,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
     job.artifacts.designIrFile = designIrFile;
+    job.artifacts.figmaAnalysisFile = figmaAnalysisFile;
     job.artifacts.stageTimingsFile = stageTimingsFile;
     if (runtime.previewEnabled) {
       job.artifacts.reproDir = reproDir;
@@ -1172,7 +1177,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: "ir.derive",
         value: {
           sourceJobId: regenInput.sourceJobId,
-          sourceIrFile: sourceRecord.artifacts.designIrFile
+          sourceIrFile: sourceRecord.artifacts.designIrFile,
+          sourceAnalysisFile: sourceRecord.artifacts.figmaAnalysisFile
         }
       });
       await artifactStore.setValue({
@@ -1202,6 +1208,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           figmaRawJsonFile,
           figmaJsonFile,
           designIrFile,
+          figmaAnalysisFile,
           stageTimingsFile,
           reproDir,
           iconMapFilePath,

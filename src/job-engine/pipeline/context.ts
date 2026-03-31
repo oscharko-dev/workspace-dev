@@ -22,6 +22,7 @@ export interface PipelineResolvedPaths {
   figmaRawJsonFile: string;
   figmaJsonFile: string;
   designIrFile: string;
+  figmaAnalysisFile: string;
   stageTimingsFile: string;
   reproDir: string;
   iconMapFilePath: string;

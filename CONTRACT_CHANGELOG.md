@@ -31,6 +31,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.2.0] - 2026-03-31
+
+### Public figma.analysis artifact
+
+Added:
+
+- `WorkspaceJobArtifacts.figmaAnalysisFile?: string` for the curated `figma.analysis` artifact path produced by `ir.derive`.
+- `GET /workspace/jobs/{jobId}/figma-analysis` to fetch the public `figma.analysis` artifact for completed jobs.
+
+---
+
 ## [3.1.0] - 2026-03-31
 
 ### Customer profile submit metadata

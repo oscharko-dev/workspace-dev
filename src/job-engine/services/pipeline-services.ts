@@ -74,7 +74,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
           STAGE_ARTIFACT_KEYS.figmaCleanedReport
         ],
-        writes: [STAGE_ARTIFACT_KEYS.designIr]
+        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
       }
     },
     {
@@ -156,7 +156,7 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: IrDeriveService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.regenerationSourceIr, STAGE_ARTIFACT_KEYS.regenerationOverrides],
-        writes: [STAGE_ARTIFACT_KEYS.designIr]
+        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
       }
     },
     {

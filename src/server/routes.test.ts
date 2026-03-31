@@ -48,6 +48,10 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
     jobId: "job-1",
     action: "design-ir"
   });
+  assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/figma-analysis"), {
+    jobId: "job-1",
+    action: "figma-analysis"
+  });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/component-manifest"), {
     jobId: "job-1",
     action: "component-manifest"
@@ -68,6 +72,7 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
   assert.equal(parseJobRoute("/workspace/jobs//result"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//cancel"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//design-ir"), undefined);
+  assert.equal(parseJobRoute("/workspace/jobs//figma-analysis"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//component-manifest"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//sync"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//create-pr"), undefined);

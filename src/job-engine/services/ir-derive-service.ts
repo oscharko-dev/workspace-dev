@@ -3,7 +3,9 @@ import type { WorkspaceRegenerationInput } from "../../contracts/index.js";
 import { createPipelineError, type PipelineDiagnosticInput } from "../errors.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "../ir-cache.js";
 import { applyIrOverrides } from "../ir-overrides.js";
+import { buildFigmaAnalysis, buildRegenerationFallbackFigmaAnalysis } from "../../parity/figma-analysis.js";
 import { figmaToDesignIrWithOptions } from "../../parity/ir.js";
+import type { FigmaFile } from "../../parity/ir-helpers.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
@@ -22,6 +24,7 @@ import {
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
   sourceIrFile?: string;
+  sourceAnalysisFile?: string;
 }
 
 export const IrDeriveService: StageService<void> = {
@@ -36,6 +39,7 @@ export const IrDeriveService: StageService<void> = {
       );
       const sourceJobId = sourceReference.sourceJobId;
       const sourceIrPath = sourceReference.sourceIrFile;
+      const sourceAnalysisPath = sourceReference.sourceAnalysisFile;
       if (!sourceIrPath) {
         throw createPipelineError({
           code: "E_REGEN_SOURCE_IR_MISSING",
@@ -75,6 +79,13 @@ export const IrDeriveService: StageService<void> = {
       });
 
       await writeFile(context.paths.designIrFile, `${JSON.stringify(overrideResult.ir, null, 2)}\n`, "utf8");
+      const regeneratedAnalysis =
+        typeof sourceAnalysisPath === "string" && sourceAnalysisPath.trim().length > 0
+          ? await readFile(sourceAnalysisPath, "utf8").catch(() => undefined)
+          : undefined;
+      const analysisContent =
+        regeneratedAnalysis ?? `${JSON.stringify(buildRegenerationFallbackFigmaAnalysis({ ir: overrideResult.ir }), null, 2)}\n`;
+      await writeFile(context.paths.figmaAnalysisFile, analysisContent.endsWith("\n") ? analysisContent : `${analysisContent}\n`, "utf8");
       context.log({
         level: "info",
         message:
@@ -85,6 +96,11 @@ export const IrDeriveService: StageService<void> = {
         key: STAGE_ARTIFACT_KEYS.designIr,
         stage: "ir.derive",
         absolutePath: context.paths.designIrFile
+      });
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+        stage: "ir.derive",
+        absolutePath: context.paths.figmaAnalysisFile
       });
       return;
     }
@@ -118,6 +134,7 @@ export const IrDeriveService: StageService<void> = {
       diagnostics: fetchDiagnostics,
       cleaning: cleaningReport
     };
+    const figmaAnalysisSource = figmaFetch.file as FigmaFile;
 
     const emitIrMetricDiagnostics = ({ source }: { source: DesignIR }): void => {
       const budgetTruncatedScreens = [...(source.metrics?.truncatedScreens ?? [])].sort((left, right) => {
@@ -414,6 +431,11 @@ export const IrDeriveService: StageService<void> = {
       });
       if (cached) {
         await writeFile(context.paths.designIrFile, `${JSON.stringify(cached, null, 2)}\n`, "utf8");
+        const cachedAnalysis = buildFigmaAnalysis({
+          file: figmaAnalysisSource,
+          ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
+        });
+        await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
         context.log({
           level: "info",
           message: `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens (brandTheme=${context.resolvedBrandTheme}).`
@@ -423,6 +445,11 @@ export const IrDeriveService: StageService<void> = {
           key: STAGE_ARTIFACT_KEYS.designIr,
           stage: "ir.derive",
           absolutePath: context.paths.designIrFile
+        });
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+          stage: "ir.derive",
+          absolutePath: context.paths.figmaAnalysisFile
         });
         return;
       }
@@ -461,6 +488,11 @@ export const IrDeriveService: StageService<void> = {
       });
     }
     await writeFile(context.paths.designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
+    const figmaAnalysis = buildFigmaAnalysis({
+      file: figmaAnalysisSource,
+      ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
+    });
+    await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
 
     if (context.runtime.irCacheEnabled) {
       const contentHash = computeContentHash(figmaFetch.file);
@@ -489,6 +521,11 @@ export const IrDeriveService: StageService<void> = {
       key: STAGE_ARTIFACT_KEYS.designIr,
       stage: "ir.derive",
       absolutePath: context.paths.designIrFile
+    });
+    await context.artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+      stage: "ir.derive",
+      absolutePath: context.paths.figmaAnalysisFile
     });
   }
 };

@@ -42,6 +42,12 @@
           "expected": "prototype-navigation/expected/design-ir.json"
         },
         {
+          "name": "figma-analysis",
+          "kind": "json",
+          "actual": "figma-analysis.json",
+          "expected": "prototype-navigation/expected/figma-analysis.json"
+        },
+        {
           "name": "app-shell",
           "kind": "text",
           "actual": "src/App.tsx",
@@ -64,6 +70,18 @@
           "kind": "text",
           "actual": "src/screens/Details.tsx",
           "expected": "prototype-navigation/expected/screens/Details.tsx"
+        }
+      ]
+    },
+    {
+      "id": "variant-shell-signals",
+      "figmaJson": "variant-shell-signals/figma.json",
+      "artifacts": [
+        {
+          "name": "figma-analysis",
+          "kind": "json",
+          "actual": "figma-analysis.json",
+          "expected": "variant-shell-signals/expected/figma-analysis.json"
         }
       ]
     },

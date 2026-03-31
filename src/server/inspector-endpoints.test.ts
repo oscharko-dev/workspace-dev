@@ -40,6 +40,23 @@ interface DesignIrPayload {
   tokens: Record<string, unknown>;
 }
 
+interface FigmaAnalysisPayload {
+  jobId: string;
+  artifactVersion: number;
+  sourceName: string;
+  summary: {
+    pageCount: number;
+    sectionCount: number;
+    topLevelFrameCount: number;
+  };
+  frameVariantGroups: unknown[];
+  appShellSignals: unknown[];
+  componentDensity: {
+    byFrame: unknown[];
+    hotspots: unknown[];
+  };
+}
+
 interface ComponentManifestPayload {
   jobId: string;
   screens: Array<{
@@ -229,7 +246,7 @@ const waitForPendingEndpoint = async ({
 }: {
   baseUrl: string;
   jobId: string;
-  endpoint: "design-ir" | "files" | "component-manifest";
+  endpoint: "design-ir" | "figma-analysis" | "files" | "component-manifest";
 }): Promise<void> => {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -259,6 +276,20 @@ const fetchDesignIr = async ({ baseUrl, jobId }: { baseUrl: string; jobId: strin
   });
   assert.equal(response.status, 200);
   return (await response.json()) as DesignIrPayload;
+};
+
+const fetchFigmaAnalysis = async ({
+  baseUrl,
+  jobId
+}: {
+  baseUrl: string;
+  jobId: string;
+}): Promise<FigmaAnalysisPayload> => {
+  const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/figma-analysis`, {
+    signal: AbortSignal.timeout(5_000)
+  });
+  assert.equal(response.status, 200);
+  return (await response.json()) as FigmaAnalysisPayload;
 };
 
 const fetchFiles = async ({
@@ -300,7 +331,7 @@ test("inspector endpoints: unknown jobs return 404", async () => {
   const running = await startCliProcess();
 
   try {
-    for (const endpoint of ["design-ir", "files", "component-manifest"] as const) {
+    for (const endpoint of ["design-ir", "figma-analysis", "files", "component-manifest"] as const) {
       const response = await fetch(`${running.baseUrl}/workspace/jobs/nonexistent-job/${endpoint}`, {
         signal: AbortSignal.timeout(2_000)
       });
@@ -321,6 +352,7 @@ test("inspector endpoints: pending jobs return 409", { timeout: 120_000 }, async
     const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
 
     await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "design-ir" });
+    await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "figma-analysis" });
     await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "files" });
     await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "component-manifest" });
 
@@ -348,10 +380,19 @@ test("inspector endpoints: completed jobs expose expected payloads and files sec
     assert.equal(terminal.status, "completed", "fixture-backed job must complete successfully");
 
     const designIr = await fetchDesignIr({ baseUrl: running.baseUrl, jobId });
+    const figmaAnalysis = await fetchFigmaAnalysis({ baseUrl: running.baseUrl, jobId });
     assert.equal(designIr.jobId, jobId);
     assert.equal(Array.isArray(designIr.screens), true);
     assert.equal(designIr.screens.length, 2, "prototype-navigation fixture should expose exactly 2 screens");
     assert.equal(typeof designIr.tokens, "object");
+    assert.equal(figmaAnalysis.jobId, jobId);
+    assert.equal(figmaAnalysis.artifactVersion, 1);
+    assert.equal(typeof figmaAnalysis.sourceName, "string");
+    assert.equal(figmaAnalysis.summary.pageCount >= 1, true);
+    assert.equal(figmaAnalysis.summary.topLevelFrameCount, designIr.screens.length);
+    assert.equal(Array.isArray(figmaAnalysis.frameVariantGroups), true);
+    assert.equal(Array.isArray(figmaAnalysis.appShellSignals), true);
+    assert.equal(Array.isArray(figmaAnalysis.componentDensity.byFrame), true);
 
     for (const screen of designIr.screens) {
       assert.equal(typeof screen.id, "string");

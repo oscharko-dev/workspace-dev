@@ -71,6 +71,7 @@ const createPlanContext = async (
       figmaRawJsonFile: path.join(jobDir, "figma.raw.json"),
       figmaJsonFile: path.join(jobDir, "figma.json"),
       designIrFile: path.join(jobDir, "design-ir.json"),
+      figmaAnalysisFile: path.join(jobDir, "figma-analysis.json"),
       stageTimingsFile: path.join(jobDir, "stage-timings.json"),
       reproDir: path.join(root, "repros", "job-1"),
       iconMapFilePath: path.join(root, "icon-map.json"),
@@ -116,6 +117,10 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   });
 
   assert.deepEqual(codegenEntry?.artifacts?.reads, [STAGE_ARTIFACT_KEYS.designIr]);
+  assert.deepEqual(
+    plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.writes,
+    [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
+  );
   assert.deepEqual(codegenEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.codegenSummary
@@ -199,6 +204,7 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.regenerationSourceIr,
     STAGE_ARTIFACT_KEYS.regenerationOverrides
   ]);
+  assert.deepEqual(irEntry?.artifacts?.writes, [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]);
   assert.equal(
     codegenEntry?.resolveInput?.(context as PipelineExecutionContext) instanceof Promise,
     false

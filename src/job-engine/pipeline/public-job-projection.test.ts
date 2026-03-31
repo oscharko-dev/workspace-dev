@@ -34,6 +34,7 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
       artifacts: {
         outputRoot: root,
         jobDir,
+        figmaAnalysisFile: path.join(jobDir, "stale-figma-analysis.json"),
         generationMetricsFile: path.join(jobDir, "stale-generation-metrics.json"),
         componentManifestFile: path.join(jobDir, "stale-component-manifest.json"),
         generationDiffFile: path.join(jobDir, "stale-generation-diff.json")
@@ -62,6 +63,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const { job, artifactStore, jobDir } = await createJob();
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const designIrFile = path.join(jobDir, "design-ir.json");
+  const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
   const figmaJsonFile = path.join(jobDir, "figma.json");
   const reproDir = path.join(jobDir, "repro");
 
@@ -74,6 +76,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.designIr,
     stage: "ir.derive",
     absolutePath: designIrFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+    stage: "ir.derive",
+    absolutePath: figmaAnalysisFile
   });
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.generatedProject,
@@ -107,6 +114,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
 
   assert.equal(job.artifacts.figmaJsonFile, figmaJsonFile);
   assert.equal(job.artifacts.designIrFile, designIrFile);
+  assert.equal(job.artifacts.figmaAnalysisFile, figmaAnalysisFile);
   assert.equal(job.artifacts.generatedProjectDir, generatedProjectDir);
   assert.equal(job.artifacts.reproDir, reproDir);
   assert.equal(job.artifacts.generationMetricsFile, undefined);
