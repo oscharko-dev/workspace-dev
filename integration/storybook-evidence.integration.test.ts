@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { getStorybookCatalogOutputFileName } from "../src/storybook/catalog.js";
 import { getStorybookPublicArtifactFileNames } from "../src/storybook/public-extracts.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../src/storybook/types.js";
 
@@ -155,6 +156,9 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   const fileNames = getStorybookPublicArtifactFileNames();
 
   const runGenerator = async (): Promise<{
+    catalogEntryCount: number;
+    catalogFamilyCount: number;
+    catalogPath: string;
     outputDir: string;
     writtenFiles: {
       tokens: string;
@@ -175,6 +179,9 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
 
     assert.equal(stderr, "");
     return JSON.parse(stdout) as {
+      catalogEntryCount: number;
+      catalogFamilyCount: number;
+      catalogPath: string;
       outputDir: string;
       writtenFiles: {
         tokens: string;
@@ -188,9 +195,19 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   };
 
   const firstSummary = await runGenerator();
+  const catalogFileName = getStorybookCatalogOutputFileName();
+  const firstCatalogBytes = await readFile(path.join(buildDir, catalogFileName), "utf8");
   const firstTokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
   const firstThemesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
   const firstComponentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
+  const firstCatalogArtifact = JSON.parse(firstCatalogBytes) as {
+    artifact: string;
+    stats: {
+      docsOnlyTiers: string[];
+      entryCount: number;
+      familyCount: number;
+    };
+  };
   const firstTokensArtifact = JSON.parse(firstTokensBytes) as {
     $extensions: {
       [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
@@ -239,6 +256,9 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   };
 
   assert.equal(firstSummary.outputDir, outputDirPath);
+  assert.equal(firstSummary.catalogPath, path.join(buildDir, catalogFileName));
+  assert.equal(firstSummary.catalogEntryCount, 2);
+  assert.equal(firstSummary.catalogFamilyCount, 2);
   assert.deepEqual(firstSummary.writtenFiles, {
     tokens: path.join(outputDirPath, fileNames.tokens),
     themes: path.join(outputDirPath, fileNames.themes),
@@ -247,6 +267,10 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   assert.ok(firstSummary.tokenCount >= 8);
   assert.equal(firstSummary.themeCount, 1);
   assert.equal(firstSummary.componentCount, 1);
+  assert.equal(firstCatalogArtifact.artifact, "storybook.catalog");
+  assert.equal(firstCatalogArtifact.stats.entryCount, 2);
+  assert.equal(firstCatalogArtifact.stats.familyCount, 2);
+  assert.deepEqual(firstCatalogArtifact.stats.docsOnlyTiers, ["Base"]);
 
   assert.equal(
     firstTokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].stats.errorCount,
@@ -267,14 +291,19 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   assert.deepEqual(firstComponentsArtifact.components[0]?.propKeys, ["infos", "title"]);
 
   const secondSummary = await runGenerator();
+  const secondCatalogBytes = await readFile(path.join(buildDir, catalogFileName), "utf8");
   const secondTokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
   const secondThemesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
   const secondComponentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
 
   assert.deepEqual(secondSummary, firstSummary);
+  assert.equal(secondCatalogBytes, firstCatalogBytes);
   assert.equal(secondTokensBytes, firstTokensBytes);
   assert.equal(secondThemesBytes, firstThemesBytes);
   assert.equal(secondComponentsBytes, firstComponentsBytes);
+  assert.equal(firstCatalogBytes.includes("bundlePath"), false);
+  assert.equal(firstCatalogBytes.includes("iframeBundlePath"), false);
+  assert.equal(firstCatalogBytes.includes("buildRoot"), false);
   assert.equal(firstTokensBytes.includes("bundlePath"), false);
   assert.equal(firstTokensBytes.includes("importPath"), false);
   assert.equal(firstTokensBytes.includes("iframeBundlePath"), false);
@@ -301,6 +330,7 @@ test(
     const generatorEntrypoint = path.resolve(process.cwd(), "src", "storybook", "generate-artifact.ts");
     const outputDirPath = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-local-smoke-"));
     const fileNames = getStorybookPublicArtifactFileNames();
+    const catalogFileName = getStorybookCatalogOutputFileName();
     const { stdout, stderr } = await execFile(
       "pnpm",
       ["exec", "tsx", generatorEntrypoint, localBuildDir, outputDirPath],
@@ -311,17 +341,36 @@ test(
 
     assert.equal(stderr, "");
     const summary = JSON.parse(stdout) as {
+      catalogEntryCount: number;
+      catalogFamilyCount: number;
+      catalogPath: string;
       tokenCount: number;
       themeCount: number;
       componentCount: number;
+    };
+    const catalogBytes = await readFile(path.join(localBuildDir, catalogFileName), "utf8");
+    const catalogArtifact = JSON.parse(catalogBytes) as {
+      stats: {
+        docsOnlyTiers: string[];
+        entryCount: number;
+      };
     };
     const tokensBytes = await readFile(path.join(outputDirPath, fileNames.tokens), "utf8");
     const themesBytes = await readFile(path.join(outputDirPath, fileNames.themes), "utf8");
     const componentsBytes = await readFile(path.join(outputDirPath, fileNames.components), "utf8");
 
+    assert.equal(summary.catalogPath, path.join(localBuildDir, catalogFileName));
+    assert.equal(summary.catalogEntryCount, 499);
+    assert.ok(summary.catalogFamilyCount > 0);
     assert.ok(summary.tokenCount > 0);
     assert.ok(summary.themeCount > 0);
     assert.ok(summary.componentCount > 0);
+    assert.equal(catalogArtifact.stats.entryCount, 499);
+    assert.ok(catalogArtifact.stats.docsOnlyTiers.includes("IF-Components"));
+    assert.ok(catalogArtifact.stats.docsOnlyTiers.includes("OSPlus_neo-Components"));
+    assert.equal(catalogBytes.includes("bundlePath"), false);
+    assert.equal(catalogBytes.includes("iframeBundlePath"), false);
+    assert.equal(catalogBytes.includes("buildRoot"), false);
     assert.equal(tokensBytes.includes("bundlePath"), false);
     assert.equal(tokensBytes.includes("importPath"), false);
     assert.equal(tokensBytes.includes("buildRoot"), false);
