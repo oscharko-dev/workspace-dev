@@ -1308,7 +1308,8 @@ export function createWorkspaceRequestHandler({
             sourceJobId: jobId,
             overrides: parsed.data.overrides,
             ...(parsed.data.draftId ? { draftId: parsed.data.draftId } : {}),
-            ...(parsed.data.baseFingerprint ? { baseFingerprint: parsed.data.baseFingerprint } : {})
+            ...(parsed.data.baseFingerprint ? { baseFingerprint: parsed.data.baseFingerprint } : {}),
+            ...(parsed.data.customerBrandId ? { customerBrandId: parsed.data.customerBrandId } : {})
           });
         } catch (error) {
           if (error instanceof Error && "code" in error) {

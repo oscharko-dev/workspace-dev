@@ -6,6 +6,13 @@ import type {
   DesignIR,
   GeneratedFile
 } from "../types.js";
+import type {
+  ResolvedStorybookPalette,
+  ResolvedStorybookTheme,
+  ResolvedStorybookThemeComponent,
+  ResolvedStorybookThemeScheme,
+  ResolvedStorybookTypographyStyle
+} from "../../storybook/theme-resolver.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "../typography-tokens.js";
 import {
   toResponsiveBreakpointValuesLiteral
@@ -188,6 +195,209 @@ export const renderThemeComponentBlock = ({
   return `    ${componentName}: {\n${componentEntries.join(",\n")}\n    }`;
 };
 
+const toThemeConfigLiteral = (value: boolean | number | string): string => {
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return literal(value);
+};
+
+const renderStorybookPalette = ({
+  mode,
+  palette
+}: {
+  mode: "light" | "dark";
+  palette: ResolvedStorybookPalette;
+}): string => {
+  const entries = [
+    `mode: "${mode}"`,
+    `primary: { main: "${palette.primary.main}"${palette.primary.contrastText ? `, contrastText: "${palette.primary.contrastText}"` : ""} }`
+  ];
+  if (palette.secondary) {
+    entries.push(
+      `secondary: { main: "${palette.secondary.main}"${palette.secondary.contrastText ? `, contrastText: "${palette.secondary.contrastText}"` : ""} }`
+    );
+  }
+  if (palette.success) {
+    entries.push(
+      `success: { main: "${palette.success.main}"${palette.success.contrastText ? `, contrastText: "${palette.success.contrastText}"` : ""} }`
+    );
+  }
+  if (palette.warning) {
+    entries.push(
+      `warning: { main: "${palette.warning.main}"${palette.warning.contrastText ? `, contrastText: "${palette.warning.contrastText}"` : ""} }`
+    );
+  }
+  if (palette.error) {
+    entries.push(
+      `error: { main: "${palette.error.main}"${palette.error.contrastText ? `, contrastText: "${palette.error.contrastText}"` : ""} }`
+    );
+  }
+  if (palette.info) {
+    entries.push(
+      `info: { main: "${palette.info.main}"${palette.info.contrastText ? `, contrastText: "${palette.info.contrastText}"` : ""} }`
+    );
+  }
+  entries.push(
+    `background: { default: "${palette.background.default}", paper: "${palette.background.paper}" }`,
+    `text: { primary: "${palette.text.primary}"${palette.text.secondary ? `, secondary: "${palette.text.secondary}"` : ""}${palette.text.disabled ? `, disabled: "${palette.text.disabled}"` : ""} }`
+  );
+  if (palette.divider) {
+    entries.push(`divider: "${palette.divider}"`);
+  }
+  if (palette.action) {
+    const actionEntries = [
+      palette.action.active ? `active: "${palette.action.active}"` : undefined,
+      palette.action.hover ? `hover: "${palette.action.hover}"` : undefined,
+      palette.action.selected ? `selected: "${palette.action.selected}"` : undefined,
+      palette.action.disabled ? `disabled: "${palette.action.disabled}"` : undefined,
+      palette.action.disabledBackground ? `disabledBackground: "${palette.action.disabledBackground}"` : undefined,
+      palette.action.focus ? `focus: "${palette.action.focus}"` : undefined
+    ].filter((entry): entry is string => Boolean(entry));
+    if (actionEntries.length > 0) {
+      entries.push(`action: { ${actionEntries.join(", ")} }`);
+    }
+  }
+  return `{\n      ${entries.join(",\n      ")}\n    }`;
+};
+
+const renderStorybookTypographyStyle = ({
+  style,
+  includeFontFamily = true
+}: {
+  style: ResolvedStorybookTypographyStyle;
+  includeFontFamily?: boolean;
+}): string => {
+  const entries = [
+    includeFontFamily && style.fontFamily ? `fontFamily: ${literal(style.fontFamily)}` : undefined,
+    style.fontSizePx !== undefined ? `fontSize: ${literal(`${style.fontSizePx}px`)}` : undefined,
+    style.fontWeight !== undefined ? `fontWeight: ${toThemeConfigLiteral(style.fontWeight)}` : undefined,
+    style.lineHeight !== undefined ? `lineHeight: ${toThemeConfigLiteral(style.lineHeight)}` : undefined,
+    style.letterSpacing !== undefined ? `letterSpacing: ${toThemeConfigLiteral(style.letterSpacing)}` : undefined,
+    style.textTransform ? `textTransform: ${literal(style.textTransform)}` : undefined
+  ].filter((entry): entry is string => Boolean(entry));
+  return `{ ${entries.join(", ")} }`;
+};
+
+const renderStorybookThemeComponent = ({
+  componentName,
+  component
+}: {
+  componentName: string;
+  component: ResolvedStorybookThemeComponent;
+}): string | undefined => {
+  const componentEntries: string[] = [];
+  const defaultPropsEntries = Object.entries(component.defaultProps ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  if (defaultPropsEntries.length > 0) {
+    componentEntries.push(
+      `      defaultProps: { ${defaultPropsEntries.map(([key, value]) => `${key}: ${toThemeConfigLiteral(value)}`).join(", ")} }`
+    );
+  }
+  const rootStyleEntries = Object.entries(component.rootStyleOverrides ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  if (rootStyleEntries.length > 0) {
+    componentEntries.push(
+      `      styleOverrides: {\n        root: {\n${rootStyleEntries
+        .map(([key, value]) => `          ${key}: ${toThemeConfigLiteral(value)}`)
+        .join(",\n")}\n        }\n      }`
+    );
+  }
+  if (componentEntries.length === 0) {
+    return undefined;
+  }
+  return `    ${componentName}: {\n${componentEntries.join(",\n")}\n    }`;
+};
+
+const renderStorybookThemeComponents = ({
+  scheme
+}: {
+  scheme: ResolvedStorybookThemeScheme;
+}): string[] => {
+  const customComponentNames = Object.keys(scheme.components)
+    .filter((componentName) => !THEME_COMPONENT_ORDER.includes(componentName))
+    .sort((left, right) => left.localeCompare(right));
+  const componentOrder = [...THEME_COMPONENT_ORDER, ...customComponentNames]
+    .filter((componentName, index, entries) => entries.indexOf(componentName) === index)
+    .filter((componentName) => Boolean(scheme.components[componentName]));
+  return componentOrder
+    .map((componentName) =>
+      renderStorybookThemeComponent({
+        componentName,
+        component: scheme.components[componentName] ?? {}
+      })
+    )
+    .filter((block): block is string => Boolean(block));
+};
+
+export const storybookThemeFile = ({
+  resolvedTheme,
+  generationLocale
+}: {
+  resolvedTheme: ResolvedStorybookTheme;
+  generationLocale?: string;
+}): GeneratedFile => {
+  const rtl = isRtlLocale(generationLocale);
+  const lightScheme = resolvedTheme.light;
+  const darkScheme = resolvedTheme.dark;
+  const deterministicTypographyVariants = new Set<string>(DESIGN_TYPOGRAPHY_VARIANTS);
+  const variantOrder = [
+    ...DESIGN_TYPOGRAPHY_VARIANTS,
+    ...Object.keys(lightScheme.typography.variants)
+      .filter((variantName) => !deterministicTypographyVariants.has(variantName))
+      .sort((left, right) => left.localeCompare(right))
+  ];
+  const typographyEntries = [
+    lightScheme.typography.base.fontSizePx !== undefined ? `    fontSize: ${Math.max(0, Math.round(lightScheme.typography.base.fontSizePx))}` : undefined,
+    lightScheme.typography.base.fontWeight !== undefined ? `    fontWeightRegular: ${toThemeConfigLiteral(lightScheme.typography.base.fontWeight)}` : undefined,
+    ...variantOrder
+      .map((variantName) => {
+        const variant = lightScheme.typography.variants[variantName];
+        if (!variant) {
+          return undefined;
+        }
+        return `    ${variantName}: ${renderStorybookTypographyStyle({
+          style: variant
+        })}`;
+      })
+      .filter((entry): entry is string => Boolean(entry))
+  ].filter((entry): entry is string => Boolean(entry));
+  const componentBlocks = renderStorybookThemeComponents({
+    scheme: lightScheme
+  });
+  const directionBlock = rtl ? `  direction: "rtl",\n` : "";
+  const cssBaselineBlock = rtl
+    ? `,\n    MuiCssBaseline: {\n      styleOverrides: {\n        body: {\n          direction: "rtl"\n        }\n      }\n    }`
+    : "";
+
+  return {
+    path: "src/theme/theme.ts",
+    content: `import { extendTheme } from "@mui/material/styles";
+
+export const appTheme = extendTheme({
+${directionBlock}  colorSchemes: {
+    light: {
+      palette: ${renderStorybookPalette({
+        mode: "light",
+        palette: lightScheme.palette
+      })}
+    }
+${darkScheme ? `,\n    dark: {\n      palette: ${renderStorybookPalette({ mode: "dark", palette: darkScheme.palette })}\n    }` : ""}
+  },
+  shape: {
+    borderRadius: ${Math.max(0, Math.round(lightScheme.borderRadius))}
+  },
+  spacing: ${Math.max(1, Math.round(lightScheme.spacingBase))},
+  typography: {
+    fontFamily: ${literal(lightScheme.typography.fontFamily)},
+${typographyEntries.join(",\n")}
+  },
+  components: {
+${componentBlocks.join(",\n")}${cssBaselineBlock}
+  }
+});
+`
+  };
+};
+
 export const fallbackThemeFile = (ir: DesignIR, themeComponentDefaults?: ThemeComponentDefaults, generationLocale?: string): GeneratedFile => {
   const tokens = ir.tokens;
   const rtl = isRtlLocale(generationLocale);
@@ -263,4 +473,3 @@ ${componentBlocks.join(",\n")}${cssBaselineBlock}
 `
   };
 };
-

@@ -34,6 +34,10 @@ export interface CustomerProfileConfigSnapshot {
     id: string;
     aliases: string[];
     brandTheme: WorkspaceBrandTheme;
+    storybookThemes: {
+      light: string;
+      dark?: string;
+    };
   }>;
   imports: {
     components: Record<
@@ -75,6 +79,10 @@ export interface ResolvedCustomerProfileBrandMapping {
   id: string;
   aliases: string[];
   brandTheme: WorkspaceBrandTheme;
+  storybookThemes: {
+    light: string;
+    dark?: string;
+  };
 }
 
 export interface ResolvedCustomerProfileComponentImport {
@@ -621,6 +629,33 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
         });
       }
 
+      const rawStorybookThemes = isPlainRecord(rawBrand.storybookThemes) ? rawBrand.storybookThemes : undefined;
+      if (!rawStorybookThemes) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.storybookThemes`,
+          message: "storybookThemes must be an object."
+        });
+      }
+      const lightThemeId =
+        rawStorybookThemes && typeof rawStorybookThemes.light === "string" ? rawStorybookThemes.light.trim() : "";
+      if (!lightThemeId) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.storybookThemes.light`,
+          message: "storybookThemes.light must be a non-empty string."
+        });
+      }
+      const darkThemeId =
+        rawStorybookThemes && typeof rawStorybookThemes.dark === "string" ? rawStorybookThemes.dark.trim() : undefined;
+      if (rawStorybookThemes && rawStorybookThemes.dark !== undefined && !darkThemeId) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.storybookThemes.dark`,
+          message: "storybookThemes.dark must be a non-empty string when provided."
+        });
+      }
+
       brandMappings.push({
         id,
         aliases: normalizeStringArray({
@@ -628,7 +663,11 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
           path: `${pathPrefix}.aliases`,
           issues
         }),
-        brandTheme: brandTheme === "sparkasse" ? "sparkasse" : "derived"
+        brandTheme: brandTheme === "sparkasse" ? "sparkasse" : "derived",
+        storybookThemes: {
+          light: lightThemeId,
+          ...(darkThemeId ? { dark: darkThemeId } : {})
+        }
       });
     }
   }
@@ -1016,7 +1055,11 @@ export const toCustomerProfileConfigSnapshot = ({
     brandMappings: profile.brandMappings.map((brandMapping) => ({
       id: brandMapping.id,
       aliases: [...brandMapping.aliases],
-      brandTheme: brandMapping.brandTheme
+      brandTheme: brandMapping.brandTheme,
+      storybookThemes: {
+        light: brandMapping.storybookThemes.light,
+        ...(brandMapping.storybookThemes.dark ? { dark: brandMapping.storybookThemes.dark } : {})
+      }
     })),
     imports: {
       components: Object.fromEntries(

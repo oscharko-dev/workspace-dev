@@ -157,6 +157,7 @@ export interface WorkspaceJobInput {
   figmaJsonPath?: string;
   storybookStaticDir?: string;
   customerProfilePath?: string;
+  customerBrandId?: string;
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
@@ -175,6 +176,7 @@ export interface WorkspaceJobRequestMetadata {
   figmaJsonPath?: string;
   storybookStaticDir?: string;
   customerProfilePath?: string;
+  customerBrandId?: string;
   repoUrl?: string;
   enableGitPr: boolean;
   figmaSourceMode: WorkspaceFigmaSourceMode;
@@ -374,6 +376,7 @@ export interface WorkspaceRegenerationInput {
   overrides: WorkspaceRegenerationOverrideEntry[];
   draftId?: string;
   baseFingerprint?: string;
+  customerBrandId?: string;
 }
 
 /** Submit response for accepted regeneration jobs. */

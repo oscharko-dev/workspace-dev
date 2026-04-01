@@ -20,6 +20,7 @@ test("schema: valid submit body parses correctly", () => {
     figmaAccessToken: "figd_xxx",
     storybookStaticDir: " ./storybook-static/customer ",
     customerProfilePath: " ./profiles/acme.json ",
+    customerBrandId: " sparkasse-retail ",
     brandTheme: " Sparkasse ",
     generationLocale: "en-US",
     formHandlingMode: " react_hook_form ",
@@ -31,6 +32,7 @@ test("schema: valid submit body parses correctly", () => {
     assert.equal(result.data.figmaFileKey, "abc123");
     assert.equal(result.data.storybookStaticDir, "./storybook-static/customer");
     assert.equal(result.data.customerProfilePath, "./profiles/acme.json");
+    assert.equal(result.data.customerBrandId, "sparkasse-retail");
     assert.equal(result.data.brandTheme, "sparkasse");
     assert.equal(result.data.generationLocale, "en-US");
     assert.equal(result.data.formHandlingMode, "react_hook_form");
@@ -172,6 +174,7 @@ test("schema: optional fields must be strings when provided", () => {
     projectName: 123,
     storybookStaticDir: 42,
     customerProfilePath: true,
+    customerBrandId: false,
     generationLocale: 5,
     formHandlingMode: 7
   });
@@ -456,7 +459,8 @@ test("schema: valid regeneration request accepts layout overrides", () => {
       { nodeId: "node-1", field: "primaryAxisAlignItems", value: "space_between" }
     ],
     draftId: "draft-1",
-    baseFingerprint: "fp-1"
+    baseFingerprint: "fp-1",
+    customerBrandId: " sparkasse-retail "
   });
 
   assert.equal(result.success, true);
@@ -466,7 +470,17 @@ test("schema: valid regeneration request accepts layout overrides", () => {
       { nodeId: "node-1", field: "layoutMode", value: "HORIZONTAL" },
       { nodeId: "node-1", field: "primaryAxisAlignItems", value: "SPACE_BETWEEN" }
     ]);
+    assert.equal(result.data.customerBrandId, "sparkasse-retail");
   }
+});
+
+test("schema: regeneration request rejects empty customerBrandId", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [],
+    customerBrandId: "   "
+  });
+
+  assert.equal(result.success, false);
 });
 
 test("schema: regeneration request rejects unsupported layout fields", () => {

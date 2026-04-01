@@ -20,6 +20,7 @@ import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
+import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
 
 const toRgba = (hex: string): { r: number; g: number; b: number } => {
   const normalized = hex.replace("#", "");
@@ -135,7 +136,11 @@ const createCustomerProfileForGeneratorTests = () => {
         {
           id: "sparkasse",
           aliases: ["sparkasse"],
-          brandTheme: "sparkasse"
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
         }
       ],
       imports: {
@@ -175,6 +180,189 @@ const createCustomerProfileForGeneratorTests = () => {
     throw new Error("Failed to create customer profile generator test fixture.");
   }
   return customerProfile;
+};
+
+const createResolvedStorybookTheme = ({
+  includeDark = true
+}: {
+  includeDark?: boolean;
+} = {}): ResolvedStorybookTheme => {
+  return {
+    customerBrandId: "sparkasse-retail",
+    brandMappingId: "sparkasse-retail",
+    includeThemeModeToggle: includeDark,
+    light: {
+      themeId: "sparkasse-light",
+      palette: {
+        primary: {
+          main: "#aa0000",
+          contrastText: "#ffffff"
+        },
+        text: {
+          primary: "#1f1f1f"
+        },
+        background: {
+          default: "#f8f8f8",
+          paper: "#ffffff"
+        },
+        divider: "#dddddd"
+      },
+      spacingBase: 10,
+      borderRadius: 14,
+      typography: {
+        fontFamily: "Storybook Sans",
+        base: {
+          fontFamily: "Storybook Sans",
+          fontSizePx: 16,
+          fontWeight: 400,
+          lineHeight: 1.5
+        },
+        variants: {
+          h1: {
+            fontFamily: "Storybook Sans",
+            fontSizePx: 30,
+            fontWeight: 700,
+            lineHeight: 1.2
+          },
+          body1: {
+            fontFamily: "Storybook Sans",
+            fontSizePx: 16,
+            fontWeight: 400,
+            lineHeight: 1.5
+          }
+        }
+      },
+      components: {
+        MuiButton: {
+          rootStyleOverrides: {
+            textTransform: "capitalize",
+            padding: "12px"
+          }
+        }
+      }
+    },
+    ...(includeDark
+      ? {
+          dark: {
+            themeId: "sparkasse-dark",
+            palette: {
+              primary: {
+                main: "#ff6666",
+                contrastText: "#111111"
+              },
+              text: {
+                primary: "#f4f4f4"
+              },
+              background: {
+                default: "#121212",
+                paper: "#1f1f1f"
+              }
+            },
+            spacingBase: 10,
+            borderRadius: 14,
+            typography: {
+              fontFamily: "Storybook Sans",
+              base: {
+                fontFamily: "Storybook Sans",
+                fontSizePx: 16,
+                fontWeight: 400,
+                lineHeight: 1.5
+              },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      : {}),
+    tokensDocument: {
+      customerBrandId: "sparkasse-retail",
+      brandMappingId: "sparkasse-retail",
+      includeThemeModeToggle: includeDark,
+      light: {
+        themeId: "sparkasse-light",
+        palette: {
+          primary: {
+            main: "#aa0000",
+            contrastText: "#ffffff"
+          },
+          text: {
+            primary: "#1f1f1f"
+          },
+          background: {
+            default: "#f8f8f8",
+            paper: "#ffffff"
+          },
+          divider: "#dddddd"
+        },
+        spacingBase: 10,
+        borderRadius: 14,
+        typography: {
+          fontFamily: "Storybook Sans",
+          base: {
+            fontFamily: "Storybook Sans",
+            fontSizePx: 16,
+            fontWeight: 400,
+            lineHeight: 1.5
+          },
+          variants: {
+            h1: {
+              fontFamily: "Storybook Sans",
+              fontSizePx: 30,
+              fontWeight: 700,
+              lineHeight: 1.2
+            },
+            body1: {
+              fontFamily: "Storybook Sans",
+              fontSizePx: 16,
+              fontWeight: 400,
+              lineHeight: 1.5
+            }
+          }
+        },
+        components: {
+          MuiButton: {
+            rootStyleOverrides: {
+              textTransform: "capitalize",
+              padding: "12px"
+            }
+          }
+        }
+      },
+      ...(includeDark
+        ? {
+            dark: {
+              themeId: "sparkasse-dark",
+              palette: {
+                primary: {
+                  main: "#ff6666",
+                  contrastText: "#111111"
+                },
+                text: {
+                  primary: "#f4f4f4"
+                },
+                background: {
+                  default: "#121212",
+                  paper: "#1f1f1f"
+                }
+              },
+              spacingBase: 10,
+              borderRadius: 14,
+              typography: {
+                fontFamily: "Storybook Sans",
+                base: {
+                  fontFamily: "Storybook Sans",
+                  fontSizePx: 16,
+                  fontWeight: 400,
+                  lineHeight: 1.5
+                },
+                variants: {}
+              },
+              components: {}
+            }
+          }
+        : {})
+    }
+  };
 };
 
 const collectDeterministicSnapshot = async ({
@@ -3981,7 +4169,11 @@ test("generateArtifacts logs customer profile diagnostics when denied MUI fallba
         {
           id: "sparkasse",
           aliases: ["sparkasse"],
-          brandTheme: "sparkasse"
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
         }
       ],
       imports: {
@@ -6707,4 +6899,58 @@ test("generateArtifacts prefers MCP asset references for images and icon wrapper
   assert.equal(screenContent.includes("data:image/svg+xml;utf8"), false);
   assert.ok(screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fsettings.svg"}'));
   assert.ok(screenContent.includes('component="img"'));
+});
+
+test("generateArtifacts uses the resolved Storybook theme payload instead of IR-derived theme output", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-theme-"));
+  const ir = createIr();
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    resolvedStorybookTheme: createResolvedStorybookTheme(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
+  const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8")) as {
+    customerBrandId: string;
+    light: {
+      spacingBase: number;
+    };
+  };
+  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+
+  assert.ok(themeContent.includes('main: "#aa0000"'));
+  assert.ok(themeContent.includes('main: "#ff6666"'));
+  assert.ok(themeContent.includes('fontFamily: "Storybook Sans"'));
+  assert.match(themeContent, /typography:\s*\{\s*fontFamily: "Storybook Sans",\s*fontSize: 16,/);
+  assert.ok(themeContent.includes('textTransform: "capitalize"'));
+  assert.equal(themeContent.includes("breakpoints: {"), false);
+  assert.equal(tokensContent.customerBrandId, "sparkasse-retail");
+  assert.equal(tokensContent.light.spacingBase, 10);
+  assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
+});
+
+test("generateArtifacts omits the theme mode toggle when the resolved Storybook theme has no dark scheme", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-light-only-"));
+  const ir = createIr();
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    resolvedStorybookTheme: createResolvedStorybookTheme({ includeDark: false }),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
+  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+
+  assert.equal(themeContent.includes("dark: {"), false);
+  assert.equal(appContent.includes('data-testid="theme-mode-toggle"'), false);
+  assert.equal(appContent.includes("useColorScheme"), false);
 });

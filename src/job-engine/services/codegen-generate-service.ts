@@ -8,6 +8,8 @@ import { buildComponentManifest } from "../../parity/component-manifest.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
 import type { DesignIR } from "../../parity/types-ir.js";
+import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
+import type { StorybookPublicThemesArtifact, StorybookPublicTokensArtifact } from "../../storybook/types.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 
@@ -21,12 +23,14 @@ interface CodegenGenerateServiceDeps {
   exportImageAssetsFromFigmaFn: typeof exportImageAssetsFromFigma;
   generateArtifactsStreamingFn: typeof generateArtifactsStreaming;
   buildComponentManifestFn: typeof buildComponentManifest;
+  resolveStorybookThemeFn: typeof resolveStorybookTheme;
 }
 
 export const createCodegenGenerateService = ({
   exportImageAssetsFromFigmaFn = exportImageAssetsFromFigma,
   generateArtifactsStreamingFn = generateArtifactsStreaming,
-  buildComponentManifestFn = buildComponentManifest
+  buildComponentManifestFn = buildComponentManifest,
+  resolveStorybookThemeFn = resolveStorybookTheme
 }: Partial<CodegenGenerateServiceDeps> = {}): StageService<CodegenGenerateStageInput> => {
   return {
     stageName: "codegen.generate",
@@ -101,12 +105,87 @@ export const createCodegenGenerateService = ({
         }
       }
 
+      let resolvedStorybookTheme: ReturnType<typeof resolveStorybookThemeFn> | undefined;
+      if (context.resolvedStorybookStaticDir) {
+        if (!context.resolvedCustomerProfile) {
+          throw createPipelineError({
+            code: "E_STORYBOOK_THEME_CUSTOMER_PROFILE_REQUIRED",
+            stage: "codegen.generate",
+            message:
+              "Storybook-first code generation requires a resolved customer profile when storybookStaticDir is enabled.",
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+        if (!context.resolvedCustomerBrandId) {
+          throw createPipelineError({
+            code: "E_STORYBOOK_THEME_CUSTOMER_BRAND_REQUIRED",
+            stage: "codegen.generate",
+            message:
+              "Storybook-first code generation requires customerBrandId when storybookStaticDir is enabled.",
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+
+        const storybookTokensPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.storybookTokens);
+        const storybookThemesPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.storybookThemes);
+
+        let tokensArtifact: StorybookPublicTokensArtifact;
+        let themesArtifact: StorybookPublicThemesArtifact;
+        try {
+          tokensArtifact = JSON.parse(await readFile(storybookTokensPath, "utf8")) as StorybookPublicTokensArtifact;
+          themesArtifact = JSON.parse(await readFile(storybookThemesPath, "utf8")) as StorybookPublicThemesArtifact;
+        } catch (error) {
+          throw createPipelineError({
+            code: "E_STORYBOOK_THEME_ARTIFACT_INVALID",
+            stage: "codegen.generate",
+            message: "Storybook theme artifacts are unreadable or malformed.",
+            cause: error,
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+
+        try {
+          resolvedStorybookTheme = resolveStorybookThemeFn({
+            customerBrandId: context.resolvedCustomerBrandId,
+            customerProfile: context.resolvedCustomerProfile,
+            tokensArtifact,
+            themesArtifact
+          });
+        } catch (error) {
+          if (error instanceof Error && "code" in error) {
+            const resolverError = error as Error & { code: string; details?: Record<string, unknown> };
+            throw createPipelineError({
+              code: resolverError.code,
+              stage: "codegen.generate",
+              message: resolverError.message,
+              cause: error,
+              ...(resolverError.details
+                ? {
+                    diagnostics: [
+                      {
+                        code: resolverError.code,
+                        message: resolverError.message,
+                        suggestion:
+                          "Fix the selected Storybook brand mapping or Storybook public token artifacts so the required theme surfaces are present.",
+                        details: resolverError.details
+                      }
+                    ]
+                  }
+                : {}),
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
+          throw error;
+        }
+      }
+
       const generator = generateArtifactsStreamingFn({
         projectDir: context.paths.generatedProjectDir,
         ir,
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
         ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
+        ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
         generationLocale: context.resolvedGenerationLocale,
         routerMode: context.runtime.routerMode,

@@ -27,13 +27,15 @@ import {
   toCustomerProfileDesignSystemConfig,
   type ResolvedCustomerProfile
 } from "../customer-profile.js";
+import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
-import type { ThemeComponentDefaults } from "./generator-design-system.js";
+import type { ThemeComponentDefaults, ThemeSxStyleValue } from "./generator-design-system.js";
 import {
   resolveFormHandlingMode,
   fallbackThemeFile,
+  storybookThemeFile,
   fallbackScreenFile,
   makeErrorBoundaryFile,
   makeScreenSkeletonFile,
@@ -239,6 +241,7 @@ interface GenerateArtifactsInput {
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
   customerProfile?: ResolvedCustomerProfile;
+  resolvedStorybookTheme?: ResolvedStorybookTheme;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   imageAssetMap?: Record<string, string>;
@@ -634,9 +637,156 @@ interface GenerateArtifactsBasePhase {
   themeFiles: StreamingArtifactFile[];
 }
 
+const parsePixelValue = (value: string | number | undefined): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  if (!normalized.endsWith("px")) {
+    return undefined;
+  }
+  const numeric = Number(normalized.slice(0, -2));
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const toThemeSxRecord = (
+  input: Record<string, boolean | number | string> | undefined
+): Record<string, ThemeSxStyleValue> | undefined => {
+  if (!input) {
+    return undefined;
+  }
+  const normalized: Record<string, ThemeSxStyleValue> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === "string" || typeof value === "number") {
+      normalized[key] = value;
+    }
+  }
+  if (Object.keys(normalized).length === 0) {
+    return undefined;
+  }
+  return normalized;
+};
+
+const toThemeComponentDefaultsFromResolvedStorybookTheme = ({
+  resolvedStorybookTheme
+}: {
+  resolvedStorybookTheme: ResolvedStorybookTheme;
+}): ThemeComponentDefaults | undefined => {
+  const defaults: ThemeComponentDefaults = {};
+  const c1StyleOverrides: NonNullable<ThemeComponentDefaults["c1StyleOverrides"]> = {};
+
+  for (const [componentName, component] of Object.entries(resolvedStorybookTheme.light.components)) {
+    const normalizedRootStyleOverrides = toThemeSxRecord(component.rootStyleOverrides);
+    if (normalizedRootStyleOverrides) {
+      c1StyleOverrides[componentName] = normalizedRootStyleOverrides;
+    }
+    if (componentName === "MuiCard") {
+      const elevation = typeof component.defaultProps?.elevation === "number" ? component.defaultProps.elevation : undefined;
+      const borderRadiusPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.borderRadius === "string" || typeof component.rootStyleOverrides?.borderRadius === "number"
+          ? component.rootStyleOverrides.borderRadius
+          : undefined
+      );
+      if (elevation !== undefined || borderRadiusPx !== undefined) {
+        defaults.MuiCard = {
+          ...(elevation !== undefined ? { elevation } : {}),
+          ...(borderRadiusPx !== undefined ? { borderRadiusPx } : {})
+        };
+      }
+      continue;
+    }
+    if (componentName === "MuiTextField") {
+      const outlinedInputBorderRadiusPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.borderRadius === "string" || typeof component.rootStyleOverrides?.borderRadius === "number"
+          ? component.rootStyleOverrides.borderRadius
+          : undefined
+      );
+      if (outlinedInputBorderRadiusPx !== undefined) {
+        defaults.MuiTextField = {
+          outlinedInputBorderRadiusPx
+        };
+      }
+      continue;
+    }
+    if (componentName === "MuiChip") {
+      const borderRadiusPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.borderRadius === "string" || typeof component.rootStyleOverrides?.borderRadius === "number"
+          ? component.rootStyleOverrides.borderRadius
+          : undefined
+      );
+      const size =
+        component.defaultProps?.size === "small" || component.defaultProps?.size === "medium"
+          ? component.defaultProps.size
+          : undefined;
+      if (borderRadiusPx !== undefined || size !== undefined) {
+        defaults.MuiChip = {
+          ...(borderRadiusPx !== undefined ? { borderRadiusPx } : {}),
+          ...(size !== undefined ? { size } : {})
+        };
+      }
+      continue;
+    }
+    if (componentName === "MuiPaper") {
+      const elevation = typeof component.defaultProps?.elevation === "number" ? component.defaultProps.elevation : undefined;
+      if (elevation !== undefined) {
+        defaults.MuiPaper = { elevation };
+      }
+      continue;
+    }
+    if (componentName === "MuiAppBar") {
+      const backgroundColor = typeof component.rootStyleOverrides?.backgroundColor === "string" ? component.rootStyleOverrides.backgroundColor : undefined;
+      if (backgroundColor) {
+        defaults.MuiAppBar = { backgroundColor };
+      }
+      continue;
+    }
+    if (componentName === "MuiDivider") {
+      const borderColor = typeof component.rootStyleOverrides?.borderColor === "string" ? component.rootStyleOverrides.borderColor : undefined;
+      if (borderColor) {
+        defaults.MuiDivider = { borderColor };
+      }
+      continue;
+    }
+    if (componentName === "MuiAvatar") {
+      const widthPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.width === "string" || typeof component.rootStyleOverrides?.width === "number"
+          ? component.rootStyleOverrides.width
+          : undefined
+      );
+      const heightPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.height === "string" || typeof component.rootStyleOverrides?.height === "number"
+          ? component.rootStyleOverrides.height
+          : undefined
+      );
+      const borderRadiusPx = parsePixelValue(
+        typeof component.rootStyleOverrides?.borderRadius === "string" || typeof component.rootStyleOverrides?.borderRadius === "number"
+          ? component.rootStyleOverrides.borderRadius
+          : undefined
+      );
+      if (widthPx !== undefined || heightPx !== undefined || borderRadiusPx !== undefined) {
+        defaults.MuiAvatar = {
+          ...(widthPx !== undefined ? { widthPx } : {}),
+          ...(heightPx !== undefined ? { heightPx } : {}),
+          ...(borderRadiusPx !== undefined ? { borderRadiusPx } : {})
+        };
+      }
+    }
+  }
+
+  if (Object.keys(c1StyleOverrides).length > 0) {
+    defaults.c1StyleOverrides = c1StyleOverrides;
+  }
+
+  return Object.keys(defaults).length > 0 ? defaults : undefined;
+};
+
 const runGenerateArtifactsBasePhase = async ({
   projectDir,
   ir,
+  resolvedStorybookTheme,
   iconMapFilePath,
   resolvedGenerationLocale,
   runtimeAdapters,
@@ -645,6 +795,7 @@ const runGenerateArtifactsBasePhase = async ({
 }: {
   projectDir: string;
   ir: DesignIR;
+  resolvedStorybookTheme?: ResolvedStorybookTheme;
   iconMapFilePath: string;
   resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
   runtimeAdapters: GenerateArtifactsRuntimeAdapters;
@@ -658,17 +809,26 @@ const runGenerateArtifactsBasePhase = async ({
     iconMapFilePath,
     onLog
   });
-  const themeComponentDefaults = deriveThemeComponentDefaultsFromIr({
-    ir,
-    generationLocale: resolvedGenerationLocale.locale
-  });
-  const tokensContent = JSON.stringify(ir.tokens, null, 2);
+  const themeComponentDefaults = resolvedStorybookTheme
+    ? toThemeComponentDefaultsFromResolvedStorybookTheme({
+        resolvedStorybookTheme
+      })
+    : deriveThemeComponentDefaultsFromIr({
+        ir,
+        generationLocale: resolvedGenerationLocale.locale
+      });
+  const tokensContent = JSON.stringify(resolvedStorybookTheme?.tokensDocument ?? ir.tokens, null, 2);
   await runtimeAdapters.writeTextFile({
     filePath: path.join(projectDir, "src", "theme", "tokens.json"),
     content: tokensContent
   });
   generatedPaths.add("src/theme/tokens.json");
-  const deterministicTheme = fallbackThemeFile(ir, themeComponentDefaults, resolvedGenerationLocale.locale);
+  const deterministicTheme = resolvedStorybookTheme
+    ? storybookThemeFile({
+        resolvedTheme: resolvedStorybookTheme,
+        generationLocale: resolvedGenerationLocale.locale
+      })
+    : fallbackThemeFile(ir, themeComponentDefaults, resolvedGenerationLocale.locale);
   await runtimeAdapters.writeGeneratedFile(projectDir, deterministicTheme);
   generatedPaths.add(deterministicTheme.path);
   const deterministicErrorBoundary = makeErrorBoundaryFile();
@@ -763,6 +923,7 @@ export async function* generateArtifactsStreaming(
     ir,
     componentMappings,
     customerProfile,
+    resolvedStorybookTheme,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
     designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
     imageAssetMap = {},
@@ -805,6 +966,7 @@ export async function* generateArtifactsStreaming(
   const { iconResolver, themeComponentDefaults, themeFiles } = await runGenerateArtifactsBasePhase({
     projectDir,
     ir,
+    ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
     iconMapFilePath,
     resolvedGenerationLocale,
     runtimeAdapters,
@@ -925,7 +1087,7 @@ export async function* generateArtifactsStreaming(
     screens: ir.screens,
     identitiesByScreenId,
     ...(routerMode !== undefined ? { routerMode } : {}),
-    includeThemeModeToggle: ir.themeAnalysis?.darkModeDetected ?? true
+    includeThemeModeToggle: resolvedStorybookTheme?.includeThemeModeToggle ?? (ir.themeAnalysis?.darkModeDetected ?? true)
   });
   await runtimeAdapters.writeTextFile({
     filePath: path.join(projectDir, "src", "App.tsx"),

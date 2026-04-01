@@ -843,6 +843,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       });
     };
     const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
+    const resolvedCustomerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const resolvedFigmaSourceMode = resolveFigmaSourceMode({ submitFigmaSourceMode: input.figmaSourceMode });
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
@@ -946,6 +947,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         },
         artifactStore,
         resolvedBrandTheme,
+        ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
         ...(storybookActivation
@@ -1101,6 +1103,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       runtimeGenerationLocale: runtime.generationLocale
     });
     const customerProfilePath = normalizeOptionalInputString(input.customerProfilePath);
+    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const storybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
@@ -1121,6 +1124,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
     if (customerProfilePath) {
       request.customerProfilePath = customerProfilePath;
+    }
+    if (customerBrandId) {
+      request.customerBrandId = customerBrandId;
     }
     if (storybookStaticDir) {
       request.storybookStaticDir = storybookStaticDir;
@@ -1236,6 +1242,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const resolvedGenerationLocale = sourceRecord.request.generationLocale;
     const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
     const resolvedBrandTheme = sourceRecord.request.brandTheme;
+    const resolvedCustomerBrandId =
+      normalizeOptionalInputString(regenInput.customerBrandId) ?? sourceRecord.request.customerBrandId;
 
     const appendDiagnostics = ({
       stage,
@@ -1318,6 +1326,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         },
         artifactStore,
         resolvedBrandTheme,
+        ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         resolvedFigmaSourceMode,
         resolvedFormHandlingMode,
         ...(requestedStorybookStaticDir ? { requestedStorybookStaticDir } : {}),
@@ -1507,11 +1516,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
 
     const jobId = randomUUID();
+    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const job: JobRecord = {
       jobId,
       status: "queued",
       submittedAt: nowIso(),
-      request: { ...sourceJob.request, enableGitPr: false },
+      request: {
+        ...sourceJob.request,
+        enableGitPr: false,
+        ...(customerBrandId ? { customerBrandId } : {})
+      },
       stages: createInitialStages(),
       logs: [],
       artifacts: {

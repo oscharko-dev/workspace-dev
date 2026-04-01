@@ -144,6 +144,7 @@ export {
   createThemeComponentBlockDraft,
   appendC1ThemeStyleEntriesToDraft,
   renderThemeComponentBlock,
+  storybookThemeFile,
   fallbackThemeFile
 } from "./templates/theme-template.js";
 export type { ThemeComponentBlockDraft } from "./templates/theme-template.js";

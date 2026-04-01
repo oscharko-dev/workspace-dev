@@ -161,6 +161,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "figmaJsonPath",
     "storybookStaticDir",
     "customerProfilePath",
+    "customerBrandId",
     "repoUrl",
     "repoToken",
     "enableGitPr",
@@ -206,6 +207,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const customerProfilePath = parseStringField({
     input,
     key: "customerProfilePath",
+    required: false,
+    issues
+  });
+  const customerBrandId = parseStringField({
+    input,
+    key: "customerBrandId",
     required: false,
     issues
   });
@@ -391,6 +398,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   if (customerProfilePath !== undefined) {
     data.customerProfilePath = customerProfilePath.trim();
   }
+  if (customerBrandId !== undefined) {
+    data.customerBrandId = customerBrandId.trim();
+  }
   if (repoUrl !== undefined) {
     data.repoUrl = repoUrl;
   }
@@ -525,6 +535,7 @@ interface RegenerationRequestData {
   overrides: WorkspaceRegenerationOverrideEntry[];
   draftId?: string;
   baseFingerprint?: string;
+  customerBrandId?: string;
 }
 
 function parseRegenerationRequest(input: unknown): ValidationResult<RegenerationRequestData> {
@@ -535,7 +546,7 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
     return { success: false, error: { issues } };
   }
 
-  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint"]);
+  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint", "customerBrandId"]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
@@ -592,6 +603,15 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
     }
   }
 
+  let customerBrandId: string | undefined;
+  if (input.customerBrandId !== undefined) {
+    if (typeof input.customerBrandId !== "string" || input.customerBrandId.trim().length === 0) {
+      pushIssue(issues, ["customerBrandId"], "customerBrandId must be a non-empty string when provided.");
+    } else {
+      customerBrandId = input.customerBrandId.trim();
+    }
+  }
+
   if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
@@ -602,6 +622,9 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
   }
   if (baseFingerprint !== undefined) {
     data.baseFingerprint = baseFingerprint;
+  }
+  if (customerBrandId !== undefined) {
+    data.customerBrandId = customerBrandId;
   }
 
   return { success: true, data };

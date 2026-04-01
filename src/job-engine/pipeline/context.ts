@@ -47,6 +47,7 @@ export interface PipelineExecutionContext {
   paths: PipelineResolvedPaths;
   artifactStore: StageArtifactStore;
   resolvedBrandTheme: WorkspaceBrandTheme;
+  resolvedCustomerBrandId?: string;
   resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   resolvedFormHandlingMode: WorkspaceFormHandlingMode;
   requestedStorybookStaticDir?: string;
@@ -73,6 +74,7 @@ export interface StageRuntimeContext {
   readonly abortSignal: AbortSignal;
   readonly fetchWithCancellation: typeof fetch;
   readonly resolvedBrandTheme: WorkspaceBrandTheme;
+  readonly resolvedCustomerBrandId?: string;
   readonly resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
   readonly resolvedFormHandlingMode: WorkspaceFormHandlingMode;
   readonly requestedStorybookStaticDir?: string;
@@ -112,6 +114,9 @@ export const createStageRuntimeContext = ({
     abortSignal: executionContext.jobAbortController.signal,
     fetchWithCancellation: executionContext.fetchWithCancellation,
     resolvedBrandTheme: executionContext.resolvedBrandTheme,
+    ...(executionContext.resolvedCustomerBrandId
+      ? { resolvedCustomerBrandId: executionContext.resolvedCustomerBrandId }
+      : {}),
     resolvedFigmaSourceMode: executionContext.resolvedFigmaSourceMode,
     resolvedFormHandlingMode: executionContext.resolvedFormHandlingMode,
     ...(executionContext.requestedStorybookStaticDir

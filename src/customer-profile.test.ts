@@ -43,7 +43,11 @@ const createRawCustomerProfile = () => ({
     {
       id: "sparkasse",
       aliases: [" Sparkasse ", "SK"],
-      brandTheme: "sparkasse"
+      brandTheme: "sparkasse",
+      storybookThemes: {
+        light: "sparkasse-light",
+        dark: "sparkasse-dark"
+      }
     }
   ],
   imports: {
@@ -230,7 +234,10 @@ test("safeParseCustomerProfileConfig rejects malformed values across sections", 
         {
           id: "",
           aliases: ["Story"],
-          brandTheme: "unknown"
+          brandTheme: "unknown",
+          storybookThemes: {
+            light: ""
+          }
         }
       ],
       imports: {
@@ -304,6 +311,31 @@ test("safeParseCustomerProfileConfig rejects malformed values across sections", 
   assert.equal(messages.some((message) => message.includes("Dependency version must be a non-empty string")), true);
   assert.equal(messages.some((message) => message.includes("Expected an object with dependency versions")), true);
   assert.equal(messages.some((message) => message.includes("Strictness must be one of")), true);
+  assert.equal(messages.some((message) => message.includes("storybookThemes.light must be a non-empty string")), true);
+});
+
+test("safeParseCustomerProfileConfig requires explicit storybook theme mappings for each brand", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse"
+        }
+      ]
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (parsed.success) {
+    assert.fail("Expected missing storybookThemes to fail parsing.");
+  }
+  assert.deepEqual(
+    parsed.issues.filter((issue) => issue.path.startsWith("brandMappings[0].storybookThemes")).map((issue) => issue.path),
+    ["brandMappings[0].storybookThemes", "brandMappings[0].storybookThemes.light"]
+  );
 });
 
 test("loadCustomerProfileConfigFile returns undefined for missing and invalid files", async () => {

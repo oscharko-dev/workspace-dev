@@ -33,7 +33,11 @@ const createTemplateProfile = ({
         {
           id: "sparkasse",
           aliases: ["sparkasse"],
-          brandTheme: "sparkasse"
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
         }
       ],
       imports: {

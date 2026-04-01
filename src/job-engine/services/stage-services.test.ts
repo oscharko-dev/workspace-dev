@@ -166,7 +166,11 @@ const createCustomerProfileForStageServices = () => {
         {
           id: "sparkasse",
           aliases: ["sparkasse"],
-          brandTheme: "sparkasse"
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
         }
       ],
       imports: {
@@ -202,49 +206,6 @@ const createCustomerProfileForStageServices = () => {
       }
     }
   });
-
-const createSuccessfulValidationResult = ({
-  attempts = 1
-}: {
-  attempts?: number;
-} = {}): ProjectValidationResult => {
-  return {
-    attempts,
-    install: {
-      status: "skipped",
-      strategy: "reused_seeded_node_modules"
-    },
-    lintAutofix: {
-      status: "completed",
-      command: "pnpm",
-      args: ["lint", "--fix"],
-      attempt: attempts,
-      timedOut: false,
-      changedFiles: ["src/App.tsx"]
-    },
-    lint: {
-      status: "passed",
-      command: "pnpm",
-      args: ["lint"],
-      attempt: attempts,
-      timedOut: false
-    },
-    typecheck: {
-      status: "passed",
-      command: "pnpm",
-      args: ["typecheck"],
-      attempt: attempts,
-      timedOut: false
-    },
-    build: {
-      status: "passed",
-      command: "pnpm",
-      args: ["build"],
-      attempt: attempts,
-      timedOut: false
-    }
-  };
-};
   if (!customerProfile) {
     throw new Error("Failed to create stage-service customer profile fixture.");
   }
@@ -834,6 +795,130 @@ test("CodegenGenerateService accepts all streaming artifact event variants witho
     executionContext.job.logs.some((entry) => entry.message.includes("Screen 1/1 completed: 'Screen 1'")),
     "progress events should still be logged"
   );
+});
+
+test("CodegenGenerateService resolves and forwards Storybook-first theme payloads", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  let forwardedGeneratorCount = 0;
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, "{}\n", "utf8");
+  await writeFile(themesPath, "{}\n", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createCustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: { fontFamily: "Brand Sans" },
+            variants: {}
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: { fontFamily: "Brand Sans" },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    generateArtifactsStreamingFn: async function* (input) {
+      forwardedGeneratorCount += 1;
+      assert.equal(input.resolvedStorybookTheme?.brandMappingId, "sparkasse");
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 0,
+          fallbackNodes: 0,
+          totalCandidateNodes: 0
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(forwardedGeneratorCount, 1);
 });
 
 test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async () => {

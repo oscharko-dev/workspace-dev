@@ -26,7 +26,11 @@ const createCustomerProfile = () => {
         {
           id: "sparkasse",
           aliases: ["sparkasse"],
-          brandTheme: "sparkasse"
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
         }
       ],
       imports: {
@@ -178,7 +182,11 @@ test("validateGeneratedProjectCustomerProfile returns warn when import policy is
       {
         id: "sparkasse",
         aliases: ["sparkasse"],
-        brandTheme: "sparkasse"
+        brandTheme: "sparkasse",
+        storybookThemes: {
+          light: "sparkasse-light",
+          dark: "sparkasse-dark"
+        }
       }
     ],
     imports: {
@@ -251,7 +259,11 @@ test("validateGeneratedProjectCustomerProfile keeps status ok when import policy
       {
         id: "sparkasse",
         aliases: ["sparkasse"],
-        brandTheme: "sparkasse"
+        brandTheme: "sparkasse",
+        storybookThemes: {
+          light: "sparkasse-light",
+          dark: "sparkasse-dark"
+        }
       }
     ],
     imports: {

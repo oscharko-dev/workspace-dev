@@ -70,10 +70,14 @@ const createLocalFigmaPayload = () => ({
 
 const createCustomerProfileFixture = ({
   packageName = "@customer/components",
-  dependencyVersion = "^1.2.3"
+  dependencyVersion = "^1.2.3",
+  storybookLightTheme = "sparkasse-light",
+  storybookDarkTheme
 }: {
   packageName?: string;
   dependencyVersion?: string;
+  storybookLightTheme?: string;
+  storybookDarkTheme?: string;
 } = {}) => ({
   version: 1,
   families: [
@@ -87,7 +91,17 @@ const createCustomerProfileFixture = ({
       }
     }
   ],
-  brandMappings: [],
+  brandMappings: [
+    {
+      id: "sparkasse",
+      aliases: ["sparkasse"],
+      brandTheme: "sparkasse",
+      storybookThemes: {
+        light: storybookLightTheme,
+        ...(storybookDarkTheme ? { dark: storybookDarkTheme } : {})
+      }
+    }
+  ],
   imports: {
     components: {
       Button: {
@@ -221,7 +235,8 @@ const createSyntheticStorybookBuild = async (): Promise<string> => {
       palette: {
         primary: { main: "#ff0000", contrastText: "#ffffff" },
         warning: { main: paletteRefs.light["warning-01"] },
-        text: { primary: "#444444" }
+        text: { primary: "#444444" },
+        background: { default: "#fafafa", paper: "#ffffff" }
       },
       typography: {
         fontFamily: "Brand Sans, sans-serif",
@@ -494,6 +509,58 @@ test("submitRegeneration result endpoint includes lineage", async () => {
   assert.equal(result.lineage?.overrideCount, 1);
 });
 
+test("submitRegeneration reuses the source customerBrandId by default and honors explicit overrides", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-brand-id-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    customerBrandId: "sparkasse-retail"
+  });
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+
+  const inheritedAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: []
+  });
+  assert.equal(engine.getJob(inheritedAccepted.jobId)?.request.customerBrandId, "sparkasse-retail");
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: inheritedAccepted.jobId
+  });
+
+  const overriddenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [],
+    customerBrandId: "sparkasse-private"
+  });
+  assert.equal(engine.getJob(overriddenAccepted.jobId)?.request.customerBrandId, "sparkasse-private");
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: overriddenAccepted.jobId
+  });
+});
+
 test("submitRegeneration reuses the stored customer profile snapshot even when the source profile file changes", async () => {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-profile-reuse-"));
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
@@ -718,8 +785,14 @@ test("queued regeneration jobs drain when a running job releases the only queue 
 test("regeneration reuses Storybook artifacts from the source job after the original Storybook build is removed", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-reuse-"));
   const figmaPath = path.join(tempRoot, "figma-input.json");
+  const customerProfilePath = path.join(tempRoot, "customer-profile.json");
   const storybookBuildDir = await createSyntheticStorybookBuild();
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(createCustomerProfileFixture({ storybookLightTheme: "default" })),
+    "utf8"
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -739,7 +812,9 @@ test("regeneration reuses Storybook artifacts from the source job after the orig
   const sourceAccepted = engine.submitJob({
     figmaJsonPath: figmaPath,
     figmaSourceMode: "local_json",
-    storybookStaticDir: storybookBuildDir
+    storybookStaticDir: storybookBuildDir,
+    customerProfilePath,
+    customerBrandId: "sparkasse"
   });
   const sourceStatus = await waitForTerminalStatus({
     getStatus: (id) => engine.getJob(id),
@@ -777,8 +852,14 @@ test("regeneration reuses Storybook artifacts from the source job after the orig
 test("regeneration fails when a source job declared Storybook input but a reusable Storybook artifact is missing", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-missing-"));
   const figmaPath = path.join(tempRoot, "figma-input.json");
+  const customerProfilePath = path.join(tempRoot, "customer-profile.json");
   const storybookBuildDir = await createSyntheticStorybookBuild();
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(createCustomerProfileFixture({ storybookLightTheme: "default" })),
+    "utf8"
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -798,7 +879,9 @@ test("regeneration fails when a source job declared Storybook input but a reusab
   const sourceAccepted = engine.submitJob({
     figmaJsonPath: figmaPath,
     figmaSourceMode: "local_json",
-    storybookStaticDir: storybookBuildDir
+    storybookStaticDir: storybookBuildDir,
+    customerProfilePath,
+    customerBrandId: "sparkasse"
   });
   const sourceStatus = await waitForTerminalStatus({
     getStatus: (id) => engine.getJob(id),

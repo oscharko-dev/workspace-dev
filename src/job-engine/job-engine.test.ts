@@ -210,7 +210,17 @@ const createCustomerProfileFixture = ({
       }
     }
   ],
-  brandMappings: [],
+  brandMappings: [
+    {
+      id: "sparkasse",
+      aliases: ["sparkasse"],
+      brandTheme: "sparkasse",
+      storybookThemes: {
+        light: "sparkasse-light",
+        dark: "sparkasse-dark"
+      }
+    }
+  ],
   imports: {
     components: {
       Button: {
