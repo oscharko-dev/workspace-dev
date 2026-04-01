@@ -2,7 +2,7 @@ import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobStageName } from "../contracts/index.js";
 import { createPipelineError, getErrorMessage, type PipelineDiagnosticLimits } from "./errors.js";
-import { StageArtifactStore } from "./pipeline/artifact-store.js";
+import type { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { isWithinRoot } from "./preview.js";
 import { buildStorybookCatalogArtifact, getStorybookCatalogOutputFileName, writeStorybookCatalogArtifact } from "../storybook/catalog.js";

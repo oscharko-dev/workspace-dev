@@ -396,3 +396,76 @@ test("resolveStorybookTheme ignores reference-only Storybook evidence metadata d
   assert.equal(resolved.light.palette.primary.main, "#dd0000");
   assert.equal(resolved.light.typography.fontFamily, "Brand Sans");
 });
+
+test("resolveStorybookTheme fails hard when customerBrandId is missing", () => {
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: undefined,
+        customerProfile: createCustomerProfile(),
+        tokensArtifact: createTokensArtifact(),
+        themesArtifact: createThemesArtifact()
+      }),
+    (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_CUSTOMER_BRAND_REQUIRED"
+  );
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "   ",
+        customerProfile: createCustomerProfile(),
+        tokensArtifact: createTokensArtifact(),
+        themesArtifact: createThemesArtifact()
+      }),
+    (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_CUSTOMER_BRAND_REQUIRED"
+  );
+});
+
+test("resolveStorybookTheme fails hard when customerProfile is missing", () => {
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "sparkasse-retail",
+        customerProfile: undefined,
+        tokensArtifact: createTokensArtifact(),
+        themesArtifact: createThemesArtifact()
+      }),
+    (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_CUSTOMER_PROFILE_REQUIRED"
+  );
+});
+
+test("resolveStorybookTheme fails hard when storybook tokens do not contain the selected theme", () => {
+  const tokensArtifact = createTokensArtifact({ includeDark: false });
+  // Remove the light theme token data entirely
+  delete (tokensArtifact.theme as Record<string, unknown>)["sparkasse-light"];
+
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "sparkasse-light-only",
+        customerProfile: createCustomerProfile(),
+        tokensArtifact,
+        themesArtifact: createThemesArtifact({ includeDark: false })
+      }),
+    (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_TOKEN_SET_MISSING"
+  );
+});
+
+test("resolveStorybookTheme fails hard on cyclic token alias references", () => {
+  const tokensArtifact = createTokensArtifact({ includeDark: false });
+  // Create a cycle: primary.main references itself via an alias chain
+  tokensArtifact.theme["sparkasse-light"].color.primary.main = {
+    $type: "color",
+    $value: "{theme.sparkasse-light.color.primary.main}"
+  };
+
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "sparkasse-light-only",
+        customerProfile: createCustomerProfile(),
+        tokensArtifact,
+        themesArtifact: createThemesArtifact({ includeDark: false })
+      }),
+    (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_ALIAS_CYCLE"
+  );
+});
