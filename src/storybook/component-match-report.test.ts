@@ -666,4 +666,77 @@ test("serializeComponentMatchReportArtifact is byte-stable and excludes raw priv
   assert.equal(firstBytes.includes("https://www.figma.com"), false);
   assert.equal(firstBytes.includes("lib-file"), false);
   assert.equal(firstBytes.includes("11:22"), false);
+  assert.equal(firstBytes.includes("componentPath"), false);
+});
+
+test("buildComponentMatchReportArtifact classifies design_link evidence as derived, not reference_only", () => {
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({
+        familyKey: "chip-family",
+        familyName: "Chip"
+      })
+    ]
+  });
+  const entries = [
+    createCatalogEntry({
+      id: "chip--default",
+      title: "Components/Chip",
+      name: "Default",
+      familyId: "family-chip",
+      componentPath: "./src/components/Chip.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/Chip?node-id=5-10"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-chip",
+          title: "Components/Chip",
+          name: "Chip",
+          entryIds: ["chip--default"],
+          storyEntryIds: ["chip--default"],
+          componentPath: "./src/components/Chip.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/Chip?node-id=5-10"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({ evidence: [] }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "chip-family",
+      canonicalFamilyName: "Chip",
+      fileKey: "lib-file",
+      nodeId: "5:10"
+    })
+  });
+
+  const entry = artifact.entries[0];
+  assert.equal(entry?.match.status, "matched");
+  const designLinkEvidence = entry?.usedEvidence.find((evidence) => evidence.class === "design_link");
+  assert.ok(designLinkEvidence, "design_link evidence should be present");
+  assert.equal(designLinkEvidence.reliability, "derived");
+  assert.notEqual(designLinkEvidence.reliability, "reference_only");
+});
+
+test("buildComponentMatchReportArtifact produces unmatched when no Storybook families exist", () => {
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({ familyKey: "orphan-family", familyName: "OrphanWidget" })
+    ]
+  });
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact: createCatalogArtifact({ entries: [], families: [] }),
+    evidenceArtifact: createEvidenceArtifact({ evidence: [] })
+  });
+
+  assert.equal(artifact.summary.totalFigmaFamilies, 1);
+  assert.equal(artifact.summary.unmatched, 1);
+  const entry = artifact.entries[0];
+  assert.equal(entry?.match.status, "unmatched");
+  assert.equal(entry?.match.confidence, "none");
+  assert.deepEqual(entry?.rejectionReasons, ["no_candidates"]);
 });

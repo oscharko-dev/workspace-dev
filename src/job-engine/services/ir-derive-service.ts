@@ -560,7 +560,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       });
     };
 
-      if (context.runtime.irCacheEnabled) {
+    if (context.runtime.irCacheEnabled) {
       const contentHash = computeContentHash(figmaFetch.file);
       const optionsHash = computeOptionsHash(irDerivationOptions);
       const cached = await loadCachedIr({

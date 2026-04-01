@@ -97,6 +97,7 @@ interface StorybookLookup {
 const compareStrings = (left: string, right: string): number => left.localeCompare(right);
 
 const sortUniqueStrings = <T extends string>(values: readonly T[]): T[] => {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Set<T> spread loses the T narrowing
   return [...new Set(values)].sort(compareStrings) as T[];
 };
 
@@ -676,9 +677,9 @@ const scoreReferenceOnlyDocs = ({
 
 const toReliabilityForEvidenceClass = (value: ComponentMatchEvidenceClass): StorybookEvidenceReliability => {
   switch (value) {
-    case "design_link":
     case "reference_only_docs":
       return "reference_only";
+    case "design_link":
     case "canonical_family_name":
     case "semantic_type":
       return "derived";
