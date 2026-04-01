@@ -152,7 +152,8 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         figmaAnalysis,
         catalogArtifact: storybookArtifacts.catalogArtifact,
         evidenceArtifact: storybookArtifacts.evidenceArtifact,
-        ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {})
+        ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {}),
+        ...(context.resolvedCustomerProfile ? { resolvedCustomerProfile: context.resolvedCustomerProfile } : {})
       });
       const writtenFile = await writeComponentMatchReportArtifact({
         artifact,

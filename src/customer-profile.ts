@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { WorkspaceBrandTheme } from "./contracts/index.js";
-import type { DesignSystemConfig } from "./design-system.js";
+import type { DesignSystemConfig, DesignSystemMappingEntry } from "./design-system.js";
+import type { ComponentMatchReportArtifact, ComponentMatchReportResolvedImport } from "./storybook/types.js";
 
 const CUSTOMER_PROFILE_VERSION = 1 as const;
 const JS_IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
@@ -146,6 +147,11 @@ export interface CustomerProfileImportIssue {
   message: string;
 }
 
+export interface ComponentMatchReportDesignSystemConfigResult {
+  config?: DesignSystemConfig;
+  warnings: string[];
+}
+
 interface ParsedSourceImport {
   modulePath: string;
   namedSpecifiers: Array<{
@@ -174,10 +180,28 @@ const normalizeAlias = (value: string): string => {
   return value.trim().toLowerCase();
 };
 
+const normalizeComponentKey = (value: string): string => {
+  return value.trim();
+};
+
 const toSortedRecord = <T>(input: Record<string, T>): Record<string, T> => {
   return Object.fromEntries(
     Object.entries(input).sort((left, right) => left[0].localeCompare(right[0]))
   );
+};
+
+const toSortedPropMappings = (propMappings: Record<string, string>): Record<string, string> | undefined => {
+  const entries = Object.entries(propMappings).sort((left, right) => left[0].localeCompare(right[0]));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
+
+const toResolvedImportSignature = ({ resolvedImport }: { resolvedImport: ComponentMatchReportResolvedImport }): string => {
+  return JSON.stringify({
+    package: resolvedImport.package,
+    exportName: resolvedImport.exportName,
+    localName: resolvedImport.localName,
+    ...(resolvedImport.propMappings ? { propMappings: toSortedRecord(resolvedImport.propMappings) } : {})
+  });
 };
 
 const pushIssue = ({
@@ -1124,12 +1148,21 @@ export const resolveCustomerProfileBrandMapping = ({
 
 export const resolveCustomerProfileComponentImport = ({
   profile,
-  componentKey
+  componentKey,
+  familyId
 }: {
   profile: ResolvedCustomerProfile;
   componentKey: string;
+  familyId?: string;
 }): ResolvedCustomerProfileComponentImport | undefined => {
-  return profile.componentImportsByKey.get(componentKey.trim());
+  const resolvedImport = profile.componentImportsByKey.get(normalizeComponentKey(componentKey));
+  if (!resolvedImport) {
+    return undefined;
+  }
+  if (familyId && resolvedImport.family !== familyId.trim()) {
+    return undefined;
+  }
+  return resolvedImport;
 };
 
 export const isCustomerProfileMuiFallbackAllowed = ({
@@ -1139,7 +1172,7 @@ export const isCustomerProfileMuiFallbackAllowed = ({
   profile: ResolvedCustomerProfile;
   componentKey: string;
 }): boolean => {
-  const explicitPolicy = profile.fallbacks.mui.components[componentKey.trim()];
+  const explicitPolicy = profile.fallbacks.mui.components[normalizeComponentKey(componentKey)];
   if (explicitPolicy !== undefined) {
     return explicitPolicy === "allow";
   }
@@ -1168,6 +1201,91 @@ export const toCustomerProfileDesignSystemConfig = ({
         }
       ])
     )
+  };
+};
+
+export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
+  artifact
+}: {
+  artifact: ComponentMatchReportArtifact;
+}): ComponentMatchReportDesignSystemConfigResult => {
+  const mappingCandidates = new Map<
+    string,
+    {
+      resolvedImport: ComponentMatchReportResolvedImport;
+      signature: string;
+    }
+  >();
+  const conflictedComponentKeys = new Set<string>();
+  const warnings: string[] = [];
+
+  for (const entry of artifact.entries) {
+    if (entry.libraryResolution.status !== "resolved_import") {
+      continue;
+    }
+    const componentKey = entry.libraryResolution.componentKey?.trim();
+    const resolvedImport = entry.libraryResolution.import;
+    if (!componentKey || !resolvedImport) {
+      warnings.push(
+        `Component match report entry '${entry.figma.familyKey}' is marked as resolved_import but is missing componentKey/import details.`
+      );
+      continue;
+    }
+
+    const signature = toResolvedImportSignature({
+      resolvedImport
+    });
+    const existing = mappingCandidates.get(componentKey);
+    if (!existing) {
+      mappingCandidates.set(componentKey, {
+        resolvedImport,
+        signature
+      });
+      continue;
+    }
+
+    if (existing.signature === signature) {
+      continue;
+    }
+
+    if (!conflictedComponentKeys.has(componentKey)) {
+      warnings.push(
+        `Component match report resolved multiple customer-profile imports for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
+      );
+      conflictedComponentKeys.add(componentKey);
+    }
+  }
+
+  const mappings: Record<string, DesignSystemMappingEntry> = Object.fromEntries(
+    [...mappingCandidates.entries()]
+      .filter(([componentKey]) => !conflictedComponentKeys.has(componentKey))
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([componentKey, { resolvedImport }]) => {
+        const propMappings = resolvedImport.propMappings
+          ? toSortedPropMappings(resolvedImport.propMappings)
+          : undefined;
+        return [
+          componentKey,
+          {
+            import: resolvedImport.package,
+            export: resolvedImport.exportName,
+            component: resolvedImport.localName,
+            ...(propMappings ? { propMappings } : {})
+          } satisfies DesignSystemMappingEntry
+        ] as const;
+      })
+  );
+
+  return {
+    ...(Object.keys(mappings).length > 0
+      ? {
+          config: {
+            library: "__customer_profile__",
+            mappings
+          }
+        }
+      : {}),
+    warnings
   };
 };
 

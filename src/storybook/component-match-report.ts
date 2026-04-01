@@ -1,6 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeVariantKey, normalizeVariantValue } from "../parity/ir-variants.js";
+import {
+  isCustomerProfileMuiFallbackAllowed,
+  resolveCustomerProfileComponentImport,
+  resolveCustomerProfileFamily,
+  type ResolvedCustomerProfile
+} from "../customer-profile.js";
 import type {
   FigmaAnalysis,
   FigmaAnalysisComponentFamily,
@@ -15,10 +21,13 @@ import type {
   ComponentMatchConfidence,
   ComponentMatchEvidenceClass,
   ComponentMatchFallbackReason,
+  ComponentMatchLibraryResolutionReason,
+  ComponentMatchLibraryResolutionStatus,
   ComponentMatchRejectionReason,
   ComponentMatchReportArtifact,
   ComponentMatchReportEntry,
   ComponentMatchReportFigmaFamily,
+  ComponentMatchReportResolvedImport,
   ComponentMatchReportStoryVariant,
   ComponentMatchReportUsedEvidence,
   ComponentMatchSemanticBucket,
@@ -40,6 +49,20 @@ const MATCHED_AUTHORITATIVE_THRESHOLD = 35;
 const MATCHED_TOTAL_THRESHOLD = 45;
 const AMBIGUOUS_AUTHORITATIVE_MIN = 20;
 const AUTHORITATIVE_LEAD_THRESHOLD = 8;
+const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
+  "resolved_import",
+  "mui_fallback_allowed",
+  "mui_fallback_denied",
+  "not_applicable"
+] as const satisfies readonly ComponentMatchLibraryResolutionStatus[];
+const COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS = [
+  "profile_import_resolved",
+  "profile_import_missing",
+  "profile_import_family_mismatch",
+  "profile_family_unresolved",
+  "match_ambiguous",
+  "match_unmatched"
+] as const satisfies readonly ComponentMatchLibraryResolutionReason[];
 
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -49,6 +72,7 @@ interface BuildComponentMatchReportArtifactInput {
   catalogArtifact: StorybookCatalogArtifact;
   evidenceArtifact: StorybookEvidenceArtifact;
   figmaLibraryResolutionArtifact?: FigmaLibraryResolutionArtifact;
+  resolvedCustomerProfile?: ResolvedCustomerProfile;
 }
 
 interface ParsedFigmaLink {
@@ -118,6 +142,40 @@ const toStableJsonValue = (value: JsonValue): JsonValue => {
 
 const toStableJsonString = (value: JsonValue): string => {
   return `${JSON.stringify(toStableJsonValue(value), null, 2)}\n`;
+};
+
+const createLibraryResolutionStatusCounts = (): Record<ComponentMatchLibraryResolutionStatus, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES.map((status) => [status, 0])
+  ) as Record<ComponentMatchLibraryResolutionStatus, number>;
+};
+
+const createLibraryResolutionReasonCounts = (): Record<ComponentMatchLibraryResolutionReason, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS.map((reason) => [reason, 0])
+  ) as Record<ComponentMatchLibraryResolutionReason, number>;
+};
+
+const toResolvedImportForReport = ({
+  packageName,
+  exportName,
+  localName,
+  propMappings
+}: {
+  packageName: string;
+  exportName: string;
+  localName: string;
+  propMappings: Record<string, string>;
+}): ComponentMatchReportResolvedImport => {
+  const normalizedPropMappings = Object.fromEntries(
+    Object.entries(propMappings).sort(([left], [right]) => left.localeCompare(right))
+  );
+  return {
+    package: packageName,
+    exportName,
+    localName,
+    ...(Object.keys(normalizedPropMappings).length > 0 ? { propMappings: normalizedPropMappings } : {})
+  };
 };
 
 const normalizeNodeId = (value: string | undefined): string | undefined => {
@@ -1004,6 +1062,104 @@ const selectStoryVariant = ({
   };
 };
 
+const resolveLibraryResolution = ({
+  matchStatus,
+  selectedFamily,
+  resolvedCustomerProfile
+}: {
+  matchStatus: ComponentMatchStatus;
+  selectedFamily?: ComponentMatchReportEntry["storybookFamily"];
+  resolvedCustomerProfile?: ResolvedCustomerProfile;
+}): ComponentMatchReportEntry["libraryResolution"] => {
+  if (matchStatus === "ambiguous") {
+    return {
+      status: "not_applicable",
+      reason: "match_ambiguous"
+    };
+  }
+  if (matchStatus === "unmatched" || !selectedFamily) {
+    return {
+      status: "not_applicable",
+      reason: "match_unmatched"
+    };
+  }
+
+  const componentKey = selectedFamily.name.trim();
+  const storybookTier = selectedFamily.tier.trim();
+  const baseResolution = {
+    storybookTier,
+    componentKey
+  };
+
+  if (!resolvedCustomerProfile) {
+    return {
+      status: "not_applicable",
+      reason: "profile_family_unresolved",
+      ...baseResolution
+    };
+  }
+
+  const profileFamily = resolveCustomerProfileFamily({
+    profile: resolvedCustomerProfile,
+    candidate: storybookTier
+  });
+  const baseResolutionWithFamily = profileFamily
+    ? {
+        ...baseResolution,
+        profileFamily: profileFamily.id
+      }
+    : baseResolution;
+
+  if (!profileFamily) {
+    const fallbackAllowed = isCustomerProfileMuiFallbackAllowed({
+      profile: resolvedCustomerProfile,
+      componentKey
+    });
+    return {
+      status: fallbackAllowed ? "mui_fallback_allowed" : "mui_fallback_denied",
+      reason: "profile_family_unresolved",
+      ...baseResolutionWithFamily
+    };
+  }
+
+  const resolvedImport = resolveCustomerProfileComponentImport({
+    profile: resolvedCustomerProfile,
+    componentKey,
+    familyId: profileFamily.id
+  });
+  if (resolvedImport) {
+    return {
+      status: "resolved_import",
+      reason: "profile_import_resolved",
+      ...baseResolutionWithFamily,
+      import: toResolvedImportForReport({
+        packageName: resolvedImport.package,
+        exportName: resolvedImport.exportName,
+        localName: resolvedImport.localName,
+        propMappings: resolvedImport.propMappings
+      })
+    };
+  }
+
+  const configuredImport = resolveCustomerProfileComponentImport({
+    profile: resolvedCustomerProfile,
+    componentKey
+  });
+  const reason: ComponentMatchLibraryResolutionReason = configuredImport
+    ? "profile_import_family_mismatch"
+    : "profile_import_missing";
+  const fallbackAllowed = isCustomerProfileMuiFallbackAllowed({
+    profile: resolvedCustomerProfile,
+    componentKey
+  });
+
+  return {
+    status: fallbackAllowed ? "mui_fallback_allowed" : "mui_fallback_denied",
+    reason,
+    ...baseResolutionWithFamily
+  };
+};
+
 const compareReportEntries = (left: ComponentMatchReportEntry, right: ComponentMatchReportEntry): number => {
   const byFamilyName = left.figma.familyName.localeCompare(right.figma.familyName);
   if (byFamilyName !== 0) {
@@ -1038,7 +1194,8 @@ export const buildComponentMatchReportArtifact = ({
   figmaAnalysis,
   catalogArtifact,
   evidenceArtifact,
-  figmaLibraryResolutionArtifact
+  figmaLibraryResolutionArtifact,
+  resolvedCustomerProfile
 }: BuildComponentMatchReportArtifactInput): ComponentMatchReportArtifact => {
   const lookup = buildStorybookLookup({
     catalogArtifact,
@@ -1103,6 +1260,11 @@ export const buildComponentMatchReportArtifact = ({
       ]);
       const usedEvidence = toUniqueUsedEvidence([...(topCandidate?.usedEvidence ?? []), ...storyVariant.usedEvidence]);
       const confidenceScore = toConfidenceScore(topCandidate?.totalScore ?? 0);
+      const libraryResolution = resolveLibraryResolution({
+        matchStatus: match.status,
+        ...(selectedFamily ? { selectedFamily } : {}),
+        ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {})
+      });
 
       return {
         figma: resolvedFigmaFamily.figma,
@@ -1114,11 +1276,19 @@ export const buildComponentMatchReportArtifact = ({
         usedEvidence,
         rejectionReasons: match.rejectionReasons,
         fallbackReasons,
+        libraryResolution,
         ...(selectedFamily ? { storybookFamily: selectedFamily } : {}),
         ...(storyVariant.storyVariant ? { storyVariant: storyVariant.storyVariant } : {})
       } satisfies ComponentMatchReportEntry;
     })
     .sort(compareReportEntries);
+
+  const libraryResolutionStatusCounts = createLibraryResolutionStatusCounts();
+  const libraryResolutionReasonCounts = createLibraryResolutionReasonCounts();
+  for (const entry of entries) {
+    libraryResolutionStatusCounts[entry.libraryResolution.status] += 1;
+    libraryResolutionReasonCounts[entry.libraryResolution.reason] += 1;
+  }
 
   return {
     artifact: "component.match_report",
@@ -1129,7 +1299,11 @@ export const buildComponentMatchReportArtifact = ({
       storybookEntryCount: catalogArtifact.entries.length,
       matched: entries.filter((entry) => entry.match.status === "matched").length,
       ambiguous: entries.filter((entry) => entry.match.status === "ambiguous").length,
-      unmatched: entries.filter((entry) => entry.match.status === "unmatched").length
+      unmatched: entries.filter((entry) => entry.match.status === "unmatched").length,
+      libraryResolution: {
+        byStatus: libraryResolutionStatusCounts,
+        byReason: libraryResolutionReasonCounts
+      }
     },
     entries
   };

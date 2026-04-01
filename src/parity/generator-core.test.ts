@@ -4078,6 +4078,50 @@ test("generateArtifacts applies customer profile imports before design-system ma
   assert.equal(screenContent.includes("FallbackButton"), false);
 });
 
+test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig over the full customer profile mapping", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-match-report-design-system-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "match-report-screen",
+      name: "Match Report Mapping",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "match-report-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    customerProfileDesignSystemConfig: {
+      library: "__customer_profile__",
+      mappings: {}
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Match Report Mapping")), "utf8");
+  assert.equal(screenContent.includes('from "@customer/components";'), false);
+  assert.equal(screenContent.includes("CustomerButton"), false);
+  assert.ok(screenContent.includes('from "@mui/material";'));
+  assert.ok(screenContent.includes("<Button"));
+});
+
 test("generateArtifacts keeps node-level componentMappings precedence over customer profile imports", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-priority-"));
   const ir = createIr();

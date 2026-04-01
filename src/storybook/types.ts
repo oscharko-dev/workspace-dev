@@ -449,6 +449,20 @@ export type ComponentMatchFallbackReason =
   | "selected_variant_by_entry_id_tiebreak"
   | "selected_docs_entry_fallback";
 
+export type ComponentMatchLibraryResolutionStatus =
+  | "resolved_import"
+  | "mui_fallback_allowed"
+  | "mui_fallback_denied"
+  | "not_applicable";
+
+export type ComponentMatchLibraryResolutionReason =
+  | "profile_import_resolved"
+  | "profile_import_missing"
+  | "profile_import_family_mismatch"
+  | "profile_family_unresolved"
+  | "match_ambiguous"
+  | "match_unmatched";
+
 export interface ComponentMatchReportVariantProperty {
   property: string;
   values: string[];
@@ -481,6 +495,22 @@ export interface ComponentMatchReportUsedEvidence {
   role: ComponentMatchEvidenceRole;
 }
 
+export interface ComponentMatchReportResolvedImport {
+  package: string;
+  exportName: string;
+  localName: string;
+  propMappings?: Record<string, string>;
+}
+
+export interface ComponentMatchReportLibraryResolution {
+  status: ComponentMatchLibraryResolutionStatus;
+  reason: ComponentMatchLibraryResolutionReason;
+  storybookTier?: string;
+  profileFamily?: string;
+  componentKey?: string;
+  import?: ComponentMatchReportResolvedImport;
+}
+
 export interface ComponentMatchReportSummary {
   totalFigmaFamilies: number;
   storybookFamilyCount: number;
@@ -488,6 +518,10 @@ export interface ComponentMatchReportSummary {
   matched: number;
   ambiguous: number;
   unmatched: number;
+  libraryResolution: {
+    byStatus: Record<ComponentMatchLibraryResolutionStatus, number>;
+    byReason: Record<ComponentMatchLibraryResolutionReason, number>;
+  };
 }
 
 export interface ComponentMatchReportEntry {
@@ -500,6 +534,7 @@ export interface ComponentMatchReportEntry {
   usedEvidence: ComponentMatchReportUsedEvidence[];
   rejectionReasons: ComponentMatchRejectionReason[];
   fallbackReasons: ComponentMatchFallbackReason[];
+  libraryResolution: ComponentMatchReportLibraryResolution;
   storybookFamily?: ComponentMatchReportStorybookFamily;
   storyVariant?: ComponentMatchReportStoryVariant;
 }

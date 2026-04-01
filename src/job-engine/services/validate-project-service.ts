@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   prepareGenerationDiff,
@@ -11,9 +11,12 @@ import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { createPipelineError } from "../errors.js";
 import {
+  validateCustomerProfileComponentMatchReport,
+  type CustomerProfileMatchValidationSummary,
   validateGeneratedProjectCustomerProfile,
   type CustomerProfileValidationSummary
 } from "../../customer-profile-validation.js";
+import type { ComponentMatchReportArtifact } from "../../storybook/types.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -48,7 +51,7 @@ interface ValidateProjectServiceDeps {
   isPerfValidationEnabledFn: () => boolean;
 }
 
-type ValidationGateStatus = "ok" | "warn" | "failed" | "not_available" | "not_requested";
+type ValidationGateStatus = "ok" | "warn" | "failed" | "partial" | "not_available" | "not_requested";
 
 interface ValidationArtifactStatusSummary {
   status: "ok" | "not_available" | "missing";
@@ -92,9 +95,20 @@ interface ValidationSummaryArtifact {
         status: "not_requested";
       };
   mapping: {
-    status: "ok" | "partial" | "not_available";
+    status: "ok" | "warn" | "failed" | "partial" | "not_available";
     figmaLibraryResolution: ValidationArtifactStatusSummary;
     componentMatchReport: ValidationArtifactStatusSummary;
+    customerProfileMatch:
+      | {
+          status: CustomerProfileMatchValidationSummary["status"];
+          policy: CustomerProfileMatchValidationSummary["policy"];
+          issueCount: number;
+          counts: CustomerProfileMatchValidationSummary["counts"];
+          issues: CustomerProfileMatchValidationSummary["issues"];
+        }
+      | {
+          status: "not_available";
+        };
   };
   style: {
     status: "ok" | "not_available";
@@ -121,16 +135,30 @@ const toJsonFileContent = (value: unknown): string => {
   return `${JSON.stringify(value, null, 2)}\n`;
 };
 
+const parseComponentMatchReportArtifact = ({
+  input
+}: {
+  input: string;
+}): ComponentMatchReportArtifact => {
+  const artifact = JSON.parse(input) as ComponentMatchReportArtifact;
+  if (artifact.artifact !== "component.match_report" || !Array.isArray(artifact.entries)) {
+    throw new Error("Expected a component.match_report artifact with an entries array.");
+  }
+  return artifact;
+};
+
 const resolveSummaryStatus = ({
   generatedApp,
   storybook,
+  mapping,
   importSummary
 }: {
   generatedApp: ValidationSummaryArtifact["generatedApp"];
   storybook: ValidationSummaryArtifact["storybook"];
+  mapping: ValidationSummaryArtifact["mapping"];
   importSummary: ValidationSummaryArtifact["import"];
 }): ValidationSummaryArtifact["status"] => {
-  const gateStatuses: ValidationGateStatus[] = [generatedApp.status, storybook.status, importSummary.status];
+  const gateStatuses: ValidationGateStatus[] = [generatedApp.status, storybook.status, mapping.status, importSummary.status];
   if (gateStatuses.includes("failed")) {
     return "failed";
   }
@@ -177,12 +205,14 @@ const buildValidationSummaryArtifact = async ({
   context,
   validatedAt,
   validationResult,
-  customerProfileSummary
+  customerProfileImportSummary,
+  customerProfileMatchSummary
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
   validationResult?: ProjectValidationResult;
-  customerProfileSummary?: CustomerProfileValidationSummary;
+  customerProfileImportSummary?: CustomerProfileValidationSummary;
+  customerProfileMatchSummary?: CustomerProfileMatchValidationSummary;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -229,9 +259,26 @@ const buildValidationSummaryArtifact = async ({
       };
 
   const mappingSummary: ValidationSummaryArtifact["mapping"] = {
-    status: componentMatchReportFile ? "ok" : figmaLibraryResolutionFile ? "partial" : "not_available",
+    status: customerProfileMatchSummary
+      ? customerProfileMatchSummary.status
+      : componentMatchReportFile
+        ? "ok"
+        : figmaLibraryResolutionFile
+          ? "partial"
+          : "not_available",
     figmaLibraryResolution: toArtifactStatusSummary(figmaLibraryResolutionFile),
-    componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
+    componentMatchReport: toArtifactStatusSummary(componentMatchReportFile),
+    customerProfileMatch: customerProfileMatchSummary
+      ? {
+          status: customerProfileMatchSummary.status,
+          policy: customerProfileMatchSummary.policy,
+          issueCount: customerProfileMatchSummary.issueCount,
+          counts: customerProfileMatchSummary.counts,
+          issues: customerProfileMatchSummary.issues
+        }
+      : {
+          status: "not_available"
+        }
   };
 
   const styleSummary: ValidationSummaryArtifact["style"] =
@@ -242,11 +289,11 @@ const buildValidationSummaryArtifact = async ({
             tokens: { status: "ok", filePath: storybookTokensFile },
             themes: { status: "ok", filePath: storybookThemesFile }
           },
-          ...(customerProfileSummary
+          ...(context.resolvedCustomerProfile
             ? {
                 customerProfile: {
-                  tokenPolicy: customerProfileSummary.token.policy,
-                  matchPolicy: customerProfileSummary.match.policy
+                  tokenPolicy: context.resolvedCustomerProfile.strictness.token,
+                  matchPolicy: context.resolvedCustomerProfile.strictness.match
                 }
               }
             : {})
@@ -257,20 +304,20 @@ const buildValidationSummaryArtifact = async ({
             tokens: toArtifactStatusSummary(storybookTokensFile),
             themes: toArtifactStatusSummary(storybookThemesFile)
           },
-          ...(customerProfileSummary
+          ...(context.resolvedCustomerProfile
             ? {
                 customerProfile: {
-                  tokenPolicy: customerProfileSummary.token.policy,
-                  matchPolicy: customerProfileSummary.match.policy
+                  tokenPolicy: context.resolvedCustomerProfile.strictness.token,
+                  matchPolicy: context.resolvedCustomerProfile.strictness.match
                 }
               }
             : {})
         };
 
-  const importSummary: ValidationSummaryArtifact["import"] = customerProfileSummary
+  const importSummary: ValidationSummaryArtifact["import"] = customerProfileImportSummary
     ? {
-        status: customerProfileSummary.status,
-        customerProfile: customerProfileSummary
+        status: customerProfileImportSummary.status,
+        customerProfile: customerProfileImportSummary
       }
     : {
         status: "not_available"
@@ -297,6 +344,7 @@ const buildValidationSummaryArtifact = async ({
     status: resolveSummaryStatus({
       generatedApp: generatedAppSummary,
       storybook: storybookSummary,
+      mapping: mappingSummary,
       importSummary
     }),
     validatedAt,
@@ -322,33 +370,108 @@ export const createValidateProjectService = ({
       const generatedProjectDir = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.generatedProject);
       const validatedAt = new Date().toISOString();
 
-      let customerProfileSummary:
+      let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
+      if (context.resolvedCustomerProfile) {
+        const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+        if (componentMatchReportPath) {
+          let componentMatchReportArtifact: ComponentMatchReportArtifact;
+          try {
+            componentMatchReportArtifact = parseComponentMatchReportArtifact({
+              input: await readFile(componentMatchReportPath, "utf8")
+            });
+          } catch (error) {
+            throw createPipelineError({
+              code: "E_COMPONENT_MATCH_REPORT_INVALID",
+              stage: "validate.project",
+              message: "component.match_report is unreadable or malformed.",
+              cause: error,
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
+
+          customerProfileMatchSummary = validateCustomerProfileComponentMatchReport({
+            artifact: componentMatchReportArtifact,
+            customerProfile: context.resolvedCustomerProfile
+          });
+          if (customerProfileMatchSummary.issueCount > 0) {
+            const logLevel =
+              customerProfileMatchSummary.policy === "warn"
+                ? "warn"
+                : customerProfileMatchSummary.policy === "error"
+                  ? "error"
+                  : "info";
+            context.log({
+              level: logLevel,
+              message:
+                `Customer profile match policy reported ${customerProfileMatchSummary.issueCount} issue(s) ` +
+                `(policy=${customerProfileMatchSummary.policy}).`
+            });
+          }
+          if (customerProfileMatchSummary.status === "failed") {
+            const summary = await buildValidationSummaryArtifact({
+              context,
+              validatedAt,
+              customerProfileMatchSummary
+            });
+            await persistValidationSummaryArtifacts({
+              context,
+              summary
+            });
+            throw createPipelineError({
+              code: "E_CUSTOMER_PROFILE_MATCH_POLICY",
+              stage: "validate.project",
+              message: `Customer profile match policy failed with ${customerProfileMatchSummary.issueCount} issue(s).`,
+              limits: context.runtime.pipelineDiagnosticLimits,
+              diagnostics: customerProfileMatchSummary.issues.map((issue) => ({
+                code: "E_CUSTOMER_PROFILE_MATCH_POLICY",
+                message: issue.message,
+                suggestion:
+                  "Fix the Storybook tier aliases, customer profile component import matrix, or fallback policy so the match report resolves deterministically.",
+                stage: "validate.project",
+                severity: "error",
+                details: {
+                  figmaFamilyKey: issue.figmaFamilyKey,
+                  figmaFamilyName: issue.figmaFamilyName,
+                  status: issue.status,
+                  reason: issue.reason,
+                  ...(issue.componentKey ? { componentKey: issue.componentKey } : {}),
+                  ...(issue.storybookTier ? { storybookTier: issue.storybookTier } : {}),
+                  ...(issue.profileFamily ? { profileFamily: issue.profileFamily } : {})
+                }
+              }))
+            });
+          }
+        }
+      }
+
+      let customerProfileImportSummary:
         | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
         | undefined;
       if (context.resolvedCustomerProfile) {
-        customerProfileSummary = await validateGeneratedProjectCustomerProfile({
+        customerProfileImportSummary = await validateGeneratedProjectCustomerProfile({
           generatedProjectDir,
           customerProfile: context.resolvedCustomerProfile
         });
-        if (customerProfileSummary.import.issueCount > 0) {
+        if (customerProfileImportSummary.import.issueCount > 0) {
           const logLevel =
-            customerProfileSummary.import.policy === "warn"
+            customerProfileImportSummary.import.policy === "warn"
               ? "warn"
-              : customerProfileSummary.import.policy === "error"
+              : customerProfileImportSummary.import.policy === "error"
                 ? "error"
                 : "info";
           context.log({
             level: logLevel,
             message:
-              `Customer profile import policy reported ${customerProfileSummary.import.issueCount} issue(s) ` +
-              `(policy=${customerProfileSummary.import.policy}).`
+              `Customer profile import policy reported ${customerProfileImportSummary.import.issueCount} issue(s) ` +
+              `(policy=${customerProfileImportSummary.import.policy}).`
           });
         }
-        if (customerProfileSummary.status === "failed") {
+        if (customerProfileImportSummary.status === "failed") {
           const summary = await buildValidationSummaryArtifact({
             context,
             validatedAt,
-            customerProfileSummary
+            customerProfileImportSummary,
+            ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {})
           });
           await persistValidationSummaryArtifacts({
             context,
@@ -357,9 +480,9 @@ export const createValidateProjectService = ({
           throw createPipelineError({
             code: "E_CUSTOMER_PROFILE_IMPORT_POLICY",
             stage: "validate.project",
-            message: `Customer profile import policy failed with ${customerProfileSummary.import.issueCount} issue(s).`,
+            message: `Customer profile import policy failed with ${customerProfileImportSummary.import.issueCount} issue(s).`,
             limits: context.runtime.pipelineDiagnosticLimits,
-            diagnostics: customerProfileSummary.import.issues.map((issue) => ({
+            diagnostics: customerProfileImportSummary.import.issues.map((issue) => ({
               code: issue.code,
               message: issue.message,
               suggestion: "Update the customer profile import matrix, template config, or generated imports so they agree.",
@@ -406,7 +529,8 @@ export const createValidateProjectService = ({
         context,
         validatedAt,
         validationResult,
-        ...(customerProfileSummary ? { customerProfileSummary } : {})
+        ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
+        ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {})
       });
       await persistValidationSummaryArtifacts({
         context,

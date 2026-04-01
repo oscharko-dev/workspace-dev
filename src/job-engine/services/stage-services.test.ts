@@ -542,6 +542,208 @@ const createCustomerProfileForStageServices = () => {
   return customerProfile;
 };
 
+const createStorybookMatchCustomerProfileForStageServices = ({
+  matchPolicy = "warn"
+}: {
+  matchPolicy?: "off" | "warn" | "error";
+} = {}) => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        },
+        {
+          id: "ReactUI",
+          tierPriority: 20,
+          aliases: {
+            figma: ["Forms"],
+            storybook: ["forms"],
+            code: ["@customer/forms"]
+          }
+        },
+        {
+          id: "Reactlib",
+          tierPriority: 30,
+          aliases: {
+            figma: ["Content"],
+            storybook: ["content"],
+            code: ["@customer/content"]
+          }
+        },
+        {
+          id: "IF-Components",
+          tierPriority: 40,
+          aliases: {
+            figma: ["Foundations"],
+            storybook: ["foundations"],
+            code: ["@customer/foundations"]
+          }
+        },
+        {
+          id: "OSPlus_neo-Components",
+          tierPriority: 50,
+          aliases: {
+            figma: ["Assets"],
+            storybook: ["assets"],
+            code: ["@customer/assets"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton",
+            importAlias: "CustomerButton"
+          },
+          TextField: {
+            family: "ReactUI",
+            package: "@customer/forms",
+            export: "CustomerTextField"
+          },
+          Accordion: {
+            family: "Reactlib",
+            package: "@customer/content",
+            export: "CustomerAccordion"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          components: {
+            Icon: "allow"
+          }
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        }
+      },
+      strictness: {
+        match: matchPolicy,
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create stage-service storybook match customer profile fixture.");
+  }
+  return customerProfile;
+};
+
+const createComponentMatchReportArtifactForStageServices = ({
+  matchStatus = "matched",
+  libraryResolutionStatus = "resolved_import",
+  libraryResolutionReason = "profile_import_resolved"
+}: {
+  matchStatus?: "matched" | "ambiguous" | "unmatched";
+  libraryResolutionStatus?: "resolved_import" | "mui_fallback_allowed" | "mui_fallback_denied" | "not_applicable";
+  libraryResolutionReason?:
+    | "profile_import_resolved"
+    | "profile_import_missing"
+    | "profile_import_family_mismatch"
+    | "profile_family_unresolved"
+    | "match_ambiguous"
+    | "match_unmatched";
+} = {}) => {
+  return {
+    artifact: "component.match_report",
+    version: 1,
+    summary: {
+      totalFigmaFamilies: 1,
+      storybookFamilyCount: 1,
+      storybookEntryCount: 1,
+      matched: matchStatus === "matched" ? 1 : 0,
+      ambiguous: matchStatus === "ambiguous" ? 1 : 0,
+      unmatched: matchStatus === "unmatched" ? 1 : 0,
+      libraryResolution: {
+        byStatus: {
+          resolved_import: libraryResolutionStatus === "resolved_import" ? 1 : 0,
+          mui_fallback_allowed: libraryResolutionStatus === "mui_fallback_allowed" ? 1 : 0,
+          mui_fallback_denied: libraryResolutionStatus === "mui_fallback_denied" ? 1 : 0,
+          not_applicable: libraryResolutionStatus === "not_applicable" ? 1 : 0
+        },
+        byReason: {
+          profile_import_resolved: libraryResolutionReason === "profile_import_resolved" ? 1 : 0,
+          profile_import_missing: libraryResolutionReason === "profile_import_missing" ? 1 : 0,
+          profile_import_family_mismatch: libraryResolutionReason === "profile_import_family_mismatch" ? 1 : 0,
+          profile_family_unresolved: libraryResolutionReason === "profile_family_unresolved" ? 1 : 0,
+          match_ambiguous: libraryResolutionReason === "match_ambiguous" ? 1 : 0,
+          match_unmatched: libraryResolutionReason === "match_unmatched" ? 1 : 0
+        }
+      }
+    },
+    entries: [
+      {
+        figma: {
+          familyKey: "button-family",
+          familyName: "Button",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: matchStatus,
+          confidence: matchStatus === "matched" ? "high" : matchStatus === "ambiguous" ? "medium" : "none",
+          confidenceScore: matchStatus === "matched" ? 100 : matchStatus === "ambiguous" ? 55 : 0
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: libraryResolutionStatus,
+          reason: libraryResolutionReason,
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Button",
+          ...(libraryResolutionStatus === "resolved_import"
+            ? {
+                import: {
+                  package: "@customer/components",
+                  exportName: "PrimaryButton",
+                  localName: "CustomerButton"
+                }
+              }
+            : {})
+        },
+        storybookFamily: {
+          familyId: "family-button",
+          title: "Components/Button",
+          name: "Button",
+          tier: "Components",
+          storyCount: 1
+        },
+        storyVariant: {
+          entryId: "button--primary",
+          storyName: "Primary"
+        }
+      }
+    ]
+  };
+};
+
 const createJobRecord = ({
   runtime,
   jobDir,
@@ -823,6 +1025,7 @@ test("IrDeriveService writes and registers component.match_report for local_json
   });
   executionContext.requestedStorybookStaticDir = storybookBuildDir;
   executionContext.resolvedStorybookStaticDir = storybookBuildDir;
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
 
   const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma-component-match.json");
   await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayloadWithMatchFamilies(), null, 2)}\n`, "utf8");
@@ -842,13 +1045,33 @@ test("IrDeriveService writes and registers component.match_report for local_json
   );
   const artifact = JSON.parse(await readFile(componentMatchReportPath as string, "utf8")) as {
     artifact: string;
-    summary: { totalFigmaFamilies: number; matched: number; ambiguous: number; unmatched: number };
+    summary: {
+      totalFigmaFamilies: number;
+      matched: number;
+      ambiguous: number;
+      unmatched: number;
+      libraryResolution: {
+        byStatus: Record<string, number>;
+        byReason: Record<string, number>;
+      };
+    };
+    entries: Array<{
+      storybookFamily?: { name?: string };
+      libraryResolution?: { status?: string; reason?: string; componentKey?: string; import?: { package?: string } };
+    }>;
   };
   assert.equal(artifact.artifact, "component.match_report");
   assert.equal(artifact.summary.totalFigmaFamilies, 6);
   assert.equal(artifact.summary.matched, 6);
   assert.equal(artifact.summary.ambiguous, 0);
   assert.equal(artifact.summary.unmatched, 0);
+  assert.equal(artifact.summary.libraryResolution.byStatus.resolved_import, 3);
+  assert.equal(artifact.summary.libraryResolution.byStatus.mui_fallback_denied, 2);
+  assert.equal(artifact.summary.libraryResolution.byStatus.mui_fallback_allowed, 1);
+  const buttonEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Button");
+  assert.equal(buttonEntry?.libraryResolution?.status, "resolved_import");
+  assert.equal(buttonEntry?.libraryResolution?.componentKey, "Button");
+  assert.equal(buttonEntry?.libraryResolution?.import?.package, "@customer/components");
 });
 
 test("IrDeriveService cache hits still write and register figma.analysis", async () => {
@@ -1356,6 +1579,7 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
   const ir = createMinimalIr();
   const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
   const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
   let forwardedGeneratorCount = 0;
   await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
   await executionContext.artifactStore.setPath({
@@ -1365,6 +1589,11 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
   });
   await writeFile(tokensPath, "{}\n", "utf8");
   await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.storybookTokens,
     stage: "figma.source",
@@ -1375,9 +1604,14 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
     stage: "figma.source",
     absolutePath: themesPath
   });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
   executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
   executionContext.resolvedCustomerBrandId = "sparkasse";
-  executionContext.resolvedCustomerProfile = createCustomerProfileForStageServices();
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
 
   const service = createCodegenGenerateService({
     resolveStorybookThemeFn: ({ customerBrandId }) =>
@@ -1473,6 +1707,207 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
   );
 
   assert.equal(forwardedGeneratorCount, 1);
+});
+
+test("CodegenGenerateService derives storybook-first customer profile mappings from component.match_report", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, "{}\n", "utf8");
+  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      {
+        ...createComponentMatchReportArtifactForStageServices(),
+        summary: {
+          totalFigmaFamilies: 2,
+          storybookFamilyCount: 2,
+          storybookEntryCount: 2,
+          matched: 2,
+          ambiguous: 0,
+          unmatched: 0,
+          libraryResolution: {
+            byStatus: {
+              resolved_import: 1,
+              mui_fallback_allowed: 1,
+              mui_fallback_denied: 0,
+              not_applicable: 0
+            },
+            byReason: {
+              profile_import_resolved: 1,
+              profile_import_missing: 1,
+              profile_import_family_mismatch: 0,
+              profile_family_unresolved: 0,
+              match_ambiguous: 0,
+              match_unmatched: 0
+            }
+          }
+        },
+        entries: [
+          createComponentMatchReportArtifactForStageServices().entries[0],
+          {
+            ...createComponentMatchReportArtifactForStageServices().entries[0],
+            figma: {
+              familyKey: "card-family",
+              familyName: "Card",
+              nodeCount: 1,
+              variantProperties: []
+            },
+            libraryResolution: {
+              status: "mui_fallback_allowed",
+              reason: "profile_import_missing",
+              storybookTier: "Components",
+              profileFamily: "Components",
+              componentKey: "Card"
+            },
+            storybookFamily: {
+              familyId: "family-card",
+              title: "Components/Card",
+              name: "Card",
+              tier: "Components",
+              storyCount: 1
+            },
+            storyVariant: {
+              entryId: "card--default",
+              storyName: "Default"
+            }
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: { fontFamily: "Brand Sans" },
+            variants: {}
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: { fontFamily: "Brand Sans" },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.deepEqual(input.customerProfileDesignSystemConfig, {
+        library: "__customer_profile__",
+        mappings: {
+          Button: {
+            import: "@customer/components",
+            export: "PrimaryButton",
+            component: "CustomerButton"
+          }
+        }
+      });
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 0,
+          fallbackNodes: 0,
+          totalCandidateNodes: 0
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-match-board"
+    },
+    stageContextFor("codegen.generate")
+  );
 });
 
 test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async () => {
@@ -1653,6 +2088,190 @@ export default defineConfig({
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+});
+
+test("ValidateProjectService persists failed customer profile match policy before project validation", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    matchPolicy: "error"
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-match-policy"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      createComponentMatchReportArtifactForStageServices({
+        libraryResolutionStatus: "mui_fallback_denied",
+        libraryResolutionReason: "profile_import_missing"
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Customer profile match policy failed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      customerProfileMatch?: {
+        status?: string;
+        issueCount?: number;
+        issues?: Array<{ reason?: string }>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.mapping?.status, "failed");
+  assert.equal(summary?.mapping?.customerProfileMatch?.status, "failed");
+  assert.equal(summary?.mapping?.customerProfileMatch?.issueCount, 1);
+  assert.equal(summary?.mapping?.customerProfileMatch?.issues?.[0]?.reason, "profile_import_missing");
+});
+
+test("ValidateProjectService marks mapping as warn and continues when customer profile match policy is warn", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    matchPolicy: "warn"
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'export const App = () => null;\n',
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-match-policy-warn"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      createComponentMatchReportArtifactForStageServices({
+        matchStatus: "ambiguous",
+        libraryResolutionStatus: "not_applicable",
+        libraryResolutionReason: "match_ambiguous"
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(validationInvoked, true);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      customerProfileMatch?: {
+        status?: string;
+        issueCount?: number;
+        issues?: Array<{ reason?: string }>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "warn");
+  assert.equal(summary?.mapping?.status, "warn");
+  assert.equal(summary?.mapping?.customerProfileMatch?.status, "warn");
+  assert.equal(summary?.mapping?.customerProfileMatch?.issueCount, 1);
+  assert.equal(summary?.mapping?.customerProfileMatch?.issues?.[0]?.reason, "match_ambiguous");
 });
 
 test("ValidateProjectService forwards aborted signal to project validation", async () => {

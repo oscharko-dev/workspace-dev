@@ -8,8 +8,13 @@ import { buildComponentManifest } from "../../parity/component-manifest.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
 import type { DesignIR } from "../../parity/types-ir.js";
+import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
-import type { StorybookPublicThemesArtifact, StorybookPublicTokensArtifact } from "../../storybook/types.js";
+import type {
+  ComponentMatchReportArtifact,
+  StorybookPublicThemesArtifact,
+  StorybookPublicTokensArtifact
+} from "../../storybook/types.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 
@@ -25,6 +30,18 @@ interface CodegenGenerateServiceDeps {
   buildComponentManifestFn: typeof buildComponentManifest;
   resolveStorybookThemeFn: typeof resolveStorybookTheme;
 }
+
+const parseComponentMatchReportArtifact = ({
+  input
+}: {
+  input: string;
+}): ComponentMatchReportArtifact => {
+  const artifact = JSON.parse(input) as ComponentMatchReportArtifact;
+  if (artifact.artifact !== "component.match_report" || !Array.isArray(artifact.entries)) {
+    throw new Error("Expected a component.match_report artifact with an entries array.");
+  }
+  return artifact;
+};
 
 export const createCodegenGenerateService = ({
   exportImageAssetsFromFigmaFn = exportImageAssetsFromFigma,
@@ -106,6 +123,9 @@ export const createCodegenGenerateService = ({
       }
 
       let resolvedStorybookTheme: ReturnType<typeof resolveStorybookThemeFn> | undefined;
+      let customerProfileDesignSystemConfig:
+        | ReturnType<typeof toCustomerProfileDesignSystemConfigFromComponentMatchReport>["config"]
+        | undefined;
       if (context.resolvedStorybookStaticDir) {
         if (!context.resolvedCustomerProfile) {
           throw createPipelineError({
@@ -177,6 +197,34 @@ export const createCodegenGenerateService = ({
           }
           throw error;
         }
+
+        let componentMatchReportArtifact: ComponentMatchReportArtifact;
+        try {
+          const componentMatchReportPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+          componentMatchReportArtifact = parseComponentMatchReportArtifact({
+            input: await readFile(componentMatchReportPath, "utf8")
+          });
+        } catch (error) {
+          throw createPipelineError({
+            code: "E_COMPONENT_MATCH_REPORT_INVALID",
+            stage: "codegen.generate",
+            message:
+              "Storybook-first code generation requires a readable component.match_report artifact when storybookStaticDir is enabled.",
+            cause: error,
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+
+        const matchReportDesignSystemConfig = toCustomerProfileDesignSystemConfigFromComponentMatchReport({
+          artifact: componentMatchReportArtifact
+        });
+        customerProfileDesignSystemConfig = matchReportDesignSystemConfig.config;
+        for (const warning of matchReportDesignSystemConfig.warnings) {
+          context.log({
+            level: "warn",
+            message: warning
+          });
+        }
       }
 
       const generator = generateArtifactsStreamingFn({
@@ -185,6 +233,7 @@ export const createCodegenGenerateService = ({
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
         ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
+        ...(customerProfileDesignSystemConfig ? { customerProfileDesignSystemConfig } : {}),
         ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
         generationLocale: context.resolvedGenerationLocale,

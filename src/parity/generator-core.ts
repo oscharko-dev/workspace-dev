@@ -19,6 +19,7 @@ import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import {
   applyDesignSystemMappingsToGeneratedTsx,
+  type DesignSystemConfig,
   getDefaultDesignSystemConfigPath,
   loadDesignSystemConfigFile
 } from "../design-system.js";
@@ -241,6 +242,7 @@ interface GenerateArtifactsInput {
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
   customerProfile?: ResolvedCustomerProfile;
+  customerProfileDesignSystemConfig?: DesignSystemConfig;
   resolvedStorybookTheme?: ResolvedStorybookTheme;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
@@ -464,6 +466,7 @@ const resolveGenerateArtifactsPhase = async ({
   llmCodegenMode,
   designSystemFilePath,
   customerProfile,
+  customerProfileDesignSystemConfig,
   onLog
 }: {
   input: GenerateArtifactsInput;
@@ -473,6 +476,7 @@ const resolveGenerateArtifactsPhase = async ({
   llmCodegenMode: LlmCodegenMode;
   designSystemFilePath: string;
   customerProfile: ResolvedCustomerProfile | undefined;
+  customerProfileDesignSystemConfig: DesignSystemConfig | undefined;
   onLog: (message: string) => void;
 }): Promise<GenerateArtifactsResolvedPhase> => {
   void llmModelName;
@@ -498,7 +502,9 @@ const resolveGenerateArtifactsPhase = async ({
   const resolvedFormHandlingMode = resolveFormHandlingMode({
     requestedMode: formHandlingMode
   });
-  const customerProfileConfig = customerProfile ? toCustomerProfileDesignSystemConfig({ profile: customerProfile }) : undefined;
+  const customerProfileConfig =
+    customerProfileDesignSystemConfig ??
+    (customerProfile ? toCustomerProfileDesignSystemConfig({ profile: customerProfile }) : undefined);
   const designSystemConfig = await runtimeAdapters.loadDesignSystemConfig({
     designSystemFilePath,
     onLog
@@ -923,6 +929,7 @@ export async function* generateArtifactsStreaming(
     ir,
     componentMappings,
     customerProfile,
+    customerProfileDesignSystemConfig,
     resolvedStorybookTheme,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
     designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
@@ -948,6 +955,7 @@ export async function* generateArtifactsStreaming(
     llmCodegenMode,
     designSystemFilePath,
     customerProfile: customerProfile ?? input.context?.config.customerProfile,
+    customerProfileDesignSystemConfig,
     onLog
   });
   const {

@@ -14,8 +14,10 @@ import {
   resolveCustomerProfileFamily,
   safeParseCustomerProfileConfig,
   toCustomerProfileConfigSnapshot,
+  toCustomerProfileDesignSystemConfigFromComponentMatchReport,
   toCustomerProfileDesignSystemConfig
 } from "./customer-profile.js";
+import type { ComponentMatchReportArtifact } from "./storybook/types.js";
 
 const createRawCustomerProfile = () => ({
   version: 1,
@@ -129,6 +131,33 @@ test("safeParseCustomerProfileConfig normalizes valid profile data and exposes r
       }
     }
   });
+});
+
+test("resolveCustomerProfileComponentImport supports family-gated resolution", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: createRawCustomerProfile()
+  });
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected customer profile to parse successfully.");
+  }
+
+  assert.equal(
+    resolveCustomerProfileComponentImport({
+      profile: parsed.config,
+      componentKey: "Button",
+      familyId: "Components"
+    })?.localName,
+    "CustomerButton"
+  );
+  assert.equal(
+    resolveCustomerProfileComponentImport({
+      profile: parsed.config,
+      componentKey: "Button",
+      familyId: "ReactUI"
+    }),
+    undefined
+  );
 });
 
 test("safeParseCustomerProfileConfig rejects duplicate aliases and duplicate import bindings", () => {
@@ -555,6 +584,214 @@ test("toCustomerProfileDesignSystemConfig includes propMappings only when non-em
 
   assert.notEqual(config.mappings.Button?.propMappings, undefined);
   assert.equal(config.mappings.Card?.propMappings, undefined);
+});
+
+test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only stable resolved imports", () => {
+  const artifact: ComponentMatchReportArtifact = {
+    artifact: "component.match_report",
+    version: 1,
+    summary: {
+      totalFigmaFamilies: 4,
+      storybookFamilyCount: 4,
+      storybookEntryCount: 4,
+      matched: 4,
+      ambiguous: 0,
+      unmatched: 0,
+      libraryResolution: {
+        byStatus: {
+          resolved_import: 3,
+          mui_fallback_allowed: 0,
+          mui_fallback_denied: 0,
+          not_applicable: 1
+        },
+        byReason: {
+          profile_import_resolved: 3,
+          profile_import_missing: 0,
+          profile_import_family_mismatch: 0,
+          profile_family_unresolved: 0,
+          match_ambiguous: 1,
+          match_unmatched: 0
+        }
+      }
+    },
+    entries: [
+      {
+        figma: {
+          familyKey: "button-primary",
+          familyName: "Button",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Button",
+          import: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        },
+        storybookFamily: {
+          familyId: "family-button",
+          title: "Components/Button",
+          name: "Button",
+          tier: "Components",
+          storyCount: 1
+        },
+        storyVariant: {
+          entryId: "button--primary",
+          storyName: "Primary"
+        }
+      },
+      {
+        figma: {
+          familyKey: "button-secondary",
+          familyName: "Button",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Button",
+          import: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        },
+        storybookFamily: {
+          familyId: "family-button",
+          title: "Components/Button",
+          name: "Button",
+          tier: "Components",
+          storyCount: 1
+        },
+        storyVariant: {
+          entryId: "button--secondary",
+          storyName: "Secondary"
+        }
+      },
+      {
+        figma: {
+          familyKey: "card-primary",
+          familyName: "Card",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "ReactUI",
+          profileFamily: "ReactUI",
+          componentKey: "Card",
+          import: {
+            package: "@customer/react-ui",
+            exportName: "ContentCard",
+            localName: "CustomerCard"
+          }
+        },
+        storybookFamily: {
+          familyId: "family-card",
+          title: "ReactUI/Card",
+          name: "Card",
+          tier: "ReactUI",
+          storyCount: 1
+        }
+      },
+      {
+        figma: {
+          familyKey: "card-secondary",
+          familyName: "Card",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "ReactUI",
+          profileFamily: "ReactUI",
+          componentKey: "Card",
+          import: {
+            package: "@customer/react-ui-v2",
+            exportName: "ContentCard",
+            localName: "CustomerCard"
+          }
+        },
+        storybookFamily: {
+          familyId: "family-card",
+          title: "ReactUI/Card",
+          name: "Card",
+          tier: "ReactUI",
+          storyCount: 1
+        }
+      }
+    ]
+  };
+
+  const result = toCustomerProfileDesignSystemConfigFromComponentMatchReport({
+    artifact
+  });
+
+  assert.deepEqual(result.config, {
+    library: "__customer_profile__",
+    mappings: {
+      Button: {
+        import: "@customer/components",
+        export: "PrimaryButton",
+        component: "CustomerButton",
+        propMappings: {
+          variant: "appearance"
+        }
+      }
+    }
+  });
+  assert.deepEqual(result.warnings, [
+    "Component match report resolved multiple customer-profile imports for component key 'Card'; excluding it from storybook-first design-system mappings."
+  ]);
 });
 
 test("resolveCustomerProfileFamily is case-insensitive and trims whitespace", () => {

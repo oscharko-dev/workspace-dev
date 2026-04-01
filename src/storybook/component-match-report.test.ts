@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { parseCustomerProfileConfig } from "../customer-profile.js";
 import {
   buildComponentMatchReportArtifact,
   serializeComponentMatchReportArtifact
@@ -355,6 +356,90 @@ const createLibraryResolutionArtifact = ({
   ]
 });
 
+const createCustomerProfileForComponentMatchTests = ({
+  imports = {
+    Button: {
+      family: "Components",
+      package: "@customer/components",
+      export: "PrimaryButton",
+      importAlias: "CustomerButton",
+      propMappings: {
+        variant: "appearance"
+      }
+    }
+  },
+  fallbackComponents
+}: {
+  imports?: Record<
+    string,
+    {
+      family: string;
+      package: string;
+      export: string;
+      importAlias?: string;
+      propMappings?: Record<string, string>;
+    }
+  >;
+  fallbackComponents?: Record<string, "allow" | "deny">;
+} = {}) => {
+  const profile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        },
+        {
+          id: "ReactUI",
+          tierPriority: 20,
+          aliases: {
+            figma: ["ReactUI"],
+            storybook: ["reactui"],
+            code: ["@customer/react-ui"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light"
+          }
+        }
+      ],
+      imports: {
+        components: imports
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          ...(fallbackComponents ? { components: fallbackComponents } : {})
+        }
+      },
+      template: {
+        dependencies: {}
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!profile) {
+    throw new Error("Failed to create component match customer profile fixture.");
+  }
+  return profile;
+};
+
 test("buildComponentMatchReportArtifact marks exact design-link and canonical-family matches as high confidence", () => {
   const figmaAnalysis = createFigmaAnalysis({
     componentFamilies: [
@@ -607,6 +692,283 @@ test("buildComponentMatchReportArtifact selects the best story variant from Figm
   );
 });
 
+test("buildComponentMatchReportArtifact resolves customer-profile imports for matched Storybook families", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "button--primary",
+      title: "Components/Button",
+      name: "Primary",
+      familyId: "family-button",
+      componentPath: "./src/components/Button.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/Button?node-id=11-22"],
+      args: {
+        variant: "primary"
+      }
+    })
+  ];
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [createFigmaFamily({ familyKey: "button-family", familyName: "Button" })]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-button",
+          title: "Components/Button",
+          name: "Button",
+          entryIds: ["button--primary"],
+          storyEntryIds: ["button--primary"],
+          componentPath: "./src/components/Button.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/Button?node-id=11-22"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "button-design-link",
+          type: "story_design_link",
+          entryId: "button--primary",
+          url: "https://www.figma.com/design/lib-file/Button?node-id=11-22"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "button-family",
+      canonicalFamilyName: "Button",
+      fileKey: "lib-file",
+      nodeId: "11:22"
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests()
+  });
+
+  const entry = artifact.entries[0];
+  assert.deepEqual(entry?.libraryResolution, {
+    status: "resolved_import",
+    reason: "profile_import_resolved",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "Button",
+    import: {
+      package: "@customer/components",
+      exportName: "PrimaryButton",
+      localName: "CustomerButton",
+      propMappings: {
+        variant: "appearance"
+      }
+    }
+  });
+  assert.deepEqual(artifact.summary.libraryResolution.byStatus, {
+    resolved_import: 1,
+    mui_fallback_allowed: 0,
+    mui_fallback_denied: 0,
+    not_applicable: 0
+  });
+  assert.deepEqual(artifact.summary.libraryResolution.byReason, {
+    profile_import_resolved: 1,
+    profile_import_missing: 0,
+    profile_import_family_mismatch: 0,
+    profile_family_unresolved: 0,
+    match_ambiguous: 0,
+    match_unmatched: 0
+  });
+});
+
+test("buildComponentMatchReportArtifact marks allowed MUI fallbacks when profile imports are missing", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "card--default",
+      title: "Components/Card",
+      name: "Default",
+      familyId: "family-card",
+      componentPath: "./src/components/Card.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/Card?node-id=2-4"]
+    })
+  ];
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [createFigmaFamily({ familyKey: "card-family", familyName: "Card" })]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-card",
+          title: "Components/Card",
+          name: "Card",
+          entryIds: ["card--default"],
+          storyEntryIds: ["card--default"],
+          componentPath: "./src/components/Card.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/Card?node-id=2-4"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "card-design-link",
+          type: "story_design_link",
+          entryId: "card--default",
+          url: "https://www.figma.com/design/lib-file/Card?node-id=2-4"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "card-family",
+      canonicalFamilyName: "Card",
+      fileKey: "lib-file",
+      nodeId: "2:4"
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests({
+      fallbackComponents: {
+        Card: "allow"
+      }
+    })
+  });
+
+  assert.deepEqual(artifact.entries[0]?.libraryResolution, {
+    status: "mui_fallback_allowed",
+    reason: "profile_import_missing",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "Card"
+  });
+});
+
+test("buildComponentMatchReportArtifact marks denied MUI fallbacks when profile imports are missing", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "text-field--default",
+      title: "Components/TextField",
+      name: "Default",
+      familyId: "family-text-field",
+      componentPath: "./src/components/TextField.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/TextField?node-id=3-6"]
+    })
+  ];
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [createFigmaFamily({ familyKey: "text-field-family", familyName: "TextField" })]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-text-field",
+          title: "Components/TextField",
+          name: "TextField",
+          entryIds: ["text-field--default"],
+          storyEntryIds: ["text-field--default"],
+          componentPath: "./src/components/TextField.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/TextField?node-id=3-6"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "text-field-design-link",
+          type: "story_design_link",
+          entryId: "text-field--default",
+          url: "https://www.figma.com/design/lib-file/TextField?node-id=3-6"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "text-field-family",
+      canonicalFamilyName: "TextField",
+      fileKey: "lib-file",
+      nodeId: "3:6"
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests()
+  });
+
+  assert.deepEqual(artifact.entries[0]?.libraryResolution, {
+    status: "mui_fallback_denied",
+    reason: "profile_import_missing",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "TextField"
+  });
+});
+
+test("buildComponentMatchReportArtifact reports family mismatches without leaking private path data", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "button--default",
+      title: "Components/Button",
+      name: "Default",
+      familyId: "family-button",
+      componentPath: "./src/components/Button.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/Button?node-id=11-22"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [createFigmaFamily({ familyKey: "button-family", familyName: "Button" })]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-button",
+          title: "Components/Button",
+          name: "Button",
+          entryIds: ["button--default"],
+          storyEntryIds: ["button--default"],
+          componentPath: "./src/components/Button.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/Button?node-id=11-22"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "button-design-link",
+          type: "story_design_link",
+          entryId: "button--default",
+          url: "https://www.figma.com/design/lib-file/Button?node-id=11-22"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "button-family",
+      canonicalFamilyName: "Button",
+      fileKey: "lib-file",
+      nodeId: "11:22"
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests({
+      imports: {
+        Button: {
+          family: "ReactUI",
+          package: "@customer/react-ui",
+          export: "SharedButton",
+          importAlias: "CustomerButton"
+        }
+      }
+    })
+  });
+
+  assert.deepEqual(artifact.entries[0]?.libraryResolution, {
+    status: "mui_fallback_denied",
+    reason: "profile_import_family_mismatch",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "Button"
+  });
+
+  const serialized = serializeComponentMatchReportArtifact({ artifact });
+  assert.equal(serialized.includes("importPath"), false);
+  assert.equal(serialized.includes("componentPath"), false);
+  assert.equal(serialized.includes("https://www.figma.com"), false);
+  assert.equal(serialized.includes("lib-file"), false);
+  assert.equal(serialized.includes("11:22"), false);
+});
+
 test("serializeComponentMatchReportArtifact is byte-stable and excludes raw private source details", () => {
   const figmaAnalysis = createFigmaAnalysis({
     componentFamilies: [createFigmaFamily({ familyKey: "button-family", familyName: "Button" })]
@@ -652,7 +1014,8 @@ test("serializeComponentMatchReportArtifact is byte-stable and excludes raw priv
       canonicalFamilyName: "Button",
       fileKey: "lib-file",
       nodeId: "11:22"
-    })
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests()
   });
 
   const firstBytes = serializeComponentMatchReportArtifact({ artifact });

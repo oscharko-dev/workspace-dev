@@ -5,6 +5,11 @@ import {
   type CustomerProfileImportIssue,
   type ResolvedCustomerProfile
 } from "./customer-profile.js";
+import type {
+  ComponentMatchLibraryResolutionReason,
+  ComponentMatchLibraryResolutionStatus,
+  ComponentMatchReportArtifact
+} from "./storybook/types.js";
 
 export interface CustomerProfileValidationIssue {
   code:
@@ -31,6 +36,50 @@ export interface CustomerProfileValidationSummary {
     policy: ResolvedCustomerProfile["strictness"]["token"];
   };
 }
+
+export interface CustomerProfileMatchValidationIssue {
+  status: ComponentMatchLibraryResolutionStatus;
+  reason: ComponentMatchLibraryResolutionReason;
+  figmaFamilyKey: string;
+  figmaFamilyName: string;
+  componentKey?: string;
+  storybookTier?: string;
+  profileFamily?: string;
+  message: string;
+}
+
+export interface CustomerProfileMatchValidationSummary {
+  status: "ok" | "warn" | "failed";
+  policy: ResolvedCustomerProfile["strictness"]["match"];
+  issueCount: number;
+  issues: CustomerProfileMatchValidationIssue[];
+  counts: {
+    byStatus: Record<ComponentMatchLibraryResolutionStatus, number>;
+    byReason: Record<ComponentMatchLibraryResolutionReason, number>;
+  };
+}
+
+const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
+  "resolved_import",
+  "mui_fallback_allowed",
+  "mui_fallback_denied",
+  "not_applicable"
+] as const satisfies readonly ComponentMatchLibraryResolutionStatus[];
+const COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS = [
+  "profile_import_resolved",
+  "profile_import_missing",
+  "profile_import_family_mismatch",
+  "profile_family_unresolved",
+  "match_ambiguous",
+  "match_unmatched"
+] as const satisfies readonly ComponentMatchLibraryResolutionReason[];
+const ISSUE_LIBRARY_RESOLUTION_REASONS = new Set<ComponentMatchLibraryResolutionReason>([
+  "match_ambiguous",
+  "match_unmatched",
+  "profile_family_unresolved",
+  "profile_import_missing",
+  "profile_import_family_mismatch"
+]);
 
 const readJsonRecord = async ({ filePath }: { filePath: string }): Promise<Record<string, unknown>> => {
   const parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
@@ -179,6 +228,119 @@ const validateTemplateAliases = async ({
   }
 
   return issues;
+};
+
+const createMatchStatusCounts = (): Record<ComponentMatchLibraryResolutionStatus, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES.map((status) => [status, 0])
+  ) as Record<ComponentMatchLibraryResolutionStatus, number>;
+};
+
+const createMatchReasonCounts = (): Record<ComponentMatchLibraryResolutionReason, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS.map((reason) => [reason, 0])
+  ) as Record<ComponentMatchLibraryResolutionReason, number>;
+};
+
+const toCustomerProfileMatchIssueMessage = ({
+  componentKey,
+  figmaFamilyName,
+  profileFamily,
+  reason,
+  storybookTier
+}: {
+  componentKey?: string;
+  figmaFamilyName: string;
+  profileFamily?: string;
+  reason: ComponentMatchLibraryResolutionReason;
+  storybookTier?: string;
+}): string => {
+  const componentLabel = componentKey ? `component '${componentKey}'` : `Figma family '${figmaFamilyName}'`;
+  if (reason === "match_ambiguous") {
+    return `${componentLabel} remains ambiguous in component.match_report.`;
+  }
+  if (reason === "match_unmatched") {
+    return `${componentLabel} is unmatched in component.match_report.`;
+  }
+  if (reason === "profile_family_unresolved") {
+    return `${componentLabel} could not resolve Storybook tier '${storybookTier ?? "unknown"}' to a customer profile family.`;
+  }
+  if (reason === "profile_import_family_mismatch") {
+    return `${componentLabel} resolves to customer profile family '${profileFamily ?? "unknown"}' but its configured import belongs to a different family.`;
+  }
+  if (reason === "profile_import_missing") {
+    return `${componentLabel} has no customer profile import for family '${profileFamily ?? "unknown"}'.`;
+  }
+  return `${componentLabel} resolved successfully.`;
+};
+
+export const validateCustomerProfileComponentMatchReport = ({
+  artifact,
+  customerProfile
+}: {
+  artifact: ComponentMatchReportArtifact;
+  customerProfile: ResolvedCustomerProfile;
+}): CustomerProfileMatchValidationSummary => {
+  const counts = {
+    byStatus: createMatchStatusCounts(),
+    byReason: createMatchReasonCounts()
+  };
+  const issues: CustomerProfileMatchValidationIssue[] = [];
+
+  for (const entry of artifact.entries) {
+    counts.byStatus[entry.libraryResolution.status] += 1;
+    counts.byReason[entry.libraryResolution.reason] += 1;
+
+    const hasNonIssueStatus =
+      entry.libraryResolution.status === "resolved_import" || entry.libraryResolution.status === "mui_fallback_allowed";
+    const hasIssueReason = ISSUE_LIBRARY_RESOLUTION_REASONS.has(entry.libraryResolution.reason);
+    const hasIssueStatus = entry.libraryResolution.status === "mui_fallback_denied";
+    if (hasNonIssueStatus || (!hasIssueReason && !hasIssueStatus)) {
+      continue;
+    }
+
+    issues.push({
+      status: entry.libraryResolution.status,
+      reason: entry.libraryResolution.reason,
+      figmaFamilyKey: entry.figma.familyKey,
+      figmaFamilyName: entry.figma.familyName,
+      ...(entry.libraryResolution.componentKey ? { componentKey: entry.libraryResolution.componentKey } : {}),
+      ...(entry.libraryResolution.storybookTier ? { storybookTier: entry.libraryResolution.storybookTier } : {}),
+      ...(entry.libraryResolution.profileFamily ? { profileFamily: entry.libraryResolution.profileFamily } : {}),
+      message: toCustomerProfileMatchIssueMessage({
+        figmaFamilyName: entry.figma.familyName,
+        reason: entry.libraryResolution.reason,
+        ...(entry.libraryResolution.componentKey ? { componentKey: entry.libraryResolution.componentKey } : {}),
+        ...(entry.libraryResolution.profileFamily ? { profileFamily: entry.libraryResolution.profileFamily } : {}),
+        ...(entry.libraryResolution.storybookTier ? { storybookTier: entry.libraryResolution.storybookTier } : {})
+      })
+    });
+  }
+
+  issues.sort((left, right) => {
+    const byFamilyName = left.figmaFamilyName.localeCompare(right.figmaFamilyName);
+    if (byFamilyName !== 0) {
+      return byFamilyName;
+    }
+    return left.figmaFamilyKey.localeCompare(right.figmaFamilyKey);
+  });
+
+  const status =
+    issues.length === 0
+      ? "ok"
+      : customerProfile.strictness.match === "error"
+        ? "failed"
+        : customerProfile.strictness.match === "warn"
+          ? "warn"
+          : "ok";
+
+  return {
+    status,
+    policy: customerProfile.strictness.match,
+    issueCount: issues.length,
+    issues,
+    counts
+  };
 };
 
 export const validateGeneratedProjectCustomerProfile = async ({
