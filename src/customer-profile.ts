@@ -1299,7 +1299,12 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     }
 
     const legacyEntries = entries.filter((entry) => !entry.resolvedApi || !entry.resolvedProps);
-    const resolvedEntries = entries.filter((entry) => entry.resolvedApi && entry.resolvedProps);
+    const resolvedEntries = entries.filter(
+      (entry): entry is typeof entry & {
+        resolvedApi: NonNullable<typeof entry.resolvedApi>;
+        resolvedProps: NonNullable<typeof entry.resolvedProps>;
+      } => entry.resolvedApi !== undefined && entry.resolvedProps !== undefined
+    );
     if (legacyEntries.length > 0 && resolvedEntries.length > 0) {
       warnings.push(
         `Component match report mixed legacy and resolved component-api records for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
@@ -1310,9 +1315,9 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     if (
       resolvedEntries.some(
         (entry) =>
-          entry.resolvedApi?.status !== "resolved" ||
-          entry.resolvedProps?.status !== "resolved" ||
-          entry.resolvedProps?.codegenCompatible !== true
+          entry.resolvedApi.status !== "resolved" ||
+          entry.resolvedProps.status !== "resolved" ||
+          !entry.resolvedProps.codegenCompatible
       )
     ) {
       warnings.push(
@@ -1322,7 +1327,7 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     }
 
     const resolvedApiSignatures = new Set(
-      resolvedEntries.map((entry) => toResolvedApiSignature({ resolvedApi: entry.resolvedApi! }))
+      resolvedEntries.map((entry) => toResolvedApiSignature({ resolvedApi: entry.resolvedApi }))
     );
     if (resolvedApiSignatures.size > 1) {
       warnings.push(
@@ -1339,7 +1344,7 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     const propMappings = resolvedImport.propMappings ? toSortedPropMappings(resolvedImport.propMappings) : undefined;
     const resolvedApi = resolvedEntries[0]?.resolvedApi;
     const omittedProps = sortUniqueStrings(
-      resolvedEntries.flatMap((entry) => entry.resolvedProps?.omittedProps.map((item) => item.sourceProp) ?? [])
+      resolvedEntries.flatMap((entry) => entry.resolvedProps.omittedProps.map((item) => item.sourceProp))
     );
     const defaultProps = resolvedApi ? toResolvedApiDefaultPropsRecord({ resolvedApi }) : undefined;
     if (legacyEntries.length > 0) {

@@ -460,7 +460,7 @@ export const createValidateProjectService = ({
               context,
               validatedAt,
               customerProfileMatchSummary,
-              ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {})
+              customerProfileComponentApiSummary
             });
             await persistValidationSummaryArtifacts({
               context,
@@ -494,7 +494,7 @@ export const createValidateProjectService = ({
             const summary = await buildValidationSummaryArtifact({
               context,
               validatedAt,
-              ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
+              customerProfileMatchSummary,
               customerProfileComponentApiSummary
             });
             await persistValidationSummaryArtifacts({

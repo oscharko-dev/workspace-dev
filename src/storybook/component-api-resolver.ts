@@ -581,8 +581,8 @@ export const resolveComponentApiContract = ({
     relevantSourceProps.add(sourceProp);
   }
 
-  const storyArgs = isPlainRecord(storyEntry?.metadata.args) ? storyEntry?.metadata.args : {};
-  const storyArgTypes = isPlainRecord(storyEntry?.metadata.argTypes) ? storyEntry?.metadata.argTypes : {};
+  const storyArgs = isPlainRecord(storyEntry?.metadata.args) ? storyEntry.metadata.args : {};
+  const storyArgTypes = isPlainRecord(storyEntry?.metadata.argTypes) ? storyEntry.metadata.argTypes : {};
   for (const targetPropName of new Set([...Object.keys(storyArgs), ...Object.keys(storyArgTypes)])) {
     const targetProp = normalizePropName(targetPropName);
     if (!targetProp || targetProp === "children") {
@@ -668,11 +668,11 @@ export const resolveComponentApiContract = ({
 
     const defaultProp = defaultsByName.get(observed.targetProp);
     const values = sortUniquePrimitiveValues(observed.values);
-    const matchesStableDefault =
-      values.length > 0 &&
+    if (
       defaultProp !== undefined &&
-      values.every((value) => value === defaultProp.value);
-    if (matchesStableDefault && defaultProp) {
+      values.length > 0 &&
+      values.every((value) => value === defaultProp.value)
+    ) {
       omittedDefaults.push({
         sourceProp: observed.sourceProp,
         targetProp: observed.targetProp,

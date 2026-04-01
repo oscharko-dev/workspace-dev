@@ -510,7 +510,7 @@ export const validateCustomerProfileComponentApiComponentMatchReport = ({
   });
 
   for (const issue of issues) {
-    counts.byReason[issue.code] = (counts.byReason[issue.code] ?? 0) + 1;
+    counts.byReason[issue.code] = counts.byReason[issue.code] + 1;
   }
 
   const hasError = issues.some((issue) => issue.severity === "error");
