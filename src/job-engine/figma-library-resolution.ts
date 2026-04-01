@@ -154,9 +154,20 @@ const isTimeoutError = (error: unknown): boolean => {
   return normalized.includes("aborted") || normalized.includes("timeout");
 };
 
-const waitFor = async (delayMs: number): Promise<void> => {
+const waitFor = async (delayMs: number, signal?: AbortSignal): Promise<void> => {
+  if (signal?.aborted) {
+    return;
+  }
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, delayMs);
+    const timer = setTimeout(resolve, delayMs);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true }
+    );
   });
 };
 
@@ -747,7 +758,7 @@ const fetchPublishedLibraryAsset = async ({
             maxRetries
           )}).`
         );
-        await waitFor(delayMs);
+        await waitFor(delayMs, abortSignal);
         continue;
       }
       if (response.status === 403) {
@@ -784,7 +795,7 @@ const fetchPublishedLibraryAsset = async ({
             maxRetries
           )}).`
         );
-        await waitFor(delayMs);
+        await waitFor(delayMs, abortSignal);
         continue;
       }
       return toLookupIssue({
