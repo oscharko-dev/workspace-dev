@@ -751,9 +751,14 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
   const customerProfilePath = path.join(customerProfileDir, "customer-profile.json");
   await mkdir(customerProfileDir, { recursive: true });
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  const muiMaterialVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiMaterialVersion, "string");
   await writeFile(
     customerProfilePath,
-    JSON.stringify(createCustomerProfileFixture({ packageName: "@customer/components-initial" })),
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@mui/material", dependencyVersion: muiMaterialVersion })),
     "utf8"
   );
 
@@ -785,6 +790,7 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
   });
   assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
 
+  // Overwrite the profile file on disk — regeneration must ignore this and use the stored snapshot
   await writeFile(
     customerProfilePath,
     JSON.stringify(createCustomerProfileFixture({ packageName: "@customer/components-updated", dependencyVersion: "^9.9.9" })),
@@ -807,7 +813,8 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
   ) as {
     dependencies?: Record<string, string>;
   };
-  assert.equal(generatedPackage.dependencies?.["@customer/components-initial"], "^1.2.3");
+  // Regeneration must use the stored snapshot (@mui/material), not the updated file (@customer/components-updated)
+  assert.equal(generatedPackage.dependencies?.["@mui/material"], muiMaterialVersion);
   assert.equal(generatedPackage.dependencies?.["@customer/components-updated"], undefined);
 
   const regenArtifactStore = new StageArtifactStore({ jobDir: String(regenStatus.artifacts.jobDir) });
@@ -820,9 +827,8 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
     };
   }>(STAGE_ARTIFACT_KEYS.customerProfileResolved);
   assert.equal(regenSnapshot?.origin, "request");
-  assert.deepEqual(regenSnapshot?.profile?.template?.dependencies, {
-    "@customer/components-initial": "^1.2.3"
-  });
+  assert.ok(regenSnapshot?.profile?.template?.dependencies?.["@mui/material"] === muiMaterialVersion);
+  assert.equal(regenSnapshot?.profile?.template?.dependencies?.["@customer/components-updated"], undefined);
 });
 
 test("submitRegeneration keeps storybook-first generated imports pinned to the stored customer profile snapshot", async () => {
@@ -942,7 +948,16 @@ test("submitRegeneration fails with E_CUSTOMER_PROFILE_SNAPSHOT_MISSING when an 
   const customerProfilePath = path.join(customerProfileDir, "customer-profile.json");
   await mkdir(customerProfileDir, { recursive: true });
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
-  await writeFile(customerProfilePath, JSON.stringify(createCustomerProfileFixture()), "utf8");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  const muiVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiVersion, "string");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@mui/material", dependencyVersion: muiVersion })),
+    "utf8"
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -1079,9 +1094,14 @@ test("regeneration reuses Storybook artifacts from the source job after the orig
   const customerProfilePath = path.join(tempRoot, "customer-profile.json");
   const storybookBuildDir = await createSyntheticStorybookBuild();
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  const muiVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiVersion, "string");
   await writeFile(
     customerProfilePath,
-    JSON.stringify(createCustomerProfileFixture({ storybookLightTheme: "default" })),
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@mui/material", dependencyVersion: muiVersion, storybookLightTheme: "default" })),
     "utf8"
   );
 
@@ -1146,9 +1166,14 @@ test("regeneration fails when a source job declared Storybook input but a reusab
   const customerProfilePath = path.join(tempRoot, "customer-profile.json");
   const storybookBuildDir = await createSyntheticStorybookBuild();
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  const muiVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiVersion, "string");
   await writeFile(
     customerProfilePath,
-    JSON.stringify(createCustomerProfileFixture({ storybookLightTheme: "default" })),
+    JSON.stringify(createCustomerProfileFixture({ packageName: "@mui/material", dependencyVersion: muiVersion, storybookLightTheme: "default" })),
     "utf8"
   );
 
