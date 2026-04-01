@@ -1084,6 +1084,113 @@ test("buildComponentMatchReportArtifact classifies design_link evidence as deriv
   assert.notEqual(designLinkEvidence.reliability, "reference_only");
 });
 
+test("buildComponentMatchReportArtifact uses MUI fallback when Storybook tier is not in customer profile families", () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: { light: "sparkasse-light" }
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          components: {
+            Card: "allow"
+          }
+        }
+      },
+      template: { dependencies: {} },
+      strictness: { match: "warn", token: "off", import: "off" }
+    }
+  });
+  assert.notEqual(customerProfile, undefined);
+
+  const designUrl = "https://www.figma.com/design/ABC123/MyFile?node-id=10:20";
+  const entries = [
+    createCatalogEntry({
+      id: "card--default",
+      title: "UnknownTier/Card",
+      name: "Card",
+      familyId: "family-card",
+      componentPath: "src/components/Card.tsx",
+      designUrls: [designUrl],
+      args: { variant: "outlined", elevation: "0" }
+    })
+  ];
+  const families = [
+    createCatalogFamily({
+      id: "family-card",
+      title: "UnknownTier/Card",
+      name: "Card",
+      entryIds: ["card--default"],
+      storyEntryIds: ["card--default"],
+      componentPath: "src/components/Card.tsx",
+      designUrls: [designUrl]
+    })
+  ];
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [createFigmaFamily({ familyKey: "card-family", familyName: "Card" })]
+    }),
+    catalogArtifact: createCatalogArtifact({ entries, families }),
+    evidenceArtifact: createEvidenceArtifact({ evidence: [] }),
+    resolvedCustomerProfile: customerProfile,
+    figmaLibraryResolutionArtifact: {
+      artifact: "figma.library_resolution",
+      version: 1,
+      entries: [
+        {
+          componentId: "card-family-component",
+          componentSetId: "card-family-set",
+          familyKey: "card-family",
+          status: "resolved",
+          canonicalFamilyName: "Card",
+          canonicalFamilyNameSource: "published_component",
+          variantProperties: [],
+          publishedComponent: {
+            fileKey: "ABC123",
+            nodeId: "10:20",
+            name: "Card",
+            description: ""
+          }
+        }
+      ]
+    }
+  });
+
+  const entry = artifact.entries[0];
+  assert.equal(entry?.match.status, "matched");
+  assert.equal(entry?.libraryResolution.reason, "profile_family_unresolved");
+  assert.equal(entry?.libraryResolution.status, "mui_fallback_allowed");
+  assert.equal(entry?.libraryResolution.componentKey, "Card");
+});
+
 test("buildComponentMatchReportArtifact produces unmatched when no Storybook families exist", () => {
   const figmaAnalysis = createFigmaAnalysis({
     componentFamilies: [

@@ -36,11 +36,17 @@ const parseComponentMatchReportArtifact = ({
 }: {
   input: string;
 }): ComponentMatchReportArtifact => {
-  const artifact = JSON.parse(input) as ComponentMatchReportArtifact;
-  if (artifact.artifact !== "component.match_report" || !Array.isArray(artifact.entries)) {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("artifact" in parsed) ||
+    (parsed as Record<string, unknown>).artifact !== "component.match_report" ||
+    !Array.isArray((parsed as Record<string, unknown>).entries)
+  ) {
     throw new Error("Expected a component.match_report artifact with an entries array.");
   }
-  return artifact;
+  return parsed as ComponentMatchReportArtifact;
 };
 
 export const createCodegenGenerateService = ({

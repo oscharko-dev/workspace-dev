@@ -5,7 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { parseCustomerProfileConfig } from "./customer-profile.js";
 import { applyCustomerProfileToTemplate } from "./customer-profile-template.js";
-import { validateGeneratedProjectCustomerProfile } from "./customer-profile-validation.js";
+import {
+  validateCustomerProfileComponentMatchReport,
+  validateGeneratedProjectCustomerProfile
+} from "./customer-profile-validation.js";
+import type { ComponentMatchReportArtifact, ComponentMatchReportEntry } from "./storybook/types.js";
 
 const createCustomerProfile = () => {
   const parsed = parseCustomerProfileConfig({
@@ -394,4 +398,208 @@ export const App = () => (
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });
   }
+});
+
+const createMatchReportEntry = (
+  overrides: Partial<ComponentMatchReportEntry> & {
+    familyKey: string;
+    familyName: string;
+    libraryResolution: ComponentMatchReportEntry["libraryResolution"];
+  }
+): ComponentMatchReportEntry => ({
+  figma: {
+    familyKey: overrides.familyKey,
+    familyName: overrides.familyName,
+    nodeCount: 1,
+    variantProperties: []
+  },
+  match: {
+    status: "matched",
+    confidence: "high",
+    confidenceScore: 100
+  },
+  usedEvidence: [],
+  rejectionReasons: [],
+  fallbackReasons: [],
+  libraryResolution: overrides.libraryResolution,
+  ...("storybookFamily" in overrides ? { storybookFamily: overrides.storybookFamily } : {})
+});
+
+const createMatchReportArtifact = (entries: ComponentMatchReportEntry[]): ComponentMatchReportArtifact => ({
+  artifact: "component.match_report",
+  version: 1,
+  summary: {
+    totalFigmaFamilies: entries.length,
+    storybookFamilyCount: entries.length,
+    storybookEntryCount: entries.length,
+    matched: entries.length,
+    ambiguous: 0,
+    unmatched: 0,
+    libraryResolution: {
+      byStatus: {
+        resolved_import: entries.filter((e) => e.libraryResolution.status === "resolved_import").length,
+        mui_fallback_allowed: entries.filter((e) => e.libraryResolution.status === "mui_fallback_allowed").length,
+        mui_fallback_denied: entries.filter((e) => e.libraryResolution.status === "mui_fallback_denied").length,
+        not_applicable: entries.filter((e) => e.libraryResolution.status === "not_applicable").length
+      },
+      byReason: {
+        profile_import_resolved: entries.filter((e) => e.libraryResolution.reason === "profile_import_resolved").length,
+        profile_import_missing: entries.filter((e) => e.libraryResolution.reason === "profile_import_missing").length,
+        profile_import_family_mismatch: entries.filter((e) => e.libraryResolution.reason === "profile_import_family_mismatch").length,
+        profile_family_unresolved: entries.filter((e) => e.libraryResolution.reason === "profile_family_unresolved").length,
+        match_ambiguous: entries.filter((e) => e.libraryResolution.reason === "match_ambiguous").length,
+        match_unmatched: entries.filter((e) => e.libraryResolution.reason === "match_unmatched").length
+      }
+    }
+  },
+  entries
+});
+
+test("validateCustomerProfileComponentMatchReport returns ok when all entries are resolved_import", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "button-primary",
+      familyName: "Button",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Button"
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "ok");
+  assert.equal(result.issueCount, 0);
+  assert.equal(result.counts.byStatus.resolved_import, 1);
+});
+
+test("validateCustomerProfileComponentMatchReport returns warn for issues when match policy is warn", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "dialog-primary",
+      familyName: "Dialog",
+      libraryResolution: {
+        status: "mui_fallback_denied",
+        reason: "profile_import_missing",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Dialog"
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "warn");
+  assert.equal(result.issueCount, 1);
+  assert.equal(result.issues[0]?.reason, "profile_import_missing");
+  assert.equal(result.issues[0]?.message.includes("Dialog"), true);
+  assert.equal(result.counts.byStatus.mui_fallback_denied, 1);
+  assert.equal(result.counts.byReason.profile_import_missing, 1);
+});
+
+test("validateCustomerProfileComponentMatchReport returns failed when match policy is error", () => {
+  const customerProfile = createCustomerProfileWithInput({
+    version: 1,
+    families: [
+      {
+        id: "Components",
+        tierPriority: 10,
+        aliases: { figma: ["Components"], storybook: ["components"], code: ["@customer/components"] }
+      }
+    ],
+    brandMappings: [
+      { id: "sparkasse", aliases: ["sparkasse"], brandTheme: "sparkasse", storybookThemes: { light: "sparkasse-light" } }
+    ],
+    imports: { components: {} },
+    fallbacks: { mui: { defaultPolicy: "deny" } },
+    template: { dependencies: {} },
+    strictness: { match: "error", token: "off", import: "off" }
+  });
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "unknown-component",
+      familyName: "Unknown",
+      libraryResolution: {
+        status: "not_applicable",
+        reason: "match_unmatched"
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "failed");
+  assert.equal(result.issueCount, 1);
+  assert.equal(result.issues[0]?.reason, "match_unmatched");
+});
+
+test("validateCustomerProfileComponentMatchReport skips resolved_import and mui_fallback_allowed entries", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "button-primary",
+      familyName: "Button",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Button"
+      }
+    }),
+    createMatchReportEntry({
+      familyKey: "card-primary",
+      familyName: "Card",
+      libraryResolution: {
+        status: "mui_fallback_allowed",
+        reason: "profile_family_unresolved",
+        storybookTier: "Unknown",
+        componentKey: "Card"
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "ok");
+  assert.equal(result.issueCount, 0);
+  assert.equal(result.counts.byStatus.resolved_import, 1);
+  assert.equal(result.counts.byStatus.mui_fallback_allowed, 1);
+});
+
+test("validateCustomerProfileComponentMatchReport reports all issue reasons with sorted output", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "z-widget",
+      familyName: "ZWidget",
+      libraryResolution: {
+        status: "not_applicable",
+        reason: "match_ambiguous",
+        storybookTier: "Components",
+        componentKey: "ZWidget"
+      }
+    }),
+    createMatchReportEntry({
+      familyKey: "a-dialog",
+      familyName: "ADialog",
+      libraryResolution: {
+        status: "mui_fallback_denied",
+        reason: "profile_import_family_mismatch",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "ADialog"
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.issueCount, 2);
+  assert.equal(result.issues[0]?.figmaFamilyName, "ADialog");
+  assert.equal(result.issues[1]?.figmaFamilyName, "ZWidget");
+  assert.equal(result.issues[0]?.reason, "profile_import_family_mismatch");
+  assert.equal(result.issues[1]?.reason, "match_ambiguous");
 });
