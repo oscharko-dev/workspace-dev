@@ -21,8 +21,19 @@ import {
   toMcpCoverageDiagnostics,
   toSortedReasonCounts
 } from "./ir-diagnostics.js";
-import { resolveFigmaLibraryResolutionArtifact } from "../figma-library-resolution.js";
-import { createJobStorybookArtifactPaths, generateStorybookArtifactsForJob } from "../storybook-artifacts.js";
+import {
+  resolveFigmaLibraryResolutionArtifact,
+  type FigmaLibraryResolutionArtifact
+} from "../figma-library-resolution.js";
+import {
+  buildComponentMatchReportArtifact,
+  writeComponentMatchReportArtifact
+} from "../../storybook/component-match-report.js";
+import {
+  createJobStorybookArtifactPaths,
+  generateStorybookArtifactsForJob,
+  type GeneratedJobStorybookArtifacts
+} from "../storybook-artifacts.js";
 
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
@@ -35,13 +46,13 @@ export type IrDeriveStageInput = Pick<WorkspaceJobInput, "figmaFileKey" | "figma
 export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
   stageName: "ir.derive",
   execute: async (input, context) => {
-    const persistStorybookArtifactsIfRequested = async (): Promise<void> => {
+    const persistStorybookArtifactsIfRequested = async (): Promise<GeneratedJobStorybookArtifacts | undefined> => {
       if (!context.resolvedStorybookStaticDir) {
-        return;
+        return undefined;
       }
 
       try {
-        const artifactPaths = await generateStorybookArtifactsForJob({
+        const storybookArtifacts = await generateStorybookArtifactsForJob({
           storybookStaticDir: context.resolvedStorybookStaticDir,
           jobDir: context.paths.jobDir,
           artifactStore: context.artifactStore,
@@ -52,8 +63,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           level: "info",
           message:
             `Generated Storybook artifacts from '${context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir}' ` +
-            `into '${path.relative(context.paths.jobDir, artifactPaths.rootDir) || "."}'.`
+            `into '${path.relative(context.paths.jobDir, storybookArtifacts.paths.rootDir) || "."}'.`
         });
+        return storybookArtifacts;
       } catch (error) {
         if (
           typeof error === "object" &&
@@ -81,7 +93,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
     }: {
       figmaAnalysis: ReturnType<typeof buildFigmaAnalysis>;
       file: FigmaFileResponse;
-    }): Promise<void> => {
+    }): Promise<FigmaLibraryResolutionArtifact | undefined> => {
       const artifact = await resolveFigmaLibraryResolutionArtifact({
         analysis: figmaAnalysis,
         file,
@@ -101,7 +113,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         }
       });
       if (!artifact) {
-        return;
+        return undefined;
       }
       const artifactPaths = createJobStorybookArtifactPaths({
         jobDir: context.paths.jobDir
@@ -119,6 +131,43 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           `Resolved external Figma libraries for ${artifact.summary.total} component reference(s): ` +
           `resolved=${artifact.summary.resolved}, partial=${artifact.summary.partial}, error=${artifact.summary.error}, ` +
           `cacheHit=${artifact.summary.cacheHit}, offlineReused=${artifact.summary.offlineReused}.`
+      });
+      return artifact;
+    };
+
+    const persistComponentMatchReportIfAvailable = async ({
+      figmaAnalysis,
+      storybookArtifacts,
+      figmaLibraryResolutionArtifact
+    }: {
+      figmaAnalysis: ReturnType<typeof buildFigmaAnalysis>;
+      storybookArtifacts: GeneratedJobStorybookArtifacts | undefined;
+      figmaLibraryResolutionArtifact: FigmaLibraryResolutionArtifact | undefined;
+    }): Promise<void> => {
+      if (!storybookArtifacts) {
+        return;
+      }
+
+      const artifact = buildComponentMatchReportArtifact({
+        figmaAnalysis,
+        catalogArtifact: storybookArtifacts.catalogArtifact,
+        evidenceArtifact: storybookArtifacts.evidenceArtifact,
+        ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {})
+      });
+      const writtenFile = await writeComponentMatchReportArtifact({
+        artifact,
+        outputFilePath: storybookArtifacts.paths.componentMatchReportFile
+      });
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+        stage: "ir.derive",
+        absolutePath: writtenFile
+      });
+      context.log({
+        level: "info",
+        message:
+          `Generated component match report: matched=${artifact.summary.matched}, ` +
+          `ambiguous=${artifact.summary.ambiguous}, unmatched=${artifact.summary.unmatched}.`
       });
     };
 
@@ -511,7 +560,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       });
     };
 
-    if (context.runtime.irCacheEnabled) {
+      if (context.runtime.irCacheEnabled) {
       const contentHash = computeContentHash(figmaFetch.file);
       const optionsHash = computeOptionsHash(irDerivationOptions);
       const cached = await loadCachedIr({
@@ -528,7 +577,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
         });
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
-        await persistFigmaLibraryResolutionIfAvailable({
+        const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
           figmaAnalysis: cachedAnalysis,
           file: cleanedFile
         });
@@ -547,7 +596,12 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           stage: "ir.derive",
           absolutePath: context.paths.figmaAnalysisFile
         });
-        await persistStorybookArtifactsIfRequested();
+        const storybookArtifacts = await persistStorybookArtifactsIfRequested();
+        await persistComponentMatchReportIfAvailable({
+          figmaAnalysis: cachedAnalysis,
+          storybookArtifacts,
+          figmaLibraryResolutionArtifact
+        });
         return;
       }
     }
@@ -590,7 +644,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
     });
     await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
-    await persistFigmaLibraryResolutionIfAvailable({
+    const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
       figmaAnalysis,
       file: cleanedFile
     });
@@ -628,6 +682,11 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       stage: "ir.derive",
       absolutePath: context.paths.figmaAnalysisFile
     });
-    await persistStorybookArtifactsIfRequested();
+    const storybookArtifacts = await persistStorybookArtifactsIfRequested();
+    await persistComponentMatchReportIfAvailable({
+      figmaAnalysis,
+      storybookArtifacts,
+      figmaLibraryResolutionArtifact
+    });
   }
 };

@@ -402,3 +402,111 @@ export interface StorybookPublicArtifactFilePaths {
   themes: string;
   components: string;
 }
+
+export type ComponentMatchStatus = "matched" | "ambiguous" | "unmatched";
+
+export type ComponentMatchConfidence = "high" | "medium" | "low" | "none";
+
+export type ComponentMatchSemanticBucket =
+  | "button"
+  | "text_field"
+  | "date_picker"
+  | "accordion"
+  | "typography"
+  | "icon"
+  | "dialog"
+  | "card"
+  | "chip"
+  | "table"
+  | "navigation"
+  | "unknown";
+
+export type ComponentMatchEvidenceClass =
+  | "design_link"
+  | "canonical_family_name"
+  | "semantic_type"
+  | "variant_or_prop_overlap"
+  | "component_path_present"
+  | "reference_only_docs";
+
+export type ComponentMatchEvidenceRole = "candidate_selection" | "story_variant_selection" | "tie_breaker";
+
+export type ComponentMatchRejectionReason =
+  | "no_candidates"
+  | "insufficient_authoritative_score"
+  | "insufficient_total_score"
+  | "insufficient_authoritative_lead";
+
+export type ComponentMatchFallbackReason =
+  | "used_library_resolution_canonical_name"
+  | "used_figma_analysis_family_name"
+  | "used_family_name_token_overlap"
+  | "used_semantic_bucket"
+  | "used_file_key_design_link"
+  | "used_reference_only_docs_tiebreaker"
+  | "selected_variant_by_overlap"
+  | "selected_variant_by_attached_story_tiebreak"
+  | "selected_variant_by_entry_id_tiebreak"
+  | "selected_docs_entry_fallback";
+
+export interface ComponentMatchReportVariantProperty {
+  property: string;
+  values: string[];
+}
+
+export interface ComponentMatchReportFigmaFamily {
+  familyKey: string;
+  familyName: string;
+  nodeCount: number;
+  variantProperties: ComponentMatchReportVariantProperty[];
+  canonicalFamilyName?: string;
+}
+
+export interface ComponentMatchReportStorybookFamily {
+  familyId: string;
+  title: string;
+  name: string;
+  tier: string;
+  storyCount: number;
+}
+
+export interface ComponentMatchReportStoryVariant {
+  entryId: string;
+  storyName: string;
+}
+
+export interface ComponentMatchReportUsedEvidence {
+  class: ComponentMatchEvidenceClass;
+  reliability: StorybookEvidenceReliability;
+  role: ComponentMatchEvidenceRole;
+}
+
+export interface ComponentMatchReportSummary {
+  totalFigmaFamilies: number;
+  storybookFamilyCount: number;
+  storybookEntryCount: number;
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+}
+
+export interface ComponentMatchReportEntry {
+  figma: ComponentMatchReportFigmaFamily;
+  match: {
+    status: ComponentMatchStatus;
+    confidence: ComponentMatchConfidence;
+    confidenceScore: number;
+  };
+  usedEvidence: ComponentMatchReportUsedEvidence[];
+  rejectionReasons: ComponentMatchRejectionReason[];
+  fallbackReasons: ComponentMatchFallbackReason[];
+  storybookFamily?: ComponentMatchReportStorybookFamily;
+  storyVariant?: ComponentMatchReportStoryVariant;
+}
+
+export interface ComponentMatchReportArtifact {
+  artifact: "component.match_report";
+  version: 1;
+  summary: ComponentMatchReportSummary;
+  entries: ComponentMatchReportEntry[];
+}

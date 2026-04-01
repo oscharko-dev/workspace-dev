@@ -221,7 +221,7 @@ test("generateStorybookArtifactsForJob writes deterministic internal and public 
   const artifactStore = new StageArtifactStore({ jobDir });
   const runtime = resolveRuntimeSettings({ enablePreview: false });
 
-  const artifactPaths = await generateStorybookArtifactsForJob({
+  const storybookArtifacts = await generateStorybookArtifactsForJob({
     storybookStaticDir: buildDir,
     jobDir,
     artifactStore,
@@ -230,7 +230,9 @@ test("generateStorybookArtifactsForJob writes deterministic internal and public 
   });
 
   const expectedPaths = createJobStorybookArtifactPaths({ jobDir });
-  assert.deepEqual(artifactPaths, expectedPaths);
+  assert.deepEqual(storybookArtifacts.paths, expectedPaths);
+  assert.equal(storybookArtifacts.catalogArtifact.artifact, "storybook.catalog");
+  assert.equal(storybookArtifacts.evidenceArtifact.artifact, "storybook.evidence");
   assert.equal(await artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog), expectedPaths.catalogFile);
   assert.equal(await artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence), expectedPaths.evidenceFile);
   assert.equal(await artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens), expectedPaths.tokensFile);
@@ -444,7 +446,7 @@ test("reuseStorybookArtifactsFromSourceJob copies optional figma.library_resolut
   await mkdir(sourceJobDir, { recursive: true });
   const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
 
-  const sourcePaths = await generateStorybookArtifactsForJob({
+  const sourceArtifacts = await generateStorybookArtifactsForJob({
     storybookStaticDir: buildDir,
     jobDir: sourceJobDir,
     artifactStore: sourceArtifactStore,
@@ -452,14 +454,14 @@ test("reuseStorybookArtifactsFromSourceJob copies optional figma.library_resolut
     limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
   });
   await writeFile(
-    sourcePaths.figmaLibraryResolutionFile,
+    sourceArtifacts.paths.figmaLibraryResolutionFile,
     '{ "artifact": "figma.library_resolution", "summary": { "total": 1 } }\n',
     "utf8"
   );
   await sourceArtifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
     stage: "ir.derive",
-    absolutePath: sourcePaths.figmaLibraryResolutionFile
+    absolutePath: sourceArtifacts.paths.figmaLibraryResolutionFile
   });
 
   const targetJobDir = path.join(root, "jobs", "target-job");
@@ -481,6 +483,55 @@ test("reuseStorybookArtifactsFromSourceJob copies optional figma.library_resolut
   );
   assert.equal(
     await readFile(targetPaths.figmaLibraryResolutionFile, "utf8"),
-    await readFile(sourcePaths.figmaLibraryResolutionFile, "utf8")
+    await readFile(sourceArtifacts.paths.figmaLibraryResolutionFile, "utf8")
+  );
+});
+
+test("reuseStorybookArtifactsFromSourceJob copies optional component.match_report artifacts when present", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-component-match-report-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  const sourceArtifacts = await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir: sourceJobDir,
+    artifactStore: sourceArtifactStore,
+    stage: "ir.derive",
+    limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
+  });
+  await writeFile(
+    sourceArtifacts.paths.componentMatchReportFile,
+    '{ "artifact": "component.match_report", "summary": { "matched": 1 } }\n',
+    "utf8"
+  );
+  await sourceArtifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: sourceArtifacts.paths.componentMatchReportFile
+  });
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  const targetPaths = await reuseStorybookArtifactsFromSourceJob({
+    sourceArtifactStore,
+    targetArtifactStore,
+    sourceJobId: "source-job",
+    sourceRequestedStorybookStaticDir: buildDir,
+    targetJobDir,
+    stage: "ir.derive"
+  });
+
+  assert.equal(
+    await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport),
+    targetPaths.componentMatchReportFile
+  );
+  assert.equal(
+    await readFile(targetPaths.componentMatchReportFile, "utf8"),
+    await readFile(sourceArtifacts.paths.componentMatchReportFile, "utf8")
   );
 });

@@ -116,6 +116,281 @@ const createLocalFigmaPayloadWithExternalComponent = () => ({
   }
 });
 
+const createLocalFigmaPayloadWithMatchFamilies = () => ({
+  name: "Stage Service Match Board",
+  lastModified: "2026-04-01T00:00:00Z",
+  components: {
+    "1:100": { key: "cmp-button", name: "Button/Primary", componentSetId: "1:200", remote: false },
+    "1:101": { key: "cmp-text-field", name: "TextField/Default", componentSetId: "1:201", remote: false },
+    "1:102": { key: "cmp-date-picker", name: "DatePicker/Single", componentSetId: "1:202", remote: false },
+    "1:103": { key: "cmp-accordion", name: "Accordion/Collapsed", componentSetId: "1:203", remote: false },
+    "1:104": { key: "cmp-typography", name: "Typography/Heading", componentSetId: "1:204", remote: false },
+    "1:105": { key: "cmp-icon", name: "Icon/Medium", componentSetId: "1:205", remote: false }
+  },
+  componentSets: {
+    "1:200": { key: "set-button", name: "Button", remote: false },
+    "1:201": { key: "set-text-field", name: "TextField", remote: false },
+    "1:202": { key: "set-date-picker", name: "DatePicker", remote: false },
+    "1:203": { key: "set-accordion", name: "Accordion", remote: false },
+    "1:204": { key: "set-typography", name: "Typography", remote: false },
+    "1:205": { key: "set-icon", name: "Icon", remote: false }
+  },
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-1",
+            type: "FRAME",
+            name: "Component Match Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 900 },
+            children: [
+              {
+                id: "instance-button",
+                type: "INSTANCE",
+                name: "Button, Variant=Primary, Size=Large",
+                componentId: "1:100",
+                componentSetId: "1:200",
+                componentProperties: {
+                  Variant: { type: "VARIANT", value: "Primary" },
+                  Size: { type: "VARIANT", value: "Large" }
+                },
+                absoluteBoundingBox: { x: 16, y: 16, width: 160, height: 48 },
+                children: []
+              },
+              {
+                id: "instance-text-field",
+                type: "INSTANCE",
+                name: "TextField, State=Default",
+                componentId: "1:101",
+                componentSetId: "1:201",
+                componentProperties: {
+                  State: { type: "VARIANT", value: "Default" }
+                },
+                absoluteBoundingBox: { x: 16, y: 96, width: 240, height: 56 },
+                children: []
+              },
+              {
+                id: "instance-date-picker",
+                type: "INSTANCE",
+                name: "DatePicker, State=Single",
+                componentId: "1:102",
+                componentSetId: "1:202",
+                componentProperties: {
+                  State: { type: "VARIANT", value: "Single" }
+                },
+                absoluteBoundingBox: { x: 16, y: 176, width: 240, height: 56 },
+                children: []
+              },
+              {
+                id: "instance-accordion",
+                type: "INSTANCE",
+                name: "Accordion, State=Collapsed",
+                componentId: "1:103",
+                componentSetId: "1:203",
+                componentProperties: {
+                  State: { type: "VARIANT", value: "Collapsed" }
+                },
+                absoluteBoundingBox: { x: 16, y: 256, width: 320, height: 64 },
+                children: []
+              },
+              {
+                id: "instance-typography",
+                type: "INSTANCE",
+                name: "Typography, Level=Heading",
+                componentId: "1:104",
+                componentSetId: "1:204",
+                componentProperties: {
+                  Level: { type: "VARIANT", value: "Heading" }
+                },
+                absoluteBoundingBox: { x: 16, y: 352, width: 240, height: 40 },
+                children: []
+              },
+              {
+                id: "instance-icon",
+                type: "INSTANCE",
+                name: "Icon, Size=Medium",
+                componentId: "1:105",
+                componentSetId: "1:205",
+                componentProperties: {
+                  Size: { type: "VARIANT", value: "Medium" }
+                },
+                absoluteBoundingBox: { x: 16, y: 424, width: 40, height: 40 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
+const createComponentMatchStorybookBuild = async (): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-storybook-match-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const storyDefinitions = [
+    {
+      id: "components-button--primary-large",
+      title: "Components/Button",
+      name: "Primary Large",
+      importPath: "./src/components/Button/Button.stories.tsx",
+      componentPath: "./src/components/Button/Button.tsx",
+      args: { variant: "primary", size: "large" }
+    },
+    {
+      id: "forms-text-field--default",
+      title: "Forms/TextField",
+      name: "Default",
+      importPath: "./src/components/TextField/TextField.stories.tsx",
+      componentPath: "./src/components/TextField/TextField.tsx",
+      args: { state: "default" }
+    },
+    {
+      id: "forms-date-picker--single",
+      title: "Forms/DatePicker",
+      name: "Single",
+      importPath: "./src/components/DatePicker/DatePicker.stories.tsx",
+      componentPath: "./src/components/DatePicker/DatePicker.tsx",
+      args: { state: "single" }
+    },
+    {
+      id: "content-accordion--collapsed",
+      title: "Content/Accordion",
+      name: "Collapsed",
+      importPath: "./src/components/Accordion/Accordion.stories.tsx",
+      componentPath: "./src/components/Accordion/Accordion.tsx",
+      args: { state: "collapsed" }
+    },
+    {
+      id: "foundations-typography--heading",
+      title: "Foundations/Typography",
+      name: "Heading",
+      importPath: "./src/components/Typography/Typography.stories.tsx",
+      componentPath: "./src/components/Typography/Typography.tsx",
+      args: { level: "heading" }
+    },
+    {
+      id: "assets-icon--medium",
+      title: "Assets/Icon",
+      name: "Medium",
+      importPath: "./src/components/Icon/Icon.stories.tsx",
+      componentPath: "./src/components/Icon/Icon.tsx",
+      args: { size: "medium" }
+    }
+  ] as const;
+
+  const indexJson = {
+    v: 5,
+    entries: Object.fromEntries(
+      storyDefinitions.map((definition) => [
+        definition.id,
+        {
+          id: definition.id,
+          title: definition.title,
+          name: definition.name,
+          importPath: definition.importPath,
+          storiesImports: [],
+          type: "story",
+          tags: ["dev", "test"],
+          componentPath: definition.componentPath
+        }
+      ])
+    )
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeEntries = storyDefinitions
+    .map(
+      (definition, index) =>
+        `"${definition.importPath}": n(() => c0(() => import("./story-${index + 1}.js"), true ? __vite__mapDeps([${index + 1}]) : void 0, import.meta.url), "${definition.importPath}")`
+    )
+    .join(",\n      ");
+  const iframeBundle = `
+    const gq0 = {
+      ${iframeEntries}
+    };
+  `;
+
+  const sharedThemeBundle = `
+    const FONT_DATA = "data:application/font-ttf;base64,${"A".repeat(1500)}";
+    const keepName = ((fn, name) => fn);
+    const createFont = keepName((family, weight, src) => ({
+      fontFamily: \`\${family}\`,
+      fontWeight: weight,
+      src: \`url('\${src}') format('truetype')\`
+    }), "createFont");
+    const regular = createFont("Brand Sans", 400, FONT_DATA);
+    const bold = createFont("Brand Sans Bold", 700, FONT_DATA);
+    const appTheme = createTheme({
+      spacing: 8,
+      shape: { borderRadius: 12 },
+      palette: {
+        primary: { main: "#ff0000", contrastText: "#ffffff" },
+        warning: { main: "#ffc900" },
+        text: { primary: "#444444" }
+      },
+      typography: {
+        fontFamily: "Brand Sans, sans-serif",
+        fontSize: 16,
+        body1: { fontSize: 14, lineHeight: 1.5, fontFamily: "Brand Sans" },
+        h1: { fontSize: 30, lineHeight: 1.2, fontFamily: "Brand Sans Bold" }
+      },
+      components: {
+        MuiCssBaseline: {
+          styleOverrides: {
+            "@font-face": [regular],
+            fallbacks: [{ "@font-face": [bold] }]
+          }
+        }
+      },
+      zIndex: { drawer: 1200 }
+    });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+
+  const cssText = `
+    :root {
+      --fi-space-base: 8px;
+    }
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "shared-theme.js"), sharedThemeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
+
+  for (const [index, definition] of storyDefinitions.entries()) {
+    const storyBundle = `
+      const meta = {
+        title: "${definition.title}",
+        args: ${JSON.stringify(definition.args)},
+        argTypes: ${JSON.stringify(
+          Object.fromEntries(Object.keys(definition.args).map((key) => [key, { control: { type: "select" } }]))
+        )}
+      };
+    `;
+    await writeFile(path.join(assetsDir, `story-${index + 1}.js`), storyBundle, "utf8");
+  }
+
+  return buildDir;
+};
+
 const createMinimalIr = (): DesignIR =>
   ({
     sourceName: "test",
@@ -536,6 +811,46 @@ test("IrDeriveService writes and registers figma.library_resolution for external
   assert.equal(artifact.summary.offlineReused, 0);
 });
 
+test("IrDeriveService writes and registers component.match_report for local_json inputs with Storybook artifacts", async () => {
+  const storybookBuildDir = await createComponentMatchStorybookBuild();
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    requestOverrides: {
+      storybookStaticDir: storybookBuildDir
+    }
+  });
+  executionContext.requestedStorybookStaticDir = storybookBuildDir;
+  executionContext.resolvedStorybookStaticDir = storybookBuildDir;
+
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma-component-match.json");
+  await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayloadWithMatchFamilies(), null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const componentMatchReportPath = await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+  assert.equal(
+    componentMatchReportPath,
+    path.join(executionContext.paths.jobDir, "storybook", "public", "component-match-report.json")
+  );
+  const artifact = JSON.parse(await readFile(componentMatchReportPath as string, "utf8")) as {
+    artifact: string;
+    summary: { totalFigmaFamilies: number; matched: number; ambiguous: number; unmatched: number };
+  };
+  assert.equal(artifact.artifact, "component.match_report");
+  assert.equal(artifact.summary.totalFigmaFamilies, 6);
+  assert.equal(artifact.summary.matched, 6);
+  assert.equal(artifact.summary.ambiguous, 0);
+  assert.equal(artifact.summary.unmatched, 0);
+});
+
 test("IrDeriveService cache hits still write and register figma.analysis", async () => {
   const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-cache-"));
   const first = await createExecutionContext({
@@ -661,6 +976,83 @@ test("IrDeriveService cache hits still write and register figma.library_resoluti
   };
   assert.equal(artifact.summary.total, 1);
   assert.equal(artifact.summary.partial, 1);
+});
+
+test("IrDeriveService cache hits still write and register component.match_report", async () => {
+  const storybookBuildDir = await createComponentMatchStorybookBuild();
+  const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-component-match-cache-hit-"));
+  const first = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    requestOverrides: {
+      storybookStaticDir: storybookBuildDir
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-component-match-cache-seed"
+  });
+  const second = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    requestOverrides: {
+      storybookStaticDir: storybookBuildDir
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-component-match-cache-hit"
+  });
+  first.executionContext.requestedStorybookStaticDir = storybookBuildDir;
+  first.executionContext.resolvedStorybookStaticDir = storybookBuildDir;
+  second.executionContext.requestedStorybookStaticDir = storybookBuildDir;
+  second.executionContext.resolvedStorybookStaticDir = storybookBuildDir;
+
+  const payload = createLocalFigmaPayloadWithMatchFamilies();
+  const firstLocalPayloadPath = path.join(first.executionContext.paths.jobDir, "local-figma-component-match.json");
+  const secondLocalPayloadPath = path.join(second.executionContext.paths.jobDir, "local-figma-component-match.json");
+  await writeFile(firstLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(secondLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: firstLocalPayloadPath
+    },
+    first.stageContextFor("figma.source")
+  );
+  const cleanedFile = JSON.parse(await readFile(first.executionContext.paths.figmaJsonFile, "utf8")) as unknown;
+  await saveCachedIr({
+    cacheDir: first.executionContext.paths.irCacheDir,
+    contentHash: computeContentHash(cleanedFile),
+    optionsHash: computeOptionsHash({
+      screenElementBudget: first.executionContext.runtime.figmaScreenElementBudget,
+      screenElementMaxDepth: first.executionContext.runtime.figmaScreenElementMaxDepth,
+      brandTheme: first.executionContext.resolvedBrandTheme,
+      figmaSourceMode: first.executionContext.resolvedFigmaSourceMode
+    }),
+    ttlMs: first.executionContext.runtime.irCacheTtlMs,
+    ir: createMinimalIr(),
+    onLog: () => {
+      // no-op for cache seeding in tests
+    }
+  });
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: secondLocalPayloadPath
+    },
+    second.stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, second.stageContextFor("ir.derive"));
+
+  const componentMatchReportPath = await second.executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+  assert.equal(
+    componentMatchReportPath,
+    path.join(second.executionContext.paths.jobDir, "storybook", "public", "component-match-report.json")
+  );
+  const artifact = JSON.parse(await readFile(componentMatchReportPath as string, "utf8")) as {
+    summary: { totalFigmaFamilies: number; matched: number };
+  };
+  assert.equal(artifact.summary.totalFigmaFamilies, 6);
+  assert.equal(artifact.summary.matched, 6);
 });
 
 test("IrDeriveService regeneration reads seeded artifacts and writes design.ir and figma.analysis", async () => {
@@ -1491,6 +1883,55 @@ test("ValidateProjectService marks mapping as partial when only figma.library_re
   assert.equal(summary?.mapping?.status, "partial");
   assert.equal(summary?.mapping?.figmaLibraryResolution?.status, "ok");
   assert.equal(summary?.mapping?.componentMatchReport?.status, "not_available");
+});
+
+test("ValidateProjectService marks mapping as ok when component.match_report is available", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-component-match-report"
+    } satisfies GenerationDiffContext
+  });
+  const storybookPublicDir = path.join(executionContext.paths.jobDir, "storybook", "public");
+  const libraryResolutionPath = path.join(storybookPublicDir, "figma-library-resolution.json");
+  const componentMatchReportPath = path.join(storybookPublicDir, "component-match-report.json");
+  await mkdir(storybookPublicDir, { recursive: true });
+  await writeFile(libraryResolutionPath, '{ "artifact": "figma.library_resolution" }\n', "utf8");
+  await writeFile(componentMatchReportPath, '{ "artifact": "component.match_report" }\n', "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    stage: "ir.derive",
+    absolutePath: libraryResolutionPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    mapping?: {
+      status?: string;
+      figmaLibraryResolution?: { status?: string };
+      componentMatchReport?: { status?: string };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.mapping?.status, "ok");
+  assert.equal(summary?.mapping?.figmaLibraryResolution?.status, "ok");
+  assert.equal(summary?.mapping?.componentMatchReport?.status, "ok");
 });
 
 test("ValidateProjectService failure preserves the previous successful diff baseline", async () => {

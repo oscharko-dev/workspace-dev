@@ -17,7 +17,9 @@ import {
   getStorybookPublicArtifactFileNames,
   writeStorybookPublicArtifacts
 } from "../storybook/public-extracts.js";
+import { getComponentMatchReportOutputFileName } from "../storybook/component-match-report.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../storybook/types.js";
+import type { StorybookCatalogArtifact, StorybookEvidenceArtifact } from "../storybook/types.js";
 
 export interface JobStorybookArtifactPaths {
   rootDir: string;
@@ -32,6 +34,12 @@ export interface JobStorybookArtifactPaths {
   componentMatchReportFile: string;
 }
 
+export interface GeneratedJobStorybookArtifacts {
+  paths: JobStorybookArtifactPaths;
+  catalogArtifact: StorybookCatalogArtifact;
+  evidenceArtifact: StorybookEvidenceArtifact;
+}
+
 interface StorybookArtifactCopyPathEntry {
   key: string;
   sourcePath: string;
@@ -39,8 +47,6 @@ interface StorybookArtifactCopyPathEntry {
 }
 
 const STORYBOOK_LIBRARY_RESOLUTION_FILE_NAME = "figma-library-resolution.json";
-const STORYBOOK_COMPONENT_MATCH_REPORT_FILE_NAME = "component-match-report.json";
-
 const toMissingReusableArtifactError = ({
   artifactKey,
   sourceJobId,
@@ -122,7 +128,7 @@ export const createJobStorybookArtifactPaths = ({ jobDir }: { jobDir: string }):
     themesFile: path.join(publicDir, publicFileNames.themes),
     componentsFile: path.join(publicDir, publicFileNames.components),
     figmaLibraryResolutionFile: path.join(publicDir, STORYBOOK_LIBRARY_RESOLUTION_FILE_NAME),
-    componentMatchReportFile: path.join(publicDir, STORYBOOK_COMPONENT_MATCH_REPORT_FILE_NAME)
+    componentMatchReportFile: path.join(publicDir, getComponentMatchReportOutputFileName())
   };
 };
 
@@ -138,7 +144,7 @@ export const generateStorybookArtifactsForJob = async ({
   artifactStore: StageArtifactStore;
   stage: WorkspaceJobStageName;
   limits: PipelineDiagnosticLimits;
-}): Promise<JobStorybookArtifactPaths> => {
+}): Promise<GeneratedJobStorybookArtifacts> => {
   const artifactPaths = createJobStorybookArtifactPaths({ jobDir });
   const buildContext = await loadStorybookBuildContext({
     buildDir: storybookStaticDir
@@ -220,7 +226,11 @@ export const generateStorybookArtifactsForJob = async ({
     absolutePath: writtenFiles.components
   });
 
-  return artifactPaths;
+  return {
+    paths: artifactPaths,
+    catalogArtifact,
+    evidenceArtifact
+  };
 };
 
 export const reuseStorybookArtifactsFromSourceJob = async ({
