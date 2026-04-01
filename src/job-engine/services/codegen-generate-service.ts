@@ -132,7 +132,8 @@ export const createCodegenGenerateService = ({
       let customerProfileDesignSystemConfig:
         | ReturnType<typeof toCustomerProfileDesignSystemConfigFromComponentMatchReport>["config"]
         | undefined;
-      if (context.resolvedStorybookStaticDir) {
+      const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
+      if (isStorybookFirst) {
         if (!context.resolvedCustomerProfile) {
           throw createPipelineError({
             code: "E_STORYBOOK_THEME_CUSTOMER_PROFILE_REQUIRED",

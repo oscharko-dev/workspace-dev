@@ -940,6 +940,192 @@ test("submitRegeneration keeps storybook-first generated imports pinned to the s
   assert.equal(regenScreenContent.includes("IconButton"), false);
 });
 
+test("submitRegeneration consumes reused component.match_report mappings after source-job completion", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-match-report-reuse-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
+  const customerProfilePath = path.join(workspaceRoot, "customer-profile.json");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  const muiMaterialVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiMaterialVersion, "string");
+  const storybookBuildDir = await createSyntheticStorybookBuildWithCustomerButton({
+    workspaceRoot
+  });
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayloadWithCustomerButton()), "utf8");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(
+      createCustomerProfileFixture({
+        packageName: "@mui/material",
+        dependencyVersion: muiMaterialVersion,
+        storybookLightTheme: "default",
+        exportName: "Button",
+        importAlias: "CustomerButton"
+      })
+    ),
+    "utf8"
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    storybookStaticDir: storybookBuildDir,
+    customerProfilePath,
+    customerBrandId: "sparkasse"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
+  assert.equal(typeof sourceStatus.artifacts.componentMatchReportFile, "string");
+
+  const sourceScreenContent = await readFile(
+    path.join(String(sourceStatus.artifacts.generatedProjectDir), toDeterministicScreenPath("Customer Button Screen")),
+    "utf8"
+  );
+  assert.ok(sourceScreenContent.includes("CustomerButton"));
+  assert.ok(sourceScreenContent.includes("<CustomerButton"));
+
+  const sourceComponentMatchReportPath = String(sourceStatus.artifacts.componentMatchReportFile);
+  const sourceComponentMatchReport = JSON.parse(await readFile(sourceComponentMatchReportPath, "utf8")) as {
+    artifact?: string;
+    summary?: Record<string, unknown>;
+    entries?: Array<Record<string, unknown>>;
+  };
+  assert.equal(sourceComponentMatchReport.artifact, "component.match_report");
+  assert.ok(Array.isArray(sourceComponentMatchReport.entries));
+  assert.ok((sourceComponentMatchReport.entries?.length ?? 0) > 0);
+  const templateEntry = sourceComponentMatchReport.entries?.[0];
+  assert.ok(templateEntry);
+
+  const buttonEntry = JSON.parse(JSON.stringify(templateEntry)) as Record<string, unknown>;
+  buttonEntry.libraryResolution = {
+    status: "mui_fallback_allowed",
+    reason: "profile_import_missing",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "Button"
+  };
+
+  const cardEntry = JSON.parse(JSON.stringify(templateEntry)) as Record<string, unknown>;
+  cardEntry.figma = {
+    familyKey: "card-family",
+    familyName: "Card",
+    nodeCount: 1,
+    variantProperties: []
+  };
+  cardEntry.libraryResolution = {
+    status: "resolved_import",
+    reason: "profile_import_resolved",
+    storybookTier: "Components",
+    profileFamily: "Components",
+    componentKey: "Card",
+    import: {
+      package: "@mui/material",
+      exportName: "Card",
+      localName: "StorybookCard"
+    }
+  };
+  cardEntry.storybookFamily = {
+    familyId: "family-card",
+    title: "Components/Card",
+    name: "Card",
+    tier: "Components",
+    storyCount: 1
+  };
+  cardEntry.storyVariant = {
+    entryId: "components-card--default",
+    storyName: "Default"
+  };
+  const cardResolvedApi = cardEntry.resolvedApi;
+  if (typeof cardResolvedApi === "object" && cardResolvedApi !== null) {
+    cardEntry.resolvedApi = {
+      ...cardResolvedApi,
+      componentKey: "Card",
+      import: {
+        package: "@mui/material",
+        exportName: "Card",
+        localName: "StorybookCard"
+      }
+    };
+  }
+  const cardResolvedProps = cardEntry.resolvedProps;
+  if (typeof cardResolvedProps === "object" && cardResolvedProps !== null) {
+    cardEntry.resolvedProps = {
+      ...cardResolvedProps,
+      status: "resolved",
+      codegenCompatible: true,
+      diagnostics: []
+    };
+  }
+
+  sourceComponentMatchReport.entries = [buttonEntry, cardEntry];
+  sourceComponentMatchReport.summary = {
+    ...(sourceComponentMatchReport.summary ?? {}),
+    totalFigmaFamilies: 2,
+    matched: 2,
+    ambiguous: 0,
+    unmatched: 0,
+    libraryResolution: {
+      byStatus: {
+        resolved_import: 1,
+        mui_fallback_allowed: 1,
+        mui_fallback_denied: 0,
+        not_applicable: 0
+      },
+      byReason: {
+        profile_import_resolved: 1,
+        profile_import_missing: 1,
+        profile_import_family_mismatch: 0,
+        profile_family_unresolved: 0,
+        match_ambiguous: 0,
+        match_unmatched: 0
+      }
+    }
+  };
+  await writeFile(sourceComponentMatchReportPath, `${JSON.stringify(sourceComponentMatchReport, null, 2)}\n`, "utf8");
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "instance-button", field: "width", value: 220 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed", `Regen job should complete, got: ${regenStatus.status} — ${regenStatus.error?.message ?? "no error"}`);
+
+  const regenScreenContent = await readFile(
+    path.join(String(regenStatus.artifacts.generatedProjectDir), toDeterministicScreenPath("Customer Button Screen")),
+    "utf8"
+  );
+  assert.equal(regenScreenContent.includes("<CustomerButton"), false);
+  assert.equal(regenScreenContent.includes("from \"@customer/components\""), false);
+  assert.ok(regenScreenContent.includes("from \"@mui/material\""));
+  assert.ok(regenScreenContent.includes("<Button"));
+});
+
 test("submitRegeneration fails with E_CUSTOMER_PROFILE_SNAPSHOT_MISSING when an explicit source snapshot is corrupt", async () => {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-profile-corrupt-"));
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
