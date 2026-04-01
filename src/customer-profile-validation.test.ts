@@ -6,6 +6,7 @@ import test from "node:test";
 import { parseCustomerProfileConfig } from "./customer-profile.js";
 import { applyCustomerProfileToTemplate } from "./customer-profile-template.js";
 import {
+  validateCustomerProfileComponentApiComponentMatchReport,
   validateCustomerProfileComponentMatchReport,
   validateGeneratedProjectCustomerProfile
 } from "./customer-profile-validation.js";
@@ -422,7 +423,9 @@ const createMatchReportEntry = (
   rejectionReasons: [],
   fallbackReasons: [],
   libraryResolution: overrides.libraryResolution,
-  ...("storybookFamily" in overrides ? { storybookFamily: overrides.storybookFamily } : {})
+  ...("storybookFamily" in overrides ? { storybookFamily: overrides.storybookFamily } : {}),
+  ...("resolvedApi" in overrides ? { resolvedApi: overrides.resolvedApi } : {}),
+  ...("resolvedProps" in overrides ? { resolvedProps: overrides.resolvedProps } : {})
 });
 
 const createMatchReportArtifact = (entries: ComponentMatchReportEntry[]): ComponentMatchReportArtifact => ({
@@ -602,4 +605,213 @@ test("validateCustomerProfileComponentMatchReport reports all issue reasons with
   assert.equal(result.issues[1]?.figmaFamilyName, "ZWidget");
   assert.equal(result.issues[0]?.reason, "profile_import_family_mismatch");
   assert.equal(result.issues[1]?.reason, "match_ambiguous");
+});
+
+test("validateCustomerProfileComponentApiComponentMatchReport warns when fallback-allowed contracts are incompatible", () => {
+  const customerProfile = createCustomerProfileWithInput({
+    version: 1,
+    families: [
+      {
+        id: "Components",
+        tierPriority: 10,
+        aliases: { figma: ["Components"], storybook: ["components"], code: ["@customer/components"] }
+      }
+    ],
+    brandMappings: [
+      { id: "sparkasse", aliases: ["sparkasse"], brandTheme: "sparkasse", storybookThemes: { light: "sparkasse-light" } }
+    ],
+    imports: {
+      components: {
+        DatePicker: {
+          family: "Components",
+          package: "@customer/forms",
+          export: "CustomerDatePicker"
+        }
+      }
+    },
+    fallbacks: { mui: { defaultPolicy: "deny", components: { DatePicker: "allow" } } },
+    template: { dependencies: {} },
+    strictness: { match: "warn", token: "off", import: "off" }
+  });
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "datepicker-default",
+      familyName: "DatePicker",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "DatePicker",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerDatePicker",
+          localName: "CustomerDatePicker"
+        }
+      },
+      resolvedApi: {
+        status: "resolved",
+        componentKey: "DatePicker",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerDatePicker",
+          localName: "CustomerDatePicker"
+        },
+        allowedProps: [{ name: "label", kind: "string" }],
+        defaultProps: [],
+        children: { policy: "not_used" },
+        slots: { policy: "unsupported", props: ["slotProps"] },
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "component_api_slot_unsupported",
+            message: "Resolved component 'DatePicker' does not expose 'slotProps'.",
+            sourceProp: "slotProps",
+            targetProp: "slotProps"
+          }
+        ]
+      },
+      resolvedProps: {
+        status: "incompatible",
+        fallbackPolicy: "allow",
+        props: [],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "not_used" },
+        slots: { policy: "unsupported", props: ["slotProps"] },
+        codegenCompatible: false,
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "component_api_slot_unsupported",
+            message: "Resolved component 'DatePicker' does not expose 'slotProps'.",
+            sourceProp: "slotProps",
+            targetProp: "slotProps"
+          }
+        ]
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentApiComponentMatchReport({
+    artifact,
+    customerProfile
+  });
+
+  assert.equal(result.status, "warn");
+  assert.equal(result.issueCount, 1);
+  assert.equal(result.counts.byReason.component_api_slot_unsupported, 1);
+  assert.equal(result.issues[0]?.severity, "warning");
+});
+
+test("validateCustomerProfileComponentApiComponentMatchReport fails when incompatible contracts deny fallback or signatures conflict", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "button-primary",
+      familyName: "Button",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Button",
+        import: {
+          package: "@customer/components",
+          exportName: "PrimaryButton",
+          localName: "CustomerButton"
+        }
+      },
+      resolvedApi: {
+        status: "resolved",
+        componentKey: "Button",
+        import: {
+          package: "@customer/components",
+          exportName: "PrimaryButton",
+          localName: "CustomerButton"
+        },
+        allowedProps: [{ name: "children", kind: "string" }],
+        defaultProps: [],
+        children: { policy: "unsupported" },
+        slots: { policy: "not_used", props: [] },
+        diagnostics: [
+          {
+            severity: "error",
+            code: "component_api_children_unsupported",
+            message: "Resolved component 'Button' does not expose 'children'.",
+            targetProp: "children"
+          }
+        ]
+      },
+      resolvedProps: {
+        status: "incompatible",
+        fallbackPolicy: "deny",
+        props: [],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "unsupported" },
+        slots: { policy: "not_used", props: [] },
+        codegenCompatible: false,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "component_api_children_unsupported",
+            message: "Resolved component 'Button' does not expose 'children'.",
+            targetProp: "children"
+          }
+        ]
+      }
+    }),
+    createMatchReportEntry({
+      familyKey: "button-secondary",
+      familyName: "Button",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Button",
+        import: {
+          package: "@customer/components",
+          exportName: "PrimaryButton",
+          localName: "CustomerButton"
+        }
+      },
+      resolvedApi: {
+        status: "resolved",
+        componentKey: "Button",
+        import: {
+          package: "@customer/components",
+          exportName: "PrimaryButton",
+          localName: "CustomerButton"
+        },
+        allowedProps: [{ name: "appearance", kind: "enum", allowedValues: ["primary"] }],
+        defaultProps: [],
+        children: { policy: "supported" },
+        slots: { policy: "not_used", props: [] },
+        diagnostics: []
+      },
+      resolvedProps: {
+        status: "resolved",
+        fallbackPolicy: "deny",
+        props: [{ sourceProp: "variant", targetProp: "appearance", kind: "enum", values: ["primary"] }],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "supported" },
+        slots: { policy: "not_used", props: [] },
+        codegenCompatible: true,
+        diagnostics: []
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentApiComponentMatchReport({
+    artifact,
+    customerProfile
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.issueCount >= 2, true);
+  assert.equal(result.counts.byReason.component_api_children_unsupported, 1);
+  assert.equal(result.counts.byReason.component_api_signature_conflict, 1);
 });

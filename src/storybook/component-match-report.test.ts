@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
+import type { ResolvedStorybookTheme } from "./theme-resolver.js";
 import {
   buildComponentMatchReportArtifact,
   serializeComponentMatchReportArtifact
@@ -15,9 +16,11 @@ import type {
   StorybookCatalogArtifact,
   StorybookCatalogEntry,
   StorybookCatalogFamily,
+  StorybookCatalogJsonValue,
   StorybookCatalogSignalReferences,
   StorybookEvidenceArtifact,
-  StorybookEvidenceItem
+  StorybookEvidenceItem,
+  StorybookPublicComponentsArtifact
 } from "./types.js";
 
 const createEmptySignalReferences = (): StorybookCatalogSignalReferences => ({
@@ -119,7 +122,7 @@ const createCatalogEntry = ({
   name: string;
   familyId: string;
   componentPath?: string;
-  args?: Record<string, string>;
+  args?: Record<string, StorybookCatalogJsonValue>;
   argTypes?: Record<string, unknown>;
   designUrls?: string[];
   type?: "story" | "docs";
@@ -156,7 +159,8 @@ const createCatalogFamily = ({
   entryIds,
   storyEntryIds,
   componentPath,
-  designUrls = []
+  designUrls = [],
+  propKeys = []
 }: {
   id: string;
   title: string;
@@ -165,6 +169,7 @@ const createCatalogFamily = ({
   storyEntryIds: string[];
   componentPath?: string;
   designUrls?: string[];
+  propKeys?: string[];
 }): StorybookCatalogFamily => ({
   id,
   title,
@@ -175,7 +180,7 @@ const createCatalogFamily = ({
   storyEntryIds,
   docsEntryIds: entryIds.filter((entryId) => !storyEntryIds.includes(entryId)),
   storyCount: storyEntryIds.length,
-  propKeys: [],
+  propKeys,
   hasDesignReference: designUrls.length > 0,
   ...(componentPath ? { componentPath } : {}),
   signalReferences: createEmptySignalReferences(),
@@ -187,6 +192,104 @@ const createCatalogFamily = ({
     }
   }
 });
+
+const createComponentsArtifact = ({
+  components
+}: {
+  components: Array<{
+    name: string;
+    title: string;
+    componentPath: string;
+    propKeys: string[];
+  }>;
+}): StorybookPublicComponentsArtifact => ({
+  artifact: "storybook.components",
+  version: 1,
+  stats: {
+    entryCount: components.length,
+    componentCount: components.length,
+    componentWithDesignReferenceCount: 0,
+    propKeyCount: new Set(components.flatMap((component) => component.propKeys)).size
+  },
+  components: components.map((component, index) => ({
+    id: `component-${index + 1}`,
+    name: component.name,
+    title: component.title,
+    componentPath: component.componentPath,
+    propKeys: component.propKeys,
+    storyCount: 1,
+    hasDesignReference: false
+  }))
+});
+
+const createResolvedStorybookThemeFixture = (): ResolvedStorybookTheme =>
+  ({
+    customerBrandId: "sparkasse",
+    brandMappingId: "sparkasse",
+    includeThemeModeToggle: false,
+    light: {
+      themeId: "sparkasse-light",
+      palette: {
+        primary: {
+          main: "#dd0000"
+        },
+        text: {
+          primary: "#111111"
+        },
+        background: {
+          default: "#ffffff",
+          paper: "#ffffff"
+        }
+      },
+      spacingBase: 8,
+      borderRadius: 12,
+      typography: {
+        fontFamily: "Brand Sans",
+        base: {},
+        variants: {}
+      },
+      components: {
+        MuiButton: {
+          defaultProps: {
+            size: "small"
+          }
+        },
+        MuiTextField: {
+          defaultProps: {
+            size: "medium"
+          }
+        }
+      }
+    },
+    tokensDocument: {
+      customerBrandId: "sparkasse",
+      brandMappingId: "sparkasse",
+      includeThemeModeToggle: false,
+      light: {
+        themeId: "sparkasse-light",
+        palette: {
+          primary: {
+            main: "#dd0000"
+          },
+          text: {
+            primary: "#111111"
+          },
+          background: {
+            default: "#ffffff",
+            paper: "#ffffff"
+          }
+        },
+        spacingBase: 8,
+        borderRadius: 12,
+        typography: {
+          fontFamily: "Brand Sans",
+          base: {},
+          variants: {}
+        },
+        components: {}
+      }
+    }
+  }) as ResolvedStorybookTheme;
 
 const createCatalogArtifact = ({
   entries,
@@ -1209,4 +1312,306 @@ test("buildComponentMatchReportArtifact produces unmatched when no Storybook fam
   assert.equal(entry?.match.status, "unmatched");
   assert.equal(entry?.match.confidence, "none");
   assert.deepEqual(entry?.rejectionReasons, ["no_candidates"]);
+});
+
+test("buildComponentMatchReportArtifact resolves sanitized component APIs across dominant Storybook families", () => {
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({
+        familyKey: "button-family",
+        familyName: "Button",
+        variantProperties: [
+          { property: "Variant", values: ["Primary"] },
+          { property: "Size", values: ["Small"] }
+        ]
+      }),
+      createFigmaFamily({
+        familyKey: "textfield-family",
+        familyName: "TextField",
+        variantProperties: [
+          { property: "Variant", values: ["Outlined"] },
+          { property: "Error", values: ["true"] }
+        ]
+      }),
+      createFigmaFamily({
+        familyKey: "select-family",
+        familyName: "Select",
+        variantProperties: [{ property: "Orientation", values: ["Horizontal"] }]
+      }),
+      createFigmaFamily({
+        familyKey: "datepicker-family",
+        familyName: "DatePicker",
+        variantProperties: [{ property: "Disabled", values: ["true"] }]
+      }),
+      createFigmaFamily({
+        familyKey: "accordion-family",
+        familyName: "Accordion",
+        variantProperties: [{ property: "Expanded", values: ["true"] }]
+      }),
+      createFigmaFamily({
+        familyKey: "icon-family",
+        familyName: "Icon",
+        variantProperties: [{ property: "Color", values: ["Primary"] }]
+      }),
+      createFigmaFamily({
+        familyKey: "typography-family",
+        familyName: "Typography",
+        variantProperties: [{ property: "Variant", values: ["H1"] }]
+      })
+    ]
+  });
+  const entries = [
+    createCatalogEntry({
+      id: "button--primary",
+      title: "Components/Button",
+      name: "Primary",
+      familyId: "family-button",
+      componentPath: "./src/components/Button.tsx",
+      args: {
+        appearance: "primary",
+        children: "Continue",
+        size: "small"
+      },
+      argTypes: {
+        appearance: {
+          options: ["primary", "secondary"]
+        }
+      }
+    }),
+    createCatalogEntry({
+      id: "textfield--default",
+      title: "Components/TextField",
+      name: "Default",
+      familyId: "family-textfield",
+      componentPath: "./src/components/TextField.tsx",
+      args: {
+        error: true,
+        label: "Email",
+        slotProps: { input: { endAdornment: "mail" } },
+        variant: "outlined"
+      }
+    }),
+    createCatalogEntry({
+      id: "select--default",
+      title: "Components/Select",
+      name: "Default",
+      familyId: "family-select",
+      componentPath: "./src/components/Select.tsx",
+      args: {
+        children: "Option A",
+        orientation: "horizontal"
+      },
+      argTypes: {
+        orientation: {
+          options: ["horizontal", "vertical"]
+        }
+      }
+    }),
+    createCatalogEntry({
+      id: "datepicker--default",
+      title: "Components/DatePicker",
+      name: "Default",
+      familyId: "family-datepicker",
+      componentPath: "./src/components/DatePicker.tsx",
+      args: {
+        label: "Birthday",
+        slotProps: { textField: { helperText: "Pick a date" } }
+      }
+    }),
+    createCatalogEntry({
+      id: "accordion--default",
+      title: "Components/Accordion",
+      name: "Default",
+      familyId: "family-accordion",
+      componentPath: "./src/components/Accordion.tsx",
+      args: {
+        expanded: true
+      }
+    }),
+    createCatalogEntry({
+      id: "icon--default",
+      title: "Components/Icon",
+      name: "Default",
+      familyId: "family-icon",
+      componentPath: "./src/components/Icon.tsx",
+      args: {
+        color: "primary"
+      },
+      argTypes: {
+        fontSize: {
+          options: ["small", "medium"]
+        }
+      }
+    }),
+    createCatalogEntry({
+      id: "typography--default",
+      title: "Components/Typography",
+      name: "Default",
+      familyId: "family-typography",
+      componentPath: "./src/components/Typography.tsx",
+      args: {
+        children: "Heading",
+        variant: "h1"
+      }
+    })
+  ];
+  const families = [
+    createCatalogFamily({
+      id: "family-button",
+      title: "Components/Button",
+      name: "Button",
+      entryIds: ["button--primary"],
+      storyEntryIds: ["button--primary"],
+      componentPath: "./src/components/Button.tsx",
+      propKeys: ["appearance", "children", "size"]
+    }),
+    createCatalogFamily({
+      id: "family-textfield",
+      title: "Components/TextField",
+      name: "TextField",
+      entryIds: ["textfield--default"],
+      storyEntryIds: ["textfield--default"],
+      componentPath: "./src/components/TextField.tsx",
+      propKeys: ["error", "label", "slotProps", "variant"]
+    }),
+    createCatalogFamily({
+      id: "family-select",
+      title: "Components/Select",
+      name: "Select",
+      entryIds: ["select--default"],
+      storyEntryIds: ["select--default"],
+      componentPath: "./src/components/Select.tsx",
+      propKeys: ["children", "orientation"]
+    }),
+    createCatalogFamily({
+      id: "family-datepicker",
+      title: "Components/DatePicker",
+      name: "DatePicker",
+      entryIds: ["datepicker--default"],
+      storyEntryIds: ["datepicker--default"],
+      componentPath: "./src/components/DatePicker.tsx",
+      propKeys: ["label"]
+    }),
+    createCatalogFamily({
+      id: "family-accordion",
+      title: "Components/Accordion",
+      name: "Accordion",
+      entryIds: ["accordion--default"],
+      storyEntryIds: ["accordion--default"],
+      componentPath: "./src/components/Accordion.tsx",
+      propKeys: ["expanded"]
+    }),
+    createCatalogFamily({
+      id: "family-icon",
+      title: "Components/Icon",
+      name: "Icon",
+      entryIds: ["icon--default"],
+      storyEntryIds: ["icon--default"],
+      componentPath: "./src/components/Icon.tsx",
+      propKeys: ["color", "fontSize"]
+    }),
+    createCatalogFamily({
+      id: "family-typography",
+      title: "Components/Typography",
+      name: "Typography",
+      entryIds: ["typography--default"],
+      storyEntryIds: ["typography--default"],
+      componentPath: "./src/components/Typography.tsx",
+      propKeys: ["children", "variant"]
+    })
+  ];
+  const customerProfile = createCustomerProfileForComponentMatchTests({
+    imports: {
+      Button: {
+        family: "Components",
+        package: "@customer/components",
+        export: "PrimaryButton",
+        importAlias: "CustomerButton",
+        propMappings: {
+          variant: "appearance"
+        }
+      },
+      TextField: {
+        family: "Components",
+        package: "@customer/forms",
+        export: "CustomerTextField"
+      },
+      Select: {
+        family: "Components",
+        package: "@customer/forms",
+        export: "CustomerSelect"
+      },
+      DatePicker: {
+        family: "Components",
+        package: "@customer/forms",
+        export: "CustomerDatePicker"
+      },
+      Accordion: {
+        family: "Components",
+        package: "@customer/content",
+        export: "CustomerAccordion"
+      },
+      Icon: {
+        family: "Components",
+        package: "@customer/icons",
+        export: "CustomerIcon"
+      },
+      Typography: {
+        family: "Components",
+        package: "@customer/typography",
+        export: "CustomerTypography"
+      }
+    }
+  });
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact: createCatalogArtifact({ entries, families }),
+    evidenceArtifact: createEvidenceArtifact({ evidence: [] }),
+    componentsArtifact: createComponentsArtifact({
+      components: families
+        .filter((family): family is StorybookCatalogFamily & { componentPath: string } => typeof family.componentPath === "string")
+        .map((family) => ({
+          name: family.name,
+          title: family.title,
+          componentPath: family.componentPath,
+          propKeys: family.propKeys
+        }))
+    }),
+    resolvedCustomerProfile: customerProfile,
+    resolvedStorybookTheme: createResolvedStorybookThemeFixture()
+  });
+
+  const buttonEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Button");
+  assert.equal(buttonEntry?.resolvedApi?.status, "resolved");
+  assert.equal(buttonEntry?.resolvedProps?.status, "resolved");
+  assert.deepEqual(buttonEntry?.resolvedProps?.omittedDefaults, [
+    {
+      source: "storybook_theme_defaultProps",
+      sourceProp: "size",
+      targetProp: "size",
+      value: "small"
+    }
+  ]);
+  assert.equal(buttonEntry?.resolvedApi?.allowedProps.some((prop) => prop.name === "appearance"), true);
+
+  const textFieldEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "TextField");
+  assert.equal(textFieldEntry?.resolvedProps?.codegenCompatible, true);
+  assert.equal(textFieldEntry?.resolvedProps?.slots.policy, "supported");
+
+  const selectEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Select");
+  assert.equal(selectEntry?.resolvedProps?.codegenCompatible, true);
+
+  const datePickerEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "DatePicker");
+  assert.notEqual(datePickerEntry, undefined);
+
+  const accordionEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Accordion");
+  assert.notEqual(accordionEntry, undefined);
+
+  const iconEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Icon");
+  assert.equal(iconEntry?.resolvedProps?.codegenCompatible, true);
+
+  const typographyEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Typography");
+  assert.equal(typographyEntry?.resolvedProps?.codegenCompatible, true);
+  assert.equal(typographyEntry?.resolvedProps?.children.policy, "supported");
 });

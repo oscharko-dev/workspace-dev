@@ -29,6 +29,7 @@ import {
   buildComponentMatchReportArtifact,
   writeComponentMatchReportArtifact
 } from "../../storybook/component-match-report.js";
+import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
 import {
   createJobStorybookArtifactPaths,
   generateStorybookArtifactsForJob,
@@ -148,12 +149,35 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         return;
       }
 
+      let resolvedStorybookTheme:
+        | ReturnType<typeof resolveStorybookTheme>
+        | undefined;
+      if (context.resolvedCustomerProfile && context.resolvedCustomerBrandId) {
+        try {
+          resolvedStorybookTheme = resolveStorybookTheme({
+            customerBrandId: context.resolvedCustomerBrandId,
+            customerProfile: context.resolvedCustomerProfile,
+            tokensArtifact: storybookArtifacts.publicArtifacts.tokensArtifact,
+            themesArtifact: storybookArtifacts.publicArtifacts.themesArtifact
+          });
+        } catch (error) {
+          context.log({
+            level: "warn",
+            message:
+              `Storybook theme defaults could not be resolved during component.match_report generation; ` +
+              `default-prop suppression will be skipped: ${getErrorMessage(error)}`
+          });
+        }
+      }
+
       const artifact = buildComponentMatchReportArtifact({
         figmaAnalysis,
         catalogArtifact: storybookArtifacts.catalogArtifact,
         evidenceArtifact: storybookArtifacts.evidenceArtifact,
+        componentsArtifact: storybookArtifacts.publicArtifacts.componentsArtifact,
         ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {}),
-        ...(context.resolvedCustomerProfile ? { resolvedCustomerProfile: context.resolvedCustomerProfile } : {})
+        ...(context.resolvedCustomerProfile ? { resolvedCustomerProfile: context.resolvedCustomerProfile } : {}),
+        ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {})
       });
       const writtenFile = await writeComponentMatchReportArtifact({
         artifact,

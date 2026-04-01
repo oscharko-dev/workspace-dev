@@ -8,6 +8,8 @@ export interface DesignSystemMappingEntry {
   component: string;
   export?: string;
   propMappings?: Record<string, string>;
+  omittedProps?: string[];
+  defaultProps?: Record<string, boolean | number | string>;
 }
 
 export interface DesignSystemConfig {
@@ -216,6 +218,54 @@ const normalizePropMappings = ({
   return Object.fromEntries(normalizedEntries);
 };
 
+const normalizeOmittedProps = ({
+  input,
+}: {
+  input: unknown;
+}): string[] | undefined => {
+  if (!Array.isArray(input)) {
+    return undefined;
+  }
+
+  const normalized = [...new Set(
+    input
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => isValidIdentifier(entry)),
+  )].sort((left, right) => left.localeCompare(right));
+
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeDefaultProps = ({
+  input,
+}: {
+  input: unknown;
+}): Record<string, boolean | number | string> | undefined => {
+  if (!isPlainRecord(input)) {
+    return undefined;
+  }
+
+  const normalizedEntries = Object.entries(input)
+    .map(([propName, rawValue]) => {
+      if (
+        !isValidIdentifier(propName) ||
+        (typeof rawValue !== "boolean" && typeof rawValue !== "number" && typeof rawValue !== "string")
+      ) {
+        return undefined;
+      }
+      return [propName, rawValue] as const;
+    })
+    .filter((entry): entry is readonly [string, boolean | number | string] => entry !== undefined)
+    .sort((left, right) => left[0].localeCompare(right[0]));
+
+  if (normalizedEntries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(normalizedEntries);
+};
+
 export const parseDesignSystemConfig = ({
   input,
 }: {
@@ -264,6 +314,12 @@ export const parseDesignSystemConfig = ({
       const propMappings = normalizePropMappings({
         input: rawMapping.propMappings,
       });
+      const omittedProps = normalizeOmittedProps({
+        input: rawMapping.omittedProps,
+      });
+      const defaultProps = normalizeDefaultProps({
+        input: rawMapping.defaultProps,
+      });
 
       return [
         muiComponentName,
@@ -272,6 +328,8 @@ export const parseDesignSystemConfig = ({
           component,
           ...(exportedName ? { export: exportedName } : {}),
           ...(propMappings ? { propMappings } : {}),
+          ...(omittedProps ? { omittedProps } : {}),
+          ...(defaultProps ? { defaultProps } : {}),
         } satisfies DesignSystemMappingEntry,
       ] as const;
     })
@@ -331,6 +389,8 @@ interface ResolvedMuiReplacement {
   designLocalName: string;
   modulePath: string;
   propMappings: Record<string, string>;
+  omittedProps: ReadonlySet<string>;
+  defaultProps: Record<string, boolean | number | string>;
 }
 
 interface TextEdit {
@@ -483,6 +543,49 @@ const applyTextEdits = ({
     }, content);
 };
 
+const toJsxAttributePrimitiveValue = ({
+  attribute,
+  typescriptModule,
+}: {
+  attribute: TypeScript.JsxAttribute;
+  typescriptModule: typeof TypeScript;
+}): boolean | number | string | undefined => {
+  if (!attribute.initializer) {
+    return true;
+  }
+  if (typescriptModule.isStringLiteral(attribute.initializer)) {
+    return attribute.initializer.text;
+  }
+  if (
+    !typescriptModule.isJsxExpression(attribute.initializer) ||
+    !attribute.initializer.expression
+  ) {
+    return undefined;
+  }
+
+  const expression = attribute.initializer.expression;
+  if (typescriptModule.isStringLiteralLike(expression)) {
+    return expression.text;
+  }
+  if (expression.kind === typescriptModule.SyntaxKind.TrueKeyword) {
+    return true;
+  }
+  if (expression.kind === typescriptModule.SyntaxKind.FalseKeyword) {
+    return false;
+  }
+  if (typescriptModule.isNumericLiteral(expression)) {
+    return Number(expression.text);
+  }
+  if (
+    typescriptModule.isPrefixUnaryExpression(expression) &&
+    expression.operator === typescriptModule.SyntaxKind.MinusToken &&
+    typescriptModule.isNumericLiteral(expression.operand)
+  ) {
+    return -Number(expression.operand.text);
+  }
+  return undefined;
+};
+
 const analyzeImportDeclarationForDesignSystemTransform = ({
   content,
   config,
@@ -614,8 +717,34 @@ const collectJsxTransformEdits = ({
             ) {
               continue;
             }
-            const targetProp = replacement.propMappings[attribute.name.text];
-            if (!targetProp || targetProp === attribute.name.text) {
+            const targetProp =
+              replacement.propMappings[attribute.name.text] ?? attribute.name.text;
+            if (replacement.omittedProps.has(attribute.name.text)) {
+              edits.push({
+                start: attribute.getFullStart(),
+                end: attribute.getEnd(),
+                replacement: "",
+              });
+              continue;
+            }
+            const defaultValue = replacement.defaultProps[targetProp];
+            const attributeValue = toJsxAttributePrimitiveValue({
+              attribute,
+              typescriptModule,
+            });
+            if (
+              defaultValue !== undefined &&
+              attributeValue !== undefined &&
+              attributeValue === defaultValue
+            ) {
+              edits.push({
+                start: attribute.getFullStart(),
+                end: attribute.getEnd(),
+                replacement: "",
+              });
+              continue;
+            }
+            if (targetProp === attribute.name.text) {
               continue;
             }
             edits.push({
@@ -751,6 +880,8 @@ export const applyDesignSystemMappingsToGeneratedTsx = ({
       designLocalName,
       modulePath,
       propMappings: pending.mapping.propMappings ?? {},
+      omittedProps: new Set(pending.mapping.omittedProps ?? []),
+      defaultProps: pending.mapping.defaultProps ?? {},
     });
   }
 
@@ -1089,6 +1220,22 @@ export const writeDesignSystemConfigFile = async ({
                       propMappings: Object.fromEntries(
                         Object.entries(mapping.propMappings).sort(
                           (left, right) => left[0].localeCompare(right[0]),
+                        ),
+                      ),
+                    }
+                  : {}),
+                ...(mapping.omittedProps
+                  ? {
+                      omittedProps: [...mapping.omittedProps].sort((left, right) =>
+                        left.localeCompare(right),
+                      ),
+                    }
+                  : {}),
+                ...(mapping.defaultProps
+                  ? {
+                      defaultProps: Object.fromEntries(
+                        Object.entries(mapping.defaultProps).sort((left, right) =>
+                          left[0].localeCompare(right[0]),
                         ),
                       ),
                     }

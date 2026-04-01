@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import type { WorkspaceBrandTheme } from "./contracts/index.js";
 import type { DesignSystemConfig, DesignSystemMappingEntry } from "./design-system.js";
-import type { ComponentMatchReportArtifact, ComponentMatchReportResolvedImport } from "./storybook/types.js";
+import type {
+  ComponentMatchReportArtifact,
+  ComponentMatchReportResolvedImport,
+  ComponentMatchResolvedApi
+} from "./storybook/types.js";
 
 const CUSTOMER_PROFILE_VERSION = 1 as const;
 const JS_IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
@@ -190,6 +194,8 @@ const toSortedRecord = <T>(input: Record<string, T>): Record<string, T> => {
   );
 };
 
+const sortUniqueStrings = (values: readonly string[]): string[] => [...new Set(values)].sort((left, right) => left.localeCompare(right));
+
 const toSortedPropMappings = (propMappings: Record<string, string>): Record<string, string> | undefined => {
   const entries = Object.entries(propMappings).sort((left, right) => left[0].localeCompare(right[0]));
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
@@ -201,6 +207,38 @@ const toResolvedImportSignature = ({ resolvedImport }: { resolvedImport: Compone
     exportName: resolvedImport.exportName,
     localName: resolvedImport.localName,
     ...(resolvedImport.propMappings ? { propMappings: toSortedRecord(resolvedImport.propMappings) } : {})
+  });
+};
+
+const toResolvedApiDefaultPropsRecord = ({
+  resolvedApi
+}: {
+  resolvedApi: ComponentMatchResolvedApi;
+}): Record<string, boolean | number | string> | undefined => {
+  if (resolvedApi.defaultProps.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    [...resolvedApi.defaultProps]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((entry) => [entry.name, entry.value] as const)
+  );
+};
+
+const toResolvedApiSignature = ({
+  resolvedApi
+}: {
+  resolvedApi: ComponentMatchResolvedApi;
+}): string => {
+  return JSON.stringify({
+    allowedProps: resolvedApi.allowedProps.map((prop) => ({
+      name: prop.name,
+      kind: prop.kind,
+      ...(prop.allowedValues ? { allowedValues: [...prop.allowedValues] } : {})
+    })),
+    children: resolvedApi.children,
+    slots: resolvedApi.slots,
+    ...(resolvedApi.defaultProps.length > 0 ? { defaultProps: toResolvedApiDefaultPropsRecord({ resolvedApi }) } : {})
   });
 };
 
@@ -1209,15 +1247,17 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
 }: {
   artifact: ComponentMatchReportArtifact;
 }): ComponentMatchReportDesignSystemConfigResult => {
-  const mappingCandidates = new Map<
-    string,
-    {
-      resolvedImport: ComponentMatchReportResolvedImport;
-      signature: string;
-    }
-  >();
-  const conflictedComponentKeys = new Set<string>();
   const warnings: string[] = [];
+  const entriesByComponentKey = new Map<
+    string,
+    Array<{
+      familyKey: string;
+      resolvedImport: ComponentMatchReportResolvedImport;
+      importSignature: string;
+      resolvedApi?: NonNullable<(typeof artifact.entries)[number]["resolvedApi"]>;
+      resolvedProps?: NonNullable<(typeof artifact.entries)[number]["resolvedProps"]>;
+    }>
+  >();
 
   for (const entry of artifact.entries) {
     if (entry.libraryResolution.status !== "resolved_import") {
@@ -1235,46 +1275,93 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     const signature = toResolvedImportSignature({
       resolvedImport
     });
-    const existing = mappingCandidates.get(componentKey);
-    if (!existing) {
-      mappingCandidates.set(componentKey, {
-        resolvedImport,
-        signature
-      });
-      continue;
-    }
+    const existingEntries = entriesByComponentKey.get(componentKey) ?? [];
+    existingEntries.push({
+      familyKey: entry.figma.familyKey,
+      resolvedImport,
+      importSignature: signature,
+      ...(entry.resolvedApi ? { resolvedApi: entry.resolvedApi } : {}),
+      ...(entry.resolvedProps ? { resolvedProps: entry.resolvedProps } : {})
+    });
+    entriesByComponentKey.set(componentKey, existingEntries);
+  }
 
-    if (existing.signature === signature) {
-      continue;
-    }
-
-    if (!conflictedComponentKeys.has(componentKey)) {
+  const mappingEntries: Array<readonly [string, DesignSystemMappingEntry]> = [];
+  for (const [componentKey, entries] of [...entriesByComponentKey.entries()].sort((left, right) =>
+    left[0].localeCompare(right[0])
+  )) {
+    const importSignatures = new Set(entries.map((entry) => entry.importSignature));
+    if (importSignatures.size > 1) {
       warnings.push(
         `Component match report resolved multiple customer-profile imports for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
       );
-      conflictedComponentKeys.add(componentKey);
+      continue;
     }
+
+    const legacyEntries = entries.filter((entry) => !entry.resolvedApi || !entry.resolvedProps);
+    const resolvedEntries = entries.filter((entry) => entry.resolvedApi && entry.resolvedProps);
+    if (legacyEntries.length > 0 && resolvedEntries.length > 0) {
+      warnings.push(
+        `Component match report mixed legacy and resolved component-api records for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
+      );
+      continue;
+    }
+
+    if (
+      resolvedEntries.some(
+        (entry) =>
+          entry.resolvedApi?.status !== "resolved" ||
+          entry.resolvedProps?.status !== "resolved" ||
+          entry.resolvedProps?.codegenCompatible !== true
+      )
+    ) {
+      warnings.push(
+        `Component match report found incompatible component-api contracts for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
+      );
+      continue;
+    }
+
+    const resolvedApiSignatures = new Set(
+      resolvedEntries.map((entry) => toResolvedApiSignature({ resolvedApi: entry.resolvedApi! }))
+    );
+    if (resolvedApiSignatures.size > 1) {
+      warnings.push(
+        `Component match report resolved multiple component-api contracts for component key '${componentKey}'; excluding it from storybook-first design-system mappings.`
+      );
+      continue;
+    }
+
+    const representativeEntry = entries[0];
+    const resolvedImport = representativeEntry?.resolvedImport;
+    if (!resolvedImport) {
+      continue;
+    }
+    const propMappings = resolvedImport.propMappings ? toSortedPropMappings(resolvedImport.propMappings) : undefined;
+    const resolvedApi = resolvedEntries[0]?.resolvedApi;
+    const omittedProps = sortUniqueStrings(
+      resolvedEntries.flatMap((entry) => entry.resolvedProps?.omittedProps.map((item) => item.sourceProp) ?? [])
+    );
+    const defaultProps = resolvedApi ? toResolvedApiDefaultPropsRecord({ resolvedApi }) : undefined;
+    if (legacyEntries.length > 0) {
+      warnings.push(
+        `Component match report for component key '${componentKey}' does not include resolved component-api data; applying legacy storybook-first import mapping.`
+      );
+    }
+
+    mappingEntries.push([
+      componentKey,
+      {
+        import: resolvedImport.package,
+        export: resolvedImport.exportName,
+        component: resolvedImport.localName,
+        ...(propMappings ? { propMappings } : {}),
+        ...(omittedProps.length > 0 ? { omittedProps } : {}),
+        ...(defaultProps ? { defaultProps } : {})
+      } satisfies DesignSystemMappingEntry
+    ] as const);
   }
 
-  const mappings: Record<string, DesignSystemMappingEntry> = Object.fromEntries(
-    [...mappingCandidates.entries()]
-      .filter(([componentKey]) => !conflictedComponentKeys.has(componentKey))
-      .sort((left, right) => left[0].localeCompare(right[0]))
-      .map(([componentKey, { resolvedImport }]) => {
-        const propMappings = resolvedImport.propMappings
-          ? toSortedPropMappings(resolvedImport.propMappings)
-          : undefined;
-        return [
-          componentKey,
-          {
-            import: resolvedImport.package,
-            export: resolvedImport.exportName,
-            component: resolvedImport.localName,
-            ...(propMappings ? { propMappings } : {})
-          } satisfies DesignSystemMappingEntry
-        ] as const;
-      })
-  );
+  const mappings: Record<string, DesignSystemMappingEntry> = Object.fromEntries(mappingEntries);
 
   return {
     ...(Object.keys(mappings).length > 0

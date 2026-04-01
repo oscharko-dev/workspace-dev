@@ -242,7 +242,7 @@ const createComponentMatchStorybookBuild = async (): Promise<string> => {
       name: "Primary Large",
       importPath: "./src/components/Button/Button.stories.tsx",
       componentPath: "./src/components/Button/Button.tsx",
-      args: { variant: "primary", size: "large" }
+      args: { appearance: "primary", size: "large", children: "Continue" }
     },
     {
       id: "forms-text-field--default",
@@ -266,7 +266,7 @@ const createComponentMatchStorybookBuild = async (): Promise<string> => {
       name: "Collapsed",
       importPath: "./src/components/Accordion/Accordion.stories.tsx",
       componentPath: "./src/components/Accordion/Accordion.tsx",
-      args: { state: "collapsed" }
+      args: { state: "collapsed", children: "Details" }
     },
     {
       id: "foundations-typography--heading",
@@ -543,9 +543,11 @@ const createCustomerProfileForStageServices = () => {
 };
 
 const createStorybookMatchCustomerProfileForStageServices = ({
-  matchPolicy = "warn"
+  matchPolicy = "warn",
+  fallbackComponents
 }: {
   matchPolicy?: "off" | "warn" | "error";
+  fallbackComponents?: Record<string, "allow" | "deny">;
 } = {}) => {
   const customerProfile = parseCustomerProfileConfig({
     input: {
@@ -614,7 +616,10 @@ const createStorybookMatchCustomerProfileForStageServices = ({
             family: "Components",
             package: "@customer/components",
             export: "PrimaryButton",
-            importAlias: "CustomerButton"
+            importAlias: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
           },
           TextField: {
             family: "ReactUI",
@@ -632,7 +637,8 @@ const createStorybookMatchCustomerProfileForStageServices = ({
         mui: {
           defaultPolicy: "deny",
           components: {
-            Icon: "allow"
+            Icon: "allow",
+            ...(fallbackComponents ?? {})
           }
         }
       },
@@ -738,7 +744,91 @@ const createComponentMatchReportArtifactForStageServices = ({
         storyVariant: {
           entryId: "button--primary",
           storyName: "Primary"
-        }
+        },
+        resolvedApi:
+          libraryResolutionStatus === "resolved_import"
+            ? {
+                status: "resolved",
+                componentKey: "Button",
+                import: {
+                  package: "@customer/components",
+                  exportName: "PrimaryButton",
+                  localName: "CustomerButton"
+                },
+                allowedProps: [
+                  {
+                    name: "children",
+                    kind: "string"
+                  },
+                  {
+                    name: "variant",
+                    kind: "enum",
+                    allowedValues: ["primary"]
+                  }
+                ],
+                defaultProps: [],
+                children: {
+                  policy: "supported"
+                },
+                slots: {
+                  policy: "not_used",
+                  props: []
+                },
+                diagnostics: []
+              }
+            : {
+                status: "not_applicable",
+                allowedProps: [],
+                defaultProps: [],
+                children: {
+                  policy: "unknown"
+                },
+                slots: {
+                  policy: "not_used",
+                  props: []
+                },
+                diagnostics: []
+              },
+        resolvedProps:
+          libraryResolutionStatus === "resolved_import"
+            ? {
+                status: "resolved",
+                fallbackPolicy: "deny",
+                props: [
+                  {
+                    sourceProp: "variant",
+                    targetProp: "variant",
+                    kind: "enum",
+                    values: ["primary"]
+                  }
+                ],
+                omittedProps: [],
+                omittedDefaults: [],
+                children: {
+                  policy: "supported"
+                },
+                slots: {
+                  policy: "not_used",
+                  props: []
+                },
+                codegenCompatible: true,
+                diagnostics: []
+              }
+            : {
+                status: "not_applicable",
+                props: [],
+                omittedProps: [],
+                omittedDefaults: [],
+                children: {
+                  policy: "unknown"
+                },
+                slots: {
+                  policy: "not_used",
+                  props: []
+                },
+                codegenCompatible: true,
+                diagnostics: []
+              }
       }
     ]
   };
@@ -1058,6 +1148,8 @@ test("IrDeriveService writes and registers component.match_report for local_json
     entries: Array<{
       storybookFamily?: { name?: string };
       libraryResolution?: { status?: string; reason?: string; componentKey?: string; import?: { package?: string } };
+      resolvedApi?: { status?: string; allowedProps?: Array<{ name?: string }> };
+      resolvedProps?: { status?: string; codegenCompatible?: boolean };
     }>;
   };
   assert.equal(artifact.artifact, "component.match_report");
@@ -1072,6 +1164,10 @@ test("IrDeriveService writes and registers component.match_report for local_json
   assert.equal(buttonEntry?.libraryResolution?.status, "resolved_import");
   assert.equal(buttonEntry?.libraryResolution?.componentKey, "Button");
   assert.equal(buttonEntry?.libraryResolution?.import?.package, "@customer/components");
+  assert.equal(buttonEntry?.resolvedApi?.status, "resolved");
+  assert.equal(buttonEntry?.resolvedProps?.status, "resolved");
+  assert.equal(buttonEntry?.resolvedProps?.codegenCompatible, true);
+  assert.equal(buttonEntry?.resolvedApi?.allowedProps?.some((prop) => prop.name === "appearance"), true);
 });
 
 test("IrDeriveService cache hits still write and register figma.analysis", async () => {
@@ -1932,6 +2028,204 @@ test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async (
   );
 });
 
+test("CodegenGenerateService excludes incompatible storybook-first mappings from component.match_report", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, "{}\n", "utf8");
+  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      {
+        ...createComponentMatchReportArtifactForStageServices(),
+        entries: [
+          {
+            ...createComponentMatchReportArtifactForStageServices().entries[0],
+            resolvedApi: {
+              status: "resolved",
+              componentKey: "Button",
+              import: {
+                package: "@customer/components",
+                exportName: "PrimaryButton",
+                localName: "CustomerButton"
+              },
+              allowedProps: [
+                {
+                  name: "variant",
+                  kind: "enum",
+                  allowedValues: ["primary"]
+                }
+              ],
+              defaultProps: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              diagnostics: [
+                {
+                  severity: "error",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            },
+            resolvedProps: {
+              status: "incompatible",
+              fallbackPolicy: "deny",
+              props: [],
+              omittedProps: [],
+              omittedDefaults: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              codegenCompatible: false,
+              diagnostics: [
+                {
+                  severity: "error",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: { fontFamily: "Brand Sans" },
+            variants: {}
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: { fontFamily: "Brand Sans" },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.equal(input.customerProfileDesignSystemConfig, undefined);
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 0,
+          fallbackNodes: 0,
+          totalCandidateNodes: 0
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-match-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+});
+
 test("ValidateProjectService reads generated.project and writes validation.summary", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     runtimeOverrides: {
@@ -2272,6 +2566,357 @@ export default defineConfig({
   assert.equal(summary?.mapping?.customerProfileMatch?.status, "warn");
   assert.equal(summary?.mapping?.customerProfileMatch?.issueCount, 1);
   assert.equal(summary?.mapping?.customerProfileMatch?.issues?.[0]?.reason, "match_ambiguous");
+});
+
+test("ValidateProjectService marks mapping.componentApi as warn and continues when fallback is allowed", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    fallbackComponents: {
+      Button: "allow"
+    }
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'export const App = () => null;\n',
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-component-api-warn"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      {
+        ...createComponentMatchReportArtifactForStageServices(),
+        entries: [
+          {
+            ...createComponentMatchReportArtifactForStageServices().entries[0],
+            resolvedApi: {
+              status: "resolved",
+              componentKey: "Button",
+              import: {
+                package: "@customer/components",
+                exportName: "PrimaryButton",
+                localName: "CustomerButton"
+              },
+              allowedProps: [
+                {
+                  name: "variant",
+                  kind: "enum",
+                  allowedValues: ["primary"]
+                }
+              ],
+              defaultProps: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              diagnostics: [
+                {
+                  severity: "warning",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            },
+            resolvedProps: {
+              status: "incompatible",
+              fallbackPolicy: "allow",
+              props: [],
+              omittedProps: [],
+              omittedDefaults: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              codegenCompatible: false,
+              diagnostics: [
+                {
+                  severity: "warning",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(validationInvoked, true);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      componentApi?: {
+        status?: string;
+        issueCount?: number;
+        issues?: Array<{ code?: string }>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "warn");
+  assert.equal(summary?.mapping?.status, "warn");
+  assert.equal(summary?.mapping?.componentApi?.status, "warn");
+  assert.equal(summary?.mapping?.componentApi?.issueCount, 1);
+  assert.equal(summary?.mapping?.componentApi?.issues?.[0]?.code, "component_api_children_unsupported");
+});
+
+test("ValidateProjectService persists failed component API policy before project validation", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    matchPolicy: "warn"
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'export const App = () => null;\n',
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-component-api-failed"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(
+      {
+        ...createComponentMatchReportArtifactForStageServices(),
+        entries: [
+          {
+            ...createComponentMatchReportArtifactForStageServices().entries[0],
+            resolvedApi: {
+              status: "resolved",
+              componentKey: "Button",
+              import: {
+                package: "@customer/components",
+                exportName: "PrimaryButton",
+                localName: "CustomerButton"
+              },
+              allowedProps: [
+                {
+                  name: "variant",
+                  kind: "enum",
+                  allowedValues: ["primary"]
+                }
+              ],
+              defaultProps: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              diagnostics: [
+                {
+                  severity: "error",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            },
+            resolvedProps: {
+              status: "incompatible",
+              fallbackPolicy: "deny",
+              props: [],
+              omittedProps: [],
+              omittedDefaults: [],
+              children: {
+                policy: "unsupported"
+              },
+              slots: {
+                policy: "not_used",
+                props: []
+              },
+              codegenCompatible: false,
+              diagnostics: [
+                {
+                  severity: "error",
+                  code: "component_api_children_unsupported",
+                  message: "Resolved component 'Button' does not expose 'children'.",
+                  targetProp: "children"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Customer profile component API gate failed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      componentApi?: {
+        status?: string;
+        issueCount?: number;
+        issues?: Array<{ code?: string }>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.mapping?.status, "failed");
+  assert.equal(summary?.mapping?.componentApi?.status, "failed");
+  assert.equal(summary?.mapping?.componentApi?.issueCount, 1);
+  assert.equal(summary?.mapping?.componentApi?.issues?.[0]?.code, "component_api_children_unsupported");
 });
 
 test("ValidateProjectService forwards aborted signal to project validation", async () => {

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeVariantKey, normalizeVariantValue } from "../parity/ir-variants.js";
+import { resolveComponentApiContract } from "./component-api-resolver.js";
 import {
   isCustomerProfileMuiFallbackAllowed,
   resolveCustomerProfileComponentImport,
@@ -16,6 +17,7 @@ import type {
   FigmaLibraryResolutionArtifact,
   FigmaLibraryResolutionEntry
 } from "../job-engine/figma-library-resolution.js";
+import type { ResolvedStorybookTheme } from "./theme-resolver.js";
 import { uniqueSorted } from "./text.js";
 import type {
   ComponentMatchConfidence,
@@ -38,7 +40,8 @@ import type {
   StorybookCatalogFamily,
   StorybookCatalogJsonValue,
   StorybookEvidenceArtifact,
-  StorybookEvidenceReliability
+  StorybookEvidenceReliability,
+  StorybookPublicComponentsArtifact
 } from "./types.js";
 
 const COMPONENT_MATCH_REPORT_OUTPUT_FILE_NAME = "component-match-report.json";
@@ -71,8 +74,10 @@ interface BuildComponentMatchReportArtifactInput {
   figmaAnalysis: FigmaAnalysis;
   catalogArtifact: StorybookCatalogArtifact;
   evidenceArtifact: StorybookEvidenceArtifact;
+  componentsArtifact?: StorybookPublicComponentsArtifact;
   figmaLibraryResolutionArtifact?: FigmaLibraryResolutionArtifact;
   resolvedCustomerProfile?: ResolvedCustomerProfile;
+  resolvedStorybookTheme?: ResolvedStorybookTheme;
 }
 
 interface ParsedFigmaLink {
@@ -1194,8 +1199,10 @@ export const buildComponentMatchReportArtifact = ({
   figmaAnalysis,
   catalogArtifact,
   evidenceArtifact,
+  componentsArtifact,
   figmaLibraryResolutionArtifact,
-  resolvedCustomerProfile
+  resolvedCustomerProfile,
+  resolvedStorybookTheme
 }: BuildComponentMatchReportArtifactInput): ComponentMatchReportArtifact => {
   const lookup = buildStorybookLookup({
     catalogArtifact,
@@ -1265,6 +1272,27 @@ export const buildComponentMatchReportArtifact = ({
         ...(selectedFamily ? { selectedFamily } : {}),
         ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {})
       });
+      const selectedStoryEntry = storyVariant.storyVariant
+        ? lookup.entriesById.get(storyVariant.storyVariant.entryId)
+        : undefined;
+      const fallbackPolicy =
+        resolvedCustomerProfile && libraryResolution.componentKey
+          ? (isCustomerProfileMuiFallbackAllowed({
+              profile: resolvedCustomerProfile,
+              componentKey: libraryResolution.componentKey
+            })
+              ? "allow"
+              : "deny")
+          : undefined;
+      const { resolvedApi, resolvedProps } = resolveComponentApiContract({
+        figmaFamily: resolvedFigmaFamily.figma,
+        libraryResolution,
+        ...(topCandidate ? { storybookFamily: topCandidate.family } : {}),
+        ...(selectedStoryEntry ? { storyEntry: selectedStoryEntry } : {}),
+        ...(componentsArtifact ? { componentsArtifact } : {}),
+        ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
+        ...(fallbackPolicy ? { fallbackPolicy } : {})
+      });
 
       return {
         figma: resolvedFigmaFamily.figma,
@@ -1278,7 +1306,9 @@ export const buildComponentMatchReportArtifact = ({
         fallbackReasons,
         libraryResolution,
         ...(selectedFamily ? { storybookFamily: selectedFamily } : {}),
-        ...(storyVariant.storyVariant ? { storyVariant: storyVariant.storyVariant } : {})
+        ...(storyVariant.storyVariant ? { storyVariant: storyVariant.storyVariant } : {}),
+        resolvedApi,
+        resolvedProps
       } satisfies ComponentMatchReportEntry;
     })
     .sort(compareReportEntries);

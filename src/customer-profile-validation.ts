@@ -2,13 +2,15 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   collectCustomerProfileImportIssuesFromSource,
+  isCustomerProfileMuiFallbackAllowed,
   type CustomerProfileImportIssue,
   type ResolvedCustomerProfile
 } from "./customer-profile.js";
 import type {
   ComponentMatchLibraryResolutionReason,
   ComponentMatchLibraryResolutionStatus,
-  ComponentMatchReportArtifact
+  ComponentMatchReportArtifact,
+  ComponentMatchResolvedDiagnosticCode
 } from "./storybook/types.js";
 
 export interface CustomerProfileValidationIssue {
@@ -59,6 +61,31 @@ export interface CustomerProfileMatchValidationSummary {
   };
 }
 
+export type CustomerProfileComponentApiValidationReason =
+  | ComponentMatchResolvedDiagnosticCode
+  | "component_api_missing"
+  | "component_api_signature_conflict";
+
+export interface CustomerProfileComponentApiValidationIssue {
+  severity: "warning" | "error";
+  code: CustomerProfileComponentApiValidationReason;
+  figmaFamilyKey: string;
+  figmaFamilyName: string;
+  componentKey?: string;
+  sourceProp?: string;
+  targetProp?: string;
+  message: string;
+}
+
+export interface CustomerProfileComponentApiValidationSummary {
+  status: "ok" | "warn" | "failed";
+  issueCount: number;
+  counts: {
+    byReason: Record<CustomerProfileComponentApiValidationReason, number>;
+  };
+  issues: CustomerProfileComponentApiValidationIssue[];
+}
+
 const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
   "resolved_import",
   "mui_fallback_allowed",
@@ -80,6 +107,13 @@ const ISSUE_LIBRARY_RESOLUTION_REASONS = new Set<ComponentMatchLibraryResolution
   "profile_import_missing",
   "profile_import_family_mismatch"
 ]);
+const COMPONENT_API_REASON_CODES = [
+  "component_api_children_unsupported",
+  "component_api_missing",
+  "component_api_prop_unsupported",
+  "component_api_signature_conflict",
+  "component_api_slot_unsupported"
+] as const satisfies readonly CustomerProfileComponentApiValidationReason[];
 
 const readJsonRecord = async ({ filePath }: { filePath: string }): Promise<Record<string, unknown>> => {
   const parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
@@ -242,6 +276,12 @@ const createMatchReasonCounts = (): Record<ComponentMatchLibraryResolutionReason
   ) as Record<ComponentMatchLibraryResolutionReason, number>;
 };
 
+const createComponentApiReasonCounts = (): Record<CustomerProfileComponentApiValidationReason, number> => {
+  return Object.fromEntries(
+    COMPONENT_API_REASON_CODES.map((reason) => [reason, 0])
+  ) as Record<CustomerProfileComponentApiValidationReason, number>;
+};
+
 const toCustomerProfileMatchIssueMessage = ({
   componentKey,
   figmaFamilyName,
@@ -340,6 +380,146 @@ export const validateCustomerProfileComponentMatchReport = ({
     issueCount: issues.length,
     issues,
     counts
+  };
+};
+
+export const validateCustomerProfileComponentApiComponentMatchReport = ({
+  artifact,
+  customerProfile
+}: {
+  artifact: ComponentMatchReportArtifact;
+  customerProfile: ResolvedCustomerProfile;
+}): CustomerProfileComponentApiValidationSummary => {
+  const issues: CustomerProfileComponentApiValidationIssue[] = [];
+  const counts = {
+    byReason: createComponentApiReasonCounts()
+  };
+  const resolvedEntriesByComponentKey = new Map<
+    string,
+    Array<{
+      figmaFamilyKey: string;
+      figmaFamilyName: string;
+      apiSignature: string | undefined;
+      issueSeverity: "warning" | "error";
+    }>
+  >();
+
+  for (const entry of artifact.entries) {
+    if (entry.libraryResolution.status !== "resolved_import") {
+      continue;
+    }
+    const componentKey = entry.libraryResolution.componentKey?.trim();
+    const issueSeverity =
+      componentKey &&
+      isCustomerProfileMuiFallbackAllowed({
+        profile: customerProfile,
+        componentKey
+      })
+        ? "warning"
+        : "error";
+
+    if (!componentKey || !entry.resolvedApi || !entry.resolvedProps) {
+      issues.push({
+        severity: issueSeverity,
+        code: "component_api_missing",
+        figmaFamilyKey: entry.figma.familyKey,
+        figmaFamilyName: entry.figma.familyName,
+        ...(componentKey ? { componentKey } : {}),
+        message:
+          `component.match_report entry '${entry.figma.familyKey}' is missing resolved component-api data ` +
+          `for component '${componentKey ?? "unknown"}'.`
+      });
+      continue;
+    }
+
+    const groupEntries = resolvedEntriesByComponentKey.get(componentKey) ?? [];
+    groupEntries.push({
+      figmaFamilyKey: entry.figma.familyKey,
+      figmaFamilyName: entry.figma.familyName,
+      apiSignature:
+        entry.resolvedApi.status === "resolved"
+          ? JSON.stringify({
+              allowedProps: entry.resolvedApi.allowedProps,
+              children: entry.resolvedApi.children,
+              slots: entry.resolvedApi.slots,
+              defaultProps: entry.resolvedApi.defaultProps
+            })
+          : undefined,
+      issueSeverity
+    });
+    resolvedEntriesByComponentKey.set(componentKey, groupEntries);
+
+    if (entry.resolvedProps.status === "resolved" && entry.resolvedProps.codegenCompatible) {
+      continue;
+    }
+
+    if (entry.resolvedProps.diagnostics.length === 0) {
+      issues.push({
+        severity: issueSeverity,
+        code: "component_api_missing",
+        figmaFamilyKey: entry.figma.familyKey,
+        figmaFamilyName: entry.figma.familyName,
+        componentKey,
+        message: `Resolved component '${componentKey}' is not codegen-compatible.`
+      });
+      continue;
+    }
+
+    for (const diagnostic of entry.resolvedProps.diagnostics) {
+      issues.push({
+        severity: diagnostic.severity,
+        code: diagnostic.code,
+        figmaFamilyKey: entry.figma.familyKey,
+        figmaFamilyName: entry.figma.familyName,
+        componentKey,
+        ...(diagnostic.sourceProp ? { sourceProp: diagnostic.sourceProp } : {}),
+        ...(diagnostic.targetProp ? { targetProp: diagnostic.targetProp } : {}),
+        message: diagnostic.message
+      });
+    }
+  }
+
+  for (const [componentKey, entries] of resolvedEntriesByComponentKey.entries()) {
+    const signatures = new Set(entries.map((entry) => entry.apiSignature).filter((entry): entry is string => Boolean(entry)));
+    if (signatures.size <= 1) {
+      continue;
+    }
+    const representative = [...entries].sort((left, right) => left.figmaFamilyName.localeCompare(right.figmaFamilyName))[0];
+    issues.push({
+      severity: representative?.issueSeverity ?? "error",
+      code: "component_api_signature_conflict",
+      figmaFamilyKey: representative?.figmaFamilyKey ?? componentKey,
+      figmaFamilyName: representative?.figmaFamilyName ?? componentKey,
+      componentKey,
+      message:
+        `Resolved component '${componentKey}' produced multiple component-api contracts across matched Figma families; ` +
+        "storybook-first mapping was excluded."
+    });
+  }
+
+  issues.sort((left, right) => {
+    const byFamilyName = left.figmaFamilyName.localeCompare(right.figmaFamilyName);
+    if (byFamilyName !== 0) {
+      return byFamilyName;
+    }
+    const byFamilyKey = left.figmaFamilyKey.localeCompare(right.figmaFamilyKey);
+    if (byFamilyKey !== 0) {
+      return byFamilyKey;
+    }
+    return left.code.localeCompare(right.code);
+  });
+
+  for (const issue of issues) {
+    counts.byReason[issue.code] = (counts.byReason[issue.code] ?? 0) + 1;
+  }
+
+  const hasError = issues.some((issue) => issue.severity === "error");
+  const hasWarning = issues.some((issue) => issue.severity === "warning");
+  return {
+    status: hasError ? "failed" : hasWarning ? "warn" : "ok",
+    issueCount: issues.length,
+    counts,
+    issues
   };
 };
 

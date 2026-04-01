@@ -511,6 +511,103 @@ export interface ComponentMatchReportLibraryResolution {
   import?: ComponentMatchReportResolvedImport;
 }
 
+export type ComponentMatchResolvedContractStatus = "resolved" | "not_applicable";
+
+export type ComponentMatchResolvedPropsStatus = "resolved" | "incompatible" | "not_applicable";
+
+export type ComponentMatchResolvedPropKind =
+  | "enum"
+  | "boolean"
+  | "string"
+  | "number"
+  | "object"
+  | "unknown";
+
+export type ComponentMatchResolvedChildrenPolicy = "supported" | "unsupported" | "not_used" | "unknown";
+
+export type ComponentMatchResolvedSlotsPolicy = "supported" | "unsupported" | "not_used";
+
+export type ComponentMatchResolvedDefaultPropSource = "storybook_theme_defaultProps";
+
+export type ComponentMatchResolvedDiagnosticSeverity = "warning" | "error";
+
+export type ComponentMatchResolvedDiagnosticCode =
+  | "component_api_children_unsupported"
+  | "component_api_prop_unsupported"
+  | "component_api_slot_unsupported";
+
+export interface ComponentMatchResolvedApiAllowedProp {
+  name: string;
+  kind: ComponentMatchResolvedPropKind;
+  allowedValues?: Array<boolean | number | string>;
+}
+
+export interface ComponentMatchResolvedDefaultProp {
+  name: string;
+  value: boolean | number | string;
+  source: ComponentMatchResolvedDefaultPropSource;
+}
+
+export interface ComponentMatchResolvedContractDiagnostic {
+  severity: ComponentMatchResolvedDiagnosticSeverity;
+  code: ComponentMatchResolvedDiagnosticCode;
+  message: string;
+  sourceProp?: string;
+  targetProp?: string;
+}
+
+export interface ComponentMatchResolvedApi {
+  status: ComponentMatchResolvedContractStatus;
+  componentKey?: string;
+  import?: ComponentMatchReportResolvedImport;
+  allowedProps: ComponentMatchResolvedApiAllowedProp[];
+  defaultProps: ComponentMatchResolvedDefaultProp[];
+  children: {
+    policy: ComponentMatchResolvedChildrenPolicy;
+  };
+  slots: {
+    policy: ComponentMatchResolvedSlotsPolicy;
+    props: string[];
+  };
+  diagnostics: ComponentMatchResolvedContractDiagnostic[];
+}
+
+export interface ComponentMatchResolvedPropsProp {
+  sourceProp: string;
+  targetProp: string;
+  kind: ComponentMatchResolvedPropKind;
+  values?: Array<boolean | number | string>;
+}
+
+export interface ComponentMatchResolvedPropsOmittedProp {
+  sourceProp: string;
+  targetProp: string;
+}
+
+export interface ComponentMatchResolvedPropsOmittedDefault {
+  sourceProp: string;
+  targetProp: string;
+  value: boolean | number | string;
+  source: ComponentMatchResolvedDefaultPropSource;
+}
+
+export interface ComponentMatchResolvedProps {
+  status: ComponentMatchResolvedPropsStatus;
+  fallbackPolicy?: "allow" | "deny";
+  props: ComponentMatchResolvedPropsProp[];
+  omittedProps: ComponentMatchResolvedPropsOmittedProp[];
+  omittedDefaults: ComponentMatchResolvedPropsOmittedDefault[];
+  children: {
+    policy: ComponentMatchResolvedChildrenPolicy;
+  };
+  slots: {
+    policy: ComponentMatchResolvedSlotsPolicy;
+    props: string[];
+  };
+  codegenCompatible: boolean;
+  diagnostics: ComponentMatchResolvedContractDiagnostic[];
+}
+
 export interface ComponentMatchReportSummary {
   totalFigmaFamilies: number;
   storybookFamilyCount: number;
@@ -537,6 +634,8 @@ export interface ComponentMatchReportEntry {
   libraryResolution: ComponentMatchReportLibraryResolution;
   storybookFamily?: ComponentMatchReportStorybookFamily;
   storyVariant?: ComponentMatchReportStoryVariant;
+  resolvedApi?: ComponentMatchResolvedApi;
+  resolvedProps?: ComponentMatchResolvedProps;
 }
 
 export interface ComponentMatchReportArtifact {

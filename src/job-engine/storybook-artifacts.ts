@@ -19,7 +19,7 @@ import {
 } from "../storybook/public-extracts.js";
 import { getComponentMatchReportOutputFileName } from "../storybook/component-match-report.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../storybook/types.js";
-import type { StorybookCatalogArtifact, StorybookEvidenceArtifact } from "../storybook/types.js";
+import type { StorybookCatalogArtifact, StorybookEvidenceArtifact, StorybookPublicArtifacts } from "../storybook/types.js";
 
 export interface JobStorybookArtifactPaths {
   rootDir: string;
@@ -38,6 +38,7 @@ export interface GeneratedJobStorybookArtifacts {
   paths: JobStorybookArtifactPaths;
   catalogArtifact: StorybookCatalogArtifact;
   evidenceArtifact: StorybookEvidenceArtifact;
+  publicArtifacts: StorybookPublicArtifacts;
 }
 
 interface StorybookArtifactCopyPathEntry {
@@ -229,7 +230,8 @@ export const generateStorybookArtifactsForJob = async ({
   return {
     paths: artifactPaths,
     catalogArtifact,
-    evidenceArtifact
+    evidenceArtifact,
+    publicArtifacts
   };
 };
 

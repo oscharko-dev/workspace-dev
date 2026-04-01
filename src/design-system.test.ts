@@ -32,6 +32,12 @@ test("parseDesignSystemConfig normalizes valid mappings and filters invalid entr
             "invalid-prop": "ignored",
             color: 12,
           },
+          omittedProps: [" disabled ", "invalid-prop", 42],
+          defaultProps: {
+            size: "small",
+            dense: true,
+            ignored: null,
+          },
         },
         Card: {
           component: "Display Card",
@@ -55,6 +61,11 @@ test("parseDesignSystemConfig normalizes valid mappings and filters invalid entr
       Button: {
         import: "@acme/ui/buttons",
         component: "PrimaryButton",
+        defaultProps: {
+          dense: true,
+          size: "small",
+        },
+        omittedProps: ["disabled"],
         propMappings: {
           disabled: "disabled",
           label: "children",
@@ -306,6 +317,51 @@ export const Checkout = () => (
   );
   assert.equal(transformed.includes("data-children"), false);
   assert.equal(transformed.includes("aria-children"), false);
+});
+
+test("applyDesignSystemMappingsToGeneratedTsx drops omitted semantic props and default-valued literals after mapping", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/screens/Checkout.tsx",
+    content: `import { Button, TextField } from "@mui/material";
+
+export const Checkout = () => (
+  <>
+    <Button variant="primary" size="small" disabled>
+      Continue
+    </Button>
+    <TextField size="medium" helperText="Keep me" />
+  </>
+);
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: {
+          component: "PrimaryButton",
+          propMappings: {
+            variant: "appearance",
+          },
+          omittedProps: ["disabled"],
+          defaultProps: {
+            size: "small",
+          },
+        },
+        TextField: {
+          component: "FormField",
+          omittedProps: ["helperText"],
+          defaultProps: {
+            size: "medium",
+          },
+        },
+      },
+    },
+  });
+
+  assert.match(transformed, /<PrimaryButton appearance="primary">/);
+  assert.equal(transformed.includes(" disabled"), false);
+  assert.equal(transformed.includes('size="small"'), false);
+  assert.equal(transformed.includes('helperText="Keep me"'), false);
+  assert.match(transformed, /<FormField \/>/);
 });
 
 test("applyDesignSystemMappingsToGeneratedTsx throws deterministic error when the optional TypeScript peer is unavailable", () => {

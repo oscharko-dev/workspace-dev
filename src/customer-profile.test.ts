@@ -96,6 +96,103 @@ const createRawCustomerProfile = () => ({
   }
 });
 
+const createResolvedApiFixture = ({
+  componentKey,
+  importEntry,
+  allowedProps,
+  defaultProps = [],
+  childrenPolicy = "supported",
+  slotPolicy = "not_used",
+}: {
+  componentKey: string;
+  importEntry: {
+    package: string;
+    exportName: string;
+    localName: string;
+    propMappings?: Record<string, string>;
+  };
+  allowedProps: Array<{
+    name: string;
+    kind: "enum" | "boolean" | "string" | "number" | "object" | "unknown";
+    allowedValues?: Array<boolean | number | string>;
+  }>;
+  defaultProps?: Array<{
+    name: string;
+    value: boolean | number | string;
+    source: "storybook_theme_defaultProps";
+  }>;
+  childrenPolicy?: "supported" | "unsupported" | "not_used" | "unknown";
+  slotPolicy?: "supported" | "unsupported" | "not_used";
+}) => ({
+  status: "resolved" as const,
+  componentKey,
+  import: importEntry,
+  allowedProps,
+  defaultProps,
+  children: {
+    policy: childrenPolicy
+  },
+  slots: {
+    policy: slotPolicy,
+    props: slotPolicy === "not_used" ? [] : ["slotProps"]
+  },
+  diagnostics: []
+});
+
+const createResolvedPropsFixture = ({
+  props,
+  omittedProps = [],
+  omittedDefaults = [],
+  fallbackPolicy = "deny",
+  childrenPolicy = "supported",
+  slotPolicy = "not_used",
+  codegenCompatible = true,
+  diagnostics = []
+}: {
+  props: Array<{
+    sourceProp: string;
+    targetProp: string;
+    kind: "enum" | "boolean" | "string" | "number" | "object" | "unknown";
+    values?: Array<boolean | number | string>;
+  }>;
+  omittedProps?: Array<{
+    sourceProp: string;
+    targetProp: string;
+  }>;
+  omittedDefaults?: Array<{
+    sourceProp: string;
+    targetProp: string;
+    value: boolean | number | string;
+    source: "storybook_theme_defaultProps";
+  }>;
+  fallbackPolicy?: "allow" | "deny";
+  childrenPolicy?: "supported" | "unsupported" | "not_used" | "unknown";
+  slotPolicy?: "supported" | "unsupported" | "not_used";
+  codegenCompatible?: boolean;
+  diagnostics?: Array<{
+    severity: "warning" | "error";
+    code: "component_api_children_unsupported" | "component_api_prop_unsupported" | "component_api_slot_unsupported";
+    message: string;
+    sourceProp?: string;
+    targetProp?: string;
+  }>;
+}) => ({
+  status: codegenCompatible ? ("resolved" as const) : ("incompatible" as const),
+  fallbackPolicy,
+  props,
+  omittedProps,
+  omittedDefaults,
+  children: {
+    policy: childrenPolicy
+  },
+  slots: {
+    policy: slotPolicy,
+    props: slotPolicy === "not_used" ? [] : ["slotProps"]
+  },
+  codegenCompatible,
+  diagnostics
+});
+
 test("safeParseCustomerProfileConfig normalizes valid profile data and exposes resolvers", () => {
   const parsed = safeParseCustomerProfileConfig({
     input: createRawCustomerProfile()
@@ -655,7 +752,39 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
         storyVariant: {
           entryId: "button--primary",
           storyName: "Primary"
-        }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Button",
+          importEntry: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          },
+          allowedProps: [
+            {
+              name: "appearance",
+              kind: "enum",
+              allowedValues: ["primary", "secondary"]
+            },
+            {
+              name: "children",
+              kind: "string"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [
+            {
+              sourceProp: "variant",
+              targetProp: "appearance",
+              kind: "enum",
+              values: ["primary"]
+            }
+          ]
+        })
       },
       {
         figma: {
@@ -697,7 +826,39 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
         storyVariant: {
           entryId: "button--secondary",
           storyName: "Secondary"
-        }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Button",
+          importEntry: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          },
+          allowedProps: [
+            {
+              name: "appearance",
+              kind: "enum",
+              allowedValues: ["primary", "secondary"]
+            },
+            {
+              name: "children",
+              kind: "string"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [
+            {
+              sourceProp: "variant",
+              targetProp: "appearance",
+              kind: "enum",
+              values: ["secondary"]
+            }
+          ]
+        })
       },
       {
         figma: {
@@ -732,7 +893,24 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
           name: "Card",
           tier: "ReactUI",
           storyCount: 1
-        }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Card",
+          importEntry: {
+            package: "@customer/react-ui",
+            exportName: "ContentCard",
+            localName: "CustomerCard"
+          },
+          allowedProps: [
+            {
+              name: "children",
+              kind: "string"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: []
+        })
       },
       {
         figma: {
@@ -767,7 +945,24 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
           name: "Card",
           tier: "ReactUI",
           storyCount: 1
-        }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Card",
+          importEntry: {
+            package: "@customer/react-ui-v2",
+            exportName: "ContentCard",
+            localName: "CustomerCard"
+          },
+          allowedProps: [
+            {
+              name: "children",
+              kind: "string"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: []
+        })
       }
     ]
   };
@@ -792,6 +987,358 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
   assert.deepEqual(result.warnings, [
     "Component match report resolved multiple customer-profile imports for component key 'Card'; excluding it from storybook-first design-system mappings."
   ]);
+});
+
+test("toCustomerProfileDesignSystemConfigFromComponentMatchReport excludes incompatible or conflicting component APIs", () => {
+  const artifact: ComponentMatchReportArtifact = {
+    artifact: "component.match_report",
+    version: 1,
+    summary: {
+      totalFigmaFamilies: 3,
+      storybookFamilyCount: 3,
+      storybookEntryCount: 3,
+      matched: 3,
+      ambiguous: 0,
+      unmatched: 0,
+      libraryResolution: {
+        byStatus: {
+          resolved_import: 3,
+          mui_fallback_allowed: 0,
+          mui_fallback_denied: 0,
+          not_applicable: 0
+        },
+        byReason: {
+          profile_import_resolved: 3,
+          profile_import_missing: 0,
+          profile_import_family_mismatch: 0,
+          profile_family_unresolved: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0
+        }
+      }
+    },
+    entries: [
+      {
+        figma: {
+          familyKey: "textfield-valid",
+          familyName: "TextField",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "TextField",
+          import: {
+            package: "@customer/forms",
+            exportName: "CustomerTextField",
+            localName: "CustomerTextField"
+          }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "TextField",
+          importEntry: {
+            package: "@customer/forms",
+            exportName: "CustomerTextField",
+            localName: "CustomerTextField"
+          },
+          allowedProps: [
+            {
+              name: "label",
+              kind: "string"
+            },
+            {
+              name: "slotProps",
+              kind: "object"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [
+            {
+              sourceProp: "label",
+              targetProp: "label",
+              kind: "string",
+              values: ["Email"]
+            }
+          ]
+        })
+      },
+      {
+        figma: {
+          familyKey: "textfield-incompatible",
+          familyName: "TextField",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "TextField",
+          import: {
+            package: "@customer/forms",
+            exportName: "CustomerTextField",
+            localName: "CustomerTextField"
+          }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "TextField",
+          importEntry: {
+            package: "@customer/forms",
+            exportName: "CustomerTextField",
+            localName: "CustomerTextField"
+          },
+          allowedProps: [
+            {
+              name: "label",
+              kind: "string"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [],
+          fallbackPolicy: "deny",
+          slotPolicy: "unsupported",
+          codegenCompatible: false,
+          diagnostics: [
+            {
+              severity: "error",
+              code: "component_api_slot_unsupported",
+              message: "Resolved component 'TextField' does not expose 'slotProps'.",
+              sourceProp: "slotProps",
+              targetProp: "slotProps"
+            }
+          ]
+        })
+      },
+      {
+        figma: {
+          familyKey: "button-conflict",
+          familyName: "Button",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Button",
+          import: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton"
+          }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Button",
+          importEntry: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton"
+          },
+          allowedProps: [
+            {
+              name: "appearance",
+              kind: "enum",
+              allowedValues: ["primary"]
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [
+            {
+              sourceProp: "variant",
+              targetProp: "appearance",
+              kind: "enum",
+              values: ["primary"]
+            }
+          ]
+        })
+      }
+    ]
+  };
+
+  const result = toCustomerProfileDesignSystemConfigFromComponentMatchReport({
+    artifact
+  });
+
+  assert.deepEqual(result.config, {
+    library: "__customer_profile__",
+    mappings: {
+      Button: {
+        import: "@customer/components",
+        export: "PrimaryButton",
+        component: "CustomerButton"
+      }
+    }
+  });
+  assert.deepEqual(result.warnings, [
+    "Component match report found incompatible component-api contracts for component key 'TextField'; excluding it from storybook-first design-system mappings."
+  ]);
+});
+
+test("toCustomerProfileDesignSystemConfigFromComponentMatchReport writes omitted props and default props from resolved APIs", () => {
+  const artifact: ComponentMatchReportArtifact = {
+    artifact: "component.match_report",
+    version: 1,
+    summary: {
+      totalFigmaFamilies: 1,
+      storybookFamilyCount: 1,
+      storybookEntryCount: 1,
+      matched: 1,
+      ambiguous: 0,
+      unmatched: 0,
+      libraryResolution: {
+        byStatus: {
+          resolved_import: 1,
+          mui_fallback_allowed: 0,
+          mui_fallback_denied: 0,
+          not_applicable: 0
+        },
+        byReason: {
+          profile_import_resolved: 1,
+          profile_import_missing: 0,
+          profile_import_family_mismatch: 0,
+          profile_family_unresolved: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0
+        }
+      }
+    },
+    entries: [
+      {
+        figma: {
+          familyKey: "button-defaulted",
+          familyName: "Button",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        match: {
+          status: "matched",
+          confidence: "high",
+          confidenceScore: 100
+        },
+        usedEvidence: [],
+        rejectionReasons: [],
+        fallbackReasons: [],
+        libraryResolution: {
+          status: "resolved_import",
+          reason: "profile_import_resolved",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Button",
+          import: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        },
+        resolvedApi: createResolvedApiFixture({
+          componentKey: "Button",
+          importEntry: {
+            package: "@customer/components",
+            exportName: "PrimaryButton",
+            localName: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          },
+          allowedProps: [
+            {
+              name: "appearance",
+              kind: "enum",
+              allowedValues: ["primary", "secondary"]
+            }
+          ],
+          defaultProps: [
+            {
+              name: "size",
+              value: "small",
+              source: "storybook_theme_defaultProps"
+            }
+          ]
+        }),
+        resolvedProps: createResolvedPropsFixture({
+          props: [
+            {
+              sourceProp: "variant",
+              targetProp: "appearance",
+              kind: "enum",
+              values: ["primary"]
+            }
+          ],
+          omittedProps: [
+            {
+              sourceProp: "disabled",
+              targetProp: "disabled"
+            }
+          ],
+          omittedDefaults: [
+            {
+              sourceProp: "size",
+              targetProp: "size",
+              value: "small",
+              source: "storybook_theme_defaultProps"
+            }
+          ]
+        })
+      }
+    ]
+  };
+
+  const result = toCustomerProfileDesignSystemConfigFromComponentMatchReport({
+    artifact
+  });
+
+  assert.deepEqual(result.config, {
+    library: "__customer_profile__",
+    mappings: {
+      Button: {
+        import: "@customer/components",
+        export: "PrimaryButton",
+        component: "CustomerButton",
+        propMappings: {
+          variant: "appearance"
+        },
+        omittedProps: ["disabled"],
+        defaultProps: {
+          size: "small"
+        }
+      }
+    }
+  });
 });
 
 test("resolveCustomerProfileFamily is case-insensitive and trims whitespace", () => {
