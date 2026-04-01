@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { toDeterministicScreenPath } from "../parity/generator-artifacts.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 
@@ -68,16 +69,91 @@ const createLocalFigmaPayload = () => ({
   }
 });
 
+const createLocalFigmaPayloadWithCustomerButton = () => ({
+  name: "Regen Storybook Match Board",
+  lastModified: "2026-04-01T00:00:00Z",
+  components: {
+    "1:100": {
+      key: "cmp-button",
+      name: "Button/Primary",
+      componentSetId: "1:200",
+      remote: false
+    }
+  },
+  componentSets: {
+    "1:200": {
+      key: "set-button",
+      name: "Button",
+      remote: false
+    }
+  },
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-1",
+            type: "FRAME",
+            name: "Customer Button Screen",
+            absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+            children: [
+              {
+                id: "instance-button",
+                type: "INSTANCE",
+                name: "Button, Variant=Primary, Size=Large",
+                componentId: "1:100",
+                componentSetId: "1:200",
+                componentProperties: {
+                  Variant: {
+                    type: "VARIANT",
+                    value: "Primary"
+                  },
+                  Size: {
+                    type: "VARIANT",
+                    value: "Large"
+                  }
+                },
+                absoluteBoundingBox: { x: 16, y: 16, width: 160, height: 48 },
+                children: [
+                  {
+                    id: "instance-button-label",
+                    type: "TEXT",
+                    name: "Label",
+                    characters: "Weiter",
+                    absoluteBoundingBox: { x: 48, y: 28, width: 96, height: 20 },
+                    style: { fontSize: 14, fontWeight: 600, lineHeightPx: 20 },
+                    fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const createCustomerProfileFixture = ({
   packageName = "@customer/components",
   dependencyVersion = "^1.2.3",
   storybookLightTheme = "sparkasse-light",
-  storybookDarkTheme
+  storybookDarkTheme,
+  exportName = "PrimaryButton",
+  importAlias = "CustomerButton",
+  propMappings = {}
 }: {
   packageName?: string;
   dependencyVersion?: string;
   storybookLightTheme?: string;
   storybookDarkTheme?: string;
+  exportName?: string;
+  importAlias?: string;
+  propMappings?: Record<string, string>;
 } = {}) => ({
   version: 1,
   families: [
@@ -107,9 +183,9 @@ const createCustomerProfileFixture = ({
       Button: {
         family: "Components",
         package: packageName,
-        export: "PrimaryButton",
-        importAlias: "CustomerButton",
-        propMappings: {}
+        export: exportName,
+        importAlias,
+        propMappings
       }
     }
   },
@@ -268,6 +344,112 @@ const createSyntheticStorybookBuild = async (): Promise<string> => {
   await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
   await writeFile(path.join(assetsDir, "Tooltip.stories-test.js"), storyBundle, "utf8");
   await writeFile(path.join(assetsDir, "colors-test.js"), docsBundle, "utf8");
+  await writeFile(path.join(assetsDir, "shared-theme.js"), sharedThemeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
+
+  return buildDir;
+};
+
+const createSyntheticStorybookBuildWithCustomerButton = async ({
+  workspaceRoot
+}: {
+  workspaceRoot: string;
+}): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(workspaceRoot, "storybook-static-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "components-button--primary": {
+        id: "components-button--primary",
+        title: "Components/Button",
+        name: "Primary",
+        importPath: "./src/components/Button/Button.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/components/Button/Button.tsx"
+      }
+    }
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeBundle = `
+    const gq0 = {
+      "./src/components/Button/Button.stories.tsx": n(() => c0(() => import("./Button.stories-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/components/Button/Button.stories.tsx")
+    };
+  `;
+
+  const storyBundle = `
+    const meta = {
+      title: "Components/Button",
+      args: { variant: "contained", size: "large", children: "Continue" },
+      argTypes: {
+        variant: { control: { type: "select" } },
+        size: { control: { type: "select" } },
+        children: { control: { type: "select" } }
+      }
+    };
+  `;
+
+  const sharedThemeBundle = `
+    const FONT_DATA = "data:application/font-ttf;base64,${"A".repeat(1500)}";
+    const keepName = ((fn, name) => fn);
+    const createFont = keepName((family, weight, src) => ({
+      fontFamily: \`\${family}\`,
+      fontWeight: weight,
+      src: \`url('\${src}') format('truetype')\`
+    }), "createFont");
+    const regular = createFont("Brand Sans", 400, FONT_DATA);
+    const bold = createFont("Brand Sans Bold", 700, FONT_DATA);
+    const appTheme = createTheme({
+      spacing: 8,
+      shape: { borderRadius: 12 },
+      palette: {
+        primary: { main: "#ff0000", contrastText: "#ffffff" },
+        warning: { main: "#ffc900" },
+        text: { primary: "#444444" },
+        background: { default: "#fafafa", paper: "#ffffff" }
+      },
+      typography: {
+        fontFamily: "Brand Sans, sans-serif",
+        fontSize: 16,
+        body1: { fontSize: 14, lineHeight: 1.5, fontFamily: "Brand Sans" },
+        h1: { fontSize: 30, lineHeight: 1.2, fontFamily: "Brand Sans Bold" }
+      },
+      components: {
+        MuiCssBaseline: {
+          styleOverrides: {
+            "@font-face": [regular],
+            fallbacks: [{ "@font-face": [bold] }]
+          }
+        }
+      },
+      zIndex: { drawer: 1200 }
+    });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+
+  const cssText = `
+    :root {
+      --fi-space-base: 8px;
+    }
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "Button.stories-test.js"), storyBundle, "utf8");
   await writeFile(path.join(assetsDir, "shared-theme.js"), sharedThemeBundle, "utf8");
   await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
 
@@ -641,6 +823,115 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
   assert.deepEqual(regenSnapshot?.profile?.template?.dependencies, {
     "@customer/components-initial": "^1.2.3"
   });
+});
+
+test("submitRegeneration keeps storybook-first generated imports pinned to the stored customer profile snapshot", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-storybook-profile-import-reuse-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
+  const customerProfilePath = path.join(workspaceRoot, "customer-profile.json");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  const muiMaterialVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.equal(typeof muiMaterialVersion, "string");
+  const storybookBuildDir = await createSyntheticStorybookBuildWithCustomerButton({
+    workspaceRoot
+  });
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayloadWithCustomerButton()), "utf8");
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(
+      createCustomerProfileFixture({
+        packageName: "@mui/material",
+        dependencyVersion: muiMaterialVersion,
+        storybookLightTheme: "default",
+        exportName: "Button",
+        importAlias: "CustomerButton"
+      })
+    ),
+    "utf8"
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    storybookStaticDir: storybookBuildDir,
+    customerProfilePath,
+    customerBrandId: "sparkasse"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
+
+  const sourceScreenContent = await readFile(
+    path.join(String(sourceStatus.artifacts.generatedProjectDir), toDeterministicScreenPath("Customer Button Screen")),
+    "utf8"
+  );
+  assert.ok(sourceScreenContent.includes("CustomerButton"));
+  assert.ok(sourceScreenContent.includes("<CustomerButton"));
+  assert.equal(sourceScreenContent.includes("UpdatedCustomerButton"), false);
+  assert.equal(sourceScreenContent.includes("<Button"), false);
+
+  await writeFile(
+    customerProfilePath,
+    JSON.stringify(
+      createCustomerProfileFixture({
+        packageName: "@mui/material",
+        dependencyVersion: "^9.9.9",
+        storybookLightTheme: "default",
+        exportName: "IconButton",
+        importAlias: "UpdatedCustomerButton"
+      })
+    ),
+    "utf8"
+  );
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "instance-button", field: "width", value: 200 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed", `Regen job should complete, got: ${regenStatus.status} — ${regenStatus.error?.message ?? "no error"}`);
+
+  const generatedPackage = JSON.parse(
+    await readFile(path.join(String(regenStatus.artifacts.generatedProjectDir), "package.json"), "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  assert.equal(generatedPackage.dependencies?.["@mui/material"], muiMaterialVersion);
+
+  const regenScreenContent = await readFile(
+    path.join(String(regenStatus.artifacts.generatedProjectDir), toDeterministicScreenPath("Customer Button Screen")),
+    "utf8"
+  );
+  assert.ok(regenScreenContent.includes("CustomerButton"));
+  assert.ok(regenScreenContent.includes("<CustomerButton"));
+  assert.equal(regenScreenContent.includes("UpdatedCustomerButton"), false);
+  assert.equal(regenScreenContent.includes("IconButton"), false);
 });
 
 test("submitRegeneration fails with E_CUSTOMER_PROFILE_SNAPSHOT_MISSING when an explicit source snapshot is corrupt", async () => {

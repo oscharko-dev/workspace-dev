@@ -11,6 +11,7 @@ import type {
   WorkspaceJobStageName
 } from "../../contracts/index.js";
 import { parseCustomerProfileConfig } from "../../customer-profile.js";
+import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
@@ -2382,6 +2383,129 @@ export default defineConfig({
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+});
+
+test("ValidateProjectService persists ok customer profile summaries when storybook-first imports agree with the profile", async () => {
+  const customerProfile = createCustomerProfileForStageServices();
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      customerProfile
+    }
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {},
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+const normalizedBasePath = "./";
+
+export default defineConfig({
+  base: normalizedBasePath,
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'import { PrimaryButton as CustomerButton } from "@customer/ui";\nexport const App = () => <CustomerButton />;\n',
+    "utf8"
+  );
+  await applyCustomerProfileToTemplate({
+    generatedProjectDir: executionContext.paths.generatedProjectDir,
+    customerProfile
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-match-policy-ok"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(validationInvoked, true);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      customerProfileMatch?: {
+        status?: string;
+        issueCount?: number;
+      };
+    };
+    import?: {
+      status?: string;
+      customerProfile?: {
+        status?: string;
+        import?: {
+          issueCount?: number;
+        };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.mapping?.status, "ok");
+  assert.equal(summary?.mapping?.customerProfileMatch?.status, "ok");
+  assert.equal(summary?.mapping?.customerProfileMatch?.issueCount, 0);
+  assert.equal(summary?.import?.status, "ok");
+  assert.equal(summary?.import?.customerProfile?.status, "ok");
+  assert.equal(summary?.import?.customerProfile?.import?.issueCount, 0);
 });
 
 test("ValidateProjectService persists failed customer profile match policy before project validation", async () => {
