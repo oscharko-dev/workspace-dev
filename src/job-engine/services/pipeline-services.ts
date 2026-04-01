@@ -9,6 +9,7 @@ import type { FigmaSourceStageInput } from "./figma-source-service.js";
 import { GitPrService } from "./git-pr-service.js";
 import type { GitPrStageInput } from "./git-pr-service.js";
 import { IrDeriveService } from "./ir-derive-service.js";
+import type { IrDeriveStageInput } from "./ir-derive-service.js";
 import { ReproExportService } from "./repro-export-service.js";
 import { TemplatePrepareService } from "./template-prepare-service.js";
 import { ValidateProjectService } from "./validate-project-service.js";
@@ -44,6 +45,14 @@ const buildCodegenInput = ({
   };
 };
 
+const buildIrDeriveInput = (context: PipelineExecutionContext): IrDeriveStageInput => {
+  const input = requireSubmissionInput(context);
+  return {
+    ...(input.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
+    ...(input.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {})
+  };
+};
+
 const buildGitPrSkipStatus = (reason: string): WorkspaceGitPrStatus => {
   return {
     status: "skipped",
@@ -68,6 +77,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
     },
     {
       service: IrDeriveService,
+      resolveInput: buildIrDeriveInput,
       artifacts: {
         reads: [
           STAGE_ARTIFACT_KEYS.figmaCleaned,

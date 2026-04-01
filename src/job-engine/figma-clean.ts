@@ -1,7 +1,7 @@
 import type { FigmaFileResponse } from "./types.js";
 import { isHelperItemNode, isNodeGeometryEmpty, isTechnicalPlaceholderNode } from "../figma-node-heuristics.js";
 
-const ALLOWED_FILE_KEYS = new Set(["name", "document", "styles"]);
+const ALLOWED_FILE_KEYS = new Set(["name", "lastModified", "document", "styles", "components", "componentSets"]);
 
 const ALLOWED_NODE_KEYS = new Set([
   "id",
@@ -63,6 +63,8 @@ const ALLOWED_INTERACTION_KEYS = new Set(["trigger", "action", "actions"]);
 const ALLOWED_INTERACTION_TRIGGER_KEYS = new Set(["type"]);
 const ALLOWED_INTERACTION_ACTION_KEYS = new Set(["type", "destinationId", "navigation", "transitionNodeID", "transitionNodeId"]);
 const ALLOWED_FILE_STYLE_KEYS = new Set(["name", "styleType", "style_type", "key", "description"]);
+const ALLOWED_FILE_COMPONENT_KEYS = new Set(["key", "name", "description", "componentSetId", "remote"]);
+const ALLOWED_FILE_COMPONENT_SET_KEYS = new Set(["key", "name", "description", "remote"]);
 
 interface FigmaCleaningAccumulator {
   inputNodeCount: number;
@@ -144,6 +146,75 @@ const sanitizeStyleCatalog = (value: unknown, metrics: FigmaCleaningAccumulator)
     }
     if (Object.keys(nextEntry).length > 0) {
       output[styleId] = nextEntry;
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const sanitizeComponentCatalog = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): FigmaFileResponse["components"] | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const output: NonNullable<FigmaFileResponse["components"]> = {};
+  for (const [componentId, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    metrics.removedPropertyCount += countRemovedKeys(entry, ALLOWED_FILE_COMPONENT_KEYS);
+    const nextEntry: NonNullable<FigmaFileResponse["components"]>[string] = {};
+    if (typeof entry.key === "string" && entry.key.trim().length > 0) {
+      nextEntry.key = entry.key;
+    }
+    if (typeof entry.name === "string" && entry.name.trim().length > 0) {
+      nextEntry.name = entry.name;
+    }
+    if (typeof entry.description === "string" && entry.description.trim().length > 0) {
+      nextEntry.description = entry.description;
+    }
+    if (typeof entry.componentSetId === "string" && entry.componentSetId.trim().length > 0) {
+      nextEntry.componentSetId = entry.componentSetId;
+    }
+    if (typeof entry.remote === "boolean") {
+      nextEntry.remote = entry.remote;
+    }
+    if (Object.keys(nextEntry).length > 0) {
+      output[componentId] = nextEntry;
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const sanitizeComponentSetCatalog = (
+  value: unknown,
+  metrics: FigmaCleaningAccumulator
+): FigmaFileResponse["componentSets"] | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const output: NonNullable<FigmaFileResponse["componentSets"]> = {};
+  for (const [componentSetId, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    metrics.removedPropertyCount += countRemovedKeys(entry, ALLOWED_FILE_COMPONENT_SET_KEYS);
+    const nextEntry: NonNullable<FigmaFileResponse["componentSets"]>[string] = {};
+    if (typeof entry.key === "string" && entry.key.trim().length > 0) {
+      nextEntry.key = entry.key;
+    }
+    if (typeof entry.name === "string" && entry.name.trim().length > 0) {
+      nextEntry.name = entry.name;
+    }
+    if (typeof entry.description === "string" && entry.description.trim().length > 0) {
+      nextEntry.description = entry.description;
+    }
+    if (typeof entry.remote === "boolean") {
+      nextEntry.remote = entry.remote;
+    }
+    if (Object.keys(nextEntry).length > 0) {
+      output[componentSetId] = nextEntry;
     }
   }
   return Object.keys(output).length > 0 ? output : undefined;
@@ -993,9 +1064,20 @@ export const cleanFigmaForCodegen = ({ file }: { file: FigmaFileResponse }): Cle
   if (typeof rawFile.name === "string") {
     cleanedFile.name = rawFile.name;
   }
+  if (typeof rawFile.lastModified === "string" && rawFile.lastModified.trim().length > 0) {
+    cleanedFile.lastModified = rawFile.lastModified;
+  }
   const styleCatalog = sanitizeStyleCatalog(rawFile.styles, metrics);
   if (styleCatalog) {
     cleanedFile.styles = styleCatalog;
+  }
+  const componentCatalog = sanitizeComponentCatalog(rawFile.components, metrics);
+  if (componentCatalog) {
+    cleanedFile.components = componentCatalog;
+  }
+  const componentSetCatalog = sanitizeComponentSetCatalog(rawFile.componentSets, metrics);
+  if (componentSetCatalog) {
+    cleanedFile.componentSets = componentSetCatalog;
   }
   if (cleanedDocument) {
     cleanedFile.document = cleanedDocument;

@@ -1,6 +1,6 @@
 import path from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
-import type { WorkspaceRegenerationInput } from "../../contracts/index.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import type { WorkspaceJobInput, WorkspaceRegenerationInput } from "../../contracts/index.js";
 import { createPipelineError, getErrorMessage, type PipelineDiagnosticInput } from "../errors.js";
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "../ir-cache.js";
 import { applyIrOverrides } from "../ir-overrides.js";
@@ -21,7 +21,8 @@ import {
   toMcpCoverageDiagnostics,
   toSortedReasonCounts
 } from "./ir-diagnostics.js";
-import { generateStorybookArtifactsForJob } from "../storybook-artifacts.js";
+import { resolveFigmaLibraryResolutionArtifact } from "../figma-library-resolution.js";
+import { createJobStorybookArtifactPaths, generateStorybookArtifactsForJob } from "../storybook-artifacts.js";
 
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
@@ -29,9 +30,11 @@ interface RegenerationSourceIrSeed {
   sourceAnalysisFile?: string;
 }
 
-export const IrDeriveService: StageService<void> = {
+export type IrDeriveStageInput = Pick<WorkspaceJobInput, "figmaFileKey" | "figmaAccessToken">;
+
+export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
   stageName: "ir.derive",
-  execute: async (_input, context) => {
+  execute: async (input, context) => {
     const persistStorybookArtifactsIfRequested = async (): Promise<void> => {
       if (!context.resolvedStorybookStaticDir) {
         return;
@@ -70,6 +73,53 @@ export const IrDeriveService: StageService<void> = {
           limits: context.runtime.pipelineDiagnosticLimits
         });
       }
+    };
+
+    const persistFigmaLibraryResolutionIfAvailable = async ({
+      figmaAnalysis,
+      file
+    }: {
+      figmaAnalysis: ReturnType<typeof buildFigmaAnalysis>;
+      file: FigmaFileResponse;
+    }): Promise<void> => {
+      const artifact = await resolveFigmaLibraryResolutionArtifact({
+        analysis: figmaAnalysis,
+        file,
+        figmaSourceMode: context.resolvedFigmaSourceMode,
+        cacheDir: path.join(context.resolvedPaths.outputRoot, "cache", "figma-library-resolution"),
+        ...(input?.figmaFileKey?.trim() ? { fileKey: input.figmaFileKey.trim() } : {}),
+        ...(input?.figmaAccessToken?.trim() ? { accessToken: input.figmaAccessToken.trim() } : {}),
+        fetchImpl: context.fetchWithCancellation,
+        timeoutMs: context.runtime.figmaTimeoutMs,
+        maxRetries: context.runtime.figmaMaxRetries,
+        abortSignal: context.abortSignal,
+        onLog: (message) => {
+          context.log({
+            level: "info",
+            message
+          });
+        }
+      });
+      if (!artifact) {
+        return;
+      }
+      const artifactPaths = createJobStorybookArtifactPaths({
+        jobDir: context.paths.jobDir
+      });
+      await mkdir(path.dirname(artifactPaths.figmaLibraryResolutionFile), { recursive: true });
+      await writeFile(artifactPaths.figmaLibraryResolutionFile, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+        stage: "ir.derive",
+        absolutePath: artifactPaths.figmaLibraryResolutionFile
+      });
+      context.log({
+        level: artifact.summary.error > 0 || artifact.summary.partial > 0 ? "warn" : "info",
+        message:
+          `Resolved external Figma libraries for ${artifact.summary.total} component reference(s): ` +
+          `resolved=${artifact.summary.resolved}, partial=${artifact.summary.partial}, error=${artifact.summary.error}, ` +
+          `cacheHit=${artifact.summary.cacheHit}, offlineReused=${artifact.summary.offlineReused}.`
+      });
     };
 
     if (context.mode === "regeneration") {
@@ -478,6 +528,10 @@ export const IrDeriveService: StageService<void> = {
           ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
         });
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
+        await persistFigmaLibraryResolutionIfAvailable({
+          figmaAnalysis: cachedAnalysis,
+          file: cleanedFile
+        });
         context.log({
           level: "info",
           message: `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens (brandTheme=${context.resolvedBrandTheme}).`
@@ -536,6 +590,10 @@ export const IrDeriveService: StageService<void> = {
       ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
     });
     await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
+    await persistFigmaLibraryResolutionIfAvailable({
+      figmaAnalysis,
+      file: cleanedFile
+    });
 
     if (context.runtime.irCacheEnabled) {
       const contentHash = computeContentHash(figmaFetch.file);

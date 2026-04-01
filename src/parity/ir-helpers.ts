@@ -112,6 +112,7 @@ export interface FigmaNode {
 
 export interface FigmaFile {
   name?: string;
+  lastModified?: string;
   document?: FigmaNode;
   styles?: Record<
     string,
@@ -121,6 +122,25 @@ export interface FigmaFile {
       style_type?: string;
       key?: string;
       description?: string;
+    }
+  >;
+  components?: Record<
+    string,
+    {
+      key?: string;
+      name?: string;
+      description?: string;
+      componentSetId?: string;
+      remote?: boolean;
+    }
+  >;
+  componentSets?: Record<
+    string,
+    {
+      key?: string;
+      name?: string;
+      description?: string;
+      remote?: boolean;
     }
   >;
 }

@@ -370,6 +370,73 @@ test("cleanFigmaForCodegen preserves style catalogs, node style ids, and bound v
   });
 });
 
+test("cleanFigmaForCodegen preserves sanitized component catalogs for external library resolution", () => {
+  const input = {
+    name: "Remote component catalog",
+    lastModified: "2026-04-01T00:00:00Z",
+    components: {
+      "1:100": {
+        key: "cmp-key",
+        name: "Button/Primary",
+        description: "Published button component",
+        componentSetId: "1:200",
+        remote: true,
+        hidden: "drop"
+      },
+      "1:101": "drop-me"
+    },
+    componentSets: {
+      "1:200": {
+        key: "set-key",
+        name: "Button",
+        description: "Published button family",
+        remote: true,
+        hidden: "drop"
+      }
+    },
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-components",
+              type: "FRAME",
+              name: "Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 },
+              children: []
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = cleanFigmaForCodegen({ file: input });
+
+  assert.equal(result.cleanedFile.lastModified, "2026-04-01T00:00:00Z");
+  assert.deepEqual(result.cleanedFile.components, {
+    "1:100": {
+      key: "cmp-key",
+      name: "Button/Primary",
+      description: "Published button component",
+      componentSetId: "1:200",
+      remote: true
+    }
+  });
+  assert.deepEqual(result.cleanedFile.componentSets, {
+    "1:200": {
+      key: "set-key",
+      name: "Button",
+      description: "Published button family",
+      remote: true
+    }
+  });
+});
+
 test("cleanFigmaForCodegen filters invalid style catalog entries and empty node style maps", () => {
   const input = {
     name: "Mixed style catalog",

@@ -435,3 +435,52 @@ test("reuseStorybookArtifactsFromSourceJob skips optional artifacts without erro
 
   assert.ok(targetPaths.catalogFile, "Required artifact path should still be returned");
 });
+
+test("reuseStorybookArtifactsFromSourceJob copies optional figma.library_resolution artifacts when present", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-library-resolution-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  const sourcePaths = await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir: sourceJobDir,
+    artifactStore: sourceArtifactStore,
+    stage: "ir.derive",
+    limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
+  });
+  await writeFile(
+    sourcePaths.figmaLibraryResolutionFile,
+    '{ "artifact": "figma.library_resolution", "summary": { "total": 1 } }\n',
+    "utf8"
+  );
+  await sourceArtifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    stage: "ir.derive",
+    absolutePath: sourcePaths.figmaLibraryResolutionFile
+  });
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  const targetPaths = await reuseStorybookArtifactsFromSourceJob({
+    sourceArtifactStore,
+    targetArtifactStore,
+    sourceJobId: "source-job",
+    sourceRequestedStorybookStaticDir: buildDir,
+    targetJobDir,
+    stage: "ir.derive"
+  });
+
+  assert.equal(
+    await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution),
+    targetPaths.figmaLibraryResolutionFile
+  );
+  assert.equal(
+    await readFile(targetPaths.figmaLibraryResolutionFile, "utf8"),
+    await readFile(sourcePaths.figmaLibraryResolutionFile, "utf8")
+  );
+});

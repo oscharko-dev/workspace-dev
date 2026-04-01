@@ -92,7 +92,7 @@ interface ValidationSummaryArtifact {
         status: "not_requested";
       };
   mapping: {
-    status: "ok" | "not_available";
+    status: "ok" | "partial" | "not_available";
     figmaLibraryResolution: ValidationArtifactStatusSummary;
     componentMatchReport: ValidationArtifactStatusSummary;
   };
@@ -229,7 +229,7 @@ const buildValidationSummaryArtifact = async ({
       };
 
   const mappingSummary: ValidationSummaryArtifact["mapping"] = {
-    status: componentMatchReportFile ? "ok" : "not_available",
+    status: componentMatchReportFile ? "ok" : figmaLibraryResolutionFile ? "partial" : "not_available",
     figmaLibraryResolution: toArtifactStatusSummary(figmaLibraryResolutionFile),
     componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
   };

@@ -35,10 +35,28 @@ import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 import type { PipelineDiagnosticLimits } from "./errors.js";
 import type { ResolvedCustomerProfile } from "../customer-profile.js";
 
+export interface FigmaComponentCatalogEntry {
+  key?: string;
+  name?: string;
+  description?: string;
+  componentSetId?: string;
+  remote?: boolean;
+}
+
+export interface FigmaComponentSetCatalogEntry {
+  key?: string;
+  name?: string;
+  description?: string;
+  remote?: boolean;
+}
+
 export interface FigmaFileResponse {
   name?: string;
+  lastModified?: string;
   document?: unknown;
   styles?: Record<string, unknown>;
+  components?: Record<string, FigmaComponentCatalogEntry>;
+  componentSets?: Record<string, FigmaComponentSetCatalogEntry>;
 }
 
 export interface FigmaFetchDiagnostics {

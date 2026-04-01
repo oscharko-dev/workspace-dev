@@ -61,6 +61,61 @@ const createLocalFigmaPayload = () => ({
   }
 });
 
+const createLocalFigmaPayloadWithExternalComponent = () => ({
+  name: "Stage Service Board",
+  lastModified: "2026-04-01T00:00:00Z",
+  components: {
+    "1:100": {
+      key: "cmp-key",
+      name: "Button/Primary",
+      componentSetId: "1:200",
+      remote: true
+    }
+  },
+  componentSets: {
+    "1:200": {
+      key: "set-key",
+      name: "Button",
+      remote: true
+    }
+  },
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        children: [
+          {
+            id: "screen-1",
+            type: "FRAME",
+            name: "Screen 1",
+            absoluteBoundingBox: { x: 0, y: 0, width: 360, height: 240 },
+            children: [
+              {
+                id: "instance-1",
+                type: "INSTANCE",
+                name: "Button",
+                componentId: "1:100",
+                componentSetId: "1:200",
+                componentProperties: {
+                  State: {
+                    type: "VARIANT",
+                    value: "Primary"
+                  }
+                },
+                absoluteBoundingBox: { x: 16, y: 16, width: 120, height: 40 },
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+});
+
 const createMinimalIr = (): DesignIR =>
   ({
     sourceName: "test",
@@ -439,6 +494,48 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
+test("IrDeriveService writes and registers figma.library_resolution for external local_json components", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma-library.json");
+  await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayloadWithExternalComponent(), null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const libraryResolutionPath = await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
+  assert.equal(
+    libraryResolutionPath,
+    path.join(executionContext.paths.jobDir, "storybook", "public", "figma-library-resolution.json")
+  );
+  const artifact = JSON.parse(await readFile(libraryResolutionPath as string, "utf8")) as {
+    artifact: string;
+    summary: {
+      total: number;
+      partial: number;
+      resolved: number;
+      error: number;
+      cacheHit: number;
+      offlineReused: number;
+    };
+  };
+  assert.equal(artifact.artifact, "figma.library_resolution");
+  assert.equal(artifact.summary.total, 1);
+  assert.equal(artifact.summary.resolved, 0);
+  assert.equal(artifact.summary.partial, 1);
+  assert.equal(artifact.summary.error, 0);
+  assert.equal(artifact.summary.cacheHit, 0);
+  assert.equal(artifact.summary.offlineReused, 0);
+});
+
 test("IrDeriveService cache hits still write and register figma.analysis", async () => {
   const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-cache-"));
   const first = await createExecutionContext({
@@ -499,6 +596,71 @@ test("IrDeriveService cache hits still write and register figma.analysis", async
   );
   assert.equal((await readFile(second.executionContext.paths.designIrFile, "utf8")).includes("Screen 1"), true);
   assert.equal((await readFile(second.executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
+});
+
+test("IrDeriveService cache hits still write and register figma.library_resolution", async () => {
+  const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-library-cache-hit-"));
+  const first = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-library-cache-seed"
+  });
+  const second = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    rootDir: sharedRoot,
+    jobId: "job-stage-library-cache-hit"
+  });
+  const payload = createLocalFigmaPayloadWithExternalComponent();
+  const firstLocalPayloadPath = path.join(first.executionContext.paths.jobDir, "local-figma-library.json");
+  const secondLocalPayloadPath = path.join(second.executionContext.paths.jobDir, "local-figma-library.json");
+  await writeFile(firstLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(secondLocalPayloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: firstLocalPayloadPath
+    },
+    first.stageContextFor("figma.source")
+  );
+  const cleanedFile = JSON.parse(await readFile(first.executionContext.paths.figmaJsonFile, "utf8")) as unknown;
+  await saveCachedIr({
+    cacheDir: first.executionContext.paths.irCacheDir,
+    contentHash: computeContentHash(cleanedFile),
+    optionsHash: computeOptionsHash({
+      screenElementBudget: first.executionContext.runtime.figmaScreenElementBudget,
+      screenElementMaxDepth: first.executionContext.runtime.figmaScreenElementMaxDepth,
+      brandTheme: first.executionContext.resolvedBrandTheme,
+      figmaSourceMode: first.executionContext.resolvedFigmaSourceMode
+    }),
+    ttlMs: first.executionContext.runtime.irCacheTtlMs,
+    ir: createMinimalIr(),
+    onLog: () => {
+      // no-op for cache seeding in tests
+    }
+  });
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: secondLocalPayloadPath
+    },
+    second.stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, second.stageContextFor("ir.derive"));
+
+  const libraryResolutionPath = await second.executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
+  assert.equal(
+    libraryResolutionPath,
+    path.join(second.executionContext.paths.jobDir, "storybook", "public", "figma-library-resolution.json")
+  );
+  const artifact = JSON.parse(await readFile(libraryResolutionPath as string, "utf8")) as {
+    summary: { total: number; partial: number };
+  };
+  assert.equal(artifact.summary.total, 1);
+  assert.equal(artifact.summary.partial, 1);
 });
 
 test("IrDeriveService regeneration reads seeded artifacts and writes design.ir and figma.analysis", async () => {
@@ -1283,6 +1445,52 @@ test("ValidateProjectService fails when generation diff context is missing", asy
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+});
+
+test("ValidateProjectService marks mapping as partial when only figma.library_resolution is available", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-library-resolution"
+    } satisfies GenerationDiffContext
+  });
+  const libraryResolutionPath = path.join(
+    executionContext.paths.jobDir,
+    "storybook",
+    "public",
+    "figma-library-resolution.json"
+  );
+  await mkdir(path.dirname(libraryResolutionPath), { recursive: true });
+  await writeFile(libraryResolutionPath, '{ "artifact": "figma.library_resolution" }\n', "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    stage: "ir.derive",
+    absolutePath: libraryResolutionPath
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    mapping?: {
+      status?: string;
+      figmaLibraryResolution?: { status?: string };
+      componentMatchReport?: { status?: string };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.mapping?.status, "partial");
+  assert.equal(summary?.mapping?.figmaLibraryResolution?.status, "ok");
+  assert.equal(summary?.mapping?.componentMatchReport?.status, "not_available");
 });
 
 test("ValidateProjectService failure preserves the previous successful diff baseline", async () => {
