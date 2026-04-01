@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import type {
   ResolvedStorybookPalette,
+  ResolvedStorybookPaletteColor,
   ResolvedStorybookTheme,
   ResolvedStorybookThemeComponent,
   ResolvedStorybookThemeScheme,
@@ -202,6 +203,16 @@ const toThemeConfigLiteral = (value: boolean | number | string): string => {
   return literal(value);
 };
 
+const renderPaletteColorEntry = ({
+  key,
+  color
+}: {
+  key: string;
+  color: ResolvedStorybookPaletteColor;
+}): string => {
+  return `${key}: { main: ${literal(color.main)}${color.contrastText ? `, contrastText: ${literal(color.contrastText)}` : ""} }`;
+};
+
 const renderStorybookPalette = ({
   mode,
   palette
@@ -210,49 +221,39 @@ const renderStorybookPalette = ({
   palette: ResolvedStorybookPalette;
 }): string => {
   const entries = [
-    `mode: "${mode}"`,
-    `primary: { main: "${palette.primary.main}"${palette.primary.contrastText ? `, contrastText: "${palette.primary.contrastText}"` : ""} }`
+    `mode: ${literal(mode)}`,
+    renderPaletteColorEntry({ key: "primary", color: palette.primary })
   ];
   if (palette.secondary) {
-    entries.push(
-      `secondary: { main: "${palette.secondary.main}"${palette.secondary.contrastText ? `, contrastText: "${palette.secondary.contrastText}"` : ""} }`
-    );
+    entries.push(renderPaletteColorEntry({ key: "secondary", color: palette.secondary }));
   }
   if (palette.success) {
-    entries.push(
-      `success: { main: "${palette.success.main}"${palette.success.contrastText ? `, contrastText: "${palette.success.contrastText}"` : ""} }`
-    );
+    entries.push(renderPaletteColorEntry({ key: "success", color: palette.success }));
   }
   if (palette.warning) {
-    entries.push(
-      `warning: { main: "${palette.warning.main}"${palette.warning.contrastText ? `, contrastText: "${palette.warning.contrastText}"` : ""} }`
-    );
+    entries.push(renderPaletteColorEntry({ key: "warning", color: palette.warning }));
   }
   if (palette.error) {
-    entries.push(
-      `error: { main: "${palette.error.main}"${palette.error.contrastText ? `, contrastText: "${palette.error.contrastText}"` : ""} }`
-    );
+    entries.push(renderPaletteColorEntry({ key: "error", color: palette.error }));
   }
   if (palette.info) {
-    entries.push(
-      `info: { main: "${palette.info.main}"${palette.info.contrastText ? `, contrastText: "${palette.info.contrastText}"` : ""} }`
-    );
+    entries.push(renderPaletteColorEntry({ key: "info", color: palette.info }));
   }
   entries.push(
-    `background: { default: "${palette.background.default}", paper: "${palette.background.paper}" }`,
-    `text: { primary: "${palette.text.primary}"${palette.text.secondary ? `, secondary: "${palette.text.secondary}"` : ""}${palette.text.disabled ? `, disabled: "${palette.text.disabled}"` : ""} }`
+    `background: { default: ${literal(palette.background.default)}, paper: ${literal(palette.background.paper)} }`,
+    `text: { primary: ${literal(palette.text.primary)}${palette.text.secondary ? `, secondary: ${literal(palette.text.secondary)}` : ""}${palette.text.disabled ? `, disabled: ${literal(palette.text.disabled)}` : ""} }`
   );
   if (palette.divider) {
-    entries.push(`divider: "${palette.divider}"`);
+    entries.push(`divider: ${literal(palette.divider)}`);
   }
   if (palette.action) {
     const actionEntries = [
-      palette.action.active ? `active: "${palette.action.active}"` : undefined,
-      palette.action.hover ? `hover: "${palette.action.hover}"` : undefined,
-      palette.action.selected ? `selected: "${palette.action.selected}"` : undefined,
-      palette.action.disabled ? `disabled: "${palette.action.disabled}"` : undefined,
-      palette.action.disabledBackground ? `disabledBackground: "${palette.action.disabledBackground}"` : undefined,
-      palette.action.focus ? `focus: "${palette.action.focus}"` : undefined
+      palette.action.active ? `active: ${literal(palette.action.active)}` : undefined,
+      palette.action.hover ? `hover: ${literal(palette.action.hover)}` : undefined,
+      palette.action.selected ? `selected: ${literal(palette.action.selected)}` : undefined,
+      palette.action.disabled ? `disabled: ${literal(palette.action.disabled)}` : undefined,
+      palette.action.disabledBackground ? `disabledBackground: ${literal(palette.action.disabledBackground)}` : undefined,
+      palette.action.focus ? `focus: ${literal(palette.action.focus)}` : undefined
     ].filter((entry): entry is string => Boolean(entry));
     if (actionEntries.length > 0) {
       entries.push(`action: { ${actionEntries.join(", ")} }`);

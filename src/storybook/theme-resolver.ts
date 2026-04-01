@@ -831,7 +831,7 @@ export const resolveStorybookTheme = ({
       }
     });
   }
-  if (darkThemeId && (!isPlainRecord(tokensArtifact.theme) || !isPlainRecord(tokensArtifact.theme[darkThemeId]))) {
+  if (darkThemeId && !isPlainRecord(tokensArtifact.theme[darkThemeId])) {
     throw createResolverError({
       code: "E_STORYBOOK_THEME_TOKEN_SET_MISSING",
       message: `Storybook tokens do not expose the selected dark theme '${darkThemeId}'.`,
