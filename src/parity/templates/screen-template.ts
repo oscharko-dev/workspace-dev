@@ -1557,8 +1557,7 @@ export const renderSemanticAccordion = (
   }
   const detailsBlock =
     !hasExplicitSlots || renderedDetails.trim()
-      ? `
-${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
+      ? `${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
 ${indent}    <Box sx={{ ${detailsSx} }}>
 ${renderedDetails || `${indent}      <Box />`}
 ${indent}    </Box>
@@ -1580,8 +1579,7 @@ ${indent}    <Box sx={{ width: "100%", position: "relative", minHeight: ${litera
 ${renderedSummary || `${indent}      <Typography>{${literal(summaryFallbackLabel)}}</Typography>`}
 ${indent}    </Box>
 ${indent}  </AccordionSummary>
-${detailsBlock}
-${indent}</Accordion>`;
+${detailsBlock ? `${detailsBlock}\n` : ""}${indent}</Accordion>`;
 };
 
 const normalizeCompoundSlotToken = (value: string | undefined): string => {
@@ -1760,16 +1758,19 @@ const isCardHeaderAvatarCandidate = (element: ScreenElementIR): boolean => {
   if (element.type === "avatar") {
     return true;
   }
-  const signal = normalizeCompoundSlotToken(`${element.semanticType ?? ""} ${element.name}`);
-  return signal.includes("avatar");
+  const nameToken = normalizeCompoundSlotToken(element.name);
+  const semanticToken = normalizeCompoundSlotToken(element.semanticType);
+  return nameToken.includes("avatar") || semanticToken.includes("avatar");
 };
 
 const isCardHeaderActionCandidate = (element: ScreenElementIR): boolean => {
   if (element.type === "button") {
     return true;
   }
-  const signal = normalizeCompoundSlotToken(`${element.semanticType ?? ""} ${element.name}`);
-  return signal.includes("action") || signal.includes("cta");
+  const nameToken = normalizeCompoundSlotToken(element.name);
+  const semanticToken = normalizeCompoundSlotToken(element.semanticType);
+  return nameToken.includes("action") || nameToken.includes("cta") ||
+    semanticToken.includes("action") || semanticToken.includes("cta");
 };
 
 const resolveCardHeaderTextNodes = (nodes: ScreenElementIR[]): Array<{ text: string }> => {

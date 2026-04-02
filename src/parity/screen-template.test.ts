@@ -730,6 +730,127 @@ test("renderSemanticAccordion omits empty explicit details wrappers", () => {
   assert.equal(rendered.includes("<Box />"), false);
 });
 
+test("renderSemanticAccordion routes unmatched children to details slot", () => {
+  const context = createRenderContext();
+  const rendered = renderSemanticAccordion(
+    makeNode({
+      id: "accordion-unmatched",
+      type: "accordion",
+      name: "<Accordion>",
+      semanticType: "Accordion",
+      children: [
+        makeNode({
+          id: "accordion-summary-slot-u",
+          type: "container",
+          name: "_<AccordionSummary>",
+          semanticType: "AccordionSummary",
+          children: [makeText({ id: "accordion-summary-text-u", text: "Header" })]
+        }),
+        makeText({ id: "accordion-orphan-text", text: "Orphan content", y: 40 })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<AccordionSummary/);
+  assert.match(rendered, /"Header"/);
+  assert.match(rendered, /<AccordionDetails/);
+  assert.match(rendered, /"Orphan content"/);
+});
+
+test("renderCard assembles partial explicit slots alongside heuristic fallbacks", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "partial-card",
+      type: "card",
+      name: "<Card>",
+      width: 320,
+      height: 200,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "partial-header-slot",
+          type: "container",
+          name: "_<CardHeader>",
+          semanticType: "CardHeader",
+          children: [makeText({ id: "partial-header-title", text: "Partial Title" })]
+        }),
+        makeText({ id: "partial-body-text", text: "Body text", y: 40 }),
+        makeNode({
+          id: "partial-action-button",
+          type: "button",
+          name: "Submit CTA",
+          y: 80,
+          children: [makeText({ id: "partial-action-label", text: "Submit" })]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<CardHeader/);
+  assert.match(rendered, /title=\{"Partial Title"\}/);
+  assert.match(rendered, /"Body text"/);
+  assert.match(rendered, /"Submit"/);
+  assert.equal(rendered.includes("<CardMedia"), false);
+});
+
+test("renderCard resolves nested image inside explicit media slot", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "nested-media-card",
+      type: "card",
+      name: "<Card>",
+      width: 320,
+      height: 300,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "nested-media-slot",
+          type: "container",
+          name: "_<CardMedia>",
+          semanticType: "CardMedia",
+          width: 320,
+          height: 180,
+          children: [
+            makeNode({
+              id: "nested-media-image",
+              type: "image",
+              name: "Hero Banner",
+              width: 320,
+              height: 180
+            })
+          ]
+        }),
+        makeNode({
+          id: "nested-content-slot",
+          type: "container",
+          name: "_<CardContent>",
+          semanticType: "CardContent",
+          children: [makeText({ id: "nested-content-text", text: "Card body" })]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<CardMedia component="img"/);
+  assert.match(rendered, /alt=\{"Hero Banner"\}/);
+  assert.match(rendered, /<CardContent>/);
+  assert.match(rendered, /"Card body"/);
+  assert.ok(rendered.indexOf("<CardMedia") < rendered.indexOf("<CardContent>"));
+});
+
 test("renderChip renders mapped variants and router links", () => {
   const context = createRenderContext({
     routePathByScreenId: navigationRouteMap("screen-4", "/filters")
