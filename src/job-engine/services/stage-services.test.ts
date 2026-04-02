@@ -5228,7 +5228,27 @@ test("ValidateProjectService marks mapping as ok when component.match_report is 
   const componentMatchReportPath = path.join(storybookPublicDir, "component-match-report.json");
   await mkdir(storybookPublicDir, { recursive: true });
   await writeFile(libraryResolutionPath, '{ "artifact": "figma.library_resolution" }\n', "utf8");
-  await writeFile(componentMatchReportPath, '{ "artifact": "component.match_report" }\n', "utf8");
+  await writeFile(componentMatchReportPath, JSON.stringify({
+    artifact: "component.match_report",
+    version: 1,
+    summary: {
+      totalFigmaFamilies: 0,
+      storybookFamilyCount: 0,
+      storybookEntryCount: 0,
+      matched: 0,
+      ambiguous: 0,
+      unmatched: 0,
+      libraryResolution: {
+        byStatus: { resolved_import: 0, mui_fallback_allowed: 0, mui_fallback_denied: 0, not_applicable: 0 },
+        byReason: { profile_import_resolved: 0, profile_import_missing: 0, profile_import_family_mismatch: 0, profile_family_unresolved: 0, match_ambiguous: 0, match_unmatched: 0 }
+      },
+      iconResolution: {
+        byStatus: { resolved_import: 0, wrapper_fallback_allowed: 0, wrapper_fallback_denied: 0, unresolved: 0, ambiguous: 0, not_applicable: 0 },
+        byReason: { profile_icon_import_resolved: 0, profile_icon_import_missing: 0, profile_icon_wrapper_allowed: 0, profile_icon_wrapper_denied: 0, profile_icon_wrapper_missing: 0, match_ambiguous: 0, match_unmatched: 0, not_icon_family: 0 }
+      }
+    },
+    entries: []
+  }) + "\n", "utf8");
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
     stage: "ir.derive",
@@ -5440,4 +5460,142 @@ test("GitPrService receives the final validation-owned generation diff", async (
     unchanged: [],
     summary: "1 file modified, 1 added"
   });
+});
+
+test("ValidateProjectService treats partial mapping status as warn in overall summary", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-partial-mapping"
+    } satisfies GenerationDiffContext
+  });
+  const figmaLibResolutionPath = path.join(executionContext.paths.jobDir, "figma-library-resolution.json");
+  await writeFile(figmaLibResolutionPath, "{}", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    stage: "ir.derive",
+    absolutePath: figmaLibResolutionPath
+  });
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status: string;
+    mapping?: { status?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.mapping?.status, "partial");
+  assert.equal(summary?.status, "warn");
+});
+
+test("ValidateProjectService includes Storybook composition coverage in summary when match report exists", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.requestedStorybookStaticDir = "/tmp/storybook-static";
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-composition-coverage"
+    } satisfies GenerationDiffContext
+  });
+  const artifact = createComponentMatchReportArtifactForStageServices({ matchStatus: "matched" });
+  artifact.entries[0].usedEvidence = [
+    {
+      class: "reference_only_docs" as const,
+      reliability: "reference_only" as const,
+      role: "candidate_selection" as const
+    }
+  ];
+  const matchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(matchReportPath, JSON.stringify(artifact), "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: matchReportPath
+  });
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status: string;
+    storybook?: {
+      status?: string;
+      composition?: {
+        totalFigmaFamilies: number;
+        matched: number;
+        ambiguous: number;
+        unmatched: number;
+        docsOnlyReferenceCount: number;
+        docsOnlyFamilyNames: string[];
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.ok(summary?.storybook?.composition, "composition coverage should be present");
+  assert.equal(summary.storybook.composition.totalFigmaFamilies, 1);
+  assert.equal(summary.storybook.composition.matched, 1);
+  assert.equal(summary.storybook.composition.unmatched, 0);
+  assert.equal(summary.storybook.composition.docsOnlyReferenceCount, 1);
+  assert.deepEqual(summary.storybook.composition.docsOnlyFamilyNames, ["Button"]);
+});
+
+test("ValidateProjectService logs composition gap diagnostics without customer profile", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-composition-diagnostics"
+    } satisfies GenerationDiffContext
+  });
+  const artifact = createComponentMatchReportArtifactForStageServices({ matchStatus: "unmatched" });
+  artifact.summary.matched = 0;
+  artifact.summary.unmatched = 1;
+  const matchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(matchReportPath, JSON.stringify(artifact), "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: matchReportPath
+  });
+  const logMessages: string[] = [];
+  const service = createValidateProjectService({
+    runProjectValidationFn: async (input) => {
+      input.onLog("validation");
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  const ctx = stageContextFor("validate.project");
+  const originalLog = ctx.log.bind(ctx);
+  ctx.log = (entry: { level: string; message: string }) => {
+    logMessages.push(entry.message);
+    originalLog(entry);
+  };
+  await service.execute(undefined, ctx);
+
+  const compositionLog = logMessages.find((m) => m.includes("Storybook composition:") && m.includes("no Storybook match"));
+  assert.ok(compositionLog, "should log unmatched composition gap diagnostic");
+  assert.ok(compositionLog.includes("1 of 1"), "should report correct counts");
 });

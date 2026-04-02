@@ -76,6 +76,15 @@ interface ValidationStorybookArtifactSet {
   components: ValidationArtifactStatusSummary;
 }
 
+interface ValidationStorybookCompositionCoverage {
+  totalFigmaFamilies: number;
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+  docsOnlyReferenceCount: number;
+  docsOnlyFamilyNames: string[];
+}
+
 interface ValidationSummaryArtifact {
   status: "ok" | "warn" | "failed";
   validatedAt: string;
@@ -100,6 +109,7 @@ interface ValidationSummaryArtifact {
         status: "ok" | "failed";
         requestedPath: string;
         artifacts: ValidationStorybookArtifactSet;
+        composition?: ValidationStorybookCompositionCoverage;
       }
     | {
         status: "not_requested";
@@ -156,6 +166,34 @@ interface ValidationSummaryArtifact {
         status: "not_available";
       };
 }
+
+const buildStorybookCompositionCoverage = ({
+  artifact
+}: {
+  artifact: ComponentMatchReportArtifact;
+}): ValidationStorybookCompositionCoverage => {
+  const docsOnlyFamilyNames: string[] = [];
+  for (const entry of artifact.entries) {
+    if (entry.match.status !== "matched") {
+      continue;
+    }
+    const hasAuthoritativeEvidence = entry.usedEvidence.some(
+      (evidence) => evidence.reliability === "authoritative"
+    );
+    if (!hasAuthoritativeEvidence && entry.usedEvidence.length > 0) {
+      docsOnlyFamilyNames.push(entry.figma.familyName);
+    }
+  }
+
+  return {
+    totalFigmaFamilies: artifact.summary.totalFigmaFamilies,
+    matched: artifact.summary.matched,
+    ambiguous: artifact.summary.ambiguous,
+    unmatched: artifact.summary.unmatched,
+    docsOnlyReferenceCount: docsOnlyFamilyNames.length,
+    docsOnlyFamilyNames: docsOnlyFamilyNames.sort((a, b) => a.localeCompare(b))
+  };
+};
 
 const toJsonFileContent = (value: unknown): string => {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -264,7 +302,7 @@ const resolveSummaryStatus = ({
   if (gateStatuses.includes("failed")) {
     return "failed";
   }
-  if (gateStatuses.includes("warn")) {
+  if (gateStatuses.includes("warn") || gateStatuses.includes("partial")) {
     return "warn";
   }
   return "ok";
@@ -310,7 +348,8 @@ const buildValidationSummaryArtifact = async ({
   customerProfileImportSummary,
   customerProfileMatchSummary,
   customerProfileComponentApiSummary,
-  customerProfileStyleSummary
+  customerProfileStyleSummary,
+  componentMatchReportArtifact
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -319,6 +358,7 @@ const buildValidationSummaryArtifact = async ({
   customerProfileMatchSummary?: CustomerProfileMatchValidationSummary;
   customerProfileComponentApiSummary?: CustomerProfileComponentApiValidationSummary;
   customerProfileStyleSummary?: CustomerProfileStyleValidationSummary;
+  componentMatchReportArtifact?: ComponentMatchReportArtifact;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -347,6 +387,10 @@ const buildValidationSummaryArtifact = async ({
     components: toRequiredStorybookArtifactStatus(storybookComponentsFile)
   };
 
+  const compositionCoverage = componentMatchReportArtifact
+    ? buildStorybookCompositionCoverage({ artifact: componentMatchReportArtifact })
+    : undefined;
+
   const storybookSummary: ValidationSummaryArtifact["storybook"] = requestedStorybookStaticDir
     ? {
         status:
@@ -358,7 +402,8 @@ const buildValidationSummaryArtifact = async ({
             ? "ok"
             : "failed",
         requestedPath: requestedStorybookStaticDir,
-        artifacts: storybookArtifacts
+        artifacts: storybookArtifacts,
+        ...(compositionCoverage ? { composition: compositionCoverage } : {})
       }
     : {
         status: "not_requested"
@@ -525,23 +570,50 @@ export const createValidateProjectService = ({
       let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
       let customerProfileComponentApiSummary: CustomerProfileComponentApiValidationSummary | undefined;
       let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
-      if (context.resolvedCustomerProfile) {
-        const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
-        if (componentMatchReportPath) {
-          try {
-            componentMatchReportArtifact = parseComponentMatchReportArtifact({
-              input: await readFile(componentMatchReportPath, "utf8")
-            });
-          } catch (error) {
-            throw createPipelineError({
-              code: "E_COMPONENT_MATCH_REPORT_INVALID",
-              stage: "validate.project",
-              message: "component.match_report is unreadable or malformed.",
-              cause: error,
-              limits: context.runtime.pipelineDiagnosticLimits
-            });
-          }
 
+      const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+      if (componentMatchReportPath) {
+        try {
+          componentMatchReportArtifact = parseComponentMatchReportArtifact({
+            input: await readFile(componentMatchReportPath, "utf8")
+          });
+        } catch (error) {
+          throw createPipelineError({
+            code: "E_COMPONENT_MATCH_REPORT_INVALID",
+            stage: "validate.project",
+            message: "component.match_report is unreadable or malformed.",
+            cause: error,
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+
+        const compositionCoverage = buildStorybookCompositionCoverage({ artifact: componentMatchReportArtifact });
+        if (compositionCoverage.unmatched > 0) {
+          context.log({
+            level: "warn",
+            message:
+              `Storybook composition: ${compositionCoverage.unmatched} of ${compositionCoverage.totalFigmaFamilies} ` +
+              `Figma familie(s) have no Storybook match.`
+          });
+        }
+        if (compositionCoverage.ambiguous > 0) {
+          context.log({
+            level: "warn",
+            message:
+              `Storybook composition: ${compositionCoverage.ambiguous} Figma familie(s) have ambiguous Storybook matches.`
+          });
+        }
+        if (compositionCoverage.docsOnlyReferenceCount > 0) {
+          context.log({
+            level: "warn",
+            message:
+              `Storybook composition: ${compositionCoverage.docsOnlyReferenceCount} matched familie(s) rely on ` +
+              `docs-only references without authoritative evidence: ${compositionCoverage.docsOnlyFamilyNames.join(", ")}.`
+          });
+        }
+      }
+
+      if (context.resolvedCustomerProfile && componentMatchReportArtifact) {
           customerProfileMatchSummary = validateCustomerProfileComponentMatchReport({
             artifact: componentMatchReportArtifact,
             customerProfile: context.resolvedCustomerProfile
@@ -578,7 +650,8 @@ export const createValidateProjectService = ({
               context,
               validatedAt,
               customerProfileMatchSummary,
-              customerProfileComponentApiSummary
+              customerProfileComponentApiSummary,
+              componentMatchReportArtifact
             });
             await persistValidationSummaryArtifacts({
               context,
@@ -613,7 +686,8 @@ export const createValidateProjectService = ({
               context,
               validatedAt,
               customerProfileMatchSummary,
-              customerProfileComponentApiSummary
+              customerProfileComponentApiSummary,
+              componentMatchReportArtifact
             });
             await persistValidationSummaryArtifacts({
               context,
@@ -642,7 +716,6 @@ export const createValidateProjectService = ({
               }))
             });
           }
-        }
       }
 
       let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
@@ -709,7 +782,8 @@ export const createValidateProjectService = ({
             validatedAt,
             ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
             ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-            customerProfileStyleSummary
+            customerProfileStyleSummary,
+            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
           });
           await persistValidationSummaryArtifacts({
             context,
@@ -774,7 +848,8 @@ export const createValidateProjectService = ({
             customerProfileImportSummary,
             ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
             ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-            ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {})
+            ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
+            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
           });
           await persistValidationSummaryArtifacts({
             context,
@@ -835,7 +910,8 @@ export const createValidateProjectService = ({
         ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
         ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
         ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-        ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {})
+        ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
+        ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
       });
       await persistValidationSummaryArtifacts({
         context,
