@@ -4212,6 +4212,52 @@ test("generateArtifacts applies customer profile imports before design-system ma
   assert.equal(appShellContent.includes("FallbackButton"), false);
 });
 
+test("generateArtifacts fails fast on malformed screen appShell cross references", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-invalid-ir-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "screen-1",
+      name: "Invalid Shell Ref",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "missing-shell",
+        contentNodeIds: ["content-1"]
+      },
+      children: [
+        {
+          id: "content-1",
+          name: "Content",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Body"
+        }
+      ]
+    }
+  ];
+
+  await assert.rejects(
+    () =>
+      generateArtifacts({
+        projectDir,
+        ir,
+        llmCodegenMode: "deterministic",
+        llmModelName: "deterministic",
+        onLog: () => {
+          // no-op
+        }
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /IR validation failed/);
+      assert.match(error.message, /does not reference a declared appShell/);
+      return true;
+    }
+  );
+});
+
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"));
   const ir = createIr();
