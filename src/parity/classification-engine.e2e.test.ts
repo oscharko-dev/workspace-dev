@@ -163,9 +163,9 @@ test("E2E: real Figma board exposes verified board families through IR classific
     "Expected at least one accordion element with board semantic metadata."
   );
   assert.equal(
-    allElements.some((element) => element.type === "input" && element.semanticType === "Input"),
+    allElements.some((element) => element.type === "input" && element.semanticType === "DatePicker"),
     true,
-    "Expected at least one input family element with board semantic metadata."
+    "Expected at least one DatePicker element classified as input with board semantic metadata."
   );
   assert.equal(
     allElements.some((element) => element.type === "text" && element.semanticType === "Typography"),

@@ -229,6 +229,20 @@ const createElementTypeMatrixFigmaFile = () => ({
                 children: []
               },
               {
+                id: "node-input-currency",
+                type: "INSTANCE",
+                name: "InputCurrency",
+                absoluteBoundingBox: { x: 10, y: 340, width: 240, height: 56 },
+                children: []
+              },
+              {
+                id: "node-input-tan",
+                type: "INSTANCE",
+                name: "InputTAN",
+                absoluteBoundingBox: { x: 10, y: 410, width: 240, height: 56 },
+                children: []
+              },
+              {
                 id: "node-dynamic-typography",
                 type: "INSTANCE",
                 name: "<Dynamic Typography>",
@@ -2227,6 +2241,8 @@ test("figmaToDesignIrWithOptions classifies extended element types deterministic
   assert.equal(byId.get("node-accordion")?.type, "accordion");
   assert.equal(byId.get("node-date-picker")?.type, "input");
   assert.equal(byId.get("node-input-iban")?.type, "input");
+  assert.equal(byId.get("node-input-currency")?.type, "input");
+  assert.equal(byId.get("node-input-tan")?.type, "input");
   assert.equal(byId.get("node-dynamic-typography")?.type, "text");
   assert.equal(byId.get("node-icon")?.type, "container");
   assert.equal(byId.get("node-switch")?.type, "switch");
@@ -2271,6 +2287,10 @@ test("figmaToDesignIrWithOptions persists board semantic metadata for explicit f
   assert.equal(byId.get("node-date-picker")?.semanticSource, "board");
   assert.equal(byId.get("node-input-iban")?.semanticType, "InputIBAN");
   assert.equal(byId.get("node-input-iban")?.semanticSource, "board");
+  assert.equal(byId.get("node-input-currency")?.semanticType, "InputCurrency");
+  assert.equal(byId.get("node-input-currency")?.semanticSource, "board");
+  assert.equal(byId.get("node-input-tan")?.semanticType, "InputTAN");
+  assert.equal(byId.get("node-input-tan")?.semanticSource, "board");
   assert.equal(byId.get("node-dynamic-typography")?.semanticType, "Typography");
   assert.equal(byId.get("node-dynamic-typography")?.semanticSource, "board");
   assert.equal(byId.get("node-icon")?.semanticType, "Icon");
