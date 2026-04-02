@@ -162,8 +162,8 @@ const resolveInitialState = ({
   }
 
   if (axes.includes("expansion-state")) {
-    const hasExpandedAccordion = Object.values(accordionStateByKey).some((value) => value === true);
-    const hasCollapsedAccordion = Object.values(accordionStateByKey).some((value) => value === false);
+    const hasExpandedAccordion = Object.values(accordionStateByKey).some((value) => value);
+    const hasCollapsedAccordion = Object.values(accordionStateByKey).some((value) => !value);
     if (hasExpandedAccordion) {
       initialState.expansionState = "expanded";
     } else if (hasCollapsedAccordion) {

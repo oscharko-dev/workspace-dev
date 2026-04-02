@@ -1272,7 +1272,7 @@ export async function* generateArtifactsStreaming(
               family: target.family,
               scenarioScreensById: screenById,
               ...baseScreenFileInput,
-              ...(appShellIdentity && identity?.filePath
+              ...(appShellIdentity && identity.filePath
                 ? {
                     appShellComponentName: appShellIdentity.componentName,
                     appShellImportPath: normalizeRelativeImportPath({
