@@ -498,7 +498,7 @@ const collectCustomerComponentContracts = ({
     if (entry.libraryResolution.status !== "resolved_import" || entry.resolvedApi?.status !== "resolved") {
       continue;
     }
-    const localName = entry.libraryResolution.import?.localName?.trim();
+    const localName = entry.libraryResolution.import?.localName.trim();
     const componentKey = entry.libraryResolution.componentKey?.trim() ?? entry.resolvedApi.componentKey?.trim();
     if (!localName || !componentKey) {
       continue;
@@ -608,7 +608,7 @@ const isRawTypographyLiteral = ({
     return false;
   }
 
-  return TYPOGRAPHY_NUMERIC_PATTERN.test(literalText) || true;
+  return TYPOGRAPHY_NUMERIC_PATTERN.test(literalText);
 };
 
 const resolveObjectLiteralInitializer = (
@@ -1419,21 +1419,21 @@ export const validateGeneratedProjectStorybookStyles = async ({
     }
   }
 
-  const tokenExtension = storybookTokensArtifact.$extensions?.[STORYBOOK_PUBLIC_EXTENSION_KEY];
-  const themeExtension = storybookThemesArtifact.$extensions?.[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  const tokenExtension = storybookTokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  const themeExtension = storybookThemesArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY];
   diagnostics.tokens = {
-    diagnosticCount: tokenExtension?.diagnostics.length ?? 0,
-    errorCount: tokenExtension?.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length ?? 0,
-    diagnostics: (tokenExtension?.diagnostics ?? []).map((diagnostic) =>
+    diagnosticCount: tokenExtension.diagnostics.length,
+    errorCount: tokenExtension.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
+    diagnostics: tokenExtension.diagnostics.map((diagnostic) =>
       normalizeStyleDiagnosticEntry({
         diagnostic
       })
     )
   };
   diagnostics.themes = {
-    diagnosticCount: themeExtension?.diagnostics.length ?? 0,
-    errorCount: themeExtension?.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length ?? 0,
-    diagnostics: (themeExtension?.diagnostics ?? []).map((diagnostic) =>
+    diagnosticCount: themeExtension.diagnostics.length,
+    errorCount: themeExtension.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
+    diagnostics: themeExtension.diagnostics.map((diagnostic) =>
       normalizeStyleDiagnosticEntry({
         diagnostic
       })

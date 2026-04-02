@@ -1175,6 +1175,137 @@ export const App = () => <Box sx={{ color: "#ffffff" }} />;
   }
 });
 
+test("validateGeneratedProjectStorybookStyles does not flag non-numeric typography string references as raw declarations", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-typo-string-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box
+    sx={{
+      fontSize: "theme.typography.body1.fontSize",
+      fontWeight: "bold",
+      lineHeight: "inherit"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    const typographyIssues = summary.issues.filter(
+      (issue) => issue.category === "raw_typography_declaration"
+    );
+    assert.equal(
+      typographyIssues.length,
+      0,
+      "Non-numeric typography string references must not be flagged as raw typography declarations"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles flags raw numeric typography literals", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-typo-numeric-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box
+    sx={{
+      fontSize: 16,
+      fontWeight: "400",
+      lineHeight: "1.5"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    const typographyIssues = summary.issues.filter(
+      (issue) => issue.category === "raw_typography_declaration"
+    );
+    assert.ok(
+      typographyIssues.length >= 3,
+      `Expected at least 3 raw typography issues (fontSize: 16, fontWeight: "400", lineHeight: "1.5"), got ${typographyIssues.length}`
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateCustomerProfileComponentMatchReport returns ok when all entries are resolved_import", () => {
   const customerProfile = createCustomerProfile();
   const artifact = createMatchReportArtifact([
