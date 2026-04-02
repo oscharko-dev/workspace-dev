@@ -6,6 +6,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
+  AppShellIR,
   ComponentMappingRule,
   DesignIR,
   GenerationMetrics,
@@ -38,9 +39,11 @@ import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js
 import type { ThemeComponentDefaults, ThemeSxStyleValue } from "./generator-design-system.js";
 import {
   resolveFormHandlingMode,
+  appShellFile,
   fallbackThemeFile,
   storybookThemeFile,
   fallbackScreenFile,
+  wrappedFallbackScreenFile,
   makeErrorBoundaryFile,
   makeScreenSkeletonFile,
   makeAppFile
@@ -920,6 +923,7 @@ const runGenerateArtifactsBasePhase = async ({
   onLog: (message: string) => void;
 }): Promise<GenerateArtifactsBasePhase> => {
   await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "screens"));
+  await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "components"));
   await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "context"));
   await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "theme"));
   const iconResolver = await runtimeAdapters.loadIconResolver({
@@ -965,6 +969,40 @@ const runGenerateArtifactsBasePhase = async ({
     themeComponentDefaults,
     themeFiles
   };
+};
+
+interface AppShellArtifactIdentity {
+  appShellId: string;
+  componentName: string;
+  filePath: string;
+}
+
+const normalizeRelativeImportPath = ({ fromFilePath, toFilePath }: { fromFilePath: string; toFilePath: string }): string => {
+  const relativePath = path.relative(path.dirname(fromFilePath), toFilePath).replace(/\\/g, "/");
+  const withoutExtension = relativePath.replace(/\.[^.]+$/, "");
+  return withoutExtension.startsWith(".") ? withoutExtension : `./${withoutExtension}`;
+};
+
+const buildAppShellArtifactIdentities = (appShells: readonly AppShellIR[] | undefined): Map<string, AppShellArtifactIdentity> => {
+  if (!appShells || appShells.length === 0) {
+    return new Map<string, AppShellArtifactIdentity>();
+  }
+
+  return new Map(
+    [...appShells]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((appShell, index) => {
+        const componentName = `AppShell${index + 1}`;
+        return [
+          appShell.id,
+          {
+            appShellId: appShell.id,
+            componentName,
+            filePath: `src/components/${componentName}.tsx`
+          } satisfies AppShellArtifactIdentity
+        ] as const;
+      })
+  );
 };
 
 // NOTE: runGenerateArtifactsScreenPhase and persistGenerateArtifactsScreenPhase
@@ -1099,9 +1137,12 @@ export async function* generateArtifactsStreaming(
 
   // ── Phase 2: Per-screen generation in parallel batches ────────────────
   const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
+  const screenById = new Map(ir.screens.map((screen) => [screen.id, screen] as const));
   const routePathByScreenId = new Map(
     Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
   );
+  const appShellIdentities = buildAppShellArtifactIdentities(ir.appShells);
+  const appShellById = new Map((ir.appShells ?? []).map((appShell) => [appShell.id, appShell] as const));
   const usedMappingNodeIds = new Set<string>();
   const screenMappingWarnings: Array<{
     code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
@@ -1121,20 +1162,82 @@ export async function* generateArtifactsStreaming(
   });
   const storybookTypographyVariants = resolvedStorybookTheme?.light.typography.variants;
 
+  for (const [appShellId, identity] of appShellIdentities) {
+    const appShell = appShellById.get(appShellId);
+    const sourceScreen = appShell ? screenById.get(appShell.sourceScreenId) : undefined;
+    if (!appShell || !sourceScreen) {
+      continue;
+    }
+
+    const shellNodeIds = new Set(appShell.shellNodeIds);
+    const shellScreen = {
+      ...sourceScreen,
+      children: sourceScreen.children.filter((child) => shellNodeIds.has(child.id))
+    };
+    const deterministicAppShell = appShellFile({
+      screen: shellScreen,
+      mappingByNodeId,
+      spacingBase: ir.tokens.spacingBase,
+      tokens: ir.tokens,
+      iconResolver,
+      imageAssetMap,
+      routePathByScreenId,
+      ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
+      generationLocale: resolvedGenerationLocale.locale,
+      formHandlingMode: resolvedFormHandlingMode,
+      ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+      ...(datePickerProvider ? { datePickerProvider } : {}),
+      ...(Object.keys(specializedComponentMappings).length > 0
+        ? { specializedComponentMappings }
+        : {}),
+      ...(storybookTypographyVariants && Object.keys(storybookTypographyVariants).length > 0
+        ? { storybookTypographyVariants }
+        : {}),
+      ...(designSystemMappedMuiComponents.size > 0
+        ? { disallowedStyledRootMuiComponents: designSystemMappedMuiComponents }
+        : {}),
+      componentNameOverride: identity.componentName,
+      filePathOverride: identity.filePath,
+      enablePatternExtraction: false
+    });
+
+    for (const nodeId of deterministicAppShell.usedMappingNodeIds.values()) {
+      usedMappingNodeIds.add(nodeId);
+    }
+    for (const warning of deterministicAppShell.mappingWarnings) {
+      screenMappingWarnings.push({ code: warning.code, message: warning.message });
+    }
+    iconWarnings.push(...deterministicAppShell.iconWarnings);
+    accessibilityWarnings.push(...deterministicAppShell.accessibilityWarnings);
+
+    const appShellFileArtifact = transformGeneratedFileWithDesignSystem(deterministicAppShell.file);
+    const componentFiles = deterministicAppShell.componentFiles.map((file) =>
+      transformGeneratedFileWithDesignSystem(file)
+    );
+    const allAppShellFiles = [appShellFileArtifact, ...componentFiles, ...deterministicAppShell.contextFiles];
+
+    await Promise.all(
+      allAppShellFiles.map(async (file) => {
+        await runtimeAdapters.writeGeneratedFile(projectDir, file);
+        generatedPaths.add(file.path);
+      })
+    );
+  }
+
   const screenBatches = chunk(ir.screens, STREAMING_SCREEN_BATCH_SIZE);
   let screenIndex = 0;
 
   for (const batch of screenBatches) {
     const batchResults = batch.map((screen) => {
       const identity = identitiesByScreenId.get(screen.id);
+      const appShellIdentity = screen.appShell ? appShellIdentities.get(screen.appShell.id) : undefined;
       const truncationMetric = truncationByScreenId.get(screen.id);
       if (truncationMetric) {
         onLog(
           `Screen '${screen.name}' truncated from ${truncationMetric.originalElements} to ${truncationMetric.retainedElements} elements (budget=${truncationMetric.budget}).`
         );
       }
-      const deterministicScreen = fallbackScreenFile({
-        screen,
+      const baseScreenFileInput = {
         mappingByNodeId,
         spacingBase: ir.tokens.spacingBase,
         tokens: ir.tokens,
@@ -1158,7 +1261,25 @@ export async function* generateArtifactsStreaming(
         ...(identity?.componentName ? { componentNameOverride: identity.componentName } : {}),
         ...(identity?.filePath ? { filePathOverride: identity.filePath } : {}),
         ...(truncationMetric ? { truncationMetric } : {})
-      });
+      };
+      const deterministicScreen =
+        screen.appShell && appShellIdentity && identity?.filePath
+          ? wrappedFallbackScreenFile({
+              screen: {
+                ...screen,
+                children: screen.children.filter((child) => screen.appShell?.contentNodeIds.includes(child.id))
+              },
+              ...baseScreenFileInput,
+              appShellComponentName: appShellIdentity.componentName,
+              appShellImportPath: normalizeRelativeImportPath({
+                fromFilePath: identity.filePath,
+                toFilePath: appShellIdentity.filePath
+              })
+            })
+          : fallbackScreenFile({
+              screen,
+              ...baseScreenFileInput
+            });
       return { screen, deterministicScreen };
     });
 

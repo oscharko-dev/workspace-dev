@@ -78,10 +78,52 @@
       "figmaJson": "variant-shell-signals/figma.json",
       "artifacts": [
         {
+          "name": "design-ir",
+          "kind": "json",
+          "actual": "design-ir.json",
+          "expected": "variant-shell-signals/expected/design-ir.json"
+        },
+        {
           "name": "figma-analysis",
           "kind": "json",
           "actual": "figma-analysis.json",
           "expected": "variant-shell-signals/expected/figma-analysis.json"
+        },
+        {
+          "name": "app-shell-component",
+          "kind": "text",
+          "actual": "src/components/AppShell1.tsx",
+          "expected": "variant-shell-signals/expected/src_components_AppShell1.tsx"
+        },
+        {
+          "name": "screen-1",
+          "kind": "text",
+          "actual": "src/screens/ID-003_1_Fehlermeldungen.tsx",
+          "expected": "variant-shell-signals/expected/screens/ID-003_1_Fehlermeldungen.tsx"
+        },
+        {
+          "name": "screen-2",
+          "kind": "text",
+          "actual": "src/screens/ID-003_2_Netto_Betriebsmittel_alle_Cluster_eingeklappt_v1.tsx",
+          "expected": "variant-shell-signals/expected/screens/ID-003_2_Netto_Betriebsmittel_alle_Cluster_eingeklappt_v1.tsx"
+        },
+        {
+          "name": "screen-3",
+          "kind": "text",
+          "actual": "src/screens/ID-003_3_Netto_Betriebsmittel_alle_Cluster_eingeklappt.tsx",
+          "expected": "variant-shell-signals/expected/screens/ID-003_3_Netto_Betriebsmittel_alle_Cluster_eingeklappt.tsx"
+        },
+        {
+          "name": "screen-4",
+          "kind": "text",
+          "actual": "src/screens/ID-003_4_Netto_Betriebsmittel_alle_Cluster_expanded.tsx",
+          "expected": "variant-shell-signals/expected/screens/ID-003_4_Netto_Betriebsmittel_alle_Cluster_expanded.tsx"
+        },
+        {
+          "name": "screen-5",
+          "kind": "text",
+          "actual": "src/screens/ID-003_5_Brutto_Betriebsmittel_alle_Cluster_eingeklappt.tsx",
+          "expected": "variant-shell-signals/expected/screens/ID-003_5_Brutto_Betriebsmittel_alle_Cluster_eingeklappt.tsx"
         }
       ]
     },

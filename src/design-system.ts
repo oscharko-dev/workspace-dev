@@ -185,7 +185,7 @@ const isTargetFileForDesignSystemTransform = ({
   if (/^src\/screens\/[^/]+\.tsx$/i.test(normalized)) {
     return true;
   }
-  return /^src\/components\/[^/]*Pattern\d+\.tsx$/i.test(normalized);
+  return /^src\/components\/(?:[^/]*Pattern\d+|AppShell\d+)\.tsx$/i.test(normalized);
 };
 
 const normalizePropMappings = ({

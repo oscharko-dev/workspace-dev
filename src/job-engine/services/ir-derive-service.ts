@@ -5,6 +5,7 @@ import { createPipelineError, getErrorMessage, type PipelineDiagnosticInput } fr
 import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } from "../ir-cache.js";
 import { applyIrOverrides } from "../ir-overrides.js";
 import { buildFigmaAnalysis, buildRegenerationFallbackFigmaAnalysis } from "../../parity/figma-analysis.js";
+import { applyAppShellsToDesignIr } from "../../parity/ir-app-shells.js";
 import { figmaToDesignIrWithOptions } from "../../parity/ir.js";
 import type { FigmaFile } from "../../parity/ir-helpers.js";
 import type { DesignIR } from "../../parity/types-ir.js";
@@ -601,11 +602,15 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         onLog: irCacheLog
       });
       if (cached) {
-        await writeFile(context.paths.designIrFile, `${JSON.stringify(cached, null, 2)}\n`, "utf8");
         const cachedAnalysis = buildFigmaAnalysis({
           file: figmaAnalysisSource,
           ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
         });
+        const cachedIrWithAppShells = applyAppShellsToDesignIr({
+          ir: cached,
+          figmaAnalysis: cachedAnalysis
+        });
+        await writeFile(context.paths.designIrFile, `${JSON.stringify(cachedIrWithAppShells, null, 2)}\n`, "utf8");
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
         const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
           figmaAnalysis: cachedAnalysis,
@@ -613,9 +618,11 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         });
         context.log({
           level: "info",
-          message: `IR cache hit — skipped derivation. Loaded ${cached.screens.length} screens (brandTheme=${context.resolvedBrandTheme}).`
+          message:
+            `IR cache hit — skipped derivation. Loaded ${cachedIrWithAppShells.screens.length} screens ` +
+            `(brandTheme=${context.resolvedBrandTheme}).`
         });
-        emitIrMetricDiagnostics({ source: cached });
+        emitIrMetricDiagnostics({ source: cachedIrWithAppShells });
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.designIr,
           stage: "ir.derive",
@@ -668,11 +675,15 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         diagnostics: buildIrEmptyDiagnostics()
       });
     }
-    await writeFile(context.paths.designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
     const figmaAnalysis = buildFigmaAnalysis({
       file: figmaAnalysisSource,
       ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
     });
+    derived = applyAppShellsToDesignIr({
+      ir: derived,
+      figmaAnalysis
+    });
+    await writeFile(context.paths.designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
     await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
     const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
       figmaAnalysis,

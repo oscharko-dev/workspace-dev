@@ -58,6 +58,7 @@ export type {
 export { validateDesignIR, isTextElement, isNonTextElement } from "./types-ir.js";
 
 export type {
+  AppShellIR,
   BaseElementIR,
   CounterAxisAlignItems,
   CssGridChildHints,
@@ -94,6 +95,7 @@ export type {
   ScreenElementIRTextRequiresText,
   ScreenElementSemanticSource,
   ScreenElementType,
+  ScreenAppShellIR,
   TextElementIR,
   ScreenIR,
   ScreenResponsiveIR,

@@ -3968,6 +3968,250 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
   });
 });
 
+test("generateArtifacts emits a shared AppShell component and wraps only shell-group screen content", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "shell-screen-1",
+      name: "Status Offen",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "app-shell-group",
+        contentNodeIds: ["content-1"]
+      },
+      children: [
+        {
+          id: "shell-brand-1",
+          name: "Markenbühne",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Gemeinsame Bühne"
+        },
+        {
+          id: "shell-header-1",
+          name: "Header + Titel",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Gemeinsamer Header"
+        },
+        {
+          id: "content-1",
+          name: "SeitenContent",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Nur Inhalt Offen"
+        }
+      ]
+    },
+    {
+      id: "shell-screen-2",
+      name: "Status Fertig",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "app-shell-group",
+        contentNodeIds: ["content-2"]
+      },
+      children: [
+        {
+          id: "shell-brand-2",
+          name: "Markenbühne",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Gemeinsame Bühne"
+        },
+        {
+          id: "shell-header-2",
+          name: "Header + Titel",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Gemeinsamer Header"
+        },
+        {
+          id: "content-2",
+          name: "SeitenContent",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Nur Inhalt Fertig"
+        }
+      ]
+    },
+    {
+      id: "standalone-screen",
+      name: "Standalone",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "standalone-content",
+          name: "Standalone Content",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Standalone Inhalt"
+        }
+      ]
+    }
+  ];
+  ir.appShells = [
+    {
+      id: "app-shell-group",
+      sourceScreenId: "shell-screen-1",
+      screenIds: ["shell-screen-1", "shell-screen-2"],
+      shellNodeIds: ["shell-brand-1", "shell-header-1"],
+      slotIndex: 2,
+      signalIds: ["signal-1", "signal-2"]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/components/AppShell1.tsx"), true);
+
+  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  assert.ok(appShellContent.includes("Gemeinsame Bühne"));
+  assert.ok(appShellContent.includes("Gemeinsamer Header"));
+  assert.ok(appShellContent.includes("{children}"));
+  assert.equal(appShellContent.includes("Nur Inhalt Offen"), false);
+  assert.equal(appShellContent.includes("Nur Inhalt Fertig"), false);
+
+  const firstScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Status Offen")), "utf8");
+  assert.ok(firstScreenContent.includes('import AppShell1 from "../components/AppShell1";'));
+  assert.ok(firstScreenContent.includes("<AppShell1>"));
+  assert.ok(firstScreenContent.includes("Nur Inhalt Offen"));
+  assert.equal(firstScreenContent.includes("Gemeinsame Bühne"), false);
+  assert.equal(firstScreenContent.includes("Gemeinsamer Header"), false);
+
+  const secondScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Status Fertig")), "utf8");
+  assert.ok(secondScreenContent.includes('import AppShell1 from "../components/AppShell1";'));
+  assert.ok(secondScreenContent.includes("Nur Inhalt Fertig"));
+  assert.equal(secondScreenContent.includes("Gemeinsame Bühne"), false);
+  assert.equal(secondScreenContent.includes("Gemeinsamer Header"), false);
+
+  const standaloneContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Standalone")), "utf8");
+  assert.equal(standaloneContent.includes('import AppShell1 from "../components/AppShell1";'), false);
+  assert.ok(standaloneContent.includes("Standalone Inhalt"));
+});
+
+test("generateArtifacts applies customer profile imports before design-system mappings for AppShell files", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-customer-profile-"));
+  const designSystemFilePath = path.join(projectDir, "design-system.json");
+  await writeFile(
+    designSystemFilePath,
+    `${JSON.stringify(
+      {
+        library: "@acme/ui",
+        mappings: {
+          Button: {
+            component: "FallbackButton"
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "shell-screen-1",
+      name: "Status Offen",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "app-shell-group",
+        contentNodeIds: ["content-1"]
+      },
+      children: [
+        {
+          id: "shell-button-1",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        },
+        {
+          id: "content-1",
+          name: "SeitenContent",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Status Offen"
+        }
+      ]
+    },
+    {
+      id: "shell-screen-2",
+      name: "Status Fertig",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "app-shell-group",
+        contentNodeIds: ["content-2"]
+      },
+      children: [
+        {
+          id: "shell-button-2",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        },
+        {
+          id: "content-2",
+          name: "SeitenContent",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Status Fertig"
+        }
+      ]
+    }
+  ];
+  ir.appShells = [
+    {
+      id: "app-shell-group",
+      sourceScreenId: "shell-screen-1",
+      screenIds: ["shell-screen-1", "shell-screen-2"],
+      shellNodeIds: ["shell-button-1"],
+      slotIndex: 1,
+      signalIds: ["signal-1"]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    designSystemFilePath,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  assert.ok(appShellContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  assert.ok(appShellContent.includes("<CustomerButton"));
+  assert.ok(appShellContent.includes("appearance="));
+  assert.equal(appShellContent.includes("FallbackButton"), false);
+});
+
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"));
   const ir = createIr();

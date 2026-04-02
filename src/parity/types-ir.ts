@@ -349,7 +349,13 @@ export interface ScreenIR {
     left: number;
   };
   responsive?: ScreenResponsiveIR;
+  appShell?: ScreenAppShellIR;
   children: ScreenElementIR[];
+}
+
+export interface ScreenAppShellIR {
+  id: string;
+  contentNodeIds: string[];
 }
 
 export interface ScreenElementCountMetric {
@@ -469,6 +475,16 @@ export interface DesignIR {
   tokens: DesignTokens;
   metrics?: GenerationMetrics;
   themeAnalysis?: DesignIrThemeAnalysis;
+  appShells?: AppShellIR[];
+}
+
+export interface AppShellIR {
+  id: string;
+  sourceScreenId: string;
+  screenIds: string[];
+  shellNodeIds: string[];
+  slotIndex: number;
+  signalIds: string[];
 }
 
 export interface DesignNodeFingerprint {
@@ -543,6 +559,7 @@ export interface ValidatedDesignIR {
   readonly tokens: DesignTokens;
   readonly metrics: GenerationMetrics;
   readonly themeAnalysis?: DesignIrThemeAnalysis;
+  readonly appShells?: readonly AppShellIR[];
 }
 
 export interface IRValidationError {
@@ -628,7 +645,9 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       sourceName: raw.sourceName,
       screens: raw.screens,
       tokens: raw.tokens,
-      metrics
+      metrics,
+      ...(raw.themeAnalysis ? { themeAnalysis: raw.themeAnalysis } : {}),
+      ...(raw.appShells ? { appShells: raw.appShells } : {})
     }
   };
 };
