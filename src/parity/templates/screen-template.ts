@@ -12,9 +12,10 @@ import type {
   DesignTokenTypographyVariantName,
   GeneratedFile,
   SimplificationMetrics,
-  TextElementIR,
   ScreenElementIR,
-  ScreenIR
+  ScreenIR,
+  ScreenVariantFamilyIR,
+  TextElementIR
 } from "../types.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../../generation-locale.js";
 import type { WorkspaceFormHandlingMode } from "../../contracts/index.js";
@@ -514,7 +515,9 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     return "";
   }
   const indent = "  ".repeat(depth);
-  const text = literal(element.text.trim() || element.name);
+  const text =
+    context.textOverrideExpressionByNodeId?.get(element.id) ??
+    literal(element.text.trim() || element.name);
   const headingComponent = context.headingComponentByNodeId.get(element.id);
   const typographyVariantName = context.typographyVariantByNodeId.get(element.id);
   const typographyVariant = typographyVariantName && context.tokens ? context.tokens.typography[typographyVariantName] : undefined;
@@ -5396,6 +5399,7 @@ export interface FallbackScreenFileInput {
   filePathOverride?: string;
   enablePatternExtraction?: boolean;
   disallowedStyledRootMuiComponents?: ReadonlySet<string>;
+  textOverrideExpressionByNodeId?: Map<string, string>;
 }
 
 export type AppShellFileInput = FallbackScreenFileInput;
@@ -5403,6 +5407,13 @@ export type AppShellFileInput = FallbackScreenFileInput;
 export interface WrappedFallbackScreenFileInput extends FallbackScreenFileInput {
   appShellComponentName: string;
   appShellImportPath: string;
+}
+
+export interface StatefulVariantScreenFileInput extends FallbackScreenFileInput {
+  family: ScreenVariantFamilyIR;
+  scenarioScreensById: Map<string, ScreenIR>;
+  appShellComponentName?: string;
+  appShellImportPath?: string;
 }
 
 export interface PreparedFallbackScreenModel {
@@ -5434,6 +5445,7 @@ export interface PreparedFallbackScreenModel {
   pageBackgroundColorNormalized: string | undefined;
   enablePatternExtraction: boolean;
   disallowedStyledRootMuiComponents: ReadonlySet<string>;
+  textOverrideExpressionByNodeId?: Map<string, string>;
 }
 
 export interface FallbackRenderState {
@@ -5489,7 +5501,8 @@ export const prepareFallbackScreenModel = ({
   componentNameOverride,
   filePathOverride,
   enablePatternExtraction = true,
-  disallowedStyledRootMuiComponents = new Set<string>()
+  disallowedStyledRootMuiComponents = new Set<string>(),
+  textOverrideExpressionByNodeId
 }: FallbackScreenFileInput): PreparedFallbackScreenModel => {
   const componentName = componentNameOverride ?? toComponentName(screen.name);
   const filePath = filePathOverride ?? toDeterministicScreenPath(screen.name);
@@ -5577,7 +5590,8 @@ export const prepareFallbackScreenModel = ({
     mappingByNodeId,
     pageBackgroundColorNormalized,
     enablePatternExtraction,
-    disallowedStyledRootMuiComponents
+    disallowedStyledRootMuiComponents,
+    ...(textOverrideExpressionByNodeId ? { textOverrideExpressionByNodeId } : {})
   };
 };
 
@@ -5663,6 +5677,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     mappingWarnings: [],
     iconWarnings: [],
     consumedFieldLabelNodeIds: new Set(consumedFieldLabelNodeIds),
+    ...(prepared.textOverrideExpressionByNodeId ? { textOverrideExpressionByNodeId: prepared.textOverrideExpressionByNodeId } : {}),
     emittedWarningKeys: new Set<string>(),
     emittedIconWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
@@ -6288,8 +6303,34 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
   return result;
 };
 
+const collectTextOverrideExpressionByNodeId = (
+  elements: readonly ScreenElementIR[]
+): Map<string, string> => {
+  const expressions = new Map<string, string>();
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.type === "text") {
+      expressions.set(
+        current.id,
+        `textOverrides?.[${literal(current.id)}] ?? ${literal(current.text.trim() || current.name)}`
+      );
+    }
+    for (const child of current.children ?? []) {
+      stack.push(child);
+    }
+  }
+  return expressions;
+};
+
 export const appShellFile = (input: AppShellFileInput): FallbackScreenFileResult => {
-  const prepared = prepareFallbackScreenModel(input);
+  const prepared = prepareFallbackScreenModel({
+    ...input,
+    textOverrideExpressionByNodeId: collectTextOverrideExpressionByNodeId(input.screen.children)
+  });
   const renderState = buildFallbackRenderState({ prepared });
   const dependencies = assembleFallbackDependencies({
     prepared,
@@ -6322,9 +6363,10 @@ export const appShellFile = (input: AppShellFileInput): FallbackScreenFileResult
   const shellBody = rendered.length > 0 ? `${rendered}\n      {children}` : "      {children}";
   const contentFunctionSource = `export interface ${propsName} {
   children: ReactNode;
+  textOverrides?: Record<string, string>;
 }
 
-function ${contentFunctionName}({ children }: Readonly<${propsName}>) {
+function ${contentFunctionName}({ children, textOverrides }: Readonly<${propsName}>) {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
@@ -6393,6 +6435,432 @@ ${wrappedShellContent}
     });
   }
   return result;
+};
+
+interface StatefulScenarioModule {
+  contentScreenId: string;
+  componentFunctionName: string;
+  source: string;
+  renderState: FallbackRenderState;
+  dependencies: FallbackDependencyAssembly;
+  prepared: PreparedFallbackScreenModel;
+}
+
+const splitNonEmptyLines = (block: string): string[] => {
+  return block
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+};
+
+const appendUniqueLines = ({
+  target,
+  seen,
+  lines
+}: {
+  target: string[];
+  seen: Set<string>;
+  lines: readonly string[];
+}): void => {
+  for (const line of lines) {
+    if (seen.has(line)) {
+      continue;
+    }
+    seen.add(line);
+    target.push(line);
+  }
+};
+
+const dedupeGeneratedFilesByPath = (files: readonly GeneratedFile[]): GeneratedFile[] => {
+  const dedupedByPath = new Map<string, GeneratedFile>();
+  for (const file of files) {
+    dedupedByPath.set(file.path, file);
+  }
+  return [...dedupedByPath.values()];
+};
+
+const buildStatefulScenarioModule = ({
+  input,
+  componentName,
+  filePath,
+  screen
+}: {
+  input: StatefulVariantScreenFileInput;
+  componentName: string;
+  filePath: string;
+  screen: ScreenIR;
+}): StatefulScenarioModule => {
+  const scenarioScreen =
+    input.appShellComponentName && screen.appShell
+      ? {
+          ...screen,
+          children: screen.children.filter((child) => screen.appShell?.contentNodeIds.includes(child.id))
+        }
+      : screen;
+  const prepared = prepareFallbackScreenModel({
+    ...input,
+    screen: scenarioScreen,
+    componentNameOverride: componentName,
+    filePathOverride: filePath,
+    enablePatternExtraction: false
+  });
+  const renderState = buildFallbackRenderState({ prepared });
+  const dependencies = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  const {
+    patternContextFileSpec,
+    formContextFileSpec,
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps
+  } = dependencies;
+  const { renderContext, rendered, contentContainerSx } = renderState;
+  const bodyFunctionName = `${componentName}Body`;
+  const bodyFunctionSource = `function ${bodyFunctionName}() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container id="main-content" maxWidth={false} disableGutters role="main"${containerFormProps} sx={{ ${contentContainerSx} }}>
+${rendered || EMPTY_SCREEN_PLACEHOLDER}
+    </Container>
+  );
+}`;
+  const { wrappedContent: wrappedScenarioContent, hasContextProviders } = wrapContentWithProviders({
+    baseContent: `      <${bodyFunctionName} />`,
+    patternContextFileSpec,
+    formContextFileSpec,
+    renderContext
+  });
+  const source = hasContextProviders
+    ? `${patternContextInitialStateDeclaration}${bodyFunctionSource}
+
+function ${componentName}() {
+  return (
+${wrappedScenarioContent}
+  );
+}`
+    : `${bodyFunctionSource}
+
+function ${componentName}() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container id="main-content" maxWidth={false} disableGutters role="main"${containerFormProps} sx={{ ${contentContainerSx} }}>
+${rendered || EMPTY_SCREEN_PLACEHOLDER}
+    </Container>
+  );
+}`;
+
+  return {
+    contentScreenId: screen.id,
+    componentFunctionName: componentName,
+    source,
+    renderState,
+    dependencies,
+    prepared
+  };
+};
+
+const accumulateStatefulResultStats = ({
+  target,
+  source
+}: {
+  target: SimplificationMetrics;
+  source: SimplificationMetrics;
+}): void => {
+  target.removedEmptyNodes += source.removedEmptyNodes;
+  target.promotedSingleChild += source.promotedSingleChild;
+  target.promotedGroupMultiChild += source.promotedGroupMultiChild;
+  target.spacingMerges += source.spacingMerges;
+  target.guardedSkips += source.guardedSkips;
+};
+
+export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput): FallbackScreenFileResult => {
+  const canonicalPrepared = prepareFallbackScreenModel({
+    ...input,
+    screen: input.screen,
+    enablePatternExtraction: false
+  });
+  const componentName = canonicalPrepared.componentName;
+  const filePath = canonicalPrepared.filePath;
+  const scenarioByScreenId = new Map(input.family.scenarios.map((scenario) => [scenario.screenId, scenario] as const));
+  const uniqueContentScreenIds = [...new Set(input.family.scenarios.map((scenario) => scenario.contentScreenId))];
+  const scenarioModules = uniqueContentScreenIds.map((contentScreenId, index) => {
+    const screen = input.scenarioScreensById.get(contentScreenId);
+    if (!screen) {
+      throw new Error(
+        `Stateful variant screen '${componentName}' is missing content screen '${contentScreenId}' for family '${input.family.familyId}'.`
+      );
+    }
+    const scenarioComponentName = `${componentName}${toComponentName(`variant-${index + 1}-${contentScreenId}`)}Content`;
+    return buildStatefulScenarioModule({
+      input,
+      componentName: scenarioComponentName,
+      filePath,
+      screen
+    });
+  });
+
+  const scenarioModuleByContentScreenId = new Map(
+    scenarioModules.map((scenarioModule) => [scenarioModule.contentScreenId, scenarioModule] as const)
+  );
+  const defaultVariantId = input.family.canonicalScreenId;
+  const defaultScenario = scenarioByScreenId.get(defaultVariantId);
+  if (!defaultScenario) {
+    throw new Error(
+      `Stateful variant screen '${componentName}' is missing the canonical scenario '${defaultVariantId}'.`
+    );
+  }
+
+  const importLines: string[] = [];
+  const seenImportLines = new Set<string>();
+  const muiImports = new Set<string>();
+  const scenarioSources: string[] = [];
+  const usedMappingNodeIds = new Set<string>();
+  const mappingWarnings: FallbackScreenFileResult["mappingWarnings"] = [];
+  const iconWarnings: FallbackScreenFileResult["iconWarnings"] = [];
+  const accessibilityWarnings: FallbackScreenFileResult["accessibilityWarnings"] = [];
+  const simplificationStats = createEmptySimplificationStats();
+  const componentFiles: GeneratedFile[] = [];
+  const contextFiles: GeneratedFile[] = [];
+
+  for (const scenarioModule of scenarioModules) {
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.reactImportBlock)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.reactHookFormImport)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.zodImportBlock)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.reactRouterImport)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.selectChangeEventTypeImport)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(buildDatePickerImportBlock({
+        needsDatePickerFallbackProvider: Boolean(scenarioModule.renderState.renderContext.usesDatePicker) &&
+          !scenarioModule.renderState.renderContext.usesDatePickerProvider
+      }))
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.iconImports)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.mappedImports)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.extractedComponentImports)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.patternContextImport)
+    });
+    appendUniqueLines({
+      target: importLines,
+      seen: seenImportLines,
+      lines: splitNonEmptyLines(scenarioModule.dependencies.formContextImport)
+    });
+    for (const muiImport of scenarioModule.dependencies.uniqueMuiImports) {
+      muiImports.add(muiImport);
+    }
+    scenarioSources.push(scenarioModule.source);
+    accumulateStatefulResultStats({
+      target: simplificationStats,
+      source: scenarioModule.prepared.simplificationStats
+    });
+    for (const usedMappingNodeId of scenarioModule.renderState.renderContext.usedMappingNodeIds.values()) {
+      usedMappingNodeIds.add(usedMappingNodeId);
+    }
+    mappingWarnings.push(...scenarioModule.renderState.renderContext.mappingWarnings);
+    iconWarnings.push(...(scenarioModule.renderState.renderContext.iconWarnings ?? []));
+    accessibilityWarnings.push(...scenarioModule.renderState.renderContext.accessibilityWarnings);
+    componentFiles.push(...scenarioModule.prepared.extractionPlan.componentFiles);
+    contextFiles.push(...scenarioModule.prepared.extractionPlan.contextFiles);
+  }
+
+  const scenarioOrderLiteral = JSON.stringify(input.family.memberScreenIds);
+  const scenarioConfigLiteral = JSON.stringify(
+    input.family.scenarios.reduce<Record<string, { contentScreenId: string; initialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"]; shellTextOverrides?: Record<string, string> }>>(
+      (result, scenario) => {
+        result[scenario.screenId] = {
+          contentScreenId: scenario.contentScreenId,
+          initialState: scenario.initialState,
+          ...(scenario.shellTextOverrides ? { shellTextOverrides: scenario.shellTextOverrides } : {})
+        };
+        return result;
+      },
+      {}
+    ),
+    null,
+    2
+  );
+  const contentSwitchCases = input.family.scenarios
+    .map((scenario) => {
+      const scenarioModule = scenarioModuleByContentScreenId.get(scenario.contentScreenId);
+      if (!scenarioModule) {
+        return "";
+      }
+      return `    case ${literal(scenario.screenId)}:
+      return <${scenarioModule.componentFunctionName} />;`;
+    })
+    .filter((chunk) => chunk.length > 0)
+    .join("\n");
+  const defaultScenarioModule = scenarioModuleByContentScreenId.get(defaultScenario.contentScreenId);
+  if (!defaultScenarioModule) {
+    throw new Error(
+      `Stateful variant screen '${componentName}' is missing the canonical content module '${defaultScenario.contentScreenId}'.`
+    );
+  }
+
+  const shellImportLine =
+    input.appShellComponentName && input.appShellImportPath
+      ? `import ${input.appShellComponentName} from "${input.appShellImportPath}";`
+      : "";
+  const screenSource = `${canonicalPrepared.truncationComment}${importLines.length > 0 ? `${importLines.join("\n")}\n` : ""}import { ${[...muiImports].sort((left, right) => left.localeCompare(right)).join(", ")} } from "@mui/material";
+${shellImportLine ? `${shellImportLine}\n` : ""}
+interface ${componentName}VariantState {
+  pricingMode?: "netto" | "brutto";
+  expansionState?: "collapsed" | "expanded";
+  validationState?: "default" | "error";
+}
+
+export interface ${componentName}ScreenProps {
+  initialVariantId?: string;
+  initialState?: Partial<${componentName}VariantState>;
+}
+
+const variantScenarioOrder = ${scenarioOrderLiteral} as const;
+const variantScenarioConfig = ${scenarioConfigLiteral} as const;
+
+const matchesRequestedInitialState = (
+  variantId: string,
+  requestedState: Partial<${componentName}VariantState> | undefined
+): boolean => {
+  if (!requestedState) {
+    return false;
+  }
+  const scenario = variantScenarioConfig[variantId as keyof typeof variantScenarioConfig];
+  if (!scenario) {
+    return false;
+  }
+  if (requestedState.pricingMode && scenario.initialState.pricingMode !== requestedState.pricingMode) {
+    return false;
+  }
+  if (requestedState.expansionState && scenario.initialState.expansionState !== requestedState.expansionState) {
+    return false;
+  }
+  if (requestedState.validationState && scenario.initialState.validationState !== requestedState.validationState) {
+    return false;
+  }
+  return true;
+};
+
+const resolveInitialVariantId = ({
+  initialVariantId,
+  initialState
+}: Readonly<${componentName}ScreenProps>): string => {
+  if (initialVariantId && initialVariantId in variantScenarioConfig) {
+    return initialVariantId;
+  }
+  for (const variantId of variantScenarioOrder) {
+    if (matchesRequestedInitialState(variantId, initialState)) {
+      return variantId;
+    }
+  }
+  return ${literal(defaultVariantId)};
+};
+
+${scenarioSources.join("\n\n")}
+
+function renderVariantContent(variantId: string) {
+  switch (variantId) {
+${contentSwitchCases}
+    default:
+      return <${defaultScenarioModule.componentFunctionName} />;
+  }
+}
+
+export default function ${componentName}Screen(props: Readonly<${componentName}ScreenProps>) {
+  const resolvedVariantId = resolveInitialVariantId(props);
+  const resolvedScenario = variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??
+    variantScenarioConfig[${literal(defaultVariantId)} as keyof typeof variantScenarioConfig];
+  const screenContent = renderVariantContent(resolvedVariantId);
+  return (
+${input.appShellComponentName ? `    <${input.appShellComponentName} textOverrides={resolvedScenario.shellTextOverrides}>
+      {screenContent}
+    </${input.appShellComponentName}>` : "    screenContent"}
+  );
+}
+`;
+  const optimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenSource);
+  validateGeneratedSourceFile({
+    filePath,
+    content: optimizedScreenContent,
+    context: {
+      screenName: input.screen.name
+    }
+  });
+
+  const canonicalScenarioModule = scenarioModuleByContentScreenId.get(defaultScenario.contentScreenId) ?? defaultScenarioModule;
+  const screenTestPlan = buildScreenTestTargetPlan({
+    roots: canonicalScenarioModule.prepared.simplifiedChildren,
+    renderedOutput: canonicalScenarioModule.renderState.rendered,
+    buttons: canonicalScenarioModule.renderState.renderContext.buttons,
+    fields: canonicalScenarioModule.renderState.renderContext.fields
+  });
+
+  return {
+    file: {
+      path: filePath,
+      content: optimizedScreenContent
+    },
+    prototypeNavigationRenderedCount: scenarioModules.reduce(
+      (sum, scenarioModule) => sum + scenarioModule.renderState.renderContext.prototypeNavigationRenderedCount,
+      0
+    ),
+    simplificationStats,
+    usedMappingNodeIds,
+    mappingWarnings,
+    iconWarnings,
+    accessibilityWarnings,
+    componentFiles: dedupeGeneratedFilesByPath(componentFiles),
+    contextFiles: dedupeGeneratedFilesByPath(contextFiles),
+    testFiles: [
+      buildScreenUnitTestFile({
+        componentName,
+        screenFilePath: filePath,
+        plan: screenTestPlan
+      })
+    ]
+  };
 };
 
 export const wrappedFallbackScreenFile = (input: WrappedFallbackScreenFileInput): FallbackScreenFileResult => {

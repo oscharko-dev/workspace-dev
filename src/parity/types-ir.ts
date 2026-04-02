@@ -358,6 +358,30 @@ export interface ScreenAppShellIR {
   contentNodeIds: string[];
 }
 
+export type ScreenVariantFamilyAxis = "pricing-mode" | "expansion-state" | "validation-state";
+
+export interface ScreenVariantFamilyInitialStateIR {
+  pricingMode?: "netto" | "brutto";
+  expansionState?: "collapsed" | "expanded";
+  validationState?: "default" | "error";
+  accordionStateByKey?: Record<string, boolean>;
+}
+
+export interface ScreenVariantFamilyScenarioIR {
+  screenId: string;
+  contentScreenId: string;
+  initialState: ScreenVariantFamilyInitialStateIR;
+  shellTextOverrides?: Record<string, string>;
+}
+
+export interface ScreenVariantFamilyIR {
+  familyId: string;
+  canonicalScreenId: string;
+  memberScreenIds: string[];
+  axes: ScreenVariantFamilyAxis[];
+  scenarios: ScreenVariantFamilyScenarioIR[];
+}
+
 export interface ScreenElementCountMetric {
   screenId: string;
   screenName: string;
@@ -476,6 +500,7 @@ export interface DesignIR {
   metrics?: GenerationMetrics;
   themeAnalysis?: DesignIrThemeAnalysis;
   appShells?: AppShellIR[];
+  screenVariantFamilies?: ScreenVariantFamilyIR[];
 }
 
 export interface AppShellIR {
@@ -560,6 +585,7 @@ export interface ValidatedDesignIR {
   readonly metrics: GenerationMetrics;
   readonly themeAnalysis?: DesignIrThemeAnalysis;
   readonly appShells?: readonly AppShellIR[];
+  readonly screenVariantFamilies?: readonly ScreenVariantFamilyIR[];
 }
 
 export interface IRValidationError {
@@ -577,7 +603,14 @@ export interface IRValidationError {
     | "IR_SCREEN_APP_SHELL_MISSING_DEFINITION"
     | "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH"
     | "IR_SCREEN_APP_SHELL_EMPTY_CONTENT"
-    | "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE";
+    | "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE"
+    | "IR_INVALID_SCREEN_VARIANT_FAMILY"
+    | "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN"
+    | "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN"
+    | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_MEMBER"
+    | "IR_INVALID_SCREEN_VARIANT_SCENARIO"
+    | "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN"
+    | "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN";
   readonly message: string;
 }
 
@@ -758,6 +791,95 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     }
   }
 
+  if (Array.isArray(raw.screenVariantFamilies)) {
+    for (let i = 0; i < raw.screenVariantFamilies.length; i++) {
+      const family = raw.screenVariantFamilies[i];
+      if (
+        !family ||
+        !family.familyId ||
+        !family.canonicalScreenId ||
+        !Array.isArray(family.memberScreenIds) ||
+        !Array.isArray(family.axes) ||
+        !Array.isArray(family.scenarios)
+      ) {
+        errors.push({
+          code: "IR_INVALID_SCREEN_VARIANT_FAMILY",
+          message:
+            `DesignIR.screenVariantFamilies[${i}] must have familyId, canonicalScreenId, memberScreenIds array, axes array, ` +
+            "and scenarios array."
+        });
+        continue;
+      }
+
+      if (!screenIdSet.has(family.canonicalScreenId)) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN",
+          message:
+            `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' does not reference an existing screen.`
+        });
+      }
+
+      const memberScreenIdSet = new Set<string>();
+      for (const memberScreenId of family.memberScreenIds) {
+        memberScreenIdSet.add(memberScreenId);
+        if (!screenIdSet.has(memberScreenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
+              "which does not exist in screens."
+          });
+        }
+      }
+
+      if (!memberScreenIdSet.has(family.canonicalScreenId)) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_MEMBER",
+          message:
+            `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
+            "must also be present in memberScreenIds."
+        });
+      }
+
+      for (let scenarioIndex = 0; scenarioIndex < family.scenarios.length; scenarioIndex++) {
+        const scenario = family.scenarios[scenarioIndex];
+        if (
+          !scenario ||
+          !scenario.screenId ||
+          !scenario.contentScreenId ||
+          typeof scenario.initialState !== "object" ||
+          scenario.initialState === null
+        ) {
+          errors.push({
+            code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}] must have screenId, contentScreenId, ` +
+              "and initialState."
+          });
+          continue;
+        }
+
+        if (!memberScreenIdSet.has(scenario.screenId) || !screenIdSet.has(scenario.screenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenId '${scenario.screenId}' ` +
+              "must reference an existing family member screen."
+          });
+        }
+
+        if (!memberScreenIdSet.has(scenario.contentScreenId) || !screenIdSet.has(scenario.contentScreenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].contentScreenId '${scenario.contentScreenId}' ` +
+              "must reference an existing family member screen."
+          });
+        }
+      }
+    }
+  }
+
   if (errors.length > 0) {
     return { valid: false, errors };
   }
@@ -786,7 +908,8 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       tokens: raw.tokens,
       metrics,
       ...(raw.themeAnalysis ? { themeAnalysis: raw.themeAnalysis } : {}),
-      ...(raw.appShells ? { appShells: raw.appShells } : {})
+      ...(raw.appShells ? { appShells: raw.appShells } : {}),
+      ...(raw.screenVariantFamilies ? { screenVariantFamilies: raw.screenVariantFamilies } : {})
     }
   };
 };

@@ -5,6 +5,7 @@ import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import { buildComponentManifest } from "../../parity/component-manifest.js";
+import { resolveEmittedScreenTargets } from "../../parity/emitted-screen-targets.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
 import type { DesignIR } from "../../parity/types-ir.js";
@@ -335,9 +336,11 @@ export const createCodegenGenerateService = ({
       }
 
       try {
+        const emittedScreenResolution = resolveEmittedScreenTargets({ ir });
         const manifest = await buildComponentManifestFn({
           projectDir: context.paths.generatedProjectDir,
-          screens: ir.screens
+          screens: emittedScreenResolution.emittedScreens,
+          identitiesByScreenId: emittedScreenResolution.emittedIdentitiesByScreenId
         });
         const manifestPath = path.join(context.paths.generatedProjectDir, "component-manifest.json");
         await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

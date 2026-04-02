@@ -2,6 +2,7 @@ import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { ScreenIR } from "./types-ir.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
+import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
 
 export interface ComponentManifestEntry {
   irNodeId: string;
@@ -87,12 +88,14 @@ export function parseIrMarkersFromSource(
 
 export async function buildComponentManifest({
   projectDir,
-  screens
+  screens,
+  identitiesByScreenId
 }: {
   projectDir: string;
   screens: ScreenIR[];
+  identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
 }): Promise<ComponentManifest> {
-  const identities = buildScreenArtifactIdentities(screens);
+  const identities = identitiesByScreenId ?? buildScreenArtifactIdentities(screens);
   const result: ScreenManifestEntry[] = [];
 
   // Collect all .tsx files to parse

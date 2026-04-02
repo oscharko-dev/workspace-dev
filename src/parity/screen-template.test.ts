@@ -239,6 +239,25 @@ test("renderText skips consumed labels and styles link-like text with contrast w
   assert.equal(warningContext.accessibilityWarnings.length, 1);
 });
 
+test("renderText uses text override expressions when they are provided by the render context", () => {
+  const context = createRenderContext();
+  context.textOverrideExpressionByNodeId = new Map([
+    ["mode-text", 'textOverrides?.["mode-text"] ?? "Netto"']
+  ]);
+
+  const rendered = renderText(
+    makeText({
+      id: "mode-text",
+      text: "Netto"
+    }) as Extract<ScreenElementIR, { type: "text" }>,
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /\{textOverrides\?\.\["mode-text"\] \?\? "Netto"\}/);
+});
+
 test("renderText prefers mapped customer typography for semantic Typography nodes when a Storybook variant matches confidently", () => {
   const context = createRenderContext({
     specializedComponentMappings: {

@@ -4105,6 +4105,243 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
   assert.ok(standaloneContent.includes("Standalone Inhalt"));
 });
 
+test("generateArtifacts emits one canonical stateful family screen and alias routes for former variants", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "family-brutto",
+      name: "Pricing Brutto",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "family-shell",
+        contentNodeIds: ["family-brutto-body"]
+      },
+      children: [
+        {
+          id: "family-brutto-header",
+          name: "Header",
+          nodeType: "FRAME",
+          type: "stack" as const,
+          children: [
+            {
+              id: "family-brutto-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Pricing"
+            },
+            {
+              id: "family-brutto-mode",
+              name: "Mode",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Brutto"
+            }
+          ]
+        },
+        {
+          id: "family-brutto-body",
+          name: "Body",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: [
+            {
+              id: "family-brutto-copy",
+              name: "Copy",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Shared body"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "family-canonical",
+      name: "Pricing Netto",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "family-shell",
+        contentNodeIds: ["family-canonical-body"]
+      },
+      children: [
+        {
+          id: "family-canonical-header",
+          name: "Header",
+          nodeType: "FRAME",
+          type: "stack" as const,
+          children: [
+            {
+              id: "family-canonical-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Pricing"
+            },
+            {
+              id: "family-canonical-mode",
+              name: "Mode",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Netto"
+            }
+          ]
+        },
+        {
+          id: "family-canonical-body",
+          name: "Body",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: [
+            {
+              id: "family-canonical-copy",
+              name: "Copy",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Shared body"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "family-expanded",
+      name: "Pricing Expanded",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "family-shell",
+        contentNodeIds: ["family-expanded-body"]
+      },
+      children: [
+        {
+          id: "family-expanded-header",
+          name: "Header",
+          nodeType: "FRAME",
+          type: "stack" as const,
+          children: [
+            {
+              id: "family-expanded-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Pricing"
+            },
+            {
+              id: "family-expanded-mode",
+              name: "Mode",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Netto"
+            }
+          ]
+        },
+        {
+          id: "family-expanded-body",
+          name: "Body",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: [
+            {
+              id: "family-expanded-copy",
+              name: "Copy",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Expanded body"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+  ir.appShells = [
+    {
+      id: "family-shell",
+      sourceScreenId: "family-canonical",
+      screenIds: ["family-brutto", "family-canonical", "family-expanded"],
+      shellNodeIds: ["family-canonical-header"],
+      slotIndex: 1,
+      signalIds: ["family-shell-signal"]
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-shell",
+      canonicalScreenId: "family-canonical",
+      memberScreenIds: ["family-brutto", "family-canonical", "family-expanded"],
+      axes: ["pricing-mode", "expansion-state"],
+      scenarios: [
+        {
+          screenId: "family-brutto",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "brutto",
+            expansionState: "collapsed"
+          },
+          shellTextOverrides: {
+            "family-canonical-mode": "Brutto"
+          }
+        },
+        {
+          screenId: "family-canonical",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "netto",
+            expansionState: "collapsed"
+          }
+        },
+        {
+          screenId: "family-expanded",
+          contentScreenId: "family-expanded",
+          initialState: {
+            pricingMode: "netto",
+            expansionState: "expanded"
+          }
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.generatedPaths.includes("src/components/AppShell1.tsx"), true);
+  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Netto")), true);
+  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Brutto")), false);
+  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Expanded")), false);
+
+  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  assert.match(appShellContent, /textOverrides\?: Record<string, string>/);
+  assert.match(appShellContent, /textOverrides\?\.\["family-canonical-mode"\] \?\? "Netto"/);
+
+  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Netto")), "utf8");
+  assert.match(canonicalScreenContent, /initialVariantId\?: string/);
+  assert.match(canonicalScreenContent, /variantScenarioConfig/);
+  assert.match(canonicalScreenContent, /renderVariantContent/);
+  assert.ok(canonicalScreenContent.includes("<AppShell1 textOverrides={resolvedScenario.shellTextOverrides}>"));
+
+  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  assert.ok(appContent.includes('path="/pricing_netto"'));
+  assert.ok(appContent.includes('path="/pricing_brutto"'));
+  assert.ok(appContent.includes('<PricingNettoScreen initialVariantId="family-brutto" />'));
+  assert.ok(appContent.includes('path="/pricing_expanded"'));
+  assert.ok(appContent.includes('<PricingNettoScreen initialVariantId="family-expanded" />'));
+  assert.ok(appContent.includes('<Route path="/" element={<Navigate to="/pricing_netto" replace />} />'));
+});
+
 test("generateArtifacts applies customer profile imports before design-system mappings for AppShell files", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-customer-profile-"));
   const designSystemFilePath = path.join(projectDir, "design-system.json");

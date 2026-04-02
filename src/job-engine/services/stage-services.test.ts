@@ -1548,6 +1548,33 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
+test("IrDeriveService persists screenVariantFamilies together with appShells for the variant-shell fixture", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "variant-shell-fixture.json");
+  const fixturePayload = await readFile(
+    path.resolve(process.cwd(), "src/parity/fixtures/golden/variant-shell-signals/figma.json"),
+    "utf8"
+  );
+  await writeFile(localPayloadPath, fixturePayload, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const derivedIr = JSON.parse(await readFile(executionContext.paths.designIrFile, "utf8")) as DesignIR;
+  assert.equal(derivedIr.appShells?.length, 1);
+  assert.equal(derivedIr.screenVariantFamilies?.length, 1);
+  assert.equal(derivedIr.screenVariantFamilies?.[0]?.canonicalScreenId, "1:66050");
+});
+
 test("IrDeriveService writes and registers figma.library_resolution for external local_json components", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     input: {
@@ -1891,6 +1918,93 @@ test("IrDeriveService regeneration reads seeded artifacts and writes design.ir a
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
+test("IrDeriveService regeneration strips affected screenVariantFamilies when overrides touch a family member", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-family-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-family-analysis.json");
+  const sourceIr = createMinimalIr();
+  sourceIr.screens = [
+    {
+      id: "family-brutto",
+      name: "Pricing Brutto",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-brutto-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Brutto"
+        }
+      ]
+    },
+    {
+      id: "family-canonical",
+      name: "Pricing Netto",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-canonical-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Netto"
+        }
+      ]
+    }
+  ];
+  sourceIr.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "family-canonical",
+      memberScreenIds: ["family-brutto", "family-canonical"],
+      axes: ["pricing-mode"],
+      scenarios: [
+        {
+          screenId: "family-brutto",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "brutto"
+          }
+        },
+        {
+          screenId: "family-canonical",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "netto"
+          }
+        }
+      ]
+    }
+  ];
+  await writeFile(sourceIrPath, `${JSON.stringify(sourceIr, null, 2)}\n`, "utf8");
+  await writeFile(sourceAnalysisPath, `${JSON.stringify({ artifactVersion: 1, sourceName: "test" }, null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath,
+    overrides: [
+      {
+        nodeId: "family-brutto-copy",
+        field: "fontSize",
+        value: 18
+      }
+    ]
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedIr = JSON.parse(await readFile(executionContext.paths.designIrFile, "utf8")) as DesignIR;
+  assert.equal(regeneratedIr.screenVariantFamilies?.length ?? 0, 0);
+});
+
 test("IrDeriveService maps missing source design IR to E_REGEN_SOURCE_IR_MISSING", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     mode: "regeneration"
@@ -2056,6 +2170,91 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
   });
   assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), undefined);
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
+});
+
+test("CodegenGenerateService builds the component manifest from emitted canonical screens only", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  ir.screens = [
+    {
+      id: "family-brutto",
+      name: "Pricing Brutto",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: []
+    },
+    {
+      id: "family-canonical",
+      name: "Pricing Netto",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: []
+    },
+    {
+      id: "standalone",
+      name: "Standalone",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: []
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "family-canonical",
+      memberScreenIds: ["family-brutto", "family-canonical"],
+      axes: ["pricing-mode"],
+      scenarios: [
+        {
+          screenId: "family-brutto",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "brutto"
+          }
+        },
+        {
+          screenId: "family-canonical",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "netto"
+          }
+        }
+      ]
+    }
+  ];
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+
+  let manifestScreenIds: string[] = [];
+  let manifestIdentityKeys: string[] = [];
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      return { generatedPaths: [] };
+    },
+    buildComponentManifestFn: async ({ screens, identitiesByScreenId }) => {
+      manifestScreenIds = screens.map((screen) => screen.id);
+      manifestIdentityKeys = [...(identitiesByScreenId?.keys() ?? [])];
+      return { screens: [] };
+    }
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.deepEqual(manifestScreenIds, ["family-canonical", "standalone"]);
+  assert.deepEqual(manifestIdentityKeys.sort(), ["family-canonical", "standalone"]);
 });
 
 test("CodegenGenerateService accepts all streaming artifact event variants without special-case handling", async () => {

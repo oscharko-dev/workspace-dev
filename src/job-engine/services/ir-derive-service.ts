@@ -6,9 +6,10 @@ import { computeContentHash, computeOptionsHash, loadCachedIr, saveCachedIr } fr
 import { applyIrOverrides } from "../ir-overrides.js";
 import { buildFigmaAnalysis, buildRegenerationFallbackFigmaAnalysis } from "../../parity/figma-analysis.js";
 import { applyAppShellsToDesignIr } from "../../parity/ir-app-shells.js";
+import { applyScreenVariantFamiliesToDesignIr } from "../../parity/ir-screen-variants.js";
 import { figmaToDesignIrWithOptions } from "../../parity/ir.js";
 import type { FigmaFile } from "../../parity/ir-helpers.js";
-import type { DesignIR } from "../../parity/types-ir.js";
+import type { DesignIR, ScreenElementIR } from "../../parity/types-ir.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
@@ -42,6 +43,67 @@ interface RegenerationSourceIrSeed {
   sourceIrFile?: string;
   sourceAnalysisFile?: string;
 }
+
+const collectScreenNodeIds = (elements: readonly ScreenElementIR[]): Set<string> => {
+  const nodeIds = new Set<string>();
+  const stack = [...elements];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    nodeIds.add(current.id);
+    if (Array.isArray(current.children) && current.children.length > 0) {
+      for (let index = current.children.length - 1; index >= 0; index -= 1) {
+        stack.push(current.children[index]!);
+      }
+    }
+  }
+  return nodeIds;
+};
+
+const stripAffectedScreenVariantFamilies = ({
+  ir,
+  overrideNodeIds
+}: {
+  ir: DesignIR;
+  overrideNodeIds: readonly string[];
+}): DesignIR => {
+  if (!ir.screenVariantFamilies || ir.screenVariantFamilies.length === 0 || overrideNodeIds.length === 0) {
+    return ir;
+  }
+
+  const screenNodeIdsByScreenId = new Map(
+    ir.screens.map((screen) => {
+      const nodeIds = collectScreenNodeIds(screen.children);
+      nodeIds.add(screen.id);
+      return [screen.id, nodeIds] as const;
+    })
+  );
+  const affectedFamilies = new Set<string>();
+
+  for (const family of ir.screenVariantFamilies) {
+    for (const memberScreenId of family.memberScreenIds) {
+      const screenNodeIds = screenNodeIdsByScreenId.get(memberScreenId);
+      if (!screenNodeIds) {
+        continue;
+      }
+      if (overrideNodeIds.some((nodeId) => screenNodeIds.has(nodeId))) {
+        affectedFamilies.add(family.familyId);
+        break;
+      }
+    }
+  }
+
+  if (affectedFamilies.size === 0) {
+    return ir;
+  }
+
+  return {
+    ...ir,
+    screenVariantFamilies: ir.screenVariantFamilies.filter((family) => !affectedFamilies.has(family.familyId))
+  };
+};
 
 export type IrDeriveStageInput = Pick<WorkspaceJobInput, "figmaFileKey" | "figmaAccessToken">;
 
@@ -244,20 +306,27 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         ir: baseIr,
         overrides
       });
+      const overrideNodeIds = overrides
+        .map((override) => override.nodeId)
+        .filter((nodeId): nodeId is string => typeof nodeId === "string" && nodeId.trim().length > 0);
+      const regeneratedIr = stripAffectedScreenVariantFamilies({
+        ir: overrideResult.ir,
+        overrideNodeIds
+      });
 
-      await writeFile(context.paths.designIrFile, `${JSON.stringify(overrideResult.ir, null, 2)}\n`, "utf8");
+      await writeFile(context.paths.designIrFile, `${JSON.stringify(regeneratedIr, null, 2)}\n`, "utf8");
       const regeneratedAnalysis =
         typeof sourceAnalysisPath === "string" && sourceAnalysisPath.trim().length > 0
           ? await readFile(sourceAnalysisPath, "utf8").catch(() => undefined)
           : undefined;
       const analysisContent =
-        regeneratedAnalysis ?? `${JSON.stringify(buildRegenerationFallbackFigmaAnalysis({ ir: overrideResult.ir }), null, 2)}\n`;
+        regeneratedAnalysis ?? `${JSON.stringify(buildRegenerationFallbackFigmaAnalysis({ ir: regeneratedIr }), null, 2)}\n`;
       await writeFile(context.paths.figmaAnalysisFile, analysisContent.endsWith("\n") ? analysisContent : `${analysisContent}\n`, "utf8");
       context.log({
         level: "info",
         message:
           `Applied ${overrideResult.appliedCount} override(s) to source IR ` +
-          `(${overrideResult.skippedCount} skipped, ${overrideResult.ir.screens.length} screens).`
+          `(${overrideResult.skippedCount} skipped, ${regeneratedIr.screens.length} screens).`
       });
       await context.artifactStore.setPath({
         key: STAGE_ARTIFACT_KEYS.designIr,
@@ -610,7 +679,11 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           ir: cached,
           figmaAnalysis: cachedAnalysis
         });
-        await writeFile(context.paths.designIrFile, `${JSON.stringify(cachedIrWithAppShells, null, 2)}\n`, "utf8");
+        const cachedIrWithFamilies = applyScreenVariantFamiliesToDesignIr({
+          ir: cachedIrWithAppShells,
+          figmaAnalysis: cachedAnalysis
+        });
+        await writeFile(context.paths.designIrFile, `${JSON.stringify(cachedIrWithFamilies, null, 2)}\n`, "utf8");
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
         const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
           figmaAnalysis: cachedAnalysis,
@@ -619,10 +692,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         context.log({
           level: "info",
           message:
-            `IR cache hit — skipped derivation. Loaded ${cachedIrWithAppShells.screens.length} screens ` +
+            `IR cache hit — skipped derivation. Loaded ${cachedIrWithFamilies.screens.length} screens ` +
             `(brandTheme=${context.resolvedBrandTheme}).`
         });
-        emitIrMetricDiagnostics({ source: cachedIrWithAppShells });
+        emitIrMetricDiagnostics({ source: cachedIrWithFamilies });
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.designIr,
           stage: "ir.derive",
@@ -680,6 +753,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {})
     });
     derived = applyAppShellsToDesignIr({
+      ir: derived,
+      figmaAnalysis
+    });
+    derived = applyScreenVariantFamiliesToDesignIr({
       ir: derived,
       figmaAnalysis
     });

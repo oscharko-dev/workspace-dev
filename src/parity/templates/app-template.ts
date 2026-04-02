@@ -9,17 +9,36 @@ import type { ScreenArtifactIdentity } from "../generator-artifacts.js";
 import type { WorkspaceRouterMode } from "../../contracts/index.js";
 import { DEFAULT_ROUTER_MODE } from "./utility-functions.js";
 
+export interface AppRouteEntry {
+  routeScreenId: string;
+  emittedScreenId: string;
+  routePath: string;
+  initialVariantId?: string;
+}
+
 export const makeAppFile = ({
   screens,
   identitiesByScreenId = buildScreenArtifactIdentities(screens),
+  routeEntries,
   routerMode = DEFAULT_ROUTER_MODE,
   includeThemeModeToggle = true
 }: {
   screens: ScreenIR[];
   identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
+  routeEntries?: AppRouteEntry[];
   routerMode?: WorkspaceRouterMode;
   includeThemeModeToggle?: boolean;
 }): string => {
+  const resolvedRouteEntries: AppRouteEntry[] =
+    routeEntries ??
+    screens.map((screen) => {
+      const identity = identitiesByScreenId.get(screen.id);
+      return {
+        routeScreenId: screen.id,
+        emittedScreenId: screen.id,
+        routePath: identity?.routePath ?? `/${sanitizeFileName(screen.name).toLowerCase()}`
+      } satisfies AppRouteEntry;
+    });
   const lazyScreens = screens.slice(1);
   const hasLazyRoutes = lazyScreens.length > 0;
   const reactImport = hasLazyRoutes ? 'import { Suspense, lazy } from "react";' : 'import { Suspense } from "react";';
@@ -66,19 +85,25 @@ const browserBasename = resolveBrowserBasename();
     })
     .join("\n");
 
-  const routes = screens
-    .map((screen, index) => {
-      const identity = identitiesByScreenId.get(screen.id);
-      const componentName = identity?.componentName ?? toComponentName(screen.name);
-      const routePath = identity?.routePath ?? `/${sanitizeFileName(screen.name).toLowerCase()}`;
-      const routeComponent = index === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
-      return `          <Route path="${routePath}" element={<ErrorBoundary><${routeComponent} /></ErrorBoundary>} />`;
+  const routes = resolvedRouteEntries
+    .map((routeEntry) => {
+      const emittedScreen = screens.find((screen) => screen.id === routeEntry.emittedScreenId);
+      if (!emittedScreen) {
+        return "";
+      }
+      const emittedIndex = screens.findIndex((screen) => screen.id === routeEntry.emittedScreenId);
+      const identity = identitiesByScreenId.get(routeEntry.emittedScreenId);
+      const componentName = identity?.componentName ?? toComponentName(emittedScreen.name);
+      const routeComponent = emittedIndex === 0 ? `${componentName}Screen` : `Lazy${componentName}Screen`;
+      const routeProps = routeEntry.initialVariantId
+        ? ` initialVariantId=${JSON.stringify(routeEntry.initialVariantId)}`
+        : "";
+      return `          <Route path="${routeEntry.routePath}" element={<ErrorBoundary><${routeComponent}${routeProps} /></ErrorBoundary>} />`;
     })
+    .filter((route) => route.length > 0)
     .join("\n");
 
-  const firstScreen = screens.at(0);
-  const firstIdentity = firstScreen ? identitiesByScreenId.get(firstScreen.id) : undefined;
-  const firstRoute = firstIdentity?.routePath ?? (firstScreen ? `/${sanitizeFileName(firstScreen.name).toLowerCase()}` : "/");
+  const firstRoute = resolvedRouteEntries[0]?.routePath ?? "/";
 
   return `${reactImport}
 ${includeThemeModeToggle ? `import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
@@ -150,4 +175,3 @@ ${routes}
 }
 `;
 };
-

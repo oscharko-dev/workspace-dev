@@ -1251,5 +1251,88 @@
         "id-003-1-fehlermeldungen-5-shell-1"
       ]
     }
+  ],
+  "screenVariantFamilies": [
+    {
+      "familyId": "id-003-1-fehlermeldungen-5",
+      "canonicalScreenId": "1:66050",
+      "memberScreenIds": [
+        "1:63230",
+        "1:64644",
+        "1:66050",
+        "1:67464",
+        "1:68884"
+      ],
+      "axes": [
+        "expansion-state",
+        "pricing-mode",
+        "validation-state"
+      ],
+      "scenarios": [
+        {
+          "screenId": "1:63230",
+          "contentScreenId": "1:66050",
+          "initialState": {
+            "pricingMode": "brutto",
+            "validationState": "default",
+            "expansionState": "collapsed",
+            "accordionStateByKey": {
+              "accordion_state_collapsed_1_63230_accordion_1": false
+            }
+          },
+          "shellTextOverrides": {
+            "1:66050-mode": "Brutto"
+          }
+        },
+        {
+          "screenId": "1:64644",
+          "contentScreenId": "1:64644",
+          "initialState": {
+            "pricingMode": "netto",
+            "validationState": "default",
+            "expansionState": "expanded",
+            "accordionStateByKey": {
+              "accordion_state_expanded_1_64644_accordion_1": true
+            }
+          }
+        },
+        {
+          "screenId": "1:66050",
+          "contentScreenId": "1:66050",
+          "initialState": {
+            "pricingMode": "netto",
+            "validationState": "default",
+            "expansionState": "collapsed",
+            "accordionStateByKey": {
+              "accordion_state_collapsed_1_66050_accordion_1": false
+            }
+          }
+        },
+        {
+          "screenId": "1:67464",
+          "contentScreenId": "1:66050",
+          "initialState": {
+            "pricingMode": "netto",
+            "validationState": "default",
+            "expansionState": "collapsed",
+            "accordionStateByKey": {
+              "accordion_state_collapsed_1_67464_accordion_1": false
+            }
+          }
+        },
+        {
+          "screenId": "1:68884",
+          "contentScreenId": "1:68884",
+          "initialState": {
+            "pricingMode": "netto",
+            "validationState": "error",
+            "expansionState": "collapsed",
+            "accordionStateByKey": {
+              "accordion_state_collapsed_1_68884_accordion_1": false
+            }
+          }
+        }
+      ]
+    }
   ]
 }

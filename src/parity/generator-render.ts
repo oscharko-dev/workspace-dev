@@ -1003,6 +1003,7 @@ export interface RenderContext {
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
   iconWarnings?: IconRenderWarning[] | undefined;
   consumedFieldLabelNodeIds?: Set<string> | undefined;
+  textOverrideExpressionByNodeId?: Map<string, string> | undefined;
   emittedWarningKeys: Set<string>;
   emittedIconWarningKeys?: Set<string> | undefined;
   emittedAccessibilityWarningKeys: Set<string>;

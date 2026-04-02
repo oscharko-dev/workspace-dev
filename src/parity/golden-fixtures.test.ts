@@ -10,6 +10,7 @@ import { applyIrOverrides } from "../job-engine/ir-overrides.js";
 import { buildFigmaAnalysis } from "./figma-analysis.js";
 import { generateArtifacts } from "./generator-core.js";
 import { applyAppShellsToDesignIr } from "./ir-app-shells.js";
+import { applyScreenVariantFamiliesToDesignIr } from "./ir-screen-variants.js";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 
 interface GoldenArtifactSpec {
@@ -177,8 +178,12 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
             }).ir
           : baseIr;
       const figmaAnalysis = buildFigmaAnalysis({ file: cleaned.cleanedFile });
-      const ir = applyAppShellsToDesignIr({
+      const irWithAppShells = applyAppShellsToDesignIr({
         ir: irWithOverrides,
+        figmaAnalysis
+      });
+      const ir = applyScreenVariantFamiliesToDesignIr({
+        ir: irWithAppShells,
         figmaAnalysis
       });
 

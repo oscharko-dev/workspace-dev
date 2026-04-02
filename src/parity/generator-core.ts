@@ -34,7 +34,7 @@ import type { ComponentMatchReportIconResolutionRecord } from "../storybook/type
 import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import type { IconRenderWarning } from "./generator-render.js";
-import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
+import { resolveEmittedScreenTargets } from "./emitted-screen-targets.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
 import type { ThemeComponentDefaults, ThemeSxStyleValue } from "./generator-design-system.js";
 import {
@@ -43,6 +43,7 @@ import {
   fallbackThemeFile,
   storybookThemeFile,
   fallbackScreenFile,
+  statefulVariantScreenFile,
   wrappedFallbackScreenFile,
   makeErrorBoundaryFile,
   makeScreenSkeletonFile,
@@ -1136,10 +1137,11 @@ export async function* generateArtifactsStreaming(
   yield { type: "theme", files: themeFiles };
 
   // ── Phase 2: Per-screen generation in parallel batches ────────────────
-  const identitiesByScreenId = buildScreenArtifactIdentities(ir.screens);
+  const emittedScreenResolution = resolveEmittedScreenTargets({ ir });
+  const identitiesByScreenId = emittedScreenResolution.emittedIdentitiesByScreenId;
   const screenById = new Map(ir.screens.map((screen) => [screen.id, screen] as const));
   const routePathByScreenId = new Map(
-    Array.from(identitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
+    Array.from(emittedScreenResolution.rawIdentitiesByScreenId.entries()).map(([screenId, identity]) => [screenId, identity.routePath] as const)
   );
   const appShellIdentities = buildAppShellArtifactIdentities(ir.appShells);
   const appShellById = new Map((ir.appShells ?? []).map((appShell) => [appShell.id, appShell] as const));
@@ -1224,11 +1226,12 @@ export async function* generateArtifactsStreaming(
     );
   }
 
-  const screenBatches = chunk(ir.screens, STREAMING_SCREEN_BATCH_SIZE);
+  const screenBatches = chunk(emittedScreenResolution.emittedTargets, STREAMING_SCREEN_BATCH_SIZE);
   let screenIndex = 0;
 
   for (const batch of screenBatches) {
-    const batchResults = batch.map((screen) => {
+    const batchResults = batch.map((target) => {
+      const screen = target.screen;
       const identity = identitiesByScreenId.get(screen.id);
       const appShellIdentity = screen.appShell ? appShellIdentities.get(screen.appShell.id) : undefined;
       const truncationMetric = truncationByScreenId.get(screen.id);
@@ -1263,7 +1266,23 @@ export async function* generateArtifactsStreaming(
         ...(truncationMetric ? { truncationMetric } : {})
       };
       const deterministicScreen =
-        screen.appShell && appShellIdentity && identity?.filePath
+        target.family && identity?.filePath
+          ? statefulVariantScreenFile({
+              screen,
+              family: target.family,
+              scenarioScreensById: screenById,
+              ...baseScreenFileInput,
+              ...(appShellIdentity && identity?.filePath
+                ? {
+                    appShellComponentName: appShellIdentity.componentName,
+                    appShellImportPath: normalizeRelativeImportPath({
+                      fromFilePath: identity.filePath,
+                      toFilePath: appShellIdentity.filePath
+                    })
+                  }
+                : {})
+            })
+          : screen.appShell && appShellIdentity && identity?.filePath
           ? wrappedFallbackScreenFile({
               screen: {
                 ...screen,
@@ -1327,7 +1346,7 @@ export async function* generateArtifactsStreaming(
       yield {
         type: "progress",
         screenIndex,
-        screenCount: ir.screens.length,
+        screenCount: emittedScreenResolution.emittedTargets.length,
         screenName: screen.name
       };
     }
@@ -1343,8 +1362,9 @@ export async function* generateArtifactsStreaming(
 
   // ── Phase 3: App.tsx (depends on all screen routes) ───────────────────
   const appContent = makeAppFile({
-    screens: ir.screens,
+    screens: emittedScreenResolution.emittedScreens,
     identitiesByScreenId,
+    routeEntries: emittedScreenResolution.routeEntries,
     ...(routerMode !== undefined ? { routerMode } : {}),
     includeThemeModeToggle: resolvedStorybookTheme?.includeThemeModeToggle ?? (ir.themeAnalysis?.darkModeDetected ?? true)
   });
@@ -1413,7 +1433,7 @@ export async function* generateArtifactsStreaming(
     generationMetrics,
     themeApplied: false,
     screenApplied: 0,
-    screenTotal: ir.screens.length,
+    screenTotal: emittedScreenResolution.emittedTargets.length,
     screenRejected: [],
     llmWarnings: [],
     mappingCoverage: {
