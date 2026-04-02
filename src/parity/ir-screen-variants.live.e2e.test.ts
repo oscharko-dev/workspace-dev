@@ -24,12 +24,49 @@ const TARGET_FAMILY_ID = "id-003-1-fehlermeldungen-5";
 const TARGET_CANONICAL_SCREEN_ID = "1:66050";
 const TARGET_MEMBER_SCREEN_IDS = ["1:63230", "1:64644", "1:66050", "1:67464", "1:68884"] as const;
 
+type LiveVariantFamily = NonNullable<ReturnType<typeof applyScreenVariantFamiliesToDesignIr>["screenVariantFamilies"]>[number];
+
+type LiveFixtureUnavailableDetails =
+  | {
+      reason: "missing-frame-documents";
+      boardName?: string;
+      missingScreenIds: string[];
+      expectedScreenIds: readonly string[];
+    }
+  | {
+      reason: "missing-target-family";
+      boardName?: string;
+      expectedFamilyId: string;
+      availableFamilyIds: string[];
+    };
+
+class LiveFixtureUnavailableError extends Error {
+  public readonly details: LiveFixtureUnavailableDetails;
+
+  public constructor(details: LiveFixtureUnavailableDetails) {
+    super("Live fixture unavailable for Issue #704 verification.");
+    this.name = "LiveFixtureUnavailableError";
+    this.details = details;
+  }
+}
+
 interface LiveVariantFixtureContext {
   ir: ReturnType<typeof applyScreenVariantFamiliesToDesignIr>;
   emitted: ReturnType<typeof resolveEmittedScreenTargets>;
+  family: LiveVariantFamily;
 }
 
 let cachedContext: Promise<LiveVariantFixtureContext> | undefined;
+
+interface LiveFrameDocumentFetchResult {
+  document?: unknown;
+  boardName?: string;
+}
+
+const isStringLengthOverflowError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Cannot create a string longer");
+};
 
 const fetchFrameDocument = async ({
   screenId,
@@ -37,7 +74,7 @@ const fetchFrameDocument = async ({
 }: {
   screenId: string;
   includeGeometry: boolean;
-}): Promise<unknown> => {
+}): Promise<LiveFrameDocumentFetchResult> => {
   const geometryParam = includeGeometry ? "&geometry=paths" : "";
   const response = await fetch(
     `https://api.figma.com/v1/files/${encodeURIComponent(FIGMA_FILE_KEY)}/nodes?ids=${encodeURIComponent(screenId)}${geometryParam}`,
@@ -47,14 +84,58 @@ const fetchFrameDocument = async ({
       }
     }
   );
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status} for node '${screenId}'.`);
+  if (!response.ok) {
+    throw new Error(`Figma API responded with status ${response.status} for node '${screenId}'.`);
+  }
 
   const payload = (await response.json()) as {
+    name?: string;
     nodes?: Record<string, { document?: unknown }>;
   };
-  const document = payload.nodes?.[screenId]?.document;
-  assert.ok(document, `Missing live frame document for '${screenId}'.`);
-  return document;
+  return {
+    document: payload.nodes?.[screenId]?.document,
+    boardName: typeof payload.name === "string" ? payload.name : undefined
+  };
+};
+
+const formatLiveFixtureUnavailableMessage = (details: LiveFixtureUnavailableDetails): string => {
+  const boardLabel = details.boardName ? `'${details.boardName}'` : `'${FIGMA_FILE_KEY}'`;
+  if (details.reason === "missing-frame-documents") {
+    const missing = details.missingScreenIds.join(", ");
+    return `Live board ${boardLabel} is incompatible with Issue #704 fixture: missing target frame node document(s): ${missing}.`;
+  }
+  const availableFamilies =
+    details.availableFamilyIds.length > 0 ? details.availableFamilyIds.join(", ") : "(none)";
+  return `Live board ${boardLabel} is incompatible with Issue #704 fixture: target family '${details.expectedFamilyId}' not found. Available families: ${availableFamilies}.`;
+};
+
+const skipWhenLiveFixtureUnavailable = ({
+  error,
+  testContext
+}: {
+  error: unknown;
+  testContext: Pick<Parameters<Parameters<typeof test>[2]>[0], "skip">;
+}): boolean => {
+  if (!(error instanceof LiveFixtureUnavailableError)) {
+    return false;
+  }
+  testContext.skip(formatLiveFixtureUnavailableMessage(error.details));
+  return true;
+};
+
+const loadLiveVariantFixtureContext = async ({
+  testContext
+}: {
+  testContext: Pick<Parameters<Parameters<typeof test>[2]>[0], "skip">;
+}): Promise<LiveVariantFixtureContext | undefined> => {
+  try {
+    return await fetchLiveVariantFixtureContext();
+  } catch (error) {
+    if (skipWhenLiveFixtureUnavailable({ error, testContext })) {
+      return undefined;
+    }
+    throw error;
+  }
 };
 
 const fetchLiveVariantFixtureContext = async (): Promise<LiveVariantFixtureContext> => {
@@ -64,31 +145,51 @@ const fetchLiveVariantFixtureContext = async (): Promise<LiveVariantFixtureConte
 
   cachedContext = (async () => {
     const frames: unknown[] = [];
+    const missingScreenIds: string[] = [];
+    let boardName: string | undefined;
     for (const screenId of TARGET_MEMBER_SCREEN_IDS) {
+      let frameDocument: unknown | undefined;
       try {
-        frames.push(
-          await fetchFrameDocument({
-            screenId,
-            includeGeometry: true
-          })
-        );
+        const responseWithGeometry = await fetchFrameDocument({
+          screenId,
+          includeGeometry: true
+        });
+        boardName ??= responseWithGeometry.boardName;
+        frameDocument = responseWithGeometry.document;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("Cannot create a string longer")) {
+        if (!isStringLengthOverflowError(error)) {
           throw error;
         }
-        frames.push(
-          await fetchFrameDocument({
-            screenId,
-            includeGeometry: false
-          })
-        );
       }
+
+      if (!frameDocument) {
+        const responseWithoutGeometry = await fetchFrameDocument({
+          screenId,
+          includeGeometry: false
+        });
+        boardName ??= responseWithoutGeometry.boardName;
+        frameDocument = responseWithoutGeometry.document;
+      }
+
+      if (!frameDocument) {
+        missingScreenIds.push(screenId);
+        continue;
+      }
+      frames.push(frameDocument);
+    }
+
+    if (missingScreenIds.length > 0) {
+      throw new LiveFixtureUnavailableError({
+        reason: "missing-frame-documents",
+        boardName,
+        missingScreenIds,
+        expectedScreenIds: TARGET_MEMBER_SCREEN_IDS
+      });
     }
 
     const cleaned = cleanFigmaForCodegen({
       file: {
-        name: "Issue 704 Live Variant Board",
+        name: boardName ?? "Issue 704 Live Variant Board",
         document: {
           id: "0:0",
           type: "DOCUMENT",
@@ -115,10 +216,22 @@ const fetchLiveVariantFixtureContext = async (): Promise<LiveVariantFixtureConte
       ir: irWithAppShells,
       figmaAnalysis
     });
+    const family = ir.screenVariantFamilies?.find((candidate) => candidate.familyId === TARGET_FAMILY_ID);
+    if (!family) {
+      throw new LiveFixtureUnavailableError({
+        reason: "missing-target-family",
+        boardName,
+        expectedFamilyId: TARGET_FAMILY_ID,
+        availableFamilyIds: (ir.screenVariantFamilies ?? []).map((candidate) => candidate.familyId).sort((left, right) => {
+          return left.localeCompare(right);
+        })
+      });
+    }
 
     return {
       ir,
-      emitted: resolveEmittedScreenTargets({ ir })
+      emitted: resolveEmittedScreenTargets({ ir }),
+      family
     };
   })();
 
@@ -139,13 +252,33 @@ const collectGeneratedSnapshot = async ({
   return snapshot;
 };
 
+test("skipWhenLiveFixtureUnavailable emits a deterministic skip message", () => {
+  let skipMessage = "";
+  const didSkip = skipWhenLiveFixtureUnavailable({
+    error: new LiveFixtureUnavailableError({
+      reason: "missing-frame-documents",
+      boardName: "Simple-Test-Board",
+      missingScreenIds: ["1:63230", "1:64644"],
+      expectedScreenIds: TARGET_MEMBER_SCREEN_IDS
+    }),
+    testContext: {
+      skip: (message) => {
+        skipMessage = message ?? "";
+      }
+    }
+  });
+
+  assert.equal(didSkip, true);
+  assert.equal(skipMessage.includes("Simple-Test-Board"), true);
+  assert.equal(skipMessage.includes("1:63230, 1:64644"), true);
+});
+
 test("live E2E: stateful screen variants derive one emitted family target with alias routes", { skip: skipReason }, async (t) => {
-  const { ir, emitted } = await fetchLiveVariantFixtureContext();
-  const family = ir.screenVariantFamilies?.find((candidate) => candidate.familyId === TARGET_FAMILY_ID);
-  if (!family) {
-    t.skip(`Live board '${FIGMA_FILE_KEY}' did not expose target family '${TARGET_FAMILY_ID}'.`);
+  const context = await loadLiveVariantFixtureContext({ testContext: t });
+  if (!context) {
     return;
   }
+  const { family, emitted } = context;
   assert.equal(family.canonicalScreenId, TARGET_CANONICAL_SCREEN_ID);
   assert.equal(family.memberScreenIds.length, 5);
   assert.equal(family.scenarios.length, 5);
@@ -160,12 +293,11 @@ test("live E2E: stateful screen variants derive one emitted family target with a
 });
 
 test("live E2E: stateful screen variant codegen is byte-stable across two runs", { skip: skipReason }, async (t) => {
-  const { ir, emitted } = await fetchLiveVariantFixtureContext();
-  const family = ir.screenVariantFamilies?.find((candidate) => candidate.familyId === TARGET_FAMILY_ID);
-  if (!family) {
-    t.skip(`Live board '${FIGMA_FILE_KEY}' did not expose target family '${TARGET_FAMILY_ID}'.`);
+  const context = await loadLiveVariantFixtureContext({ testContext: t });
+  if (!context) {
     return;
   }
+  const { ir, emitted, family } = context;
 
   const canonicalIdentity = emitted.rawIdentitiesByScreenId.get(TARGET_CANONICAL_SCREEN_ID);
   assert.ok(canonicalIdentity, `Missing canonical identity for '${TARGET_CANONICAL_SCREEN_ID}'.`);
