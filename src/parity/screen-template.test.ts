@@ -582,6 +582,154 @@ test("renderCard renders media, actions, and navigation handlers", () => {
   assert.equal(context.usesNavigateHandler, true);
 });
 
+test("renderCard assembles explicit board slots into compound subcomponents", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "explicit-card",
+      type: "card",
+      name: "<Card>",
+      width: 320,
+      height: 240,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "card-header-slot",
+          type: "container",
+          name: "_<CardHeader>",
+          semanticType: "CardHeader",
+          children: [
+            makeText({ id: "card-header-title", text: "Premium Account" }),
+            makeText({ id: "card-header-subtitle", text: "Updated today", y: 24 })
+          ]
+        }),
+        makeNode({
+          id: "card-media-slot",
+          type: "container",
+          name: "_<CardMedia>",
+          semanticType: "CardMedia",
+          width: 320,
+          height: 120
+        }),
+        makeNode({
+          id: "card-content-slot",
+          type: "container",
+          name: "_<CardContent>",
+          semanticType: "CardContent",
+          children: [makeText({ id: "card-content-text", text: "Explicit body", y: 140 })]
+        }),
+        makeText({ id: "card-unmatched-text", text: "Unmatched body", y: 160 }),
+        makeNode({
+          id: "card-actions-slot",
+          type: "container",
+          name: "_<CardActions>",
+          semanticType: "CardActions",
+          children: [
+            makeNode({
+              id: "card-action-button",
+              type: "button",
+              name: "Details CTA",
+              children: [makeText({ id: "card-action-label", text: "Details" })]
+            })
+          ]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<CardHeader/);
+  assert.match(rendered, /title=\{"Premium Account"\}/);
+  assert.match(rendered, /subheader=\{"Updated today"\}/);
+  assert.match(rendered, /<CardMedia component="img"/);
+  assert.match(rendered, /<CardContent>/);
+  assert.match(rendered, /"Explicit body"/);
+  assert.match(rendered, /"Unmatched body"/);
+  assert.match(rendered, /<CardActions>/);
+  assert.ok(rendered.indexOf("<CardHeader") < rendered.indexOf("<CardMedia"));
+  assert.ok(rendered.indexOf("<CardMedia") < rendered.indexOf("<CardContent>"));
+  assert.ok(rendered.indexOf("<CardContent>") < rendered.indexOf("<CardActions>"));
+  assert.equal(rendered.includes("component=\"main\" role=\"main\""), false);
+  assert.equal(rendered.includes("<CardContent />"), false);
+  assert.equal(context.muiImports.has("CardHeader"), true);
+});
+
+test("renderSemanticAccordion prefers explicit summary and details slots", () => {
+  const context = createRenderContext();
+  const rendered = renderSemanticAccordion(
+    makeNode({
+      id: "explicit-accordion",
+      type: "accordion",
+      name: "<Accordion>",
+      semanticType: "Accordion",
+      children: [
+        makeNode({
+          id: "accordion-summary-slot",
+          type: "container",
+          name: "_<AccordionSummary>",
+          semanticType: "AccordionSummary",
+          children: [makeText({ id: "accordion-summary-text", text: "Show details" })]
+        }),
+        makeNode({
+          id: "accordion-details-slot",
+          type: "container",
+          name: "_<AccordionDetails>",
+          semanticType: "AccordionDetails",
+          children: [makeText({ id: "accordion-details-text", text: "Hidden content" })]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<AccordionSummary/);
+  assert.match(rendered, /"Show details"/);
+  assert.match(rendered, /<AccordionDetails/);
+  assert.match(rendered, /"Hidden content"/);
+  assert.equal(rendered.includes("<Box />"), false);
+});
+
+test("renderSemanticAccordion omits empty explicit details wrappers", () => {
+  const context = createRenderContext();
+  const rendered = renderSemanticAccordion(
+    makeNode({
+      id: "explicit-accordion-empty",
+      type: "accordion",
+      name: "<Accordion>",
+      semanticType: "Accordion",
+      children: [
+        makeNode({
+          id: "accordion-summary-only-slot",
+          type: "container",
+          name: "_<AccordionSummary>",
+          semanticType: "AccordionSummary",
+          children: [makeText({ id: "accordion-summary-only-text", text: "Only summary" })]
+        }),
+        makeNode({
+          id: "accordion-details-empty-slot",
+          type: "container",
+          name: "_<AccordionDetails>",
+          semanticType: "AccordionDetails",
+          children: []
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<AccordionSummary/);
+  assert.match(rendered, /"Only summary"/);
+  assert.equal(rendered.includes("<AccordionDetails"), false);
+  assert.equal(rendered.includes("<Box />"), false);
+});
+
 test("renderChip renders mapped variants and router links", () => {
   const context = createRenderContext({
     routePathByScreenId: navigationRouteMap("screen-4", "/filters")

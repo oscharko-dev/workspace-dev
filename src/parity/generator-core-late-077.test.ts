@@ -1224,3 +1224,134 @@ test("deterministic screen rendering supports extended semantic MUI element type
   assert.ok(content.includes('role="main"'));
 });
 
+test("deterministic screen rendering assembles explicit card and accordion slots without placeholders", () => {
+  const basePadding = { top: 0, right: 0, bottom: 0, left: 0 };
+  const textNode = (id: string, name: string, text: string): any => ({
+    id,
+    name,
+    nodeType: "TEXT",
+    type: "text" as const,
+    text
+  });
+  const frameNode = (node: Record<string, unknown>): any => ({
+    nodeType: "FRAME",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: basePadding,
+    children: [],
+    ...node
+  });
+
+  const screen = {
+    id: "explicit-slot-screen",
+    name: "Explicit Slots",
+    layoutMode: "NONE" as const,
+    gap: 0,
+    padding: basePadding,
+    children: [
+      frameNode({
+        id: "explicit-card",
+        name: "<Card>",
+        type: "card" as const,
+        width: 320,
+        height: 240,
+        fillColor: "#ffffff",
+        children: [
+          frameNode({
+            id: "card-header-slot",
+            name: "_<CardHeader>",
+            type: "container" as const,
+            semanticType: "CardHeader",
+            children: [
+              textNode("card-header-title", "Card Header Title", "Premium Account"),
+              textNode("card-header-subtitle", "Card Header Subtitle", "Updated today")
+            ]
+          }),
+          {
+            id: "card-media-slot",
+            name: "_<CardMedia>",
+            nodeType: "RECTANGLE",
+            type: "container" as const,
+            semanticType: "CardMedia",
+            width: 320,
+            height: 120,
+            fillColor: "#e5e7eb",
+            children: []
+          },
+          frameNode({
+            id: "card-content-slot",
+            name: "_<CardContent>",
+            type: "container" as const,
+            semanticType: "CardContent",
+            children: [textNode("card-content-text", "Card Content Text", "Explicit body")]
+          }),
+          textNode("card-unmatched-text", "Card Unmatched Text", "Unmatched body copy"),
+          frameNode({
+            id: "card-actions-slot",
+            name: "_<CardActions>",
+            type: "container" as const,
+            semanticType: "CardActions",
+            children: [
+              frameNode({
+                id: "card-action-button",
+                name: "Details CTA",
+                type: "button" as const,
+                children: [textNode("card-action-label", "Card Action Label", "Details")]
+              })
+            ]
+          })
+        ]
+      }),
+      frameNode({
+        id: "explicit-accordion",
+        name: "<Accordion>",
+        type: "accordion" as const,
+        semanticType: "Accordion",
+        width: 320,
+        height: 200,
+        children: [
+          frameNode({
+            id: "accordion-summary-slot",
+            name: "_<AccordionSummary>",
+            type: "container" as const,
+            semanticType: "AccordionSummary",
+            children: [textNode("accordion-summary-text", "Accordion Summary Text", "Show details")]
+          }),
+          frameNode({
+            id: "accordion-details-slot",
+            name: "_<AccordionDetails>",
+            type: "container" as const,
+            semanticType: "AccordionDetails",
+            children: [textNode("accordion-details-text", "Accordion Details Text", "Hidden body")]
+          })
+        ]
+      })
+    ]
+  };
+
+  const content = createDeterministicScreenFile(screen).content;
+  const muiImportLine = content
+    .split("\n")
+    .find((line) => line.startsWith("import { ") && line.endsWith(' } from "@mui/material";'));
+  assert.ok(muiImportLine);
+  assert.ok(muiImportLine?.includes("CardHeader"));
+  assert.ok(muiImportLine?.includes("CardMedia"));
+  assert.ok(muiImportLine?.includes("CardContent"));
+  assert.ok(muiImportLine?.includes("CardActions"));
+  assert.ok(muiImportLine?.includes("AccordionSummary"));
+  assert.ok(muiImportLine?.includes("AccordionDetails"));
+  assert.ok(content.includes("<CardHeader"));
+  assert.ok(content.includes('title={"Premium Account"}'));
+  assert.ok(content.includes('subheader={"Updated today"}'));
+  assert.ok(content.includes("<CardMedia "));
+  assert.ok(content.includes('"Explicit body"'));
+  assert.ok(content.includes('"Unmatched body copy"'));
+  assert.ok(content.includes("<CardActions>"));
+  assert.ok(content.includes('"Hidden body"'));
+  assert.equal(content.includes("<CardContent />"), false);
+  assert.equal(content.includes('component="main" role="main"'), false);
+  assert.equal(content.includes("<Box />"), false);
+  assert.ok(content.indexOf("<CardHeader") < content.indexOf("<CardMedia"));
+  assert.ok(content.indexOf("<CardMedia") < content.indexOf("<CardContent>"));
+  assert.ok(content.indexOf("<CardContent>") < content.indexOf("<CardActions>"));
+});

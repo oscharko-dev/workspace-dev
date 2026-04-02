@@ -1414,22 +1414,48 @@ export const renderSemanticAccordion = (
     element,
     defaultExpanded: accordionSignals.includes("collapsed") ? false : true
   });
-  const summaryRoot = findFirstByName(element, "muibuttonbaseroot") ?? element.children?.[0] ?? element;
-  const summaryContent = findFirstByName(summaryRoot, "accordionsummarycontent") ?? summaryRoot;
-  const detailsRoot = findFirstByName(element, "collapsewrapper") ?? element.children?.[1] ?? element;
-  const detailsContainer = detailsRoot.children?.length === 1 ? (detailsRoot.children[0] ?? detailsRoot) : detailsRoot;
+  const explicitSlots = partitionExplicitAccordionSlots({ element, context });
+  const hasExplicitSlots = explicitSlots.hasExplicitSlots;
+  const summaryRoot = hasExplicitSlots
+    ? explicitSlots.summarySlotRoot ?? element
+    : (findFirstByName(element, "muibuttonbaseroot") ?? element.children?.[0] ?? element);
+  const summaryContent = hasExplicitSlots
+    ? summaryRoot
+    : (findFirstByName(summaryRoot, "accordionsummarycontent") ?? summaryRoot);
+  const detailsRoot = hasExplicitSlots
+    ? explicitSlots.detailsSlotRoot ?? element
+    : (findFirstByName(element, "collapsewrapper") ?? element.children?.[1] ?? element);
+  const detailsContainer = hasExplicitSlots
+    ? detailsRoot
+    : (detailsRoot.children?.length === 1 ? (detailsRoot.children[0] ?? detailsRoot) : detailsRoot);
 
-  const renderedSummary = renderChildrenIntoParent({
-    element: summaryContent,
-    depth: depth + 3,
-    context
-  });
+  const renderedSummary = hasExplicitSlots
+    ? renderNodesIntoParent({
+        nodes: explicitSlots.summaryNodes,
+        parent: summaryRoot,
+        depth: depth + 3,
+        context,
+        layoutMode: summaryRoot.layoutMode ?? "NONE"
+      })
+    : renderChildrenIntoParent({
+        element: summaryContent,
+        depth: depth + 3,
+        context
+      });
 
-  const renderedDetails = renderChildrenIntoParent({
-    element: detailsContainer,
-    depth: depth + 2,
-    context
-  });
+  const renderedDetails = hasExplicitSlots
+    ? renderNodesIntoParent({
+        nodes: explicitSlots.detailsNodes,
+        parent: detailsContainer,
+        depth: depth + 2,
+        context,
+        layoutMode: detailsContainer.layoutMode ?? "NONE"
+      })
+    : renderChildrenIntoParent({
+        element: detailsContainer,
+        depth: depth + 2,
+        context
+      });
 
   const summaryFallbackLabel = firstText(summaryContent) ?? firstText(element) ?? "Accordion";
   const expandIconNode = findFirstByName(summaryRoot, "expandiconwrapper") ?? findFirstByName(element, "expandiconwrapper");
@@ -1454,7 +1480,7 @@ export const renderSemanticAccordion = (
     });
     expandIconExpression = `<${expandMoreIcon} fontSize="small" />`;
   }
-  registerMuiImports(context, "Accordion", "AccordionSummary", "AccordionDetails", "Box", "Typography");
+  registerMuiImports(context, "Accordion", "AccordionSummary", "Box");
 
   const detailsWidthRatio =
     typeof detailsContainer.width === "number" &&
@@ -1526,6 +1552,21 @@ export const renderSemanticAccordion = (
 
   const accordionHeaderId = buildAccordionHeaderA11yId(accordionModel.key);
   const accordionPanelId = buildAccordionPanelA11yId(accordionModel.key);
+  if (!renderedSummary) {
+    registerMuiImports(context, "Typography");
+  }
+  const detailsBlock =
+    !hasExplicitSlots || renderedDetails.trim()
+      ? `
+${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
+${indent}    <Box sx={{ ${detailsSx} }}>
+${renderedDetails || `${indent}      <Box />`}
+${indent}    </Box>
+${indent}  </AccordionDetails>`
+      : "";
+  if (detailsBlock) {
+    registerMuiImports(context, "AccordionDetails");
+  }
   return `${indent}<Accordion
 ${indent}  expanded={accordionState[${literal(accordionModel.key)}] ?? ${accordionModel.defaultExpanded ? "true" : "false"}}
 ${indent}  onChange={(_, expanded) => updateAccordionState(${literal(accordionModel.key)}, expanded)}
@@ -1539,12 +1580,226 @@ ${indent}    <Box sx={{ width: "100%", position: "relative", minHeight: ${litera
 ${renderedSummary || `${indent}      <Typography>{${literal(summaryFallbackLabel)}}</Typography>`}
 ${indent}    </Box>
 ${indent}  </AccordionSummary>
-${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
-${indent}    <Box sx={{ ${detailsSx} }}>
-${renderedDetails || `${indent}      <Box />`}
-${indent}    </Box>
-${indent}  </AccordionDetails>
+${detailsBlock}
 ${indent}</Accordion>`;
+};
+
+const normalizeCompoundSlotToken = (value: string | undefined): string => {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+};
+
+const CARD_HEADER_SLOT_TOKENS = new Set(["cardheader"]);
+const CARD_MEDIA_SLOT_TOKENS = new Set(["cardmedia"]);
+const CARD_CONTENT_SLOT_TOKENS = new Set(["cardcontent"]);
+const CARD_ACTIONS_SLOT_TOKENS = new Set(["cardactions"]);
+const ACCORDION_SUMMARY_SLOT_TOKENS = new Set(["accordionsummary", "accordionheader", "accordionsummarycontent"]);
+const ACCORDION_DETAILS_SLOT_TOKENS = new Set(["accordiondetails", "accordioncontent", "collapsewrapper"]);
+const RAW_EXPLICIT_SLOT_NAMES = new Set([
+  "cardheader",
+  "cardmedia",
+  "cardcontent",
+  "cardactions",
+  "accordionsummary",
+  "accordionheader",
+  "accordionsummarycontent",
+  "accordiondetails",
+  "accordioncontent",
+  "collapsewrapper"
+]);
+
+const matchesExplicitCompoundSlot = ({
+  element,
+  tokens
+}: {
+  element: ScreenElementIR;
+  tokens: ReadonlySet<string>;
+}): boolean => {
+  const semanticToken = normalizeCompoundSlotToken(element.semanticType);
+  if (semanticToken && tokens.has(semanticToken)) {
+    return true;
+  }
+  const normalizedNameToken = normalizeCompoundSlotToken(element.name);
+  if (!tokens.has(normalizedNameToken)) {
+    return false;
+  }
+  const rawName = element.name.trim().toLowerCase();
+  return rawName.startsWith("_") || rawName.includes("<") || RAW_EXPLICIT_SLOT_NAMES.has(rawName);
+};
+
+const toExplicitSlotChildren = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): ScreenElementIR[] => {
+  return sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+};
+
+interface PartitionedExplicitCardSlots {
+  hasExplicitSlots: boolean;
+  headerSlotRoot?: ScreenElementIR;
+  mediaSlotRoot?: ScreenElementIR;
+  contentSlotRoot?: ScreenElementIR;
+  actionsSlotRoot?: ScreenElementIR;
+  headerNodes: ScreenElementIR[];
+  contentNodes: ScreenElementIR[];
+  actionNodes: ScreenElementIR[];
+}
+
+const partitionExplicitCardSlots = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): PartitionedExplicitCardSlots => {
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  let hasExplicitSlots = false;
+  let headerSlotRoot: ScreenElementIR | undefined;
+  let mediaSlotRoot: ScreenElementIR | undefined;
+  let contentSlotRoot: ScreenElementIR | undefined;
+  let actionsSlotRoot: ScreenElementIR | undefined;
+  const headerNodes: ScreenElementIR[] = [];
+  const contentNodes: ScreenElementIR[] = [];
+  const actionNodes: ScreenElementIR[] = [];
+
+  for (const child of sortedChildren) {
+    if (matchesExplicitCompoundSlot({ element: child, tokens: CARD_HEADER_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      headerSlotRoot ??= child;
+      headerNodes.push(...toExplicitSlotChildren({ element: child, context }));
+      continue;
+    }
+    if (matchesExplicitCompoundSlot({ element: child, tokens: CARD_MEDIA_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      mediaSlotRoot ??= child;
+      continue;
+    }
+    if (matchesExplicitCompoundSlot({ element: child, tokens: CARD_CONTENT_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      contentSlotRoot ??= child;
+      contentNodes.push(...toExplicitSlotChildren({ element: child, context }));
+      continue;
+    }
+    if (matchesExplicitCompoundSlot({ element: child, tokens: CARD_ACTIONS_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      actionsSlotRoot ??= child;
+      actionNodes.push(...toExplicitSlotChildren({ element: child, context }));
+      continue;
+    }
+    contentNodes.push(child);
+  }
+
+  return {
+    hasExplicitSlots,
+    ...(headerSlotRoot ? { headerSlotRoot } : {}),
+    ...(mediaSlotRoot ? { mediaSlotRoot } : {}),
+    ...(contentSlotRoot ? { contentSlotRoot } : {}),
+    ...(actionsSlotRoot ? { actionsSlotRoot } : {}),
+    headerNodes,
+    contentNodes,
+    actionNodes
+  };
+};
+
+interface PartitionedExplicitAccordionSlots {
+  hasExplicitSlots: boolean;
+  summarySlotRoot?: ScreenElementIR;
+  detailsSlotRoot?: ScreenElementIR;
+  summaryNodes: ScreenElementIR[];
+  detailsNodes: ScreenElementIR[];
+}
+
+const partitionExplicitAccordionSlots = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): PartitionedExplicitAccordionSlots => {
+  const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
+    generationLocale: context.generationLocale
+  });
+  let hasExplicitSlots = false;
+  let summarySlotRoot: ScreenElementIR | undefined;
+  let detailsSlotRoot: ScreenElementIR | undefined;
+  const summaryNodes: ScreenElementIR[] = [];
+  const detailsNodes: ScreenElementIR[] = [];
+
+  for (const child of sortedChildren) {
+    if (matchesExplicitCompoundSlot({ element: child, tokens: ACCORDION_SUMMARY_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      summarySlotRoot ??= child;
+      summaryNodes.push(...toExplicitSlotChildren({ element: child, context }));
+      continue;
+    }
+    if (matchesExplicitCompoundSlot({ element: child, tokens: ACCORDION_DETAILS_SLOT_TOKENS })) {
+      hasExplicitSlots = true;
+      detailsSlotRoot ??= child;
+      detailsNodes.push(...toExplicitSlotChildren({ element: child, context }));
+      continue;
+    }
+    detailsNodes.push(child);
+  }
+
+  return {
+    hasExplicitSlots,
+    ...(summarySlotRoot ? { summarySlotRoot } : {}),
+    ...(detailsSlotRoot ? { detailsSlotRoot } : {}),
+    summaryNodes,
+    detailsNodes
+  };
+};
+
+const isCardHeaderAvatarCandidate = (element: ScreenElementIR): boolean => {
+  if (element.type === "avatar") {
+    return true;
+  }
+  const signal = normalizeCompoundSlotToken(`${element.semanticType ?? ""} ${element.name}`);
+  return signal.includes("avatar");
+};
+
+const isCardHeaderActionCandidate = (element: ScreenElementIR): boolean => {
+  if (element.type === "button") {
+    return true;
+  }
+  const signal = normalizeCompoundSlotToken(`${element.semanticType ?? ""} ${element.name}`);
+  return signal.includes("action") || signal.includes("cta");
+};
+
+const resolveCardHeaderTextNodes = (nodes: ScreenElementIR[]): Array<{ text: string }> => {
+  return nodes
+    .flatMap((node) => collectTextNodes(node))
+    .map((node) => ({ text: node.text.trim() }))
+    .filter((node) => node.text.length > 0);
+};
+
+const toJsxFragmentPropValue = ({
+  content,
+  fragmentIndent,
+  closingIndent
+}: {
+  content: string;
+  fragmentIndent: string;
+  closingIndent: string;
+}): string => {
+  return `(
+${fragmentIndent}<>
+${content}
+${fragmentIndent}</>
+${closingIndent})`;
+};
+
+const resolveExplicitCardMediaElement = (slotRoot: ScreenElementIR): ScreenElementIR => {
+  const nestedImage = (slotRoot.children ?? []).find((child) => {
+    return child.type === "image" || normalizeCompoundSlotToken(child.name).includes("media");
+  });
+  return nestedImage ?? slotRoot;
 };
 
 const subtreeContainsButtonSurfaceType = (
@@ -2491,7 +2746,7 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
   if ((element.children?.length ?? 0) === 0 && !hasVisualStyle(element)) {
     return renderContainer(element, depth, parent, context);
   }
-  registerMuiImports(context, "Card", "CardContent");
+  registerMuiImports(context, "Card");
   const indent = "  ".repeat(depth);
   const cardElevation = normalizeElevationForSx(element.elevation);
   const cardDefaults = context.themeComponentDefaults?.MuiCard;
@@ -2548,61 +2803,155 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
   const navigation = resolvePrototypeNavigationBinding({ element, context });
   const navigationProps = navigation ? toNavigateHandlerProps({ navigation, context }) : undefined;
   const elevationProp = typeof cardElevation === "number" && cardElevation > 0 && !omitDefaultElevation ? ` elevation={${cardElevation}}` : "";
+  const explicitSlots = partitionExplicitCardSlots({ element, context });
   const sortedChildren = sortChildren(element.children ?? [], element.layoutMode ?? "NONE", {
     generationLocale: context.generationLocale
   });
-  const mediaCandidate = sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
-  const actionCandidates = sortedChildren.filter((child) => {
-    if (child.type === "button") {
-      return true;
-    }
-    const loweredName = child.name.toLowerCase();
-    return loweredName.includes("action") || loweredName.includes("cta");
-  });
-  const bodyChildren = sortedChildren.filter((child) => {
-    if (child.id === mediaCandidate?.id) {
-      return false;
-    }
-    return !actionCandidates.some((candidate) => candidate.id === child.id);
-  });
+  const mediaCandidate = explicitSlots.hasExplicitSlots
+    ? (explicitSlots.mediaSlotRoot ? resolveExplicitCardMediaElement(explicitSlots.mediaSlotRoot) : undefined)
+    : sortedChildren.find((child) => child.type === "image" || child.name.toLowerCase().includes("media"));
+  const mediaLayoutElement = explicitSlots.mediaSlotRoot ?? mediaCandidate;
+  const actionCandidates = explicitSlots.hasExplicitSlots
+    ? explicitSlots.actionNodes
+    : sortedChildren.filter((child) => {
+        if (child.type === "button") {
+          return true;
+        }
+        const childLoweredName = child.name.toLowerCase();
+        return childLoweredName.includes("action") || childLoweredName.includes("cta");
+      });
+  const bodyChildren = explicitSlots.hasExplicitSlots
+    ? explicitSlots.contentNodes
+    : sortedChildren.filter((child) => {
+        if (child.id === mediaCandidate?.id) {
+          return false;
+        }
+        return !actionCandidates.some((candidate) => candidate.id === child.id);
+      });
 
-  const contentElement: ScreenElementIR = {
-    ...element,
-    children: bodyChildren
-  };
-  const actionsElement: ScreenElementIR = {
-    ...element,
-    children: actionCandidates
-  };
-  const mediaSx = mediaCandidate
+  let headerBlock = "";
+  if (explicitSlots.hasExplicitSlots && explicitSlots.headerNodes.length > 0) {
+    const headerRoot = explicitSlots.headerSlotRoot ?? element;
+    const avatarCandidate = explicitSlots.headerNodes.find((child) => isCardHeaderAvatarCandidate(child));
+    const headerActionCandidate = explicitSlots.headerNodes.find((child) => {
+      return child.id !== avatarCandidate?.id && isCardHeaderActionCandidate(child);
+    });
+    const headerBodyNodes = explicitSlots.headerNodes.filter((child) => {
+      return child.id !== avatarCandidate?.id && child.id !== headerActionCandidate?.id;
+    });
+    const renderedAvatar = avatarCandidate
+      ? renderElement(avatarCandidate, depth + 4, headerRoot, context)?.trim() ?? ""
+      : "";
+    const renderedHeaderAction = headerActionCandidate
+      ? renderElement(headerActionCandidate, depth + 4, headerRoot, context)?.trim() ?? ""
+      : "";
+    const renderedHeaderBody = headerBodyNodes.length > 0
+      ? renderNodesIntoParent({
+          nodes: headerBodyNodes,
+          parent: headerRoot,
+          depth: depth + 4,
+          context,
+          layoutMode: headerRoot.layoutMode ?? "NONE"
+        }).trim()
+      : "";
+    const headerTextNodes = resolveCardHeaderTextNodes(headerBodyNodes);
+    const hasComplexHeaderStructure = headerBodyNodes.some((child) => child.type !== "text") || headerTextNodes.length > 2;
+    const headerProps: string[] = [];
+    if (renderedHeaderBody) {
+      if (!hasComplexHeaderStructure && headerTextNodes.length > 0) {
+        headerProps.push(`${indent}    title={${literal(headerTextNodes[0]?.text ?? "")}}`);
+        if (headerTextNodes[1]) {
+          headerProps.push(`${indent}    subheader={${literal(headerTextNodes[1].text)}}`);
+        }
+      } else {
+        headerProps.push(
+          `${indent}    title={${toJsxFragmentPropValue({
+            content: renderedHeaderBody,
+            fragmentIndent: `${indent}      `,
+            closingIndent: `${indent}    `
+          })}}`
+        );
+      }
+    }
+    if (renderedAvatar) {
+      headerProps.push(
+        `${indent}    avatar={${toJsxFragmentPropValue({
+          content: renderedAvatar,
+          fragmentIndent: `${indent}      `,
+          closingIndent: `${indent}    `
+        })}}`
+      );
+    }
+    if (renderedHeaderAction) {
+      headerProps.push(
+        `${indent}    action={${toJsxFragmentPropValue({
+          content: renderedHeaderAction,
+          fragmentIndent: `${indent}      `,
+          closingIndent: `${indent}    `
+        })}}`
+      );
+    }
+    if (headerProps.length > 0) {
+      registerMuiImports(context, "CardHeader");
+      headerBlock = `${indent}  <CardHeader\n${headerProps.join("\n")}\n${indent}  />`;
+    }
+  }
+
+  const contentParent = explicitSlots.contentSlotRoot ?? element;
+  const actionsParent = explicitSlots.actionsSlotRoot ?? element;
+  const renderedChildren = explicitSlots.hasExplicitSlots
+    ? renderNodesIntoParent({
+        nodes: bodyChildren,
+        parent: contentParent,
+        depth: depth + 2,
+        context,
+        layoutMode: contentParent.layoutMode ?? "NONE"
+      })
+    : renderChildrenIntoParent({
+        element: {
+          ...element,
+          children: bodyChildren
+        },
+        depth: depth + 2,
+        context
+      });
+  const renderedActions = explicitSlots.hasExplicitSlots
+    ? renderNodesIntoParent({
+        nodes: actionCandidates,
+        parent: actionsParent,
+        depth: depth + 2,
+        context,
+        layoutMode: actionsParent.layoutMode ?? "NONE"
+      })
+    : renderChildrenIntoParent({
+        element: {
+          ...element,
+          children: actionCandidates
+        },
+        depth: depth + 2,
+        context
+      });
+  const contentBlock = renderedChildren.trim()
+    ? (() => {
+        registerMuiImports(context, "CardContent");
+        return `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`;
+      })()
+    : explicitSlots.hasExplicitSlots
+      ? ""
+      : (() => {
+          registerMuiImports(context, "CardContent");
+          return `${indent}  <CardContent />`;
+        })();
+  const mediaSx = mediaLayoutElement
     ? sxString([
-        ["height", toPxLiteral(mediaCandidate.height ?? 140)],
+        ["height", toPxLiteral(mediaLayoutElement.height ?? mediaCandidate?.height ?? 140)],
         ["objectFit", literal("cover")],
         ["display", literal("block")]
       ])
     : undefined;
-  if (mediaCandidate) {
-    registerMuiImports(context, "CardMedia");
-  }
-  if (actionCandidates.length > 0) {
-    registerMuiImports(context, "CardActions");
-  }
-
-  const renderedChildren = renderChildrenIntoParent({
-    element: contentElement,
-    depth: depth + 2,
-    context
-  });
-  const renderedActions = renderChildrenIntoParent({
-    element: actionsElement,
-    depth: depth + 2,
-    context
-  });
-  const contentBlock = renderedChildren.trim()
-    ? `${indent}  <CardContent>\n${renderedChildren}\n${indent}  </CardContent>`
-    : `${indent}  <CardContent />`;
-  const mediaBlock = mediaCandidate
+  const mediaBlock = mediaCandidate && mediaLayoutElement
     ? (() => {
+        registerMuiImports(context, "CardMedia");
         const mediaLabel = resolveElementA11yLabel({ element: mediaCandidate, fallback: "Image" });
         const mediaSource = resolveImageSource({
           element: mediaCandidate,
@@ -2611,12 +2960,17 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
         });
         const mediaPerfAttrs = toImagePerformanceAttrs(mediaCandidate);
         if (isDecorativeImageElement(mediaCandidate)) {
-          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true"${mediaPerfAttrs} sx={{ ${mediaSx} }} />\n`;
+          return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt="" aria-hidden="true"${mediaPerfAttrs} sx={{ ${mediaSx} }} />`;
         }
-        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}}${mediaPerfAttrs} sx={{ ${mediaSx} }} />\n`;
+        return `${indent}  <CardMedia component="img" image={${literal(mediaSource)}} alt={${literal(mediaLabel)}}${mediaPerfAttrs} sx={{ ${mediaSx} }} />`;
       })()
     : "";
-  const actionsBlock = renderedActions.trim() ? `\n${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>` : "";
+  const actionsBlock = renderedActions.trim()
+    ? (() => {
+        registerMuiImports(context, "CardActions");
+        return `${indent}  <CardActions>\n${renderedActions}\n${indent}  </CardActions>`;
+      })()
+    : "";
   const semanticContainerProps = resolveSemanticContainerProps({ element, context });
   const roleProp = navigationProps?.roleProp ?? semanticContainerProps.roleProp;
   const tabIndexProp = navigationProps?.tabIndexProp ?? "";
@@ -2625,8 +2979,9 @@ export const renderCard = (element: ScreenElementIR, depth: number, parent: Virt
   const componentProp = semanticContainerProps.componentProp;
   const ariaLabelProp = navigationProps ? "" : semanticContainerProps.ariaLabelProp;
   const sxProp = sx.trim() ? ` sx={{ ${sx} }}` : "";
+  const cardChildren = [headerBlock, mediaBlock, contentBlock, actionsBlock].filter((block) => block.trim().length > 0).join("\n");
   return `${indent}<Card${componentProp}${elevationProp}${roleProp}${ariaLabelProp}${tabIndexProp}${onClickProp}${onKeyDownProp}${sxProp}>
-${mediaBlock}${contentBlock}${actionsBlock}
+${cardChildren}
 ${indent}</Card>`;
 };
 
