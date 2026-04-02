@@ -50,6 +50,23 @@ const parseComponentMatchReportArtifact = ({
   return parsed as ComponentMatchReportArtifact;
 };
 
+const rankIconResolutionStatus = (value: ComponentMatchReportIconResolutionRecord["status"]): number => {
+  switch (value) {
+    case "resolved_import":
+      return 0;
+    case "wrapper_fallback_allowed":
+      return 1;
+    case "wrapper_fallback_denied":
+      return 2;
+    case "unresolved":
+      return 3;
+    case "ambiguous":
+      return 4;
+    case "not_applicable":
+      return 5;
+  }
+};
+
 const buildStorybookFirstIconLookup = ({
   artifact
 }: {
@@ -66,23 +83,7 @@ const buildStorybookFirstIconLookup = ({
         iconLookup.set(iconKey, resolution);
         continue;
       }
-      const rank = (value: ComponentMatchReportIconResolutionRecord["status"]): number => {
-        switch (value) {
-          case "resolved_import":
-            return 0;
-          case "wrapper_fallback_allowed":
-            return 1;
-          case "wrapper_fallback_denied":
-            return 2;
-          case "unresolved":
-            return 3;
-          case "ambiguous":
-            return 4;
-          case "not_applicable":
-            return 5;
-        }
-      };
-      if (rank(resolution.status) < rank(existing.status)) {
+      if (rankIconResolutionStatus(resolution.status) < rankIconResolutionStatus(existing.status)) {
         iconLookup.set(iconKey, resolution);
       }
     }
