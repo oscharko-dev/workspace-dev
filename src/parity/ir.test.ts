@@ -208,72 +208,115 @@ const createElementTypeMatrixFigmaFile = () => ({
                 children: []
               },
               {
+                id: "node-accordion",
+                type: "INSTANCE",
+                name: "Accordion, State=Collapsed",
+                absoluteBoundingBox: { x: 10, y: 120, width: 320, height: 64 },
+                children: [{ id: "node-accordion-label", type: "TEXT", name: "Label", characters: "Details" }]
+              },
+              {
+                id: "node-date-picker",
+                type: "INSTANCE",
+                name: "DatePicker, State=Single",
+                absoluteBoundingBox: { x: 10, y: 200, width: 240, height: 56 },
+                children: []
+              },
+              {
+                id: "node-input-iban",
+                type: "INSTANCE",
+                name: "InputIBAN",
+                absoluteBoundingBox: { x: 10, y: 270, width: 240, height: 56 },
+                children: []
+              },
+              {
+                id: "node-dynamic-typography",
+                type: "INSTANCE",
+                name: "<Dynamic Typography>",
+                absoluteBoundingBox: { x: 10, y: 340, width: 320, height: 32 },
+                children: [
+                  {
+                    id: "node-dynamic-typography-text",
+                    type: "TEXT",
+                    name: "Body",
+                    characters: "Dynamic copy",
+                    absoluteBoundingBox: { x: 18, y: 346, width: 120, height: 20 }
+                  }
+                ]
+              },
+              {
+                id: "node-icon",
+                type: "INSTANCE",
+                name: "ic_settings",
+                absoluteBoundingBox: { x: 10, y: 390, width: 24, height: 24 },
+                children: []
+              },
+              {
                 id: "node-switch",
                 type: "FRAME",
                 name: "MuiSwitch Root",
-                absoluteBoundingBox: { x: 10, y: 120, width: 56, height: 32 },
+                absoluteBoundingBox: { x: 10, y: 440, width: 56, height: 32 },
                 children: []
               },
               {
                 id: "node-checkbox",
                 type: "FRAME",
                 name: "MuiCheckbox",
-                absoluteBoundingBox: { x: 10, y: 170, width: 24, height: 24 },
+                absoluteBoundingBox: { x: 10, y: 490, width: 24, height: 24 },
                 children: []
               },
               {
                 id: "node-radio",
                 type: "FRAME",
                 name: "MuiRadio",
-                absoluteBoundingBox: { x: 10, y: 210, width: 24, height: 24 },
+                absoluteBoundingBox: { x: 10, y: 530, width: 24, height: 24 },
                 children: []
               },
               {
                 id: "node-chip",
                 type: "FRAME",
                 name: "MuiChip - Filter",
-                absoluteBoundingBox: { x: 10, y: 250, width: 130, height: 32 },
+                absoluteBoundingBox: { x: 10, y: 570, width: 130, height: 32 },
                 children: []
               },
               {
                 id: "node-tab",
                 type: "FRAME",
                 name: "MuiTabs Root",
-                absoluteBoundingBox: { x: 10, y: 290, width: 300, height: 48 },
+                absoluteBoundingBox: { x: 10, y: 610, width: 300, height: 48 },
                 children: []
               },
               {
                 id: "node-grid",
                 type: "FRAME",
                 name: "Grid Layout",
-                absoluteBoundingBox: { x: 10, y: 340, width: 340, height: 180 },
+                absoluteBoundingBox: { x: 10, y: 660, width: 340, height: 180 },
                 children: [
                   {
                     id: "node-grid-a",
                     type: "FRAME",
                     name: "Tile A",
-                    absoluteBoundingBox: { x: 10, y: 340, width: 160, height: 80 },
+                    absoluteBoundingBox: { x: 10, y: 660, width: 160, height: 80 },
                     children: []
                   },
                   {
                     id: "node-grid-b",
                     type: "FRAME",
                     name: "Tile B",
-                    absoluteBoundingBox: { x: 190, y: 340, width: 160, height: 80 },
+                    absoluteBoundingBox: { x: 190, y: 660, width: 160, height: 80 },
                     children: []
                   },
                   {
                     id: "node-grid-c",
                     type: "FRAME",
                     name: "Tile C",
-                    absoluteBoundingBox: { x: 10, y: 440, width: 160, height: 80 },
+                    absoluteBoundingBox: { x: 10, y: 760, width: 160, height: 80 },
                     children: []
                   },
                   {
                     id: "node-grid-d",
                     type: "FRAME",
                     name: "Tile D",
-                    absoluteBoundingBox: { x: 190, y: 440, width: 160, height: 80 },
+                    absoluteBoundingBox: { x: 190, y: 760, width: 160, height: 80 },
                     children: []
                   }
                 ]
@@ -283,21 +326,21 @@ const createElementTypeMatrixFigmaFile = () => ({
                 type: "FRAME",
                 name: "Stack Group",
                 layoutMode: "VERTICAL",
-                absoluteBoundingBox: { x: 370, y: 340, width: 200, height: 120 },
+                absoluteBoundingBox: { x: 370, y: 660, width: 200, height: 120 },
                 children: [
                   {
                     id: "node-stack-child-1",
                     type: "TEXT",
                     name: "Stack Item 1",
                     characters: "Item 1",
-                    absoluteBoundingBox: { x: 372, y: 344, width: 80, height: 20 }
+                    absoluteBoundingBox: { x: 372, y: 664, width: 80, height: 20 }
                   },
                   {
                     id: "node-stack-child-2",
                     type: "TEXT",
                     name: "Stack Item 2",
                     characters: "Item 2",
-                    absoluteBoundingBox: { x: 372, y: 372, width: 80, height: 20 }
+                    absoluteBoundingBox: { x: 372, y: 692, width: 80, height: 20 }
                   }
                 ]
               },
@@ -306,14 +349,14 @@ const createElementTypeMatrixFigmaFile = () => ({
                 type: "FRAME",
                 name: "Paper Surface",
                 fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
-                absoluteBoundingBox: { x: 370, y: 470, width: 260, height: 110 },
+                absoluteBoundingBox: { x: 370, y: 790, width: 260, height: 110 },
                 children: [
                   {
                     id: "node-paper-text",
                     type: "TEXT",
                     name: "Paper Title",
                     characters: "Paper",
-                    absoluteBoundingBox: { x: 382, y: 482, width: 80, height: 20 }
+                    absoluteBoundingBox: { x: 382, y: 802, width: 80, height: 20 }
                   }
                 ]
               },
@@ -321,27 +364,27 @@ const createElementTypeMatrixFigmaFile = () => ({
                 id: "node-table",
                 type: "FRAME",
                 name: "Customer Table",
-                absoluteBoundingBox: { x: 650, y: 340, width: 360, height: 160 },
+                absoluteBoundingBox: { x: 650, y: 660, width: 360, height: 160 },
                 children: [
                   {
                     id: "node-table-row-1",
                     type: "FRAME",
                     name: "Table Row 1",
-                    absoluteBoundingBox: { x: 650, y: 340, width: 360, height: 40 },
+                    absoluteBoundingBox: { x: 650, y: 660, width: 360, height: 40 },
                     children: [
                       {
                         id: "node-table-row-1-col-1",
                         type: "TEXT",
                         name: "Col 1",
                         characters: "Name",
-                        absoluteBoundingBox: { x: 656, y: 350, width: 80, height: 18 }
+                        absoluteBoundingBox: { x: 656, y: 670, width: 80, height: 18 }
                       },
                       {
                         id: "node-table-row-1-col-2",
                         type: "TEXT",
                         name: "Col 2",
                         characters: "Value",
-                        absoluteBoundingBox: { x: 836, y: 350, width: 80, height: 18 }
+                        absoluteBoundingBox: { x: 836, y: 670, width: 80, height: 18 }
                       }
                     ]
                   },
@@ -349,14 +392,14 @@ const createElementTypeMatrixFigmaFile = () => ({
                     id: "node-table-row-2",
                     type: "FRAME",
                     name: "Table Row 2",
-                    absoluteBoundingBox: { x: 650, y: 384, width: 360, height: 40 },
+                    absoluteBoundingBox: { x: 650, y: 704, width: 360, height: 40 },
                     children: [
                       {
                         id: "node-table-row-2-col-1",
                         type: "TEXT",
                         name: "Col 1",
                         characters: "Anna",
-                        absoluteBoundingBox: { x: 656, y: 394, width: 80, height: 18 }
+                        absoluteBoundingBox: { x: 656, y: 714, width: 80, height: 18 }
                       },
                       {
                         id: "node-table-row-2-col-2",
@@ -2177,40 +2220,61 @@ test("figmaToDesignIrWithOptions retags semantic text hints with a valid text pa
 
 test("figmaToDesignIrWithOptions classifies extended element types deterministically", () => {
   const ir = figmaToDesignIrWithOptions(createElementTypeMatrixFigmaFile());
-  const byId = new Map(ir.screens[0]?.children.map((child) => [child.id, child.type]));
+  const byId = new Map(ir.screens[0]?.children.map((child) => [child.id, child]));
 
-  assert.equal(byId.get("node-text"), "text");
-  assert.equal(byId.get("node-input"), "input");
-  assert.equal(byId.get("node-switch"), "switch");
-  assert.equal(byId.get("node-checkbox"), "checkbox");
-  assert.equal(byId.get("node-radio"), "radio");
-  assert.equal(byId.get("node-chip"), "chip");
-  assert.equal(byId.get("node-tab"), "tab");
-  assert.equal(byId.get("node-grid"), "grid");
-  assert.equal(byId.get("node-stack"), "stack");
-  assert.equal(byId.get("node-paper"), "paper");
-  assert.equal(byId.get("node-table"), "table");
-  assert.equal(byId.get("node-tooltip"), "tooltip");
-  assert.equal(byId.get("node-drawer"), "drawer");
-  assert.equal(byId.get("node-breadcrumbs"), "breadcrumbs");
-  assert.equal(byId.get("node-select"), "select");
-  assert.equal(byId.get("node-slider"), "slider");
-  assert.equal(byId.get("node-rating"), "rating");
-  assert.equal(byId.get("node-snackbar"), "snackbar");
-  assert.equal(byId.get("node-skeleton"), "skeleton");
-  assert.equal(byId.get("node-progress"), "progress");
-  assert.equal(byId.get("node-avatar"), "avatar");
-  assert.equal(byId.get("node-badge"), "badge");
-  assert.equal(byId.get("node-divider"), "divider");
-  assert.equal(byId.get("node-appbar"), "appbar");
-  assert.equal(byId.get("node-navigation"), "navigation");
-  assert.equal(byId.get("node-dialog"), "dialog");
-  assert.equal(byId.get("node-stepper"), "stepper");
-  assert.equal(byId.get("node-list"), "list");
-  assert.equal(byId.get("node-card"), "card");
-  assert.equal(byId.get("node-button"), "button");
-  assert.equal(byId.get("node-image"), "image");
-  assert.equal(byId.get("node-container"), "container");
+  assert.equal(byId.get("node-text")?.type, "text");
+  assert.equal(byId.get("node-input")?.type, "input");
+  assert.equal(byId.get("node-accordion")?.type, "accordion");
+  assert.equal(byId.get("node-date-picker")?.type, "input");
+  assert.equal(byId.get("node-input-iban")?.type, "input");
+  assert.equal(byId.get("node-dynamic-typography")?.type, "text");
+  assert.equal(byId.get("node-icon")?.type, "container");
+  assert.equal(byId.get("node-switch")?.type, "switch");
+  assert.equal(byId.get("node-checkbox")?.type, "checkbox");
+  assert.equal(byId.get("node-radio")?.type, "radio");
+  assert.equal(byId.get("node-chip")?.type, "chip");
+  assert.equal(byId.get("node-tab")?.type, "tab");
+  assert.equal(byId.get("node-grid")?.type, "grid");
+  assert.equal(byId.get("node-stack")?.type, "stack");
+  assert.equal(byId.get("node-paper")?.type, "paper");
+  assert.equal(byId.get("node-table")?.type, "table");
+  assert.equal(byId.get("node-tooltip")?.type, "tooltip");
+  assert.equal(byId.get("node-drawer")?.type, "drawer");
+  assert.equal(byId.get("node-breadcrumbs")?.type, "breadcrumbs");
+  assert.equal(byId.get("node-select")?.type, "select");
+  assert.equal(byId.get("node-slider")?.type, "slider");
+  assert.equal(byId.get("node-rating")?.type, "rating");
+  assert.equal(byId.get("node-snackbar")?.type, "snackbar");
+  assert.equal(byId.get("node-skeleton")?.type, "skeleton");
+  assert.equal(byId.get("node-progress")?.type, "progress");
+  assert.equal(byId.get("node-avatar")?.type, "avatar");
+  assert.equal(byId.get("node-badge")?.type, "badge");
+  assert.equal(byId.get("node-divider")?.type, "divider");
+  assert.equal(byId.get("node-appbar")?.type, "appbar");
+  assert.equal(byId.get("node-navigation")?.type, "navigation");
+  assert.equal(byId.get("node-dialog")?.type, "dialog");
+  assert.equal(byId.get("node-stepper")?.type, "stepper");
+  assert.equal(byId.get("node-list")?.type, "list");
+  assert.equal(byId.get("node-card")?.type, "card");
+  assert.equal(byId.get("node-button")?.type, "button");
+  assert.equal(byId.get("node-image")?.type, "image");
+  assert.equal(byId.get("node-container")?.type, "container");
+});
+
+test("figmaToDesignIrWithOptions persists board semantic metadata for explicit families without MCP enrichment", () => {
+  const ir = figmaToDesignIrWithOptions(createElementTypeMatrixFigmaFile());
+  const byId = new Map(ir.screens[0]?.children.map((child) => [child.id, child]));
+
+  assert.equal(byId.get("node-accordion")?.semanticType, "Accordion");
+  assert.equal(byId.get("node-accordion")?.semanticSource, "board");
+  assert.equal(byId.get("node-date-picker")?.semanticType, "DatePicker");
+  assert.equal(byId.get("node-date-picker")?.semanticSource, "board");
+  assert.equal(byId.get("node-input-iban")?.semanticType, "InputIBAN");
+  assert.equal(byId.get("node-input-iban")?.semanticSource, "board");
+  assert.equal(byId.get("node-dynamic-typography")?.semanticType, "Typography");
+  assert.equal(byId.get("node-dynamic-typography")?.semanticSource, "board");
+  assert.equal(byId.get("node-icon")?.semanticType, "Icon");
+  assert.equal(byId.get("node-icon")?.semanticSource, "board");
 });
 
 test("figmaToDesignIrWithOptions keeps select classification precedence over input when both semantic signals exist", () => {
@@ -2811,6 +2875,13 @@ test("figmaToDesignIrWithOptions prioritizes explicit board components over MCP 
   );
   assert.ok(unsupportedDiagnostic);
   assert.match(unsupportedDiagnostic?.reason ?? "", /CardContent/);
+
+  const unsupportedFallback = ir.metrics?.classificationFallbacks?.find((entry) => entry.nodeId === "board-unsupported");
+  assert.equal(unsupportedFallback?.semanticType, "CardContent");
+  const fallbackDiagnostic = ir.metrics?.nodeDiagnostics?.find(
+    (entry) => entry.nodeId === "board-unsupported" && entry.category === "classification-fallback"
+  );
+  assert.match(fallbackDiagnostic?.reason ?? "", /CardContent/);
 });
 
 const createResponsiveVariantFigmaFile = () => ({

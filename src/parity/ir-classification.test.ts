@@ -118,6 +118,8 @@ describe("isIconLikeNodeName", () => {
     assert.equal(isIconLikeNodeName("icons/close"), true);
     assert.equal(isIconLikeNodeName("icon-arrow"), true);
     assert.equal(isIconLikeNodeName("icon_search"), true);
+    assert.equal(isIconLikeNodeName("brand/check"), true);
+    assert.equal(isIconLikeNodeName("semantic-success"), true);
   });
 
   it("detects word boundary 'icon'", () => {
@@ -157,6 +159,7 @@ describe("NODE_CLASSIFICATION_RULES data integrity", () => {
       "text", "select", "slider", "rating", "skeleton", "input",
       "switch", "checkbox", "radio", "chip", "tab", "progress",
       "avatar", "badge", "divider", "appbar", "drawer", "breadcrumbs",
+      "accordion",
       "tooltip", "table", "navigation", "snackbar", "dialog", "stepper",
       "list", "grid", "card", "paper", "stack", "button", "image"
     ];
@@ -244,6 +247,33 @@ describe("classifyElementTypeFromNode", () => {
     });
   });
 
+  describe("accordion", () => {
+    it("classifies explicit accordion board components before generic container heuristics", () => {
+      assert.equal(
+        classify(makeNode({
+          type: "INSTANCE",
+          name: "Accordion, State=Collapsed",
+          absoluteBoundingBox: { x: 0, y: 0, width: 320, height: 64 },
+          children: [{ id: "accordion-summary", type: "TEXT", characters: "Details" }]
+        }), WITH_SOLID_FILL),
+        "accordion"
+      );
+    });
+
+    it("classifies accordion semantic containers by subtree hints", () => {
+      assert.equal(
+        classify(makeNode({
+          name: "Cluster Wrapper",
+          children: [
+            { id: "summary", type: "FRAME", name: "AccordionSummaryContent" },
+            { id: "details", type: "FRAME", name: "CollapseWrapper" }
+          ]
+        })),
+        "accordion"
+      );
+    });
+  });
+
   describe("input", () => {
     it("classifies by semantic keyword + field sizing", () => {
       assert.equal(
@@ -260,6 +290,33 @@ describe("classifyElementTypeFromNode", () => {
         classify(makeNode({
           name: "text input field",
           children: [{ id: "c1", type: "TEXT" }]
+        })),
+        "input"
+      );
+    });
+
+    it("classifies DatePicker and banking input board families as input", () => {
+      assert.equal(
+        classify(makeNode({
+          type: "INSTANCE",
+          name: "DatePicker, State=Single",
+          absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 56 }
+        })),
+        "input"
+      );
+      assert.equal(
+        classify(makeNode({
+          type: "INSTANCE",
+          name: "InputIBAN, State=Default",
+          absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 56 }
+        })),
+        "input"
+      );
+      assert.equal(
+        classify(makeNode({
+          type: "INSTANCE",
+          name: "InputCurrency",
+          absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 56 }
         })),
         "input"
       );
@@ -960,6 +1017,15 @@ describe("classifyElementTypeFromSemanticHint", () => {
     assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "country select", semanticType: undefined }), "select");
   });
 
+  it("classifies accordion hints", () => {
+    assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "accordion", semanticType: undefined }), "accordion");
+  });
+
+  it("classifies date picker and banking input hints as input", () => {
+    assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "DatePicker", semanticType: undefined }), "input");
+    assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "InputTAN", semanticType: undefined }), "input");
+  });
+
   it("classifies button hints", () => {
     assert.equal(classifyElementTypeFromSemanticHint({ semanticName: undefined, semanticType: "button" }), "button");
   });
@@ -978,6 +1044,11 @@ describe("classifyElementTypeFromSemanticHint", () => {
 
   it("classifies image hints", () => {
     assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "profile photo", semanticType: undefined }), "image");
+  });
+
+  it("does not degrade icon hints into image classification", () => {
+    assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "Icon", semanticType: undefined }), undefined);
+    assert.equal(classifyElementTypeFromSemanticHint({ semanticName: "brand/check", semanticType: undefined }), undefined);
   });
 
   it("classifies appbar by keyword match", () => {
@@ -1008,6 +1079,64 @@ describe("resolveExplicitBoardComponentFromNode", () => {
       canonicalName: "Stack",
       type: "stack"
     });
+  });
+
+  it("preserves canonical names for accordion, date picker, banking input, typography, and icon families", () => {
+    assert.deepEqual(
+      resolveExplicitBoardComponentFromNode({
+        type: "INSTANCE",
+        name: "Accordion, State=Collapsed"
+      }),
+      {
+        rawName: "Accordion, State=Collapsed",
+        canonicalName: "Accordion",
+        type: "accordion"
+      }
+    );
+    assert.deepEqual(
+      resolveExplicitBoardComponentFromNode({
+        type: "INSTANCE",
+        name: "DatePicker, State=Single"
+      }),
+      {
+        rawName: "DatePicker, State=Single",
+        canonicalName: "DatePicker",
+        type: "input"
+      }
+    );
+    assert.deepEqual(
+      resolveExplicitBoardComponentFromNode({
+        type: "INSTANCE",
+        name: "<InputTAN>"
+      }),
+      {
+        rawName: "InputTAN",
+        canonicalName: "InputTAN",
+        type: "input"
+      }
+    );
+    assert.deepEqual(
+      resolveExplicitBoardComponentFromNode({
+        type: "INSTANCE",
+        name: "<Dynamic Typography>"
+      }),
+      {
+        rawName: "Dynamic Typography",
+        canonicalName: "Typography",
+        type: "text"
+      }
+    );
+    assert.deepEqual(
+      resolveExplicitBoardComponentFromNode({
+        type: "INSTANCE",
+        name: "ic_search"
+      }),
+      {
+        rawName: "ic_search",
+        canonicalName: "Icon",
+        type: "container"
+      }
+    );
   });
 
   it("keeps unsupported explicit board components visible for diagnostics", () => {

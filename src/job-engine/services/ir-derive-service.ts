@@ -402,7 +402,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             `Classification fallback to container used for ${classificationFallbacks.length} node(s). ` +
             `Top sample: ${classificationFallbacks
               .slice(0, 3)
-              .map((entry) => `'${entry.nodeName}'`)
+              .map((entry) =>
+                entry.semanticType ? `'${entry.nodeName}' [semantic=${entry.semanticType}]` : `'${entry.nodeName}'`
+              )
               .join(", ")}`
         });
         const diagnostics: PipelineDiagnosticInput[] = classificationFallbacks.slice(0, 12).map((entry) => {
@@ -412,7 +414,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           });
           return {
             code: "W_IR_CLASSIFICATION_FALLBACK",
-            message: `Node '${entry.nodeName}' fell back to generic 'container' classification.`,
+            message:
+              `Node '${entry.nodeName}' fell back to generic 'container' classification.` +
+              (entry.semanticType ? ` Deterministic board semantic: '${entry.semanticType}'.` : ""),
             suggestion:
               "Use clearer component naming/structure (e.g., button/input/list/table semantics) so deterministic classification can resolve a specific type.",
             stage: "ir.derive",
@@ -426,6 +430,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
               nodeName: entry.nodeName,
               nodeType: entry.nodeType,
               depth: entry.depth,
+              ...(entry.semanticType ? { semanticType: entry.semanticType } : {}),
               ...(entry.layoutMode ? { layoutMode: entry.layoutMode } : {}),
               ...(entry.matchedRulePriority !== undefined
                 ? { matchedRulePriority: entry.matchedRulePriority }

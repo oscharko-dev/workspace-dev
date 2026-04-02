@@ -192,12 +192,16 @@ export const buildElementBase = ({
         nodeType: node.type,
         depth,
         ...(node.layoutMode ? { layoutMode: node.layoutMode } : {}),
+        ...(explicitBoardComponent?.canonicalName ? { semanticType: explicitBoardComponent.canonicalName } : {}),
         ...(matchedRulePriority !== undefined ? { matchedRulePriority } : {})
       });
       metrics.nodeDiagnostics.push({
         nodeId: node.id,
         category: "classification-fallback",
-        reason: `Element type classification used fallback rule for Figma node type '${node.type}'.`,
+        reason:
+          `Element type classification used fallback rule for Figma node type '${node.type}'` +
+          (explicitBoardComponent?.canonicalName ? ` despite board semantic '${explicitBoardComponent.canonicalName}'` : "") +
+          ".",
         screenId
       });
     }
@@ -214,6 +218,12 @@ export const buildElementBase = ({
     id: node.id,
     name: node.name ?? node.type,
     nodeType: node.type,
+    ...(explicitBoardComponent?.canonicalName
+      ? {
+          semanticType: explicitBoardComponent.canonicalName,
+          semanticSource: "board" as const
+        }
+      : {}),
     layoutMode: node.layoutMode ?? "NONE",
     gap: node.itemSpacing ?? 0,
     padding: mapPadding(node),

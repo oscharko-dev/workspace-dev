@@ -1828,11 +1828,11 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
                       id: "nested-2",
                       type: "FRAME",
                       name: "Layer Beta",
-                      children: [{ id: "nested-3", type: "RECTANGLE", name: "Unknown Box", children: [] }]
+                      children: [{ id: "nested-3", type: "RECTANGLE", name: "_<CardContent>", children: [] }]
                     }
                   ]
                 },
-                { id: "rect-1", type: "RECTANGLE", name: "Mystery Block", children: [] },
+                { id: "rect-1", type: "RECTANGLE", name: "_<CardContent>", children: [] },
                 { id: "rect-2", type: "RECTANGLE", name: "Mystery Block 2", children: [] }
               ]
             }
@@ -1873,13 +1873,19 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
   assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
   assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_DEPTH_TRUNCATION"), true);
   assert.equal(
+    status.error?.diagnostics?.some(
+      (entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK" && entry.message?.includes("CardContent")
+    ),
+    true
+  );
+  assert.equal(
     status.error?.diagnostics?.some((entry) => entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id=")),
     true
   );
 
   const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
-    diagnostics?: Array<{ code?: string }>;
+    diagnostics?: Array<{ code?: string; message?: string }>;
   };
   assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
   assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "E_VALIDATE_PROJECT"), true);

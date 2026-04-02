@@ -76,6 +76,7 @@ type BooleanContextKey =
   | "hasControlSemanticDescendants"
   | "hasFormLikeFieldCluster"
   | "hasIconLikeName"
+  | "hasAccordionChildNames"
   | "isLikelyGridByStructure"
   | "isLikelyListByStructure"
   | "hasCssGridNamingHint"
@@ -109,6 +110,7 @@ interface NodeClassificationContext<TNode extends ElementClassificationNode> {
   hasControlSemanticDescendants: boolean;
   hasFormLikeFieldCluster: boolean;
   hasIconLikeName: boolean;
+  hasAccordionChildNames: boolean;
   rowBuckets: number;
   columnBuckets: number;
   isLikelyGridByStructure: boolean;
@@ -190,15 +192,22 @@ export const hasAnyWord = (value: string, words: readonly string[]): boolean => 
 };
 
 export const isIconLikeNodeName = (value: string): boolean => {
+  const normalizedValue = value.toLowerCase();
   return (
-    value.includes("muisvgiconroot") ||
-    value.includes("iconcomponent") ||
-    value.startsWith("ic_") ||
-    value.startsWith("icon/") ||
-    value.startsWith("icons/") ||
-    value.startsWith("icon-") ||
-    value.startsWith("icon_") ||
-    hasAnyWord(value, ["icon"])
+    normalizedValue.includes("muisvgiconroot") ||
+    normalizedValue.includes("iconcomponent") ||
+    normalizedValue.startsWith("ic_") ||
+    normalizedValue.startsWith("icon/") ||
+    normalizedValue.startsWith("icons/") ||
+    normalizedValue.startsWith("icon-") ||
+    normalizedValue.startsWith("icon_") ||
+    normalizedValue.startsWith("brand/") ||
+    normalizedValue.startsWith("brand_") ||
+    normalizedValue.startsWith("brand-") ||
+    normalizedValue.startsWith("semantic/") ||
+    normalizedValue.startsWith("semantic_") ||
+    normalizedValue.startsWith("semantic-") ||
+    hasAnyWord(normalizedValue, ["icon"])
   );
 };
 
@@ -235,6 +244,12 @@ const EXPLICIT_BOARD_COMPONENT_DESCRIPTORS: readonly ExplicitBoardComponentDescr
     type: "alert",
     exactPatterns: [/^alert$/i],
     wordPatterns: [/\balert\b/i]
+  },
+  {
+    canonicalName: "Accordion",
+    type: "accordion",
+    exactPatterns: [/^accordion$/i],
+    wordPatterns: [/\baccordion\b/i]
   },
   {
     canonicalName: "Card",
@@ -319,6 +334,30 @@ const EXPLICIT_BOARD_COMPONENT_DESCRIPTORS: readonly ExplicitBoardComponentDescr
     type: "select",
     exactPatterns: [/^select$/i, /^dropdown$/i],
     wordPatterns: [/\bselect\b/i, /\bdropdown\b/i]
+  },
+  {
+    canonicalName: "DatePicker",
+    type: "input",
+    exactPatterns: [/^date\s*picker$/i, /^datepicker$/i],
+    wordPatterns: [/\bdate[-_\s]*picker\b/i]
+  },
+  {
+    canonicalName: "InputCurrency",
+    type: "input",
+    exactPatterns: [/^input\s*currency$/i, /^inputcurrency$/i],
+    wordPatterns: [/\binput[-_\s]*currency\b/i]
+  },
+  {
+    canonicalName: "InputIBAN",
+    type: "input",
+    exactPatterns: [/^input\s*iban$/i, /^inputiban$/i],
+    wordPatterns: [/\binput[-_\s]*iban\b/i]
+  },
+  {
+    canonicalName: "InputTAN",
+    type: "input",
+    exactPatterns: [/^input\s*tan$/i, /^inputtan$/i],
+    wordPatterns: [/\binput[-_\s]*tan\b/i]
   },
   {
     canonicalName: "Input",
@@ -416,6 +455,18 @@ const resolveExplicitBoardDescriptor = ({
   });
 };
 
+const toExplicitBoardIconMatch = (rawName: string): ExplicitBoardComponentMatch | undefined => {
+  const normalizedCandidate = normalizeExplicitBoardComponentSource(rawName).toLowerCase();
+  if (!normalizedCandidate || !isIconLikeNodeName(normalizedCandidate)) {
+    return undefined;
+  }
+  return {
+    rawName,
+    canonicalName: "Icon",
+    type: "container"
+  };
+};
+
 export const resolveExplicitBoardComponentFromNode = (
   node: Pick<ElementClassificationNode, "name" | "type">
 ): ExplicitBoardComponentMatch | undefined => {
@@ -431,10 +482,12 @@ export const resolveExplicitBoardComponentFromNode = (
       candidate,
       allowWordPatterns: true
     });
+    const iconMatch = descriptor ? undefined : toExplicitBoardIconMatch(candidate);
+    const resolvedType = descriptor?.type ?? iconMatch?.type;
     return {
       rawName: candidate,
-      canonicalName: descriptor?.canonicalName ?? candidate,
-      ...(descriptor?.type ? { type: descriptor.type } : {})
+      canonicalName: descriptor?.canonicalName ?? iconMatch?.canonicalName ?? candidate,
+      ...(resolvedType ? { type: resolvedType } : {})
     };
   }
 
@@ -447,7 +500,7 @@ export const resolveExplicitBoardComponentFromNode = (
     allowWordPatterns: true
   });
   if (!descriptor) {
-    return undefined;
+    return toExplicitBoardIconMatch(rawName);
   }
   return {
     rawName,
@@ -646,6 +699,15 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
   const hasButtonKeyword = hasAnySubstring(name, ["muibutton", "buttonbase", "button", "cta"]);
   const hasStrongImageName = hasAnyWord(name, ["image", "photo", "illustration", "hero", "banner"]);
   const hasIconLikeName = isIconLikeNodeName(name);
+  const hasAccordionChildNames = children.some((child) => {
+    const childName = (child.name ?? "").toLowerCase();
+    return hasAnySubstring(childName, [
+      "accordionsummary",
+      "accordionsummarycontent",
+      "accordiondetails",
+      "collapsewrapper"
+    ]);
+  });
 
   const rowBuckets = countPositionBuckets({
     values: children
@@ -716,6 +778,7 @@ const createNodeClassificationContext = <TNode extends ElementClassificationNode
     hasControlSemanticDescendants,
     hasFormLikeFieldCluster,
     hasIconLikeName,
+    hasAccordionChildNames,
     rowBuckets,
     columnBuckets,
     isLikelyGridByStructure,
@@ -790,7 +853,7 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
   { type: "badge", priority: 68, keywords: ["muibadge"] },
   { type: "badge", priority: 69, words: ["badge"] },
 
-  // --- Priority 80–99: divider, appbar, drawer, breadcrumbs, tooltip ---
+  // --- Priority 80–99: divider, appbar, drawer, breadcrumbs, tooltip, accordion ---
   { type: "divider", priority: 80, keywords: ["muidivider", "separator"] },
   { type: "divider", priority: 81, words: ["divider"] },
   { type: "divider", priority: 82, requires: { isLikelyDividerByGeometry: true } },
@@ -802,6 +865,9 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
   { type: "breadcrumbs", priority: 89, words: ["breadcrumbs", "breadcrumb"] },
   { type: "tooltip", priority: 90, keywords: ["muitooltip"] },
   { type: "tooltip", priority: 91, words: ["tooltip", "hover info"] },
+  { type: "accordion", priority: 92, keywords: ["muiaccordion", "accordionsummarycontent", "collapsewrapper"] },
+  { type: "accordion", priority: 93, requires: { hasAccordionChildNames: true } },
+  { type: "accordion", priority: 94, words: ["accordion"], requires: { hasChildren: true } },
 
   // --- Priority 100–119: table (keyword + structural) ---
   { type: "table", priority: 100, keywords: ["muitable"] },
@@ -903,8 +969,9 @@ export const NODE_CLASSIFICATION_RULES: readonly ClassificationRule[] = [
 
 export const SEMANTIC_CLASSIFICATION_RULES: readonly SemanticClassificationRule[] = [
   { type: "text", priority: 10, words: ["text", "typography", "headline", "title", "label"] },
-  { type: "input", priority: 20, keywords: ["formcontrol", "textfield", "text field"] },
-  { type: "input", priority: 21, words: ["input", "field"] },
+  { type: "input", priority: 20, keywords: ["datepicker", "date picker", "inputcurrency", "inputiban", "inputtan"] },
+  { type: "input", priority: 21, keywords: ["formcontrol", "textfield", "text field"] },
+  { type: "input", priority: 22, words: ["input", "field"] },
   { type: "select", priority: 30, words: ["select", "dropdown"] },
   { type: "switch", priority: 40, words: ["switch", "toggle"] },
   { type: "checkbox", priority: 50, words: ["checkbox"] },
@@ -912,6 +979,7 @@ export const SEMANTIC_CLASSIFICATION_RULES: readonly SemanticClassificationRule[
   { type: "slider", priority: 70, words: ["slider", "range"] },
   { type: "rating", priority: 80, words: ["rating", "stars"] },
   { type: "chip", priority: 90, words: ["chip"] },
+  { type: "accordion", priority: 95, words: ["accordion"] },
   { type: "tab", priority: 100, words: ["tab", "tabs"] },
   { type: "grid", priority: 110, words: ["grid", "grid2", "tile"] },
   { type: "stack", priority: 120, words: ["stack"] },
@@ -934,7 +1002,7 @@ export const SEMANTIC_CLASSIFICATION_RULES: readonly SemanticClassificationRule[
   { type: "list", priority: 280, words: ["list", "listitem"] },
   { type: "card", priority: 290, words: ["card"] },
   { type: "button", priority: 300, words: ["button", "cta"] },
-  { type: "image", priority: 310, words: ["image", "photo", "illustration", "icon"] }
+  { type: "image", priority: 310, words: ["image", "photo", "illustration"] }
 ];
 
 // ---------------------------------------------------------------------------

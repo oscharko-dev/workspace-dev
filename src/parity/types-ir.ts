@@ -180,6 +180,7 @@ export type ScreenElementType =
   | "container"
   | "button"
   | "alert"
+  | "accordion"
   | "input"
   | "image"
   | "grid"
@@ -383,6 +384,7 @@ export interface ClassificationFallbackMetric {
   depth: number;
   matchedRulePriority?: number;
   layoutMode?: string;
+  semanticType?: string;
 }
 
 export type NodeDiagnosticCategory =

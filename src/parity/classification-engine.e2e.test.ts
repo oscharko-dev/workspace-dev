@@ -4,7 +4,9 @@
 // ---------------------------------------------------------------------------
 import assert from "node:assert/strict";
 import test from "node:test";
+import os from "node:os";
 import { figmaToDesignIrWithOptions } from "./ir.js";
+import { fetchFigmaFile } from "../job-engine/figma-source.js";
 import type { ScreenElementIR } from "./types.js";
 import {
   NODE_CLASSIFICATION_RULES,
@@ -25,13 +27,23 @@ const fetchFigmaFileOnce = async (): Promise<unknown> => {
   if (cachedFigmaFile) {
     return cachedFigmaFile;
   }
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
+  const result = await fetchFigmaFile({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN,
+    timeoutMs: 45_000,
+    maxRetries: 5,
+    fetchImpl: fetch,
+    onLog: () => {},
+    bootstrapDepth: 5,
+    nodeBatchSize: 1,
+    nodeFetchConcurrency: 1,
+    adaptiveBatchingEnabled: false,
+    maxScreenCandidates: 1,
+    cacheEnabled: true,
+    cacheTtlMs: 15 * 60_000,
+    cacheDir: os.tmpdir()
   });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  cachedFigmaFile = await response.json();
+  cachedFigmaFile = result.file;
   return cachedFigmaFile;
 };
 
@@ -51,6 +63,7 @@ const collectAllElements = (children: ScreenElementIR[]): ScreenElementIR[] => {
 
 const VALID_ELEMENT_TYPES = new Set<string>([
   "text", "container", "button", "alert", "input", "image", "grid", "stack",
+  "accordion",
   "paper", "card", "chip", "switch", "checkbox", "radio", "select",
   "slider", "rating", "list", "table", "tooltip", "appbar", "drawer",
   "breadcrumbs", "tab", "dialog", "snackbar", "stepper", "progress",
@@ -126,6 +139,37 @@ test("E2E: real Figma board produces diverse element classifications", { skip: s
   assert.ok(
     typeCounts.size >= 5,
     `Expected at least 5 distinct element types but found ${typeCounts.size}: ${[...typeCounts.keys()].join(", ")}`
+  );
+});
+
+test("E2E: real Figma board exposes verified board families through IR classification and semantics", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const allElements: ScreenElementIR[] = [];
+  for (const screen of ir.screens) {
+    allElements.push(...collectAllElements(screen.children));
+  }
+
+  assert.equal(
+    allElements.some((element) => element.type === "accordion" && element.semanticType === "Accordion"),
+    true,
+    "Expected at least one accordion element with board semantic metadata."
+  );
+  assert.equal(
+    allElements.some((element) => element.type === "input" && element.semanticType === "Input"),
+    true,
+    "Expected at least one input family element with board semantic metadata."
+  );
+  assert.equal(
+    allElements.some((element) => element.type === "text" && element.semanticType === "Typography"),
+    true,
+    "Expected at least one Typography family element classified as text."
+  );
+  assert.equal(
+    allElements.some((element) => element.type === "container" && element.semanticType === "Icon"),
+    true,
+    "Expected at least one Icon family element to remain a container with board semantic metadata."
   );
 });
 
