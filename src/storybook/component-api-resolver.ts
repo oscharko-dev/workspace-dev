@@ -82,6 +82,10 @@ const COMPONENT_GENERATOR_SURFACES: Record<string, GeneratorSurface> = {
     semanticProps: ["expanded"],
     childrenMode: "always"
   },
+  Alert: {
+    semanticProps: ["children", "severity", "sx"],
+    childrenMode: "always"
+  },
   Button: {
     semanticProps: ["color", "disabled", "endIcon", "size", "startIcon", "variant"],
     childrenMode: "always"

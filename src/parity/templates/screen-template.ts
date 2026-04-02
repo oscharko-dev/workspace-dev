@@ -368,6 +368,75 @@ const appendMappedPropLine = ({
   lines.push(`${targetName}={${expression}}`);
 };
 
+const renderAlertExpression = ({
+  context,
+  indent,
+  messageExpression,
+  severityExpression,
+  sxExpression
+}: {
+  context: RenderContext;
+  indent: string;
+  messageExpression: string;
+  severityExpression: string;
+  sxExpression?: string;
+}): string => {
+  const alertMapping = resolveSpecializedComponentMapping({
+    context,
+    semanticType: "Alert"
+  });
+  if (alertMapping) {
+    const componentLocalName = registerSpecializedComponentImport({
+      context,
+      mapping: alertMapping
+    });
+    const propLines: string[] = [];
+    appendMappedPropLine({
+      lines: propLines,
+      mapping: alertMapping,
+      sourceName: "severity",
+      expression: severityExpression
+    });
+    appendMappedPropLine({
+      lines: propLines,
+      mapping: alertMapping,
+      sourceName: "children",
+      expression: messageExpression
+    });
+    if (sxExpression) {
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: alertMapping,
+        sourceName: "sx",
+        expression: sxExpression
+      });
+    }
+    const props = propLines.length > 0 ? `\n${propLines.map((line) => `${indent}  ${line}`).join("\n")}\n${indent}` : " ";
+    return `${indent}<${componentLocalName}${props}/>`;
+  }
+  registerMuiImports(context, "Alert");
+  const sxProp = sxExpression ? ` sx={${sxExpression}}` : "";
+  return `${indent}<Alert severity={${severityExpression}}${sxProp}>{${messageExpression}}</Alert>`;
+};
+
+const buildScreenLevelErrorEvidenceBlock = ({
+  context,
+  indent
+}: {
+  context: RenderContext;
+  indent: string;
+}): string => {
+  const alertExpression = renderAlertExpression({
+    context,
+    indent: `${indent}  `,
+    messageExpression: "screenLevelError.message",
+    severityExpression: "screenLevelError.severity"
+  });
+  return `${indent}{screenLevelErrorEvidence?.map((screenLevelError) => (
+${alertExpression}
+${indent}))}`;
+};
+
 const normalizeVariantLookupToken = (value: string): string => {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 };
@@ -4254,7 +4323,7 @@ export const renderRatingElement = (element: ScreenElementIR, depth: number, par
 };
 
 export const renderSnackbar = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
-  registerMuiImports(context, "Snackbar", "Alert");
+  registerMuiImports(context, "Snackbar");
   const indent = "  ".repeat(depth);
   const message = firstText(element)?.trim() || element.name || "Hinweis";
   const severity = toAlertSeverityFromName(element.name);
@@ -4264,8 +4333,15 @@ export const renderSnackbar = (element: ScreenElementIR, depth: number, parent: 
     context,
     includePaints: false
   });
+  const alertContent = renderAlertExpression({
+    context,
+    indent: `${indent}  `,
+    messageExpression: literal(message),
+    severityExpression: literal(severity),
+    sxExpression: `{ ${sx} }`
+  });
   return `${indent}<Snackbar open anchorOrigin={{ vertical: "bottom", horizontal: "center" }} role="status" aria-live="polite">
-${indent}  <Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>
+${alertContent}
 ${indent}</Snackbar>`;
 };
 
@@ -4275,7 +4351,6 @@ export const renderAlertElement = (
   parent: VirtualParent,
   context: RenderContext
 ): string => {
-  registerMuiImports(context, "Alert");
   const indent = "  ".repeat(depth);
   const message = firstText(element)?.trim() || element.name || "Hinweis";
   const severity = toAlertSeverityFromName(element.name);
@@ -4285,7 +4360,13 @@ export const renderAlertElement = (
     context,
     includePaints: false
   });
-  return `${indent}<Alert severity="${severity}" sx={{ ${sx} }}>{${literal(message)}}</Alert>`;
+  return renderAlertExpression({
+    context,
+    indent,
+    messageExpression: literal(message),
+    severityExpression: literal(severity),
+    sxExpression: `{ ${sx} }`
+  });
 };
 
 export const renderSkeleton = (element: ScreenElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
@@ -5482,6 +5563,45 @@ export interface FallbackDependencyAssembly {
   formContextImport: string;
 }
 
+interface VariantFieldEvidenceAggregate {
+  message?: string;
+  visualError: boolean;
+}
+
+const collectVariantFieldEvidenceByContentScreen = ({
+  family,
+  contentScreenId
+}: {
+  family: ScreenVariantFamilyIR | undefined;
+  contentScreenId: string;
+}): Record<string, VariantFieldEvidenceAggregate> => {
+  if (!family) {
+    return {};
+  }
+  const scenarioOrder = new Map(family.memberScreenIds.map((screenId, index) => [screenId, index] as const));
+  const aggregate = new Map<string, VariantFieldEvidenceAggregate>();
+  const scenarios = [...family.scenarios]
+    .filter((scenario) => scenario.contentScreenId === contentScreenId)
+    .sort((left, right) => {
+      const leftIndex = scenarioOrder.get(left.screenId) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = scenarioOrder.get(right.screenId) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+  for (const scenario of scenarios) {
+    for (const [fieldKey, evidence] of Object.entries(scenario.fieldErrorEvidenceByFieldKey ?? {})) {
+      const existing = aggregate.get(fieldKey);
+      const nextMessage = existing?.message ?? (evidence.message.trim().length > 0 ? evidence.message : undefined);
+      aggregate.set(fieldKey, {
+        ...(nextMessage ? { message: nextMessage } : {}),
+        visualError: (existing?.visualError ?? false) || evidence.visualError
+      });
+    }
+  }
+  return Object.fromEntries(
+    [...aggregate.entries()].sort((left, right) => left[0].localeCompare(right[0]))
+  );
+};
+
 export const prepareFallbackScreenModel = ({
   screen,
   mappingByNodeId,
@@ -5788,10 +5908,14 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
 
 export const assembleFallbackDependencies = ({
   prepared,
-  renderState
+  renderState,
+  variantFieldEvidenceByFieldKey = {},
+  initialVisualErrorsOverrideExpression
 }: {
   prepared: PreparedFallbackScreenModel;
   renderState: FallbackRenderState;
+  variantFieldEvidenceByFieldKey?: Record<string, VariantFieldEvidenceAggregate>;
+  initialVisualErrorsOverrideExpression?: string;
 }): FallbackDependencyAssembly => {
   const { componentName, extractionPlan, resolvedFormHandlingMode, enablePatternExtraction } = prepared;
   const {
@@ -5815,13 +5939,36 @@ export const assembleFallbackDependencies = ({
     ),
     validationMessageMap: Object.fromEntries(
       fields
-        .filter((field) => field.validationMessage)
-        .map((field) => [field.key, field.validationMessage as string])
+        .map((field) => {
+          const variantEvidence = variantFieldEvidenceByFieldKey[field.key];
+          const variantMessage = variantEvidence?.message?.trim();
+          const isExplicitMessage = field.validationMessageSource === "explicit";
+          const resolvedMessage = isExplicitMessage
+            ? field.validationMessage
+            : variantMessage && variantMessage.length > 0
+              ? variantMessage
+              : field.validationMessage;
+          return resolvedMessage ? ([field.key, resolvedMessage] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, string] => entry !== undefined)
     ),
     initialVisualErrorsMap: Object.fromEntries(
       fields
-        .filter((field) => field.hasVisualErrorExample)
-        .map((field) => [field.key, field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.")])
+        .map((field) => {
+          const variantEvidence = variantFieldEvidenceByFieldKey[field.key];
+          const variantMessage = variantEvidence?.message?.trim();
+          const isExplicitMessage = field.validationMessageSource === "explicit";
+          const resolvedMessage = isExplicitMessage
+            ? field.validationMessage
+            : variantMessage && variantMessage.length > 0
+              ? variantMessage
+              : field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.");
+          const hasVisualError =
+            field.hasVisualErrorExample ||
+            (initialVisualErrorsOverrideExpression === undefined && variantEvidence?.visualError === true);
+          return hasVisualError ? ([field.key, resolvedMessage] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, string] => entry !== undefined)
     ),
     selectOptionsMap: Object.fromEntries(
       fields.filter((field) => field.isSelect).map((field) => [field.key, field.options])
@@ -5829,7 +5976,9 @@ export const assembleFallbackDependencies = ({
     crossFieldRules: detectCrossFieldRules(fields),
     validationMode: inferValidationMode({
       fields,
-      hasVisualErrors: fields.some((field) => field.hasVisualErrorExample === true)
+      hasVisualErrors: fields.some(
+        (field) => field.hasVisualErrorExample === true || variantFieldEvidenceByFieldKey[field.key]?.visualError === true
+      )
     }),
     validationRulesMap: Object.fromEntries(
       fields
@@ -5928,6 +6077,9 @@ export const assembleFallbackDependencies = ({
             hasSelectField,
             selectOptionsMap,
             initialVisualErrorsMap,
+            ...(initialVisualErrorsOverrideExpression
+              ? { initialVisualErrorsOverrideExpression }
+              : {}),
             requiredFieldMap,
             validationTypeMap,
             validationMessageMap,
@@ -5940,6 +6092,9 @@ export const assembleFallbackDependencies = ({
             hasSelectField,
             selectOptionsMap,
             initialVisualErrorsMap,
+            ...(initialVisualErrorsOverrideExpression
+              ? { initialVisualErrorsOverrideExpression }
+              : {}),
             requiredFieldMap,
             validationTypeMap,
             validationMessageMap,
@@ -6096,12 +6251,14 @@ const wrapContentWithProviders = ({
   baseContent,
   patternContextFileSpec,
   formContextFileSpec,
-  renderContext
+  renderContext,
+  formContextProviderPropsExpression
 }: {
   baseContent: string;
   patternContextFileSpec: PatternContextFileSpec | undefined;
   formContextFileSpec: FormContextFileSpec | undefined;
   renderContext: RenderContext;
+  formContextProviderPropsExpression?: string;
 }): {
   wrappedContent: string;
   hasContextProviders: boolean;
@@ -6128,7 +6285,7 @@ ${wrappedContent}
       </${renderContext.datePickerProviderResolvedImports.providerLocalName}>`;
   }
   if (formContextFileSpec) {
-    wrappedContent = `      <${formContextFileSpec.providerName}>
+    wrappedContent = `      <${formContextFileSpec.providerName}${formContextProviderPropsExpression ? ` ${formContextProviderPropsExpression}` : ""}>
 ${wrappedContent}
       </${formContextFileSpec.providerName}>`;
   }
@@ -6490,6 +6647,10 @@ const buildStatefulScenarioModule = ({
   filePath: string;
   screen: ScreenIR;
 }): StatefulScenarioModule => {
+  const variantFieldEvidenceByFieldKey = collectVariantFieldEvidenceByContentScreen({
+    family: input.family,
+    contentScreenId: screen.id
+  });
   const scenarioScreen =
     input.appShellComponentName && screen.appShell
       ? {
@@ -6501,13 +6662,18 @@ const buildStatefulScenarioModule = ({
     ...input,
     screen: scenarioScreen,
     componentNameOverride: componentName,
-    filePathOverride: filePath,
-    enablePatternExtraction: false
+    filePathOverride: filePath
   });
   const renderState = buildFallbackRenderState({ prepared });
+  const screenLevelErrorEvidenceBlock = buildScreenLevelErrorEvidenceBlock({
+    context: renderState.renderContext,
+    indent: "      "
+  });
   const dependencies = assembleFallbackDependencies({
     prepared,
-    renderState
+    renderState,
+    variantFieldEvidenceByFieldKey,
+    initialVisualErrorsOverrideExpression: "initialVisualErrorsOverride"
   });
   const {
     patternContextFileSpec,
@@ -6518,41 +6684,49 @@ const buildStatefulScenarioModule = ({
     containerFormProps
   } = dependencies;
   const { renderContext, rendered, contentContainerSx } = renderState;
+  const propsName = `${componentName}Props`;
   const bodyFunctionName = `${componentName}Body`;
-  const bodyFunctionSource = `function ${bodyFunctionName}() {
+  const bodyFunctionSource = `interface ${propsName} {
+  initialVisualErrorsOverride?: Record<string, string>;
+  screenLevelErrorEvidence?: ReadonlyArray<{
+    message: string;
+    severity: "error";
+    sourceNodeId?: string;
+  }>;
+}
+
+function ${bodyFunctionName}({ initialVisualErrorsOverride, screenLevelErrorEvidence }: Readonly<${propsName}>) {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
     <Container id="main-content" maxWidth={false} disableGutters role="main"${containerFormProps} sx={{ ${contentContainerSx} }}>
+${screenLevelErrorEvidenceBlock}
 ${rendered || EMPTY_SCREEN_PLACEHOLDER}
     </Container>
   );
 }`;
   const { wrappedContent: wrappedScenarioContent, hasContextProviders } = wrapContentWithProviders({
-    baseContent: `      <${bodyFunctionName} />`,
+    baseContent: `      <${bodyFunctionName}
+        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
+      />`,
     patternContextFileSpec,
     formContextFileSpec,
-    renderContext
+    renderContext,
+    formContextProviderPropsExpression: "initialVisualErrorsOverride={props.initialVisualErrorsOverride}"
   });
-  const source = hasContextProviders
-    ? `${patternContextInitialStateDeclaration}${bodyFunctionSource}
+  const componentRenderSource = hasContextProviders
+    ? wrappedScenarioContent
+    : `      <${bodyFunctionName}
+        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
+      />`;
+  const source = `${hasContextProviders ? patternContextInitialStateDeclaration : ""}${bodyFunctionSource}
 
-function ${componentName}() {
+function ${componentName}(props: Readonly<${propsName}>) {
   return (
-${wrappedScenarioContent}
-  );
-}`
-    : `${bodyFunctionSource}
-
-function ${componentName}() {
-${[navigationHookBlock, stateBlock]
-  .filter((chunk) => chunk.length > 0)
-  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
-  .join("")}  return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main"${containerFormProps} sx={{ ${contentContainerSx} }}>
-${rendered || EMPTY_SCREEN_PLACEHOLDER}
-    </Container>
+${componentRenderSource}
   );
 }`;
 
@@ -6703,17 +6877,36 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
     iconWarnings.push(...(scenarioModule.renderState.renderContext.iconWarnings ?? []));
     accessibilityWarnings.push(...scenarioModule.renderState.renderContext.accessibilityWarnings);
     componentFiles.push(...scenarioModule.prepared.extractionPlan.componentFiles);
-    contextFiles.push(...scenarioModule.prepared.extractionPlan.contextFiles);
+    contextFiles.push(
+      ...scenarioModule.prepared.extractionPlan.contextFiles,
+      ...(scenarioModule.dependencies.formContextFileSpec ? [scenarioModule.dependencies.formContextFileSpec.file] : []),
+      ...(scenarioModule.dependencies.formContextFileSpecs
+        ? scenarioModule.dependencies.formContextFileSpecs.map((spec) => spec.file)
+        : [])
+    );
   }
 
   const scenarioOrderLiteral = JSON.stringify(input.family.memberScreenIds);
   const scenarioConfigLiteral = JSON.stringify(
-    input.family.scenarios.reduce<Record<string, { contentScreenId: string; initialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"]; shellTextOverrides?: Record<string, string> }>>(
+    input.family.scenarios.reduce<Record<string, {
+      contentScreenId: string;
+      initialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"];
+      shellTextOverrides?: Record<string, string>;
+      initialVisualErrorsOverride?: Record<string, string>;
+      screenLevelErrorEvidence?: ScreenVariantFamilyIR["scenarios"][number]["screenLevelErrorEvidence"];
+    }>>(
       (result, scenario) => {
+        const initialVisualErrorsOverride = Object.fromEntries(
+          Object.entries(scenario.fieldErrorEvidenceByFieldKey ?? {})
+            .filter(([, evidence]) => evidence.visualError && evidence.message.trim().length > 0)
+            .map(([fieldKey, evidence]) => [fieldKey, evidence.message] as const)
+        );
         result[scenario.screenId] = {
           contentScreenId: scenario.contentScreenId,
           initialState: scenario.initialState,
-          ...(scenario.shellTextOverrides ? { shellTextOverrides: scenario.shellTextOverrides } : {})
+          ...(scenario.shellTextOverrides ? { shellTextOverrides: scenario.shellTextOverrides } : {}),
+          ...(Object.keys(initialVisualErrorsOverride).length > 0 ? { initialVisualErrorsOverride } : {}),
+          ...(scenario.screenLevelErrorEvidence ? { screenLevelErrorEvidence: scenario.screenLevelErrorEvidence } : {})
         };
         return result;
       },
@@ -6729,7 +6922,12 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
         return "";
       }
       return `    case ${literal(scenario.screenId)}:
-      return <${scenarioModule.componentFunctionName} />;`;
+      return (
+        <${scenarioModule.componentFunctionName}
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );`;
     })
     .filter((chunk) => chunk.length > 0)
     .join("\n");
@@ -6800,11 +6998,19 @@ const resolveInitialVariantId = ({
 
 ${scenarioSources.join("\n\n")}
 
-function renderVariantContent(variantId: string) {
+function renderVariantContent(
+  variantId: string,
+  scenario: (typeof variantScenarioConfig)[keyof typeof variantScenarioConfig]
+) {
   switch (variantId) {
 ${contentSwitchCases}
     default:
-      return <${defaultScenarioModule.componentFunctionName} />;
+      return (
+        <${defaultScenarioModule.componentFunctionName}
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
   }
 }
 
@@ -6812,7 +7018,7 @@ export default function ${componentName}Screen(props: Readonly<${componentName}S
   const resolvedVariantId = resolveInitialVariantId(props);
   const resolvedScenario = variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??
     variantScenarioConfig[${literal(defaultVariantId)} as keyof typeof variantScenarioConfig];
-  const screenContent = renderVariantContent(resolvedVariantId);
+  const screenContent = renderVariantContent(resolvedVariantId, resolvedScenario);
   return (
 ${input.appShellComponentName ? `    <${input.appShellComponentName} textOverrides={resolvedScenario.shellTextOverrides}>
       {screenContent}

@@ -301,6 +301,32 @@ test("resolveComponentApiContract marks children not_used for never-children sur
   assert.equal(result.resolvedProps.children.policy, "not_used");
 });
 
+test("resolveComponentApiContract resolves Alert family with severity, sx, and children support", () => {
+  const result = resolveComponentApiContract({
+    figmaFamily: createFigmaFamily({
+      familyName: "Alert",
+      variantProperties: [
+        { property: "severity", values: ["error", "warning"] },
+        { property: "sx", values: ["{}"] }
+      ]
+    }),
+    libraryResolution: {
+      status: "resolved_import",
+      componentKey: "Alert",
+      import: createResolvedImport()
+    },
+    storybookFamily: createStorybookFamily({
+      propKeys: ["severity", "sx", "children"]
+    })
+  });
+
+  assert.equal(result.resolvedApi.status, "resolved");
+  assert.equal(result.resolvedApi.componentKey, "Alert");
+  assert.equal(result.resolvedApi.children.policy, "supported");
+  assert.ok(result.resolvedApi.allowedProps.some((prop) => prop.name === "severity"));
+  assert.ok(result.resolvedApi.allowedProps.some((prop) => prop.name === "sx"));
+});
+
 test("resolveComponentApiContract handles slotProps support and unsupported diagnostics", () => {
   const result = resolveComponentApiContract({
     figmaFamily: createFigmaFamily({
@@ -457,7 +483,7 @@ test("resolveComponentApiContract normalizes Figma 'type' variant key to 'varian
 });
 
 test("resolveComponentApiContract resolves all dominant board families", () => {
-  const families = ["TextField", "Select", "DatePicker", "Accordion", "Button", "Icon", "Typography"] as const;
+  const families = ["Alert", "TextField", "Select", "DatePicker", "Accordion", "Button", "Icon", "Typography"] as const;
 
   for (const family of families) {
     const result = resolveComponentApiContract({

@@ -48,6 +48,33 @@ const createContainerNode = ({ id, name, children = [] }: { id: string; name: st
   children
 });
 
+const createInputNode = ({
+  id,
+  name,
+  x,
+  y,
+  strokeColor,
+  children = []
+}: {
+  id: string;
+  name: string;
+  x?: number;
+  y?: number;
+  strokeColor?: string;
+  children?: ScreenElementIR[];
+}): ScreenElementIR => ({
+  id,
+  name,
+  nodeType: "FRAME",
+  type: "input",
+  x,
+  y,
+  width: 320,
+  height: 56,
+  ...(strokeColor ? { strokeColor } : {}),
+  children
+});
+
 const createIr = ({ screens }: { screens: ScreenIR[] }): DesignIR => ({
   sourceName: "Variant Screen Demo",
   screens,
@@ -166,8 +193,298 @@ test("applyScreenVariantFamiliesToDesignIr derives the ID-003 stateful family fr
 
   const errorScenario = family.scenarios.find((scenario) => scenario.screenId === "1:68884");
   assert.ok(errorScenario);
-  assert.equal(errorScenario.contentScreenId, "1:68884");
+  assert.equal(errorScenario.contentScreenId, "1:66050");
   assert.equal(errorScenario.initialState.validationState, "error");
+  assert.deepEqual(errorScenario.screenLevelErrorEvidence, [
+    {
+      message: "Fehler bei der Validierung",
+      severity: "error",
+      sourceNodeId: "1:68884-error"
+    }
+  ]);
+});
+
+test("applyScreenVariantFamiliesToDesignIr collapses validation-only field errors and attaches them to a single field", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-default",
+        name: "Default",
+        children: [
+          createContainerNode({
+            id: "form-root-default",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-default",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-default",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-default",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#9ca3af"
+                      }
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      }),
+      createScreen({
+        id: "frame-error",
+        name: "Error",
+        children: [
+          createContainerNode({
+            id: "form-root-error",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-error",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-error",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-error",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  }),
+                  createTextNode({
+                    id: "email-error-text",
+                    name: "Error Text",
+                    text: "Please enter a valid email address."
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "validation-family",
+        frameIds: ["frame-default", "frame-error"],
+        frameNames: ["Default", "Error"],
+        canonicalFrameId: "frame-default",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+  const scenario = result.screenVariantFamilies?.[0]?.scenarios.find((entry) => entry.screenId === "frame-error");
+  assert.ok(scenario);
+  assert.equal(scenario.contentScreenId, "frame-default");
+  assert.deepEqual(scenario.fieldErrorEvidenceByFieldKey, {
+    email_field_email_field_default: {
+      message: "Please enter a valid email address.",
+      visualError: true,
+      sourceNodeId: "email-error-text"
+    }
+  });
+  assert.equal(scenario.screenLevelErrorEvidence, undefined);
+});
+
+test("applyScreenVariantFamiliesToDesignIr keeps ambiguous validation copy at screen level", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "ambiguous-default",
+        name: "Default",
+        children: [
+          createContainerNode({
+            id: "form-root-default",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-default",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-default",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-default",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#9ca3af"
+                      }
+                    ]
+                  })
+                ]
+              }),
+              createInputNode({
+                id: "password-field-default",
+                name: "Password Field",
+                x: 0,
+                y: 120,
+                children: [
+                  createContainerNode({
+                    id: "password-outline-default",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "password-border-default",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#9ca3af"
+                      }
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      }),
+      createScreen({
+        id: "ambiguous-error",
+        name: "Error",
+        children: [
+          createContainerNode({
+            id: "form-root-error",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-error",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-error",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-error",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  })
+                ]
+              }),
+              createInputNode({
+                id: "password-field-error",
+                name: "Password Field",
+                x: 0,
+                y: 120,
+                children: [
+                  createContainerNode({
+                    id: "password-outline-error",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "password-border-error",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  })
+                ]
+              }),
+              {
+                id: "form-error-text",
+                name: "Error Summary",
+                nodeType: "TEXT",
+                type: "text",
+                text: "Please review the highlighted fields.",
+                x: 0,
+                y: 72
+              }
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "validation-family",
+        frameIds: ["ambiguous-default", "ambiguous-error"],
+        frameNames: ["Default", "Error"],
+        canonicalFrameId: "ambiguous-default",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+  const scenario = result.screenVariantFamilies?.[0]?.scenarios.find((entry) => entry.screenId === "ambiguous-error");
+  assert.ok(scenario);
+  assert.equal(scenario.contentScreenId, "ambiguous-default");
+  assert.deepEqual(scenario.fieldErrorEvidenceByFieldKey, {
+    email_field_email_field_default: {
+      message: "",
+      visualError: true,
+      sourceNodeId: "email-field-error"
+    },
+    password_field_password_field_default: {
+      message: "",
+      visualError: true,
+      sourceNodeId: "password-field-error"
+    }
+  });
+  assert.deepEqual(scenario.screenLevelErrorEvidence, [
+    {
+      message: "Please review the highlighted fields.",
+      severity: "error",
+      sourceNodeId: "form-error-text"
+    }
+  ]);
 });
 
 test("applyScreenVariantFamiliesToDesignIr falls back when shell matching is ambiguous", () => {

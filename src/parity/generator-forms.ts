@@ -91,6 +91,7 @@ export interface InteractiveFieldModel {
   required?: boolean | undefined;
   validationType?: ValidationFieldType | undefined;
   validationMessage?: string | undefined;
+  validationMessageSource?: "explicit" | "inferred" | undefined;
   hasVisualErrorExample?: boolean | undefined;
   validationRules?: ValidationRule[] | undefined;
   suffixText?: string | undefined;
@@ -382,6 +383,19 @@ const VALIDATION_ONLY_TYPE_RULES: Array<{
     placeholderPatterns: [/^\d{4}\s\d{4}\s\d{4}\s\d{4}$/]
   }
 ];
+
+const EXPLICIT_VALIDATION_FIELD_TYPES = new Set<ValidationFieldType>([
+  "email",
+  "password",
+  "tel",
+  "number",
+  "date",
+  "url",
+  "search",
+  "iban",
+  "plz",
+  "credit_card"
+]);
 
 const INPUT_PLACEHOLDER_TECHNICAL_VALUES = new Set([
   "swap component",
@@ -741,6 +755,16 @@ const inferTextFieldAutoComplete = (inputType: TextFieldInputType | undefined): 
   }
 };
 
+const resolveExplicitValidationType = (value: string | undefined): ValidationFieldType | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return EXPLICIT_VALIDATION_FIELD_TYPES.has(normalized as ValidationFieldType)
+    ? (normalized as ValidationFieldType)
+    : undefined;
+};
+
 export const inferRequiredFromLabel = (label: string): boolean => {
   return /(?:^|\s)\*(?:\s|$)|\*\s*$/.test(label);
 };
@@ -913,8 +937,10 @@ export const registerInteractiveField = ({
   const inputType = isSelect ? undefined : inferTextFieldType(semanticHints);
   const autoComplete = isSelect ? undefined : inferTextFieldAutoComplete(inputType);
   const validationOnlyType = isSelect ? undefined : inferValidationOnlyType({ hints: semanticHints, placeholder });
-  const validationType = isSelect ? undefined : (validationOnlyType ?? inputType);
-  const validationMessage = inferTextFieldValidationMessage(validationType);
+  const explicitValidationType = isSelect ? undefined : resolveExplicitValidationType(element.validationType);
+  const validationType = isSelect ? undefined : (explicitValidationType ?? validationOnlyType ?? inputType);
+  const explicitValidationMessage = element.validationMessage?.trim();
+  const validationMessage = explicitValidationMessage || inferTextFieldValidationMessage(validationType);
   const hasVisualErrorExample = inferVisualErrorFromOutline(element);
 
   const created: InteractiveFieldModel = {
@@ -929,6 +955,7 @@ export const registerInteractiveField = ({
     ...(required ? { required } : {}),
     ...(validationType ? { validationType } : {}),
     ...(validationMessage ? { validationMessage } : {}),
+    ...(validationMessage ? { validationMessageSource: explicitValidationMessage ? "explicit" : "inferred" } : {}),
     ...(hasVisualErrorExample ? { hasVisualErrorExample } : {}),
     suffixText: isSelect ? undefined : model.suffixText,
     labelFontFamily: normalizeFontFamily(model.labelNode?.fontFamily),

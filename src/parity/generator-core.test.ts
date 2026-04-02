@@ -4342,6 +4342,175 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
   assert.ok(appContent.includes('<Route path="/" element={<Navigate to="/pricing_netto" replace />} />'));
 });
 
+test("generateArtifacts keeps RHF/Zod generation and scenario-specific validation overlays for stateful error variants", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-validation-family-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "loan-validation-default",
+      name: "Loan Validation",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "loan-validation-title",
+          name: "Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Loan Validation"
+        },
+        {
+          id: "email-field",
+          name: "Email Field",
+          nodeType: "FRAME",
+          type: "input" as const,
+          width: 320,
+          height: 56,
+          children: [
+            {
+              id: "email-label",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Email",
+              y: 0
+            },
+            {
+              id: "email-value",
+              name: "Value",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "name@example.com",
+              y: 28
+            }
+          ]
+        },
+        {
+          id: "loan-validation-submit",
+          name: "Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Continue"
+        }
+      ]
+    },
+    {
+      id: "loan-validation-error",
+      name: "Loan Validation Error",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "loan-validation-title-error",
+          name: "Title",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Loan Validation"
+        },
+        {
+          id: "email-field-error",
+          name: "Email Field",
+          nodeType: "FRAME",
+          type: "input" as const,
+          width: 320,
+          height: 56,
+          children: [
+            {
+              id: "email-label-error",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Email",
+              y: 0
+            },
+            {
+              id: "email-value-error",
+              name: "Value",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "name@example.com",
+              y: 28
+            }
+          ]
+        },
+        {
+          id: "loan-validation-submit-error",
+          name: "Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Continue"
+        }
+      ]
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "loan-validation-family",
+      canonicalScreenId: "loan-validation-default",
+      memberScreenIds: ["loan-validation-default", "loan-validation-error"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "loan-validation-default",
+          contentScreenId: "loan-validation-default",
+          initialState: {
+            validationState: "default"
+          }
+        },
+        {
+          screenId: "loan-validation-error",
+          contentScreenId: "loan-validation-default",
+          initialState: {
+            validationState: "error"
+          },
+          fieldErrorEvidenceByFieldKey: {
+            email_field_email_field: {
+              message: "Please enter a valid email address.",
+              visualError: true,
+              sourceNodeId: "email-field-error"
+            }
+          },
+          screenLevelErrorEvidence: [
+            {
+              message: "Please review the highlighted fields.",
+              severity: "error",
+              sourceNodeId: "error-summary"
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Loan Validation")), true);
+  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Loan Validation Error")), false);
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Validation")), "utf8");
+  assert.ok(screenContent.includes("initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"));
+  assert.ok(screenContent.includes("screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}"));
+  assert.ok(screenContent.includes("screenLevelErrorEvidence?.map((screenLevelError) => ("));
+  assert.ok(screenContent.includes("Please enter a valid email address."));
+  assert.ok(screenContent.includes("Please review the highlighted fields."));
+
+  const contextPath = result.generatedPaths.find((generatedPath) =>
+    generatedPath.includes("LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx")
+  );
+  assert.ok(contextPath, `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`);
+  const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
+  assert.ok(contextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
+  assert.ok(contextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;"));
+});
+
 test("generateArtifacts applies customer profile imports before design-system mappings for AppShell files", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-customer-profile-"));
   const designSystemFilePath = path.join(projectDir, "design-system.json");
@@ -5475,6 +5644,8 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes('import { z } from "zod";'));
   assert.ok(formContextContent.includes("export type LoanFormFormInput = z.input<typeof formSchema>;"));
   assert.ok(formContextContent.includes("export type LoanFormFormOutput = z.output<typeof formSchema>;"));
+  assert.ok(formContextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
+  assert.ok(formContextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;"));
   assert.ok(
     formContextContent.includes(
       "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<LoanFormFormInput>({"
@@ -6587,10 +6758,11 @@ test("deterministic screen rendering emits form validation state scaffolding for
   const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('component="form" onSubmit={handleSubmit} noValidate'));
   assert.ok(content.includes("const initialVisualErrors: Record<string, string> = "));
+  assert.ok(content.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;"));
   assert.ok(content.includes("const requiredFields: Record<string, boolean> = "));
   assert.ok(content.includes("const fieldValidationTypes: Record<string, string> = "));
   assert.ok(content.includes("const fieldValidationMessages: Record<string, string> = "));
-  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"));
+  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);"));
   assert.ok(content.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"));
   assert.ok(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
   assert.ok(content.includes("const validateForm = (values: Record<string, string>): Record<string, string> => {"));
@@ -6718,6 +6890,8 @@ test("deterministic screen rendering seeds visual error examples from red outlin
 
   const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
   assert.ok(content.includes('"email_input_visual_error_field": "Please enter a valid email address."'));
+  assert.ok(content.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;"));
+  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);"));
   const block = findRenderedTextFieldBlock({ content, label: "Email" });
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("helperText={"));
@@ -7113,7 +7287,7 @@ test("deterministic screen rendering honors explicit board component semantics f
   assert.ok(content.includes("<Divider "));
   assert.ok(content.includes('aria-hidden="true"'));
   assert.ok(content.includes("<Alert "));
-  assert.ok(content.includes('severity="info"'));
+  assert.ok(content.includes('severity={"info"}'));
   assert.ok(content.includes("<Stack "));
   assert.ok(content.includes('direction="column"'));
   assert.equal(content.includes('<Paper data-ir-id="board-button"'), false);

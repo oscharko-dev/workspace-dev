@@ -21,6 +21,7 @@ export const buildInlineLegacyFormStateBlock = ({
   hasSelectField,
   selectOptionsMap,
   initialVisualErrorsMap,
+  initialVisualErrorsOverrideExpression,
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
@@ -30,6 +31,7 @@ export const buildInlineLegacyFormStateBlock = ({
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
   initialVisualErrorsMap: Record<string, string>;
+  initialVisualErrorsOverrideExpression?: string;
   requiredFieldMap: Record<string, boolean>;
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
@@ -43,12 +45,13 @@ export const buildInlineLegacyFormStateBlock = ({
     ? `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = ${JSON.stringify(validationRulesMap, null, 2)};\n`
     : `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = {};\n`;
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
 const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
 const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
 const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};${validationRulesDeclaration}
 
 const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
-const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);
 const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
 const parseLocalizedNumber = (rawValue: string): number | undefined => {
@@ -319,16 +322,18 @@ const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(und
 
 export interface ${providerPropsTypeName} {
   children: ReactNode;
+  initialVisualErrorsOverride?: Record<string, string>;
 }
 
-export function ${providerName}({ children }: ${providerPropsTypeName}) {
+export function ${providerName}({ children, initialVisualErrorsOverride }: ${providerPropsTypeName}) {
   const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
   const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
   const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
   const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
   const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
   const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const parseLocalizedNumber = (rawValue: string): number | undefined => {
@@ -492,7 +497,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
   return (
     <${contextVarName}.Provider
       value={{
-        initialVisualErrors,
+        initialVisualErrors: resolvedInitialVisualErrors,
         selectOptions,
         formValues,
         fieldErrors,
@@ -615,6 +620,7 @@ export const buildInlineReactHookFormStateBlock = ({
   hasSelectField,
   selectOptionsMap,
   initialVisualErrorsMap,
+  initialVisualErrorsOverrideExpression,
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
@@ -626,6 +632,7 @@ export const buildInlineReactHookFormStateBlock = ({
   hasSelectField: boolean;
   selectOptionsMap: Record<string, string[]>;
   initialVisualErrorsMap: Record<string, string>;
+  initialVisualErrorsOverrideExpression?: string;
   requiredFieldMap: Record<string, boolean>;
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
@@ -662,6 +669,7 @@ export const buildInlineReactHookFormStateBlock = ({
 `
     : "";
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
 const fieldSchemaSpecs = ${fieldSchemaSpecsLiteral} as const;
 
 const parseLocalizedNumber = (rawValue: string): number | undefined => {
@@ -962,12 +970,12 @@ const resolveFieldErrorMessage = ({
   isTouched: boolean;
   isSubmitted: boolean;
   fieldError: string | undefined;
-}): string => {
-  if (!isTouched && !isSubmitted) {
-    return initialVisualErrors[fieldKey] ?? "";
-  }
-  return fieldError ?? "";
-};`;
+  }): string => {
+    if (!isTouched && !isSubmitted) {
+      return resolvedInitialVisualErrors[fieldKey] ?? "";
+    }
+    return fieldError ?? "";
+  };`;
 };
 
 export const buildReactHookFormContextFile = ({
@@ -1327,10 +1335,12 @@ const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(und
 
 export interface ${providerPropsTypeName} {
   children: ReactNode;
+  initialVisualErrorsOverride?: Record<string, string>;
 }
 
-export function ${providerName}({ children }: ${providerPropsTypeName}) {
+export function ${providerName}({ children, initialVisualErrorsOverride }: ${providerPropsTypeName}) {
   const defaultValues: ${formInputTypeName} = ${JSON.stringify(initialValues, null, 2)};
+  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
@@ -1355,7 +1365,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
     fieldError: string | undefined;
   }): string => {
     if (!isTouched && !isSubmitted) {
-      return initialVisualErrors[fieldKey] ?? "";
+      return resolvedInitialVisualErrors[fieldKey] ?? "";
     }
     return fieldError ?? "";
   };
@@ -1363,7 +1373,7 @@ export function ${providerName}({ children }: ${providerPropsTypeName}) {
   return (
     <${contextVarName}.Provider
       value={{
-        initialVisualErrors,
+        initialVisualErrors: resolvedInitialVisualErrors,
         selectOptions,
         control,
         handleSubmit,

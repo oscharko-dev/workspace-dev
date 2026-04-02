@@ -1,18 +1,45 @@
 import type { FigmaAnalysis, FigmaAnalysisFrameVariantGroup } from "./figma-analysis.js";
+import {
+  firstText,
+  isLikelyErrorRedColor,
+  toRgbaColor
+} from "./templates/utility-functions.js";
+import { isTextElement } from "./types-ir.js";
 import type {
   AppShellIR,
   DesignIR,
   ScreenElementIR,
   ScreenIR,
   ScreenVariantFamilyAxis,
+  ScreenVariantFieldErrorEvidenceIR,
   ScreenVariantFamilyIR,
   ScreenVariantFamilyInitialStateIR,
-  ScreenVariantFamilyScenarioIR
+  ScreenVariantFamilyScenarioIR,
+  ScreenVariantScreenLevelErrorEvidenceIR
 } from "./types-ir.js";
 
 interface IndexedNodeRecord {
   element: ScreenElementIR;
   path: string;
+}
+
+interface ValidationFieldRecord {
+  canonicalElement: ScreenElementIR;
+  memberElement: ScreenElementIR;
+  path: string;
+  fieldKey: string;
+}
+
+interface ValidationMessageCandidate {
+  element: ScreenElementIR;
+  path: string;
+  message: string;
+}
+
+interface ValidationOnlyDiffEvidence {
+  isValidationOnly: boolean;
+  fieldErrorEvidenceByFieldKey?: Record<string, ScreenVariantFieldErrorEvidenceIR>;
+  screenLevelErrorEvidence?: ScreenVariantScreenLevelErrorEvidenceIR[];
 }
 
 const ACTIONABLE_AXES: readonly ScreenVariantFamilyAxis[] = [
@@ -211,6 +238,148 @@ const buildIndexedNodeMap = ({ roots, rootPath }: { roots: readonly ScreenElemen
   return new Map(buildIndexedNodeRecords({ roots, rootPath }).map((record) => [record.path, record.element] as const));
 };
 
+const toParentPath = (path: string): string => {
+  const separatorIndex = path.lastIndexOf("/");
+  return separatorIndex <= 0 ? "" : path.slice(0, separatorIndex);
+};
+
+const toPathDepth = (path: string): number => path.split("/").filter((segment) => segment.length > 0).length;
+
+const sortRecordEntries = (value: Record<string, string> | undefined): Record<string, string> | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    Object.entries(value).sort((left, right) => left[0].localeCompare(right[0]))
+  );
+};
+
+const localStructureFingerprint = (element: ScreenElementIR): string => {
+  return JSON.stringify({
+    name: element.name,
+    nodeType: element.nodeType,
+    type: element.type,
+    semanticType: element.semanticType,
+    text: isTextElement(element) ? element.text : element.text,
+    layoutMode: element.layoutMode,
+    gap: element.gap,
+    padding: element.padding,
+    variantMapping: element.variantMapping
+      ? {
+          properties: sortRecordEntries(element.variantMapping.properties),
+          muiProps: element.variantMapping.muiProps,
+          state: element.variantMapping.state
+        }
+      : undefined
+  });
+};
+
+const localStyleFingerprint = (element: ScreenElementIR): string => {
+  return JSON.stringify({
+    fillColor: element.fillColor,
+    fillGradient: element.fillGradient,
+    opacity: element.opacity,
+    elevation: element.elevation,
+    insetShadow: element.insetShadow,
+    strokeColor: element.strokeColor,
+    strokeWidth: element.strokeWidth,
+    cornerRadius: element.cornerRadius,
+    fontSize: element.fontSize,
+    fontWeight: element.fontWeight,
+    fontFamily: element.fontFamily,
+    lineHeight: element.lineHeight,
+    letterSpacing: element.letterSpacing,
+    textAlign: element.textAlign
+  });
+};
+
+const isFieldElement = (element: ScreenElementIR): boolean => {
+  return element.type === "input" || element.type === "select";
+};
+
+const toStateKey = (element: ScreenElementIR): string => {
+  const sanitized = element.name.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase();
+  return `${sanitized}_${element.id.replace(/[^a-zA-Z0-9]+/g, "_")}`;
+};
+
+const findFirstByNormalizedName = (element: ScreenElementIR, target: string): ScreenElementIR | undefined => {
+  const stack = [element];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (normalizeNodeName(current.name).includes(target)) {
+      return current;
+    }
+    for (let index = (current.children?.length ?? 0) - 1; index >= 0; index -= 1) {
+      const child = current.children?.[index];
+      if (child) {
+        stack.push(child);
+      }
+    }
+  }
+  return undefined;
+};
+
+const inferVisualErrorFromOutline = (element: ScreenElementIR): boolean => {
+  const outlineContainer = findFirstByNormalizedName(element, "muioutlinedinputroot") ?? element;
+  const outlinedBorderNode = findFirstByNormalizedName(element, "muinotchedoutlined");
+  const outlineColor = toRgbaColor(outlinedBorderNode?.strokeColor ?? outlineContainer.strokeColor ?? element.strokeColor);
+  return isLikelyErrorRedColor(outlineColor);
+};
+
+const resolveNodeMessageText = (element: ScreenElementIR): string | undefined => {
+  if (isTextElement(element)) {
+    const message = element.text.trim();
+    return message.length > 0 ? message : undefined;
+  }
+  const message = firstText(element)?.trim();
+  return message && message.length > 0 ? message : undefined;
+};
+
+const isValidationMessageCandidate = (element: ScreenElementIR): boolean => {
+  if (isTextElement(element)) {
+    return resolveNodeMessageText(element) !== undefined;
+  }
+  if (element.type === "alert" || element.type === "snackbar") {
+    return resolveNodeMessageText(element) !== undefined;
+  }
+  const normalizedName = normalizeNodeName(element.name);
+  return (
+    normalizedName.includes("error") ||
+    normalizedName.includes("alert") ||
+    normalizedName.includes("warning")
+  ) && resolveNodeMessageText(element) !== undefined;
+};
+
+const sharesFieldContainer = ({ fieldPath, messagePath }: { fieldPath: string; messagePath: string }): boolean => {
+  const fieldParentPath = toParentPath(fieldPath);
+  const messageParentPath = toParentPath(messagePath);
+  if (fieldParentPath.length > 0 && fieldParentPath === messageParentPath) {
+    return true;
+  }
+  const fieldGrandParentPath = toParentPath(fieldParentPath);
+  const messageGrandParentPath = toParentPath(messageParentPath);
+  return fieldGrandParentPath.length > 0 && fieldGrandParentPath === messageGrandParentPath;
+};
+
+const resolveInitialStateSignature = ({
+  initialState
+}: {
+  initialState: ScreenVariantFamilyInitialStateIR;
+}): string => {
+  return JSON.stringify({
+    pricingMode: initialState.pricingMode,
+    expansionState: initialState.expansionState,
+    accordionStateByKey: initialState.accordionStateByKey
+      ? Object.fromEntries(
+          Object.entries(initialState.accordionStateByKey).sort((left, right) => left[0].localeCompare(right[0]))
+        )
+      : undefined
+  });
+};
+
 const screenContentRoots = ({ screen, appShell }: { screen: ScreenIR; appShell: AppShellIR | undefined }): ScreenElementIR[] => {
   if (!screen.appShell || !appShell) {
     return [...screen.children];
@@ -268,6 +437,219 @@ const contentScreensAreEquivalent = ({
   return JSON.stringify(canonicalFingerprint) === JSON.stringify(memberFingerprint);
 };
 
+const buildValidationFieldRecords = ({
+  canonicalRoots,
+  memberRoots
+}: {
+  canonicalRoots: readonly ScreenElementIR[];
+  memberRoots: readonly ScreenElementIR[];
+}): ValidationFieldRecord[] => {
+  const canonicalRecords = buildIndexedNodeRecords({ roots: canonicalRoots, rootPath: "content" });
+  const memberByPath = new Map(buildIndexedNodeRecords({ roots: memberRoots, rootPath: "content" }).map((record) => [record.path, record] as const));
+  return canonicalRecords
+    .filter((record) => isFieldElement(record.element))
+    .map((record) => {
+      const memberRecord = memberByPath.get(record.path);
+      if (!memberRecord || !isFieldElement(memberRecord.element)) {
+        return undefined;
+      }
+      return {
+        canonicalElement: record.element,
+        memberElement: memberRecord.element,
+        path: record.path,
+        fieldKey: toStateKey(record.element)
+      } satisfies ValidationFieldRecord;
+    })
+    .filter((record): record is ValidationFieldRecord => record !== undefined);
+};
+
+const resolveFieldMessageAssociation = ({
+  candidate,
+  changedFields
+}: {
+  candidate: ValidationMessageCandidate;
+  changedFields: readonly ValidationFieldRecord[];
+}): ValidationFieldRecord | undefined => {
+  if (changedFields.length === 0) {
+    return undefined;
+  }
+  const scopedFields = changedFields.filter((field) => sharesFieldContainer({ fieldPath: field.path, messagePath: candidate.path }));
+  const candidateFields = scopedFields.length > 0 ? scopedFields : changedFields;
+  const ranked = candidateFields
+    .map((field) => ({
+      field,
+      distance: Math.abs((candidate.element.y ?? 0) - (field.memberElement.y ?? field.canonicalElement.y ?? 0)),
+      fieldY: field.memberElement.y ?? field.canonicalElement.y ?? 0,
+      pathDepth: toPathDepth(field.path)
+    }))
+    .sort((left, right) => {
+      if (left.distance !== right.distance) {
+        return left.distance - right.distance;
+      }
+      if (left.pathDepth !== right.pathDepth) {
+        return right.pathDepth - left.pathDepth;
+      }
+      return left.field.path.localeCompare(right.field.path);
+    });
+  const nearest = ranked[0];
+  const runnerUp = ranked[1];
+  if (!nearest) {
+    return undefined;
+  }
+  const candidateY = candidate.element.y;
+  const fieldY = nearest.fieldY;
+  const fieldHeight = nearest.field.memberElement.height ?? nearest.field.canonicalElement.height ?? 0;
+  const isInlineRange =
+    candidateY === undefined ||
+    (candidateY >= fieldY - 24 && candidateY <= fieldY + fieldHeight + 160);
+  if (!isInlineRange) {
+    return undefined;
+  }
+  if (runnerUp && runnerUp.distance === nearest.distance) {
+    return undefined;
+  }
+  return nearest.field;
+};
+
+const extractValidationOnlyDiffEvidence = ({
+  canonicalRoots,
+  memberRoots
+}: {
+  canonicalRoots: readonly ScreenElementIR[];
+  memberRoots: readonly ScreenElementIR[];
+}): ValidationOnlyDiffEvidence => {
+  const canonicalRecords = buildIndexedNodeRecords({ roots: canonicalRoots, rootPath: "content" });
+  const memberRecords = buildIndexedNodeRecords({ roots: memberRoots, rootPath: "content" });
+  const canonicalByPath = new Map(canonicalRecords.map((record) => [record.path, record] as const));
+  const memberByPath = new Map(memberRecords.map((record) => [record.path, record] as const));
+  const canonicalPaths = new Set(canonicalByPath.keys());
+  const memberPaths = new Set(memberByPath.keys());
+  const changedFields = new Map<string, ValidationFieldRecord>();
+  const messageCandidates: ValidationMessageCandidate[] = [];
+
+  for (const record of buildValidationFieldRecords({ canonicalRoots, memberRoots })) {
+    if (!inferVisualErrorFromOutline(record.canonicalElement) && inferVisualErrorFromOutline(record.memberElement)) {
+      changedFields.set(record.fieldKey, record);
+    }
+  }
+  const changedFieldPaths = [...changedFields.values()].map((field) => field.path);
+
+  for (const path of [...canonicalPaths].sort((left, right) => left.localeCompare(right))) {
+    const canonicalRecord = canonicalByPath.get(path);
+    const memberRecord = memberByPath.get(path);
+    if (!canonicalRecord) {
+      continue;
+    }
+    if (!memberRecord) {
+      return {
+        isValidationOnly: false
+      };
+    }
+    const canonicalElement = canonicalRecord.element;
+    const memberElement = memberRecord.element;
+    if (localStructureFingerprint(canonicalElement) !== localStructureFingerprint(memberElement)) {
+      if (
+        isTextElement(canonicalElement) &&
+        isTextElement(memberElement) &&
+        canonicalElement.text.trim() !== memberElement.text.trim() &&
+        memberElement.text.trim().length > 0
+      ) {
+        messageCandidates.push({
+          element: memberElement,
+          path,
+          message: memberElement.text.trim()
+        });
+        continue;
+      }
+      return {
+        isValidationOnly: false
+      };
+    }
+    if (localStyleFingerprint(canonicalElement) !== localStyleFingerprint(memberElement)) {
+      const isChangedFieldSubtree = changedFieldPaths.some(
+        (fieldPath) => path === fieldPath || path.startsWith(`${fieldPath}/`)
+      );
+      if (!(isChangedFieldSubtree || (isFieldElement(canonicalElement) && isFieldElement(memberElement) && inferVisualErrorFromOutline(memberElement)))) {
+        return {
+          isValidationOnly: false
+        };
+      }
+    }
+  }
+
+  const topLevelAddedRecords = memberRecords
+    .filter((record) => !canonicalPaths.has(record.path))
+    .filter((record) => canonicalPaths.has(toParentPath(record.path)) || !memberPaths.has(toParentPath(record.path)))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  for (const record of topLevelAddedRecords) {
+    if (!isValidationMessageCandidate(record.element)) {
+      return {
+        isValidationOnly: false
+      };
+    }
+    const message = resolveNodeMessageText(record.element);
+    if (!message) {
+      return {
+        isValidationOnly: false
+      };
+    }
+    messageCandidates.push({
+      element: record.element,
+      path: record.path,
+      message
+    });
+  }
+
+  if (messageCandidates.length === 0 && changedFields.size === 0) {
+    return {
+      isValidationOnly: false
+    };
+  }
+
+  const fieldErrorEvidenceByFieldKey = new Map<string, ScreenVariantFieldErrorEvidenceIR>();
+  for (const [fieldKey, field] of changedFields.entries()) {
+    fieldErrorEvidenceByFieldKey.set(fieldKey, {
+      message: "",
+      visualError: true,
+      sourceNodeId: field.memberElement.id
+    });
+  }
+
+  const screenLevelErrorEvidence: ScreenVariantScreenLevelErrorEvidenceIR[] = [];
+  for (const candidate of messageCandidates.sort((left, right) => left.path.localeCompare(right.path))) {
+    const matchedField = resolveFieldMessageAssociation({
+      candidate,
+      changedFields: [...changedFields.values()]
+    });
+    if (matchedField) {
+      const existing = fieldErrorEvidenceByFieldKey.get(matchedField.fieldKey);
+      fieldErrorEvidenceByFieldKey.set(matchedField.fieldKey, {
+        message: existing?.message || candidate.message,
+        visualError: true,
+        sourceNodeId: candidate.element.id
+      });
+      continue;
+    }
+    screenLevelErrorEvidence.push({
+      message: candidate.message,
+      severity: "error",
+      sourceNodeId: candidate.element.id
+    });
+  }
+
+  return {
+    isValidationOnly: true,
+    ...(fieldErrorEvidenceByFieldKey.size > 0
+      ? {
+          fieldErrorEvidenceByFieldKey: Object.fromEntries(
+            [...fieldErrorEvidenceByFieldKey.entries()].sort((left, right) => left[0].localeCompare(right[0]))
+          )
+        }
+      : {}),
+    ...(screenLevelErrorEvidence.length > 0 ? { screenLevelErrorEvidence } : {})
+  };
+};
+
 const deriveShellTextOverrides = ({
   canonicalScreen,
   memberScreen,
@@ -322,6 +704,28 @@ const resolveFamilyAppShell = ({
   return ir.appShells?.find((candidate) => candidate.id === appShellId);
 };
 
+const resolveValidationBaselineScenario = ({
+  scenarios,
+  scenario
+}: {
+  scenarios: readonly ScreenVariantFamilyScenarioIR[];
+  scenario: ScreenVariantFamilyScenarioIR;
+}): ScreenVariantFamilyScenarioIR | undefined => {
+  const scenarioStateSignature = resolveInitialStateSignature({
+    initialState: scenario.initialState
+  });
+  const matchingScenario = scenarios.find(
+    (candidate) =>
+      candidate.screenId !== scenario.screenId &&
+      candidate.initialState.validationState !== "error" &&
+      resolveInitialStateSignature({ initialState: candidate.initialState }) === scenarioStateSignature
+  );
+  if (matchingScenario) {
+    return matchingScenario;
+  }
+  return scenarios.find((candidate) => candidate.initialState.validationState !== "error");
+};
+
 const deriveFamily = ({
   ir,
   group,
@@ -338,6 +742,7 @@ const deriveFamily = ({
   const appShell = resolveFamilyAppShell({ ir, canonicalScreen });
   const canonicalContentRoots = screenContentRoots({ screen: canonicalScreen, appShell });
   const scenarios: ScreenVariantFamilyScenarioIR[] = [];
+  const screenById = new Map(memberScreens.map((screen) => [screen.id, screen] as const));
 
   for (const memberScreenId of group.frameIds) {
     const memberScreen = memberScreens.find((candidate) => candidate.id === memberScreenId);
@@ -376,6 +781,40 @@ const deriveFamily = ({
       initialState,
       ...(shellTextOverrides && Object.keys(shellTextOverrides).length > 0 ? { shellTextOverrides } : {})
     });
+  }
+
+  for (const scenario of scenarios) {
+    if (scenario.initialState.validationState !== "error") {
+      continue;
+    }
+    const baselineScenario = resolveValidationBaselineScenario({
+      scenarios,
+      scenario
+    });
+    if (!baselineScenario) {
+      continue;
+    }
+    const baselineScreen = screenById.get(baselineScenario.screenId);
+    const memberScreen = screenById.get(scenario.screenId);
+    if (!baselineScreen || !memberScreen) {
+      continue;
+    }
+    const baselineContentRoots = screenContentRoots({ screen: baselineScreen, appShell });
+    const memberContentRoots = screenContentRoots({ screen: memberScreen, appShell });
+    const validationOnlyDiffEvidence = extractValidationOnlyDiffEvidence({
+      canonicalRoots: baselineContentRoots,
+      memberRoots: memberContentRoots
+    });
+    if (!validationOnlyDiffEvidence.isValidationOnly) {
+      continue;
+    }
+    scenario.contentScreenId = baselineScenario.contentScreenId;
+    if (validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey) {
+      scenario.fieldErrorEvidenceByFieldKey = validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey;
+    }
+    if (validationOnlyDiffEvidence.screenLevelErrorEvidence) {
+      scenario.screenLevelErrorEvidence = validationOnlyDiffEvidence.screenLevelErrorEvidence;
+    }
   }
 
   return {

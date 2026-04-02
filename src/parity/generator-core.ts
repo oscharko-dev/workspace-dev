@@ -812,6 +812,7 @@ const toThemeComponentDefaultsFromResolvedStorybookTheme = ({
 };
 
 const ISSUE_693_SPECIALIZED_COMPONENT_KEYS = [
+  "Alert",
   "DatePicker",
   "InputCurrency",
   "InputIBAN",

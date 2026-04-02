@@ -367,11 +367,25 @@ export interface ScreenVariantFamilyInitialStateIR {
   accordionStateByKey?: Record<string, boolean>;
 }
 
+export interface ScreenVariantFieldErrorEvidenceIR {
+  message: string;
+  visualError: boolean;
+  sourceNodeId?: string;
+}
+
+export interface ScreenVariantScreenLevelErrorEvidenceIR {
+  message: string;
+  severity: "error";
+  sourceNodeId?: string;
+}
+
 export interface ScreenVariantFamilyScenarioIR {
   screenId: string;
   contentScreenId: string;
   initialState: ScreenVariantFamilyInitialStateIR;
   shellTextOverrides?: Record<string, string>;
+  fieldErrorEvidenceByFieldKey?: Record<string, ScreenVariantFieldErrorEvidenceIR>;
+  screenLevelErrorEvidence?: ScreenVariantScreenLevelErrorEvidenceIR[];
 }
 
 export interface ScreenVariantFamilyIR {
@@ -875,6 +889,67 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].contentScreenId '${scenario.contentScreenId}' ` +
               "must reference an existing family member screen."
           });
+        }
+
+        if (scenario.fieldErrorEvidenceByFieldKey !== undefined) {
+          if (
+            typeof scenario.fieldErrorEvidenceByFieldKey !== "object" ||
+            scenario.fieldErrorEvidenceByFieldKey === null ||
+            Array.isArray(scenario.fieldErrorEvidenceByFieldKey)
+          ) {
+            errors.push({
+              code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
+              message:
+                `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey ` +
+                "must be an object when present."
+            });
+          } else {
+            for (const [fieldKey, evidence] of Object.entries(scenario.fieldErrorEvidenceByFieldKey)) {
+              if (
+                !fieldKey ||
+                typeof evidence !== "object" ||
+                evidence === null ||
+                Array.isArray(evidence) ||
+                typeof evidence.message !== "string" ||
+                typeof evidence.visualError !== "boolean"
+              ) {
+                errors.push({
+                  code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
+                  message:
+                    `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey['${fieldKey}'] ` +
+                    "must contain a string message and boolean visualError."
+                });
+              }
+            }
+          }
+        }
+
+        if (scenario.screenLevelErrorEvidence !== undefined) {
+          if (!Array.isArray(scenario.screenLevelErrorEvidence)) {
+            errors.push({
+              code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
+              message:
+                `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence ` +
+                "must be an array when present."
+            });
+          } else {
+            for (const [errorIndex, evidence] of scenario.screenLevelErrorEvidence.entries()) {
+              if (
+                typeof evidence !== "object" ||
+                evidence === null ||
+                Array.isArray(evidence) ||
+                typeof evidence.message !== "string" ||
+                evidence.severity !== "error"
+              ) {
+                errors.push({
+                  code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
+                  message:
+                    `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence[${errorIndex}] ` +
+                    "must contain a string message and severity='error'."
+                });
+              }
+            }
+          }
         }
       }
     }
