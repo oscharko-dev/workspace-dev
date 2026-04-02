@@ -1146,6 +1146,48 @@ test("buildComponentMatchReportArtifact records denied icon wrapper fallback whe
   assert.equal(artifact.summary.iconResolution.byStatus.wrapper_fallback_denied, 1);
 });
 
+test("buildComponentMatchReportArtifact treats unmatched ic_* families as unresolved icon outcomes", () => {
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "ic-mail-family",
+          familyName: "ic_mail"
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries: [],
+      families: []
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: []
+    })
+  });
+
+  assert.equal(artifact.entries[0]?.match.status, "unmatched");
+  assert.deepEqual(artifact.entries[0]?.iconResolution, {
+    assetKind: "icon",
+    iconKeys: ["mail"],
+    byKey: {
+      mail: {
+        iconKey: "mail",
+        status: "unresolved",
+        reason: "match_unmatched"
+      }
+    },
+    counts: {
+      exactImportResolved: 0,
+      wrapperFallbackAllowed: 0,
+      wrapperFallbackDenied: 0,
+      unresolved: 1,
+      ambiguous: 0
+    }
+  });
+  assert.equal(artifact.summary.iconResolution.byStatus.unresolved, 1);
+  assert.equal(artifact.summary.iconResolution.byReason.match_unmatched, 1);
+});
+
 test("buildComponentMatchReportArtifact marks allowed MUI fallbacks when profile imports are missing", () => {
   const entries = [
     createCatalogEntry({

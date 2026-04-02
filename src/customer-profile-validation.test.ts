@@ -567,6 +567,47 @@ test("validateCustomerProfileComponentMatchReport aggregates icon outcomes separ
   assert.equal(result.issues.some((issue) => issue.kind === "icon" && issue.iconKey === "search"), true);
 });
 
+test("validateCustomerProfileComponentMatchReport includes unresolved ic_* icon outcomes in issue summary", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "ic-mail-family",
+      familyName: "ic_mail",
+      libraryResolution: {
+        status: "not_applicable",
+        reason: "match_unmatched"
+      },
+      iconResolution: {
+        assetKind: "icon",
+        iconKeys: ["mail"],
+        byKey: {
+          mail: {
+            iconKey: "mail",
+            status: "unresolved",
+            reason: "match_unmatched"
+          }
+        },
+        counts: {
+          exactImportResolved: 0,
+          wrapperFallbackAllowed: 0,
+          wrapperFallbackDenied: 0,
+          unresolved: 1,
+          ambiguous: 0
+        }
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "warn");
+  assert.equal(result.counts.iconByStatus.unresolved, 1);
+  assert.equal(result.counts.iconByReason.match_unmatched, 1);
+  assert.equal(
+    result.issues.some((issue) => issue.kind === "icon" && issue.iconKey === "mail" && issue.reason === "match_unmatched"),
+    true
+  );
+});
+
 test("validateCustomerProfileComponentMatchReport returns failed when match policy is error", () => {
   const customerProfile = createCustomerProfileWithInput({
     version: 1,

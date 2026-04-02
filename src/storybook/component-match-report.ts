@@ -414,7 +414,8 @@ const toSemanticBucket = (values: string[]): ComponentMatchSemanticBucket => {
   if (hasAny("button")) {
     return "button";
   }
-  if (hasAny("icon")) {
+  const hasIcTokenIconAlias = hasAny("ic") && tokenSet.size > 1;
+  if (hasAny("icon", "icons") || hasIcTokenIconAlias) {
     return "icon";
   }
   if (hasAny("card")) {
