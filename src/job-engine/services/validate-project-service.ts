@@ -15,10 +15,18 @@ import {
   validateCustomerProfileComponentMatchReport,
   type CustomerProfileComponentApiValidationSummary,
   type CustomerProfileMatchValidationSummary,
+  type CustomerProfileStyleValidationSummary,
   validateGeneratedProjectCustomerProfile,
+  validateGeneratedProjectStorybookStyles,
   type CustomerProfileValidationSummary
 } from "../../customer-profile-validation.js";
-import type { ComponentMatchReportArtifact } from "../../storybook/types.js";
+import {
+  STORYBOOK_PUBLIC_EXTENSION_KEY,
+  type ComponentMatchReportArtifact,
+  type StorybookEvidenceArtifact,
+  type StorybookPublicThemesArtifact,
+  type StorybookPublicTokensArtifact
+} from "../../storybook/types.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -123,10 +131,16 @@ interface ValidationSummaryArtifact {
         };
   };
   style: {
-    status: "ok" | "not_available";
+    status: CustomerProfileStyleValidationSummary["status"];
+    issueCount: number;
+    issues: CustomerProfileStyleValidationSummary["issues"];
+    diagnostics: CustomerProfileStyleValidationSummary["diagnostics"];
+    policy?: CustomerProfileStyleValidationSummary["policy"];
     storybook: {
+      evidence: ValidationArtifactStatusSummary;
       tokens: ValidationArtifactStatusSummary;
       themes: ValidationArtifactStatusSummary;
+      componentMatchReport: ValidationArtifactStatusSummary;
     };
     customerProfile?: {
       tokenPolicy: CustomerProfileValidationSummary["token"]["policy"];
@@ -147,6 +161,10 @@ const toJsonFileContent = (value: unknown): string => {
   return `${JSON.stringify(value, null, 2)}\n`;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
 const parseComponentMatchReportArtifact = ({
   input
 }: {
@@ -165,18 +183,84 @@ const parseComponentMatchReportArtifact = ({
   return parsed as ComponentMatchReportArtifact;
 };
 
+const parseStorybookEvidenceArtifact = ({
+  input
+}: {
+  input: string;
+}): StorybookEvidenceArtifact => {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    !isRecord(parsed) ||
+    parsed.artifact !== "storybook.evidence" ||
+    !Array.isArray(parsed.evidence)
+  ) {
+    throw new Error("Expected a storybook.evidence artifact with an evidence array.");
+  }
+  return parsed as unknown as StorybookEvidenceArtifact;
+};
+
+const parseStorybookTokensArtifact = ({
+  input
+}: {
+  input: string;
+}): StorybookPublicTokensArtifact => {
+  const parsed: unknown = JSON.parse(input);
+  if (!isRecord(parsed)) {
+    throw new Error("Expected a storybook.tokens artifact object.");
+  }
+  const extensions = parsed.$extensions;
+  if (
+    !isRecord(extensions) ||
+    !isRecord(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]) ||
+    extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].artifact !== "storybook.tokens" ||
+    !Array.isArray(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics)
+  ) {
+    throw new Error("Expected a storybook.tokens artifact extension payload.");
+  }
+  return parsed as unknown as StorybookPublicTokensArtifact;
+};
+
+const parseStorybookThemesArtifact = ({
+  input
+}: {
+  input: string;
+}): StorybookPublicThemesArtifact => {
+  const parsed: unknown = JSON.parse(input);
+  if (!isRecord(parsed) || parsed.name !== "storybook.themes") {
+    throw new Error("Expected a storybook.themes artifact object.");
+  }
+  const extensions = parsed.$extensions;
+  if (
+    !isRecord(extensions) ||
+    !isRecord(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]) ||
+    extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].artifact !== "storybook.themes" ||
+    !Array.isArray(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics)
+  ) {
+    throw new Error("Expected a storybook.themes artifact extension payload.");
+  }
+  return parsed as unknown as StorybookPublicThemesArtifact;
+};
+
 const resolveSummaryStatus = ({
   generatedApp,
   storybook,
   mapping,
+  style,
   importSummary
 }: {
   generatedApp: ValidationSummaryArtifact["generatedApp"];
   storybook: ValidationSummaryArtifact["storybook"];
   mapping: ValidationSummaryArtifact["mapping"];
+  style: ValidationSummaryArtifact["style"];
   importSummary: ValidationSummaryArtifact["import"];
 }): ValidationSummaryArtifact["status"] => {
-  const gateStatuses: ValidationGateStatus[] = [generatedApp.status, storybook.status, mapping.status, importSummary.status];
+  const gateStatuses: ValidationGateStatus[] = [
+    generatedApp.status,
+    storybook.status,
+    mapping.status,
+    style.status,
+    importSummary.status
+  ];
   if (gateStatuses.includes("failed")) {
     return "failed";
   }
@@ -225,7 +309,8 @@ const buildValidationSummaryArtifact = async ({
   validationResult,
   customerProfileImportSummary,
   customerProfileMatchSummary,
-  customerProfileComponentApiSummary
+  customerProfileComponentApiSummary,
+  customerProfileStyleSummary
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -233,6 +318,7 @@ const buildValidationSummaryArtifact = async ({
   customerProfileImportSummary?: CustomerProfileValidationSummary;
   customerProfileMatchSummary?: CustomerProfileMatchValidationSummary;
   customerProfileComponentApiSummary?: CustomerProfileComponentApiValidationSummary;
+  customerProfileStyleSummary?: CustomerProfileStyleValidationSummary;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -316,12 +402,18 @@ const buildValidationSummaryArtifact = async ({
   };
 
   const styleSummary: ValidationSummaryArtifact["style"] =
-    storybookTokensFile && storybookThemesFile
+    customerProfileStyleSummary
       ? {
-          status: "ok",
+          status: customerProfileStyleSummary.status,
+          issueCount: customerProfileStyleSummary.issueCount,
+          issues: customerProfileStyleSummary.issues,
+          diagnostics: customerProfileStyleSummary.diagnostics,
+          policy: customerProfileStyleSummary.policy,
           storybook: {
-            tokens: { status: "ok", filePath: storybookTokensFile },
-            themes: { status: "ok", filePath: storybookThemesFile }
+            evidence: toArtifactStatusSummary(storybookEvidenceFile),
+            tokens: toArtifactStatusSummary(storybookTokensFile),
+            themes: toArtifactStatusSummary(storybookThemesFile),
+            componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
           },
           ...(context.resolvedCustomerProfile
             ? {
@@ -334,9 +426,34 @@ const buildValidationSummaryArtifact = async ({
         }
       : {
           status: "not_available",
+          issueCount: 0,
+          issues: [],
+          diagnostics: {
+            evidence: {
+              authoritativeStylingEvidenceCount: 0,
+              referenceOnlyStylingEvidenceCount: 0,
+              referenceOnlyEvidenceTypes: []
+            },
+            tokens: {
+              diagnosticCount: 0,
+              errorCount: 0,
+              diagnostics: []
+            },
+            themes: {
+              diagnosticCount: 0,
+              errorCount: 0,
+              diagnostics: []
+            },
+            componentMatchReport: {
+              resolvedCustomerComponentCount: 0,
+              validatedComponentNames: []
+            }
+          },
           storybook: {
+            evidence: toArtifactStatusSummary(storybookEvidenceFile),
             tokens: toArtifactStatusSummary(storybookTokensFile),
-            themes: toArtifactStatusSummary(storybookThemesFile)
+            themes: toArtifactStatusSummary(storybookThemesFile),
+            componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
           },
           ...(context.resolvedCustomerProfile
             ? {
@@ -379,6 +496,7 @@ const buildValidationSummaryArtifact = async ({
       generatedApp: generatedAppSummary,
       storybook: storybookSummary,
       mapping: mappingSummary,
+      style: styleSummary,
       importSummary
     }),
     validatedAt,
@@ -406,10 +524,10 @@ export const createValidateProjectService = ({
 
       let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
       let customerProfileComponentApiSummary: CustomerProfileComponentApiValidationSummary | undefined;
+      let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
       if (context.resolvedCustomerProfile) {
         const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
         if (componentMatchReportPath) {
-          let componentMatchReportArtifact: ComponentMatchReportArtifact;
           try {
             componentMatchReportArtifact = parseComponentMatchReportArtifact({
               input: await readFile(componentMatchReportPath, "utf8")
@@ -527,6 +645,106 @@ export const createValidateProjectService = ({
         }
       }
 
+      let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
+      if (context.resolvedCustomerProfile) {
+        const storybookEvidencePath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
+        const storybookTokensPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
+        const storybookThemesPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
+
+        let storybookEvidenceArtifact: StorybookEvidenceArtifact | undefined;
+        let storybookTokensArtifact: StorybookPublicTokensArtifact | undefined;
+        let storybookThemesArtifact: StorybookPublicThemesArtifact | undefined;
+
+        try {
+          storybookEvidenceArtifact = storybookEvidencePath
+            ? parseStorybookEvidenceArtifact({
+                input: await readFile(storybookEvidencePath, "utf8")
+              })
+            : undefined;
+          storybookTokensArtifact = storybookTokensPath
+            ? parseStorybookTokensArtifact({
+                input: await readFile(storybookTokensPath, "utf8")
+              })
+            : undefined;
+          storybookThemesArtifact = storybookThemesPath
+            ? parseStorybookThemesArtifact({
+                input: await readFile(storybookThemesPath, "utf8")
+              })
+            : undefined;
+        } catch (error) {
+          throw createPipelineError({
+            code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
+            stage: "validate.project",
+            message: "Storybook style artifacts are unreadable or malformed.",
+            cause: error,
+            limits: context.runtime.pipelineDiagnosticLimits
+          });
+        }
+
+        customerProfileStyleSummary = await validateGeneratedProjectStorybookStyles({
+          generatedProjectDir,
+          customerProfile: context.resolvedCustomerProfile,
+          ...(storybookEvidenceArtifact ? { storybookEvidenceArtifact } : {}),
+          ...(storybookTokensArtifact ? { storybookTokensArtifact } : {}),
+          ...(storybookThemesArtifact ? { storybookThemesArtifact } : {}),
+          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
+        });
+        if (customerProfileStyleSummary.issueCount > 0) {
+          const logLevel =
+            customerProfileStyleSummary.status === "failed"
+              ? "error"
+              : customerProfileStyleSummary.status === "warn"
+                ? "warn"
+                : "info";
+          context.log({
+            level: logLevel,
+            message:
+              `Storybook-first style guard reported ${customerProfileStyleSummary.issueCount} issue(s) ` +
+              `(policy=${customerProfileStyleSummary.policy}, status=${customerProfileStyleSummary.status}).`
+          });
+        }
+        if (customerProfileStyleSummary.status === "failed") {
+          const summary = await buildValidationSummaryArtifact({
+            context,
+            validatedAt,
+            ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
+            ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
+            customerProfileStyleSummary
+          });
+          await persistValidationSummaryArtifacts({
+            context,
+            summary
+          });
+          throw createPipelineError({
+            code: "E_CUSTOMER_PROFILE_STYLE_POLICY",
+            stage: "validate.project",
+            message:
+              `Storybook-first style guard failed with ${customerProfileStyleSummary.issueCount} issue(s).`,
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: customerProfileStyleSummary.issues.map((issue) => ({
+              code: issue.diagnosticCode ?? issue.category,
+              message: issue.message,
+              suggestion:
+                "Use Storybook-derived theme or token references, and only forward props allowed by the resolved customer component API.",
+              stage: "validate.project",
+              severity: issue.severity,
+              details: {
+                category: issue.category,
+                ...(issue.filePath ? { filePath: issue.filePath } : {}),
+                ...(issue.line ? { line: issue.line } : {}),
+                ...(issue.column ? { column: issue.column } : {}),
+                ...(issue.componentName ? { componentName: issue.componentName } : {}),
+                ...(issue.propName ? { propName: issue.propName } : {}),
+                ...(issue.themeId ? { themeId: issue.themeId } : {}),
+                ...(issue.tokenPath ? { tokenPath: issue.tokenPath } : {}),
+                ...(issue.artifact ? { artifact: issue.artifact } : {}),
+                ...(issue.evidenceTypes ? { evidenceTypes: issue.evidenceTypes } : {})
+              }
+            }))
+          });
+        }
+      }
+
       let customerProfileImportSummary:
         | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
         | undefined;
@@ -555,7 +773,8 @@ export const createValidateProjectService = ({
             validatedAt,
             customerProfileImportSummary,
             ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-            ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {})
+            ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
+            ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {})
           });
           await persistValidationSummaryArtifacts({
             context,
@@ -615,7 +834,8 @@ export const createValidateProjectService = ({
         validationResult,
         ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
         ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-        ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {})
+        ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
+        ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {})
       });
       await persistValidationSummaryArtifacts({
         context,

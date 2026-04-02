@@ -1,4 +1,4 @@
-import { Box, Container, Typography } from "@mui/material";
+import { Alert, Container, Typography } from "@mui/material";
 import AppShell1 from "../components/AppShell1";
 
 interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantState {
@@ -62,7 +62,7 @@ const variantScenarioConfig = {
     }
   },
   "1:68884": {
-    "contentScreenId": "1:68884",
+    "contentScreenId": "1:66050",
     "initialState": {
       "pricingMode": "netto",
       "validationState": "error",
@@ -70,7 +70,14 @@ const variantScenarioConfig = {
       "accordionStateByKey": {
         "accordion_state_collapsed_1_68884_accordion_1": false
       }
-    }
+    },
+    "screenLevelErrorEvidence": [
+      {
+        "message": "Fehler bei der Validierung",
+        "severity": "error",
+        "sourceNodeId": "1:68884-error"
+      }
+    ]
   }
 } as const;
 
@@ -112,90 +119,129 @@ const resolveInitialVariantId = ({
   return "1:66050";
 };
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody() {
+interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps {
+  initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
+  screenLevelErrorEvidence?: ReadonlyArray<{
+    message: string;
+    severity: "error";
+    sourceNodeId?: string;
+  }>;
+}
+
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps>) {
   return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
+    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={{ position: "relative", width: "100%" }}>
+      {screenLevelErrorEvidence?.map((screenLevelError) => (
+        <Alert severity={screenLevelError.severity}>{screenLevelError.message}</Alert>
+      ))}
       <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
     </Container>
   );
 }
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content() {
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps>) {
   return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
+      <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody
+        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        validationMessagesOverride={props.validationMessagesOverride}
+        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
+      />
+  );
+}
+
+interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps {
+  initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
+  screenLevelErrorEvidence?: ReadonlyArray<{
+    message: string;
+    severity: "error";
+    sourceNodeId?: string;
+  }>;
+}
+
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps>) {
+  return (
+    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={{ position: "relative", width: "100%" }}>
+      {screenLevelErrorEvidence?.map((screenLevelError) => (
+        <Alert severity={screenLevelError.severity}>{screenLevelError.message}</Alert>
+      ))}
       <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
     </Container>
   );
 }
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody() {
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps>) {
   return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
-      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
-    </Container>
+      <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody
+        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        validationMessagesOverride={props.validationMessagesOverride}
+        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
+      />
   );
 }
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content() {
-  return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
-      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
-    </Container>
-  );
-}
-
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant3168884ContentBody() {
-  return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
-      {/* @ir:start 1:68884-body Form Body table */}
-      <Box data-ir-id="1:68884-body" data-ir-name="Form Body" component="form" sx={{ width: "96.4%", maxWidth: "1288px", minHeight: "2230px", display: "flex", flexDirection: "column" }}>
-        {/* @ir:start 1:68884-error Error Text text */}
-        <Typography data-ir-id="1:68884-error" data-ir-name="Error Text" sx={{ whiteSpace: "pre-wrap" }}>{"Fehler bei der Validierung"}</Typography>
-        {/* @ir:end 1:68884-error */}
-      </Box>
-      {/* @ir:end 1:68884-body */}
-    </Container>
-  );
-}
-
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant3168884Content() {
-  return (
-    <Container id="main-content" maxWidth={false} disableGutters role="main" sx={sharedSxStyle1}>
-      {/* @ir:start 1:68884-body Form Body table */}
-      <Box data-ir-id="1:68884-body" data-ir-name="Form Body" component="form" sx={{ width: "96.4%", maxWidth: "1288px", minHeight: "2230px", display: "flex", flexDirection: "column" }}>
-        {/* @ir:start 1:68884-error Error Text text */}
-        <Typography data-ir-id="1:68884-error" data-ir-name="Error Text" sx={{ whiteSpace: "pre-wrap" }}>{"Fehler bei der Validierung"}</Typography>
-        {/* @ir:end 1:68884-error */}
-      </Box>
-      {/* @ir:end 1:68884-body */}
-    </Container>
-  );
-}
-
-function renderVariantContent(variantId: string) {
+function renderVariantContent(
+  variantId: string,
+  scenario: (typeof variantScenarioConfig)[keyof typeof variantScenarioConfig]
+) {
   switch (variantId) {
     case "1:63230":
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
     case "1:64644":
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
     case "1:66050":
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
     case "1:67464":
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
     case "1:68884":
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant3168884Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
     default:
-      return <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content />;
+      return (
+        <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
+          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
+          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
+        />
+      );
   }
 }
-
-const sharedSxStyle1 = { position: "relative", width: "100%" };
 
 export default function ID0033NettoBetriebsmittelAlleClusterEingeklapptScreen(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptScreenProps>) {
   const resolvedVariantId = resolveInitialVariantId(props);
   const resolvedScenario = variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??
     variantScenarioConfig["1:66050" as keyof typeof variantScenarioConfig];
-  const screenContent = renderVariantContent(resolvedVariantId);
+  const screenContent = renderVariantContent(resolvedVariantId, resolvedScenario);
   return (
     <AppShell1 textOverrides={resolvedScenario.shellTextOverrides}>
       {screenContent}

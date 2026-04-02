@@ -4,26 +4,31 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 const initialVisualErrors: Record<string, string> = {};
+const defaultValidationMessages: Record<string, string> = {
+  "muitextfieldroot_email_field": "Use your @example.com email.",
+  "muitextfieldroot_amount_field": "Amount must be between 100 and 5000.",
+  "muitextfieldroot_code_field": "Promo code must be 6 uppercase characters."
+};
 const fieldSchemaSpecs = {
   "muitextfieldroot_amount_field": {
     "required": false,
     "validationType": "number",
-    "validationMessage": "Please enter a valid number.",
+    "validationMessage": "Amount must be between 100 and 5000.",
     "selectOptions": [],
-    "selectValidationMessage": "Please enter a valid number."
+    "selectValidationMessage": "Amount must be between 100 and 5000."
   },
   "muitextfieldroot_code_field": {
     "required": false,
-    "validationMessage": "Invalid value.",
+    "validationMessage": "Promo code must be 6 uppercase characters.",
     "selectOptions": [],
-    "selectValidationMessage": "Please select a valid option."
+    "selectValidationMessage": "Promo code must be 6 uppercase characters."
   },
   "muitextfieldroot_email_field": {
     "required": false,
     "validationType": "email",
-    "validationMessage": "Please enter a valid email address.",
+    "validationMessage": "Use your @example.com email.",
     "selectOptions": [],
-    "selectValidationMessage": "Please enter a valid email address."
+    "selectValidationMessage": "Use your @example.com email."
   }
 } as const;
 const selectOptions: Record<string, string[]> = {};
@@ -334,14 +339,18 @@ const ValidationFormFormContext = createContext<ValidationFormFormContextValue |
 
 export interface ValidationFormFormContextProviderProps {
   children: ReactNode;
+  initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
 }
 
-export function ValidationFormFormContextProvider({ children }: ValidationFormFormContextProviderProps) {
+export function ValidationFormFormContextProvider({ children, initialVisualErrorsOverride, validationMessagesOverride }: ValidationFormFormContextProviderProps) {
   const defaultValues: ValidationFormFormInput = {
   "muitextfieldroot_email_field": "",
   "muitextfieldroot_amount_field": "250",
   "muitextfieldroot_code_field": "AB12CD"
 };
+  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<ValidationFormFormInput>({
     resolver: zodResolver(formSchema),
@@ -366,15 +375,23 @@ export function ValidationFormFormContextProvider({ children }: ValidationFormFo
     fieldError: string | undefined;
   }): string => {
     if (!isTouched && !isSubmitted) {
-      return initialVisualErrors[fieldKey] ?? "";
+      return resolvedInitialVisualErrors[fieldKey] ?? "";
     }
-    return fieldError ?? "";
+    if (!fieldError) {
+      return "";
+    }
+    const overrideMessage = resolvedValidationMessages[fieldKey];
+    const defaultMessage = defaultValidationMessages[fieldKey];
+    if (overrideMessage && defaultMessage && fieldError === defaultMessage) {
+      return overrideMessage;
+    }
+    return fieldError;
   };
 
   return (
     <ValidationFormFormContext.Provider
       value={{
-        initialVisualErrors,
+        initialVisualErrors: resolvedInitialVisualErrors,
         selectOptions,
         control,
         handleSubmit,

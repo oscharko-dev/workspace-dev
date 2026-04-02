@@ -1959,7 +1959,10 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     const propMappings = resolvedImport.propMappings ? toSortedPropMappings(resolvedImport.propMappings) : undefined;
     const resolvedApi = resolvedEntries[0]?.resolvedApi;
     const omittedProps = sortUniqueStrings(
-      resolvedEntries.flatMap((entry) => entry.resolvedProps.omittedProps.map((item) => item.sourceProp))
+      [
+        ...resolvedEntries.flatMap((entry) => entry.resolvedProps.omittedProps.map((item) => item.sourceProp)),
+        ...(resolvedApi && !resolvedApi.allowedProps.some((prop) => prop.name === "sx") ? ["sx"] : [])
+      ]
     );
     const defaultProps = resolvedApi ? toResolvedApiDefaultPropsRecord({ resolvedApi }) : undefined;
     if (legacyEntries.length > 0) {

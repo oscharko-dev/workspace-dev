@@ -1,5 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
+import type * as TypeScript from "typescript";
 import {
   collectCustomerProfileImportIssuesFromSource,
   isCustomerProfileMuiFallbackAllowed,
@@ -12,8 +14,13 @@ import type {
   ComponentMatchLibraryResolutionReason,
   ComponentMatchLibraryResolutionStatus,
   ComponentMatchReportArtifact,
-  ComponentMatchResolvedDiagnosticCode
+  ComponentMatchResolvedDiagnosticCode,
+  StorybookEvidenceArtifact,
+  StorybookEvidenceType,
+  StorybookPublicThemesArtifact,
+  StorybookPublicTokensArtifact
 } from "./storybook/types.js";
+import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "./storybook/types.js";
 
 export interface CustomerProfileValidationIssue {
   code:
@@ -92,6 +99,76 @@ export interface CustomerProfileComponentApiValidationSummary {
   issues: CustomerProfileComponentApiValidationIssue[];
 }
 
+export type CustomerProfileStyleValidationIssueCategory =
+  | "missing_authoritative_styling_evidence"
+  | "reference_only_styling_evidence"
+  | "storybook_token_diagnostic"
+  | "storybook_theme_diagnostic"
+  | "forbidden_generated_stylesheet"
+  | "forbidden_inline_style"
+  | "hard_coded_color_literal"
+  | "raw_spacing_literal"
+  | "raw_typography_declaration"
+  | "disallowed_customer_component_prop";
+
+export interface CustomerProfileStyleValidationIssue {
+  category: CustomerProfileStyleValidationIssueCategory;
+  severity: "warning" | "error";
+  message: string;
+  filePath?: string;
+  line?: number;
+  column?: number;
+  componentName?: string;
+  propName?: string;
+  artifact?: "storybook.evidence" | "storybook.tokens" | "storybook.themes" | "component.match_report";
+  diagnosticCode?: string;
+  themeId?: string;
+  tokenPath?: string[];
+  evidenceTypes?: StorybookEvidenceType[];
+}
+
+export interface CustomerProfileStyleArtifactDiagnostics {
+  evidence: {
+    authoritativeStylingEvidenceCount: number;
+    referenceOnlyStylingEvidenceCount: number;
+    referenceOnlyEvidenceTypes: StorybookEvidenceType[];
+  };
+  tokens: {
+    diagnosticCount: number;
+    errorCount: number;
+    diagnostics: Array<{
+      severity: "warning" | "error";
+      code: string;
+      message: string;
+      themeId?: string;
+      tokenPath?: string[];
+    }>;
+  };
+  themes: {
+    diagnosticCount: number;
+    errorCount: number;
+    diagnostics: Array<{
+      severity: "warning" | "error";
+      code: string;
+      message: string;
+      themeId?: string;
+      tokenPath?: string[];
+    }>;
+  };
+  componentMatchReport: {
+    resolvedCustomerComponentCount: number;
+    validatedComponentNames: string[];
+  };
+}
+
+export interface CustomerProfileStyleValidationSummary {
+  status: "ok" | "warn" | "failed" | "not_available";
+  policy: ResolvedCustomerProfile["strictness"]["token"];
+  issueCount: number;
+  issues: CustomerProfileStyleValidationIssue[];
+  diagnostics: CustomerProfileStyleArtifactDiagnostics;
+}
+
 const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
   "resolved_import",
   "mui_fallback_allowed",
@@ -145,6 +222,129 @@ const COMPONENT_API_REASON_CODES = [
   "component_api_signature_conflict",
   "component_api_slot_unsupported"
 ] as const satisfies readonly CustomerProfileComponentApiValidationReason[];
+const SOURCE_FILE_EXTENSIONS = new Set<string>([".ts", ".tsx", ".js", ".jsx"]);
+const GENERATED_STYLESHEET_EXTENSIONS = new Set<string>([".css", ".scss"]);
+const SCAN_EXCLUDED_DIRECTORIES = new Set<string>(["node_modules", "dist", ".git", ".figmapipe"]);
+const AUTHORIZED_STORYBOOK_STYLE_OUTPUTS = new Set<string>(["src/theme/theme.ts", "src/theme/tokens.json"]);
+const REFERENCE_ONLY_STYLE_EVIDENCE_TYPES = new Set<StorybookEvidenceType>([
+  "docs_image",
+  "docs_text",
+  "mdx_link",
+  "story_design_link"
+]);
+const COLOR_STYLE_PROPERTY_NAMES = new Set<string>([
+  "background",
+  "backgroundColor",
+  "bgcolor",
+  "borderColor",
+  "caretColor",
+  "color",
+  "fill",
+  "outlineColor",
+  "stroke"
+]);
+const SPACING_STYLE_PROPERTY_NAMES = new Set<string>([
+  "columnGap",
+  "gap",
+  "m",
+  "margin",
+  "marginBlock",
+  "marginBlockEnd",
+  "marginBlockStart",
+  "marginBottom",
+  "marginInline",
+  "marginInlineEnd",
+  "marginInlineStart",
+  "marginLeft",
+  "marginRight",
+  "marginTop",
+  "mb",
+  "ml",
+  "mr",
+  "mt",
+  "mx",
+  "my",
+  "p",
+  "padding",
+  "paddingBlock",
+  "paddingBlockEnd",
+  "paddingBlockStart",
+  "paddingBottom",
+  "paddingInline",
+  "paddingInlineEnd",
+  "paddingInlineStart",
+  "paddingLeft",
+  "paddingRight",
+  "paddingTop",
+  "pb",
+  "pl",
+  "pr",
+  "pt",
+  "px",
+  "py",
+  "rowGap"
+]);
+const TYPOGRAPHY_STYLE_PROPERTY_NAMES = new Set<string>([
+  "fontFamily",
+  "fontSize",
+  "fontStyle",
+  "fontWeight",
+  "letterSpacing",
+  "lineHeight",
+  "textTransform"
+]);
+const IMPLICIT_ALLOWED_COMPONENT_PROP_NAMES = new Set<string>(["key", "ref"]);
+const HEX_COLOR_PATTERN = /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/iu;
+const COLOR_FUNCTION_PATTERN = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/iu;
+const NAMED_COLOR_PATTERN =
+  /^(?:black|blue|currentcolor|gray|green|grey|red|transparent|white)$/iu;
+const SPACING_UNIT_PATTERN = /^-?(?:\d+|\d*\.\d+)(?:px|rem|em|vh|vw)$/iu;
+const TYPOGRAPHY_NUMERIC_PATTERN = /^-?(?:\d+|\d*\.\d+)$/u;
+const TYPOGRAPHY_KEYWORD_PATTERN = /^(?:inherit|initial|normal|revert|unset)$/iu;
+
+let cachedTypescriptModule: typeof TypeScript | null | undefined;
+let resolveTypescriptModuleOverride:
+  | (() => typeof TypeScript | null)
+  | undefined;
+
+export const __setTypescriptModuleResolverForCustomerProfileValidationTests = (
+  resolver?: () => typeof TypeScript | null
+): void => {
+  resolveTypescriptModuleOverride = resolver;
+  cachedTypescriptModule = undefined;
+};
+
+export const __resetTypescriptModuleResolverForCustomerProfileValidationTests = (): void => {
+  __setTypescriptModuleResolverForCustomerProfileValidationTests(undefined);
+};
+
+const resolveTypescriptModule = (): typeof TypeScript | null => {
+  if (resolveTypescriptModuleOverride) {
+    return resolveTypescriptModuleOverride();
+  }
+  if (cachedTypescriptModule !== undefined) {
+    return cachedTypescriptModule;
+  }
+
+  try {
+    const requireFromModule = createRequire(import.meta.url);
+    cachedTypescriptModule = requireFromModule("typescript") as typeof TypeScript;
+  } catch {
+    cachedTypescriptModule = null;
+  }
+
+  return cachedTypescriptModule;
+};
+
+const getTypescriptModuleForStyleValidation = (): typeof TypeScript => {
+  const typescriptModule = resolveTypescriptModule();
+  if (typescriptModule) {
+    return typescriptModule;
+  }
+  throw new Error(
+    "Storybook-first style validation requires the optional 'typescript' peer dependency to be installed."
+  );
+};
 
 const readJsonRecord = async ({ filePath }: { filePath: string }): Promise<Record<string, unknown>> => {
   const parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
@@ -154,10 +354,12 @@ const readJsonRecord = async ({ filePath }: { filePath: string }): Promise<Recor
   return parsed as Record<string, unknown>;
 };
 
-const collectSourceFiles = async ({
-  directoryPath
+const collectFiles = async ({
+  directoryPath,
+  extensions
 }: {
   directoryPath: string;
+  extensions: ReadonlySet<string>;
 }): Promise<string[]> => {
   const results: string[] = [];
   const walk = async (currentPath: string): Promise<void> => {
@@ -174,7 +376,7 @@ const collectSourceFiles = async ({
     for (const entry of entries) {
       const absolutePath = path.join(currentPath, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git" || entry.name === ".figmapipe") {
+        if (SCAN_EXCLUDED_DIRECTORIES.has(entry.name)) {
           continue;
         }
         await walk(absolutePath);
@@ -184,7 +386,7 @@ const collectSourceFiles = async ({
         continue;
       }
       const extension = path.extname(entry.name).toLowerCase();
-      if (extension === ".ts" || extension === ".tsx" || extension === ".js" || extension === ".jsx") {
+      if (extensions.has(extension)) {
         results.push(absolutePath);
       }
     }
@@ -192,6 +394,528 @@ const collectSourceFiles = async ({
 
   await walk(directoryPath);
   return results.sort((left, right) => left.localeCompare(right));
+};
+
+const collectSourceFiles = async ({
+  directoryPath
+}: {
+  directoryPath: string;
+}): Promise<string[]> => {
+  return collectFiles({
+    directoryPath,
+    extensions: SOURCE_FILE_EXTENSIONS
+  });
+};
+
+const toRelativeGeneratedProjectPath = ({
+  generatedProjectDir,
+  filePath
+}: {
+  generatedProjectDir: string;
+  filePath: string;
+}): string => {
+  return path.relative(generatedProjectDir, filePath).split(path.sep).join("/");
+};
+
+const isAuthorizedStorybookStyleOutput = ({ relativeFilePath }: { relativeFilePath: string }): boolean => {
+  return AUTHORIZED_STORYBOOK_STYLE_OUTPUTS.has(relativeFilePath);
+};
+
+const createEmptyStyleDiagnostics = (): CustomerProfileStyleArtifactDiagnostics => ({
+  evidence: {
+    authoritativeStylingEvidenceCount: 0,
+    referenceOnlyStylingEvidenceCount: 0,
+    referenceOnlyEvidenceTypes: []
+  },
+  tokens: {
+    diagnosticCount: 0,
+    errorCount: 0,
+    diagnostics: []
+  },
+  themes: {
+    diagnosticCount: 0,
+    errorCount: 0,
+    diagnostics: []
+  },
+  componentMatchReport: {
+    resolvedCustomerComponentCount: 0,
+    validatedComponentNames: []
+  }
+});
+
+const toStyleValidationStatus = ({
+  issueCount,
+  policy
+}: {
+  issueCount: number;
+  policy: ResolvedCustomerProfile["strictness"]["token"];
+}): CustomerProfileStyleValidationSummary["status"] => {
+  if (issueCount === 0) {
+    return "ok";
+  }
+  if (policy === "error") {
+    return "failed";
+  }
+  if (policy === "warn") {
+    return "warn";
+  }
+  return "ok";
+};
+
+const normalizeStyleDiagnosticEntry = ({
+  diagnostic
+}: {
+  diagnostic: {
+    severity: "warning" | "error";
+    code: string;
+    message: string;
+    themeId?: string;
+    tokenPath?: string[];
+  };
+}) => {
+  return {
+    severity: diagnostic.severity,
+    code: diagnostic.code,
+    message: diagnostic.message,
+    ...(diagnostic.themeId ? { themeId: diagnostic.themeId } : {}),
+    ...(diagnostic.tokenPath ? { tokenPath: [...diagnostic.tokenPath] } : {})
+  };
+};
+
+interface StyleValidationCustomerComponentContract {
+  componentKey: string;
+  allowedProps: ReadonlySet<string>;
+}
+
+const collectCustomerComponentContracts = ({
+  artifact
+}: {
+  artifact: ComponentMatchReportArtifact;
+}): Map<string, StyleValidationCustomerComponentContract> => {
+  const byComponentName = new Map<string, StyleValidationCustomerComponentContract>();
+
+  for (const entry of artifact.entries) {
+    if (entry.libraryResolution.status !== "resolved_import" || entry.resolvedApi?.status !== "resolved") {
+      continue;
+    }
+    const localName = entry.libraryResolution.import?.localName?.trim();
+    const componentKey = entry.libraryResolution.componentKey?.trim() ?? entry.resolvedApi.componentKey?.trim();
+    if (!localName || !componentKey) {
+      continue;
+    }
+
+    const existing = byComponentName.get(localName);
+    const allowedPropNames = new Set<string>([
+      ...(existing ? existing.allowedProps : []),
+      ...entry.resolvedApi.allowedProps.map((prop) => prop.name)
+    ]);
+    byComponentName.set(localName, {
+      componentKey,
+      allowedProps: allowedPropNames
+    });
+  }
+
+  return byComponentName;
+};
+
+const resolveObjectPropertyName = (
+  typescriptModule: typeof TypeScript,
+  name: TypeScript.PropertyName
+): string | undefined => {
+  if (typescriptModule.isIdentifier(name) || typescriptModule.isStringLiteralLike(name) || typescriptModule.isNumericLiteral(name)) {
+    return name.text;
+  }
+  if (typescriptModule.isComputedPropertyName(name)) {
+    const expression = name.expression;
+    if (typescriptModule.isStringLiteralLike(expression) || typescriptModule.isNumericLiteral(expression)) {
+      return expression.text;
+    }
+  }
+  return undefined;
+};
+
+const resolveJsxAttributeName = (
+  typescriptModule: typeof TypeScript,
+  attribute: TypeScript.JsxAttribute
+): string | undefined => {
+  return typescriptModule.isIdentifier(attribute.name) ? attribute.name.text : undefined;
+};
+
+const resolveLiteralText = (
+  typescriptModule: typeof TypeScript,
+  expression: TypeScript.Expression
+): string | undefined => {
+  if (typescriptModule.isStringLiteralLike(expression) || typescriptModule.isNoSubstitutionTemplateLiteral(expression)) {
+    return expression.text.trim();
+  }
+  return undefined;
+};
+
+const isRawColorLiteral = ({
+  typescriptModule,
+  expression
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+}): boolean => {
+  const literalText = resolveLiteralText(typescriptModule, expression);
+  if (!literalText) {
+    return false;
+  }
+  return HEX_COLOR_PATTERN.test(literalText) || COLOR_FUNCTION_PATTERN.test(literalText) || NAMED_COLOR_PATTERN.test(literalText);
+};
+
+const isRawSpacingLiteral = ({
+  typescriptModule,
+  expression,
+  attributeName
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+  attributeName: string;
+}): boolean => {
+  if (typescriptModule.isNumericLiteral(expression) || (
+    typescriptModule.isPrefixUnaryExpression(expression) &&
+    expression.operator === typescriptModule.SyntaxKind.MinusToken &&
+    typescriptModule.isNumericLiteral(expression.operand)
+  )) {
+    return attributeName === "style";
+  }
+  const literalText = resolveLiteralText(typescriptModule, expression);
+  if (!literalText) {
+    return false;
+  }
+  return SPACING_UNIT_PATTERN.test(literalText);
+};
+
+const isRawTypographyLiteral = ({
+  typescriptModule,
+  expression
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+}): boolean => {
+  if (typescriptModule.isNumericLiteral(expression) || (
+    typescriptModule.isPrefixUnaryExpression(expression) &&
+    expression.operator === typescriptModule.SyntaxKind.MinusToken &&
+    typescriptModule.isNumericLiteral(expression.operand)
+  )) {
+    return true;
+  }
+
+  const literalText = resolveLiteralText(typescriptModule, expression);
+  if (!literalText || TYPOGRAPHY_KEYWORD_PATTERN.test(literalText)) {
+    return false;
+  }
+
+  return TYPOGRAPHY_NUMERIC_PATTERN.test(literalText) || true;
+};
+
+const resolveObjectLiteralInitializer = (
+  typescriptModule: typeof TypeScript,
+  attribute: TypeScript.JsxAttribute
+): TypeScript.ObjectLiteralExpression | undefined => {
+  if (!attribute.initializer || !typescriptModule.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) {
+    return undefined;
+  }
+  return typescriptModule.isObjectLiteralExpression(attribute.initializer.expression)
+    ? attribute.initializer.expression
+    : undefined;
+};
+
+const isImplicitlyAllowedComponentProp = (propName: string): boolean => {
+  return IMPLICIT_ALLOWED_COMPONENT_PROP_NAMES.has(propName) || propName.startsWith("aria-") || propName.startsWith("data-");
+};
+
+const pushStyleIssue = ({
+  issues,
+  seenIssueKeys,
+  issue
+}: {
+  issues: CustomerProfileStyleValidationIssue[];
+  seenIssueKeys: Set<string>;
+  issue: CustomerProfileStyleValidationIssue;
+}): void => {
+  const dedupeKey = JSON.stringify({
+    category: issue.category,
+    filePath: issue.filePath,
+    line: issue.line,
+    column: issue.column,
+    componentName: issue.componentName,
+    propName: issue.propName,
+    diagnosticCode: issue.diagnosticCode,
+    themeId: issue.themeId,
+    tokenPath: issue.tokenPath,
+    evidenceTypes: issue.evidenceTypes,
+    message: issue.message
+  });
+  if (seenIssueKeys.has(dedupeKey)) {
+    return;
+  }
+  seenIssueKeys.add(dedupeKey);
+  issues.push(issue);
+};
+
+const toSourceLocation = ({
+  sourceFile,
+  node
+}: {
+  sourceFile: TypeScript.SourceFile;
+  node: TypeScript.Node;
+}): { line: number; column: number } => {
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  return {
+    line: line + 1,
+    column: character + 1
+  };
+};
+
+const scanStyleObjectLiteral = ({
+  typescriptModule,
+  sourceFile,
+  relativeFilePath,
+  attributeName,
+  componentName,
+  objectLiteral,
+  issues,
+  seenIssueKeys,
+  activeStylePropertyName
+}: {
+  typescriptModule: typeof TypeScript;
+  sourceFile: TypeScript.SourceFile;
+  relativeFilePath: string;
+  attributeName: string;
+  componentName?: string;
+  objectLiteral: TypeScript.ObjectLiteralExpression;
+  issues: CustomerProfileStyleValidationIssue[];
+  seenIssueKeys: Set<string>;
+  activeStylePropertyName?: string;
+}): void => {
+  for (const property of objectLiteral.properties) {
+    if (!typescriptModule.isPropertyAssignment(property) && !typescriptModule.isShorthandPropertyAssignment(property)) {
+      continue;
+    }
+
+    const propertyName = typescriptModule.isShorthandPropertyAssignment(property)
+      ? property.name.text
+      : resolveObjectPropertyName(typescriptModule, property.name);
+    if (!propertyName) {
+      continue;
+    }
+
+    const stylePropertyName =
+      COLOR_STYLE_PROPERTY_NAMES.has(propertyName) ||
+      SPACING_STYLE_PROPERTY_NAMES.has(propertyName) ||
+      TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(propertyName)
+        ? propertyName
+        : activeStylePropertyName;
+
+    const propertyValue = typescriptModule.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
+    if (typescriptModule.isObjectLiteralExpression(propertyValue)) {
+      scanStyleObjectLiteral({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        attributeName,
+        ...(componentName ? { componentName } : {}),
+        objectLiteral: propertyValue,
+        issues,
+        seenIssueKeys,
+        ...(stylePropertyName ? { activeStylePropertyName: stylePropertyName } : {})
+      });
+      continue;
+    }
+
+    const location = toSourceLocation({
+      sourceFile,
+      node: property
+    });
+    if (stylePropertyName && COLOR_STYLE_PROPERTY_NAMES.has(stylePropertyName) && isRawColorLiteral({ typescriptModule, expression: propertyValue })) {
+      pushStyleIssue({
+        issues,
+        seenIssueKeys,
+        issue: {
+          category: "hard_coded_color_literal",
+          severity: "error",
+          message:
+            `Generated source must reference Storybook theme tokens instead of hard-coded color literals ` +
+            `for '${stylePropertyName}'.`,
+          filePath: relativeFilePath,
+          ...location,
+          ...(componentName ? { componentName } : {}),
+          propName: stylePropertyName
+        }
+      });
+    }
+
+    if (
+      stylePropertyName &&
+      SPACING_STYLE_PROPERTY_NAMES.has(stylePropertyName) &&
+      isRawSpacingLiteral({ typescriptModule, expression: propertyValue, attributeName })
+    ) {
+      pushStyleIssue({
+        issues,
+        seenIssueKeys,
+        issue: {
+          category: "raw_spacing_literal",
+          severity: "error",
+          message:
+            `Generated source must avoid raw spacing literals for '${stylePropertyName}' ` +
+            `outside Storybook-derived theme tokens.`,
+          filePath: relativeFilePath,
+          ...location,
+          ...(componentName ? { componentName } : {}),
+          propName: stylePropertyName
+        }
+      });
+    }
+
+    if (
+      stylePropertyName &&
+      TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(stylePropertyName) &&
+      isRawTypographyLiteral({ typescriptModule, expression: propertyValue })
+    ) {
+      pushStyleIssue({
+        issues,
+        seenIssueKeys,
+        issue: {
+          category: "raw_typography_declaration",
+          severity: "error",
+          message:
+            `Generated source must keep typography declarations in Storybook-derived theme outputs; ` +
+            `found raw '${stylePropertyName}' styling.`,
+          filePath: relativeFilePath,
+          ...location,
+          ...(componentName ? { componentName } : {}),
+          propName: stylePropertyName
+        }
+      });
+    }
+  }
+};
+
+const scanGeneratedSourceFileForStyleIssues = ({
+  generatedProjectDir,
+  sourceFilePath,
+  customerComponents
+}: {
+  generatedProjectDir: string;
+  sourceFilePath: string;
+  customerComponents: Map<string, StyleValidationCustomerComponentContract>;
+}): Promise<CustomerProfileStyleValidationIssue[]> => {
+  return readFile(sourceFilePath, "utf8").then((content) => {
+    const typescriptModule = getTypescriptModuleForStyleValidation();
+    const relativeFilePath = toRelativeGeneratedProjectPath({
+      generatedProjectDir,
+      filePath: sourceFilePath
+    });
+    const sourceFile = typescriptModule.createSourceFile(
+      relativeFilePath,
+      content,
+      typescriptModule.ScriptTarget.Latest,
+      true,
+      relativeFilePath.endsWith(".tsx") || relativeFilePath.endsWith(".jsx")
+        ? typescriptModule.ScriptKind.TSX
+        : typescriptModule.ScriptKind.TS
+    );
+    const issues: CustomerProfileStyleValidationIssue[] = [];
+    const seenIssueKeys = new Set<string>();
+
+    const visit = (node: TypeScript.Node): void => {
+      if (typescriptModule.isJsxOpeningElement(node) || typescriptModule.isJsxSelfClosingElement(node)) {
+        const componentName = typescriptModule.isIdentifier(node.tagName) ? node.tagName.text : undefined;
+        const customerComponent = componentName ? customerComponents.get(componentName) : undefined;
+
+        for (const attribute of node.attributes.properties) {
+          if (!typescriptModule.isJsxAttribute(attribute)) {
+            continue;
+          }
+          const attributeName = resolveJsxAttributeName(typescriptModule, attribute);
+          if (!attributeName) {
+            continue;
+          }
+
+          const location = toSourceLocation({
+            sourceFile,
+            node: attribute
+          });
+          if (customerComponent && !customerComponent.allowedProps.has(attributeName) && !isImplicitlyAllowedComponentProp(attributeName)) {
+            pushStyleIssue({
+              issues,
+              seenIssueKeys,
+              issue: {
+                category: "disallowed_customer_component_prop",
+                severity: "error",
+                message:
+                  `Generated source forwarded disallowed prop '${attributeName}' to customer component ` +
+                  `'${componentName}'.`,
+                filePath: relativeFilePath,
+                ...location,
+                ...(componentName ? { componentName } : {}),
+                propName: attributeName,
+                artifact: "component.match_report"
+              }
+            });
+          }
+
+          if (attributeName === "style") {
+            pushStyleIssue({
+              issues,
+              seenIssueKeys,
+              issue: {
+                category: "forbidden_inline_style",
+                severity: "error",
+                message: "Generated source must not use inline style={{...}} objects.",
+                filePath: relativeFilePath,
+                ...location,
+                ...(componentName ? { componentName } : {}),
+                propName: "style"
+              }
+            });
+          }
+
+          if (attributeName !== "style" && attributeName !== "sx") {
+            continue;
+          }
+
+          const objectLiteral = resolveObjectLiteralInitializer(typescriptModule, attribute);
+          if (!objectLiteral) {
+            continue;
+          }
+
+          scanStyleObjectLiteral({
+            typescriptModule,
+            sourceFile,
+            relativeFilePath,
+            attributeName,
+            ...(componentName ? { componentName } : {}),
+            objectLiteral,
+            issues,
+            seenIssueKeys
+          });
+        }
+      }
+
+      typescriptModule.forEachChild(node, visit);
+    };
+
+    visit(sourceFile);
+    return issues.sort((left, right) => {
+      const byFilePath = (left.filePath ?? "").localeCompare(right.filePath ?? "");
+      if (byFilePath !== 0) {
+        return byFilePath;
+      }
+      const byLine = (left.line ?? 0) - (right.line ?? 0);
+      if (byLine !== 0) {
+        return byLine;
+      }
+      const byColumn = (left.column ?? 0) - (right.column ?? 0);
+      if (byColumn !== 0) {
+        return byColumn;
+      }
+      return left.message.localeCompare(right.message);
+    });
+  });
 };
 
 const validateTemplateDependencies = ({
@@ -617,6 +1341,220 @@ export const validateCustomerProfileComponentApiComponentMatchReport = ({
     issueCount: issues.length,
     counts,
     issues
+  };
+};
+
+export const validateGeneratedProjectStorybookStyles = async ({
+  generatedProjectDir,
+  customerProfile,
+  storybookEvidenceArtifact,
+  storybookTokensArtifact,
+  storybookThemesArtifact,
+  componentMatchReportArtifact
+}: {
+  generatedProjectDir: string;
+  customerProfile: ResolvedCustomerProfile;
+  storybookEvidenceArtifact?: StorybookEvidenceArtifact;
+  storybookTokensArtifact?: StorybookPublicTokensArtifact;
+  storybookThemesArtifact?: StorybookPublicThemesArtifact;
+  componentMatchReportArtifact?: ComponentMatchReportArtifact;
+}): Promise<CustomerProfileStyleValidationSummary> => {
+  const diagnostics = createEmptyStyleDiagnostics();
+  if (
+    !storybookEvidenceArtifact ||
+    !storybookTokensArtifact ||
+    !storybookThemesArtifact ||
+    !componentMatchReportArtifact
+  ) {
+    return {
+      status: "not_available",
+      policy: customerProfile.strictness.token,
+      issueCount: 0,
+      issues: [],
+      diagnostics
+    };
+  }
+
+  const issues: CustomerProfileStyleValidationIssue[] = [];
+  const seenIssueKeys = new Set<string>();
+  const authoritativeStylingEvidence = storybookEvidenceArtifact.evidence.filter(
+    (item) => item.reliability === "authoritative" && item.usage.canDriveStyling
+  );
+  const referenceOnlyEvidence = storybookEvidenceArtifact.evidence.filter(
+    (item) => item.reliability === "reference_only" && REFERENCE_ONLY_STYLE_EVIDENCE_TYPES.has(item.type)
+  );
+  diagnostics.evidence = {
+    authoritativeStylingEvidenceCount: authoritativeStylingEvidence.length,
+    referenceOnlyStylingEvidenceCount: referenceOnlyEvidence.length,
+    referenceOnlyEvidenceTypes: [...new Set(referenceOnlyEvidence.map((item) => item.type))].sort((left, right) =>
+      left.localeCompare(right)
+    )
+  };
+
+  if (authoritativeStylingEvidence.length === 0) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "missing_authoritative_styling_evidence",
+        severity: "error",
+        message:
+          "Storybook-first style validation requires authoritative styling evidence from story args, argTypes, theme bundles, or CSS.",
+        artifact: "storybook.evidence"
+      }
+    });
+    if (referenceOnlyEvidence.length > 0) {
+      pushStyleIssue({
+        issues,
+        seenIssueKeys,
+        issue: {
+          category: "reference_only_styling_evidence",
+          severity: "error",
+          message:
+            "Reference-only Storybook evidence such as docs images or docs text cannot satisfy style authority requirements.",
+          artifact: "storybook.evidence",
+          evidenceTypes: diagnostics.evidence.referenceOnlyEvidenceTypes
+        }
+      });
+    }
+  }
+
+  const tokenExtension = storybookTokensArtifact.$extensions?.[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  const themeExtension = storybookThemesArtifact.$extensions?.[STORYBOOK_PUBLIC_EXTENSION_KEY];
+  diagnostics.tokens = {
+    diagnosticCount: tokenExtension?.diagnostics.length ?? 0,
+    errorCount: tokenExtension?.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length ?? 0,
+    diagnostics: (tokenExtension?.diagnostics ?? []).map((diagnostic) =>
+      normalizeStyleDiagnosticEntry({
+        diagnostic
+      })
+    )
+  };
+  diagnostics.themes = {
+    diagnosticCount: themeExtension?.diagnostics.length ?? 0,
+    errorCount: themeExtension?.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length ?? 0,
+    diagnostics: (themeExtension?.diagnostics ?? []).map((diagnostic) =>
+      normalizeStyleDiagnosticEntry({
+        diagnostic
+      })
+    )
+  };
+
+  for (const diagnostic of diagnostics.tokens.diagnostics) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "storybook_token_diagnostic",
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        artifact: "storybook.tokens",
+        diagnosticCode: diagnostic.code,
+        ...(diagnostic.themeId ? { themeId: diagnostic.themeId } : {}),
+        ...(diagnostic.tokenPath ? { tokenPath: diagnostic.tokenPath } : {})
+      }
+    });
+  }
+  for (const diagnostic of diagnostics.themes.diagnostics) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "storybook_theme_diagnostic",
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        artifact: "storybook.themes",
+        diagnosticCode: diagnostic.code,
+        ...(diagnostic.themeId ? { themeId: diagnostic.themeId } : {}),
+        ...(diagnostic.tokenPath ? { tokenPath: diagnostic.tokenPath } : {})
+      }
+    });
+  }
+
+  const sourceRoot = path.join(generatedProjectDir, "src");
+  const sourceFiles = await collectSourceFiles({
+    directoryPath: sourceRoot
+  });
+  const stylesheetFiles = await collectFiles({
+    directoryPath: sourceRoot,
+    extensions: GENERATED_STYLESHEET_EXTENSIONS
+  });
+  for (const stylesheetPath of stylesheetFiles) {
+    const relativeFilePath = toRelativeGeneratedProjectPath({
+      generatedProjectDir,
+      filePath: stylesheetPath
+    });
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "forbidden_generated_stylesheet",
+        severity: "error",
+        message: "Generated Storybook-first source must not emit .css or .scss stylesheets.",
+        filePath: relativeFilePath
+      }
+    });
+  }
+
+  const customerComponents = collectCustomerComponentContracts({
+    artifact: componentMatchReportArtifact
+  });
+  diagnostics.componentMatchReport = {
+    resolvedCustomerComponentCount: customerComponents.size,
+    validatedComponentNames: [...customerComponents.keys()].sort((left, right) => left.localeCompare(right))
+  };
+
+  const sourceIssues = await Promise.all(
+    sourceFiles
+      .map((sourceFilePath) => ({
+        sourceFilePath,
+        relativeFilePath: toRelativeGeneratedProjectPath({
+          generatedProjectDir,
+          filePath: sourceFilePath
+        })
+      }))
+      .filter(({ relativeFilePath }) => !isAuthorizedStorybookStyleOutput({ relativeFilePath }))
+      .map(({ sourceFilePath }) =>
+        scanGeneratedSourceFileForStyleIssues({
+          generatedProjectDir,
+          sourceFilePath,
+          customerComponents
+        })
+      )
+  );
+  for (const sourceIssue of sourceIssues.flat()) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: sourceIssue
+    });
+  }
+
+  const sortedIssues = [...issues].sort((left, right) => {
+    const byCategory = left.category.localeCompare(right.category);
+    if (byCategory !== 0) {
+      return byCategory;
+    }
+    const byFilePath = (left.filePath ?? "").localeCompare(right.filePath ?? "");
+    if (byFilePath !== 0) {
+      return byFilePath;
+    }
+    const byLine = (left.line ?? 0) - (right.line ?? 0);
+    if (byLine !== 0) {
+      return byLine;
+    }
+    return left.message.localeCompare(right.message);
+  });
+
+  return {
+    status: toStyleValidationStatus({
+      issueCount: sortedIssues.length,
+      policy: customerProfile.strictness.token
+    }),
+    policy: customerProfile.strictness.token,
+    issueCount: sortedIssues.length,
+    issues: sortedIssues,
+    diagnostics
   };
 };
 

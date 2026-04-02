@@ -1093,7 +1093,8 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
         component: "CustomerButton",
         propMappings: {
           variant: "appearance"
-        }
+        },
+        omittedProps: ["sx"]
       }
     }
   });
@@ -1330,7 +1331,8 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport excludes incom
       Button: {
         import: "@customer/components",
         export: "PrimaryButton",
-        component: "CustomerButton"
+        component: "CustomerButton",
+        omittedProps: ["sx"]
       }
     }
   });
@@ -1485,7 +1487,7 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport writes omitted
         propMappings: {
           variant: "appearance"
         },
-        omittedProps: ["disabled"],
+        omittedProps: ["disabled", "sx"],
         defaultProps: {
           size: "small"
         }
