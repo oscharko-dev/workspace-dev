@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   isTextElement
 } from "../types.js";
+import type { ComponentMappingWarningCode } from "../types-mapping.js";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -5093,7 +5094,7 @@ export interface FallbackScreenFileResult {
   simplificationStats: SimplificationMetrics;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    code: ComponentMappingWarningCode;
     nodeId: string;
     message: string;
   }>;

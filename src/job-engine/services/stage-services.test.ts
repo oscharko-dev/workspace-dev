@@ -2913,6 +2913,268 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
   );
 });
 
+test("CodegenGenerateService resolves pattern componentMappings into exact node mappings without mutating component.match_report", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      componentMappings: [
+        {
+          boardKey: "storybook-board",
+          canonicalComponentName: " Button ",
+          componentName: " ManualButton ",
+          importPath: " @manual/ui ",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]
+    }
+  });
+  const ir = {
+    ...createMinimalIr(),
+    screens: [
+      {
+        id: "screen-1",
+        name: "Screen 1",
+        route: "/",
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: [
+          {
+            id: "instance-1",
+            name: "Primary CTA",
+            nodeType: "FRAME",
+            type: "button" as const,
+            semanticType: "button",
+            text: "Weiter",
+            children: []
+          }
+        ]
+      }
+    ]
+  } as DesignIR;
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const figmaAnalysisPath = path.join(executionContext.paths.jobDir, "figma.analysis.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  const componentMatchReportArtifact = createComponentMatchReportArtifactForStageServices();
+  const componentMatchReportContent = `${JSON.stringify(componentMatchReportArtifact, null, 2)}\n`;
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, "{}\n", "utf8");
+  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(
+    figmaAnalysisPath,
+    `${JSON.stringify(
+      {
+        artifactVersion: 1,
+        sourceName: "stage-services-test",
+        summary: {
+          pageCount: 1,
+          sectionCount: 0,
+          topLevelFrameCount: 1,
+          totalNodeCount: 1,
+          totalInstanceCount: 1,
+          localComponentCount: 0,
+          localStyleCount: 0,
+          externalComponentCount: 1
+        },
+        tokenSignals: {
+          boundVariableIds: [],
+          variableModeIds: [],
+          styleReferences: {
+            allStyleIds: [],
+            byType: {
+              fill: [],
+              stroke: [],
+              effect: [],
+              text: [],
+              generic: []
+            },
+            localStyleIds: [],
+            linkedStyleIds: []
+          }
+        },
+        layoutGraph: {
+          pages: [],
+          sections: [],
+          frames: [],
+          edges: []
+        },
+        componentFamilies: [
+          {
+            familyKey: "button-family",
+            familyName: "Button",
+            componentIds: ["1:100"],
+            componentSetIds: ["1:200"],
+            referringNodeIds: ["instance-1"],
+            nodeCount: 1,
+            variantProperties: []
+          }
+        ],
+        externalComponents: [],
+        frameVariantGroups: [],
+        appShellSignals: [],
+        componentDensity: {
+          boardDominantFamilies: [],
+          byFrame: [],
+          hotspots: []
+        },
+        diagnostics: []
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(componentMatchReportPath, componentMatchReportContent, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+    stage: "ir.derive",
+    absolutePath: figmaAnalysisPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: { fontFamily: "Brand Sans" },
+            variants: {}
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: { fontFamily: "Brand Sans" },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.deepEqual(input.componentMappings, [
+        {
+          boardKey: "storybook-board",
+          nodeId: "instance-1",
+          componentName: "ManualButton",
+          importPath: "@manual/ui",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]);
+      assert.deepEqual(input.customerProfileDesignSystemConfig, {
+        library: "__customer_profile__",
+        mappings: {
+          Button: {
+            import: "@customer/components",
+            export: "PrimaryButton",
+            component: "CustomerButton",
+            omittedProps: ["sx"]
+          }
+        }
+      });
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 1,
+          fallbackNodes: 0,
+          totalCandidateNodes: 1
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0,
+          broadPatternCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-board",
+      componentMappings: executionContext.input?.componentMappings
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(await readFile(componentMatchReportPath, "utf8"), componentMatchReportContent);
+});
+
 test("CodegenGenerateService generates Issue #693 customer form specializations in storybook-first mode", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createIssue693IrForStageServices();

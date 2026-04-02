@@ -394,6 +394,7 @@ export interface ReviewEvidenceSummary {
     contractMismatchCount?: number;
     missingMappingCount?: number;
     disabledMappingCount?: number;
+    broadPatternCount?: number;
   };
   deltaSummary?: JobDeltaSummary;
   diffPreview?: JobDiffPreview;

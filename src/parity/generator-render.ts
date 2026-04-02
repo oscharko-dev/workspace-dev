@@ -8,6 +8,7 @@ import {
   isTextElement
 } from "./types.js";
 import type { ComponentMatchReportIconResolutionRecord } from "../storybook/types.js";
+import type { ComponentMappingWarningCode } from "./types-mapping.js";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -996,7 +997,7 @@ export interface RenderContext {
   mappingByNodeId: Map<string, ComponentMappingRule>;
   usedMappingNodeIds: Set<string>;
   mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    code: ComponentMappingWarningCode;
     nodeId: string;
     message: string;
   }>;
@@ -1056,7 +1057,7 @@ const pushMappingWarning = ({
   message
 }: {
   context: RenderContext;
-  code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+  code: ComponentMappingWarningCode;
   nodeId: string;
   message: string;
 }): void => {

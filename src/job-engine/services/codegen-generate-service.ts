@@ -3,11 +3,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
+import type { WorkspaceComponentMappingRule } from "../../contracts/index.js";
+import { resolveComponentMappingRules } from "../../component-mapping-rules.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import { buildComponentManifest } from "../../parity/component-manifest.js";
 import { resolveEmittedScreenTargets } from "../../parity/emitted-screen-targets.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
+import type { FigmaAnalysis } from "../../parity/figma-analysis.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
@@ -17,6 +20,7 @@ import type {
   StorybookPublicThemesArtifact,
   StorybookPublicTokensArtifact
 } from "../../storybook/types.js";
+import type { FigmaLibraryResolutionArtifact } from "../figma-library-resolution.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 
@@ -24,6 +28,7 @@ export interface CodegenGenerateStageInput {
   figmaFileKey?: string;
   figmaAccessToken?: string;
   boardKeySeed: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
 }
 
 interface CodegenGenerateServiceDeps {
@@ -49,6 +54,42 @@ const parseComponentMatchReportArtifact = ({
     throw new Error("Expected a component.match_report artifact with an entries array.");
   }
   return parsed as ComponentMatchReportArtifact;
+};
+
+const parseFigmaAnalysisArtifact = ({
+  input
+}: {
+  input: string;
+}): FigmaAnalysis => {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("componentFamilies" in parsed) ||
+    !Array.isArray((parsed as Record<string, unknown>).componentFamilies)
+  ) {
+    throw new Error("Expected a figma.analysis artifact with a componentFamilies array.");
+  }
+  return parsed as FigmaAnalysis;
+};
+
+const parseFigmaLibraryResolutionArtifact = ({
+  input
+}: {
+  input: string;
+}): FigmaLibraryResolutionArtifact => {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("artifact" in parsed) ||
+    (parsed as Record<string, unknown>).artifact !== "figma.library_resolution" ||
+    !("entries" in parsed) ||
+    !Array.isArray((parsed as Record<string, unknown>).entries)
+  ) {
+    throw new Error("Expected a figma.library_resolution artifact with an entries array.");
+  }
+  return parsed as FigmaLibraryResolutionArtifact;
 };
 
 const rankIconResolutionStatus = (value: ComponentMatchReportIconResolutionRecord["status"]): number => {
@@ -176,6 +217,8 @@ export const createCodegenGenerateService = ({
         | ReturnType<typeof toCustomerProfileDesignSystemConfigFromComponentMatchReport>["config"]
         | undefined;
       let storybookFirstIconLookup: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
+      let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
+      let figmaLibraryResolutionArtifact: FigmaLibraryResolutionArtifact | undefined;
       const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
       if (isStorybookFirst) {
         if (!context.resolvedCustomerProfile) {
@@ -249,7 +292,6 @@ export const createCodegenGenerateService = ({
           throw error;
         }
 
-        let componentMatchReportArtifact: ComponentMatchReportArtifact;
         try {
           const componentMatchReportPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.componentMatchReport);
           componentMatchReportArtifact = parseComponentMatchReportArtifact({
@@ -281,9 +323,85 @@ export const createCodegenGenerateService = ({
         }
       }
 
+      let resolvedComponentMappings = input.componentMappings;
+      let initialMappingWarnings: ReturnType<typeof resolveComponentMappingRules>["mappingWarnings"] = [];
+      if (resolvedComponentMappings && resolvedComponentMappings.length > 0) {
+        const hasPatternComponentMappings = resolvedComponentMappings.some((rule) => !rule.nodeId?.trim());
+        let figmaAnalysisArtifact: FigmaAnalysis | undefined;
+        if (hasPatternComponentMappings) {
+          try {
+            const figmaAnalysisPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.figmaAnalysis);
+            figmaAnalysisArtifact = parseFigmaAnalysisArtifact({
+              input: await readFile(figmaAnalysisPath, "utf8")
+            });
+          } catch (error) {
+            throw createPipelineError({
+              code: "E_FIGMA_ANALYSIS_INVALID",
+              stage: "codegen.generate",
+              message: "Pattern component mapping overrides require a readable figma.analysis artifact.",
+              cause: error,
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
+        }
+
+        if (hasPatternComponentMappings && !componentMatchReportArtifact) {
+          const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+          if (componentMatchReportPath) {
+            try {
+              componentMatchReportArtifact = parseComponentMatchReportArtifact({
+                input: await readFile(componentMatchReportPath, "utf8")
+              });
+            } catch (error) {
+              throw createPipelineError({
+                code: "E_COMPONENT_MATCH_REPORT_INVALID",
+                stage: "codegen.generate",
+                message: "Pattern component mapping overrides require a readable component.match_report artifact.",
+                cause: error,
+                limits: context.runtime.pipelineDiagnosticLimits
+              });
+            }
+          }
+
+          const figmaLibraryResolutionPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
+          if (figmaLibraryResolutionPath) {
+            try {
+              figmaLibraryResolutionArtifact = parseFigmaLibraryResolutionArtifact({
+                input: await readFile(figmaLibraryResolutionPath, "utf8")
+              });
+            } catch (error) {
+              throw createPipelineError({
+                code: "E_FIGMA_LIBRARY_RESOLUTION_INVALID",
+                stage: "codegen.generate",
+                message: "Pattern component mapping overrides require a readable figma.library_resolution artifact when present.",
+                cause: error,
+                limits: context.runtime.pipelineDiagnosticLimits
+              });
+            }
+          }
+        }
+
+        const resolvedComponentMappingResult = resolveComponentMappingRules({
+          componentMappings: resolvedComponentMappings,
+          ir,
+          ...(figmaAnalysisArtifact ? { figmaAnalysis: figmaAnalysisArtifact } : {}),
+          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
+          ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {})
+        });
+        resolvedComponentMappings = resolvedComponentMappingResult.componentMappings;
+        initialMappingWarnings = resolvedComponentMappingResult.mappingWarnings;
+        for (const warning of initialMappingWarnings) {
+          context.log({
+            level: "warn",
+            message: warning.message
+          });
+        }
+      }
+
       const generator = generateArtifactsStreamingFn({
         projectDir: context.paths.generatedProjectDir,
         ir,
+        ...(resolvedComponentMappings ? { componentMappings: resolvedComponentMappings } : {}),
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
         ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
@@ -291,6 +409,7 @@ export const createCodegenGenerateService = ({
         ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
         ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
+        ...(initialMappingWarnings.length > 0 ? { initialMappingWarnings } : {}),
         generationLocale: context.resolvedGenerationLocale,
         routerMode: context.runtime.routerMode,
         formHandlingMode: context.resolvedFormHandlingMode,

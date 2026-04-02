@@ -16,6 +16,7 @@ import type {
   SimplificationMetrics
 } from "./types.js";
 import { validateDesignIR } from "./types.js";
+import type { ComponentMappingWarning } from "./types-mapping.js";
 import { WorkflowError } from "./workflow-error.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import {
@@ -260,6 +261,7 @@ interface GenerateArtifactsInput {
   projectDir: string;
   ir: DesignIR;
   componentMappings?: ComponentMappingRule[];
+  initialMappingWarnings?: ComponentMappingWarning[];
   customerProfile?: ResolvedCustomerProfile;
   customerProfileDesignSystemConfig?: DesignSystemConfig;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
@@ -342,11 +344,9 @@ interface GenerateArtifactsResult {
     missingMappingCount: number;
     contractMismatchCount: number;
     disabledMappingCount: number;
+    broadPatternCount: number;
   };
-  mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>;
+  mappingWarnings: ComponentMappingWarning[];
 }
 
 
@@ -365,14 +365,8 @@ const accumulateSimplificationStats = ({
 };
 
 const dedupeMappingWarnings = (
-  warnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>
-): Array<{
-  code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-  message: string;
-}> => {
+  warnings: ComponentMappingWarning[]
+): ComponentMappingWarning[] => {
   const seen = new Set<string>();
   return warnings.filter((warning) => {
     const key = `${warning.code}:${warning.message}`;
@@ -585,18 +579,17 @@ interface GenerateArtifactsStatePhase {
   }>;
   allIrNodeIds: Set<string>;
   mappingByNodeId: Map<string, ComponentMappingRule>;
-  mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>;
+  mappingWarnings: ComponentMappingWarning[];
 }
 
 const initializeGenerateArtifactsStatePhase = ({
   ir,
-  componentMappings
+  componentMappings,
+  initialMappingWarnings = []
 }: {
   ir: DesignIR;
   componentMappings: ComponentMappingRule[] | undefined;
+  initialMappingWarnings?: ComponentMappingWarning[];
 }): GenerateArtifactsStatePhase => {
   const generatedPaths = new Set<string>();
   const generationMetrics: GenerationMetrics = {
@@ -621,7 +614,7 @@ const initializeGenerateArtifactsStatePhase = ({
     ir.screens.flatMap((screen) => flattenElements(screen.children).map((node) => node.id))
   );
   const prioritizedMappings = [...(componentMappings ?? [])]
-    .filter((mapping) => mapping.nodeId.trim().length > 0)
+    .filter((mapping) => typeof mapping.nodeId === "string" && mapping.nodeId.trim().length > 0)
     .sort((left, right) => {
       if (left.priority !== right.priority) {
         return left.priority - right.priority;
@@ -629,18 +622,17 @@ const initializeGenerateArtifactsStatePhase = ({
       if (left.source !== right.source) {
         return left.source === "local_override" ? -1 : 1;
       }
-      return left.nodeId.localeCompare(right.nodeId);
+      return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
     });
   const mappingByNodeId = new Map<string, ComponentMappingRule>();
   for (const mapping of prioritizedMappings) {
-    if (!mappingByNodeId.has(mapping.nodeId)) {
-      mappingByNodeId.set(mapping.nodeId, mapping);
+    const nodeId = mapping.nodeId;
+    if (!nodeId || mappingByNodeId.has(nodeId)) {
+      continue;
     }
+    mappingByNodeId.set(nodeId, mapping);
   }
-  const mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }> = [];
+  const mappingWarnings: ComponentMappingWarning[] = [...initialMappingWarnings];
   for (const [nodeId] of mappingByNodeId.entries()) {
     if (!allIrNodeIds.has(nodeId)) {
       mappingWarnings.push({
@@ -1020,10 +1012,7 @@ const appendGenerateArtifactsMappingWarnings = ({
   mappingByNodeId: Map<string, ComponentMappingRule>;
   allIrNodeIds: Set<string>;
   usedMappingNodeIds: Set<string>;
-  mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>;
+  mappingWarnings: ComponentMappingWarning[];
 }): void => {
   for (const [nodeId, mapping] of mappingByNodeId.entries()) {
     if (!allIrNodeIds.has(nodeId)) {
@@ -1079,6 +1068,7 @@ export async function* generateArtifactsStreaming(
     projectDir,
     ir,
     componentMappings,
+    initialMappingWarnings,
     customerProfile,
     customerProfileDesignSystemConfig,
     storybookFirstIconLookup,
@@ -1120,7 +1110,8 @@ export async function* generateArtifactsStreaming(
     mappingWarnings
   } = initializeGenerateArtifactsStatePhase({
     ir,
-    componentMappings
+    componentMappings,
+    ...(initialMappingWarnings ? { initialMappingWarnings } : {})
   });
 
   // ── Phase 1: Theme & shared base files (yield immediately) ────────────
@@ -1147,10 +1138,7 @@ export async function* generateArtifactsStreaming(
   const appShellIdentities = buildAppShellArtifactIdentities(ir.appShells);
   const appShellById = new Map((ir.appShells ?? []).map((appShell) => [appShell.id, appShell] as const));
   const usedMappingNodeIds = new Set<string>();
-  const screenMappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }> = [];
+  const screenMappingWarnings: ComponentMappingWarning[] = [];
   const iconWarnings: IconRenderWarning[] = [];
   const accessibilityWarnings: AccessibilityWarning[] = [];
   const simplificationByScreen: ScreenSimplificationMetric[] = [];
@@ -1445,7 +1433,8 @@ export async function* generateArtifactsStreaming(
     mappingDiagnostics: {
       missingMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_MISSING").length,
       contractMismatchCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_CONTRACT_MISMATCH").length,
-      disabledMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_DISABLED").length
+      disabledMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_DISABLED").length,
+      broadPatternCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_BROAD_PATTERN").length
     },
     mappingWarnings: dedupedMappingWarnings
   };

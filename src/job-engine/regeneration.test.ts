@@ -748,6 +748,100 @@ test("submitRegeneration reuses the source customerBrandId by default and honors
   });
 });
 
+test("submitRegeneration reuses source componentMappings by default and honors explicit replacements", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-component-mappings-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    componentMappings: [
+      {
+        boardKey: " board-1 ",
+        nodeId: " box-1 ",
+        componentName: " Button ",
+        importPath: " @mui/material/Button ",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+
+  const inheritedAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: []
+  });
+  assert.deepEqual(engine.getJob(inheritedAccepted.jobId)?.request.componentMappings, [
+    {
+      boardKey: "board-1",
+      nodeId: "box-1",
+      componentName: "Button",
+      importPath: "@mui/material/Button",
+      priority: 0,
+      source: "local_override",
+      enabled: true
+    }
+  ]);
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: inheritedAccepted.jobId
+  });
+
+  const overriddenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [],
+    componentMappings: [
+      {
+        boardKey: " board-1 ",
+        canonicalComponentName: " Button ",
+        semanticType: " button ",
+        componentName: " PatternButton ",
+        importPath: " @pattern/ui ",
+        priority: 1,
+        source: "code_connect_import",
+        enabled: false
+      }
+    ]
+  });
+  assert.deepEqual(engine.getJob(overriddenAccepted.jobId)?.request.componentMappings, [
+    {
+      boardKey: "board-1",
+      canonicalComponentName: "Button",
+      semanticType: "button",
+      componentName: "PatternButton",
+      importPath: "@pattern/ui",
+      priority: 1,
+      source: "code_connect_import",
+      enabled: false
+    }
+  ]);
+  await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: overriddenAccepted.jobId
+  });
+});
+
 test("submitRegeneration reuses the stored customer profile snapshot even when the source profile file changes", async () => {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-customer-profile-reuse-"));
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");

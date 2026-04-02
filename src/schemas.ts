@@ -18,6 +18,7 @@
 
 import type {
   WorkspaceBrandTheme,
+  WorkspaceComponentMappingRule,
   WorkspaceCreatePrInput,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
@@ -27,6 +28,7 @@ import type {
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus
 } from "./contracts/index.js";
+import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import { normalizeGenerationLocale } from "./generation-locale.js";
 import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
 
@@ -147,6 +149,190 @@ function parseSubmitGenerationLocale({
   return normalized;
 }
 
+function parseComponentMappingRuleEntry({
+  entry,
+  path
+}: {
+  entry: unknown;
+  path: PathSegment[];
+}): ValidationResult<WorkspaceComponentMappingRule> {
+  const issues: ValidationIssue[] = [];
+  if (!isRecord(entry)) {
+    pushIssue(issues, path, "Each component mapping rule must be an object.");
+    return { success: false, error: { issues } };
+  }
+
+  const allowedKeys = new Set([
+    "id",
+    "boardKey",
+    "nodeId",
+    "nodeNamePattern",
+    "canonicalComponentName",
+    "storybookTier",
+    "figmaLibrary",
+    "semanticType",
+    "componentName",
+    "importPath",
+    "propContract",
+    "priority",
+    "source",
+    "enabled",
+    "createdAt",
+    "updatedAt"
+  ]);
+  for (const key of Object.keys(entry)) {
+    if (!allowedKeys.has(key)) {
+      pushIssue(issues, [...path, key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  const parseOptionalNonEmptyString = (key: keyof WorkspaceComponentMappingRule): string | undefined => {
+    const value = entry[key];
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "string" || value.trim().length === 0) {
+      pushIssue(issues, [...path, key], `${key} must be a non-empty string when provided.`);
+      return undefined;
+    }
+    return value.trim();
+  };
+
+  const boardKey = parseOptionalNonEmptyString("boardKey");
+  const nodeId = parseOptionalNonEmptyString("nodeId");
+  const nodeNamePattern = parseOptionalNonEmptyString("nodeNamePattern");
+  const canonicalComponentName = parseOptionalNonEmptyString("canonicalComponentName");
+  const storybookTier = parseOptionalNonEmptyString("storybookTier");
+  const figmaLibrary = parseOptionalNonEmptyString("figmaLibrary");
+  const semanticType = parseOptionalNonEmptyString("semanticType");
+  const componentName = parseOptionalNonEmptyString("componentName");
+  const importPath = parseOptionalNonEmptyString("importPath");
+  const createdAt = parseOptionalNonEmptyString("createdAt");
+  const updatedAt = parseOptionalNonEmptyString("updatedAt");
+
+  const id = (() => {
+    const value = entry.id;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "number" || !Number.isInteger(value)) {
+      pushIssue(issues, [...path, "id"], "id must be an integer when provided.");
+      return undefined;
+    }
+    return value;
+  })();
+
+  const priority = (() => {
+    const value = entry.priority;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      pushIssue(issues, [...path, "priority"], "priority must be a finite number.");
+      return undefined;
+    }
+    return value;
+  })();
+
+  const source = (() => {
+    const value = entry.source;
+    if (value !== "local_override" && value !== "code_connect_import") {
+      pushIssue(issues, [...path, "source"], "source must be either 'local_override' or 'code_connect_import'.");
+      return undefined;
+    }
+    return value;
+  })();
+
+  const enabled = (() => {
+    const value = entry.enabled;
+    if (typeof value !== "boolean") {
+      pushIssue(issues, [...path, "enabled"], "enabled must be a boolean.");
+      return undefined;
+    }
+    return value;
+  })();
+
+  const propContract = (() => {
+    const value = entry.propContract;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isRecord(value)) {
+      pushIssue(issues, [...path, "propContract"], "propContract must be an object when provided.");
+      return undefined;
+    }
+    return value;
+  })();
+
+  if (issues.length > 0) {
+    return { success: false, error: { issues } };
+  }
+
+  const rule: WorkspaceComponentMappingRule = {
+    boardKey: boardKey as string,
+    componentName: componentName as string,
+    importPath: importPath as string,
+    priority: priority as number,
+    source: source as WorkspaceComponentMappingRule["source"],
+    enabled: enabled as boolean,
+    ...(id !== undefined ? { id } : {}),
+    ...(nodeId ? { nodeId } : {}),
+    ...(nodeNamePattern ? { nodeNamePattern } : {}),
+    ...(canonicalComponentName ? { canonicalComponentName } : {}),
+    ...(storybookTier ? { storybookTier } : {}),
+    ...(figmaLibrary ? { figmaLibrary } : {}),
+    ...(semanticType ? { semanticType } : {}),
+    ...(propContract ? { propContract } : {}),
+    ...(createdAt ? { createdAt } : {}),
+    ...(updatedAt ? { updatedAt } : {})
+  };
+
+  const validation = validateComponentMappingRule({ rule });
+  if (!validation.ok) {
+    const validationPath = validation.message.includes("nodeNamePattern")
+      ? [...path, "nodeNamePattern"]
+      : path;
+    pushIssue(issues, validationPath, validation.message);
+    return { success: false, error: { issues } };
+  }
+
+  return {
+    success: true,
+    data: validation.normalizedRule
+  };
+}
+
+function parseOptionalComponentMappingsField({
+  input,
+  key,
+  issues
+}: {
+  input: Record<string, unknown>;
+  key: "componentMappings";
+  issues: ValidationIssue[];
+}): WorkspaceComponentMappingRule[] | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    pushIssue(issues, [key], "componentMappings must be an array when provided.");
+    return undefined;
+  }
+
+  const parsedRules: WorkspaceComponentMappingRule[] = [];
+  value.forEach((entry, index) => {
+    const parsed = parseComponentMappingRuleEntry({
+      entry,
+      path: [key, index]
+    });
+    if (!parsed.success) {
+      issues.push(...parsed.error.issues);
+      return;
+    }
+    parsedRules.push(parsed.data);
+  });
+
+  return parsedRules;
+}
+
 function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput> {
   const issues: ValidationIssue[] = [];
 
@@ -162,6 +348,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "storybookStaticDir",
     "customerProfilePath",
     "customerBrandId",
+    "componentMappings",
     "repoUrl",
     "repoToken",
     "enableGitPr",
@@ -214,6 +401,11 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     input,
     key: "customerBrandId",
     required: false,
+    issues
+  });
+  const componentMappings = parseOptionalComponentMappingsField({
+    input,
+    key: "componentMappings",
     issues
   });
   const repoUrl = parseStringField({
@@ -401,6 +593,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   if (customerBrandId !== undefined) {
     data.customerBrandId = customerBrandId.trim();
   }
+  if (componentMappings !== undefined) {
+    data.componentMappings = componentMappings;
+  }
   if (repoUrl !== undefined) {
     data.repoUrl = repoUrl;
   }
@@ -536,6 +731,7 @@ interface RegenerationRequestData {
   draftId?: string;
   baseFingerprint?: string;
   customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
 }
 
 function parseRegenerationRequest(input: unknown): ValidationResult<RegenerationRequestData> {
@@ -546,7 +742,7 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
     return { success: false, error: { issues } };
   }
 
-  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint", "customerBrandId"]);
+  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint", "customerBrandId", "componentMappings"]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
@@ -612,6 +808,12 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
     }
   }
 
+  const componentMappings = parseOptionalComponentMappingsField({
+    input,
+    key: "componentMappings",
+    issues
+  });
+
   if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
@@ -625,6 +827,9 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
   }
   if (customerBrandId !== undefined) {
     data.customerBrandId = customerBrandId;
+  }
+  if (componentMappings !== undefined) {
+    data.componentMappings = componentMappings;
   }
 
   return { success: true, data };

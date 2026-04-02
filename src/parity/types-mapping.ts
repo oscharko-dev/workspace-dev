@@ -1,19 +1,19 @@
+import type { WorkspaceComponentMappingRule, WorkspaceComponentMappingSource } from "../contracts/index.js";
 import type { MappingGateMode } from "./types-core.js";
 
-export type ComponentMappingSource = "local_override" | "code_connect_import";
+export type ComponentMappingSource = WorkspaceComponentMappingSource;
 
-export interface ComponentMappingRule {
-  id?: number;
-  boardKey: string;
-  nodeId: string;
-  componentName: string;
-  importPath: string;
-  propContract?: Record<string, unknown>;
-  priority: number;
-  source: ComponentMappingSource;
-  enabled: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+export interface ComponentMappingRule extends WorkspaceComponentMappingRule {}
+
+export type ComponentMappingWarningCode =
+  | "W_COMPONENT_MAPPING_MISSING"
+  | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH"
+  | "W_COMPONENT_MAPPING_DISABLED"
+  | "W_COMPONENT_MAPPING_BROAD_PATTERN";
+
+export interface ComponentMappingWarning {
+  code: ComponentMappingWarningCode;
+  message: string;
 }
 
 export interface ComponentMappingCoverage {
@@ -40,6 +40,7 @@ export interface MappingCoverageMetrics {
   contractMismatchCount: number;
   missingMappingCount: number;
   disabledMappingCount: number;
+  broadPatternCount: number;
   status: "passed" | "warned" | "failed";
   policy?: MappingPolicy;
 }

@@ -537,11 +537,19 @@ const accumulateSimplificationStats = ({
 
 const dedupeMappingWarnings = (
   warnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+    code:
+      | "W_COMPONENT_MAPPING_MISSING"
+      | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH"
+      | "W_COMPONENT_MAPPING_DISABLED"
+      | "W_COMPONENT_MAPPING_BROAD_PATTERN";
     message: string;
   }>
 ): Array<{
-  code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
+  code:
+    | "W_COMPONENT_MAPPING_MISSING"
+    | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH"
+    | "W_COMPONENT_MAPPING_DISABLED"
+    | "W_COMPONENT_MAPPING_BROAD_PATTERN";
   message: string;
 }> => {
   const seen = new Set<string>();

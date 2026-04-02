@@ -15,6 +15,7 @@ import type {
   WorkspaceJobStatus,
   WorkspaceRegenerationInput
 } from "./contracts/index.js";
+import { normalizeComponentMappingRules } from "./component-mapping-rules.js";
 import {
   safeParseCustomerProfileConfig,
   toCustomerProfileConfigSnapshot,
@@ -1105,6 +1106,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const customerProfilePath = normalizeOptionalInputString(input.customerProfilePath);
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const storybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
+    const componentMappings = input.componentMappings
+      ? normalizeComponentMappingRules({
+          rules: input.componentMappings
+        })
+      : undefined;
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
     });
@@ -1127,6 +1133,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
     if (customerBrandId) {
       request.customerBrandId = customerBrandId;
+    }
+    if (componentMappings !== undefined) {
+      request.componentMappings = componentMappings;
     }
     if (storybookStaticDir) {
       request.storybookStaticDir = storybookStaticDir;
@@ -1517,6 +1526,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const jobId = randomUUID();
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
+    const componentMappings = input.componentMappings
+      ? normalizeComponentMappingRules({
+          rules: input.componentMappings
+        })
+      : undefined;
     const job: JobRecord = {
       jobId,
       status: "queued",
@@ -1524,7 +1538,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       request: {
         ...sourceJob.request,
         enableGitPr: false,
-        ...(customerBrandId ? { customerBrandId } : {})
+        ...(customerBrandId ? { customerBrandId } : {}),
+        ...(componentMappings ? { componentMappings } : {})
       },
       stages: createInitialStages(),
       logs: [],

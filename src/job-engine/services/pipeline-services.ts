@@ -41,7 +41,14 @@ const buildCodegenInput = ({
   return {
     boardKeySeed,
     ...(input?.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
-    ...(input?.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {})
+    ...(input?.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
+    ...(context.mode === "submission"
+      ? (input?.componentMappings !== undefined ? { componentMappings: input.componentMappings } : {})
+      : (context.regenerationInput?.componentMappings !== undefined
+          ? { componentMappings: context.regenerationInput.componentMappings }
+          : context.sourceJob?.request.componentMappings !== undefined
+            ? { componentMappings: context.sourceJob.request.componentMappings }
+            : {}))
   };
 };
 

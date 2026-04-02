@@ -10,6 +10,7 @@ import type {
   SimplificationMetrics,
   ScreenSimplificationMetric
 } from "./types.js";
+import type { ComponentMappingWarning } from "./types-mapping.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
 import { resolveGenerationLocale } from "../generation-locale.js";
 import {
@@ -85,10 +86,7 @@ export interface MetricsAccumulator {
 }
 
 export interface WarningCollector {
-  mappingWarnings: Array<{
-    code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
-    message: string;
-  }>;
+  mappingWarnings: ComponentMappingWarning[];
   accessibilityWarnings: AccessibilityWarning[];
 }
 
@@ -275,12 +273,14 @@ export const createGeneratorContext = (input: CreateGeneratorContextInput): Gene
     if (leftSourceOrder !== rightSourceOrder) {
       return leftSourceOrder - rightSourceOrder;
     }
-    return left.nodeId.localeCompare(right.nodeId);
+    return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
   });
   for (const mapping of sortedMappings) {
-    if (!mappingByNodeId.has(mapping.nodeId)) {
-      mappingByNodeId.set(mapping.nodeId, mapping);
+    const nodeId = mapping.nodeId;
+    if (!nodeId || mappingByNodeId.has(nodeId)) {
+      continue;
     }
+    mappingByNodeId.set(nodeId, mapping);
   }
 
   // Collect all IR node IDs for mapping coverage analysis

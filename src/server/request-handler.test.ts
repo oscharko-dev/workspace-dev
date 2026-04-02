@@ -613,6 +613,106 @@ test("request handler shares the submission rate limit between submit and regene
   }
 });
 
+test("request handler forwards normalized componentMappings on submit and regenerate", async () => {
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "job-accepted",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const submitRegeneration = test.mock.fn(() => {
+    return {
+      jobId: "regen-job",
+      sourceJobId: "source-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic"
+      }
+    } as ReturnType<JobEngine["submitRegeneration"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob, submitRegeneration })
+  });
+
+  try {
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token",
+        componentMappings: [
+          {
+            boardKey: " board-1 ",
+            nodeId: " button-node-1 ",
+            componentName: " ManualButton ",
+            importPath: " @manual/ui ",
+            priority: 0,
+            source: "local_override",
+            enabled: true
+          }
+        ]
+      }
+    });
+    assert.equal(submitResponse.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.deepEqual(submitJob.mock.calls[0]?.arguments[0]?.componentMappings, [
+      {
+        boardKey: "board-1",
+        nodeId: "button-node-1",
+        componentName: "ManualButton",
+        importPath: "@manual/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]);
+
+    const regenerateResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/regenerate",
+      headers: { "content-type": "application/json" },
+      payload: {
+        overrides: [],
+        componentMappings: [
+          {
+            boardKey: " board-1 ",
+            canonicalComponentName: " Button ",
+            semanticType: " button ",
+            componentName: " PatternButton ",
+            importPath: " @pattern/ui ",
+            priority: 1,
+            source: "code_connect_import",
+            enabled: false
+          }
+        ]
+      }
+    });
+    assert.equal(regenerateResponse.statusCode, 202);
+    assert.equal(submitRegeneration.mock.callCount(), 1);
+    assert.deepEqual(submitRegeneration.mock.calls[0]?.arguments[0]?.componentMappings, [
+      {
+        boardKey: "board-1",
+        canonicalComponentName: "Button",
+        semanticType: "button",
+        componentName: "PatternButton",
+        importPath: "@pattern/ui",
+        priority: 1,
+        source: "code_connect_import",
+        enabled: false
+      }
+    ]);
+  } finally {
+    await close();
+  }
+});
+
 test("request handler maps local sync errors to deterministic HTTP envelopes", async (t) => {
   const dryRunScenarios = [
     {

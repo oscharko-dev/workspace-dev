@@ -2929,6 +2929,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(result.mappingDiagnostics.missingMappingCount, 1);
   assert.equal(result.mappingDiagnostics.contractMismatchCount, 1);
   assert.equal(result.mappingDiagnostics.disabledMappingCount, 1);
+  assert.equal(result.mappingDiagnostics.broadPatternCount, 0);
   assert.ok(logs.some((entry) => entry.includes("deterministic")));
 
   const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
@@ -5401,6 +5402,29 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
   assert.ok(first.includes("<MappedHeader"));
   assert.equal(first.includes("<AppBar "), false);
   assert.equal(first.includes("<Toolbar>"), false);
+});
+
+test("generateArtifacts folds pre-resolved broad pattern warnings into mapping diagnostics", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-warning-"));
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir: createIr(),
+    initialMappingWarnings: [
+      {
+        code: "W_COMPONENT_MAPPING_BROAD_PATTERN",
+        message: "Pattern component mapping rule storybookTier='Components' matched multiple Figma families; deterministic fallback used"
+      }
+    ],
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  assert.equal(result.mappingDiagnostics.broadPatternCount, 1);
+  assert.equal(result.mappingWarnings.some((warning) => warning.code === "W_COMPONENT_MAPPING_BROAD_PATTERN"), true);
 });
 
 test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fallback behavior", async () => {

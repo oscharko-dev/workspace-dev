@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.3.0
+ * Contract version: 3.4.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -26,6 +26,29 @@ export type WorkspaceLogFormat = "text" | "json";
 
 /** Form handling mode for generated interactive forms. */
 export type WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state";
+
+/** Source that produced a manual or imported component mapping rule. */
+export type WorkspaceComponentMappingSource = "local_override" | "code_connect_import";
+
+/** Submit-time or regeneration-time component mapping override rule. */
+export interface WorkspaceComponentMappingRule {
+  id?: number;
+  boardKey: string;
+  nodeId?: string;
+  nodeNamePattern?: string;
+  canonicalComponentName?: string;
+  storybookTier?: string;
+  figmaLibrary?: string;
+  semanticType?: string;
+  componentName: string;
+  importPath: string;
+  propContract?: Record<string, unknown>;
+  priority: number;
+  source: WorkspaceComponentMappingSource;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 /** Runtime status values for asynchronous workspace jobs. */
 export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed" | "canceled";
@@ -158,6 +181,7 @@ export interface WorkspaceJobInput {
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
@@ -177,6 +201,7 @@ export interface WorkspaceJobRequestMetadata {
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
   repoUrl?: string;
   enableGitPr: boolean;
   figmaSourceMode: WorkspaceFigmaSourceMode;
@@ -377,6 +402,7 @@ export interface WorkspaceRegenerationInput {
   draftId?: string;
   baseFingerprint?: string;
   customerBrandId?: string;
+  componentMappings?: WorkspaceComponentMappingRule[];
 }
 
 /** Submit response for accepted regeneration jobs. */
@@ -614,4 +640,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.3.0" as const;
+export const CONTRACT_VERSION = "3.4.0" as const;

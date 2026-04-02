@@ -31,6 +31,24 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.4.0] - 2026-04-02
+
+### Public component mapping override rules
+
+Added:
+
+- `WorkspaceComponentMappingSource` for explicit manual-override rule provenance.
+- `WorkspaceComponentMappingRule` as the public component mapping override rule contract shared by submit and regeneration flows.
+- `WorkspaceJobInput.componentMappings?: WorkspaceComponentMappingRule[]` for submit-time exact or pattern-based component mapping overrides.
+- `WorkspaceJobRequestMetadata.componentMappings?: WorkspaceComponentMappingRule[]` so persisted public job metadata retains submitted component mapping rules.
+- `WorkspaceRegenerationInput.componentMappings?: WorkspaceComponentMappingRule[]` so regeneration jobs can replace inherited component mapping overrides.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.3.0` to `3.4.0`.
+
+---
+
 ## [3.3.0] - 2026-03-31
 
 ### Storybook-first submit metadata and artifact paths

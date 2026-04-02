@@ -42,6 +42,59 @@ test("schema: valid submit body parses correctly", () => {
   }
 });
 
+test("schema: valid submit body accepts exact and pattern componentMappings", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    componentMappings: [
+      {
+        boardKey: " board-1 ",
+        nodeId: " button-node-1 ",
+        componentName: " ManualButton ",
+        importPath: " @manual/ui ",
+        priority: 1,
+        source: "local_override",
+        enabled: true
+      },
+      {
+        boardKey: " board-1 ",
+        canonicalComponentName: " Button ",
+        storybookTier: " Components ",
+        componentName: " PatternButton ",
+        importPath: " @pattern/ui ",
+        priority: 2,
+        source: "code_connect_import",
+        enabled: false
+      }
+    ]
+  });
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.componentMappings, [
+      {
+        boardKey: "board-1",
+        nodeId: "button-node-1",
+        componentName: "ManualButton",
+        importPath: "@manual/ui",
+        priority: 1,
+        source: "local_override",
+        enabled: true
+      },
+      {
+        boardKey: "board-1",
+        canonicalComponentName: "Button",
+        storybookTier: "Components",
+        componentName: "PatternButton",
+        importPath: "@pattern/ui",
+        priority: 2,
+        source: "code_connect_import",
+        enabled: false
+      }
+    ]);
+  }
+});
+
 test("schema: valid local_json submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "local_json",
@@ -356,6 +409,63 @@ test("schema: rest mode missing credentials report exact required-field issues",
   }
 });
 
+test("schema: submit request rejects mixed exact and pattern componentMappings", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeId: "button-node-1",
+        canonicalComponentName: "Button",
+        componentName: "BrokenRule",
+        importPath: "@broken/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["componentMappings", 0],
+        message: "component mapping rules must be either exact (nodeId only) or pattern-based (selectors only)."
+      }
+    ]);
+  }
+});
+
+test("schema: submit request rejects invalid componentMappings regex sources", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeNamePattern: "[",
+        componentName: "BrokenRule",
+        importPath: "@broken/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["componentMappings", 0, "nodeNamePattern"],
+        message: "nodeNamePattern must be a valid regular expression source."
+      }
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // WorkspaceStatusSchema
 // ---------------------------------------------------------------------------
@@ -474,6 +584,40 @@ test("schema: valid regeneration request accepts layout overrides", () => {
   }
 });
 
+test("schema: valid regeneration request accepts componentMappings", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [],
+    componentMappings: [
+      {
+        boardKey: " board-1 ",
+        canonicalComponentName: " Button ",
+        semanticType: " button ",
+        componentName: " ManualButton ",
+        importPath: " @manual/ui ",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.componentMappings, [
+      {
+        boardKey: "board-1",
+        canonicalComponentName: "Button",
+        semanticType: "button",
+        componentName: "ManualButton",
+        importPath: "@manual/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]);
+  }
+});
+
 test("schema: regeneration request rejects empty customerBrandId", () => {
   const result = RegenerationRequestSchema.safeParse({
     overrides: [],
@@ -481,6 +625,33 @@ test("schema: regeneration request rejects empty customerBrandId", () => {
   });
 
   assert.equal(result.success, false);
+});
+
+test("schema: regeneration request rejects invalid componentMappings", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [],
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        componentName: "BrokenRule",
+        importPath: "@broken/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["componentMappings", 0, "nodeNamePattern"],
+        message:
+          "pattern component mapping rules must define at least one selector: nodeNamePattern, canonicalComponentName, storybookTier, figmaLibrary, or semanticType."
+      }
+    ]);
+  }
 });
 
 test("schema: regeneration request rejects unsupported layout fields", () => {
