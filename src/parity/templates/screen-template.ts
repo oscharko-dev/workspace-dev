@@ -31,6 +31,7 @@ import {
 } from "../generated-source-validation.js";
 import {
   registerMuiImports,
+  registerMappedImport,
   registerIconImport,
   registerInteractiveField,
   registerInteractiveAccordion,
@@ -73,6 +74,7 @@ import {
   isRenderableTabAction,
   deriveSelectOptions,
   renderMappedElement,
+  registerNamedMappedImport,
   toStateKey,
   hasSubtreeName,
   approximatelyEqualNumber,
@@ -112,9 +114,13 @@ import type {
   PatternExtractionPlan,
   RenderedButtonModel,
   ThemeComponentDefaults,
+  DatePickerProviderConfig,
+  PrimitiveJsxPropValue,
+  SpecializedComponentMapping,
   ListRowAnalysis,
   FormGroupAssignment
 } from "../generator-core.js";
+import type { ResolvedStorybookTypographyStyle } from "../../storybook/theme-resolver.js";
 import {
   literal,
   clamp,
@@ -172,11 +178,266 @@ import {
   buildReactHookFormContextFile
 } from "./form-template.js";
 
+const ISSUE_693_BANKING_INPUT_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
+
+const toTypographyWeightNumber = (value: number | string | undefined): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim().toLowerCase();
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) {
+    return numeric;
+  }
+  if (trimmed === "normal") {
+    return 400;
+  }
+  if (trimmed === "medium") {
+    return 500;
+  }
+  if (trimmed === "semibold" || trimmed === "semi bold") {
+    return 600;
+  }
+  if (trimmed === "bold") {
+    return 700;
+  }
+  if (trimmed === "extrabold" || trimmed === "extra bold") {
+    return 800;
+  }
+  if (trimmed === "black") {
+    return 900;
+  }
+  if (trimmed === "light") {
+    return 300;
+  }
+  return undefined;
+};
+
+const toTypographyLineHeightPx = ({
+  value,
+  fontSizePx
+}: {
+  value: number | string | undefined;
+  fontSizePx: number | undefined;
+}): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 4 || fontSizePx === undefined) {
+      return value;
+    }
+    return value * fontSizePx;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.endsWith("px")) {
+    const parsed = Number.parseFloat(trimmed.slice(0, -2));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (trimmed.endsWith("%")) {
+    const parsed = Number.parseFloat(trimmed.slice(0, -1));
+    return Number.isFinite(parsed) && fontSizePx !== undefined ? (parsed / 100) * fontSizePx : undefined;
+  }
+  const parsed = Number.parseFloat(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  if (parsed > 4 || fontSizePx === undefined) {
+    return parsed;
+  }
+  return parsed * fontSizePx;
+};
+
+const toTypographyLetterSpacingEm = ({
+  value,
+  fontSizePx
+}: {
+  value: number | string | undefined;
+  fontSizePx: number | undefined;
+}): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return toLetterSpacingEm({
+      letterSpacingPx: value,
+      fontSizePx
+    });
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.endsWith("em")) {
+    const parsed = Number.parseFloat(trimmed.slice(0, -2));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (trimmed.endsWith("px")) {
+    const parsed = Number.parseFloat(trimmed.slice(0, -2));
+    return Number.isFinite(parsed)
+      ? toLetterSpacingEm({
+          letterSpacingPx: parsed,
+          fontSizePx
+        })
+      : undefined;
+  }
+  const parsed = Number.parseFloat(trimmed);
+  return Number.isFinite(parsed)
+    ? toLetterSpacingEm({
+        letterSpacingPx: parsed,
+        fontSizePx
+      })
+    : undefined;
+};
+
+const isHeadingLikeTextElement = (element: TextElementIR, context: RenderContext): boolean => {
+  return (
+    Boolean(context.headingComponentByNodeId.get(element.id)) ||
+    (typeof element.fontSize === "number" && element.fontSize >= 24) ||
+    (typeof element.fontWeight === "number" && element.fontWeight >= 600)
+  );
+};
+
+const resolveSpecializedComponentMapping = ({
+  context,
+  semanticType
+}: {
+  context: RenderContext;
+  semanticType: string | undefined;
+}): SpecializedComponentMapping | undefined => {
+  if (!semanticType) {
+    return undefined;
+  }
+  return context.specializedComponentMappings[semanticType];
+};
+
+const registerSpecializedComponentImport = ({
+  context,
+  mapping
+}: {
+  context: RenderContext;
+  mapping: SpecializedComponentMapping;
+}): string => {
+  if (mapping.importedName) {
+    return registerNamedMappedImport({
+      context,
+      importedName: mapping.importedName,
+      modulePath: mapping.modulePath,
+      localName: mapping.localName
+    });
+  }
+  return registerMappedImport({
+    context,
+    componentName: mapping.localName,
+    importPath: mapping.modulePath
+  });
+};
+
+const appendMappedPropLine = ({
+  lines,
+  mapping,
+  sourceName,
+  expression,
+  primitiveValue
+}: {
+  lines: string[];
+  mapping: SpecializedComponentMapping;
+  sourceName: string;
+  expression: string;
+  primitiveValue?: PrimitiveJsxPropValue;
+}): void => {
+  if (mapping.omittedProps.has(sourceName)) {
+    return;
+  }
+  const targetName = mapping.propMappings[sourceName] ?? sourceName;
+  if (primitiveValue !== undefined && mapping.defaultProps[targetName] === primitiveValue) {
+    return;
+  }
+  lines.push(`${targetName}={${expression}}`);
+};
+
+const resolveStorybookTypographyVariantName = ({
+  element,
+  context
+}: {
+  element: TextElementIR;
+  context: RenderContext;
+}): string | undefined => {
+  const variants = context.storybookTypographyVariants;
+  if (!variants || Object.keys(variants).length === 0) {
+    return undefined;
+  }
+
+  const elementLetterSpacingEm = toLetterSpacingEm({
+    letterSpacingPx: element.letterSpacing,
+    fontSizePx: element.fontSize
+  });
+  const elementFontFamily = normalizeFontFamily(element.fontFamily);
+  const headingLike = isHeadingLikeTextElement(element, context);
+
+  const ranked = Object.entries(variants)
+    .map(([variantName, variant]) => {
+      const variantWeight = toTypographyWeightNumber(variant.fontWeight);
+      const variantLineHeightPx = toTypographyLineHeightPx({
+        value: variant.lineHeight,
+        fontSizePx: variant.fontSizePx
+      });
+      const variantLetterSpacingEm = toTypographyLetterSpacingEm({
+        value: variant.letterSpacing,
+        fontSizePx: variant.fontSizePx
+      });
+      const normalizedVariantFont = normalizeFontFamily(variant.fontFamily);
+      const sizeDiff = Math.abs((element.fontSize ?? variant.fontSizePx ?? 0) - (variant.fontSizePx ?? element.fontSize ?? 0));
+      const weightDiff = Math.abs(
+        (element.fontWeight ?? variantWeight ?? 0) - (variantWeight ?? element.fontWeight ?? 0)
+      );
+      const lineDiff = Math.abs(
+        (element.lineHeight ?? variantLineHeightPx ?? 0) - (variantLineHeightPx ?? element.lineHeight ?? 0)
+      );
+      const letterSpacingDiff = Math.abs((elementLetterSpacingEm ?? 0) - (variantLetterSpacingEm ?? 0));
+      const familyMismatch =
+        elementFontFamily && normalizedVariantFont && elementFontFamily !== normalizedVariantFont ? 1.25 : 0;
+      const headingPenalty = headingLike === /^h[1-6]$/i.test(variantName) ? 0 : 0.75;
+
+      return {
+        variantName,
+        score: sizeDiff * 3 + weightDiff / 200 + lineDiff / 4 + letterSpacingDiff * 8 + familyMismatch + headingPenalty,
+        sizeDiff,
+        weightDiff,
+        lineDiff
+      };
+    })
+    .sort((left, right) => left.score - right.score || left.sizeDiff - right.sizeDiff);
+
+  const bestMatch = ranked[0];
+  const secondBest = ranked[1];
+  if (!bestMatch) {
+    return undefined;
+  }
+  const hasConfidentLead =
+    !secondBest || secondBest.score - bestMatch.score >= 0.35 || bestMatch.score <= 1.5;
+  if (
+    !hasConfidentLead ||
+    bestMatch.sizeDiff > 2.5 ||
+    bestMatch.weightDiff > 350 ||
+    bestMatch.lineDiff > 6 ||
+    bestMatch.score > 9.5
+  ) {
+    return undefined;
+  }
+  return bestMatch.variantName;
+};
+
 export const renderText = (element: TextElementIR, depth: number, parent: VirtualParent, context: RenderContext): string => {
   if (context.consumedFieldLabelNodeIds?.has(element.id)) {
     return "";
   }
-  registerMuiImports(context, "Typography");
   const indent = "  ".repeat(depth);
   const text = literal(element.text.trim() || element.name);
   const headingComponent = context.headingComponentByNodeId.get(element.id);
@@ -281,6 +542,53 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     }
   }
 
+  // Specialized Typography component mapping (Storybook-driven).
+  const specializedTypographyMapping =
+    element.semanticType === "Typography"
+      ? resolveSpecializedComponentMapping({
+          context,
+          semanticType: element.semanticType
+        })
+      : undefined;
+  if (specializedTypographyMapping) {
+    const storybookVariantName = resolveStorybookTypographyVariantName({
+      element,
+      context
+    });
+    if (storybookVariantName) {
+      const componentLocalName = registerSpecializedComponentImport({
+        context,
+        mapping: specializedTypographyMapping
+      });
+      const propLines: string[] = [];
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedTypographyMapping,
+        sourceName: "variant",
+        expression: literal(storybookVariantName),
+        primitiveValue: storybookVariantName
+      });
+      if (headingComponent) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedTypographyMapping,
+          sourceName: "component",
+          expression: literal(headingComponent),
+          primitiveValue: headingComponent
+        });
+      }
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedTypographyMapping,
+        sourceName: "sx",
+        expression: `{ ${sx} }`
+      });
+      const propsBlock =
+        propLines.length > 0 ? `\n${propLines.map((line) => `${indent}  ${line}`).join("\n")}\n${indent}` : " ";
+      return `${indent}<${componentLocalName}${propsBlock}>{${text}}</${componentLocalName}>`;
+    }
+  }
+
   // DynamicTypography variant mapping (issue #693): when the element has
   // semanticType "DynamicTypography", resolve a variant from the Storybook
   // catalog and prefer it over the token-derived variant.
@@ -289,6 +597,8 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
       ? resolveDynamicTypographyVariant(element)
       : undefined;
   const resolvedVariantName = dynamicTypoVariant ?? typographyVariantName;
+
+  registerMuiImports(context, "Typography");
   const variantProp = resolvedVariantName ? ` variant="${resolvedVariantName}"` : "";
   const headingProp = headingComponent ? ` component="${headingComponent}"` : "";
   return `${indent}<Typography${variantProp}${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
@@ -514,10 +824,15 @@ export const renderSemanticInput = (
   context: RenderContext
 ): string => {
   // --- Banking-input and DatePicker prioritisation (issue #693) ---
-  if (element.semanticType === "DatePicker") {
+  // Specialized component mappings take priority; the built-in renderers
+  // below serve as deterministic fallbacks when no mapping is configured.
+  const hasSpecializedMapping = element.semanticType
+    ? Boolean(resolveSpecializedComponentMapping({ context, semanticType: element.semanticType }))
+    : false;
+  if (!hasSpecializedMapping && element.semanticType === "DatePicker") {
     return renderDatePickerInput(element, depth, parent, context);
   }
-  if (element.semanticType && BANKING_INPUT_SEMANTIC_TYPES.has(element.semanticType)) {
+  if (!hasSpecializedMapping && element.semanticType && BANKING_INPUT_SEMANTIC_TYPES.has(element.semanticType)) {
     return renderBankingInput(element, depth, parent, context);
   }
 
@@ -673,10 +988,6 @@ ${indent}  <FormHelperText id={${literal(helperTextId)}}>{${fieldHelperTextExpre
 ${indent}</FormControl>`;
   }
 
-  registerMuiImports(context, "TextField");
-  if (field.suffixText) {
-    registerMuiImports(context, "InputAdornment");
-  }
   collectThemeSxSampleFromEntries({
     context,
     componentName: "MuiTextField",
@@ -715,6 +1026,228 @@ ${indent}</FormControl>`;
 ${textFieldSxEntries.map((entry) => `${indent}    ${entry}`).join(",\n")}
 ${indent}  }}\n`
       : "";
+
+  const specializedInputMapping = (() => {
+    if (element.semanticType === "DatePicker") {
+      const mapping = resolveSpecializedComponentMapping({
+        context,
+        semanticType: element.semanticType
+      });
+      return mapping && context.datePickerProvider ? mapping : undefined;
+    }
+    if (ISSUE_693_BANKING_INPUT_TYPES.has(element.semanticType ?? "")) {
+      return resolveSpecializedComponentMapping({
+        context,
+        semanticType: element.semanticType
+      });
+    }
+    return undefined;
+  })();
+
+  if (specializedInputMapping) {
+    const componentLocalName = registerSpecializedComponentImport({
+      context,
+      mapping: specializedInputMapping
+    });
+    const usesSlotProps = !specializedInputMapping.omittedProps.has("slotProps");
+    if (field.suffixText && usesSlotProps) {
+      registerMuiImports(context, "InputAdornment");
+    }
+    if (element.semanticType === "DatePicker" && context.datePickerProvider && !context.datePickerProviderResolvedImports) {
+      const providerLocalName = registerNamedMappedImport({
+        context,
+        importedName: context.datePickerProvider.importedName,
+        modulePath: context.datePickerProvider.modulePath,
+        localName: context.datePickerProvider.localName
+      });
+      const adapterLocalName = context.datePickerProvider.adapter
+        ? registerNamedMappedImport({
+            context,
+            importedName: context.datePickerProvider.adapter.importedName,
+            modulePath: context.datePickerProvider.adapter.modulePath,
+            localName: context.datePickerProvider.adapter.localName
+          })
+        : undefined;
+      context.datePickerProviderResolvedImports = {
+        providerLocalName,
+        ...(adapterLocalName ? { adapterLocalName } : {})
+      };
+    }
+    if (element.semanticType === "DatePicker") {
+      context.usesDatePickerProvider = true;
+    } else {
+      context.requiresChangeEventTypeImport = true;
+    }
+
+    const slotPropsExpression = `{
+${indent}    ${slotPropsEntries}
+${indent}  }`;
+    const renderMappedComponent = ({
+      valueExpression,
+      onChangeExpression,
+      onBlurExpression,
+      errorExpression,
+      helperTextExpression
+    }: {
+      valueExpression: string;
+      onChangeExpression: string;
+      onBlurExpression: string;
+      errorExpression: string;
+      helperTextExpression: string;
+    }): string => {
+      const propLines: string[] = [];
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "label",
+        expression: literal(field.label),
+        primitiveValue: field.label
+      });
+      if (element.semanticType !== "DatePicker" && field.placeholder) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "placeholder",
+          expression: literal(field.placeholder),
+          primitiveValue: field.placeholder
+        });
+      }
+      if (element.semanticType !== "DatePicker" && field.inputType) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "type",
+          expression: literal(field.inputType),
+          primitiveValue: field.inputType
+        });
+      }
+      if (element.semanticType !== "DatePicker" && field.autoComplete) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "autoComplete",
+          expression: literal(field.autoComplete),
+          primitiveValue: field.autoComplete
+        });
+      }
+      if (field.required) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "required",
+          expression: "true",
+          primitiveValue: true
+        });
+      }
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "value",
+        expression: valueExpression
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "onChange",
+        expression: onChangeExpression
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "onBlur",
+        expression: onBlurExpression
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "error",
+        expression: errorExpression
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "helperText",
+        expression: helperTextExpression
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "aria-label",
+        expression: literal(field.label)
+      });
+      appendMappedPropLine({
+        lines: propLines,
+        mapping: specializedInputMapping,
+        sourceName: "aria-describedby",
+        expression: literal(helperTextId)
+      });
+      if (textFieldSxEntries.length > 0) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "sx",
+          expression: `{ ${textFieldSxEntries.join(", ")} }`
+        });
+      }
+      if (usesSlotProps) {
+        appendMappedPropLine({
+          lines: propLines,
+          mapping: specializedInputMapping,
+          sourceName: "slotProps",
+          expression: slotPropsExpression
+        });
+      }
+      return `${indent}<${componentLocalName}
+${propLines.map((line) => `${indent}  ${line}`).join("\n")}
+${indent}/>`;
+    };
+
+    if (usesReactHookForm) {
+      const onChangeExpression =
+        element.semanticType === "DatePicker"
+          ? `(value) => controllerField.onChange(typeof value === "string" ? value : value ? String(value) : "")`
+          : `(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)`;
+      return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => {
+${indent}    const helperText = resolveFieldErrorMessage({
+${indent}      fieldKey: ${literal(field.key)},
+${indent}      isTouched: fieldState.isTouched,
+${indent}      isSubmitted,
+${indent}      fieldError: typeof fieldState.error?.message === "string" ? fieldState.error.message : undefined
+${indent}    });
+${indent}    return (
+${indent}      ${renderMappedComponent({
+  valueExpression: "controllerField.value",
+  onChangeExpression,
+  onBlurExpression: "controllerField.onBlur",
+  errorExpression: "Boolean(helperText)",
+  helperTextExpression: "helperText"
+})}
+${indent}    );
+${indent}  }}
+${indent}/>`;
+    }
+
+    const onChangeExpression =
+      element.semanticType === "DatePicker"
+        ? `(value) => updateFieldValue(${literal(field.key)}, typeof value === "string" ? value : value ? String(value) : "")`
+        : `(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)`;
+    return renderMappedComponent({
+      valueExpression: `formValues[${literal(field.key)}] ?? ""`,
+      onChangeExpression,
+      onBlurExpression: `() => handleFieldBlur(${literal(field.key)})`,
+      errorExpression: fieldErrorExpression,
+      helperTextExpression: fieldHelperTextExpression
+    });
+  }
+
+  registerMuiImports(context, "TextField");
+  if (field.suffixText) {
+    registerMuiImports(context, "InputAdornment");
+  }
+  context.requiresChangeEventTypeImport = true;
   if (usesReactHookForm) {
     return `${indent}<Controller
 ${indent}  name={${literal(field.key)}}
@@ -4397,6 +4930,9 @@ export interface FallbackScreenFileInput {
     budget: number;
   };
   themeComponentDefaults?: ThemeComponentDefaults;
+  datePickerProvider?: DatePickerProviderConfig;
+  specializedComponentMappings?: Partial<Record<string, SpecializedComponentMapping>>;
+  storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   componentNameOverride?: string;
   filePathOverride?: string;
   enablePatternExtraction?: boolean;
@@ -4412,6 +4948,9 @@ export interface PreparedFallbackScreenModel {
   resolvedGenerationLocale: string;
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   resolvedThemeComponentDefaults: ThemeComponentDefaults | undefined;
+  datePickerProvider?: DatePickerProviderConfig;
+  specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
+  storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   simplificationStats: SimplificationMetrics;
   simplifiedChildren: ScreenElementIR[];
   headingComponentByNodeId: Map<string, HeadingComponent>;
@@ -4475,6 +5014,9 @@ export const prepareFallbackScreenModel = ({
   formHandlingMode,
   truncationMetric,
   themeComponentDefaults,
+  datePickerProvider,
+  specializedComponentMappings = {},
+  storybookTypographyVariants,
   componentNameOverride,
   filePathOverride,
   enablePatternExtraction = true,
@@ -4547,6 +5089,9 @@ export const prepareFallbackScreenModel = ({
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
     resolvedThemeComponentDefaults,
+    ...(datePickerProvider ? { datePickerProvider } : {}),
+    specializedComponentMappings,
+    ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     simplificationStats,
     simplifiedChildren,
     headingComponentByNodeId,
@@ -4578,6 +5123,9 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     headingComponentByNodeId,
     typographyVariantByNodeId,
     resolvedThemeComponentDefaults,
+    datePickerProvider,
+    specializedComponentMappings,
+    storybookTypographyVariants,
     simplifiedChildren,
     rootParent,
     minX,
@@ -4632,6 +5180,10 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     usesNavigateHandler: false,
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
+    specializedComponentMappings,
+    ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
+    ...(datePickerProvider ? { datePickerProvider } : {}),
+    usesDatePickerProvider: false,
     spacingBase: prepared.resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
     mappingByNodeId,
@@ -4643,6 +5195,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     pageBackgroundColorNormalized,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
+    requiresChangeEventTypeImport: false,
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
       : {})
@@ -4753,7 +5306,6 @@ export const assembleFallbackDependencies = ({
     hasInteractiveFields,
     hasInteractiveAccordions,
     hasSelectField,
-    hasTextInputField,
     formGroups
   } = renderState;
 
@@ -4963,7 +5515,7 @@ const ${dialogCloseHandlerVar} = (): void => {
   if (usesInlineLegacyFormState) {
     reactTypeImports.push("FormEvent");
   }
-  if (hasTextInputField) {
+  if (renderContext.requiresChangeEventTypeImport) {
     reactTypeImports.push("ChangeEvent");
   }
   if (renderContext.usesNavigateHandler) {
@@ -5002,7 +5554,11 @@ const ${dialogCloseHandlerVar} = (): void => {
     .map((iconImport) => `import ${iconImport.localName} from "${iconImport.modulePath}";`)
     .join("\n");
   const mappedImports = renderContext.mappedImports
-    .map((mappedImport) => `import ${mappedImport.localName} from "${mappedImport.modulePath}";`)
+    .map((mappedImport) =>
+      mappedImport.importMode === "named"
+        ? `import { ${mappedImport.importedName}${mappedImport.importedName !== mappedImport.localName ? ` as ${mappedImport.localName}` : ""} } from "${mappedImport.modulePath}";`
+        : `import ${mappedImport.localName} from "${mappedImport.modulePath}";`
+    )
     .join("\n");
   const extractedComponentImports = extractionPlan.componentImports
     .map((componentImport) => `import { ${componentImport.componentName} } from "${componentImport.importPath}";`)
@@ -5084,9 +5640,25 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
   );
 }`;
   // --- DatePicker provider wiring (issue #693) ---
-  const needsDatePickerProvider = Boolean(renderContext.usesDatePicker);
-  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec) || needsDatePickerProvider;
+  const hasDatePickerProvider = Boolean(renderContext.usesDatePickerProvider && renderContext.datePickerProvider);
+  const needsDatePickerFallbackProvider = Boolean(renderContext.usesDatePicker) && !hasDatePickerProvider;
+  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec) || hasDatePickerProvider || needsDatePickerFallbackProvider;
   let wrappedScreenContent = `      <${contentFunctionName} />`;
+  if (hasDatePickerProvider && renderContext.datePickerProvider && renderContext.datePickerProviderResolvedImports) {
+    const providerProps = [
+      ...Object.entries(renderContext.datePickerProvider.props).map(([propName, value]) =>
+        `${propName}={${typeof value === "string" ? literal(value) : JSON.stringify(value)}}`
+      ),
+      ...(renderContext.datePickerProvider.adapter
+        ? [
+            `${renderContext.datePickerProvider.adapter.propName}={${renderContext.datePickerProviderResolvedImports.adapterLocalName ?? renderContext.datePickerProvider.adapter.localName}}`
+          ]
+        : [])
+    ].join(" ");
+    wrappedScreenContent = `      <${renderContext.datePickerProviderResolvedImports.providerLocalName}${providerProps ? ` ${providerProps}` : ""}>
+${wrappedScreenContent}
+      </${renderContext.datePickerProviderResolvedImports.providerLocalName}>`;
+  }
   if (formContextFileSpec) {
     wrappedScreenContent = `      <${formContextFileSpec.providerName}>
 ${wrappedScreenContent}
@@ -5097,7 +5669,7 @@ ${wrappedScreenContent}
 ${wrappedScreenContent}
       </${patternContextFileSpec.providerName}>`;
   }
-  if (needsDatePickerProvider) {
+  if (needsDatePickerFallbackProvider) {
     wrappedScreenContent = `      <LocalizationProvider dateAdapter={AdapterDateFns}>
 ${wrappedScreenContent}
       </LocalizationProvider>`;
@@ -5120,7 +5692,7 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     </Container>
   );
 }`;
-  const datePickerImportBlock = needsDatePickerProvider
+  const datePickerImportBlock = needsDatePickerFallbackProvider
     ? `import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";

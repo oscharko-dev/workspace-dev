@@ -58,6 +58,7 @@ import { normalizeInputSemanticText } from "./generator-forms.js";
 import type { InteractiveFieldModel } from "./generator-forms.js";
 import type { AccessibilityWarning } from "./generator-a11y.js";
 import { toElementSx } from "./generator-templates.js";
+import type { ResolvedStorybookTypographyStyle } from "../storybook/theme-resolver.js";
 
 
 
@@ -902,6 +903,33 @@ export interface IconFallbackResolver {
 export interface MappedImportSpec {
   localName: string;
   modulePath: string;
+  importMode: "default" | "named";
+  importedName?: string;
+}
+
+export type PrimitiveJsxPropValue = boolean | number | string;
+
+export interface SpecializedComponentMapping {
+  componentKey: string;
+  modulePath: string;
+  localName: string;
+  importedName?: string;
+  propMappings: Record<string, string>;
+  omittedProps: ReadonlySet<string>;
+  defaultProps: Record<string, PrimitiveJsxPropValue>;
+}
+
+export interface DatePickerProviderConfig {
+  modulePath: string;
+  importedName: string;
+  localName: string;
+  props: Record<string, PrimitiveJsxPropValue>;
+  adapter?: {
+    modulePath: string;
+    importedName: string;
+    localName: string;
+    propName: string;
+  };
 }
 
 export interface ExtractedComponentImportSpec {
@@ -947,6 +975,14 @@ export interface RenderContext {
   usesNavigateHandler: boolean;
   prototypeNavigationRenderedCount: number;
   mappedImports: MappedImportSpec[];
+  specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
+  storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>> | undefined;
+  datePickerProvider?: DatePickerProviderConfig | undefined;
+  datePickerProviderResolvedImports?: {
+    providerLocalName: string;
+    adapterLocalName?: string;
+  } | undefined;
+  usesDatePickerProvider: boolean;
   spacingBase: number;
   tokens?: DesignTokens | undefined;
   mappingByNodeId: Map<string, ComponentMappingRule>;
@@ -966,6 +1002,7 @@ export interface RenderContext {
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
   currentFormGroupId?: string | undefined;
   usesDatePicker?: boolean | undefined;
+  requiresChangeEventTypeImport: boolean;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {
@@ -1094,7 +1131,7 @@ const toNormalizedImportPath = ({
   return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
 };
 
-const registerMappedImport = ({
+export const registerMappedImport = ({
   context,
   componentName,
   importPath
@@ -1129,7 +1166,53 @@ const registerMappedImport = ({
 
   context.mappedImports.push({
     localName: toIdentifier(localName, "MappedComponent"),
-    modulePath: importPath
+    modulePath: importPath,
+    importMode: "default"
+  });
+  const newestImport = context.mappedImports.at(-1);
+  return newestImport?.localName ?? "MappedComponent";
+};
+
+export const registerNamedMappedImport = ({
+  context,
+  importedName,
+  modulePath,
+  localName
+}: {
+  context: RenderContext;
+  importedName: string;
+  modulePath: string;
+  localName: string;
+}): string => {
+  const preferredName = toComponentIdentifier(localName);
+  const existing = context.mappedImports.find(
+    (item) =>
+      item.importMode === "named" &&
+      item.importedName === importedName &&
+      item.modulePath === modulePath
+  );
+  if (existing) {
+    return existing.localName;
+  }
+
+  const knownNames = new Set<string>([
+    ...context.muiImports,
+    ...context.iconImports.map((item) => item.localName),
+    ...context.mappedImports.map((item) => item.localName)
+  ]);
+
+  let resolvedLocalName = preferredName;
+  let suffix = 2;
+  while (knownNames.has(resolvedLocalName)) {
+    resolvedLocalName = `${preferredName}${suffix}`;
+    suffix += 1;
+  }
+
+  context.mappedImports.push({
+    localName: toIdentifier(resolvedLocalName, "MappedComponent"),
+    modulePath,
+    importMode: "named",
+    importedName
   });
   const newestImport = context.mappedImports.at(-1);
   return newestImport?.localName ?? "MappedComponent";

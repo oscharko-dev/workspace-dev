@@ -196,6 +196,8 @@ const createRenderContext = (): RenderContext =>
     usesNavigateHandler: false,
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
+    specializedComponentMappings: {},
+    usesDatePickerProvider: false,
     spacingBase: 8,
     mappingByNodeId: new Map(),
     usedMappingNodeIds: new Set(),
@@ -205,6 +207,7 @@ const createRenderContext = (): RenderContext =>
     emittedAccessibilityWarningKeys: new Set(),
     themeComponentDefaults: undefined,
     pageBackgroundColorNormalized: undefined,
+    requiresChangeEventTypeImport: false,
     extractionInvocationByNodeId: new Map(),
     responsiveTopLevelLayoutOverrides: {
       flow: {

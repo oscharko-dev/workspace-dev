@@ -59,6 +59,8 @@ const createRenderContext = (): RenderContext => ({
   usesNavigateHandler: false,
   prototypeNavigationRenderedCount: 0,
   mappedImports: [],
+  specializedComponentMappings: {},
+  usesDatePickerProvider: false,
   spacingBase: 8,
   mappingByNodeId: new Map(),
   usedMappingNodeIds: new Set(),
@@ -67,6 +69,7 @@ const createRenderContext = (): RenderContext => ({
   emittedWarningKeys: new Set(),
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
+  requiresChangeEventTypeImport: false,
   extractionInvocationByNodeId: new Map()
 });
 

@@ -53,13 +53,6 @@ export const appTheme = extendTheme({
           textTransform: "none"
         }
       }
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: "8px"
-        }
-      }
     }
   }
 });

@@ -75,6 +75,8 @@ const createRenderContext = (
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
   extractionInvocationByNodeId: new Map(),
+  specializedComponentMappings: {},
+  requiresChangeEventTypeImport: false,
   ...overrides
 });
 

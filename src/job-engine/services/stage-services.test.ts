@@ -13,6 +13,8 @@ import type {
 import { parseCustomerProfileConfig } from "../../customer-profile.js";
 import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
+import { toDeterministicScreenPath } from "../../parity/generator-artifacts.js";
+import { buildTypographyScaleFromAliases } from "../../parity/typography-tokens.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
 import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
@@ -431,7 +433,11 @@ const createMinimalIr = (): DesignIR =>
       fontFamily: "Roboto",
       headingSize: 24,
       bodySize: 14,
-      typography: {}
+      typography: buildTypographyScaleFromAliases({
+        fontFamily: "Roboto",
+        headingSize: 24,
+        bodySize: 14
+      })
     }
   }) as DesignIR;
 
@@ -660,6 +666,466 @@ const createStorybookMatchCustomerProfileForStageServices = ({
   }
   return customerProfile;
 };
+
+const createIssue693CustomerProfileForStageServices = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Forms",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Forms"],
+            storybook: ["forms"],
+            code: ["@customer/forms"]
+          }
+        },
+        {
+          id: "Typography",
+          tierPriority: 20,
+          aliases: {
+            figma: ["Typography"],
+            storybook: ["typography"],
+            code: ["@customer/typography"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light"
+          }
+        }
+      ],
+      imports: {
+        components: {
+          DatePicker: {
+            family: "Forms",
+            package: "@customer/forms",
+            export: "CustomerDatePicker"
+          },
+          InputIBAN: {
+            family: "Forms",
+            package: "@customer/forms",
+            export: "CustomerIbanInput"
+          },
+          Typography: {
+            family: "Typography",
+            package: "@customer/typography",
+            export: "CustomerTypography"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny"
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/forms": "^1.0.0",
+          "@customer/typography": "^1.0.0",
+          "@customer/date-provider": "^1.0.0"
+        },
+        providers: {
+          datePicker: {
+            package: "@customer/date-provider",
+            export: "CustomerDatePickerProvider",
+            adapter: {
+              package: "@customer/date-provider",
+              export: "CustomerDateAdapter"
+            },
+            props: {
+              adapterLocale: "de"
+            }
+          }
+        }
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create Issue #693 stage-service customer profile fixture.");
+  }
+  return customerProfile;
+};
+
+const createIssue693IrForStageServices = (): DesignIR =>
+  ({
+    sourceName: "issue-693",
+    screens: [
+      {
+        id: "screen-issue-693",
+        name: "Issue 693 Screen",
+        route: "/",
+        layoutMode: "VERTICAL",
+        gap: 16,
+        padding: { top: 24, right: 24, bottom: 24, left: 24 },
+        children: [
+          {
+            id: "dynamic-typography",
+            name: "<Dynamic Typography>",
+            nodeType: "TEXT",
+            type: "text",
+            semanticType: "Typography",
+            text: "Payment Schedule",
+            fontFamily: "Brand Sans",
+            fontSize: 32,
+            fontWeight: 700,
+            lineHeight: 40
+          },
+          {
+            id: "iban-field",
+            name: "IBAN field",
+            nodeType: "FRAME",
+            type: "input",
+            semanticType: "InputIBAN",
+            width: 320,
+            height: 56,
+            children: [
+              {
+                id: "iban-label",
+                name: "IBAN label",
+                nodeType: "TEXT",
+                type: "text",
+                text: "IBAN",
+                y: 0
+              },
+              {
+                id: "iban-value",
+                name: "IBAN value",
+                nodeType: "TEXT",
+                type: "text",
+                text: "DE89 3704 0044 0532 0130 00",
+                y: 28
+              }
+            ]
+          },
+          {
+            id: "date-field",
+            name: "Date field",
+            nodeType: "FRAME",
+            type: "input",
+            semanticType: "DatePicker",
+            width: 320,
+            height: 56,
+            y: 88,
+            children: [
+              {
+                id: "date-label",
+                name: "Date label",
+                nodeType: "TEXT",
+                type: "text",
+                text: "Execution date",
+                y: 88
+              },
+              {
+                id: "date-value",
+                name: "Date value",
+                nodeType: "TEXT",
+                type: "text",
+                text: "2026-04-02",
+                y: 116
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    tokens: {
+      palette: {
+        primary: "#dd0000",
+        secondary: "#9c27b0",
+        background: "#ffffff",
+        text: "#111111",
+        success: "#2e7d32",
+        warning: "#ed6c02",
+        error: "#d32f2f",
+        info: "#0288d1",
+        divider: "#e0e0e0",
+        action: {
+          active: "#dd0000",
+          hover: "#dd00001a",
+          selected: "#dd000014",
+          disabled: "#00000042",
+          disabledBackground: "#0000001f",
+          focus: "#dd00001f"
+        }
+      },
+      borderRadius: 12,
+      spacingBase: 8,
+      fontFamily: "Brand Sans",
+      headingSize: 32,
+      bodySize: 16,
+      typography: buildTypographyScaleFromAliases({
+        fontFamily: "Brand Sans",
+        headingSize: 32,
+        bodySize: 16
+      })
+    }
+  }) as DesignIR;
+
+const createIssue693ComponentMatchReportArtifactForStageServices = () => ({
+  artifact: "component.match_report" as const,
+  version: 1 as const,
+  summary: {
+    totalFigmaFamilies: 3,
+    storybookFamilyCount: 3,
+    storybookEntryCount: 3,
+    matched: 3,
+    ambiguous: 0,
+    unmatched: 0,
+    libraryResolution: {
+      byStatus: {
+        resolved_import: 3,
+        mui_fallback_allowed: 0,
+        mui_fallback_denied: 0,
+        not_applicable: 0
+      },
+      byReason: {
+        profile_import_resolved: 3,
+        profile_import_missing: 0,
+        profile_import_family_mismatch: 0,
+        profile_family_unresolved: 0,
+        match_ambiguous: 0,
+        match_unmatched: 0
+      }
+    }
+  },
+  entries: [
+    {
+      figma: {
+        familyKey: "date-picker-family",
+        familyName: "DatePicker",
+        nodeCount: 1,
+        variantProperties: []
+      },
+      match: {
+        status: "matched" as const,
+        confidence: "high" as const,
+        confidenceScore: 100
+      },
+      usedEvidence: [],
+      rejectionReasons: [],
+      fallbackReasons: [],
+      libraryResolution: {
+        status: "resolved_import" as const,
+        reason: "profile_import_resolved" as const,
+        storybookTier: "Forms",
+        profileFamily: "Forms",
+        componentKey: "DatePicker",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerDatePicker",
+          localName: "CustomerDatePicker"
+        }
+      },
+      storybookFamily: {
+        familyId: "storybook-date-picker",
+        title: "Forms/DatePicker",
+        name: "DatePicker",
+        tier: "Forms",
+        storyCount: 1
+      },
+      storyVariant: {
+        entryId: "datepicker--default",
+        storyName: "Default"
+      },
+      resolvedApi: {
+        status: "resolved" as const,
+        componentKey: "DatePicker",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerDatePicker",
+          localName: "CustomerDatePicker"
+        },
+        allowedProps: [
+          { name: "label", kind: "string" as const },
+          { name: "value", kind: "string" as const },
+          { name: "onChange", kind: "unknown" as const },
+          { name: "onBlur", kind: "unknown" as const },
+          { name: "error", kind: "boolean" as const },
+          { name: "helperText", kind: "string" as const },
+          { name: "required", kind: "boolean" as const },
+          { name: "aria-label", kind: "string" as const },
+          { name: "aria-describedby", kind: "string" as const },
+          { name: "sx", kind: "object" as const },
+          { name: "slotProps", kind: "object" as const }
+        ],
+        defaultProps: [],
+        children: { policy: "not_used" as const },
+        slots: { policy: "supported" as const, props: ["slotProps"] },
+        diagnostics: []
+      },
+      resolvedProps: {
+        status: "resolved" as const,
+        fallbackPolicy: "deny" as const,
+        props: [],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "not_used" as const },
+        slots: { policy: "supported" as const, props: ["slotProps"] },
+        codegenCompatible: true,
+        diagnostics: []
+      }
+    },
+    {
+      figma: {
+        familyKey: "iban-family",
+        familyName: "InputIBAN",
+        nodeCount: 1,
+        variantProperties: []
+      },
+      match: {
+        status: "matched" as const,
+        confidence: "high" as const,
+        confidenceScore: 100
+      },
+      usedEvidence: [],
+      rejectionReasons: [],
+      fallbackReasons: [],
+      libraryResolution: {
+        status: "resolved_import" as const,
+        reason: "profile_import_resolved" as const,
+        storybookTier: "Forms",
+        profileFamily: "Forms",
+        componentKey: "InputIBAN",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerIbanInput",
+          localName: "CustomerIbanInput"
+        }
+      },
+      storybookFamily: {
+        familyId: "storybook-input-iban",
+        title: "Forms/InputIBAN",
+        name: "InputIBAN",
+        tier: "Forms",
+        storyCount: 1
+      },
+      storyVariant: {
+        entryId: "inputiban--default",
+        storyName: "Default"
+      },
+      resolvedApi: {
+        status: "resolved" as const,
+        componentKey: "InputIBAN",
+        import: {
+          package: "@customer/forms",
+          exportName: "CustomerIbanInput",
+          localName: "CustomerIbanInput"
+        },
+        allowedProps: [
+          { name: "label", kind: "string" as const },
+          { name: "value", kind: "string" as const },
+          { name: "onChange", kind: "unknown" as const },
+          { name: "onBlur", kind: "unknown" as const },
+          { name: "error", kind: "boolean" as const },
+          { name: "helperText", kind: "string" as const },
+          { name: "required", kind: "boolean" as const },
+          { name: "placeholder", kind: "string" as const },
+          { name: "type", kind: "string" as const },
+          { name: "autoComplete", kind: "string" as const },
+          { name: "aria-label", kind: "string" as const },
+          { name: "aria-describedby", kind: "string" as const },
+          { name: "sx", kind: "object" as const },
+          { name: "slotProps", kind: "object" as const }
+        ],
+        defaultProps: [],
+        children: { policy: "not_used" as const },
+        slots: { policy: "supported" as const, props: ["slotProps"] },
+        diagnostics: []
+      },
+      resolvedProps: {
+        status: "resolved" as const,
+        fallbackPolicy: "deny" as const,
+        props: [],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "not_used" as const },
+        slots: { policy: "supported" as const, props: ["slotProps"] },
+        codegenCompatible: true,
+        diagnostics: []
+      }
+    },
+    {
+      figma: {
+        familyKey: "typography-family",
+        familyName: "Typography",
+        nodeCount: 1,
+        variantProperties: []
+      },
+      match: {
+        status: "matched" as const,
+        confidence: "high" as const,
+        confidenceScore: 100
+      },
+      usedEvidence: [],
+      rejectionReasons: [],
+      fallbackReasons: [],
+      libraryResolution: {
+        status: "resolved_import" as const,
+        reason: "profile_import_resolved" as const,
+        storybookTier: "Typography",
+        profileFamily: "Typography",
+        componentKey: "Typography",
+        import: {
+          package: "@customer/typography",
+          exportName: "CustomerTypography",
+          localName: "CustomerTypography"
+        }
+      },
+      storybookFamily: {
+        familyId: "storybook-typography",
+        title: "Typography/Typography",
+        name: "Typography",
+        tier: "Typography",
+        storyCount: 1
+      },
+      storyVariant: {
+        entryId: "typography--default",
+        storyName: "Default"
+      },
+      resolvedApi: {
+        status: "resolved" as const,
+        componentKey: "Typography",
+        import: {
+          package: "@customer/typography",
+          exportName: "CustomerTypography",
+          localName: "CustomerTypography"
+        },
+        allowedProps: [
+          { name: "variant", kind: "string" as const },
+          { name: "component", kind: "string" as const },
+          { name: "sx", kind: "object" as const }
+        ],
+        defaultProps: [],
+        children: { policy: "supported" as const },
+        slots: { policy: "not_used" as const, props: [] },
+        diagnostics: []
+      },
+      resolvedProps: {
+        status: "resolved" as const,
+        fallbackPolicy: "deny" as const,
+        props: [],
+        omittedProps: [],
+        omittedDefaults: [],
+        children: { policy: "supported" as const },
+        slots: { policy: "not_used" as const, props: [] },
+        codegenCompatible: true,
+        diagnostics: []
+      }
+    }
+  ]
+});
 
 const createComponentMatchReportArtifactForStageServices = ({
   matchStatus = "matched",
@@ -2004,6 +2470,162 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
       boardKeySeed: "storybook-match-board"
     },
     stageContextFor("codegen.generate")
+  );
+});
+
+test("CodegenGenerateService generates Issue #693 customer form specializations in storybook-first mode", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createIssue693IrForStageServices();
+  const tokensPath = path.join(executionContext.paths.jobDir, "issue-693-storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "issue-693-storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "issue-693-component-match-report.json");
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, "{}\n", "utf8");
+  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createIssue693ComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createIssue693CustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: {
+              fontFamily: "Brand Sans",
+              fontSizePx: 16,
+              fontWeight: 400,
+              lineHeight: 1.5
+            },
+            variants: {
+              displayLg: {
+                fontFamily: "Brand Sans",
+                fontSizePx: 32,
+                fontWeight: 700,
+                lineHeight: 40,
+                letterSpacing: "0em"
+              },
+              bodyMd: {
+                fontFamily: "Brand Sans",
+                fontSizePx: 16,
+                fontWeight: 400,
+                lineHeight: 24,
+                letterSpacing: "0em"
+              }
+            }
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: {
+                fontFamily: "Brand Sans",
+                fontSizePx: 16,
+                fontWeight: 400,
+                lineHeight: 1.5
+              },
+              variants: {
+                displayLg: {
+                  fontFamily: "Brand Sans",
+                  fontSizePx: 32,
+                  fontWeight: 700,
+                  lineHeight: 40,
+                  letterSpacing: "0em"
+                },
+                bodyMd: {
+                  fontFamily: "Brand Sans",
+                  fontSizePx: 16,
+                  fontWeight: 400,
+                  lineHeight: 24,
+                  letterSpacing: "0em"
+                }
+              }
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "issue-693-storybook-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  const screenContent = await readFile(
+    path.join(executionContext.paths.generatedProjectDir, toDeterministicScreenPath("Issue 693 Screen")),
+    "utf8"
+  );
+
+  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
+  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"displayLg"\}/);
+  assert.match(screenContent, /<CustomerIbanInput/);
+  assert.match(screenContent, /<CustomerDatePicker/);
+  assert.match(
+    screenContent,
+    /<Issue693ScreenFormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<Issue693ScreenScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/Issue693ScreenFormContextProvider>/
   );
 });
 

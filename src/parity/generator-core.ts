@@ -25,6 +25,7 @@ import {
 } from "../design-system.js";
 import {
   collectCustomerProfileImportIssuesFromSource,
+  resolveCustomerProfileDatePickerProvider,
   toCustomerProfileDesignSystemConfig,
   type ResolvedCustomerProfile
 } from "../customer-profile.js";
@@ -60,7 +61,9 @@ export {
   resolveImageSource,
   pickBestIconNode,
   findFirstByName,
+  registerMappedImport,
   registerMuiImports,
+  registerNamedMappedImport,
   renderMappedElement,
   toStateKey,
   normalizeIconImports,
@@ -92,6 +95,7 @@ export type {
   VirtualParent,
   ButtonVariant,
   ButtonSize,
+  DatePickerProviderConfig,
   HeadingComponent,
   LandmarkRole,
   RgbaColor,
@@ -99,6 +103,8 @@ export type {
   IconImportSpec,
   IconFallbackResolver,
   MappedImportSpec,
+  PrimitiveJsxPropValue,
+  SpecializedComponentMapping,
   ExtractedComponentImportSpec,
   RenderContext,
   RenderedButtonModel
@@ -231,7 +237,13 @@ import {
   loadIconFallbackResolver,
   isPlainRecord
 } from "./generator-render.js";
-import type { IconFallbackResolver, ResolvedFormHandlingMode } from "./generator-render.js";
+import type {
+  DatePickerProviderConfig,
+  IconFallbackResolver,
+  PrimitiveJsxPropValue,
+  ResolvedFormHandlingMode,
+  SpecializedComponentMapping
+} from "./generator-render.js";
 import type { GeneratorContext } from "./generator-context.js";
 import type { AccessibilityWarning } from "./generator-a11y.js";
 
@@ -789,6 +801,98 @@ const toThemeComponentDefaultsFromResolvedStorybookTheme = ({
   return Object.keys(defaults).length > 0 ? defaults : undefined;
 };
 
+const ISSUE_693_SPECIALIZED_COMPONENT_KEYS = [
+  "DatePicker",
+  "InputCurrency",
+  "InputIBAN",
+  "InputTAN",
+  "Typography"
+] as const;
+
+const toSpecializedComponentMapping = ({
+  componentKey,
+  mapping
+}: {
+  componentKey: string;
+  mapping: DesignSystemConfig["mappings"][string] | undefined;
+}): SpecializedComponentMapping | undefined => {
+  if (!mapping?.import || !mapping.component.trim()) {
+    return undefined;
+  }
+
+  const localName = mapping.component.trim();
+  return {
+    componentKey,
+    modulePath: mapping.import,
+    localName,
+    ...(mapping.export ? { importedName: mapping.export } : {}),
+    propMappings: { ...(mapping.propMappings ?? {}) },
+    omittedProps: new Set(mapping.omittedProps ?? []),
+    defaultProps: { ...(mapping.defaultProps ?? {}) }
+  };
+};
+
+const toIssue693SpecializedComponentMappings = ({
+  designSystemConfig
+}: {
+  designSystemConfig: DesignSystemConfig | undefined;
+}): Partial<Record<(typeof ISSUE_693_SPECIALIZED_COMPONENT_KEYS)[number], SpecializedComponentMapping>> => {
+  if (!designSystemConfig) {
+    return {};
+  }
+
+  const entries = ISSUE_693_SPECIALIZED_COMPONENT_KEYS
+    .map((componentKey) => {
+      const mapping = toSpecializedComponentMapping({
+        componentKey,
+        mapping: designSystemConfig.mappings[componentKey]
+      });
+      return mapping ? ([componentKey, mapping] as const) : undefined;
+    })
+    .filter(
+      (
+        entry
+      ): entry is readonly [
+        (typeof ISSUE_693_SPECIALIZED_COMPONENT_KEYS)[number],
+        SpecializedComponentMapping
+      ] => entry !== undefined
+    );
+
+  return Object.fromEntries(entries);
+};
+
+const toDatePickerProviderConfig = ({
+  customerProfile
+}: {
+  customerProfile: ResolvedCustomerProfile | undefined;
+}): DatePickerProviderConfig | undefined => {
+  if (!customerProfile) {
+    return undefined;
+  }
+  const provider = resolveCustomerProfileDatePickerProvider({
+    profile: customerProfile
+  });
+  if (!provider) {
+    return undefined;
+  }
+  return {
+    modulePath: provider.package,
+    importedName: provider.exportName,
+    localName: provider.localName,
+    props: { ...provider.props } as Record<string, PrimitiveJsxPropValue>,
+    ...(provider.adapter
+      ? {
+          adapter: {
+            modulePath: provider.adapter.package,
+            importedName: provider.adapter.exportName,
+            localName: provider.adapter.localName,
+            propName: provider.adapter.propName
+          }
+        }
+      : {})
+  };
+};
+
 const runGenerateArtifactsBasePhase = async ({
   projectDir,
   ir,
@@ -999,6 +1103,17 @@ export async function* generateArtifactsStreaming(
   const aggregatedSimplificationStats = createEmptySimplificationStats();
   let prototypeNavigationRenderedCount = 0;
   const designSystemMappedMuiComponents = new Set(Object.keys(designSystemConfig?.mappings ?? {}));
+  const specializedComponentMappings = resolvedStorybookTheme
+    ? toIssue693SpecializedComponentMappings({
+        designSystemConfig: customerProfileDesignSystemConfig
+      })
+    : {};
+  const datePickerProvider = resolvedStorybookTheme
+    ? toDatePickerProviderConfig({
+        customerProfile
+      })
+    : undefined;
+  const storybookTypographyVariants = resolvedStorybookTheme?.light.typography.variants;
 
   const screenBatches = chunk(ir.screens, STREAMING_SCREEN_BATCH_SIZE);
   let screenIndex = 0;
@@ -1023,6 +1138,13 @@ export async function* generateArtifactsStreaming(
         generationLocale: resolvedGenerationLocale.locale,
         formHandlingMode: resolvedFormHandlingMode,
         ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
+        ...(datePickerProvider ? { datePickerProvider } : {}),
+        ...(Object.keys(specializedComponentMappings).length > 0
+          ? { specializedComponentMappings }
+          : {}),
+        ...(storybookTypographyVariants && Object.keys(storybookTypographyVariants).length > 0
+          ? { storybookTypographyVariants }
+          : {}),
         ...(designSystemMappedMuiComponents.size > 0
           ? { disallowedStyledRootMuiComponents: designSystemMappedMuiComponents }
           : {}),

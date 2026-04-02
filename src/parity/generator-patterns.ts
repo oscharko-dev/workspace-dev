@@ -887,6 +887,8 @@ const buildExtractedComponentFile = ({
     usesNavigateHandler: false,
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
+    specializedComponentMappings: {},
+    usesDatePickerProvider: false,
     spacingBase,
     ...(tokens ? { tokens } : {}),
     mappingByNodeId,
@@ -895,6 +897,7 @@ const buildExtractedComponentFile = ({
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized,
+    requiresChangeEventTypeImport: false,
     ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
     ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {}),
     extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()

@@ -1,11 +1,17 @@
 import { useState } from "react";
 import type { SyntheticEvent } from "react";
-import { Box, Card, CardContent, Container, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
-
-const sharedSxStyle1 = { color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" };
-const sharedSxStyle2 = { width: "100%", maxWidth: "768px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.8 };
+import { Accordion, AccordionDetails, AccordionSummary, Box, Container, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 export default function SettingsScreen() {
+  const [accordionState, setAccordionState] = useState<Record<string, boolean>>({
+    "muiaccordionroot_accordion_section": true
+  });
+
+  const updateAccordionState = (accordionKey: string, expanded: boolean): void => {
+    setAccordionState((previous) => ({ ...previous, [accordionKey]: expanded }));
+  };
+
   const [tabValue1, setTabValue1] = useState<number>(0);
 
   const handleTabChange1 = (_event: SyntheticEvent, newValue: number): void => {
@@ -14,7 +20,7 @@ export default function SettingsScreen() {
   return (
     <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 784px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
       {/* @ir:start settings-title Title text */}
-      <Typography data-ir-id="settings-title" data-ir-name="Title" variant="h1" component="h1" sx={sharedSxStyle1}>{"Settings"}</Typography>
+      <Typography data-ir-id="settings-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Settings"}</Typography>
       {/* @ir:end settings-title */}
       {/* @ir:start tabs-container MuiTabsRoot tab */}
       <Tabs data-ir-id="tabs-container" data-ir-name="MuiTabsRoot" value={tabValue1} onChange={handleTabChange1} aria-label={"General"} sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", bgcolor: "#ffffff" }}>
@@ -23,39 +29,28 @@ export default function SettingsScreen() {
         <Tab key={"tab-security"} id={"tab-1-2"} value={2} label={"Security"} />
       </Tabs>
       {/* @ir:end tabs-container */}
-      {/* @ir:start accordion-section MuiAccordionRoot card */}
-      <Card data-ir-id="accordion-section" data-ir-name="MuiAccordionRoot" sx={{ width: "96%", maxWidth: "768px", minHeight: "300px", display: "flex", flexDirection: "column", bgcolor: "#ffffff" }}>
-        <CardContent>
-          {/* @ir:start accordion-header-1 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-1" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
+      {/* @ir:start accordion-section MuiAccordionRoot accordion */}
+      <Accordion data-ir-id="accordion-section" data-ir-name="MuiAccordionRoot"
+        expanded={accordionState["muiaccordionroot_accordion_section"] ?? true}
+        onChange={(_, expanded) => updateAccordionState("muiaccordionroot_accordion_section", expanded)}
+        disableGutters
+        elevation={0}
+        square
+        sx={{ width: "96%", maxWidth: "768px", minHeight: "300px", display: "flex", flexDirection: "column", bgcolor: "#ffffff", borderRadius: 1, boxShadow: "none", "&::before": { display: "none" } }}
+      >
+        <AccordionSummary id={"accordion-header-muiaccordionroot_accordion_section"} aria-controls={"accordion-panel-muiaccordionroot_accordion_section"} expandIcon={<ExpandMoreIcon fontSize="small" />} sx={{ minHeight: "56px" }}>
+          <Box sx={{ width: "100%", position: "relative", minHeight: "56px" }}>
             {/* @ir:start acc-title-1 Title text */}
-            <Typography data-ir-id="acc-title-1" data-ir-name="Title" variant="h3" component="h3" sx={sharedSxStyle1}>{"Profile Information"}</Typography>
+            <Typography data-ir-id="acc-title-1" data-ir-name="Title" variant="h3" component="h3" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Profile Information"}</Typography>
             {/* @ir:end acc-title-1 */}
-          </Stack>
-          {/* @ir:end accordion-header-1 */}
-          {/* @ir:start accordion-content-1 Accordion Content stack */}
-          <Stack data-ir-id="accordion-content-1" data-ir-name="Accordion Content" component="main" direction="column" spacing={1.2} role="main" sx={{ width: "100%", maxWidth: "768px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1.2 }}>
-            {/* @ir:start acc-body-1 Body text */}
-            <Typography data-ir-id="acc-body-1" data-ir-name="Body" variant="body1" sx={{ color: "text.primary", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Update your personal details and contact information."}</Typography>
-            {/* @ir:end acc-body-1 */}
-          </Stack>
-          {/* @ir:end accordion-content-1 */}
-          {/* @ir:start accordion-header-2 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-2" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
-            {/* @ir:start acc-title-2 Title text */}
-            <Typography data-ir-id="acc-title-2" data-ir-name="Title" variant="h3" component="h4" sx={sharedSxStyle1}>{"Preferences"}</Typography>
-            {/* @ir:end acc-title-2 */}
-          </Stack>
-          {/* @ir:end accordion-header-2 */}
-          {/* @ir:start accordion-header-3 Accordion Header stack */}
-          <Stack data-ir-id="accordion-header-3" data-ir-name="Accordion Header" component="header" direction="row" spacing={0.8} role="banner" sx={sharedSxStyle2}>
-            {/* @ir:start acc-title-3 Title text */}
-            <Typography data-ir-id="acc-title-3" data-ir-name="Title" variant="h3" component="h5" sx={sharedSxStyle1}>{"Privacy Settings"}</Typography>
-            {/* @ir:end acc-title-3 */}
-          </Stack>
-          {/* @ir:end accordion-header-3 */}
-        </CardContent>
-      </Card>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails id={"accordion-panel-muiaccordionroot_accordion_section"} role="region" aria-labelledby={"accordion-header-muiaccordionroot_accordion_section"} sx={{ p: 0 }}>
+          <Box sx={{ position: "relative", width: "91.1%", maxWidth: "700px", minHeight: "22px", display: "block", flexDirection: "column" }}>
+            <Box />
+          </Box>
+        </AccordionDetails>
+      </Accordion>
       {/* @ir:end accordion-section */}
       {/* @ir:start dialog-trigger MuiDialogRoot table */}
       <Box data-ir-id="dialog-trigger" data-ir-name="MuiDialogRoot" sx={{ position: "relative", width: "50%", maxWidth: "400px", minHeight: "300px", bgcolor: "#ffffff", borderRadius: 1.5 }}>

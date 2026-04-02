@@ -366,6 +366,8 @@ const createThemeDerivationRenderContext = ({
     usesNavigateHandler: false,
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
+    specializedComponentMappings: {},
+    usesDatePickerProvider: false,
     spacingBase,
     mappingByNodeId: new Map<string, ComponentMappingRule>(),
     usedMappingNodeIds: new Set<string>(),
@@ -373,6 +375,7 @@ const createThemeDerivationRenderContext = ({
     emittedWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
+    requiresChangeEventTypeImport: false,
     ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
     ...(themeSxSampleCollector ? { themeSxSampleCollector } : {}),
     extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()

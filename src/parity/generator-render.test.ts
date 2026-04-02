@@ -59,6 +59,8 @@ const createRenderContext = (): RenderContext => ({
   usesNavigateHandler: false,
   prototypeNavigationRenderedCount: 0,
   mappedImports: [],
+  specializedComponentMappings: {},
+  usesDatePickerProvider: false,
   spacingBase: 8,
   mappingByNodeId: new Map(),
   usedMappingNodeIds: new Set(),
@@ -67,6 +69,7 @@ const createRenderContext = (): RenderContext => ({
   emittedWarningKeys: new Set(),
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
+  requiresChangeEventTypeImport: false,
   extractionInvocationByNodeId: new Map()
 });
 
@@ -287,7 +290,8 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
   assert.deepEqual(context.mappedImports, [
     {
       localName: "AcmeButton2",
-      modulePath: "../components/AcmeButton"
+      modulePath: "../components/AcmeButton",
+      importMode: "default"
     }
   ]);
 });

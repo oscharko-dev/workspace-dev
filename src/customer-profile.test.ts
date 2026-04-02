@@ -566,6 +566,72 @@ test("toCustomerProfileConfigSnapshot round-trips resolved profiles through safe
   assert.equal(reparsed.config.imports.components.Button.package, parsed.config.imports.components.Button.package);
 });
 
+test("safeParseCustomerProfileConfig parses and snapshots explicit DatePicker provider metadata", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      template: {
+        ...createRawCustomerProfile().template,
+        providers: {
+          datePicker: {
+            package: "@customer/date-provider",
+            export: "CustomerDatePickerProvider",
+            importAlias: "DatePickerProvider",
+            adapter: {
+              package: "@customer/date-provider",
+              export: "CustomerDateAdapter"
+            },
+            props: {
+              adapterLocale: "de",
+              disableFuture: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(parsed.success, true);
+  if (!parsed.success) {
+    assert.fail("Expected explicit DatePicker provider metadata to parse successfully.");
+  }
+
+  assert.deepEqual(parsed.config.template.providers.datePicker, {
+    package: "@customer/date-provider",
+    exportName: "CustomerDatePickerProvider",
+    localName: "DatePickerProvider",
+    adapter: {
+      package: "@customer/date-provider",
+      exportName: "CustomerDateAdapter",
+      localName: "CustomerDateAdapter",
+      propName: "dateAdapter"
+    },
+    props: {
+      adapterLocale: "de",
+      disableFuture: true
+    }
+  });
+
+  const snapshot = toCustomerProfileConfigSnapshot({
+    profile: parsed.config
+  });
+  assert.deepEqual(snapshot.template.providers, {
+    datePicker: {
+      package: "@customer/date-provider",
+      export: "CustomerDatePickerProvider",
+      importAlias: "DatePickerProvider",
+      adapter: {
+        package: "@customer/date-provider",
+        export: "CustomerDateAdapter"
+      },
+      props: {
+        adapterLocale: "de",
+        disableFuture: true
+      }
+    }
+  });
+});
+
 test("collectCustomerProfileImportIssuesFromSource reports disallowed MUI fallbacks and unknown exports", () => {
   const parsed = safeParseCustomerProfileConfig({
     input: createRawCustomerProfile()

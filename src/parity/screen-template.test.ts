@@ -54,7 +54,10 @@ const createRenderContext = ({
   hasScreenFormFields = false,
   primarySubmitButtonKey = "",
   routePathByScreenId,
-  themeComponentDefaults
+  themeComponentDefaults,
+  specializedComponentMappings,
+  storybookTypographyVariants,
+  datePickerProvider
 }: {
   formHandlingMode?: RenderContext["formHandlingMode"];
   generationLocale?: string;
@@ -62,6 +65,9 @@ const createRenderContext = ({
   primarySubmitButtonKey?: string;
   routePathByScreenId?: Map<string, string>;
   themeComponentDefaults?: RenderContext["themeComponentDefaults"];
+  specializedComponentMappings?: RenderContext["specializedComponentMappings"];
+  storybookTypographyVariants?: RenderContext["storybookTypographyVariants"];
+  datePickerProvider?: RenderContext["datePickerProvider"];
 } = {}): RenderContext => ({
   screenId: "screen-1",
   screenName: "Example",
@@ -92,6 +98,10 @@ const createRenderContext = ({
   usesNavigateHandler: false,
   prototypeNavigationRenderedCount: 0,
   mappedImports: [],
+  specializedComponentMappings: specializedComponentMappings ?? {},
+  ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
+  ...(datePickerProvider ? { datePickerProvider } : {}),
+  usesDatePickerProvider: false,
   spacingBase: 8,
   mappingByNodeId: new Map(),
   usedMappingNodeIds: new Set(),
@@ -100,6 +110,7 @@ const createRenderContext = ({
   emittedWarningKeys: new Set(),
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
+  requiresChangeEventTypeImport: false,
   themeComponentDefaults,
   extractionInvocationByNodeId: new Map(),
   responsiveTopLevelLayoutOverrides: undefined
@@ -152,6 +163,26 @@ const makeNode = ({
   type,
   ...overrides
 }) as ScreenElementIR;
+
+const makeSpecializedMapping = ({
+  componentKey,
+  modulePath,
+  importedName,
+  localName = importedName
+}: {
+  componentKey: string;
+  modulePath: string;
+  importedName: string;
+  localName?: string;
+}): NonNullable<RenderContext["specializedComponentMappings"]>[string] => ({
+  componentKey,
+  modulePath,
+  importedName,
+  localName,
+  propMappings: {},
+  omittedProps: new Set<string>(),
+  defaultProps: {}
+});
 
 test("renderText skips consumed labels and styles link-like text with contrast warnings", () => {
   const skippedContext = createRenderContext();
@@ -206,6 +237,63 @@ test("renderText skips consumed labels and styles link-like text with contrast w
   );
 
   assert.equal(warningContext.accessibilityWarnings.length, 1);
+});
+
+test("renderText prefers mapped customer typography for semantic Typography nodes when a Storybook variant matches confidently", () => {
+  const context = createRenderContext({
+    specializedComponentMappings: {
+      Typography: makeSpecializedMapping({
+        componentKey: "Typography",
+        modulePath: "@customer/typography",
+        importedName: "CustomerTypography"
+      })
+    },
+    storybookTypographyVariants: {
+      displayLg: {
+        fontFamily: "Storybook Sans",
+        fontSizePx: 32,
+        fontWeight: 700,
+        lineHeight: 40,
+        letterSpacing: "0em"
+      },
+      bodyMd: {
+        fontFamily: "Storybook Sans",
+        fontSizePx: 16,
+        fontWeight: 400,
+        lineHeight: 24,
+        letterSpacing: "0em"
+      }
+    }
+  });
+  context.headingComponentByNodeId.set("dynamic-heading", "h1");
+
+  const rendered = renderText(
+    makeText({
+      id: "dynamic-heading",
+      text: "Dynamic Headline",
+      semanticType: "Typography",
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<CustomerTypography/);
+  assert.match(rendered, /variant=\{"displayLg"\}/);
+  assert.match(rendered, /component=\{"h1"\}/);
+  assert.equal(rendered.includes("<Typography"), false);
+  assert.deepEqual(context.mappedImports, [
+    {
+      localName: "CustomerTypography",
+      modulePath: "@customer/typography",
+      importMode: "named",
+      importedName: "CustomerTypography"
+    }
+  ]);
 });
 
 test("renderButton renders icon-only router links and submit buttons with end icons", () => {
@@ -746,6 +834,46 @@ test("renderSemanticInput renders legacy text fields with adornments and shell s
   assert.equal(context.muiImports.has("InputAdornment"), true);
 });
 
+test("renderSemanticInput prefers mapped customer banking inputs when specialized mappings are available", () => {
+  const context = createRenderContext({
+    specializedComponentMappings: {
+      InputIBAN: makeSpecializedMapping({
+        componentKey: "InputIBAN",
+        modulePath: "@customer/forms",
+        importedName: "CustomerIbanInput"
+      })
+    }
+  });
+  const element = makeNode({
+    id: "iban-field",
+    type: "input",
+    semanticType: "InputIBAN",
+    name: "IBAN field",
+    width: 320,
+    height: 56,
+    children: [
+      makeText({ id: "iban-label", text: "IBAN", y: 0 }),
+      makeText({ id: "iban-value", text: "DE89 3704 0044 0532 0130 00", y: 28 })
+    ]
+  });
+
+  const rendered = renderSemanticInput(element, 1, rootParent, context);
+
+  assert.match(rendered, /<Controller/);
+  assert.match(rendered, /<CustomerIbanInput/);
+  assert.equal(rendered.includes("<TextField"), false);
+  assert.equal(context.muiImports.has("TextField"), false);
+  assert.equal(context.requiresChangeEventTypeImport, true);
+  assert.deepEqual(context.mappedImports, [
+    {
+      localName: "CustomerIbanInput",
+      modulePath: "@customer/forms",
+      importMode: "named",
+      importedName: "CustomerIbanInput"
+    }
+  ]);
+});
+
 test("renderSemanticInput renders react-hook-form select controls", () => {
   const context = createRenderContext();
   const element = makeNode({
@@ -1199,4 +1327,127 @@ test("fallback screen dependency assembly splits multiple interactive form group
     generated.contextFiles.some((file) => file.path.includes("AccountSetupFormGroup1")),
     true
   );
+});
+
+test("fallbackScreenFile wraps specialized date pickers with a single configured provider per screen", () => {
+  const screen: ScreenIR = {
+    id: "screen-date-pickers",
+    name: "Appointment Setup",
+    layoutMode: "VERTICAL",
+    gap: 16,
+    width: 390,
+    height: 844,
+    padding: {
+      top: 24,
+      right: 24,
+      bottom: 24,
+      left: 24
+    },
+    children: [
+      makeNode({
+        id: "date-picker-start",
+        type: "input",
+        semanticType: "DatePicker",
+        width: 320,
+        height: 56,
+        children: [
+          makeText({ id: "start-label", text: "Start date", y: 0 }),
+          makeText({ id: "start-value", text: "2026-04-02", y: 28 })
+        ]
+      }),
+      makeNode({
+        id: "date-picker-end",
+        type: "input",
+        semanticType: "DatePicker",
+        y: 88,
+        width: 320,
+        height: 56,
+        children: [
+          makeText({ id: "end-label", text: "End date", y: 88 }),
+          makeText({ id: "end-value", text: "2026-04-03", y: 116 })
+        ]
+      })
+    ]
+  };
+
+  const generated = fallbackScreenFile({
+    screen,
+    mappingByNodeId: new Map(),
+    formHandlingMode: "react_hook_form",
+    specializedComponentMappings: {
+      DatePicker: makeSpecializedMapping({
+        componentKey: "DatePicker",
+        modulePath: "@customer/forms",
+        importedName: "CustomerDatePicker"
+      })
+    },
+    datePickerProvider: {
+      modulePath: "@customer/date-provider",
+      importedName: "CustomerDatePickerProvider",
+      localName: "CustomerDatePickerProvider",
+      props: {
+        adapterLocale: "de"
+      },
+      adapter: {
+        modulePath: "@customer/date-provider",
+        importedName: "CustomerDateAdapter",
+        localName: "CustomerDateAdapter",
+        propName: "dateAdapter"
+      }
+    }
+  });
+
+  assert.equal((generated.file.content.match(/<CustomerDatePicker\b/g) ?? []).length, 2);
+  assert.equal((generated.file.content.match(/<CustomerDatePickerProvider\b/g) ?? []).length, 1);
+  assert.match(
+    generated.file.content,
+    /<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<AppointmentSetupScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>/
+  );
+});
+
+test("fallbackScreenFile keeps DatePicker on the generic fallback path when no provider configuration is available", () => {
+  const screen: ScreenIR = {
+    id: "screen-generic-date-picker",
+    name: "Generic Date Picker",
+    layoutMode: "VERTICAL",
+    gap: 16,
+    width: 390,
+    height: 844,
+    padding: {
+      top: 24,
+      right: 24,
+      bottom: 24,
+      left: 24
+    },
+    children: [
+      makeNode({
+        id: "date-picker-generic",
+        type: "input",
+        semanticType: "DatePicker",
+        width: 320,
+        height: 56,
+        children: [
+          makeText({ id: "generic-date-label", text: "Booking date", y: 0 }),
+          makeText({ id: "generic-date-value", text: "2026-04-02", y: 28 })
+        ]
+      })
+    ]
+  };
+
+  const generated = fallbackScreenFile({
+    screen,
+    mappingByNodeId: new Map(),
+    formHandlingMode: "react_hook_form",
+    specializedComponentMappings: {
+      DatePicker: makeSpecializedMapping({
+        componentKey: "DatePicker",
+        modulePath: "@customer/forms",
+        importedName: "CustomerDatePicker"
+      })
+    }
+  });
+
+  assert.equal(generated.file.content.includes("CustomerDatePickerProvider"), false);
+  assert.equal(generated.file.content.includes("CustomerDatePicker"), false);
+  assert.match(generated.file.content, /<TextField/);
 });

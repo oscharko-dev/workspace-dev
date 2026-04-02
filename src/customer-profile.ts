@@ -16,6 +16,7 @@ const NAMED_IMPORT_CLAUSE_PATTERN = /\{([\s\S]*?)\}/;
 
 export type CustomerProfileStrictness = "off" | "warn" | "error";
 export type CustomerProfileMuiFallbackPolicy = "allow" | "deny";
+export type CustomerProfilePrimitivePropValue = boolean | number | string;
 
 export interface CustomerProfileParseIssue {
   path: string;
@@ -66,6 +67,20 @@ export interface CustomerProfileConfigSnapshot {
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
     importAliases: Record<string, string>;
+    providers?: {
+      datePicker?: {
+        package: string;
+        export: string;
+        importAlias?: string;
+        adapter?: {
+          package: string;
+          export: string;
+          importAlias?: string;
+          propName?: string;
+        };
+        props?: Record<string, CustomerProfilePrimitivePropValue>;
+      };
+    };
   };
   strictness: {
     match: CustomerProfileStrictness;
@@ -103,6 +118,25 @@ export interface ResolvedCustomerProfileTemplate {
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
   importAliases: Record<string, string>;
+  providers: {
+    datePicker?: ResolvedCustomerProfileTemplateDatePickerProvider;
+  };
+}
+
+export interface ResolvedCustomerProfileTemplateImportBinding {
+  package: string;
+  exportName: string;
+  localName: string;
+}
+
+export interface ResolvedCustomerProfileTemplateDatePickerProviderAdapter
+  extends ResolvedCustomerProfileTemplateImportBinding {
+  propName: string;
+}
+
+export interface ResolvedCustomerProfileTemplateDatePickerProvider extends ResolvedCustomerProfileTemplateImportBinding {
+  adapter?: ResolvedCustomerProfileTemplateDatePickerProviderAdapter;
+  props: Record<string, CustomerProfilePrimitivePropValue>;
 }
 
 export interface ResolvedCustomerProfileStrictness {
@@ -432,6 +466,177 @@ const normalizeImportAliasRecord = ({
   }
 
   return toSortedRecord(normalized);
+};
+
+const normalizePrimitivePropRecord = ({
+  input,
+  path,
+  issues
+}: {
+  input: unknown;
+  path: string;
+  issues: CustomerProfileParseIssue[];
+}): Record<string, CustomerProfilePrimitivePropValue> => {
+  if (input === undefined) {
+    return {};
+  }
+  if (!isPlainRecord(input)) {
+    pushIssue({
+      issues,
+      path,
+      message: "Expected an object with primitive prop values."
+    });
+    return {};
+  }
+
+  const normalized: Record<string, CustomerProfilePrimitivePropValue> = {};
+  for (const [rawPropName, rawValue] of Object.entries(input)) {
+    const propName = rawPropName.trim();
+    if (!isValidIdentifier(propName)) {
+      pushIssue({
+        issues,
+        path: `${path}.${rawPropName}`,
+        message: "Prop name must be a valid identifier."
+      });
+      continue;
+    }
+    if (typeof rawValue !== "boolean" && typeof rawValue !== "number" && typeof rawValue !== "string") {
+      pushIssue({
+        issues,
+        path: `${path}.${rawPropName}`,
+        message: "Provider prop value must be a boolean, number, or string."
+      });
+      continue;
+    }
+    normalized[propName] = rawValue;
+  }
+
+  return toSortedRecord(normalized);
+};
+
+const parseTemplateImportBinding = ({
+  input,
+  path,
+  issues
+}: {
+  input: unknown;
+  path: string;
+  issues: CustomerProfileParseIssue[];
+}): ResolvedCustomerProfileTemplateImportBinding | undefined => {
+  if (input === undefined) {
+    return undefined;
+  }
+  if (!isPlainRecord(input)) {
+    pushIssue({
+      issues,
+      path,
+      message: "Provider import configuration must be an object."
+    });
+    return undefined;
+  }
+
+  const packageName = typeof input.package === "string" ? input.package.trim() : "";
+  if (!isValidPackageName(packageName)) {
+    pushIssue({
+      issues,
+      path: `${path}.package`,
+      message: "package must be a valid package name."
+    });
+  }
+
+  const exportName = typeof input.export === "string" ? input.export.trim() : "";
+  if (!isValidIdentifier(exportName)) {
+    pushIssue({
+      issues,
+      path: `${path}.export`,
+      message: "export must be a valid identifier."
+    });
+  }
+
+  const importAlias =
+    typeof input.importAlias === "string" && input.importAlias.trim().length > 0 ? input.importAlias.trim() : exportName;
+  if (!isValidIdentifier(importAlias)) {
+    pushIssue({
+      issues,
+      path: `${path}.importAlias`,
+      message: "importAlias must be a valid identifier."
+    });
+  }
+
+  return {
+    package: packageName,
+    exportName,
+    localName: importAlias
+  };
+};
+
+const parseDatePickerProvider = ({
+  input,
+  path,
+  issues
+}: {
+  input: unknown;
+  path: string;
+  issues: CustomerProfileParseIssue[];
+}): ResolvedCustomerProfileTemplateDatePickerProvider | undefined => {
+  const binding = parseTemplateImportBinding({
+    input,
+    path,
+    issues
+  });
+  if (!binding || !isPlainRecord(input)) {
+    return binding
+      ? {
+          ...binding,
+          props: {}
+        }
+      : undefined;
+  }
+
+  const rawAdapter = isPlainRecord(input.adapter) ? input.adapter : undefined;
+  if (input.adapter !== undefined && !rawAdapter) {
+    pushIssue({
+      issues,
+      path: `${path}.adapter`,
+      message: "adapter must be an object."
+    });
+  }
+
+  const adapterBinding = parseTemplateImportBinding({
+    input: rawAdapter,
+    path: `${path}.adapter`,
+    issues
+  });
+  const adapterPropName =
+    typeof rawAdapter?.propName === "string" && rawAdapter.propName.trim().length > 0
+      ? rawAdapter.propName.trim()
+      : "dateAdapter";
+  if (adapterBinding && !isValidIdentifier(adapterPropName)) {
+    pushIssue({
+      issues,
+      path: `${path}.adapter.propName`,
+      message: "propName must be a valid identifier."
+    });
+  }
+
+  const props = normalizePrimitivePropRecord({
+    input: input.props,
+    path: `${path}.props`,
+    issues
+  });
+
+  return {
+    ...binding,
+    props,
+    ...(adapterBinding
+      ? {
+          adapter: {
+            ...adapterBinding,
+            propName: adapterPropName
+          }
+        }
+      : {})
+  };
 };
 
 const parseStrictnessValue = ({
@@ -961,7 +1166,25 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       input: rawTemplate?.importAliases,
       path: "template.importAliases",
       issues
-    })
+    }),
+    providers: (() => {
+      const rawProviders = rawTemplate?.providers;
+      if (rawProviders !== undefined && !isPlainRecord(rawProviders)) {
+        pushIssue({
+          issues,
+          path: "template.providers",
+          message: "template.providers must be an object."
+        });
+      }
+      const datePicker = parseDatePickerProvider({
+        input: isPlainRecord(rawProviders) ? rawProviders.datePicker : undefined,
+        path: "template.providers.datePicker",
+        issues
+      });
+      return {
+        ...(datePicker ? { datePicker } : {})
+      };
+    })()
   };
 
   const rawStrictness = isPlainRecord(input.strictness) ? input.strictness : undefined;
@@ -1028,11 +1251,38 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
 
   const componentImportsByKey = new Map<string, ResolvedCustomerProfileComponentImport>();
   const allowedExportsByPackage = new Map<string, Set<string>>();
+  const registerAllowedExport = ({
+    packageName,
+    exportName
+  }: {
+    packageName: string;
+    exportName: string;
+  }): void => {
+    if (!packageName || !exportName) {
+      return;
+    }
+    const existingExports = allowedExportsByPackage.get(packageName) ?? new Set<string>();
+    existingExports.add(exportName);
+    allowedExportsByPackage.set(packageName, existingExports);
+  };
   for (const [componentKey, importEntry] of Object.entries(sortedComponentImports)) {
     componentImportsByKey.set(componentKey, importEntry);
-    const existingExports = allowedExportsByPackage.get(importEntry.package) ?? new Set<string>();
-    existingExports.add(importEntry.exportName);
-    allowedExportsByPackage.set(importEntry.package, existingExports);
+    registerAllowedExport({
+      packageName: importEntry.package,
+      exportName: importEntry.exportName
+    });
+  }
+  if (template.providers.datePicker) {
+    registerAllowedExport({
+      packageName: template.providers.datePicker.package,
+      exportName: template.providers.datePicker.exportName
+    });
+    if (template.providers.datePicker.adapter) {
+      registerAllowedExport({
+        packageName: template.providers.datePicker.adapter.package,
+        exportName: template.providers.datePicker.adapter.exportName
+      });
+    }
   }
 
   return {
@@ -1103,6 +1353,36 @@ export const toCustomerProfileConfigSnapshot = ({
 }: {
   profile: ResolvedCustomerProfile;
 }): CustomerProfileConfigSnapshot => {
+  const datePickerProviderSnapshot = profile.template.providers.datePicker
+    ? {
+        datePicker: {
+          package: profile.template.providers.datePicker.package,
+          export: profile.template.providers.datePicker.exportName,
+          ...(profile.template.providers.datePicker.localName !== profile.template.providers.datePicker.exportName
+            ? { importAlias: profile.template.providers.datePicker.localName }
+            : {}),
+          ...(profile.template.providers.datePicker.adapter
+            ? {
+                adapter: {
+                  package: profile.template.providers.datePicker.adapter.package,
+                  export: profile.template.providers.datePicker.adapter.exportName,
+                  ...(profile.template.providers.datePicker.adapter.localName !==
+                  profile.template.providers.datePicker.adapter.exportName
+                    ? { importAlias: profile.template.providers.datePicker.adapter.localName }
+                    : {}),
+                  ...(profile.template.providers.datePicker.adapter.propName !== "dateAdapter"
+                    ? { propName: profile.template.providers.datePicker.adapter.propName }
+                    : {})
+                }
+              }
+            : {}),
+          ...(Object.keys(profile.template.providers.datePicker.props).length > 0
+            ? { props: { ...profile.template.providers.datePicker.props } }
+            : {})
+        }
+      }
+    : undefined;
+
   return {
     version: profile.version,
     families: profile.families.map((family) => ({
@@ -1146,7 +1426,8 @@ export const toCustomerProfileConfigSnapshot = ({
     template: {
       dependencies: { ...profile.template.dependencies },
       devDependencies: { ...profile.template.devDependencies },
-      importAliases: { ...profile.template.importAliases }
+      importAliases: { ...profile.template.importAliases },
+      ...(datePickerProviderSnapshot ? { providers: datePickerProviderSnapshot } : {})
     },
     strictness: {
       match: profile.strictness.match,
@@ -1201,6 +1482,14 @@ export const resolveCustomerProfileComponentImport = ({
     return undefined;
   }
   return resolvedImport;
+};
+
+export const resolveCustomerProfileDatePickerProvider = ({
+  profile
+}: {
+  profile: ResolvedCustomerProfile;
+}): ResolvedCustomerProfileTemplateDatePickerProvider | undefined => {
+  return profile.template.providers.datePicker;
 };
 
 export const isCustomerProfileMuiFallbackAllowed = ({

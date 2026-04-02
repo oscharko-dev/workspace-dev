@@ -58,6 +58,8 @@ const createRenderContext = (screenElements: ScreenElementIR[] = []): RenderCont
   usesNavigateHandler: false,
   prototypeNavigationRenderedCount: 0,
   mappedImports: [],
+  specializedComponentMappings: {},
+  usesDatePickerProvider: false,
   spacingBase: 8,
   mappingByNodeId: new Map(),
   usedMappingNodeIds: new Set(),
@@ -66,6 +68,7 @@ const createRenderContext = (screenElements: ScreenElementIR[] = []): RenderCont
   emittedWarningKeys: new Set(),
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
+  requiresChangeEventTypeImport: false,
   extractionInvocationByNodeId: new Map()
 });
 

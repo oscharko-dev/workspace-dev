@@ -182,6 +182,106 @@ const createCustomerProfileForGeneratorTests = () => {
   return customerProfile;
 };
 
+const createIssue693CustomerProfileForGeneratorTests = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        },
+        {
+          id: "Forms",
+          tierPriority: 20,
+          aliases: {
+            figma: ["Forms"],
+            storybook: ["forms"],
+            code: ["@customer/forms"]
+          }
+        },
+        {
+          id: "Typography",
+          tierPriority: 30,
+          aliases: {
+            figma: ["Typography"],
+            storybook: ["typography"],
+            code: ["@customer/typography"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
+        }
+      ],
+      imports: {
+        components: {
+          DatePicker: {
+            family: "Forms",
+            package: "@customer/forms",
+            export: "CustomerDatePicker"
+          },
+          InputIBAN: {
+            family: "Forms",
+            package: "@customer/forms",
+            export: "CustomerIbanInput"
+          },
+          Typography: {
+            family: "Typography",
+            package: "@customer/typography",
+            export: "CustomerTypography"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny"
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/forms": "^1.0.0",
+          "@customer/typography": "^1.0.0"
+        },
+        providers: {
+          datePicker: {
+            package: "@customer/date-provider",
+            export: "CustomerDatePickerProvider",
+            adapter: {
+              package: "@customer/date-provider",
+              export: "CustomerDateAdapter"
+            },
+            props: {
+              adapterLocale: "de"
+            }
+          }
+        }
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create Issue #693 customer profile generator test fixture.");
+  }
+  return customerProfile;
+};
+
 const createResolvedStorybookTheme = ({
   includeDark = true
 }: {
@@ -6997,4 +7097,142 @@ test("generateArtifacts omits the theme mode toggle when the resolved Storybook 
   assert.equal(themeContent.includes("dark: {"), false);
   assert.equal(appContent.includes('data-testid="theme-mode-toggle"'), false);
   assert.equal(appContent.includes("useColorScheme"), false);
+});
+
+test("generateArtifacts applies Issue #693 customer form specializations in the storybook-first path", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-issue-693-"));
+  const ir = createIr();
+  ir.screens[0]!.children = [
+    {
+      id: "dynamic-typography",
+      name: "<Dynamic Typography>",
+      nodeType: "TEXT",
+      type: "text",
+      semanticType: "Typography",
+      text: "Payment Schedule",
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    },
+    {
+      id: "iban-field",
+      name: "IBAN field",
+      nodeType: "FRAME",
+      type: "input",
+      semanticType: "InputIBAN",
+      width: 320,
+      height: 56,
+      children: [
+        {
+          id: "iban-label",
+          name: "IBAN label",
+          nodeType: "TEXT",
+          type: "text",
+          text: "IBAN",
+          y: 0
+        },
+        {
+          id: "iban-value",
+          name: "IBAN value",
+          nodeType: "TEXT",
+          type: "text",
+          text: "DE89 3704 0044 0532 0130 00",
+          y: 28
+        }
+      ]
+    },
+    {
+      id: "date-field",
+      name: "Date field",
+      nodeType: "FRAME",
+      type: "input",
+      semanticType: "DatePicker",
+      width: 320,
+      height: 56,
+      y: 88,
+      children: [
+        {
+          id: "date-label",
+          name: "Date label",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Execution date",
+          y: 88
+        },
+        {
+          id: "date-value",
+          name: "Date value",
+          nodeType: "TEXT",
+          type: "text",
+          text: "2026-04-02",
+          y: 116
+        }
+      ]
+    }
+  ];
+  const resolvedStorybookTheme = createResolvedStorybookTheme();
+  resolvedStorybookTheme.light.typography.variants = {
+    displayLg: {
+      fontFamily: "Storybook Sans",
+      fontSizePx: 32,
+      fontWeight: 700,
+      lineHeight: 40,
+      letterSpacing: "0em"
+    },
+    bodyMd: {
+      fontFamily: "Storybook Sans",
+      fontSizePx: 16,
+      fontWeight: 400,
+      lineHeight: 24,
+      letterSpacing: "0em"
+    }
+  };
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createIssue693CustomerProfileForGeneratorTests(),
+    customerProfileDesignSystemConfig: {
+      library: "__customer_profile__",
+      mappings: {
+        DatePicker: {
+          import: "@customer/forms",
+          export: "CustomerDatePicker",
+          component: "CustomerDatePicker"
+        },
+        InputIBAN: {
+          import: "@customer/forms",
+          export: "CustomerIbanInput",
+          component: "CustomerIbanInput"
+        },
+        Typography: {
+          import: "@customer/typography",
+          export: "CustomerTypography",
+          component: "CustomerTypography"
+        }
+      }
+    },
+    resolvedStorybookTheme,
+    formHandlingMode: "react_hook_form",
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+
+  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
+  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"displayLg"\}/);
+  assert.match(screenContent, /<CustomerIbanInput/);
+  assert.match(screenContent, /<CustomerDatePicker/);
+  assert.match(
+    screenContent,
+    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/
+  );
+  assert.equal(screenContent.includes("<TextField"), false);
 });
