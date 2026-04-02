@@ -66,6 +66,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const MAX_NODE_NAME_PATTERN_LENGTH = 256;
+const NESTED_QUANTIFIER_PATTERN = /(\+|\*|\{)\)?(\+|\*|\{)/;
+
 const normalizeOptionalString = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -247,7 +250,8 @@ export const validateComponentMappingRule = ({
       message: "priority must be a finite number."
     };
   }
-  if (normalizedRule.source !== "local_override" && normalizedRule.source !== "code_connect_import") {
+  const sourceValue: string = normalizedRule.source;
+  if (sourceValue !== "local_override" && sourceValue !== "code_connect_import") {
     return {
       ok: false,
       normalizedRule,
@@ -300,6 +304,20 @@ export const validateComponentMappingRule = ({
 
   let nodeNameRegex: RegExp | undefined;
   if (normalizedRule.nodeNamePattern) {
+    if (normalizedRule.nodeNamePattern.length > MAX_NODE_NAME_PATTERN_LENGTH) {
+      return {
+        ok: false,
+        normalizedRule,
+        message: `nodeNamePattern must not exceed ${MAX_NODE_NAME_PATTERN_LENGTH} characters.`
+      };
+    }
+    if (NESTED_QUANTIFIER_PATTERN.test(normalizedRule.nodeNamePattern)) {
+      return {
+        ok: false,
+        normalizedRule,
+        message: "nodeNamePattern must not contain nested quantifiers (potential ReDoS)."
+      };
+    }
     try {
       nodeNameRegex = new RegExp(normalizedRule.nodeNamePattern, "iu");
     } catch {
@@ -386,11 +404,17 @@ const buildComponentMappingNodeContexts = ({
 };
 
 const matchesPatternRule = ({
-  rule,
+  ruleCanonicalComponentName,
+  ruleStorybookTier,
+  ruleFigmaLibrary,
+  ruleSemanticType,
   nodeContext,
   nodeNameRegex
 }: {
-  rule: NormalizedComponentMappingRule;
+  ruleCanonicalComponentName: string | undefined;
+  ruleStorybookTier: string | undefined;
+  ruleFigmaLibrary: string | undefined;
+  ruleSemanticType: string | undefined;
   nodeContext: ComponentMappingNodeContext;
   nodeNameRegex?: RegExp;
 }): boolean => {
@@ -398,26 +422,26 @@ const matchesPatternRule = ({
     return false;
   }
   if (
-    normalizeComparableToken(rule.canonicalComponentName) !== undefined &&
-    normalizeComparableToken(rule.canonicalComponentName) !== normalizeComparableToken(nodeContext.canonicalComponentName)
+    ruleCanonicalComponentName !== undefined &&
+    ruleCanonicalComponentName !== normalizeComparableToken(nodeContext.canonicalComponentName)
   ) {
     return false;
   }
   if (
-    normalizeComparableToken(rule.storybookTier) !== undefined &&
-    normalizeComparableToken(rule.storybookTier) !== normalizeComparableToken(nodeContext.storybookTier)
+    ruleStorybookTier !== undefined &&
+    ruleStorybookTier !== normalizeComparableToken(nodeContext.storybookTier)
   ) {
     return false;
   }
   if (
-    normalizeComparableToken(rule.figmaLibrary) !== undefined &&
-    normalizeComparableToken(rule.figmaLibrary) !== normalizeComparableToken(nodeContext.figmaLibrary)
+    ruleFigmaLibrary !== undefined &&
+    ruleFigmaLibrary !== normalizeComparableToken(nodeContext.figmaLibrary)
   ) {
     return false;
   }
   if (
-    normalizeComparableToken(rule.semanticType) !== undefined &&
-    normalizeComparableToken(rule.semanticType) !== normalizeComparableToken(nodeContext.semanticType)
+    ruleSemanticType !== undefined &&
+    ruleSemanticType !== normalizeComparableToken(nodeContext.semanticType)
   ) {
     return false;
   }
@@ -510,9 +534,16 @@ export const resolveComponentMappingRules = ({
       continue;
     }
 
+    const ruleCanonicalComponentName = normalizeComparableToken(validation.normalizedRule.canonicalComponentName);
+    const ruleStorybookTier = normalizeComparableToken(validation.normalizedRule.storybookTier);
+    const ruleFigmaLibrary = normalizeComparableToken(validation.normalizedRule.figmaLibrary);
+    const ruleSemanticType = normalizeComparableToken(validation.normalizedRule.semanticType);
     const matchedNodeContexts = nodeContexts.filter((nodeContext) =>
       matchesPatternRule({
-        rule: validation.normalizedRule,
+        ruleCanonicalComponentName,
+        ruleStorybookTier,
+        ruleFigmaLibrary,
+        ruleSemanticType,
         nodeContext,
         ...(validation.nodeNameRegex ? { nodeNameRegex: validation.nodeNameRegex } : {})
       })

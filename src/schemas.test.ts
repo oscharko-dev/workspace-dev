@@ -466,6 +466,34 @@ test("schema: submit request rejects invalid componentMappings regex sources", (
   }
 });
 
+test("schema: submit request rejects componentMappings with nested quantifier patterns (ReDoS)", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeNamePattern: "(a+)+",
+        componentName: "ReDoSRule",
+        importPath: "@redos/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["componentMappings", 0, "nodeNamePattern"],
+        message: "nodeNamePattern must not contain nested quantifiers (potential ReDoS)."
+      }
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // WorkspaceStatusSchema
 // ---------------------------------------------------------------------------

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveComponentMappingRules, validateComponentMappingRule } from "./component-mapping-rules.js";
+import {
+  describeComponentMappingRule,
+  normalizeComponentMappingRule,
+  resolveComponentMappingRules,
+  validateComponentMappingRule
+} from "./component-mapping-rules.js";
 import type { WorkspaceComponentMappingRule } from "./contracts/index.js";
 import type { FigmaLibraryResolutionArtifact } from "./job-engine/figma-library-resolution.js";
 import type { FigmaAnalysis } from "./parity/figma-analysis.js";
@@ -455,4 +460,131 @@ test("resolveComponentMappingRules warns when a pattern spans multiple Figma fam
   assert.equal(resolved.componentMappings.length, 0);
   assert.equal(resolved.mappingWarnings[0]?.code, "W_COMPONENT_MAPPING_BROAD_PATTERN");
   assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /matched 2 component families/);
+});
+
+test("resolveComponentMappingRules warns when a pattern rule is disabled", () => {
+  const resolved = resolveComponentMappingRules({
+    componentMappings: [
+      createRule({
+        canonicalComponentName: "Button",
+        componentName: "DisabledButton",
+        enabled: false
+      })
+    ],
+    ir: createResolverIr(),
+    figmaAnalysis: createResolverFigmaAnalysis(),
+    componentMatchReportArtifact: createResolverComponentMatchReport()
+  });
+
+  assert.equal(resolved.componentMappings.length, 0);
+  assert.equal(resolved.mappingWarnings[0]?.code, "W_COMPONENT_MAPPING_DISABLED");
+  assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /disabled/);
+});
+
+test("resolveComponentMappingRules matches nodeNamePattern regex against node names", () => {
+  const resolved = resolveComponentMappingRules({
+    componentMappings: [
+      createRule({
+        nodeNamePattern: "^primary",
+        componentName: "RegexButton"
+      })
+    ],
+    ir: createResolverIr(),
+    figmaAnalysis: createResolverFigmaAnalysis(),
+    componentMatchReportArtifact: createResolverComponentMatchReport()
+  });
+
+  assert.equal(resolved.componentMappings.length, 1);
+  assert.equal(resolved.componentMappings[0]?.componentName, "RegexButton");
+  assert.equal(resolved.componentMappings[0]?.nodeId, "button-node-1");
+});
+
+test("component mapping rules reject nested quantifier patterns (ReDoS)", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "(a+)+"
+    })
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /nested quantifiers/);
+  }
+});
+
+test("component mapping rules reject excessively long nodeNamePattern", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "a".repeat(300)
+    })
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /must not exceed/);
+  }
+});
+
+test("describeComponentMappingRule formats exact rules by nodeId", () => {
+  const description = describeComponentMappingRule({
+    rule: { boardKey: "b", nodeId: " node-1 " }
+  });
+  assert.equal(description, "node 'node-1'");
+});
+
+test("describeComponentMappingRule formats pattern rules by selectors", () => {
+  const description = describeComponentMappingRule({
+    rule: {
+      boardKey: "b",
+      canonicalComponentName: "Button",
+      storybookTier: "Components"
+    }
+  });
+  assert.equal(description, "canonicalComponentName='Button', storybookTier='Components'");
+});
+
+test("describeComponentMappingRule falls back to boardKey when no selectors", () => {
+  const description = describeComponentMappingRule({
+    rule: { boardKey: "my-board" }
+  });
+  assert.equal(description, "board 'my-board'");
+});
+
+test("normalizeComponentMappingRule trims and normalizes all fields", () => {
+  const normalized = normalizeComponentMappingRule({
+    rule: createRule({
+      boardKey: " board-1 ",
+      componentName: " MyButton ",
+      importPath: " @my/ui ",
+      nodeId: " node-1 ",
+      canonicalComponentName: " Button ",
+      storybookTier: " Components ",
+      figmaLibrary: " lib-key ",
+      semanticType: " button ",
+      createdAt: " 2026-01-01 ",
+      updatedAt: " 2026-01-02 "
+    })
+  });
+
+  assert.equal(normalized.boardKey, "board-1");
+  assert.equal(normalized.componentName, "MyButton");
+  assert.equal(normalized.importPath, "@my/ui");
+  assert.equal(normalized.nodeId, "node-1");
+  assert.equal(normalized.canonicalComponentName, "Button");
+  assert.equal(normalized.storybookTier, "Components");
+  assert.equal(normalized.figmaLibrary, "lib-key");
+  assert.equal(normalized.semanticType, "button");
+  assert.equal(normalized.createdAt, "2026-01-01");
+  assert.equal(normalized.updatedAt, "2026-01-02");
+});
+
+test("component mapping rules reject rules with neither nodeId nor pattern selectors", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({})
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /must define at least one selector/);
+  }
 });

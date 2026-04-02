@@ -3,7 +3,7 @@ import type { MappingGateMode } from "./types-core.js";
 
 export type ComponentMappingSource = WorkspaceComponentMappingSource;
 
-export interface ComponentMappingRule extends WorkspaceComponentMappingRule {}
+export type ComponentMappingRule = WorkspaceComponentMappingRule;
 
 export type ComponentMappingWarningCode =
   | "W_COMPONENT_MAPPING_MISSING"
