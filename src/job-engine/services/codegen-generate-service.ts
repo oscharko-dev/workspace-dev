@@ -4,13 +4,14 @@ import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
 import type { WorkspaceComponentMappingRule } from "../../contracts/index.js";
-import { resolveComponentMappingRules } from "../../component-mapping-rules.js";
+import { describeComponentMappingRule, resolveComponentMappingRules } from "../../component-mapping-rules.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import { buildComponentManifest } from "../../parity/component-manifest.js";
 import { resolveEmittedScreenTargets } from "../../parity/emitted-screen-targets.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
 import type { FigmaAnalysis } from "../../parity/figma-analysis.js";
+import type { ComponentMappingWarning } from "../../parity/types-mapping.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
@@ -37,6 +38,43 @@ interface CodegenGenerateServiceDeps {
   buildComponentManifestFn: typeof buildComponentManifest;
   resolveStorybookThemeFn: typeof resolveStorybookTheme;
 }
+
+const normalizeOptionalString = (value: string | undefined): string | undefined => {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+};
+
+const collectBoardKeyMismatchWarnings = ({
+  componentMappings,
+  currentBoardKey,
+  boardKeySeed
+}: {
+  componentMappings: readonly WorkspaceComponentMappingRule[];
+  currentBoardKey: string;
+  boardKeySeed: string;
+}): ComponentMappingWarning[] => {
+  const acceptedBoardKeys = new Set<string>([currentBoardKey]);
+  const normalizedBoardKeySeed = normalizeOptionalString(boardKeySeed);
+  if (normalizedBoardKeySeed) {
+    acceptedBoardKeys.add(normalizedBoardKeySeed);
+  }
+
+  return componentMappings.flatMap((rule) => {
+    const declaredBoardKey = normalizeOptionalString(rule.boardKey);
+    if (!declaredBoardKey || acceptedBoardKeys.has(declaredBoardKey)) {
+      return [];
+    }
+
+    return [
+      {
+        code: "W_COMPONENT_MAPPING_BOARD_KEY_MISMATCH",
+        message:
+          `Component mapping rule ${describeComponentMappingRule({ rule })} declares boardKey '${declaredBoardKey}' ` +
+          `but current generation boardKey is '${currentBoardKey}'; applying override for compatibility.`
+      }
+    ];
+  });
+};
 
 const parseComponentMatchReportArtifact = ({
   input
@@ -143,6 +181,7 @@ export const createCodegenGenerateService = ({
     stageName: "codegen.generate",
     execute: async (input, context) => {
       const designIrPath = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.designIr);
+      const currentBoardKey = resolveBoardKey(input.boardKeySeed);
 
       let ir: DesignIR;
       try {
@@ -326,6 +365,11 @@ export const createCodegenGenerateService = ({
       let resolvedComponentMappings = input.componentMappings;
       let initialMappingWarnings: ReturnType<typeof resolveComponentMappingRules>["mappingWarnings"] = [];
       if (resolvedComponentMappings && resolvedComponentMappings.length > 0) {
+        const boardKeyMismatchWarnings = collectBoardKeyMismatchWarnings({
+          componentMappings: resolvedComponentMappings,
+          currentBoardKey,
+          boardKeySeed: input.boardKeySeed
+        });
         const hasPatternComponentMappings = resolvedComponentMappings.some((rule) => !rule.nodeId?.trim());
         let figmaAnalysisArtifact: FigmaAnalysis | undefined;
         if (hasPatternComponentMappings) {
@@ -389,7 +433,7 @@ export const createCodegenGenerateService = ({
           ...(figmaLibraryResolutionArtifact ? { figmaLibraryResolutionArtifact } : {})
         });
         resolvedComponentMappings = resolvedComponentMappingResult.componentMappings;
-        initialMappingWarnings = resolvedComponentMappingResult.mappingWarnings;
+        initialMappingWarnings = [...boardKeyMismatchWarnings, ...resolvedComponentMappingResult.mappingWarnings];
         for (const warning of initialMappingWarnings) {
           context.log({
             level: "warn",
@@ -480,7 +524,7 @@ export const createCodegenGenerateService = ({
       }
 
       const diffContext: GenerationDiffContext = {
-        boardKey: resolveBoardKey(input.boardKeySeed)
+        boardKey: currentBoardKey
       };
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.generationDiffContext,

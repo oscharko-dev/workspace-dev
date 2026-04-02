@@ -3175,6 +3175,235 @@ test("CodegenGenerateService resolves pattern componentMappings into exact node 
   assert.equal(await readFile(componentMatchReportPath, "utf8"), componentMatchReportContent);
 });
 
+test("CodegenGenerateService warns on componentMappings boardKey mismatches but still applies exact overrides", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      componentMappings: [
+        {
+          boardKey: "other-board",
+          nodeId: "instance-1",
+          componentName: "ManualButton",
+          importPath: "@manual/ui",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]
+    }
+  });
+  const ir = createMinimalIr();
+  ir.screens = [
+    {
+      id: "screen-1",
+      name: "Screen 1",
+      route: "/",
+      layoutMode: "VERTICAL" as const,
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "instance-1",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter",
+          children: []
+        }
+      ]
+    }
+  ];
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+
+  const currentBoardKey = resolveBoardKey("storybook-board");
+  const expectedWarning =
+    `Component mapping rule node 'instance-1' declares boardKey 'other-board' ` +
+    `but current generation boardKey is '${currentBoardKey}'; applying override for compatibility.`;
+
+  const service = createCodegenGenerateService({
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.deepEqual(input.componentMappings, [
+        {
+          boardKey: "other-board",
+          nodeId: "instance-1",
+          componentName: "ManualButton",
+          importPath: "@manual/ui",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]);
+      assert.deepEqual(input.initialMappingWarnings, [
+        {
+          code: "W_COMPONENT_MAPPING_BOARD_KEY_MISMATCH",
+          message: expectedWarning
+        }
+      ]);
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 1,
+          fallbackNodes: 0,
+          totalCandidateNodes: 1
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0,
+          broadPatternCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-board",
+      componentMappings: executionContext.input?.componentMappings
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(executionContext.job.logs.some((entry) => entry.message === expectedWarning), true);
+});
+
+test("CodegenGenerateService skips boardKey mismatch warnings when componentMappings boardKey matches the current generation target", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      componentMappings: [
+        {
+          boardKey: "storybook-board",
+          nodeId: "instance-1",
+          componentName: "ManualButton",
+          importPath: "@manual/ui",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]
+    }
+  });
+  const ir = createMinimalIr();
+  ir.screens = [
+    {
+      id: "screen-1",
+      name: "Screen 1",
+      route: "/",
+      layoutMode: "VERTICAL" as const,
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "instance-1",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter",
+          children: []
+        }
+      ]
+    }
+  ];
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+
+  const service = createCodegenGenerateService({
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.deepEqual(input.componentMappings, [
+        {
+          boardKey: "storybook-board",
+          nodeId: "instance-1",
+          componentName: "ManualButton",
+          importPath: "@manual/ui",
+          priority: 0,
+          source: "local_override",
+          enabled: true
+        }
+      ]);
+      assert.equal(input.initialMappingWarnings, undefined);
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 1,
+          fallbackNodes: 0,
+          totalCandidateNodes: 1
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0,
+          broadPatternCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-board",
+      componentMappings: executionContext.input?.componentMappings
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(executionContext.job.logs.some((entry) => entry.message.includes("declares boardKey")), false);
+  assert.equal(executionContext.job.logs.some((entry) => entry.message.includes("applying override for compatibility")), false);
+});
+
 test("CodegenGenerateService generates Issue #693 customer form specializations in storybook-first mode", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createIssue693IrForStageServices();
