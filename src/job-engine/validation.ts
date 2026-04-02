@@ -61,6 +61,27 @@ export interface ProjectValidationResult {
   perfAssert?: ValidationCommandResult;
 }
 
+const UI_GATE_ARTIFACT_DIR_NAME = "ui-gate";
+const UI_GATE_REPORT_FILE_NAME = "ui-gate-report.json";
+const UI_GATE_BASELINE_FILE_NAME = "ui-gate-visual-baseline.json";
+
+export const getUiGateReportPaths = ({
+  jobDir
+}: {
+  jobDir: string;
+}): {
+  artifactDir: string;
+  reportPath: string;
+  baselinePath: string;
+} => {
+  const artifactDir = path.join(jobDir, UI_GATE_ARTIFACT_DIR_NAME);
+  return {
+    artifactDir,
+    reportPath: path.join(artifactDir, UI_GATE_REPORT_FILE_NAME),
+    baselinePath: path.join(artifactDir, UI_GATE_BASELINE_FILE_NAME)
+  };
+};
+
 const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<boolean> => {
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
   try {
@@ -513,9 +534,19 @@ export const runProjectValidationWithDeps = async ({
   }
 
   if (enableUiValidation) {
+    const uiGateEnv = jobDir
+      ? (() => {
+          const { reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
+          return {
+            FIGMAPIPE_UI_GATE_REPORT_PATH: reportPath,
+            FIGMAPIPE_UI_GATE_BASELINE_PATH: baselinePath
+          };
+        })()
+      : undefined;
     attemptCommands.push({
       name: "validate-ui",
       args: ["run", "validate:ui"],
+      ...(uiGateEnv ? { env: uiGateEnv } : {}),
       timeoutMs: commandTimeoutMs
     });
   }

@@ -6,7 +6,11 @@ import {
   type GenerationDiffContext,
   writeGenerationDiffReport
 } from "../generation-diff.js";
-import { runProjectValidation, type ProjectValidationResult } from "../validation.js";
+import {
+  getUiGateReportPaths,
+  runProjectValidation,
+  type ProjectValidationResult
+} from "../validation.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { createPipelineError } from "../errors.js";
@@ -85,6 +89,36 @@ interface ValidationStorybookCompositionCoverage {
   docsOnlyFamilyNames: string[];
 }
 
+interface ValidationUiA11yCheckSummary {
+  name: string;
+  status: "passed" | "failed";
+  count: number;
+  details?: string;
+}
+
+interface ValidationUiA11yReportSummary {
+  status: "ok" | "warn";
+  reportPath: string;
+  visualDiffCount: number;
+  a11yViolationCount: number;
+  interactionViolationCount: number;
+  checks: ValidationUiA11yCheckSummary[];
+  artifacts: string[];
+  summary?: string;
+  diagnostics?: string[];
+}
+
+type ValidationUiA11ySummary =
+  | ValidationUiA11yReportSummary
+  | {
+      status: "not_requested";
+    }
+  | {
+      status: "not_available";
+      reportPath?: string;
+      summary?: string;
+    };
+
 interface ValidationSummaryArtifact {
   status: "ok" | "warn" | "failed";
   validatedAt: string;
@@ -104,6 +138,7 @@ interface ValidationSummaryArtifact {
     | {
         status: "not_available";
       };
+  uiA11y: ValidationUiA11ySummary;
   storybook:
     | {
         status: "ok" | "failed";
@@ -203,6 +238,186 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const toUiA11yWarnSummary = ({
+  reportPath,
+  summary,
+  diagnostics
+}: {
+  reportPath: string;
+  summary: string;
+  diagnostics?: string[];
+}): ValidationUiA11yReportSummary => {
+  return {
+    status: "warn",
+    reportPath,
+    visualDiffCount: 0,
+    a11yViolationCount: 0,
+    interactionViolationCount: 0,
+    checks: [],
+    artifacts: [],
+    summary,
+    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {})
+  };
+};
+
+const parseUiA11yCheckSummary = ({
+  input
+}: {
+  input: unknown;
+}): ValidationUiA11yCheckSummary | undefined => {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (name.length === 0) {
+    return undefined;
+  }
+
+  const statusRaw = typeof input.status === "string" ? input.status.trim().toLowerCase() : "";
+  if (statusRaw !== "passed" && statusRaw !== "failed") {
+    return undefined;
+  }
+
+  const count = typeof input.count === "number" && Number.isFinite(input.count) ? Math.max(0, Math.trunc(input.count)) : 0;
+  return {
+    name,
+    status: statusRaw,
+    count,
+    ...(typeof input.details === "string" && input.details.trim().length > 0 ? { details: input.details.trim() } : {})
+  };
+};
+
+const parseUiA11yReportSummary = ({
+  input,
+  reportPath
+}: {
+  input: string;
+  reportPath: string;
+}): ValidationUiA11yReportSummary => {
+  const parsed: unknown = JSON.parse(input);
+  if (!isRecord(parsed)) {
+    throw new Error("Expected ui-gate report to be a JSON object.");
+  }
+
+  const diagnostics: string[] = [];
+  const toViolationCount = ({
+    key,
+    value
+  }: {
+    key: "visualDiffCount" | "a11yViolationCount" | "interactionViolationCount";
+    value: unknown;
+  }): number => {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      return Math.trunc(value);
+    }
+    diagnostics.push(`Expected '${key}' to be a non-negative number.`);
+    return 0;
+  };
+
+  const visualDiffCount = toViolationCount({
+    key: "visualDiffCount",
+    value: parsed.visualDiffCount
+  });
+  const a11yViolationCount = toViolationCount({
+    key: "a11yViolationCount",
+    value: parsed.a11yViolationCount
+  });
+  const interactionViolationCount = toViolationCount({
+    key: "interactionViolationCount",
+    value: parsed.interactionViolationCount
+  });
+
+  const checks = Array.isArray(parsed.checks)
+    ? parsed.checks
+        .map((entry) => parseUiA11yCheckSummary({ input: entry }))
+        .filter((entry): entry is ValidationUiA11yCheckSummary => entry !== undefined)
+    : [];
+  if (!Array.isArray(parsed.checks)) {
+    diagnostics.push("Expected 'checks' to be an array.");
+  }
+
+  const artifacts = Array.isArray(parsed.artifacts)
+    ? [...new Set(
+        parsed.artifacts
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+      )]
+    : [];
+  if (!Array.isArray(parsed.artifacts)) {
+    diagnostics.push("Expected 'artifacts' to be an array.");
+  }
+
+  const hasFailedChecks = checks.some((entry) => entry.status === "failed");
+  const hasViolationCounts = visualDiffCount > 0 || a11yViolationCount > 0 || interactionViolationCount > 0;
+  const status: ValidationUiA11yReportSummary["status"] =
+    hasFailedChecks || hasViolationCounts || diagnostics.length > 0 ? "warn" : "ok";
+
+  return {
+    status,
+    reportPath,
+    visualDiffCount,
+    a11yViolationCount,
+    interactionViolationCount,
+    checks,
+    artifacts,
+    ...(typeof parsed.summary === "string" && parsed.summary.trim().length > 0 ? { summary: parsed.summary.trim() } : {}),
+    ...(diagnostics.length > 0 ? { diagnostics } : {})
+  };
+};
+
+const buildUiA11ySummary = async ({
+  context,
+  validationResult
+}: {
+  context: Parameters<StageService<void>["execute"]>[1];
+  validationResult?: ProjectValidationResult;
+}): Promise<ValidationUiA11ySummary> => {
+  if (!context.runtime.enableUiValidation) {
+    return {
+      status: "not_requested"
+    };
+  }
+
+  const { reportPath } = getUiGateReportPaths({
+    jobDir: context.paths.jobDir
+  });
+  if (!validationResult?.validateUi) {
+    return {
+      status: "not_available",
+      reportPath,
+      summary: "UI/A11y validation did not run; ui-gate report is not available."
+    };
+  }
+
+  let reportInput: string;
+  try {
+    reportInput = await readFile(reportPath, "utf8");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return toUiA11yWarnSummary({
+      reportPath,
+      summary: "UI/A11y validation ran but ui-gate report is missing or unreadable.",
+      diagnostics: [message]
+    });
+  }
+
+  try {
+    return parseUiA11yReportSummary({
+      input: reportInput,
+      reportPath
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return toUiA11yWarnSummary({
+      reportPath,
+      summary: "UI/A11y validation produced a malformed ui-gate report.",
+      diagnostics: [message]
+    });
+  }
+};
+
 const parseComponentMatchReportArtifact = ({
   input
 }: {
@@ -281,12 +496,14 @@ const parseStorybookThemesArtifact = ({
 
 const resolveSummaryStatus = ({
   generatedApp,
+  uiA11y,
   storybook,
   mapping,
   style,
   importSummary
 }: {
   generatedApp: ValidationSummaryArtifact["generatedApp"];
+  uiA11y: ValidationSummaryArtifact["uiA11y"];
   storybook: ValidationSummaryArtifact["storybook"];
   mapping: ValidationSummaryArtifact["mapping"];
   style: ValidationSummaryArtifact["style"];
@@ -294,6 +511,7 @@ const resolveSummaryStatus = ({
 }): ValidationSummaryArtifact["status"] => {
   const gateStatuses: ValidationGateStatus[] = [
     generatedApp.status,
+    uiA11y.status,
     storybook.status,
     mapping.status,
     style.status,
@@ -535,10 +753,15 @@ const buildValidationSummaryArtifact = async ({
     : {
         status: "not_available"
       };
+  const uiA11ySummary = await buildUiA11ySummary({
+    context,
+    ...(validationResult ? { validationResult } : {})
+  });
 
   return {
     status: resolveSummaryStatus({
       generatedApp: generatedAppSummary,
+      uiA11y: uiA11ySummary,
       storybook: storybookSummary,
       mapping: mappingSummary,
       style: styleSummary,
@@ -546,6 +769,7 @@ const buildValidationSummaryArtifact = async ({
     }),
     validatedAt,
     generatedApp: generatedAppSummary,
+    uiA11y: uiA11ySummary,
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,

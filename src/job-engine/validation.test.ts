@@ -3,7 +3,7 @@ import { access, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFi
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runProjectValidationWithDeps } from "./validation.js";
+import { getUiGateReportPaths, runProjectValidationWithDeps } from "./validation.js";
 
 const linkLocalTypescript = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<void> => {
   const repositoryTypescriptPath = path.resolve(process.cwd(), "node_modules", "typescript");
@@ -1166,6 +1166,44 @@ test("runProjectValidationWithDeps runs ui validation when enabled", async () =>
 
   assert.equal(calls.includes("pnpm run validate:ui"), true);
   assert.deepEqual(result.validateUi?.args, ["run", "validate:ui"]);
+});
+
+test("runProjectValidationWithDeps configures deterministic ui gate report paths when jobDir is available", async () => {
+  const calls: Array<{
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  }> = [];
+  const jobDir = "/tmp/workspace-dev-job";
+  const { reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
+
+  await runProjectValidationWithDeps({
+    generatedProjectDir: "/tmp/generated-project",
+    jobDir,
+    onLog: () => {
+      // no-op
+    },
+    enableUiValidation: true,
+    deps: {
+      runCommand: async ({ args, env }) => {
+        calls.push({
+          args,
+          ...(env ? { env } : {})
+        });
+        return {
+          success: true,
+          code: 0,
+          stdout: "",
+          stderr: "",
+          combined: ""
+        };
+      }
+    }
+  });
+
+  const uiValidationCall = calls.find((call) => call.args[0] === "run" && call.args[1] === "validate:ui");
+  assert.notEqual(uiValidationCall, undefined);
+  assert.equal(uiValidationCall?.env?.FIGMAPIPE_UI_GATE_REPORT_PATH, reportPath);
+  assert.equal(uiValidationCall?.env?.FIGMAPIPE_UI_GATE_BASELINE_PATH, baselinePath);
 });
 
 test("runProjectValidationWithDeps runs unit tests when enabled", async () => {

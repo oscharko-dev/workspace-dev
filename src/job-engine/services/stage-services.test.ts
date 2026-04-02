@@ -443,9 +443,11 @@ const createMinimalIr = (): DesignIR =>
   }) as DesignIR;
 
 const createSuccessfulValidationResult = ({
-  attempts = 1
+  attempts = 1,
+  includeUiValidation = false
 }: {
   attempts?: number;
+  includeUiValidation?: boolean;
 } = {}): ProjectValidationResult => {
   return {
     attempts,
@@ -481,7 +483,18 @@ const createSuccessfulValidationResult = ({
       args: ["build"],
       attempt: attempts,
       timedOut: false
-    }
+    },
+    ...(includeUiValidation
+      ? {
+          validateUi: {
+            status: "passed" as const,
+            command: "pnpm" as const,
+            args: ["run", "validate:ui"],
+            attempt: attempts,
+            timedOut: false
+          }
+        }
+      : {})
   };
 };
 
@@ -3518,6 +3531,234 @@ test("ValidateProjectService reads generated.project and writes validation.summa
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+});
+
+test("ValidateProjectService persists uiA11y summary when UI validation report is available", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      enableUiValidation: true
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-ui-a11y-ok"
+    } satisfies GenerationDiffContext
+  });
+  const uiGateReportPath = path.join(executionContext.paths.jobDir, "ui-gate", "ui-gate-report.json");
+  await mkdir(path.dirname(uiGateReportPath), { recursive: true });
+  await writeFile(
+    uiGateReportPath,
+    `${JSON.stringify(
+      {
+        visualDiffCount: 0,
+        a11yViolationCount: 0,
+        interactionViolationCount: 0,
+        artifacts: ["ui-gate-a11y-findings.json", "ui-gate-interaction-findings.json"],
+        summary: "UI gate clean",
+        checks: [
+          {
+            name: "a11y-static",
+            status: "passed",
+            count: 0
+          },
+          {
+            name: "interaction-static",
+            status: "passed",
+            count: 0
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      return createSuccessfulValidationResult({
+        includeUiValidation: true
+      });
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    uiA11y?: {
+      status?: string;
+      reportPath?: string;
+      visualDiffCount?: number;
+      a11yViolationCount?: number;
+      interactionViolationCount?: number;
+      checks?: Array<{ name?: string; status?: string; count?: number }>;
+      artifacts?: string[];
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.uiA11y?.status, "ok");
+  assert.equal(summary?.uiA11y?.reportPath, uiGateReportPath);
+  assert.equal(summary?.uiA11y?.visualDiffCount, 0);
+  assert.equal(summary?.uiA11y?.a11yViolationCount, 0);
+  assert.equal(summary?.uiA11y?.interactionViolationCount, 0);
+  assert.equal(summary?.uiA11y?.checks?.every((entry) => entry.status === "passed"), true);
+  assert.deepEqual(summary?.uiA11y?.artifacts, ["ui-gate-a11y-findings.json", "ui-gate-interaction-findings.json"]);
+});
+
+test("ValidateProjectService marks uiA11y as warn when UI validation report contains violations", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      enableUiValidation: true
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-ui-a11y-warn"
+    } satisfies GenerationDiffContext
+  });
+  const uiGateReportPath = path.join(executionContext.paths.jobDir, "ui-gate", "ui-gate-report.json");
+  await mkdir(path.dirname(uiGateReportPath), { recursive: true });
+  await writeFile(
+    uiGateReportPath,
+    `${JSON.stringify(
+      {
+        visualDiffCount: 1,
+        a11yViolationCount: 2,
+        interactionViolationCount: 0,
+        artifacts: ["ui-gate-a11y-findings.json"],
+        summary: "UI gate violations found",
+        checks: [
+          {
+            name: "visual-baseline",
+            status: "failed",
+            count: 1
+          },
+          {
+            name: "a11y-static",
+            status: "failed",
+            count: 2
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      return createSuccessfulValidationResult({
+        includeUiValidation: true
+      });
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    uiA11y?: {
+      status?: string;
+      visualDiffCount?: number;
+      a11yViolationCount?: number;
+      checks?: Array<{ status?: string }>;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.uiA11y?.status, "warn");
+  assert.equal(summary?.uiA11y?.visualDiffCount, 1);
+  assert.equal(summary?.uiA11y?.a11yViolationCount, 2);
+  assert.equal(summary?.uiA11y?.checks?.some((entry) => entry.status === "failed"), true);
+  assert.equal(summary?.status, "warn");
+});
+
+test("ValidateProjectService marks uiA11y as warn when the UI validation report is missing", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      enableUiValidation: true
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-ui-a11y-missing"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      return createSuccessfulValidationResult({
+        includeUiValidation: true
+      });
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    uiA11y?: {
+      status?: string;
+      diagnostics?: string[];
+      summary?: string;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.uiA11y?.status, "warn");
+  assert.equal((summary?.uiA11y?.diagnostics?.length ?? 0) > 0, true);
+  assert.match(summary?.uiA11y?.summary ?? "", /missing|unreadable/i);
+  assert.equal(summary?.status, "warn");
+});
+
+test("ValidateProjectService reports uiA11y.status as not_requested when UI validation is disabled", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-ui-a11y-not-requested"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    uiA11y?: {
+      status?: string;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.uiA11y?.status, "not_requested");
+  assert.equal(summary?.status, "ok");
 });
 
 test("ValidateProjectService persists failed customer profile import policy before project validation", async () => {
