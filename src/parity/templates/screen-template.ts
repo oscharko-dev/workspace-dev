@@ -5398,7 +5398,7 @@ export interface FallbackScreenFileInput {
   disallowedStyledRootMuiComponents?: ReadonlySet<string>;
 }
 
-export interface AppShellFileInput extends FallbackScreenFileInput {}
+export type AppShellFileInput = FallbackScreenFileInput;
 
 export interface WrappedFallbackScreenFileInput extends FallbackScreenFileInput {
   appShellComponentName: string;

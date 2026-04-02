@@ -16,8 +16,10 @@ interface DerivedGroupShellPlan {
 }
 
 const toScreenWithoutAppShell = (screen: ScreenIR): ScreenIR => {
-  const { appShell: _appShell, ...screenWithoutAppShell } = screen;
-  return screenWithoutAppShell;
+  if (!screen.appShell) return screen;
+  const copy = { ...screen };
+  delete copy.appShell;
+  return copy;
 };
 
 const findTopLevelSignalMatch = ({
@@ -211,7 +213,8 @@ export const applyAppShellsToDesignIr = ({
     }
   }
 
-  const { appShells: _appShells, ...irWithoutAppShells } = ir;
+  const irWithoutAppShells = { ...ir };
+  delete irWithoutAppShells.appShells;
   const screens = baseScreens.map((screen) => {
     const screenAppShell = appShellByScreenId.get(screen.id);
     return screenAppShell ? { ...screen, appShell: screenAppShell } : screen;

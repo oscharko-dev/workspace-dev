@@ -563,7 +563,7 @@ export interface ValidatedDesignIR {
 }
 
 export interface IRValidationError {
-  readonly code: "IR_EMPTY_SCREENS" | "IR_INVALID_SCREEN" | "IR_MISSING_TOKENS" | "IR_MISSING_SOURCE_NAME";
+  readonly code: "IR_EMPTY_SCREENS" | "IR_INVALID_SCREEN" | "IR_MISSING_TOKENS" | "IR_MISSING_SOURCE_NAME" | "IR_INVALID_APP_SHELL" | "IR_APP_SHELL_MISSING_SOURCE_SCREEN" | "IR_APP_SHELL_MISSING_SCREEN";
   readonly message: string;
 }
 
@@ -617,6 +617,34 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       code: "IR_MISSING_TOKENS",
       message: "DesignIR.tokens must include palette (with primary and background) and a non-empty typography scale."
     });
+  }
+
+  if (Array.isArray(raw.appShells)) {
+    const screenIdSet = new Set(raw.screens.map((s) => s.id));
+    for (let i = 0; i < raw.appShells.length; i++) {
+      const appShell = raw.appShells[i];
+      if (!appShell || !appShell.id || !appShell.sourceScreenId || !Array.isArray(appShell.screenIds)) {
+        errors.push({
+          code: "IR_INVALID_APP_SHELL",
+          message: `DesignIR.appShells[${i}] must have id, sourceScreenId, and screenIds array.`
+        });
+        continue;
+      }
+      if (!screenIdSet.has(appShell.sourceScreenId)) {
+        errors.push({
+          code: "IR_APP_SHELL_MISSING_SOURCE_SCREEN",
+          message: `DesignIR.appShells[${i}].sourceScreenId '${appShell.sourceScreenId}' does not reference an existing screen.`
+        });
+      }
+      for (const screenId of appShell.screenIds) {
+        if (!screenIdSet.has(screenId)) {
+          errors.push({
+            code: "IR_APP_SHELL_MISSING_SCREEN",
+            message: `DesignIR.appShells[${i}].screenIds references '${screenId}' which does not exist in screens.`
+          });
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {
