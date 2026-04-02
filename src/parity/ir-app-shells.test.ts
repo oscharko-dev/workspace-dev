@@ -805,3 +805,117 @@ test("validateDesignIR accepts valid appShells with existing screen references",
 
   assert.equal(result.valid, true);
 });
+
+test("validateDesignIR rejects non-string sourceNodeId in fieldErrorEvidenceByFieldKey", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "screen-1",
+        name: "Screen 1",
+        children: [createTextNode({ id: "n1", name: "N1", text: "T1" })]
+      }),
+      createScreen({
+        id: "screen-2",
+        name: "Screen 2",
+        children: [createTextNode({ id: "n2", name: "N2", text: "T2" })]
+      })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "screen-1",
+      memberScreenIds: ["screen-1", "screen-2"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "screen-1",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "default" }
+        },
+        {
+          screenId: "screen-2",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "error" },
+          fieldErrorEvidenceByFieldKey: {
+            email_field: {
+              message: "Invalid email",
+              visualError: true,
+              sourceNodeId: 42 as unknown as string
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.code === "IR_INVALID_SCREEN_VARIANT_SCENARIO" &&
+          error.message.includes("fieldErrorEvidenceByFieldKey['email_field']")
+      )
+    );
+  }
+});
+
+test("validateDesignIR rejects non-string sourceNodeId in screenLevelErrorEvidence", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "screen-1",
+        name: "Screen 1",
+        children: [createTextNode({ id: "n1", name: "N1", text: "T1" })]
+      }),
+      createScreen({
+        id: "screen-2",
+        name: "Screen 2",
+        children: [createTextNode({ id: "n2", name: "N2", text: "T2" })]
+      })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "screen-1",
+      memberScreenIds: ["screen-1", "screen-2"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "screen-1",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "default" }
+        },
+        {
+          screenId: "screen-2",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "error" },
+          screenLevelErrorEvidence: [
+            {
+              message: "Please review the highlighted fields.",
+              severity: "error",
+              sourceNodeId: 7 as unknown as string
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.code === "IR_INVALID_SCREEN_VARIANT_SCENARIO" &&
+          error.message.includes("screenLevelErrorEvidence[0]")
+      )
+    );
+  }
+});

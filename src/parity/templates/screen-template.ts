@@ -5910,12 +5910,14 @@ export const assembleFallbackDependencies = ({
   prepared,
   renderState,
   variantFieldEvidenceByFieldKey = {},
-  initialVisualErrorsOverrideExpression
+  initialVisualErrorsOverrideExpression,
+  validationMessagesOverrideExpression
 }: {
   prepared: PreparedFallbackScreenModel;
   renderState: FallbackRenderState;
   variantFieldEvidenceByFieldKey?: Record<string, VariantFieldEvidenceAggregate>;
   initialVisualErrorsOverrideExpression?: string;
+  validationMessagesOverrideExpression?: string;
 }): FallbackDependencyAssembly => {
   const { componentName, extractionPlan, resolvedFormHandlingMode, enablePatternExtraction } = prepared;
   const {
@@ -5926,6 +5928,7 @@ export const assembleFallbackDependencies = ({
     hasSelectField,
     formGroups
   } = renderState;
+  const preferVariantMessageInBaseMaps = validationMessagesOverrideExpression === undefined;
 
   const buildFieldMaps = (fields: InteractiveFieldModel[]) => ({
     initialValues: Object.fromEntries(fields.map((field) => [field.key, field.defaultValue])),
@@ -5945,7 +5948,7 @@ export const assembleFallbackDependencies = ({
           const isExplicitMessage = field.validationMessageSource === "explicit";
           const resolvedMessage = isExplicitMessage
             ? field.validationMessage
-            : variantMessage && variantMessage.length > 0
+            : preferVariantMessageInBaseMaps && variantMessage && variantMessage.length > 0
               ? variantMessage
               : field.validationMessage;
           return resolvedMessage ? ([field.key, resolvedMessage] as const) : undefined;
@@ -5960,7 +5963,7 @@ export const assembleFallbackDependencies = ({
           const isExplicitMessage = field.validationMessageSource === "explicit";
           const resolvedMessage = isExplicitMessage
             ? field.validationMessage
-            : variantMessage && variantMessage.length > 0
+            : preferVariantMessageInBaseMaps && variantMessage && variantMessage.length > 0
               ? variantMessage
               : field.validationMessage ?? (field.required ? "This field is required." : "Invalid value.");
           const hasVisualError =
@@ -6080,6 +6083,9 @@ export const assembleFallbackDependencies = ({
             ...(initialVisualErrorsOverrideExpression
               ? { initialVisualErrorsOverrideExpression }
               : {}),
+            ...(validationMessagesOverrideExpression
+              ? { validationMessagesOverrideExpression }
+              : {}),
             requiredFieldMap,
             validationTypeMap,
             validationMessageMap,
@@ -6094,6 +6100,9 @@ export const assembleFallbackDependencies = ({
             initialVisualErrorsMap,
             ...(initialVisualErrorsOverrideExpression
               ? { initialVisualErrorsOverrideExpression }
+              : {}),
+            ...(validationMessagesOverrideExpression
+              ? { validationMessagesOverrideExpression }
               : {}),
             requiredFieldMap,
             validationTypeMap,
@@ -6673,7 +6682,8 @@ const buildStatefulScenarioModule = ({
     prepared,
     renderState,
     variantFieldEvidenceByFieldKey,
-    initialVisualErrorsOverrideExpression: "initialVisualErrorsOverride"
+    initialVisualErrorsOverrideExpression: "initialVisualErrorsOverride",
+    validationMessagesOverrideExpression: "validationMessagesOverride"
   });
   const {
     patternContextFileSpec,
@@ -6688,6 +6698,7 @@ const buildStatefulScenarioModule = ({
   const bodyFunctionName = `${componentName}Body`;
   const bodyFunctionSource = `interface ${propsName} {
   initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
   screenLevelErrorEvidence?: ReadonlyArray<{
     message: string;
     severity: "error";
@@ -6695,7 +6706,7 @@ const buildStatefulScenarioModule = ({
   }>;
 }
 
-function ${bodyFunctionName}({ initialVisualErrorsOverride, screenLevelErrorEvidence }: Readonly<${propsName}>) {
+function ${bodyFunctionName}({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<${propsName}>) {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
@@ -6709,17 +6720,20 @@ ${rendered || EMPTY_SCREEN_PLACEHOLDER}
   const { wrappedContent: wrappedScenarioContent, hasContextProviders } = wrapContentWithProviders({
     baseContent: `      <${bodyFunctionName}
         initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        validationMessagesOverride={props.validationMessagesOverride}
         screenLevelErrorEvidence={props.screenLevelErrorEvidence}
       />`,
     patternContextFileSpec,
     formContextFileSpec,
     renderContext,
-    formContextProviderPropsExpression: "initialVisualErrorsOverride={props.initialVisualErrorsOverride}"
+    formContextProviderPropsExpression:
+      "initialVisualErrorsOverride={props.initialVisualErrorsOverride} validationMessagesOverride={props.validationMessagesOverride}"
   });
   const componentRenderSource = hasContextProviders
     ? wrappedScenarioContent
     : `      <${bodyFunctionName}
         initialVisualErrorsOverride={props.initialVisualErrorsOverride}
+        validationMessagesOverride={props.validationMessagesOverride}
         screenLevelErrorEvidence={props.screenLevelErrorEvidence}
       />`;
   const source = `${hasContextProviders ? patternContextInitialStateDeclaration : ""}${bodyFunctionSource}
@@ -6893,6 +6907,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
       initialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"];
       shellTextOverrides?: Record<string, string>;
       initialVisualErrorsOverride?: Record<string, string>;
+      validationMessagesOverride?: Record<string, string>;
       screenLevelErrorEvidence?: ScreenVariantFamilyIR["scenarios"][number]["screenLevelErrorEvidence"];
     }>>(
       (result, scenario) => {
@@ -6901,11 +6916,17 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
             .filter(([, evidence]) => evidence.visualError && evidence.message.trim().length > 0)
             .map(([fieldKey, evidence]) => [fieldKey, evidence.message] as const)
         );
+        const validationMessagesOverride = Object.fromEntries(
+          Object.entries(scenario.fieldErrorEvidenceByFieldKey ?? {})
+            .filter(([, evidence]) => evidence.message.trim().length > 0)
+            .map(([fieldKey, evidence]) => [fieldKey, evidence.message] as const)
+        );
         result[scenario.screenId] = {
           contentScreenId: scenario.contentScreenId,
           initialState: scenario.initialState,
           ...(scenario.shellTextOverrides ? { shellTextOverrides: scenario.shellTextOverrides } : {}),
           ...(Object.keys(initialVisualErrorsOverride).length > 0 ? { initialVisualErrorsOverride } : {}),
+          ...(Object.keys(validationMessagesOverride).length > 0 ? { validationMessagesOverride } : {}),
           ...(scenario.screenLevelErrorEvidence ? { screenLevelErrorEvidence: scenario.screenLevelErrorEvidence } : {})
         };
         return result;
@@ -6925,6 +6946,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
       return (
         <${scenarioModule.componentFunctionName}
           initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );`;
@@ -7008,6 +7030,7 @@ ${contentSwitchCases}
       return (
         <${defaultScenarioModule.componentFunctionName}
           initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
+          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );

@@ -22,6 +22,7 @@ export const buildInlineLegacyFormStateBlock = ({
   selectOptionsMap,
   initialVisualErrorsMap,
   initialVisualErrorsOverrideExpression,
+  validationMessagesOverrideExpression,
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
@@ -32,6 +33,7 @@ export const buildInlineLegacyFormStateBlock = ({
   selectOptionsMap: Record<string, string[]>;
   initialVisualErrorsMap: Record<string, string>;
   initialVisualErrorsOverrideExpression?: string;
+  validationMessagesOverrideExpression?: string;
   requiredFieldMap: Record<string, boolean>;
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
@@ -48,7 +50,12 @@ export const buildInlineLegacyFormStateBlock = ({
 const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
 const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
 const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};${validationRulesDeclaration}
+const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const fieldValidationMessages: Record<string, string> = ${
+  validationMessagesOverrideExpression
+    ? `{ ...defaultValidationMessages, ...(${validationMessagesOverrideExpression} ?? {}) }`
+    : "defaultValidationMessages"
+};${validationRulesDeclaration}
 
 const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
 const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);
@@ -323,14 +330,16 @@ const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(und
 export interface ${providerPropsTypeName} {
   children: ReactNode;
   initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
 }
 
-export function ${providerName}({ children, initialVisualErrorsOverride }: ${providerPropsTypeName}) {
+export function ${providerName}({ children, initialVisualErrorsOverride, validationMessagesOverride }: ${providerPropsTypeName}) {
   const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
   const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
   const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
   const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
-  const fieldValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+  const fieldValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
   const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
   const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);
@@ -621,6 +630,7 @@ export const buildInlineReactHookFormStateBlock = ({
   selectOptionsMap,
   initialVisualErrorsMap,
   initialVisualErrorsOverrideExpression,
+  validationMessagesOverrideExpression,
   requiredFieldMap,
   validationTypeMap,
   validationMessageMap,
@@ -633,6 +643,7 @@ export const buildInlineReactHookFormStateBlock = ({
   selectOptionsMap: Record<string, string[]>;
   initialVisualErrorsMap: Record<string, string>;
   initialVisualErrorsOverrideExpression?: string;
+  validationMessagesOverrideExpression?: string;
   requiredFieldMap: Record<string, boolean>;
   validationTypeMap: Record<string, ValidationFieldType>;
   validationMessageMap: Record<string, string>;
@@ -670,6 +681,12 @@ export const buildInlineReactHookFormStateBlock = ({
     : "";
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
 const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
+const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
+const resolvedValidationMessages: Record<string, string> = ${
+  validationMessagesOverrideExpression
+    ? `{ ...defaultValidationMessages, ...(${validationMessagesOverrideExpression} ?? {}) }`
+    : "defaultValidationMessages"
+};
 const fieldSchemaSpecs = ${fieldSchemaSpecsLiteral} as const;
 
 const parseLocalizedNumber = (rawValue: string): number | undefined => {
@@ -971,11 +988,19 @@ const resolveFieldErrorMessage = ({
   isSubmitted: boolean;
   fieldError: string | undefined;
   }): string => {
-    if (!isTouched && !isSubmitted) {
-      return resolvedInitialVisualErrors[fieldKey] ?? "";
-    }
-    return fieldError ?? "";
-  };`;
+  if (!isTouched && !isSubmitted) {
+    return resolvedInitialVisualErrors[fieldKey] ?? "";
+  }
+  if (!fieldError) {
+    return "";
+  }
+  const overrideMessage = resolvedValidationMessages[fieldKey];
+  const defaultMessage = defaultValidationMessages[fieldKey];
+  if (overrideMessage && defaultMessage && fieldError === defaultMessage) {
+    return overrideMessage;
+  }
+  return fieldError;
+};`;
 };
 
 export const buildReactHookFormContextFile = ({
@@ -1028,6 +1053,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
+const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
 const fieldSchemaSpecs = ${fieldSchemaSpecsLiteral} as const;
 const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
 
@@ -1336,11 +1362,13 @@ const ${contextVarName} = createContext<${contextValueTypeName} | undefined>(und
 export interface ${providerPropsTypeName} {
   children: ReactNode;
   initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
 }
 
-export function ${providerName}({ children, initialVisualErrorsOverride }: ${providerPropsTypeName}) {
+export function ${providerName}({ children, initialVisualErrorsOverride, validationMessagesOverride }: ${providerPropsTypeName}) {
   const defaultValues: ${formInputTypeName} = ${JSON.stringify(initialValues, null, 2)};
   const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}
     resolver: zodResolver(formSchema),
@@ -1367,7 +1395,15 @@ export function ${providerName}({ children, initialVisualErrorsOverride }: ${pro
     if (!isTouched && !isSubmitted) {
       return resolvedInitialVisualErrors[fieldKey] ?? "";
     }
-    return fieldError ?? "";
+    if (!fieldError) {
+      return "";
+    }
+    const overrideMessage = resolvedValidationMessages[fieldKey];
+    const defaultMessage = defaultValidationMessages[fieldKey];
+    if (overrideMessage && defaultMessage && fieldError === defaultMessage) {
+      return overrideMessage;
+    }
+    return fieldError;
   };
 
   return (

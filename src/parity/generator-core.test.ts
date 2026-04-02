@@ -4497,6 +4497,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
 
   const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Validation")), "utf8");
   assert.ok(screenContent.includes("initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"));
+  assert.ok(screenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"));
   assert.ok(screenContent.includes("screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}"));
   assert.ok(screenContent.includes("screenLevelErrorEvidence?.map((screenLevelError) => ("));
   assert.ok(screenContent.includes("Please enter a valid email address."));
@@ -4508,7 +4509,10 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
   assert.ok(contextPath, `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`);
   const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
   assert.ok(contextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
+  assert.ok(contextContent.includes("validationMessagesOverride?: Record<string, string>;"));
   assert.ok(contextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;"));
+  assert.ok(contextContent.includes("const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };"));
+  assert.ok(contextContent.includes("if (overrideMessage && defaultMessage && fieldError === defaultMessage) {"));
 });
 
 test("generateArtifacts applies customer profile imports before design-system mappings for AppShell files", async () => {
@@ -4616,6 +4620,205 @@ test("generateArtifacts applies customer profile imports before design-system ma
   assert.ok(appShellContent.includes("<CustomerButton"));
   assert.ok(appShellContent.includes("appearance="));
   assert.equal(appShellContent.includes("FallbackButton"), false);
+});
+
+test("generateArtifacts preserves scenario-specific validation message overrides when error variants conflict", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-validation-conflict-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "loan-validation-default",
+      name: "Loan Validation",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "email-field",
+          name: "Email Field",
+          nodeType: "FRAME",
+          type: "input" as const,
+          width: 320,
+          height: 56,
+          children: [
+            {
+              id: "email-label",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Email",
+              y: 0
+            },
+            {
+              id: "email-value",
+              name: "Value",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "name@example.com",
+              y: 28
+            }
+          ]
+        },
+        {
+          id: "loan-validation-submit",
+          name: "Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Continue"
+        }
+      ]
+    },
+    {
+      id: "loan-validation-error-a",
+      name: "Loan Validation Error A",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "email-field-error-a",
+          name: "Email Field",
+          nodeType: "FRAME",
+          type: "input" as const,
+          width: 320,
+          height: 56,
+          children: [
+            {
+              id: "email-label-error-a",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Email",
+              y: 0
+            },
+            {
+              id: "email-value-error-a",
+              name: "Value",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "name@example.com",
+              y: 28
+            }
+          ]
+        },
+        {
+          id: "loan-validation-submit-error-a",
+          name: "Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Continue"
+        }
+      ]
+    },
+    {
+      id: "loan-validation-error-b",
+      name: "Loan Validation Error B",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "email-field-error-b",
+          name: "Email Field",
+          nodeType: "FRAME",
+          type: "input" as const,
+          width: 320,
+          height: 56,
+          children: [
+            {
+              id: "email-label-error-b",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Email",
+              y: 0
+            },
+            {
+              id: "email-value-error-b",
+              name: "Value",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "name@example.com",
+              y: 28
+            }
+          ]
+        },
+        {
+          id: "loan-validation-submit-error-b",
+          name: "Submit",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Continue"
+        }
+      ]
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "loan-validation-family",
+      canonicalScreenId: "loan-validation-default",
+      memberScreenIds: ["loan-validation-default", "loan-validation-error-a", "loan-validation-error-b"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "loan-validation-default",
+          contentScreenId: "loan-validation-default",
+          initialState: {
+            validationState: "default"
+          }
+        },
+        {
+          screenId: "loan-validation-error-a",
+          contentScreenId: "loan-validation-default",
+          initialState: {
+            validationState: "error"
+          },
+          fieldErrorEvidenceByFieldKey: {
+            email_field_email_field: {
+              message: "Message A",
+              visualError: true
+            }
+          }
+        },
+        {
+          screenId: "loan-validation-error-b",
+          contentScreenId: "loan-validation-default",
+          initialState: {
+            validationState: "error"
+          },
+          fieldErrorEvidenceByFieldKey: {
+            email_field_email_field: {
+              message: "Message B",
+              visualError: true
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Validation")), "utf8");
+  assert.ok(screenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"));
+  assert.ok(screenContent.includes("Message A"));
+  assert.ok(screenContent.includes("Message B"));
+
+  const contextPath = result.generatedPaths.find((generatedPath) =>
+    generatedPath.includes("LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx")
+  );
+  assert.ok(contextPath, `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`);
+  const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
+  assert.ok(contextContent.includes("validationMessagesOverride?: Record<string, string>;"));
+  assert.ok(contextContent.includes("const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };"));
+  assert.equal(contextContent.includes("Message A"), false);
+  assert.equal(contextContent.includes("Message B"), false);
 });
 
 test("generateArtifacts fails fast on malformed screen appShell cross references", async () => {

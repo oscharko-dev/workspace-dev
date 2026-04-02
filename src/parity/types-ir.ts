@@ -913,13 +913,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 entry === null ||
                 Array.isArray(entry) ||
                 typeof entry.message !== "string" ||
-                typeof entry.visualError !== "boolean"
+                typeof entry.visualError !== "boolean" ||
+                (entry.sourceNodeId !== undefined && typeof entry.sourceNodeId !== "string")
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey['${fieldKey}'] ` +
-                    "must contain a string message and boolean visualError."
+                    "must contain a string message, boolean visualError, and optional string sourceNodeId."
                 });
               }
             }
@@ -942,13 +943,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 evidence === null ||
                 Array.isArray(evidence) ||
                 typeof evidence.message !== "string" ||
-                evidence.severity !== "error"
+                evidence.severity !== "error" ||
+                (evidence.sourceNodeId !== undefined && typeof evidence.sourceNodeId !== "string")
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence[${errorIndex}] ` +
-                    "must contain a string message and severity='error'."
+                    "must contain a string message, severity='error', and optional string sourceNodeId."
                 });
               }
             }
