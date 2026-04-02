@@ -892,10 +892,11 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         }
 
         if (scenario.fieldErrorEvidenceByFieldKey !== undefined) {
+          const rawFieldEvidence: unknown = scenario.fieldErrorEvidenceByFieldKey;
           if (
-            typeof scenario.fieldErrorEvidenceByFieldKey !== "object" ||
-            scenario.fieldErrorEvidenceByFieldKey === null ||
-            Array.isArray(scenario.fieldErrorEvidenceByFieldKey)
+            typeof rawFieldEvidence !== "object" ||
+            rawFieldEvidence === null ||
+            Array.isArray(rawFieldEvidence)
           ) {
             errors.push({
               code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
@@ -904,14 +905,15 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 "must be an object when present."
             });
           } else {
-            for (const [fieldKey, evidence] of Object.entries(scenario.fieldErrorEvidenceByFieldKey)) {
+            for (const [fieldKey, evidence] of Object.entries(rawFieldEvidence as Record<string, unknown>)) {
+              const entry = evidence as Record<string, unknown> | null;
               if (
                 !fieldKey ||
-                typeof evidence !== "object" ||
-                evidence === null ||
-                Array.isArray(evidence) ||
-                typeof evidence.message !== "string" ||
-                typeof evidence.visualError !== "boolean"
+                typeof entry !== "object" ||
+                entry === null ||
+                Array.isArray(entry) ||
+                typeof entry.message !== "string" ||
+                typeof entry.visualError !== "boolean"
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
@@ -933,7 +935,8 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 "must be an array when present."
             });
           } else {
-            for (const [errorIndex, evidence] of scenario.screenLevelErrorEvidence.entries()) {
+            for (const [errorIndex, rawEvidence] of scenario.screenLevelErrorEvidence.entries()) {
+              const evidence = rawEvidence as unknown as Record<string, unknown> | null;
               if (
                 typeof evidence !== "object" ||
                 evidence === null ||

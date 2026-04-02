@@ -147,6 +147,8 @@ const EXPECTED_TYPES_EXPORTS = [
   "ScreenVariantFamilyInitialStateIR",
   "ScreenVariantFamilyIR",
   "ScreenVariantFamilyScenarioIR",
+  "ScreenVariantFieldErrorEvidenceIR",
+  "ScreenVariantScreenLevelErrorEvidenceIR",
   "ScreenResponsiveIR",
   "ScreenResponsiveLayoutOverride",
   "ScreenResponsiveLayoutOverridesByBreakpoint",
