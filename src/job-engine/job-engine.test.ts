@@ -230,12 +230,17 @@ const createCustomerProfileFixture = ({
         importAlias: "CustomerButton",
         propMappings: {}
       }
-    }
+    },
+    icons: {}
   },
   fallbacks: {
     mui: {
       defaultPolicy: "allow",
       components: {}
+    },
+    icons: {
+      defaultPolicy: "deny",
+      icons: {}
     }
   },
   template: {

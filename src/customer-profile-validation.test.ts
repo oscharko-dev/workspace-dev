@@ -423,6 +423,7 @@ const createMatchReportEntry = (
   rejectionReasons: [],
   fallbackReasons: [],
   libraryResolution: overrides.libraryResolution,
+  ...("iconResolution" in overrides ? { iconResolution: overrides.iconResolution } : {}),
   ...("storybookFamily" in overrides ? { storybookFamily: overrides.storybookFamily } : {}),
   ...("resolvedApi" in overrides ? { resolvedApi: overrides.resolvedApi } : {}),
   ...("resolvedProps" in overrides ? { resolvedProps: overrides.resolvedProps } : {})
@@ -452,6 +453,26 @@ const createMatchReportArtifact = (entries: ComponentMatchReportEntry[]): Compon
         profile_family_unresolved: entries.filter((e) => e.libraryResolution.reason === "profile_family_unresolved").length,
         match_ambiguous: entries.filter((e) => e.libraryResolution.reason === "match_ambiguous").length,
         match_unmatched: entries.filter((e) => e.libraryResolution.reason === "match_unmatched").length
+      }
+    },
+    iconResolution: {
+      byStatus: {
+        resolved_import: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.status === "resolved_import").length,
+        wrapper_fallback_allowed: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.status === "wrapper_fallback_allowed").length,
+        wrapper_fallback_denied: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.status === "wrapper_fallback_denied").length,
+        unresolved: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.status === "unresolved").length,
+        ambiguous: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.status === "ambiguous").length,
+        not_applicable: entries.filter((entry) => !entry.iconResolution).length
+      },
+      byReason: {
+        profile_icon_import_resolved: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_import_resolved").length,
+        profile_icon_import_missing: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_import_missing").length,
+        profile_icon_wrapper_allowed: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_allowed").length,
+        profile_icon_wrapper_denied: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_denied").length,
+        profile_icon_wrapper_missing: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_missing").length,
+        match_ambiguous: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "match_ambiguous").length,
+        match_unmatched: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "match_unmatched").length,
+        not_icon_family: entries.filter((entry) => !entry.iconResolution).length
       }
     }
   },
@@ -503,6 +524,47 @@ test("validateCustomerProfileComponentMatchReport returns warn for issues when m
   assert.equal(result.issues[0]?.message.includes("Dialog"), true);
   assert.equal(result.counts.byStatus.mui_fallback_denied, 1);
   assert.equal(result.counts.byReason.profile_import_missing, 1);
+});
+
+test("validateCustomerProfileComponentMatchReport aggregates icon outcomes separately and reports unresolved icons", () => {
+  const customerProfile = createCustomerProfile();
+  const artifact = createMatchReportArtifact([
+    createMatchReportEntry({
+      familyKey: "icon-search",
+      familyName: "Icon",
+      libraryResolution: {
+        status: "resolved_import",
+        reason: "profile_import_resolved",
+        storybookTier: "Components",
+        profileFamily: "Components",
+        componentKey: "Button"
+      },
+      iconResolution: {
+        assetKind: "icon",
+        iconKeys: ["search"],
+        byKey: {
+          search: {
+            iconKey: "search",
+            status: "wrapper_fallback_denied",
+            reason: "profile_icon_wrapper_denied"
+          }
+        },
+        counts: {
+          exactImportResolved: 0,
+          wrapperFallbackAllowed: 0,
+          wrapperFallbackDenied: 1,
+          unresolved: 0,
+          ambiguous: 0
+        }
+      }
+    })
+  ]);
+
+  const result = validateCustomerProfileComponentMatchReport({ artifact, customerProfile });
+  assert.equal(result.status, "warn");
+  assert.equal(result.counts.iconByStatus.wrapper_fallback_denied, 1);
+  assert.equal(result.counts.iconByReason.profile_icon_wrapper_denied, 1);
+  assert.equal(result.issues.some((issue) => issue.kind === "icon" && issue.iconKey === "search"), true);
 });
 
 test("validateCustomerProfileComponentMatchReport returns failed when match policy is error", () => {

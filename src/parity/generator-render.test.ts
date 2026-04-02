@@ -20,6 +20,7 @@ import {
   toSequentialDeltas,
   pickBestIconNode
 } from "./generator-render.js";
+import { renderFallbackIconExpression } from "./templates/icon-template.js";
 import type { IconFallbackResolver, RenderContext, VirtualParent } from "./generator-render.js";
 import type { ScreenElementIR } from "./types.js";
 
@@ -619,6 +620,116 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
     }),
     "InfoOutlinedIcon"
   );
+});
+
+test("renderFallbackIconExpression uses exact Storybook-first customer icon imports before heuristic fallbacks", () => {
+  const context = createRenderContext();
+  context.storybookFirstIconLookup = new Map([
+    [
+      "mail",
+      {
+        iconKey: "mail",
+        status: "resolved_import",
+        reason: "profile_icon_import_resolved",
+        import: {
+          package: "@customer/icons",
+          exportName: "MailIcon",
+          localName: "CustomerMailIcon"
+        }
+      }
+    ]
+  ]);
+
+  const rendered = renderFallbackIconExpression({
+    element: makeNode({
+      id: "mail-icon",
+      type: "container",
+      name: "Icon",
+      semanticName: "Mail"
+    }),
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("<CustomerMailIcon"), true);
+  assert.deepEqual(context.mappedImports, [
+    {
+      localName: "CustomerMailIcon",
+      modulePath: "@customer/icons",
+      importMode: "named",
+      importedName: "MailIcon"
+    }
+  ]);
+});
+
+test("renderFallbackIconExpression uses generic Storybook-first icon wrapper with normalized icon key prop", () => {
+  const context = createRenderContext();
+  context.storybookFirstIconLookup = new Map([
+    [
+      "search",
+      {
+        iconKey: "search",
+        status: "wrapper_fallback_allowed",
+        reason: "profile_icon_wrapper_allowed",
+        wrapper: {
+          package: "@customer/icons",
+          exportName: "Icon",
+          localName: "CustomerIcon",
+          iconPropName: "name"
+        }
+      }
+    ]
+  ]);
+
+  const rendered = renderFallbackIconExpression({
+    element: makeNode({
+      id: "search-icon",
+      type: "container",
+      name: "Icon",
+      semanticName: "Search"
+    }),
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("<CustomerIcon"), true);
+  assert.equal(rendered.includes('name={"search"}'), true);
+});
+
+test("renderFallbackIconExpression emits a warning and falls back to heuristic MUI icon when Storybook-first icon lookup is unresolved", () => {
+  const context = createRenderContext();
+  context.storybookFirstIconLookup = new Map([
+    [
+      "mail",
+      {
+        iconKey: "mail",
+        status: "wrapper_fallback_denied",
+        reason: "profile_icon_wrapper_denied"
+      }
+    ]
+  ]);
+  context.iconWarnings = [];
+  context.emittedIconWarningKeys = new Set();
+  context.iconResolver = compileIconFallbackResolver({
+    map: {
+      version: 1,
+      entries: [{ iconName: "Mail", aliases: ["mail"] }]
+    }
+  });
+
+  const rendered = renderFallbackIconExpression({
+    element: makeNode({
+      id: "mail-icon",
+      type: "container",
+      name: "Mail"
+    }),
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("<MailIcon"), true);
+  assert.equal(context.iconWarnings?.length, 1);
+  assert.equal(context.iconWarnings?.[0]?.code, "W_STORYBOOK_ICON_HEURISTIC_FALLBACK");
 });
 
 test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering branches", () => {

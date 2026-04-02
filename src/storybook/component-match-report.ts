@@ -1,9 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { collectNormalizedIconKeys } from "../icon-library-resolution.js";
 import { normalizeVariantKey, normalizeVariantValue } from "../parity/ir-variants.js";
 import { resolveComponentApiContract } from "./component-api-resolver.js";
 import {
+  isCustomerProfileIconFallbackAllowed,
   isCustomerProfileMuiFallbackAllowed,
+  resolveCustomerProfileIconFallbackWrapper,
+  resolveCustomerProfileIconImport,
   resolveCustomerProfileComponentImport,
   resolveCustomerProfileFamily,
   type ResolvedCustomerProfile
@@ -23,6 +27,12 @@ import type {
   ComponentMatchConfidence,
   ComponentMatchEvidenceClass,
   ComponentMatchFallbackReason,
+  ComponentMatchReportIconFallbackWrapperImport,
+  ComponentMatchReportIconResolution,
+  ComponentMatchReportIconResolutionRecord,
+  ComponentMatchReportIconResolvedImport,
+  ComponentMatchIconResolutionReason,
+  ComponentMatchIconResolutionStatus,
   ComponentMatchLibraryResolutionReason,
   ComponentMatchLibraryResolutionStatus,
   ComponentMatchRejectionReason,
@@ -66,6 +76,24 @@ const COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS = [
   "match_ambiguous",
   "match_unmatched"
 ] as const satisfies readonly ComponentMatchLibraryResolutionReason[];
+const COMPONENT_MATCH_ICON_RESOLUTION_STATUSES = [
+  "resolved_import",
+  "wrapper_fallback_allowed",
+  "wrapper_fallback_denied",
+  "unresolved",
+  "ambiguous",
+  "not_applicable"
+] as const satisfies readonly ComponentMatchIconResolutionStatus[];
+const COMPONENT_MATCH_ICON_RESOLUTION_REASONS = [
+  "profile_icon_import_resolved",
+  "profile_icon_import_missing",
+  "profile_icon_wrapper_allowed",
+  "profile_icon_wrapper_denied",
+  "profile_icon_wrapper_missing",
+  "match_ambiguous",
+  "match_unmatched",
+  "not_icon_family"
+] as const satisfies readonly ComponentMatchIconResolutionReason[];
 
 type JsonPrimitive = boolean | number | string | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -97,6 +125,7 @@ interface ResolvedFigmaFamily {
   semanticBucket: ComponentMatchSemanticBucket;
   canonicalName: string;
   canonicalTokens: string[];
+  iconKeys: string[];
   variantSignals: string[];
   variantValueSignals: string[];
   designLinks: ParsedFigmaLink[];
@@ -161,6 +190,18 @@ const createLibraryResolutionReasonCounts = (): Record<ComponentMatchLibraryReso
   ) as Record<ComponentMatchLibraryResolutionReason, number>;
 };
 
+const createIconResolutionStatusCounts = (): Record<ComponentMatchIconResolutionStatus, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_ICON_RESOLUTION_STATUSES.map((status) => [status, 0])
+  ) as Record<ComponentMatchIconResolutionStatus, number>;
+};
+
+const createIconResolutionReasonCounts = (): Record<ComponentMatchIconResolutionReason, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_ICON_RESOLUTION_REASONS.map((reason) => [reason, 0])
+  ) as Record<ComponentMatchIconResolutionReason, number>;
+};
+
 const toResolvedImportForReport = ({
   packageName,
   exportName,
@@ -180,6 +221,41 @@ const toResolvedImportForReport = ({
     exportName,
     localName,
     ...(Object.keys(normalizedPropMappings).length > 0 ? { propMappings: normalizedPropMappings } : {})
+  };
+};
+
+const toIconResolvedImportForReport = ({
+  packageName,
+  exportName,
+  localName
+}: {
+  packageName: string;
+  exportName: string;
+  localName: string;
+}): ComponentMatchReportIconResolvedImport => {
+  return {
+    package: packageName,
+    exportName,
+    localName
+  };
+};
+
+const toIconFallbackWrapperForReport = ({
+  packageName,
+  exportName,
+  localName,
+  iconPropName
+}: {
+  packageName: string;
+  exportName: string;
+  localName: string;
+  iconPropName: string;
+}): ComponentMatchReportIconFallbackWrapperImport => {
+  return {
+    package: packageName,
+    exportName,
+    localName,
+    iconPropName
   };
 };
 
@@ -494,6 +570,10 @@ const buildResolvedFigmaFamily = ({
     semanticBucket: toSemanticBucket([canonicalFamilyName, family.familyName]),
     canonicalName: canonicalFamilyName,
     canonicalTokens,
+    iconKeys: collectNormalizedIconKeys({
+      candidates: [canonicalFamilyName, family.familyName],
+      variantProperties
+    }),
     variantSignals,
     variantValueSignals,
     designLinks: resolution.designLinks,
@@ -1165,6 +1245,182 @@ const resolveLibraryResolution = ({
   };
 };
 
+const resolveEntryIconKeys = ({
+  figmaFamily,
+  selectedFamily
+}: {
+  figmaFamily: ResolvedFigmaFamily;
+  selectedFamily?: StorybookCatalogFamily;
+}): string[] => {
+  const storybookAssetKeys = selectedFamily?.metadata.assetKeys ?? [];
+  const figmaAssetKeys = figmaFamily.iconKeys;
+  if (storybookAssetKeys.length === 0) {
+    return figmaAssetKeys;
+  }
+  if (figmaAssetKeys.length === 0) {
+    return storybookAssetKeys;
+  }
+  const storybookKeySet = new Set(storybookAssetKeys);
+  const sharedKeys = figmaAssetKeys.filter((iconKey) => storybookKeySet.has(iconKey));
+  return sharedKeys.length > 0 ? sharedKeys : sortUniqueStrings([...figmaAssetKeys, ...storybookAssetKeys]);
+};
+
+const createIconResolutionSummary = (): ComponentMatchReportIconResolution["counts"] => {
+  return {
+    exactImportResolved: 0,
+    wrapperFallbackAllowed: 0,
+    wrapperFallbackDenied: 0,
+    unresolved: 0,
+    ambiguous: 0
+  };
+};
+
+const incrementIconResolutionSummary = ({
+  summary,
+  status
+}: {
+  summary: ComponentMatchReportIconResolution["counts"];
+  status: ComponentMatchIconResolutionStatus;
+}): void => {
+  if (status === "resolved_import") {
+    summary.exactImportResolved += 1;
+    return;
+  }
+  if (status === "wrapper_fallback_allowed") {
+    summary.wrapperFallbackAllowed += 1;
+    return;
+  }
+  if (status === "wrapper_fallback_denied") {
+    summary.wrapperFallbackDenied += 1;
+    return;
+  }
+  if (status === "ambiguous") {
+    summary.ambiguous += 1;
+    return;
+  }
+  if (status === "unresolved") {
+    summary.unresolved += 1;
+  }
+};
+
+const resolveIconResolution = ({
+  matchStatus,
+  selectedFamily,
+  figmaFamily,
+  resolvedCustomerProfile
+}: {
+  matchStatus: ComponentMatchStatus;
+  selectedFamily?: StorybookCatalogFamily;
+  figmaFamily: ResolvedFigmaFamily;
+  resolvedCustomerProfile?: ResolvedCustomerProfile;
+}): ComponentMatchReportIconResolution | undefined => {
+  const isIconFamily = selectedFamily?.metadata.assetKind === "icon" || figmaFamily.semanticBucket === "icon";
+  if (!isIconFamily) {
+    return undefined;
+  }
+
+  const iconKeys = resolveEntryIconKeys({
+    figmaFamily,
+    ...(selectedFamily ? { selectedFamily } : {})
+  });
+  const fallbackIconKey = collectNormalizedIconKeys({
+    candidates: [figmaFamily.canonicalName, figmaFamily.figma.familyName]
+  })[0];
+  const resolvedIconKeys = iconKeys.length > 0 ? iconKeys : fallbackIconKey ? [fallbackIconKey] : [];
+  if (resolvedIconKeys.length === 0) {
+    return undefined;
+  }
+
+  const counts = createIconResolutionSummary();
+  const byKey: Record<string, ComponentMatchReportIconResolutionRecord> = {};
+
+  for (const iconKey of resolvedIconKeys) {
+    let resolution: ComponentMatchReportIconResolutionRecord;
+    if (matchStatus === "ambiguous") {
+      resolution = {
+        iconKey,
+        status: "ambiguous",
+        reason: "match_ambiguous"
+      };
+    } else if (matchStatus === "unmatched" || !selectedFamily) {
+      resolution = {
+        iconKey,
+        status: "unresolved",
+        reason: "match_unmatched"
+      };
+    } else if (!resolvedCustomerProfile) {
+      resolution = {
+        iconKey,
+        status: "unresolved",
+        reason: "profile_icon_import_missing"
+      };
+    } else {
+      const resolvedImport = resolveCustomerProfileIconImport({
+        profile: resolvedCustomerProfile,
+        iconKey
+      });
+      if (resolvedImport) {
+        resolution = {
+          iconKey,
+          status: "resolved_import",
+          reason: "profile_icon_import_resolved",
+          import: toIconResolvedImportForReport({
+            packageName: resolvedImport.package,
+            exportName: resolvedImport.exportName,
+            localName: resolvedImport.localName
+          })
+        };
+      } else {
+        const fallbackAllowed = isCustomerProfileIconFallbackAllowed({
+          profile: resolvedCustomerProfile,
+          iconKey
+        });
+        if (!fallbackAllowed) {
+          resolution = {
+            iconKey,
+            status: "wrapper_fallback_denied",
+            reason: "profile_icon_wrapper_denied"
+          };
+        } else {
+          const wrapper = resolveCustomerProfileIconFallbackWrapper({
+            profile: resolvedCustomerProfile
+          });
+          resolution = wrapper
+            ? {
+                iconKey,
+                status: "wrapper_fallback_allowed",
+                reason: "profile_icon_wrapper_allowed",
+                wrapper: toIconFallbackWrapperForReport({
+                  packageName: wrapper.package,
+                  exportName: wrapper.exportName,
+                  localName: wrapper.localName,
+                  iconPropName: wrapper.iconPropName
+                })
+              }
+            : {
+                iconKey,
+                status: "unresolved",
+                reason: "profile_icon_wrapper_missing"
+              };
+        }
+      }
+    }
+
+    byKey[iconKey] = resolution;
+    incrementIconResolutionSummary({
+      summary: counts,
+      status: resolution.status
+    });
+  }
+
+  return {
+    assetKind: "icon",
+    iconKeys: resolvedIconKeys,
+    byKey,
+    counts
+  };
+};
+
 const compareReportEntries = (left: ComponentMatchReportEntry, right: ComponentMatchReportEntry): number => {
   const byFamilyName = left.figma.familyName.localeCompare(right.figma.familyName);
   if (byFamilyName !== 0) {
@@ -1272,6 +1528,12 @@ export const buildComponentMatchReportArtifact = ({
         ...(selectedFamily ? { selectedFamily } : {}),
         ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {})
       });
+      const iconResolution = resolveIconResolution({
+        matchStatus: match.status,
+        ...(topCandidate ? { selectedFamily: topCandidate.family } : {}),
+        figmaFamily: resolvedFigmaFamily,
+        ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {})
+      });
       const selectedStoryEntry = storyVariant.storyVariant
         ? lookup.entriesById.get(storyVariant.storyVariant.entryId)
         : undefined;
@@ -1305,6 +1567,7 @@ export const buildComponentMatchReportArtifact = ({
         rejectionReasons: match.rejectionReasons,
         fallbackReasons,
         libraryResolution,
+        ...(iconResolution ? { iconResolution } : {}),
         ...(selectedFamily ? { storybookFamily: selectedFamily } : {}),
         ...(storyVariant.storyVariant ? { storyVariant: storyVariant.storyVariant } : {}),
         resolvedApi,
@@ -1315,9 +1578,20 @@ export const buildComponentMatchReportArtifact = ({
 
   const libraryResolutionStatusCounts = createLibraryResolutionStatusCounts();
   const libraryResolutionReasonCounts = createLibraryResolutionReasonCounts();
+  const iconResolutionStatusCounts = createIconResolutionStatusCounts();
+  const iconResolutionReasonCounts = createIconResolutionReasonCounts();
   for (const entry of entries) {
     libraryResolutionStatusCounts[entry.libraryResolution.status] += 1;
     libraryResolutionReasonCounts[entry.libraryResolution.reason] += 1;
+    if (!entry.iconResolution) {
+      iconResolutionStatusCounts.not_applicable += 1;
+      iconResolutionReasonCounts.not_icon_family += 1;
+      continue;
+    }
+    for (const resolution of Object.values(entry.iconResolution.byKey)) {
+      iconResolutionStatusCounts[resolution.status] += 1;
+      iconResolutionReasonCounts[resolution.reason] += 1;
+    }
   }
 
   return {
@@ -1333,6 +1607,10 @@ export const buildComponentMatchReportArtifact = ({
       libraryResolution: {
         byStatus: libraryResolutionStatusCounts,
         byReason: libraryResolutionReasonCounts
+      },
+      iconResolution: {
+        byStatus: iconResolutionStatusCounts,
+        byReason: iconResolutionReasonCounts
       }
     },
     entries

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { WorkspaceBrandTheme } from "./contracts/index.js";
 import type { DesignSystemConfig, DesignSystemMappingEntry } from "./design-system.js";
+import { normalizeIconKey } from "./icon-library-resolution.js";
 import type {
   ComponentMatchReportArtifact,
   ComponentMatchReportResolvedImport,
@@ -56,11 +57,29 @@ export interface CustomerProfileConfigSnapshot {
         propMappings: Record<string, string>;
       }
     >;
+    icons: Record<
+      string,
+      {
+        package: string;
+        export: string;
+        importAlias: string;
+      }
+    >;
   };
   fallbacks: {
     mui: {
       defaultPolicy: CustomerProfileMuiFallbackPolicy;
       components: Record<string, CustomerProfileMuiFallbackPolicy>;
+    };
+    icons: {
+      defaultPolicy: CustomerProfileMuiFallbackPolicy;
+      icons: Record<string, CustomerProfileMuiFallbackPolicy>;
+      wrapper?: {
+        package: string;
+        export: string;
+        importAlias: string;
+        iconProp?: string;
+      };
     };
   };
   template: {
@@ -114,6 +133,20 @@ export interface ResolvedCustomerProfileComponentImport {
   propMappings: Record<string, string>;
 }
 
+export interface ResolvedCustomerProfileIconImport {
+  iconKey: string;
+  package: string;
+  exportName: string;
+  localName: string;
+}
+
+export interface ResolvedCustomerProfileIconFallbackWrapper {
+  package: string;
+  exportName: string;
+  localName: string;
+  iconPropName: string;
+}
+
 export interface ResolvedCustomerProfileTemplate {
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
@@ -151,11 +184,17 @@ export interface ResolvedCustomerProfile {
   brandMappings: readonly ResolvedCustomerProfileBrandMapping[];
   imports: {
     readonly components: Readonly<Record<string, ResolvedCustomerProfileComponentImport>>;
+    readonly icons: Readonly<Record<string, ResolvedCustomerProfileIconImport>>;
   };
   fallbacks: {
     readonly mui: {
       readonly defaultPolicy: CustomerProfileMuiFallbackPolicy;
       readonly components: Readonly<Record<string, CustomerProfileMuiFallbackPolicy>>;
+    };
+    readonly icons: {
+      readonly defaultPolicy: CustomerProfileMuiFallbackPolicy;
+      readonly icons: Readonly<Record<string, CustomerProfileMuiFallbackPolicy>>;
+      readonly wrapper?: Readonly<ResolvedCustomerProfileIconFallbackWrapper>;
     };
   };
   template: Readonly<ResolvedCustomerProfileTemplate>;
@@ -164,6 +203,7 @@ export interface ResolvedCustomerProfile {
   familyByAlias: ReadonlyMap<string, ResolvedCustomerProfileFamily>;
   brandByAlias: ReadonlyMap<string, ResolvedCustomerProfileBrandMapping>;
   componentImportsByKey: ReadonlyMap<string, ResolvedCustomerProfileComponentImport>;
+  iconImportsByKey: ReadonlyMap<string, ResolvedCustomerProfileIconImport>;
   allowedExportsByPackage: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
@@ -220,6 +260,10 @@ const normalizeAlias = (value: string): string => {
 
 const normalizeComponentKey = (value: string): string => {
   return value.trim();
+};
+
+const normalizeIconProfileKey = (value: string): string | undefined => {
+  return normalizeIconKey({ value });
 };
 
 const toSortedRecord = <T>(input: Record<string, T>): Record<string, T> => {
@@ -697,6 +741,45 @@ const parseMuiFallbackPolicy = ({
   return "allow";
 };
 
+const parseIconFallbackWrapper = ({
+  input,
+  path,
+  issues
+}: {
+  input: unknown;
+  path: string;
+  issues: CustomerProfileParseIssue[];
+}): ResolvedCustomerProfileIconFallbackWrapper | undefined => {
+  const binding = parseTemplateImportBinding({
+    input,
+    path,
+    issues
+  });
+  if (!binding || !isPlainRecord(input)) {
+    return binding
+      ? {
+          ...binding,
+          iconPropName: "name"
+        }
+      : undefined;
+  }
+
+  const iconPropName =
+    typeof input.iconProp === "string" && input.iconProp.trim().length > 0 ? input.iconProp.trim() : "name";
+  if (!isValidIdentifier(iconPropName)) {
+    pushIssue({
+      issues,
+      path: `${path}.iconProp`,
+      message: "iconProp must be a valid identifier."
+    });
+  }
+
+  return {
+    ...binding,
+    iconPropName
+  };
+};
+
 const parseNamedImportSpecifiers = (clause: string): Array<{ imported: string; local: string }> => {
   const match = clause.match(NAMED_IMPORT_CLAUSE_PATTERN);
   if (!match) {
@@ -996,8 +1079,18 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       message: "imports.components must be an object."
     });
   }
+  const rawImportIconsInput = rawImports === undefined ? undefined : rawImports.icons;
+  const rawImportIcons = isPlainRecord(rawImportIconsInput) ? rawImportIconsInput : undefined;
+  if (rawImportIconsInput !== undefined && !rawImportIcons) {
+    pushIssue({
+      issues,
+      path: "imports.icons",
+      message: "imports.icons must be an object."
+    });
+  }
 
   const resolvedComponentImports: Record<string, ResolvedCustomerProfileComponentImport> = {};
+  const resolvedIconImports: Record<string, ResolvedCustomerProfileIconImport> = {};
   const bindingOwners = new Map<string, string>();
   if (rawImportComponents) {
     for (const [rawComponentKey, rawImportEntry] of Object.entries(rawImportComponents)) {
@@ -1089,6 +1182,77 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       };
     }
   }
+  if (rawImportIcons) {
+    for (const [rawIconKey, rawImportEntry] of Object.entries(rawImportIcons)) {
+      const normalizedIconKey = normalizeIconProfileKey(rawIconKey);
+      const pathPrefix = `imports.icons.${rawIconKey}`;
+      if (!normalizedIconKey) {
+        pushIssue({
+          issues,
+          path: pathPrefix,
+          message: "Icon key must normalize to a non-empty deterministic icon key."
+        });
+        continue;
+      }
+      if (!isPlainRecord(rawImportEntry)) {
+        pushIssue({
+          issues,
+          path: pathPrefix,
+          message: "Icon import entry must be an object."
+        });
+        continue;
+      }
+
+      const packageName = typeof rawImportEntry.package === "string" ? rawImportEntry.package.trim() : "";
+      if (!isValidPackageName(packageName)) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.package`,
+          message: "package must be a valid package name."
+        });
+      }
+
+      const exportName = typeof rawImportEntry.export === "string" ? rawImportEntry.export.trim() : "";
+      if (!isValidIdentifier(exportName)) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.export`,
+          message: "export must be a valid identifier."
+        });
+      }
+
+      const importAlias =
+        typeof rawImportEntry.importAlias === "string" && rawImportEntry.importAlias.trim().length > 0
+          ? rawImportEntry.importAlias.trim()
+          : exportName;
+      if (!isValidIdentifier(importAlias)) {
+        pushIssue({
+          issues,
+          path: `${pathPrefix}.importAlias`,
+          message: "importAlias must be a valid identifier."
+        });
+      }
+
+      const bindingKey = `${packageName}::${exportName}`;
+      const bindingOwner = bindingOwners.get(bindingKey);
+      if (bindingOwner && bindingOwner !== `icon:${normalizedIconKey}`) {
+        pushIssue({
+          issues,
+          path: pathPrefix,
+          message: `Import binding '${bindingKey}' is already assigned to '${bindingOwner}'.`
+        });
+      } else if (packageName && exportName) {
+        bindingOwners.set(bindingKey, `icon:${normalizedIconKey}`);
+      }
+
+      resolvedIconImports[normalizedIconKey] = {
+        iconKey: normalizedIconKey,
+        package: packageName,
+        exportName,
+        localName: importAlias
+      };
+    }
+  }
 
   const rawFallbacks = isPlainRecord(input.fallbacks) ? input.fallbacks : undefined;
   if (!rawFallbacks) {
@@ -1105,6 +1269,16 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       issues,
       path: "fallbacks.mui",
       message: "fallbacks.mui must be an object."
+    });
+  }
+
+  const rawIconFallbacksInput = rawFallbacks === undefined ? undefined : rawFallbacks.icons;
+  const rawIconFallbacks = isPlainRecord(rawIconFallbacksInput) ? rawIconFallbacksInput : undefined;
+  if (rawIconFallbacksInput !== undefined && !rawIconFallbacks) {
+    pushIssue({
+      issues,
+      path: "fallbacks.icons",
+      message: "fallbacks.icons must be an object."
     });
   }
 
@@ -1139,6 +1313,69 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
           issues
         });
       }
+    }
+  }
+  const defaultIconPolicy =
+    rawIconFallbacksInput === undefined
+      ? "deny"
+      : parseMuiFallbackPolicy({
+          input: rawIconFallbacks?.defaultPolicy,
+          path: "fallbacks.icons.defaultPolicy",
+          issues
+        });
+
+  const iconPolicies: Record<string, CustomerProfileMuiFallbackPolicy> = {};
+  if (rawIconFallbacks?.icons !== undefined) {
+    if (!isPlainRecord(rawIconFallbacks.icons)) {
+      pushIssue({
+        issues,
+        path: "fallbacks.icons.icons",
+        message: "fallbacks.icons.icons must be an object."
+      });
+    } else {
+      for (const [rawIconKey, rawPolicy] of Object.entries(rawIconFallbacks.icons)) {
+        const normalizedIconKey = normalizeIconProfileKey(rawIconKey);
+        if (!normalizedIconKey) {
+          pushIssue({
+            issues,
+            path: `fallbacks.icons.icons.${rawIconKey}`,
+            message: "Fallback icon key must normalize to a non-empty deterministic icon key."
+          });
+          continue;
+        }
+        iconPolicies[normalizedIconKey] = parseMuiFallbackPolicy({
+          input: rawPolicy,
+          path: `fallbacks.icons.icons.${rawIconKey}`,
+          issues
+        });
+      }
+    }
+  }
+
+  const iconFallbackWrapper = parseIconFallbackWrapper({
+    input: rawIconFallbacks?.wrapper,
+    path: "fallbacks.icons.wrapper",
+    issues
+  });
+  const requiresIconWrapper =
+    defaultIconPolicy === "allow" || Object.values(iconPolicies).some((policy) => policy === "allow");
+  if (requiresIconWrapper && !iconFallbackWrapper) {
+    pushIssue({
+      issues,
+      path: "fallbacks.icons.wrapper",
+      message: "fallbacks.icons.wrapper is required when any icon fallback policy allows wrapper fallback."
+    });
+  } else if (iconFallbackWrapper) {
+    const bindingKey = `${iconFallbackWrapper.package}::${iconFallbackWrapper.exportName}`;
+    const bindingOwner = bindingOwners.get(bindingKey);
+    if (bindingOwner && bindingOwner !== "icon_wrapper") {
+      pushIssue({
+        issues,
+        path: "fallbacks.icons.wrapper",
+        message: `Import binding '${bindingKey}' is already assigned to '${bindingOwner}'.`
+      });
+    } else if (iconFallbackWrapper.package && iconFallbackWrapper.exportName) {
+      bindingOwners.set(bindingKey, "icon_wrapper");
     }
   }
 
@@ -1229,7 +1466,9 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
   });
   const sortedBrandMappings = [...brandMappings].sort((left, right) => left.id.localeCompare(right.id));
   const sortedComponentImports = toSortedRecord(resolvedComponentImports);
+  const sortedIconImports = toSortedRecord(resolvedIconImports);
   const sortedMuiComponentPolicies = toSortedRecord(muiComponentPolicies);
+  const sortedIconPolicies = toSortedRecord(iconPolicies);
 
   const resolvedFamilyById = new Map<string, ResolvedCustomerProfileFamily>();
   const resolvedFamilyByAlias = new Map<string, ResolvedCustomerProfileFamily>();
@@ -1250,6 +1489,7 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
   }
 
   const componentImportsByKey = new Map<string, ResolvedCustomerProfileComponentImport>();
+  const iconImportsByKey = new Map<string, ResolvedCustomerProfileIconImport>();
   const allowedExportsByPackage = new Map<string, Set<string>>();
   const registerAllowedExport = ({
     packageName,
@@ -1272,6 +1512,19 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       exportName: importEntry.exportName
     });
   }
+  for (const [iconKey, importEntry] of Object.entries(sortedIconImports)) {
+    iconImportsByKey.set(iconKey, importEntry);
+    registerAllowedExport({
+      packageName: importEntry.package,
+      exportName: importEntry.exportName
+    });
+  }
+  if (iconFallbackWrapper) {
+    registerAllowedExport({
+      packageName: iconFallbackWrapper.package,
+      exportName: iconFallbackWrapper.exportName
+    });
+  }
   if (template.providers.datePicker) {
     registerAllowedExport({
       packageName: template.providers.datePicker.package,
@@ -1292,12 +1545,18 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       families: sortedFamilies,
       brandMappings: sortedBrandMappings,
       imports: {
-        components: sortedComponentImports
+        components: sortedComponentImports,
+        icons: sortedIconImports
       },
       fallbacks: {
         mui: {
           defaultPolicy,
           components: sortedMuiComponentPolicies
+        },
+        icons: {
+          defaultPolicy: defaultIconPolicy,
+          icons: sortedIconPolicies,
+          ...(iconFallbackWrapper ? { wrapper: iconFallbackWrapper } : {})
         }
       },
       template,
@@ -1306,6 +1565,7 @@ export const safeParseCustomerProfileConfig = ({ input }: { input: unknown }): C
       familyByAlias: resolvedFamilyByAlias,
       brandByAlias: resolvedBrandByAlias,
       componentImportsByKey,
+      iconImportsByKey,
       allowedExportsByPackage
     },
     issues: []
@@ -1415,12 +1675,38 @@ export const toCustomerProfileConfigSnapshot = ({
             propMappings: { ...componentImport.propMappings }
           }
         ])
+      ),
+      icons: Object.fromEntries(
+        Object.entries(profile.imports.icons).map(([iconKey, iconImport]) => [
+          iconKey,
+          {
+            package: iconImport.package,
+            export: iconImport.exportName,
+            importAlias: iconImport.localName
+          }
+        ])
       )
     },
     fallbacks: {
       mui: {
         defaultPolicy: profile.fallbacks.mui.defaultPolicy,
         components: { ...profile.fallbacks.mui.components }
+      },
+      icons: {
+        defaultPolicy: profile.fallbacks.icons.defaultPolicy,
+        icons: { ...profile.fallbacks.icons.icons },
+        ...(profile.fallbacks.icons.wrapper
+          ? {
+              wrapper: {
+                package: profile.fallbacks.icons.wrapper.package,
+                export: profile.fallbacks.icons.wrapper.exportName,
+                importAlias: profile.fallbacks.icons.wrapper.localName,
+                ...(profile.fallbacks.icons.wrapper.iconPropName !== "name"
+                  ? { iconProp: profile.fallbacks.icons.wrapper.iconPropName }
+                  : {})
+              }
+            }
+          : {})
       }
     },
     template: {
@@ -1482,6 +1768,46 @@ export const resolveCustomerProfileComponentImport = ({
     return undefined;
   }
   return resolvedImport;
+};
+
+export const resolveCustomerProfileIconImport = ({
+  profile,
+  iconKey
+}: {
+  profile: ResolvedCustomerProfile;
+  iconKey: string;
+}): ResolvedCustomerProfileIconImport | undefined => {
+  const normalizedIconKey = normalizeIconProfileKey(iconKey);
+  if (!normalizedIconKey) {
+    return undefined;
+  }
+  return profile.iconImportsByKey.get(normalizedIconKey);
+};
+
+export const isCustomerProfileIconFallbackAllowed = ({
+  profile,
+  iconKey
+}: {
+  profile: ResolvedCustomerProfile;
+  iconKey: string;
+}): boolean => {
+  const normalizedIconKey = normalizeIconProfileKey(iconKey);
+  if (!normalizedIconKey) {
+    return false;
+  }
+  const explicitPolicy = profile.fallbacks.icons.icons[normalizedIconKey];
+  if (explicitPolicy !== undefined) {
+    return explicitPolicy === "allow";
+  }
+  return profile.fallbacks.icons.defaultPolicy === "allow";
+};
+
+export const resolveCustomerProfileIconFallbackWrapper = ({
+  profile
+}: {
+  profile: ResolvedCustomerProfile;
+}): ResolvedCustomerProfileIconFallbackWrapper | undefined => {
+  return profile.fallbacks.icons.wrapper;
 };
 
 export const resolveCustomerProfileDatePickerProvider = ({

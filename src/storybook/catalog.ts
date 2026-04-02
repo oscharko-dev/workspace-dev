@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { collectStorybookAssetMetadata, type StorybookAssetKind } from "../icon-library-resolution.js";
 import { extractMdxLinks, extractStoryDesignUrls } from "./bundle-analysis.js";
 import {
   buildStorybookEvidenceArtifact,
@@ -69,6 +70,8 @@ interface StorybookFamilyAccumulator {
   componentPaths: Set<string>;
   propKeys: Set<string>;
   designUrls: Set<string>;
+  assetKeys: Set<string>;
+  assetKinds: Set<StorybookAssetKind>;
   internalDocsLinks: Map<string, StorybookCatalogResolvedDocsLink>;
   externalDocsLinks: Set<string>;
   signalReferences: StorybookCatalogSignalReferences;
@@ -412,6 +415,14 @@ const buildCatalogEntries = ({
       const tier = resolveTier(entry.title);
       const storyMetadata = storyMetadataByImportPath.get(normalizedImportPath);
       const docsMetadata = docsMetadataByImportPath.get(normalizedImportPath);
+      const assetMetadata = collectStorybookAssetMetadata({
+        title: entry.title,
+        name: entry.name,
+        tags: entry.tags,
+        ...(entry.componentPath ? { componentPath: entry.componentPath } : {}),
+        ...(entry.type === "story" && storyMetadata?.args ? { args: storyMetadata.args } : {}),
+        ...(entry.type === "story" && storyMetadata?.argTypes ? { argTypes: storyMetadata.argTypes } : {})
+      });
       const signalReferences = cloneSignalReferences(globalSignalReferences);
       const entrySignalReferences = signalReferencesByEntryId.get(entry.id);
 
@@ -441,7 +452,9 @@ const buildCatalogEntries = ({
           ...(entry.type === "story" && storyMetadata?.args ? { args: storyMetadata.args } : {}),
           ...(entry.type === "story" && storyMetadata?.argTypes ? { argTypes: storyMetadata.argTypes } : {}),
           designUrls: entry.type === "story" ? storyMetadata?.designUrls ?? [] : [],
-          mdxLinks: entry.type === "docs" ? cloneLinkMetadata(docsMetadata?.mdxLinks ?? createEmptyLinkMetadata()) : createEmptyLinkMetadata()
+          mdxLinks: entry.type === "docs" ? cloneLinkMetadata(docsMetadata?.mdxLinks ?? createEmptyLinkMetadata()) : createEmptyLinkMetadata(),
+          assetKeys: assetMetadata.assetKeys,
+          ...(assetMetadata.assetKind ? { assetKind: assetMetadata.assetKind } : {})
         }
       } satisfies StorybookCatalogEntry;
     })
@@ -473,6 +486,8 @@ const buildCatalogFamilies = ({
       componentPaths: new Set<string>(),
       propKeys: new Set<string>(),
       designUrls: new Set<string>(),
+      assetKeys: new Set<string>(),
+      assetKinds: new Set<StorybookAssetKind>(),
       internalDocsLinks: new Map<string, StorybookCatalogResolvedDocsLink>(),
       externalDocsLinks: new Set<string>(),
       signalReferences: createEmptySignalReferences()
@@ -500,6 +515,12 @@ const buildCatalogFamilies = ({
       for (const designUrl of entry.metadata.designUrls) {
         family.designUrls.add(designUrl);
       }
+      for (const assetKey of entry.metadata.assetKeys) {
+        family.assetKeys.add(assetKey);
+      }
+      if (entry.metadata.assetKind) {
+        family.assetKinds.add(entry.metadata.assetKind);
+      }
       if (entry.componentPath) {
         family.componentPaths.add(entry.componentPath);
       }
@@ -507,6 +528,12 @@ const buildCatalogFamilies = ({
     }
 
     family.docsEntryIds.add(entry.id);
+    for (const assetKey of entry.metadata.assetKeys) {
+      family.assetKeys.add(assetKey);
+    }
+    if (entry.metadata.assetKind) {
+      family.assetKinds.add(entry.metadata.assetKind);
+    }
     for (const link of entry.metadata.mdxLinks.internal) {
       family.internalDocsLinks.set(`${link.path}|${link.entryId ?? ""}`, link);
     }
@@ -537,7 +564,13 @@ const buildCatalogFamilies = ({
           mdxLinks: {
             internal: [...family.internalDocsLinks.values()].sort(compareResolvedDocsLinks),
             external: uniqueSorted(family.externalDocsLinks)
-          }
+          },
+          assetKeys: uniqueSorted(family.assetKeys),
+          ...(family.assetKinds.has("icon")
+            ? { assetKind: "icon" as const }
+            : family.assetKinds.has("illustration")
+              ? { assetKind: "illustration" as const }
+              : {})
         }
       } satisfies StorybookCatalogFamily;
     })

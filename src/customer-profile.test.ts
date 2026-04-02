@@ -6,11 +6,14 @@ import test from "node:test";
 import {
   collectCustomerProfileImportIssuesFromSource,
   getCustomerProfileFamiliesByPriority,
+  isCustomerProfileIconFallbackAllowed,
   isCustomerProfileMuiFallbackAllowed,
   loadCustomerProfileConfigFile,
   parseCustomerProfileConfig,
   resolveCustomerProfileBrandMapping,
   resolveCustomerProfileComponentImport,
+  resolveCustomerProfileIconFallbackWrapper,
+  resolveCustomerProfileIconImport,
   resolveCustomerProfileFamily,
   safeParseCustomerProfileConfig,
   toCustomerProfileConfigSnapshot,
@@ -68,6 +71,13 @@ const createRawCustomerProfile = () => ({
         package: "@customer/react-ui",
         export: "ContentCard"
       }
+    },
+    icons: {
+      mail: {
+        package: "@customer/icons",
+        export: "MailIcon",
+        importAlias: "CustomerMailIcon"
+      }
     }
   },
   fallbacks: {
@@ -75,6 +85,18 @@ const createRawCustomerProfile = () => ({
       defaultPolicy: "deny",
       components: {
         Card: "allow"
+      }
+    },
+    icons: {
+      defaultPolicy: "deny",
+      icons: {
+        search: "allow"
+      },
+      wrapper: {
+        package: "@customer/icons",
+        export: "Icon",
+        importAlias: "CustomerIcon",
+        iconProp: "name"
       }
     }
   },
@@ -207,8 +229,11 @@ test("safeParseCustomerProfileConfig normalizes valid profile data and exposes r
   assert.equal(resolveCustomerProfileFamily({ profile, candidate: "react ui" })?.id, "ReactUI");
   assert.equal(resolveCustomerProfileBrandMapping({ profile, candidate: "sk" })?.brandTheme, "sparkasse");
   assert.equal(resolveCustomerProfileComponentImport({ profile, componentKey: "Button" })?.localName, "CustomerButton");
+  assert.equal(resolveCustomerProfileIconImport({ profile, iconKey: "mail" })?.localName, "CustomerMailIcon");
   assert.equal(isCustomerProfileMuiFallbackAllowed({ profile, componentKey: "Card" }), true);
   assert.equal(isCustomerProfileMuiFallbackAllowed({ profile, componentKey: "Button" }), false);
+  assert.equal(isCustomerProfileIconFallbackAllowed({ profile, iconKey: "search" }), true);
+  assert.equal(resolveCustomerProfileIconFallbackWrapper({ profile })?.localName, "CustomerIcon");
 
   assert.deepEqual(toCustomerProfileDesignSystemConfig({ profile }), {
     library: "__customer_profile__",
@@ -564,6 +589,8 @@ test("toCustomerProfileConfigSnapshot round-trips resolved profiles through safe
   }
   assert.equal(reparsed.config.strictness.import, parsed.config.strictness.import);
   assert.equal(reparsed.config.imports.components.Button.package, parsed.config.imports.components.Button.package);
+  assert.equal(reparsed.config.imports.icons.mail.localName, "CustomerMailIcon");
+  assert.equal(reparsed.config.fallbacks.icons.wrapper?.iconPropName, "name");
 });
 
 test("safeParseCustomerProfileConfig parses and snapshots explicit DatePicker provider metadata", () => {
@@ -774,6 +801,26 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
           profile_family_unresolved: 0,
           match_ambiguous: 1,
           match_unmatched: 0
+        }
+      },
+      iconResolution: {
+        byStatus: {
+          resolved_import: 0,
+          wrapper_fallback_allowed: 0,
+          wrapper_fallback_denied: 0,
+          unresolved: 0,
+          ambiguous: 0,
+          not_applicable: 4
+        },
+        byReason: {
+          profile_icon_import_resolved: 0,
+          profile_icon_import_missing: 0,
+          profile_icon_wrapper_allowed: 0,
+          profile_icon_wrapper_denied: 0,
+          profile_icon_wrapper_missing: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0,
+          not_icon_family: 4
         }
       }
     },
@@ -1081,6 +1128,26 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport excludes incom
           match_ambiguous: 0,
           match_unmatched: 0
         }
+      },
+      iconResolution: {
+        byStatus: {
+          resolved_import: 0,
+          wrapper_fallback_allowed: 0,
+          wrapper_fallback_denied: 0,
+          unresolved: 0,
+          ambiguous: 0,
+          not_applicable: 3
+        },
+        byReason: {
+          profile_icon_import_resolved: 0,
+          profile_icon_import_missing: 0,
+          profile_icon_wrapper_allowed: 0,
+          profile_icon_wrapper_denied: 0,
+          profile_icon_wrapper_missing: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0,
+          not_icon_family: 3
+        }
       }
     },
     entries: [
@@ -1297,6 +1364,26 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport writes omitted
           profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0
+        }
+      },
+      iconResolution: {
+        byStatus: {
+          resolved_import: 0,
+          wrapper_fallback_allowed: 0,
+          wrapper_fallback_denied: 0,
+          unresolved: 0,
+          ambiguous: 0,
+          not_applicable: 1
+        },
+        byReason: {
+          profile_icon_import_resolved: 0,
+          profile_icon_import_missing: 0,
+          profile_icon_wrapper_allowed: 0,
+          profile_icon_wrapper_denied: 0,
+          profile_icon_wrapper_missing: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0,
+          not_icon_family: 1
         }
       }
     },

@@ -1,3 +1,5 @@
+import type { StorybookAssetKind } from "../icon-library-resolution.js";
+
 export type StorybookEntryType = "story" | "docs";
 
 export type StorybookEvidenceType =
@@ -141,6 +143,8 @@ export interface StorybookCatalogEntryMetadata {
   argTypes?: Record<string, StorybookCatalogJsonValue>;
   designUrls: string[];
   mdxLinks: StorybookCatalogLinkMetadata;
+  assetKeys: string[];
+  assetKind?: StorybookAssetKind;
 }
 
 export interface StorybookCatalogEntry {
@@ -164,6 +168,8 @@ export interface StorybookCatalogEntry {
 export interface StorybookCatalogFamilyMetadata {
   designUrls: string[];
   mdxLinks: StorybookCatalogLinkMetadata;
+  assetKeys: string[];
+  assetKind?: StorybookAssetKind;
 }
 
 export interface StorybookCatalogFamily {
@@ -463,6 +469,24 @@ export type ComponentMatchLibraryResolutionReason =
   | "match_ambiguous"
   | "match_unmatched";
 
+export type ComponentMatchIconResolutionStatus =
+  | "resolved_import"
+  | "wrapper_fallback_allowed"
+  | "wrapper_fallback_denied"
+  | "unresolved"
+  | "ambiguous"
+  | "not_applicable";
+
+export type ComponentMatchIconResolutionReason =
+  | "profile_icon_import_resolved"
+  | "profile_icon_import_missing"
+  | "profile_icon_wrapper_allowed"
+  | "profile_icon_wrapper_denied"
+  | "profile_icon_wrapper_missing"
+  | "match_ambiguous"
+  | "match_unmatched"
+  | "not_icon_family";
+
 export interface ComponentMatchReportVariantProperty {
   property: string;
   values: string[];
@@ -502,6 +526,16 @@ export interface ComponentMatchReportResolvedImport {
   propMappings?: Record<string, string>;
 }
 
+export interface ComponentMatchReportIconResolvedImport {
+  package: string;
+  exportName: string;
+  localName: string;
+}
+
+export interface ComponentMatchReportIconFallbackWrapperImport extends ComponentMatchReportIconResolvedImport {
+  iconPropName: string;
+}
+
 export interface ComponentMatchReportLibraryResolution {
   status: ComponentMatchLibraryResolutionStatus;
   reason: ComponentMatchLibraryResolutionReason;
@@ -509,6 +543,29 @@ export interface ComponentMatchReportLibraryResolution {
   profileFamily?: string;
   componentKey?: string;
   import?: ComponentMatchReportResolvedImport;
+}
+
+export interface ComponentMatchReportIconResolutionRecord {
+  iconKey: string;
+  status: ComponentMatchIconResolutionStatus;
+  reason: ComponentMatchIconResolutionReason;
+  import?: ComponentMatchReportIconResolvedImport;
+  wrapper?: ComponentMatchReportIconFallbackWrapperImport;
+}
+
+export interface ComponentMatchReportIconResolutionSummary {
+  exactImportResolved: number;
+  wrapperFallbackAllowed: number;
+  wrapperFallbackDenied: number;
+  unresolved: number;
+  ambiguous: number;
+}
+
+export interface ComponentMatchReportIconResolution {
+  assetKind: "icon";
+  iconKeys: string[];
+  byKey: Record<string, ComponentMatchReportIconResolutionRecord>;
+  counts: ComponentMatchReportIconResolutionSummary;
 }
 
 export type ComponentMatchResolvedContractStatus = "resolved" | "not_applicable";
@@ -619,6 +676,10 @@ export interface ComponentMatchReportSummary {
     byStatus: Record<ComponentMatchLibraryResolutionStatus, number>;
     byReason: Record<ComponentMatchLibraryResolutionReason, number>;
   };
+  iconResolution: {
+    byStatus: Record<ComponentMatchIconResolutionStatus, number>;
+    byReason: Record<ComponentMatchIconResolutionReason, number>;
+  };
 }
 
 export interface ComponentMatchReportEntry {
@@ -632,6 +693,7 @@ export interface ComponentMatchReportEntry {
   rejectionReasons: ComponentMatchRejectionReason[];
   fallbackReasons: ComponentMatchFallbackReason[];
   libraryResolution: ComponentMatchReportLibraryResolution;
+  iconResolution?: ComponentMatchReportIconResolution;
   storybookFamily?: ComponentMatchReportStorybookFamily;
   storyVariant?: ComponentMatchReportStoryVariant;
   resolvedApi?: ComponentMatchResolvedApi;

@@ -118,8 +118,10 @@ import type {
   PrimitiveJsxPropValue,
   SpecializedComponentMapping,
   ListRowAnalysis,
-  FormGroupAssignment
+  FormGroupAssignment,
+  IconRenderWarning
 } from "../generator-core.js";
+import type { ComponentMatchReportIconResolutionRecord } from "../../storybook/types.js";
 import type { ResolvedStorybookTypographyStyle } from "../../storybook/theme-resolver.js";
 import {
   literal,
@@ -4655,6 +4657,7 @@ export interface FallbackScreenFileResult {
     nodeId: string;
     message: string;
   }>;
+  iconWarnings: IconRenderWarning[];
   accessibilityWarnings: AccessibilityWarning[];
 }
 
@@ -5031,6 +5034,7 @@ export interface FallbackScreenFileInput {
   themeComponentDefaults?: ThemeComponentDefaults;
   datePickerProvider?: DatePickerProviderConfig;
   specializedComponentMappings?: Partial<Record<string, SpecializedComponentMapping>>;
+  storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   componentNameOverride?: string;
   filePathOverride?: string;
@@ -5049,6 +5053,7 @@ export interface PreparedFallbackScreenModel {
   resolvedThemeComponentDefaults: ThemeComponentDefaults | undefined;
   datePickerProvider?: DatePickerProviderConfig;
   specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
+  storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   simplificationStats: SimplificationMetrics;
   simplifiedChildren: ScreenElementIR[];
@@ -5115,6 +5120,7 @@ export const prepareFallbackScreenModel = ({
   themeComponentDefaults,
   datePickerProvider,
   specializedComponentMappings = {},
+  storybookFirstIconLookup,
   storybookTypographyVariants,
   componentNameOverride,
   filePathOverride,
@@ -5190,6 +5196,7 @@ export const prepareFallbackScreenModel = ({
     resolvedThemeComponentDefaults,
     ...(datePickerProvider ? { datePickerProvider } : {}),
     specializedComponentMappings,
+    ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     simplificationStats,
     simplifiedChildren,
@@ -5234,6 +5241,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     routePathByScreenId,
     tokens,
     mappingByNodeId,
+    storybookFirstIconLookup,
     pageBackgroundColorNormalized,
     extractionPlan
   } = prepared;
@@ -5280,6 +5288,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     prototypeNavigationRenderedCount: 0,
     mappedImports: [],
     specializedComponentMappings,
+    ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     ...(datePickerProvider ? { datePickerProvider } : {}),
     usesDatePickerProvider: false,
@@ -5288,8 +5297,10 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     mappingByNodeId,
     usedMappingNodeIds: new Set<string>(),
     mappingWarnings: [],
+    iconWarnings: [],
     consumedFieldLabelNodeIds: new Set(consumedFieldLabelNodeIds),
     emittedWarningKeys: new Set<string>(),
+    emittedIconWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
@@ -5837,6 +5848,7 @@ ${patternContextInitialStateDeclaration}${screenExportSource}
     simplificationStats,
     usedMappingNodeIds: renderContext.usedMappingNodeIds,
     mappingWarnings: renderContext.mappingWarnings,
+    iconWarnings: renderContext.iconWarnings ?? [],
     accessibilityWarnings: renderContext.accessibilityWarnings,
     componentFiles: extractionPlan.componentFiles,
     contextFiles,

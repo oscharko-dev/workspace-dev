@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   isTextElement
 } from "./types.js";
+import type { ComponentMatchReportIconResolutionRecord } from "../storybook/types.js";
 import type {
   ComponentMappingRule,
   DesignTokens,
@@ -874,6 +875,13 @@ export interface IconImportSpec {
   modulePath: string;
 }
 
+export interface IconRenderWarning {
+  code: "W_STORYBOOK_ICON_HEURISTIC_FALLBACK";
+  nodeId: string;
+  iconKey?: string;
+  message: string;
+}
+
 export interface IconFallbackMapEntry {
   iconName: string;
   aliases?: string[] | undefined;
@@ -992,8 +1000,11 @@ export interface RenderContext {
     nodeId: string;
     message: string;
   }>;
+  storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
+  iconWarnings?: IconRenderWarning[] | undefined;
   consumedFieldLabelNodeIds?: Set<string> | undefined;
   emittedWarningKeys: Set<string>;
+  emittedIconWarningKeys?: Set<string> | undefined;
   emittedAccessibilityWarningKeys: Set<string>;
   pageBackgroundColorNormalized: string | undefined;
   themeComponentDefaults?: ThemeComponentDefaults;

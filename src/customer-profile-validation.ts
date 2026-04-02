@@ -7,6 +7,8 @@ import {
   type ResolvedCustomerProfile
 } from "./customer-profile.js";
 import type {
+  ComponentMatchIconResolutionReason,
+  ComponentMatchIconResolutionStatus,
   ComponentMatchLibraryResolutionReason,
   ComponentMatchLibraryResolutionStatus,
   ComponentMatchReportArtifact,
@@ -40,11 +42,13 @@ export interface CustomerProfileValidationSummary {
 }
 
 export interface CustomerProfileMatchValidationIssue {
-  status: ComponentMatchLibraryResolutionStatus;
-  reason: ComponentMatchLibraryResolutionReason;
+  kind: "component" | "icon";
+  status: ComponentMatchLibraryResolutionStatus | ComponentMatchIconResolutionStatus;
+  reason: ComponentMatchLibraryResolutionReason | ComponentMatchIconResolutionReason;
   figmaFamilyKey: string;
   figmaFamilyName: string;
   componentKey?: string;
+  iconKey?: string;
   storybookTier?: string;
   profileFamily?: string;
   message: string;
@@ -58,6 +62,8 @@ export interface CustomerProfileMatchValidationSummary {
   counts: {
     byStatus: Record<ComponentMatchLibraryResolutionStatus, number>;
     byReason: Record<ComponentMatchLibraryResolutionReason, number>;
+    iconByStatus: Record<ComponentMatchIconResolutionStatus, number>;
+    iconByReason: Record<ComponentMatchIconResolutionReason, number>;
   };
 }
 
@@ -100,12 +106,37 @@ const COMPONENT_MATCH_LIBRARY_RESOLUTION_REASONS = [
   "match_ambiguous",
   "match_unmatched"
 ] as const satisfies readonly ComponentMatchLibraryResolutionReason[];
+const COMPONENT_MATCH_ICON_RESOLUTION_STATUSES = [
+  "resolved_import",
+  "wrapper_fallback_allowed",
+  "wrapper_fallback_denied",
+  "unresolved",
+  "ambiguous",
+  "not_applicable"
+] as const satisfies readonly ComponentMatchIconResolutionStatus[];
+const COMPONENT_MATCH_ICON_RESOLUTION_REASONS = [
+  "profile_icon_import_resolved",
+  "profile_icon_import_missing",
+  "profile_icon_wrapper_allowed",
+  "profile_icon_wrapper_denied",
+  "profile_icon_wrapper_missing",
+  "match_ambiguous",
+  "match_unmatched",
+  "not_icon_family"
+] as const satisfies readonly ComponentMatchIconResolutionReason[];
 const ISSUE_LIBRARY_RESOLUTION_REASONS = new Set<ComponentMatchLibraryResolutionReason>([
   "match_ambiguous",
   "match_unmatched",
   "profile_family_unresolved",
   "profile_import_missing",
   "profile_import_family_mismatch"
+]);
+const ISSUE_ICON_RESOLUTION_REASONS = new Set<ComponentMatchIconResolutionReason>([
+  "match_ambiguous",
+  "match_unmatched",
+  "profile_icon_import_missing",
+  "profile_icon_wrapper_denied",
+  "profile_icon_wrapper_missing"
 ]);
 const COMPONENT_API_REASON_CODES = [
   "component_api_children_unsupported",
@@ -276,6 +307,18 @@ const createMatchReasonCounts = (): Record<ComponentMatchLibraryResolutionReason
   ) as Record<ComponentMatchLibraryResolutionReason, number>;
 };
 
+const createIconStatusCounts = (): Record<ComponentMatchIconResolutionStatus, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_ICON_RESOLUTION_STATUSES.map((status) => [status, 0])
+  ) as Record<ComponentMatchIconResolutionStatus, number>;
+};
+
+const createIconReasonCounts = (): Record<ComponentMatchIconResolutionReason, number> => {
+  return Object.fromEntries(
+    COMPONENT_MATCH_ICON_RESOLUTION_REASONS.map((reason) => [reason, 0])
+  ) as Record<ComponentMatchIconResolutionReason, number>;
+};
+
 const createComponentApiReasonCounts = (): Record<CustomerProfileComponentApiValidationReason, number> => {
   return Object.fromEntries(
     COMPONENT_API_REASON_CODES.map((reason) => [reason, 0])
@@ -283,24 +326,39 @@ const createComponentApiReasonCounts = (): Record<CustomerProfileComponentApiVal
 };
 
 const toCustomerProfileMatchIssueMessage = ({
+  iconKey,
   componentKey,
   figmaFamilyName,
   profileFamily,
   reason,
   storybookTier
 }: {
+  iconKey?: string;
   componentKey?: string;
   figmaFamilyName: string;
   profileFamily?: string;
-  reason: ComponentMatchLibraryResolutionReason;
+  reason: ComponentMatchLibraryResolutionReason | ComponentMatchIconResolutionReason;
   storybookTier?: string;
 }): string => {
-  const componentLabel = componentKey ? `component '${componentKey}'` : `Figma family '${figmaFamilyName}'`;
+  const componentLabel = iconKey
+    ? `icon '${iconKey}' in Figma family '${figmaFamilyName}'`
+    : componentKey
+      ? `component '${componentKey}'`
+      : `Figma family '${figmaFamilyName}'`;
   if (reason === "match_ambiguous") {
     return `${componentLabel} remains ambiguous in component.match_report.`;
   }
   if (reason === "match_unmatched") {
     return `${componentLabel} is unmatched in component.match_report.`;
+  }
+  if (reason === "profile_icon_import_missing") {
+    return `${componentLabel} has no exact customer profile icon import.`;
+  }
+  if (reason === "profile_icon_wrapper_denied") {
+    return `${componentLabel} is denied generic customer icon wrapper fallback.`;
+  }
+  if (reason === "profile_icon_wrapper_missing") {
+    return `${componentLabel} allows generic customer icon wrapper fallback but no wrapper binding is configured.`;
   }
   if (reason === "profile_family_unresolved") {
     return `${componentLabel} could not resolve Storybook tier '${storybookTier ?? "unknown"}' to a customer profile family.`;
@@ -323,13 +381,51 @@ export const validateCustomerProfileComponentMatchReport = ({
 }): CustomerProfileMatchValidationSummary => {
   const counts = {
     byStatus: createMatchStatusCounts(),
-    byReason: createMatchReasonCounts()
+    byReason: createMatchReasonCounts(),
+    iconByStatus: createIconStatusCounts(),
+    iconByReason: createIconReasonCounts()
   };
   const issues: CustomerProfileMatchValidationIssue[] = [];
 
   for (const entry of artifact.entries) {
     counts.byStatus[entry.libraryResolution.status] += 1;
     counts.byReason[entry.libraryResolution.reason] += 1;
+    if (!entry.iconResolution) {
+      counts.iconByStatus.not_applicable += 1;
+      counts.iconByReason.not_icon_family += 1;
+    } else {
+      for (const resolution of Object.values(entry.iconResolution.byKey)) {
+        counts.iconByStatus[resolution.status] += 1;
+        counts.iconByReason[resolution.reason] += 1;
+        const hasIconIssueStatus = resolution.status === "wrapper_fallback_denied" || resolution.status === "unresolved";
+        const hasIconIssueReason = ISSUE_ICON_RESOLUTION_REASONS.has(resolution.reason);
+        if (
+          resolution.status === "resolved_import" ||
+          resolution.status === "wrapper_fallback_allowed" ||
+          resolution.status === "not_applicable" ||
+          (!hasIconIssueStatus && !hasIconIssueReason)
+        ) {
+          continue;
+        }
+        issues.push({
+          kind: "icon",
+          status: resolution.status,
+          reason: resolution.reason,
+          figmaFamilyKey: entry.figma.familyKey,
+          figmaFamilyName: entry.figma.familyName,
+          iconKey: resolution.iconKey,
+          ...(entry.libraryResolution.storybookTier ? { storybookTier: entry.libraryResolution.storybookTier } : {}),
+          ...(entry.libraryResolution.profileFamily ? { profileFamily: entry.libraryResolution.profileFamily } : {}),
+          message: toCustomerProfileMatchIssueMessage({
+            figmaFamilyName: entry.figma.familyName,
+            iconKey: resolution.iconKey,
+            reason: resolution.reason,
+            ...(entry.libraryResolution.profileFamily ? { profileFamily: entry.libraryResolution.profileFamily } : {}),
+            ...(entry.libraryResolution.storybookTier ? { storybookTier: entry.libraryResolution.storybookTier } : {})
+          })
+        });
+      }
+    }
 
     const hasNonIssueStatus =
       entry.libraryResolution.status === "resolved_import" || entry.libraryResolution.status === "mui_fallback_allowed";
@@ -340,6 +436,7 @@ export const validateCustomerProfileComponentMatchReport = ({
     }
 
     issues.push({
+      kind: "component",
       status: entry.libraryResolution.status,
       reason: entry.libraryResolution.reason,
       figmaFamilyKey: entry.figma.familyKey,

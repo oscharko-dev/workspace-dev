@@ -11,6 +11,7 @@ import type { DesignIR } from "../../parity/types-ir.js";
 import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
 import type {
+  ComponentMatchReportIconResolutionRecord,
   ComponentMatchReportArtifact,
   StorybookPublicThemesArtifact,
   StorybookPublicTokensArtifact
@@ -47,6 +48,46 @@ const parseComponentMatchReportArtifact = ({
     throw new Error("Expected a component.match_report artifact with an entries array.");
   }
   return parsed as ComponentMatchReportArtifact;
+};
+
+const buildStorybookFirstIconLookup = ({
+  artifact
+}: {
+  artifact: ComponentMatchReportArtifact;
+}): ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> => {
+  const iconLookup = new Map<string, ComponentMatchReportIconResolutionRecord>();
+  for (const entry of artifact.entries) {
+    if (!entry.iconResolution) {
+      continue;
+    }
+    for (const [iconKey, resolution] of Object.entries(entry.iconResolution.byKey)) {
+      const existing = iconLookup.get(iconKey);
+      if (!existing) {
+        iconLookup.set(iconKey, resolution);
+        continue;
+      }
+      const rank = (value: ComponentMatchReportIconResolutionRecord["status"]): number => {
+        switch (value) {
+          case "resolved_import":
+            return 0;
+          case "wrapper_fallback_allowed":
+            return 1;
+          case "wrapper_fallback_denied":
+            return 2;
+          case "unresolved":
+            return 3;
+          case "ambiguous":
+            return 4;
+          case "not_applicable":
+            return 5;
+        }
+      };
+      if (rank(resolution.status) < rank(existing.status)) {
+        iconLookup.set(iconKey, resolution);
+      }
+    }
+  }
+  return iconLookup;
 };
 
 export const createCodegenGenerateService = ({
@@ -132,6 +173,7 @@ export const createCodegenGenerateService = ({
       let customerProfileDesignSystemConfig:
         | ReturnType<typeof toCustomerProfileDesignSystemConfigFromComponentMatchReport>["config"]
         | undefined;
+      let storybookFirstIconLookup: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
       const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
       if (isStorybookFirst) {
         if (!context.resolvedCustomerProfile) {
@@ -226,6 +268,9 @@ export const createCodegenGenerateService = ({
           artifact: componentMatchReportArtifact
         });
         customerProfileDesignSystemConfig = matchReportDesignSystemConfig.config;
+        storybookFirstIconLookup = buildStorybookFirstIconLookup({
+          artifact: componentMatchReportArtifact
+        });
         for (const warning of matchReportDesignSystemConfig.warnings) {
           context.log({
             level: "warn",
@@ -241,6 +286,7 @@ export const createCodegenGenerateService = ({
         designSystemFilePath: context.paths.designSystemFilePath,
         ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
         ...(customerProfileDesignSystemConfig ? { customerProfileDesignSystemConfig } : {}),
+        ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
         ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
         generationLocale: context.resolvedGenerationLocale,

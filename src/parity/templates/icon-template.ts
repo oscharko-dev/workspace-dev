@@ -2,8 +2,10 @@
 // icon-template.ts — Icon fallback resolver and rendering
 // Extracted from generator-templates.ts (issue #298)
 // ---------------------------------------------------------------------------
+import { collectNormalizedIconKeys } from "../../icon-library-resolution.js";
 import type { ScreenElementIR } from "../types.js";
 import {
+  registerNamedMappedImport,
   registerMuiImports,
   resolveFallbackIconComponent,
   resolveIconColor,
@@ -231,6 +233,113 @@ const filterBoundingBoxPaths = ({
   return filtered.length > 0 ? filtered : paths;
 };
 
+interface ResolvedStorybookFirstIconSpec {
+  componentName: string;
+  additionalProps: string[];
+}
+
+const pushIconRenderWarning = ({
+  context,
+  element,
+  iconKey,
+  message
+}: {
+  context: RenderContext;
+  element: ScreenElementIR;
+  iconKey?: string;
+  message: string;
+}): void => {
+  if (!context.iconWarnings || !context.emittedIconWarningKeys) {
+    return;
+  }
+  const warningKey = `${element.id}:${iconKey ?? "unknown"}`;
+  if (context.emittedIconWarningKeys.has(warningKey)) {
+    return;
+  }
+  context.emittedIconWarningKeys.add(warningKey);
+  context.iconWarnings.push({
+    code: "W_STORYBOOK_ICON_HEURISTIC_FALLBACK",
+    nodeId: element.id,
+    ...(iconKey ? { iconKey } : {}),
+    message
+  });
+};
+
+const resolveStorybookFirstIconSpec = ({
+  element,
+  parent,
+  context
+}: {
+  element: ScreenElementIR;
+  parent: Pick<VirtualParent, "name">;
+  context: RenderContext;
+}): ResolvedStorybookFirstIconSpec | undefined => {
+  const iconLookup = context.storybookFirstIconLookup;
+  if (!iconLookup || iconLookup.size === 0) {
+    return undefined;
+  }
+
+  const iconKeys = collectNormalizedIconKeys({
+    candidates: [
+      element.semanticName,
+      element.semanticType,
+      element.name,
+      parent.name,
+      element.asset?.label,
+      element.asset?.alt
+    ]
+  });
+  const matchedIconKey = iconKeys.find((iconKey) => iconLookup.has(iconKey));
+  if (!matchedIconKey) {
+    if (iconKeys.length > 0) {
+      pushIconRenderWarning({
+        context,
+        element,
+        ...(iconKeys[0] ? { iconKey: iconKeys[0] } : {}),
+        message: `Storybook-first icon '${iconKeys[0]}' has no customer-profile icon mapping; falling back to heuristic MUI icon resolution.`
+      });
+    }
+    return undefined;
+  }
+
+  const resolution = iconLookup.get(matchedIconKey);
+  if (!resolution) {
+    return undefined;
+  }
+  if (resolution.status === "resolved_import" && resolution.import) {
+    return {
+      componentName: registerNamedMappedImport({
+        context,
+        importedName: resolution.import.exportName,
+        modulePath: resolution.import.package,
+        localName: resolution.import.localName
+      }),
+      additionalProps: []
+    };
+  }
+  if (resolution.status === "wrapper_fallback_allowed" && resolution.wrapper) {
+    return {
+      componentName: registerNamedMappedImport({
+        context,
+        importedName: resolution.wrapper.exportName,
+        modulePath: resolution.wrapper.package,
+        localName: resolution.wrapper.localName
+      }),
+      additionalProps: [`${resolution.wrapper.iconPropName}={${literal(matchedIconKey)}}`]
+    };
+  }
+
+  pushIconRenderWarning({
+    context,
+    element,
+    iconKey: matchedIconKey,
+    message:
+      `Storybook-first icon '${matchedIconKey}' resolved to '${resolution.status}' in component.match_report; ` +
+      "falling back to heuristic MUI icon resolution."
+  });
+  return undefined;
+};
+
 export const renderFallbackIconExpression = ({
   element,
   parent,
@@ -276,7 +385,13 @@ export const renderFallbackIconExpression = ({
     });
   }
 
-  const iconComponent = resolveFallbackIconComponent({ element, parent, context });
+  const storybookFirstIcon = resolveStorybookFirstIconSpec({
+    element,
+    parent,
+    context
+  });
+  const iconComponent =
+    storybookFirstIcon?.componentName ?? resolveFallbackIconComponent({ element, parent, context });
   const color = resolveIconColor(element);
   const rtlMirror = isRtlLocale(context.generationLocale) && DIRECTIONAL_ICON_NAMES.has(iconComponent);
   const sx = sxString([
@@ -289,7 +404,8 @@ export const renderFallbackIconExpression = ({
     ...extraEntries
   ]);
   const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
-  return `<${iconComponent}${ariaHiddenProp} sx={{ ${sx} }} fontSize="inherit" />`;
+  const additionalProps = storybookFirstIcon ? ` ${storybookFirstIcon.additionalProps.join(" ")}` : "";
+  return `<${iconComponent}${ariaHiddenProp}${additionalProps} sx={{ ${sx} }} fontSize="inherit" />`;
 };
 
 

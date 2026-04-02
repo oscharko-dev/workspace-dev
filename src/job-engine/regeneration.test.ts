@@ -187,12 +187,17 @@ const createCustomerProfileFixture = ({
         importAlias,
         propMappings
       }
-    }
+    },
+    icons: {}
   },
   fallbacks: {
     mui: {
       defaultPolicy: "allow",
       components: {}
+    },
+    icons: {
+      defaultPolicy: "deny",
+      icons: {}
     }
   },
   template: {

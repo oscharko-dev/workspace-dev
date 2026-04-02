@@ -115,6 +115,8 @@ const createCatalogEntry = ({
   args,
   argTypes,
   designUrls = [],
+  assetKind,
+  assetKeys,
   type = "story"
 }: {
   id: string;
@@ -125,6 +127,8 @@ const createCatalogEntry = ({
   args?: Record<string, StorybookCatalogJsonValue>;
   argTypes?: Record<string, unknown>;
   designUrls?: string[];
+  assetKind?: "icon" | "illustration";
+  assetKeys?: string[];
   type?: "story" | "docs";
 }): StorybookCatalogEntry => ({
   id,
@@ -148,7 +152,9 @@ const createCatalogEntry = ({
     mdxLinks: {
       internal: [],
       external: []
-    }
+    },
+    assetKeys: assetKeys ?? [],
+    ...(assetKind ? { assetKind } : {})
   }
 });
 
@@ -160,7 +166,9 @@ const createCatalogFamily = ({
   storyEntryIds,
   componentPath,
   designUrls = [],
-  propKeys = []
+  propKeys = [],
+  assetKind,
+  assetKeys
 }: {
   id: string;
   title: string;
@@ -170,6 +178,8 @@ const createCatalogFamily = ({
   componentPath?: string;
   designUrls?: string[];
   propKeys?: string[];
+  assetKind?: "icon" | "illustration";
+  assetKeys?: string[];
 }): StorybookCatalogFamily => ({
   id,
   title,
@@ -189,7 +199,9 @@ const createCatalogFamily = ({
     mdxLinks: {
       internal: [],
       external: []
-    }
+    },
+    assetKeys: assetKeys ?? [],
+    ...(assetKind ? { assetKind } : {})
   }
 });
 
@@ -471,7 +483,10 @@ const createCustomerProfileForComponentMatchTests = ({
       }
     }
   },
-  fallbackComponents
+  iconImports,
+  fallbackComponents,
+  fallbackIcons,
+  iconWrapper
 }: {
   imports?: Record<
     string,
@@ -483,7 +498,22 @@ const createCustomerProfileForComponentMatchTests = ({
       propMappings?: Record<string, string>;
     }
   >;
+  iconImports?: Record<
+    string,
+    {
+      package: string;
+      export: string;
+      importAlias?: string;
+    }
+  >;
   fallbackComponents?: Record<string, "allow" | "deny">;
+  fallbackIcons?: Record<string, "allow" | "deny">;
+  iconWrapper?: {
+    package: string;
+    export: string;
+    importAlias?: string;
+    iconProp?: string;
+  };
 } = {}) => {
   const profile = parseCustomerProfileConfig({
     input: {
@@ -519,12 +549,18 @@ const createCustomerProfileForComponentMatchTests = ({
         }
       ],
       imports: {
-        components: imports
+        components: imports,
+        icons: iconImports ?? {}
       },
       fallbacks: {
         mui: {
           defaultPolicy: "deny",
           ...(fallbackComponents ? { components: fallbackComponents } : {})
+        },
+        icons: {
+          defaultPolicy: "deny",
+          ...(fallbackIcons ? { icons: fallbackIcons } : {}),
+          ...(iconWrapper ? { wrapper: iconWrapper } : {})
         }
       },
       template: {
@@ -877,6 +913,237 @@ test("buildComponentMatchReportArtifact resolves customer-profile imports for ma
     match_ambiguous: 0,
     match_unmatched: 0
   });
+});
+
+test("buildComponentMatchReportArtifact resolves exact customer icon imports per normalized icon key", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "icons-mail--default",
+      title: "Assets/Icons/Icon",
+      name: "Mail",
+      familyId: "family-mail-icon",
+      assetKind: "icon",
+      assetKeys: ["mail"],
+      designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=5-9"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "mail-icon-family",
+          familyName: "Icon",
+          variantProperties: [{ property: "Name", values: ["MailOutlined"] }]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-mail-icon",
+          title: "Assets/Icons/Icon",
+          name: "Icon",
+          entryIds: ["icons-mail--default"],
+          storyEntryIds: ["icons-mail--default"],
+          assetKind: "icon",
+          assetKeys: ["mail"],
+          designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=5-9"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "mail-icon-design-link",
+          type: "story_design_link",
+          entryId: "icons-mail--default",
+          url: "https://www.figma.com/design/lib-file/Icon?node-id=5-9"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "mail-icon-family",
+      canonicalFamilyName: "Icon",
+      fileKey: "lib-file",
+      nodeId: "5:9",
+      variantProperties: [{ property: "Name", values: ["MailOutlined"] }]
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests({
+      iconImports: {
+        mail: {
+          package: "@customer/icons",
+          export: "MailIcon",
+          importAlias: "CustomerMailIcon"
+        }
+      }
+    })
+  });
+
+  assert.deepEqual(artifact.entries[0]?.iconResolution, {
+    assetKind: "icon",
+    iconKeys: ["mail"],
+    byKey: {
+      mail: {
+        iconKey: "mail",
+        status: "resolved_import",
+        reason: "profile_icon_import_resolved",
+        import: {
+          package: "@customer/icons",
+          exportName: "MailIcon",
+          localName: "CustomerMailIcon"
+        }
+      }
+    },
+    counts: {
+      exactImportResolved: 1,
+      wrapperFallbackAllowed: 0,
+      wrapperFallbackDenied: 0,
+      unresolved: 0,
+      ambiguous: 0
+    }
+  });
+  assert.equal(artifact.summary.iconResolution.byStatus.resolved_import, 1);
+  assert.equal(artifact.summary.iconResolution.byReason.profile_icon_import_resolved, 1);
+});
+
+test("buildComponentMatchReportArtifact records allowed generic icon wrapper fallback", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "icons-search--default",
+      title: "Assets/Icons/Icon",
+      name: "Search",
+      familyId: "family-search-icon",
+      assetKind: "icon",
+      assetKeys: ["search"],
+      designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=7-11"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "search-icon-family",
+          familyName: "Icon",
+          variantProperties: [{ property: "iconName", values: ["Search"] }]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-search-icon",
+          title: "Assets/Icons/Icon",
+          name: "Icon",
+          entryIds: ["icons-search--default"],
+          storyEntryIds: ["icons-search--default"],
+          assetKind: "icon",
+          assetKeys: ["search"],
+          designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=7-11"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "search-icon-design-link",
+          type: "story_design_link",
+          entryId: "icons-search--default",
+          url: "https://www.figma.com/design/lib-file/Icon?node-id=7-11"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "search-icon-family",
+      canonicalFamilyName: "Icon",
+      fileKey: "lib-file",
+      nodeId: "7:11",
+      variantProperties: [{ property: "iconName", values: ["Search"] }]
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests({
+      fallbackIcons: {
+        search: "allow"
+      },
+      iconWrapper: {
+        package: "@customer/icons",
+        export: "Icon",
+        importAlias: "CustomerIcon",
+        iconProp: "name"
+      }
+    })
+  });
+
+  assert.equal(artifact.entries[0]?.iconResolution?.byKey.search?.status, "wrapper_fallback_allowed");
+  assert.deepEqual(artifact.entries[0]?.iconResolution?.byKey.search?.wrapper, {
+    package: "@customer/icons",
+    exportName: "Icon",
+    localName: "CustomerIcon",
+    iconPropName: "name"
+  });
+  assert.equal(artifact.summary.iconResolution.byStatus.wrapper_fallback_allowed, 1);
+});
+
+test("buildComponentMatchReportArtifact records denied icon wrapper fallback when exact icon import is missing", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "icons-search--default",
+      title: "Assets/Icons/Icon",
+      name: "Search",
+      familyId: "family-search-icon",
+      assetKind: "icon",
+      assetKeys: ["search"],
+      designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=7-11"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "search-icon-family",
+          familyName: "Icon",
+          variantProperties: [{ property: "Name", values: ["Search"] }]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-search-icon",
+          title: "Assets/Icons/Icon",
+          name: "Icon",
+          entryIds: ["icons-search--default"],
+          storyEntryIds: ["icons-search--default"],
+          assetKind: "icon",
+          assetKeys: ["search"],
+          designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=7-11"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "search-icon-design-link",
+          type: "story_design_link",
+          entryId: "icons-search--default",
+          url: "https://www.figma.com/design/lib-file/Icon?node-id=7-11"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "search-icon-family",
+      canonicalFamilyName: "Icon",
+      fileKey: "lib-file",
+      nodeId: "7:11",
+      variantProperties: [{ property: "Name", values: ["Search"] }]
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests()
+  });
+
+  assert.equal(artifact.entries[0]?.iconResolution?.byKey.search?.status, "wrapper_fallback_denied");
+  assert.equal(artifact.entries[0]?.iconResolution?.byKey.search?.reason, "profile_icon_wrapper_denied");
+  assert.equal(artifact.summary.iconResolution.byStatus.wrapper_fallback_denied, 1);
 });
 
 test("buildComponentMatchReportArtifact marks allowed MUI fallbacks when profile imports are missing", () => {

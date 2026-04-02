@@ -1167,6 +1167,26 @@ const createComponentMatchReportArtifactForStageServices = ({
           match_ambiguous: libraryResolutionReason === "match_ambiguous" ? 1 : 0,
           match_unmatched: libraryResolutionReason === "match_unmatched" ? 1 : 0
         }
+      },
+      iconResolution: {
+        byStatus: {
+          resolved_import: 0,
+          wrapper_fallback_allowed: 0,
+          wrapper_fallback_denied: 0,
+          unresolved: 0,
+          ambiguous: 0,
+          not_applicable: 1
+        },
+        byReason: {
+          profile_icon_import_resolved: 0,
+          profile_icon_import_missing: 0,
+          profile_icon_wrapper_allowed: 0,
+          profile_icon_wrapper_denied: 0,
+          profile_icon_wrapper_missing: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0,
+          not_icon_family: 1
+        }
       }
     },
     entries: [
@@ -2314,10 +2334,55 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
               match_ambiguous: 0,
               match_unmatched: 0
             }
+          },
+          iconResolution: {
+            byStatus: {
+              resolved_import: 1,
+              wrapper_fallback_allowed: 0,
+              wrapper_fallback_denied: 0,
+              unresolved: 0,
+              ambiguous: 0,
+              not_applicable: 1
+            },
+            byReason: {
+              profile_icon_import_resolved: 1,
+              profile_icon_import_missing: 0,
+              profile_icon_wrapper_allowed: 0,
+              profile_icon_wrapper_denied: 0,
+              profile_icon_wrapper_missing: 0,
+              match_ambiguous: 0,
+              match_unmatched: 0,
+              not_icon_family: 1
+            }
           }
         },
         entries: [
-          createComponentMatchReportArtifactForStageServices().entries[0],
+          {
+            ...createComponentMatchReportArtifactForStageServices().entries[0],
+            iconResolution: {
+              assetKind: "icon",
+              iconKeys: ["mail"],
+              byKey: {
+                mail: {
+                  iconKey: "mail",
+                  status: "resolved_import",
+                  reason: "profile_icon_import_resolved",
+                  import: {
+                    package: "@customer/icons",
+                    exportName: "MailIcon",
+                    localName: "CustomerMailIcon"
+                  }
+                }
+              },
+              counts: {
+                exactImportResolved: 1,
+                wrapperFallbackAllowed: 0,
+                wrapperFallbackDenied: 0,
+                unresolved: 0,
+                ambiguous: 0
+              }
+            }
+          },
           {
             ...createComponentMatchReportArtifactForStageServices().entries[0],
             figma: {
@@ -2426,6 +2491,7 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
           }
         }
       });
+      assert.equal(input.storybookFirstIconLookup?.get("mail")?.status, "resolved_import");
       return {
         generatedPaths: [],
         generationMetrics: {
@@ -3313,6 +3379,142 @@ export default defineConfig({
   assert.equal(summary?.import?.status, "ok");
   assert.equal(summary?.import?.customerProfile?.status, "ok");
   assert.equal(summary?.import?.customerProfile?.import?.issueCount, 0);
+});
+
+test("ValidateProjectService surfaces unresolved icon mappings in validation.summary", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    matchPolicy: "warn"
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    'export const App = () => null;\n',
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-icon-match-policy"
+    } satisfies GenerationDiffContext
+  });
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  const artifact = createComponentMatchReportArtifactForStageServices();
+  artifact.entries[0] = {
+    ...artifact.entries[0],
+    iconResolution: {
+      assetKind: "icon",
+      iconKeys: ["search"],
+      byKey: {
+        search: {
+          iconKey: "search",
+          status: "wrapper_fallback_denied",
+          reason: "profile_icon_wrapper_denied"
+        }
+      },
+      counts: {
+        exactImportResolved: 0,
+        wrapperFallbackAllowed: 0,
+        wrapperFallbackDenied: 1,
+        unresolved: 0,
+        ambiguous: 0
+      }
+    }
+  };
+  artifact.summary.iconResolution = {
+    byStatus: {
+      resolved_import: 0,
+      wrapper_fallback_allowed: 0,
+      wrapper_fallback_denied: 1,
+      unresolved: 0,
+      ambiguous: 0,
+      not_applicable: 0
+    },
+    byReason: {
+      profile_icon_import_resolved: 0,
+      profile_icon_import_missing: 0,
+      profile_icon_wrapper_allowed: 0,
+      profile_icon_wrapper_denied: 1,
+      profile_icon_wrapper_missing: 0,
+      match_ambiguous: 0,
+      match_unmatched: 0,
+      not_icon_family: 0
+    }
+  };
+  await writeFile(componentMatchReportPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    mapping?: {
+      customerProfileMatch?: {
+        status?: string;
+        counts?: {
+          iconByStatus?: Record<string, number>;
+        };
+        issues?: Array<{ kind?: string; iconKey?: string }>;
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.mapping?.customerProfileMatch?.status, "warn");
+  assert.equal(summary?.mapping?.customerProfileMatch?.counts?.iconByStatus?.wrapper_fallback_denied, 1);
+  assert.equal(summary?.mapping?.customerProfileMatch?.issues?.some((issue) => issue.kind === "icon" && issue.iconKey === "search"), true);
 });
 
 test("ValidateProjectService persists failed customer profile match policy before project validation", async () => {

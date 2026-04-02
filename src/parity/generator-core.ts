@@ -29,8 +29,10 @@ import {
   toCustomerProfileDesignSystemConfig,
   type ResolvedCustomerProfile
 } from "../customer-profile.js";
+import type { ComponentMatchReportIconResolutionRecord } from "../storybook/types.js";
 import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
 import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
+import type { IconRenderWarning } from "./generator-render.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
 import type { ThemeComponentDefaults, ThemeSxStyleValue } from "./generator-design-system.js";
@@ -106,6 +108,7 @@ export type {
   PrimitiveJsxPropValue,
   SpecializedComponentMapping,
   ExtractedComponentImportSpec,
+  IconRenderWarning,
   RenderContext,
   RenderedButtonModel
 } from "./generator-render.js";
@@ -255,6 +258,7 @@ interface GenerateArtifactsInput {
   componentMappings?: ComponentMappingRule[];
   customerProfile?: ResolvedCustomerProfile;
   customerProfileDesignSystemConfig?: DesignSystemConfig;
+  storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   resolvedStorybookTheme?: ResolvedStorybookTheme;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
@@ -1037,6 +1041,7 @@ export async function* generateArtifactsStreaming(
     componentMappings,
     customerProfile,
     customerProfileDesignSystemConfig,
+    storybookFirstIconLookup,
     resolvedStorybookTheme,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
     designSystemFilePath = getDefaultDesignSystemConfigPath({ outputRoot: projectDir }),
@@ -1102,6 +1107,7 @@ export async function* generateArtifactsStreaming(
     code: "W_COMPONENT_MAPPING_MISSING" | "W_COMPONENT_MAPPING_CONTRACT_MISMATCH" | "W_COMPONENT_MAPPING_DISABLED";
     message: string;
   }> = [];
+  const iconWarnings: IconRenderWarning[] = [];
   const accessibilityWarnings: AccessibilityWarning[] = [];
   const simplificationByScreen: ScreenSimplificationMetric[] = [];
   const aggregatedSimplificationStats = createEmptySimplificationStats();
@@ -1135,6 +1141,7 @@ export async function* generateArtifactsStreaming(
         iconResolver,
         imageAssetMap,
         routePathByScreenId,
+        ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
         generationLocale: resolvedGenerationLocale.locale,
         formHandlingMode: resolvedFormHandlingMode,
         ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
@@ -1172,6 +1179,7 @@ export async function* generateArtifactsStreaming(
       for (const warning of deterministicScreen.mappingWarnings) {
         screenMappingWarnings.push({ code: warning.code, message: warning.message });
       }
+      iconWarnings.push(...deterministicScreen.iconWarnings);
       accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
 
       const screenFile = transformGeneratedFileWithDesignSystem(deterministicScreen.file);
@@ -1268,6 +1276,11 @@ export async function* generateArtifactsStreaming(
       onLog(`[a11y] ${warning.message}`);
     }
     onLog(`Accessibility warnings: ${accessibilityWarnings.length} potential contrast issue(s).`);
+  }
+  if (iconWarnings.length > 0) {
+    for (const warning of iconWarnings) {
+      onLog(`[icon] ${warning.message}`);
+    }
   }
 
   onLog("Generated deterministic baseline artifacts (streaming)");

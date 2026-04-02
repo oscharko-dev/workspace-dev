@@ -84,7 +84,8 @@ const createStorybookFamily = ({
   signalReferences: createEmptySignalReferences(),
   metadata: {
     designUrls: [],
-    mdxLinks: { internal: [], external: [] }
+    mdxLinks: { internal: [], external: [] },
+    assetKeys: []
   }
 });
 
@@ -114,7 +115,8 @@ const createStoryEntry = ({
     ...(args !== undefined ? { args } : {}),
     ...(argTypes !== undefined ? { argTypes } : {}),
     designUrls: [],
-    mdxLinks: { internal: [], external: [] }
+    mdxLinks: { internal: [], external: [] },
+    assetKeys: []
   }
 });
 
