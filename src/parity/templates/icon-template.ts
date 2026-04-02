@@ -404,7 +404,8 @@ export const renderFallbackIconExpression = ({
     ...extraEntries
   ]);
   const ariaHiddenProp = ariaHidden ? ` aria-hidden="true"` : "";
-  const additionalProps = storybookFirstIcon ? ` ${storybookFirstIcon.additionalProps.join(" ")}` : "";
+  const joinedAdditionalProps = storybookFirstIcon?.additionalProps.join(" ") ?? "";
+  const additionalProps = joinedAdditionalProps.length > 0 ? ` ${joinedAdditionalProps}` : "";
   return `<${iconComponent}${ariaHiddenProp}${additionalProps} sx={{ ${sx} }} fontSize="inherit" />`;
 };
 
