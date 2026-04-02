@@ -4749,6 +4749,158 @@ export const App = () => <CustomerButton variant={"primary"} sx={{ color: "#ffff
   assert.equal(summary?.style?.issues?.some((issue) => issue.category === "hard_coded_color_literal"), true);
 });
 
+test("ValidateProjectService fails style validation when Storybook artifacts exist but component.match_report is missing", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    tokenPolicy: "error"
+  });
+
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"), "export default {};\n", "utf8");
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    `import { Box } from "@mui/material";
+
+export const App = () => <Box sx={{ color: "#ffffff" }} />;
+`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-style-missing-match-report"
+    } satisfies GenerationDiffContext
+  });
+
+  const storybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.json");
+  const storybookTokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const storybookThemesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  await writeFile(
+    storybookEvidencePath,
+    `${JSON.stringify(
+      createStorybookEvidenceArtifactForStageServices({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookTokensPath,
+    `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookThemesPath,
+    `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "figma.source",
+    absolutePath: storybookEvidencePath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: storybookTokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: storybookThemesPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Storybook-first style guard failed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    style?: {
+      status?: string;
+      issueCount?: number;
+      issues?: Array<{ category?: string }>;
+      storybook?: {
+        componentMatchReport?: { status?: string };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.style?.status, "failed");
+  assert.equal(summary?.style?.issues?.some((issue) => issue.category === "missing_component_match_report"), true);
+  assert.equal(summary?.style?.issues?.some((issue) => issue.category === "hard_coded_color_literal"), true);
+  assert.equal(summary?.style?.storybook?.componentMatchReport?.status, "not_available");
+});
+
 test("ValidateProjectService reports style.status as not_available for non-Storybook validation runs", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({

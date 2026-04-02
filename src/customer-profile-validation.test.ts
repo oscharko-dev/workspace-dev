@@ -869,6 +869,120 @@ export const App = () => (
   }
 });
 
+test("validateGeneratedProjectStorybookStyles resolves identifier-based sx objects and flags hard style literals", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-identifier-sx-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+const sharedSx = {
+  color: "#ffffff",
+  gap: "16px",
+  fontFamily: "Arial"
+} as const;
+
+export const App = () => <Box sx={sharedSx} />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "story-args-1",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "button--primary",
+              entryType: "story",
+              title: "Components/Button"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["variant"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_typography_declaration"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles fails when Storybook artifacts exist but component.match_report is missing", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-missing-match-report-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => <Box sx={{ color: "#ffffff" }} />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture()
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "missing_component_match_report"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles rejects inline style objects", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-inline-style-"));
   const customerProfile = createCustomerProfileForStyleValidation({
@@ -1175,7 +1289,7 @@ export const App = () => <Box sx={{ color: "#ffffff" }} />;
   }
 });
 
-test("validateGeneratedProjectStorybookStyles does not flag non-numeric typography string references as raw declarations", async () => {
+test("validateGeneratedProjectStorybookStyles allows explicit theme/token typography references", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-typo-string-"));
   const customerProfile = createCustomerProfileForStyleValidation({
     tokenPolicy: "error"
@@ -1189,8 +1303,9 @@ test("validateGeneratedProjectStorybookStyles does not flag non-numeric typograp
 export const App = () => (
   <Box
     sx={{
+      fontFamily: "theme.typography.body1.fontFamily",
       fontSize: "theme.typography.body1.fontSize",
-      fontWeight: "bold",
+      fontWeight: "theme.typography.body1.fontWeight",
       lineHeight: "inherit"
     }}
   />
@@ -1234,7 +1349,71 @@ export const App = () => (
     assert.equal(
       typographyIssues.length,
       0,
-      "Non-numeric typography string references must not be flagged as raw typography declarations"
+      "Theme/token typography references must not be flagged as raw typography declarations"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles flags raw typography string literals", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-typo-string-raw-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box
+    sx={{
+      fontFamily: "Arial",
+      fontWeight: "bold"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    const typographyIssues = summary.issues.filter(
+      (issue) => issue.category === "raw_typography_declaration"
+    );
+    assert.ok(
+      typographyIssues.length >= 2,
+      `Expected at least 2 raw typography issues (fontFamily/fontWeight), got ${typographyIssues.length}`
     );
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });

@@ -102,6 +102,7 @@ export interface CustomerProfileComponentApiValidationSummary {
 export type CustomerProfileStyleValidationIssueCategory =
   | "missing_authoritative_styling_evidence"
   | "reference_only_styling_evidence"
+  | "missing_component_match_report"
   | "storybook_token_diagnostic"
   | "storybook_theme_diagnostic"
   | "forbidden_generated_stylesheet"
@@ -299,8 +300,8 @@ const COLOR_FUNCTION_PATTERN = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|co
 const NAMED_COLOR_PATTERN =
   /^(?:black|blue|currentcolor|gray|green|grey|red|transparent|white)$/iu;
 const SPACING_UNIT_PATTERN = /^-?(?:\d+|\d*\.\d+)(?:px|rem|em|vh|vw)$/iu;
-const TYPOGRAPHY_NUMERIC_PATTERN = /^-?(?:\d+|\d*\.\d+)$/u;
 const TYPOGRAPHY_KEYWORD_PATTERN = /^(?:inherit|initial|normal|revert|unset)$/iu;
+const TYPOGRAPHY_TOKEN_REFERENCE_PATTERN = /^(?:theme\.|tokens?\.|var\(--)/iu;
 
 let cachedTypescriptModule: typeof TypeScript | null | undefined;
 let resolveTypescriptModuleOverride:
@@ -608,19 +609,181 @@ const isRawTypographyLiteral = ({
     return false;
   }
 
-  return TYPOGRAPHY_NUMERIC_PATTERN.test(literalText);
+  if (TYPOGRAPHY_TOKEN_REFERENCE_PATTERN.test(literalText)) {
+    return false;
+  }
+
+  return true;
 };
 
-const resolveObjectLiteralInitializer = (
-  typescriptModule: typeof TypeScript,
-  attribute: TypeScript.JsxAttribute
-): TypeScript.ObjectLiteralExpression | undefined => {
+const unwrapStyleExpression = ({
+  typescriptModule,
+  expression
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+}): TypeScript.Expression => {
+  let currentExpression = expression;
+  let continueUnwrapping = true;
+  while (continueUnwrapping) {
+    continueUnwrapping = false;
+    if (typescriptModule.isParenthesizedExpression(currentExpression)) {
+      currentExpression = currentExpression.expression;
+      continueUnwrapping = true;
+      continue;
+    }
+    if (typescriptModule.isAsExpression(currentExpression)) {
+      currentExpression = currentExpression.expression;
+      continueUnwrapping = true;
+      continue;
+    }
+    if (typescriptModule.isSatisfiesExpression(currentExpression)) {
+      currentExpression = currentExpression.expression;
+      continueUnwrapping = true;
+      continue;
+    }
+    if (typescriptModule.isTypeAssertionExpression(currentExpression)) {
+      currentExpression = currentExpression.expression;
+      continueUnwrapping = true;
+      continue;
+    }
+    if (typescriptModule.isNonNullExpression(currentExpression)) {
+      currentExpression = currentExpression.expression;
+      continueUnwrapping = true;
+      continue;
+    }
+  }
+  return currentExpression;
+};
+
+interface StyleExpressionBinding {
+  expression: TypeScript.Expression;
+  position: number;
+}
+
+const collectStyleExpressionBindings = ({
+  typescriptModule,
+  sourceFile
+}: {
+  typescriptModule: typeof TypeScript;
+  sourceFile: TypeScript.SourceFile;
+}): Map<string, StyleExpressionBinding[]> => {
+  const bindingsByIdentifier = new Map<string, StyleExpressionBinding[]>();
+
+  const visit = (node: TypeScript.Node): void => {
+    if (typescriptModule.isVariableDeclaration(node) && typescriptModule.isIdentifier(node.name) && node.initializer) {
+      const existingBindings = bindingsByIdentifier.get(node.name.text) ?? [];
+      existingBindings.push({
+        expression: node.initializer,
+        position: node.getStart(sourceFile)
+      });
+      bindingsByIdentifier.set(node.name.text, existingBindings);
+    }
+    typescriptModule.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  for (const bindings of bindingsByIdentifier.values()) {
+    bindings.sort((left, right) => left.position - right.position);
+  }
+
+  return bindingsByIdentifier;
+};
+
+const resolveStyleExpressionBinding = ({
+  bindingsByIdentifier,
+  identifierName,
+  referencePosition
+}: {
+  bindingsByIdentifier: Map<string, StyleExpressionBinding[]>;
+  identifierName: string;
+  referencePosition: number;
+}): StyleExpressionBinding | undefined => {
+  const bindings = bindingsByIdentifier.get(identifierName);
+  if (!bindings || bindings.length === 0) {
+    return undefined;
+  }
+
+  let resolvedBinding: StyleExpressionBinding | undefined;
+  for (const binding of bindings) {
+    if (binding.position > referencePosition) {
+      break;
+    }
+    resolvedBinding = binding;
+  }
+  return resolvedBinding;
+};
+
+const resolveObjectLiteralFromExpression = ({
+  typescriptModule,
+  expression,
+  styleExpressionBindings,
+  referencePosition,
+  seenBindingKeys = new Set<string>()
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
+  referencePosition: number;
+  seenBindingKeys?: Set<string>;
+}): TypeScript.ObjectLiteralExpression | undefined => {
+  const unwrappedExpression = unwrapStyleExpression({
+    typescriptModule,
+    expression
+  });
+  if (typescriptModule.isObjectLiteralExpression(unwrappedExpression)) {
+    return unwrappedExpression;
+  }
+  if (!typescriptModule.isIdentifier(unwrappedExpression)) {
+    return undefined;
+  }
+
+  const styleExpressionBinding = resolveStyleExpressionBinding({
+    bindingsByIdentifier: styleExpressionBindings,
+    identifierName: unwrappedExpression.text,
+    referencePosition
+  });
+  if (!styleExpressionBinding) {
+    return undefined;
+  }
+
+  const bindingKey = `${unwrappedExpression.text}:${styleExpressionBinding.position}`;
+  if (seenBindingKeys.has(bindingKey)) {
+    return undefined;
+  }
+
+  seenBindingKeys.add(bindingKey);
+  const resolvedObjectLiteral = resolveObjectLiteralFromExpression({
+    typescriptModule,
+    expression: styleExpressionBinding.expression,
+    styleExpressionBindings,
+    referencePosition: styleExpressionBinding.position,
+    seenBindingKeys
+  });
+  seenBindingKeys.delete(bindingKey);
+  return resolvedObjectLiteral;
+};
+
+const resolveObjectLiteralInitializer = ({
+  typescriptModule,
+  attribute,
+  sourceFile,
+  styleExpressionBindings
+}: {
+  typescriptModule: typeof TypeScript;
+  attribute: TypeScript.JsxAttribute;
+  sourceFile: TypeScript.SourceFile;
+  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
+}): TypeScript.ObjectLiteralExpression | undefined => {
   if (!attribute.initializer || !typescriptModule.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) {
     return undefined;
   }
-  return typescriptModule.isObjectLiteralExpression(attribute.initializer.expression)
-    ? attribute.initializer.expression
-    : undefined;
+  return resolveObjectLiteralFromExpression({
+    typescriptModule,
+    expression: attribute.initializer.expression,
+    styleExpressionBindings,
+    referencePosition: attribute.getStart(sourceFile)
+  });
 };
 
 const isImplicitlyAllowedComponentProp = (propName: string): boolean => {
@@ -679,6 +842,7 @@ const scanStyleObjectLiteral = ({
   objectLiteral,
   issues,
   seenIssueKeys,
+  styleExpressionBindings,
   activeStylePropertyName
 }: {
   typescriptModule: typeof TypeScript;
@@ -689,9 +853,33 @@ const scanStyleObjectLiteral = ({
   objectLiteral: TypeScript.ObjectLiteralExpression;
   issues: CustomerProfileStyleValidationIssue[];
   seenIssueKeys: Set<string>;
+  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
   activeStylePropertyName?: string;
 }): void => {
   for (const property of objectLiteral.properties) {
+    if (typescriptModule.isSpreadAssignment(property)) {
+      const spreadObjectLiteral = resolveObjectLiteralFromExpression({
+        typescriptModule,
+        expression: property.expression,
+        styleExpressionBindings,
+        referencePosition: property.expression.getStart(sourceFile)
+      });
+      if (spreadObjectLiteral) {
+        scanStyleObjectLiteral({
+          typescriptModule,
+          sourceFile,
+          relativeFilePath,
+          attributeName,
+          ...(componentName ? { componentName } : {}),
+          objectLiteral: spreadObjectLiteral,
+          issues,
+          seenIssueKeys,
+          styleExpressionBindings,
+          ...(activeStylePropertyName ? { activeStylePropertyName } : {})
+        });
+      }
+      continue;
+    }
     if (!typescriptModule.isPropertyAssignment(property) && !typescriptModule.isShorthandPropertyAssignment(property)) {
       continue;
     }
@@ -711,16 +899,23 @@ const scanStyleObjectLiteral = ({
         : activeStylePropertyName;
 
     const propertyValue = typescriptModule.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
-    if (typescriptModule.isObjectLiteralExpression(propertyValue)) {
+    const nestedObjectLiteral = resolveObjectLiteralFromExpression({
+      typescriptModule,
+      expression: propertyValue,
+      styleExpressionBindings,
+      referencePosition: propertyValue.getStart(sourceFile)
+    });
+    if (nestedObjectLiteral) {
       scanStyleObjectLiteral({
         typescriptModule,
         sourceFile,
         relativeFilePath,
         attributeName,
         ...(componentName ? { componentName } : {}),
-        objectLiteral: propertyValue,
+        objectLiteral: nestedObjectLiteral,
         issues,
         seenIssueKeys,
+        styleExpressionBindings,
         ...(stylePropertyName ? { activeStylePropertyName: stylePropertyName } : {})
       });
       continue;
@@ -820,6 +1015,10 @@ const scanGeneratedSourceFileForStyleIssues = ({
     );
     const issues: CustomerProfileStyleValidationIssue[] = [];
     const seenIssueKeys = new Set<string>();
+    const styleExpressionBindings = collectStyleExpressionBindings({
+      typescriptModule,
+      sourceFile
+    });
 
     const visit = (node: TypeScript.Node): void => {
       if (typescriptModule.isJsxOpeningElement(node) || typescriptModule.isJsxSelfClosingElement(node)) {
@@ -878,7 +1077,12 @@ const scanGeneratedSourceFileForStyleIssues = ({
             continue;
           }
 
-          const objectLiteral = resolveObjectLiteralInitializer(typescriptModule, attribute);
+          const objectLiteral = resolveObjectLiteralInitializer({
+            typescriptModule,
+            attribute,
+            sourceFile,
+            styleExpressionBindings
+          });
           if (!objectLiteral) {
             continue;
           }
@@ -891,7 +1095,8 @@ const scanGeneratedSourceFileForStyleIssues = ({
             ...(componentName ? { componentName } : {}),
             objectLiteral,
             issues,
-            seenIssueKeys
+            seenIssueKeys,
+            styleExpressionBindings
           });
         }
       }
@@ -1360,12 +1565,7 @@ export const validateGeneratedProjectStorybookStyles = async ({
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
 }): Promise<CustomerProfileStyleValidationSummary> => {
   const diagnostics = createEmptyStyleDiagnostics();
-  if (
-    !storybookEvidenceArtifact ||
-    !storybookTokensArtifact ||
-    !storybookThemesArtifact ||
-    !componentMatchReportArtifact
-  ) {
+  if (!storybookEvidenceArtifact || !storybookTokensArtifact || !storybookThemesArtifact) {
     return {
       status: "not_available",
       policy: customerProfile.strictness.token,
@@ -1390,6 +1590,19 @@ export const validateGeneratedProjectStorybookStyles = async ({
       left.localeCompare(right)
     )
   };
+  if (!componentMatchReportArtifact) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "missing_component_match_report",
+        severity: "error",
+        message:
+          "Storybook-first style validation requires component.match_report to enforce allowed customer component props.",
+        artifact: "component.match_report"
+      }
+    });
+  }
 
   if (authoritativeStylingEvidence.length === 0) {
     pushStyleIssue({
@@ -1496,13 +1709,17 @@ export const validateGeneratedProjectStorybookStyles = async ({
     });
   }
 
-  const customerComponents = collectCustomerComponentContracts({
-    artifact: componentMatchReportArtifact
-  });
-  diagnostics.componentMatchReport = {
-    resolvedCustomerComponentCount: customerComponents.size,
-    validatedComponentNames: [...customerComponents.keys()].sort((left, right) => left.localeCompare(right))
-  };
+  const customerComponents = componentMatchReportArtifact
+    ? collectCustomerComponentContracts({
+        artifact: componentMatchReportArtifact
+      })
+    : new Map<string, StyleValidationCustomerComponentContract>();
+  if (componentMatchReportArtifact) {
+    diagnostics.componentMatchReport = {
+      resolvedCustomerComponentCount: customerComponents.size,
+      validatedComponentNames: [...customerComponents.keys()].sort((left, right) => left.localeCompare(right))
+    };
+  }
 
   const sourceIssues = await Promise.all(
     sourceFiles
