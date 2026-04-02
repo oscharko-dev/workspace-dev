@@ -848,7 +848,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           !scenario.screenId ||
           !scenario.contentScreenId ||
           typeof scenario.initialState !== "object" ||
-          scenario.initialState === null
+          (scenario.initialState as unknown) === null
         ) {
           errors.push({
             code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",

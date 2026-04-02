@@ -6816,7 +6816,7 @@ export default function ${componentName}Screen(props: Readonly<${componentName}S
   return (
 ${input.appShellComponentName ? `    <${input.appShellComponentName} textOverrides={resolvedScenario.shellTextOverrides}>
       {screenContent}
-    </${input.appShellComponentName}>` : "    screenContent"}
+    </${input.appShellComponentName}>` : "    {screenContent}"}
   );
 }
 `;

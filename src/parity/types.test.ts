@@ -9,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const typesFilePath = path.resolve(__dirname, "./types.ts");
 
 const EXPECTED_TYPES_EXPORTS = [
+  "AppShellIR",
   "BaseElementIR",
   "BoardRegistryRecord",
   "ComponentMappingCoverage",
@@ -135,6 +136,7 @@ const EXPECTED_TYPES_EXPORTS = [
   "ReviewEvidenceSummary",
   "SaveOperationCommit",
   "SaveOperationResult",
+  "ScreenAppShellIR",
   "ScreenElementCountMetric",
   "ScreenElementIR",
   "ScreenElementIRTextRequiresText",
