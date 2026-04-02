@@ -2291,7 +2291,7 @@ test("figmaToDesignIrWithOptions persists board semantic metadata for explicit f
   assert.equal(byId.get("node-input-currency")?.semanticSource, "board");
   assert.equal(byId.get("node-input-tan")?.semanticType, "InputTAN");
   assert.equal(byId.get("node-input-tan")?.semanticSource, "board");
-  assert.equal(byId.get("node-dynamic-typography")?.semanticType, "Typography");
+  assert.equal(byId.get("node-dynamic-typography")?.semanticType, "DynamicTypography");
   assert.equal(byId.get("node-dynamic-typography")?.semanticSource, "board");
   assert.equal(byId.get("node-icon")?.semanticType, "Icon");
   assert.equal(byId.get("node-icon")?.semanticSource, "board");

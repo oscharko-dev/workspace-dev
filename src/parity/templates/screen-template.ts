@@ -281,9 +281,230 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     }
   }
 
-  const variantProp = typographyVariantName ? ` variant="${typographyVariantName}"` : "";
+  // DynamicTypography variant mapping (issue #693): when the element has
+  // semanticType "DynamicTypography", resolve a variant from the Storybook
+  // catalog and prefer it over the token-derived variant.
+  const dynamicTypoVariant =
+    element.semanticType === "DynamicTypography"
+      ? resolveDynamicTypographyVariant(element)
+      : undefined;
+  const resolvedVariantName = dynamicTypoVariant ?? typographyVariantName;
+  const variantProp = resolvedVariantName ? ` variant="${resolvedVariantName}"` : "";
   const headingProp = headingComponent ? ` component="${headingComponent}"` : "";
   return `${indent}<Typography${variantProp}${headingProp} sx={{ ${sx} }}>{${text}}</Typography>`;
+};
+
+// ---------------------------------------------------------------------------
+// Banking-input semantic types that receive prioritised rendering over
+// generic TextField when the board classification matches.
+// ---------------------------------------------------------------------------
+const BANKING_INPUT_SEMANTIC_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
+
+// ---------------------------------------------------------------------------
+// DynamicTypography Storybook variant catalog.
+// Maps Figma typography style tokens (from variant properties or node name
+// suffixes) to customer-specific MUI Typography variants derived from the
+// catalogued Storybook component library.
+// ---------------------------------------------------------------------------
+export const DYNAMIC_TYPOGRAPHY_VARIANT_CATALOG: ReadonlyMap<string, string> = new Map([
+  ["display-large", "h1"],
+  ["display-medium", "h2"],
+  ["display-small", "h3"],
+  ["headline-large", "h4"],
+  ["headline-medium", "h5"],
+  ["headline-small", "h6"],
+  ["title-large", "subtitle1"],
+  ["title-medium", "subtitle2"],
+  ["body-large", "body1"],
+  ["body-medium", "body2"],
+  ["body-small", "caption"],
+  ["label-large", "button"],
+  ["label-medium", "overline"],
+  ["label-small", "overline"]
+]);
+
+/**
+ * Resolve a DynamicTypography variant from the element's variant mapping
+ * or name. Returns the MUI Typography variant string, or `undefined` when
+ * no catalogue match is found.
+ */
+export const resolveDynamicTypographyVariant = (element: ScreenElementIR): string | undefined => {
+  const candidates: string[] = [];
+  if (element.variantMapping?.properties) {
+    for (const [key, value] of Object.entries(element.variantMapping.properties)) {
+      candidates.push(value.toLowerCase(), key.toLowerCase());
+    }
+  }
+  const nameParts = element.name.replace(/[^a-zA-Z0-9-]/g, " ").trim().toLowerCase().split(/\s+/);
+  candidates.push(...nameParts);
+
+  for (const candidate of candidates) {
+    const variant = DYNAMIC_TYPOGRAPHY_VARIANT_CATALOG.get(candidate);
+    if (variant) {
+      return variant;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Render a DatePicker element using `@mui/x-date-pickers/DatePicker` and
+ * mark the screen as requiring `LocalizationProvider` wiring.
+ */
+const renderDatePickerInput = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext
+): string => {
+  context.usesDatePicker = true;
+  const indent = "  ".repeat(depth);
+  const model = buildSemanticInputModel(element);
+  const field = registerInteractiveField({ context, element, model });
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
+  });
+  const fieldSx = sxString(baseEntries);
+  const usesReactHookForm = context.formHandlingMode === "react_hook_form";
+
+  if (usesReactHookForm) {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField }) => (
+${indent}    <DatePicker
+${indent}      label={${literal(field.label)}}
+${indent}      value={controllerField.value}
+${indent}      onChange={(newValue) => controllerField.onChange(newValue)}
+${indent}      slotProps={{
+${indent}        textField: {
+${indent}          onBlur: controllerField.onBlur,
+${indent}          aria-label: ${literal(field.label)},
+${indent}          sx: { ${fieldSx} }
+${indent}        }
+${indent}      }}
+${indent}    />
+${indent}  )}
+${indent}/>`;
+  }
+  return `${indent}<DatePicker
+${indent}  label={${literal(field.label)}}
+${indent}  value={formValues[${literal(field.key)}] ?? null}
+${indent}  onChange={(newValue) => updateFieldValue(${literal(field.key)}, newValue)}
+${indent}  slotProps={{
+${indent}    textField: {
+${indent}      onBlur: () => handleFieldBlur(${literal(field.key)}),
+${indent}      aria-label: ${literal(field.label)},
+${indent}      sx: { ${fieldSx} }
+${indent}    }
+${indent}  }}
+${indent}/>`;
+};
+
+/**
+ * Render a banking-specific input (InputCurrency, InputIBAN, InputTAN).
+ * These use standard MUI TextField with specialised formatting props
+ * (input masks, adornments, ARIA roles) that differentiate them from
+ * generic text fields.
+ */
+const renderBankingInput = (
+  element: ScreenElementIR,
+  depth: number,
+  parent: VirtualParent,
+  context: RenderContext
+): string => {
+  const indent = "  ".repeat(depth);
+  const model = buildSemanticInputModel(element);
+  const field = registerInteractiveField({ context, element, model });
+  registerMuiImports(context, "TextField", "InputAdornment");
+  const baseEntries = baseLayoutEntries(element, parent, {
+    includePaints: false,
+    spacingBase: context.spacingBase,
+    tokens: context.tokens,
+    generationLocale: context.generationLocale
+  });
+  const fieldSx = sxString(baseEntries);
+  const semanticType = element.semanticType as string;
+  const usesReactHookForm = context.formHandlingMode === "react_hook_form";
+
+  const bankingProps = (() => {
+    switch (semanticType) {
+      case "InputCurrency":
+        return {
+          startAdornment: `<InputAdornment position="start">{"\u20AC"}</InputAdornment>`,
+          inputMode: "decimal" as const,
+          placeholder: "0,00",
+          ariaRoleDescription: "currency input"
+        };
+      case "InputIBAN":
+        return {
+          startAdornment: undefined,
+          inputMode: "text" as const,
+          placeholder: "DE00 0000 0000 0000 0000 00",
+          ariaRoleDescription: "IBAN input"
+        };
+      case "InputTAN":
+        return {
+          startAdornment: undefined,
+          inputMode: "numeric" as const,
+          placeholder: "000000",
+          ariaRoleDescription: "TAN input"
+        };
+      default:
+        return {
+          startAdornment: undefined,
+          inputMode: "text" as const,
+          placeholder: undefined,
+          ariaRoleDescription: undefined
+        };
+    }
+  })();
+
+  const startAdornmentEntry = bankingProps.startAdornment
+    ? `input: { startAdornment: ${bankingProps.startAdornment} }`
+    : "";
+  const slotPropsEntries = [
+    startAdornmentEntry,
+    `htmlInput: { inputMode: ${literal(bankingProps.inputMode)}${bankingProps.ariaRoleDescription ? `, "aria-roledescription": ${literal(bankingProps.ariaRoleDescription)}` : ""} }`
+  ]
+    .filter((e) => e.length > 0)
+    .join(`,\n${indent}    `);
+
+  if (usesReactHookForm) {
+    return `${indent}<Controller
+${indent}  name={${literal(field.key)}}
+${indent}  control={control}
+${indent}  render={({ field: controllerField, fieldState }) => (
+${indent}    <TextField
+${indent}      label={${literal(field.label)}}
+${bankingProps.placeholder ? `${indent}      placeholder={${literal(bankingProps.placeholder)}}\n` : ""}${indent}      value={controllerField.value}
+${indent}      onChange={controllerField.onChange}
+${indent}      onBlur={controllerField.onBlur}
+${indent}      error={Boolean(fieldState.error)}
+${indent}      helperText={fieldState.error?.message ?? ""}
+${indent}      aria-label={${literal(field.label)}}
+${indent}      sx={{ ${fieldSx} }}
+${indent}      slotProps={{
+${indent}        ${slotPropsEntries}
+${indent}      }}
+${indent}    />
+${indent}  )}
+${indent}/>`;
+  }
+  return `${indent}<TextField
+${indent}  label={${literal(field.label)}}
+${bankingProps.placeholder ? `${indent}  placeholder={${literal(bankingProps.placeholder)}}\n` : ""}${indent}  value={formValues[${literal(field.key)}] ?? ""}
+${indent}  onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)}
+${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}  aria-label={${literal(field.label)}}
+${indent}  sx={{ ${fieldSx} }}
+${indent}  slotProps={{
+${indent}    ${slotPropsEntries}
+${indent}  }}
+${indent}/>`;
 };
 
 export const renderSemanticInput = (
@@ -292,6 +513,14 @@ export const renderSemanticInput = (
   parent: VirtualParent,
   context: RenderContext
 ): string => {
+  // --- Banking-input and DatePicker prioritisation (issue #693) ---
+  if (element.semanticType === "DatePicker") {
+    return renderDatePickerInput(element, depth, parent, context);
+  }
+  if (element.semanticType && BANKING_INPUT_SEMANTIC_TYPES.has(element.semanticType)) {
+    return renderBankingInput(element, depth, parent, context);
+  }
+
   const indent = "  ".repeat(depth);
   const model = buildSemanticInputModel(element);
   const field = registerInteractiveField({ context, element, model });
@@ -4854,7 +5083,9 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     </Container>
   );
 }`;
-  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec);
+  // --- DatePicker provider wiring (issue #693) ---
+  const needsDatePickerProvider = Boolean(renderContext.usesDatePicker);
+  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec) || needsDatePickerProvider;
   let wrappedScreenContent = `      <${contentFunctionName} />`;
   if (formContextFileSpec) {
     wrappedScreenContent = `      <${formContextFileSpec.providerName}>
@@ -4865,6 +5096,11 @@ ${wrappedScreenContent}
     wrappedScreenContent = `      <${patternContextFileSpec.providerName} initialState={patternContextInitialState}>
 ${wrappedScreenContent}
       </${patternContextFileSpec.providerName}>`;
+  }
+  if (needsDatePickerProvider) {
+    wrappedScreenContent = `      <LocalizationProvider dateAdapter={AdapterDateFns}>
+${wrappedScreenContent}
+      </LocalizationProvider>`;
   }
   const screenExportSource = hasContextProviders
     ? `${contentFunctionSource}
@@ -4884,8 +5120,14 @@ ${rendered || '      <Typography variant="body1">{"Screen generated from Figma I
     </Container>
   );
 }`;
+  const datePickerImportBlock = needsDatePickerProvider
+    ? `import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+`
+    : "";
   const screenContent = `${truncationComment}${reactImportBlock}${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
-${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
+${datePickerImportBlock}${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;
   const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);

@@ -1122,7 +1122,7 @@ describe("resolveExplicitBoardComponentFromNode", () => {
       }),
       {
         rawName: "Dynamic Typography",
-        canonicalName: "Typography",
+        canonicalName: "DynamicTypography",
         type: "text"
       }
     );
