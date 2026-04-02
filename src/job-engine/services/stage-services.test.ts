@@ -16,6 +16,7 @@ import { resolveBoardKey } from "../../parity/board-key.js";
 import { toDeterministicScreenPath } from "../../parity/generator-artifacts.js";
 import { buildTypographyScaleFromAliases } from "../../parity/typography-tokens.js";
 import type { DesignIR } from "../../parity/types-ir.js";
+import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../../storybook/types.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
 import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
 import { computeContentHash, computeOptionsHash, saveCachedIr } from "../ir-cache.js";
@@ -551,9 +552,11 @@ const createCustomerProfileForStageServices = () => {
 
 const createStorybookMatchCustomerProfileForStageServices = ({
   matchPolicy = "warn",
+  tokenPolicy = "off",
   fallbackComponents
 }: {
   matchPolicy?: "off" | "warn" | "error";
+  tokenPolicy?: "off" | "warn" | "error";
   fallbackComponents?: Record<string, "allow" | "deny">;
 } = {}) => {
   const customerProfile = parseCustomerProfileConfig({
@@ -656,7 +659,7 @@ const createStorybookMatchCustomerProfileForStageServices = ({
       },
       strictness: {
         match: matchPolicy,
-        token: "off",
+        token: tokenPolicy,
         import: "error"
       }
     }
@@ -1318,6 +1321,164 @@ const createComponentMatchReportArtifactForStageServices = ({
               }
       }
     ]
+  };
+};
+
+const createStorybookEvidenceArtifactForStageServices = ({
+  evidence
+}: {
+  evidence: Array<{
+    id: string;
+    type:
+      | "story_componentPath"
+      | "story_argTypes"
+      | "story_args"
+      | "story_design_link"
+      | "theme_bundle"
+      | "css"
+      | "mdx_link"
+      | "docs_image"
+      | "docs_text";
+    reliability: "authoritative" | "reference_only" | "derived";
+    source: Record<string, string>;
+    usage: {
+      canDriveTokens: boolean;
+      canDriveProps: boolean;
+      canDriveImports: boolean;
+      canDriveStyling: boolean;
+      canProvideMatchHints: boolean;
+    };
+    summary: Record<string, string | string[]>;
+  }>;
+}) => {
+  return {
+    artifact: "storybook.evidence",
+    version: 1,
+    buildRoot: "/tmp/storybook-static",
+    iframeBundlePath: "/tmp/storybook-static/iframe.html",
+    stats: {
+      entryCount: evidence.length,
+      evidenceCount: evidence.length,
+      byType: {
+        story_componentPath: evidence.filter((item) => item.type === "story_componentPath").length,
+        story_argTypes: evidence.filter((item) => item.type === "story_argTypes").length,
+        story_args: evidence.filter((item) => item.type === "story_args").length,
+        story_design_link: evidence.filter((item) => item.type === "story_design_link").length,
+        theme_bundle: evidence.filter((item) => item.type === "theme_bundle").length,
+        css: evidence.filter((item) => item.type === "css").length,
+        mdx_link: evidence.filter((item) => item.type === "mdx_link").length,
+        docs_image: evidence.filter((item) => item.type === "docs_image").length,
+        docs_text: evidence.filter((item) => item.type === "docs_text").length
+      },
+      byReliability: {
+        authoritative: evidence.filter((item) => item.reliability === "authoritative").length,
+        reference_only: evidence.filter((item) => item.reliability === "reference_only").length,
+        derived: evidence.filter((item) => item.reliability === "derived").length
+      }
+    },
+    evidence
+  };
+};
+
+const createStorybookTokensArtifactForStageServices = ({
+  diagnostics = []
+}: {
+  diagnostics?: Array<{
+    severity: "warning" | "error";
+    code: string;
+    message: string;
+    themeId?: string;
+    tokenPath?: string[];
+  }>;
+} = {}) => {
+  return {
+    $schema: "https://www.designtokens.org/TR/2025.10/format/",
+    $extensions: {
+      [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+        artifact: "storybook.tokens",
+        version: 3,
+        stats: {
+          tokenCount: 0,
+          themeCount: 1,
+          byType: {
+            color: 0,
+            dimension: 0,
+            fontFamily: 0,
+            fontWeight: 0,
+            number: 0,
+            typography: 0
+          },
+          diagnosticCount: diagnostics.length,
+          errorCount: diagnostics.filter((item) => item.severity === "error").length
+        },
+        diagnostics,
+        themes: [
+          {
+            id: "sparkasse-light",
+            name: "Sparkasse Light",
+            context: "default",
+            categories: [],
+            tokenCount: 0
+          }
+        ],
+        provenance: {}
+      }
+    }
+  };
+};
+
+const createStorybookThemesArtifactForStageServices = ({
+  diagnostics = []
+}: {
+  diagnostics?: Array<{
+    severity: "warning" | "error";
+    code: string;
+    message: string;
+    themeId?: string;
+    tokenPath?: string[];
+  }>;
+} = {}) => {
+  return {
+    $schema: "https://www.designtokens.org/TR/2025.10/resolver/",
+    name: "storybook.themes",
+    version: "2025.10",
+    sets: {
+      "sparkasse-light": {
+        sources: [{ $ref: "./tokens.json#/theme/sparkasse-light" }]
+      }
+    },
+    modifiers: {
+      theme: {
+        default: "default",
+        contexts: {
+          default: [{ $ref: "#/sets/sparkasse-light" }]
+        }
+      }
+    },
+    resolutionOrder: [{ $ref: "#/modifiers/theme" }],
+    $extensions: {
+      [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+        artifact: "storybook.themes",
+        version: 3,
+        stats: {
+          themeCount: 1,
+          contextCount: 1,
+          diagnosticCount: diagnostics.length,
+          errorCount: diagnostics.filter((item) => item.severity === "error").length
+        },
+        diagnostics,
+        themes: [
+          {
+            id: "sparkasse-light",
+            name: "Sparkasse Light",
+            context: "default",
+            categories: [],
+            tokenCount: 0
+          }
+        ],
+        provenance: {}
+      }
+    }
   };
 };
 
@@ -2686,7 +2847,8 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
           Button: {
             import: "@customer/components",
             export: "PrimaryButton",
-            component: "CustomerButton"
+            component: "CustomerButton",
+            omittedProps: ["sx"]
           }
         }
       });
@@ -3028,7 +3190,8 @@ test("CodegenGenerateService treats requestedStorybookStaticDir as storybook-fir
           Button: {
             import: "@customer/components",
             export: "PrimaryButton",
-            component: "CustomerButton"
+            component: "CustomerButton",
+            omittedProps: ["sx"]
           }
         }
       });
@@ -4249,6 +4412,419 @@ export default defineConfig({
   assert.equal(summary?.mapping?.componentApi?.status, "failed");
   assert.equal(summary?.mapping?.componentApi?.issueCount, 1);
   assert.equal(summary?.mapping?.componentApi?.issues?.[0]?.code, "component_api_children_unsupported");
+});
+
+test("ValidateProjectService persists a failed style summary and aborts before project validation when token policy is error", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    tokenPolicy: "error"
+  });
+
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `export default {};
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    `import { CustomerButton } from "@customer/components";
+
+export const App = () => <CustomerButton sx={{ color: "#ffffff" }}>{"Weiter"}</CustomerButton>;
+`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-style-failed"
+    } satisfies GenerationDiffContext
+  });
+
+  const storybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.json");
+  const storybookTokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const storybookThemesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    storybookEvidencePath,
+    `${JSON.stringify(
+      createStorybookEvidenceArtifactForStageServices({
+        evidence: [
+          {
+            id: "story-args-1",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "button--primary",
+              entryType: "story",
+              title: "Components/Button"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["appearance"]
+            }
+          }
+        ]
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookTokensPath,
+    `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookThemesPath,
+    `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "figma.source",
+    absolutePath: storybookEvidencePath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: storybookTokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: storybookThemesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Storybook-first style guard failed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    style?: {
+      status?: string;
+      issueCount?: number;
+      issues?: Array<{ category?: string; propName?: string }>;
+      storybook?: {
+        evidence?: { status?: string };
+        tokens?: { status?: string };
+        themes?: { status?: string };
+        componentMatchReport?: { status?: string };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.style?.status, "failed");
+  assert.equal(summary?.style?.issueCount, 2);
+  assert.equal(
+    summary?.style?.issues?.some(
+      (issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "sx"
+    ),
+    true
+  );
+  assert.equal(summary?.style?.storybook?.evidence?.status, "ok");
+  assert.equal(summary?.style?.storybook?.tokens?.status, "ok");
+  assert.equal(summary?.style?.storybook?.themes?.status, "ok");
+  assert.equal(summary?.style?.storybook?.componentMatchReport?.status, "ok");
+});
+
+test("ValidateProjectService persists a warn style summary and continues into project validation when token policy is warn", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    tokenPolicy: "warn"
+  });
+
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"), "export default {};\n", "utf8");
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    `import { PrimaryButton as CustomerButton } from "@customer/components";
+
+export const App = () => <CustomerButton variant={"primary"} sx={{ color: "#ffffff" }}>{"Weiter"}</CustomerButton>;
+`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-style-warn"
+    } satisfies GenerationDiffContext
+  });
+
+  const storybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.json");
+  const storybookTokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const storybookThemesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  await writeFile(
+    storybookEvidencePath,
+    `${JSON.stringify(
+      createStorybookEvidenceArtifactForStageServices({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookTokensPath,
+    `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookThemesPath,
+    `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "figma.source",
+    absolutePath: storybookEvidencePath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: storybookTokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: storybookThemesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(validationInvoked, true);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    style?: {
+      status?: string;
+      issueCount?: number;
+      issues?: Array<{ category?: string }>;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "warn");
+  assert.equal(summary?.style?.status, "warn");
+  assert.equal((summary?.style?.issueCount ?? 0) >= 2, true);
+  assert.equal(summary?.style?.issues?.some((issue) => issue.category === "hard_coded_color_literal"), true);
+});
+
+test("ValidateProjectService reports style.status as not_available for non-Storybook validation runs", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
+    tokenPolicy: "warn"
+  });
+
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-style-not-available"
+    } satisfies GenerationDiffContext
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {
+          "@customer/components": "^1.2.3"
+        },
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"), "export default {};\n", "utf8");
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"), "export const App = () => null;\n", "utf8");
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    style?: {
+      status?: string;
+      issueCount?: number;
+      storybook?: {
+        evidence?: { status?: string };
+        tokens?: { status?: string };
+        themes?: { status?: string };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.style?.status, "not_available");
+  assert.equal(summary?.style?.issueCount, 0);
+  assert.equal(summary?.style?.storybook?.evidence?.status, "not_available");
+  assert.equal(summary?.style?.storybook?.tokens?.status, "not_available");
+  assert.equal(summary?.style?.storybook?.themes?.status, "not_available");
 });
 
 test("ValidateProjectService forwards aborted signal to project validation", async () => {

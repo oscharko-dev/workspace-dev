@@ -5077,6 +5077,60 @@ test("generateArtifacts applies customer profile imports before design-system ma
   assert.equal(screenContent.includes("FallbackButton"), false);
 });
 
+test("generateArtifacts omits sx from storybook-first customer profile mappings when the resolved API disallows it", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-sx-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "storybook-first-sx-screen",
+      name: "Storybook First SX",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "storybook-first-sx-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    customerProfileDesignSystemConfig: {
+      library: "__customer_profile__",
+      mappings: {
+        Button: {
+          import: "@customer/components",
+          export: "PrimaryButton",
+          component: "CustomerButton",
+          propMappings: {
+            variant: "appearance"
+          },
+          omittedProps: ["sx"]
+        }
+      }
+    },
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Storybook First SX")), "utf8");
+  assert.ok(screenContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  assert.ok(screenContent.includes("<CustomerButton"));
+  assert.ok(screenContent.includes("appearance="));
+  assert.equal(/<CustomerButton[\s\S]*?\ssx=\{\{/.test(screenContent), false);
+});
+
 test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig over the full customer profile mapping", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-match-report-design-system-"));
   const ir = createIr();
