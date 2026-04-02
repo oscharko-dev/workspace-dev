@@ -13,13 +13,19 @@ import {
   SEMANTIC_CLASSIFICATION_RULES
 } from "./ir-classification.js";
 
-const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? "xZkvYk9KOezMsi9LmPEFGX";
+const REFERENCE_BOARD_KEY = "xZkvYk9KOezMsi9LmPEFGX";
+const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? REFERENCE_BOARD_KEY;
 const FIGMA_ACCESS_TOKEN = process.env["FIGMA_ACCESS_TOKEN"] ?? "";
 
 const skipReason =
   FIGMA_ACCESS_TOKEN.length === 0
     ? "FIGMA_ACCESS_TOKEN not set – skipping real Figma E2E tests"
     : undefined;
+
+const skipBoardFamiliesReason =
+  skipReason ?? (FIGMA_FILE_KEY !== REFERENCE_BOARD_KEY
+    ? `Board-specific family assertions only apply to reference board ${REFERENCE_BOARD_KEY}`
+    : undefined);
 
 let cachedFigmaFile: unknown;
 
@@ -142,7 +148,7 @@ test("E2E: real Figma board produces diverse element classifications", { skip: s
   );
 });
 
-test("E2E: real Figma board exposes verified board families through IR classification and semantics", { skip: skipReason }, async () => {
+test("E2E: real Figma board exposes verified board families through IR classification and semantics", { skip: skipBoardFamiliesReason }, async () => {
   const figmaFile = await fetchFigmaFileOnce();
   const ir = figmaToDesignIrWithOptions(figmaFile);
 
@@ -171,6 +177,29 @@ test("E2E: real Figma board exposes verified board families through IR classific
     true,
     "Expected at least one Icon family element to remain a container with board semantic metadata."
   );
+});
+
+test("E2E: any real Figma board propagates board semantic metadata for recognized families", { skip: skipReason }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+
+  const allElements: ScreenElementIR[] = [];
+  for (const screen of ir.screens) {
+    allElements.push(...collectAllElements(screen.children));
+  }
+
+  const elementsWithSemanticSource = allElements.filter((el) => el.semanticSource === "board");
+  assert.ok(
+    elementsWithSemanticSource.length > 0,
+    "Expected at least one element with board semantic source metadata."
+  );
+
+  for (const el of elementsWithSemanticSource) {
+    assert.ok(
+      typeof el.semanticType === "string" && el.semanticType.length > 0,
+      `Element "${el.name}" (${el.id}) has board semantic source but empty/missing semanticType.`
+    );
+  }
 });
 
 test("E2E: classification produces stable results on repeated derivation", { skip: skipReason }, async () => {
