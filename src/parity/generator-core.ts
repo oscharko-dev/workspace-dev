@@ -466,6 +466,7 @@ interface GenerateArtifactsResolvedPhase {
   resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   transformGeneratedFileWithDesignSystem: (file: GeneratedFile) => GeneratedFile;
+  effectiveCustomerProfileDesignSystemConfig?: DesignSystemConfig;
   customerProfile?: ResolvedCustomerProfile;
   designSystemConfig?: LoadedDesignSystemConfig;
 }
@@ -558,6 +559,7 @@ const resolveGenerateArtifactsPhase = async ({
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
     transformGeneratedFileWithDesignSystem,
+    ...(customerProfileConfig ? { effectiveCustomerProfileDesignSystemConfig: customerProfileConfig } : {}),
     ...(customerProfile ? { customerProfile } : {}),
     ...(designSystemConfig ? { designSystemConfig } : {})
   };
@@ -806,6 +808,7 @@ const ISSUE_693_SPECIALIZED_COMPONENT_KEYS = [
   "InputCurrency",
   "InputIBAN",
   "InputTAN",
+  "DynamicTypography",
   "Typography"
 ] as const;
 
@@ -1050,6 +1053,7 @@ export async function* generateArtifactsStreaming(
     resolvedGenerationLocale,
     resolvedFormHandlingMode,
     transformGeneratedFileWithDesignSystem,
+    effectiveCustomerProfileDesignSystemConfig,
     designSystemConfig
   } = await resolveGenerateArtifactsPhase({
     input,
@@ -1103,16 +1107,12 @@ export async function* generateArtifactsStreaming(
   const aggregatedSimplificationStats = createEmptySimplificationStats();
   let prototypeNavigationRenderedCount = 0;
   const designSystemMappedMuiComponents = new Set(Object.keys(designSystemConfig?.mappings ?? {}));
-  const specializedComponentMappings = resolvedStorybookTheme
-    ? toIssue693SpecializedComponentMappings({
-        designSystemConfig: customerProfileDesignSystemConfig
-      })
-    : {};
-  const datePickerProvider = resolvedStorybookTheme
-    ? toDatePickerProviderConfig({
-        customerProfile
-      })
-    : undefined;
+  const specializedComponentMappings = toIssue693SpecializedComponentMappings({
+    designSystemConfig: effectiveCustomerProfileDesignSystemConfig
+  });
+  const datePickerProvider = toDatePickerProviderConfig({
+    customerProfile
+  });
   const storybookTypographyVariants = resolvedStorybookTheme?.light.typography.variants;
 
   const screenBatches = chunk(ir.screens, STREAMING_SCREEN_BATCH_SIZE);

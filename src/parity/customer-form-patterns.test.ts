@@ -323,6 +323,108 @@ describe("DynamicTypography variant mapping (#693 AC-3)", () => {
     );
   });
 
+  it("matches Storybook variant keys from DynamicTypography candidates case-insensitively", () => {
+    const context = createRenderContext({
+      storybookTypographyVariants: {
+        "H1-light": {
+          fontFamily: "Storybook Sans",
+          fontSizePx: 32,
+          fontWeight: 700,
+          lineHeight: 40,
+          letterSpacing: "0em"
+        }
+      }
+    });
+    assert.equal(
+      resolveDynamicTypographyVariant(
+        {
+          id: "dt-1b",
+          name: "<Dynamic Typography>, Variant=h1 light",
+          nodeType: "INSTANCE",
+          type: "text",
+          text: "Title",
+          semanticType: "DynamicTypography",
+          variantMapping: {
+            properties: { Variant: "h1 light" }
+          }
+        } as TextElementIR,
+        context
+      ),
+      "H1-light"
+    );
+  });
+
+  it("falls back to Storybook style scoring when DynamicTypography candidates do not match", () => {
+    const context = createRenderContext({
+      storybookTypographyVariants: {
+        displayLg: {
+          fontFamily: "Storybook Sans",
+          fontSizePx: 32,
+          fontWeight: 700,
+          lineHeight: 40,
+          letterSpacing: "0em"
+        },
+        bodyMd: {
+          fontFamily: "Storybook Sans",
+          fontSizePx: 16,
+          fontWeight: 400,
+          lineHeight: 24,
+          letterSpacing: "0em"
+        }
+      }
+    });
+    assert.equal(
+      resolveDynamicTypographyVariant(
+        {
+          id: "dt-1c",
+          name: "Dynamic Typography",
+          nodeType: "INSTANCE",
+          type: "text",
+          text: "Title",
+          semanticType: "DynamicTypography",
+          fontFamily: "Storybook Sans",
+          fontSize: 32,
+          fontWeight: 700,
+          lineHeight: 40
+        } as TextElementIR,
+        context
+      ),
+      "displayLg"
+    );
+  });
+
+  it("does not use static DynamicTypography fallback when Storybook variants are available but unresolved", () => {
+    const context = createRenderContext({
+      storybookTypographyVariants: {
+        displayLg: {
+          fontFamily: "Storybook Sans",
+          fontSizePx: 32,
+          fontWeight: 700,
+          lineHeight: 40,
+          letterSpacing: "0em"
+        }
+      }
+    });
+    assert.equal(
+      resolveDynamicTypographyVariant(
+        {
+          id: "dt-1d",
+          name: "headline-medium",
+          nodeType: "INSTANCE",
+          type: "text",
+          text: "Title",
+          semanticType: "DynamicTypography",
+          fontFamily: "Storybook Sans",
+          fontSize: 12,
+          fontWeight: 300,
+          lineHeight: 14
+        } as TextElementIR,
+        context
+      ),
+      undefined
+    );
+  });
+
   it("maps name-based tokens to MUI typography variants", () => {
     assert.equal(
       resolveDynamicTypographyVariant({

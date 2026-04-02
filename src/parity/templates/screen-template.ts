@@ -314,6 +314,9 @@ const resolveSpecializedComponentMapping = ({
   if (!semanticType) {
     return undefined;
   }
+  if (semanticType === "DynamicTypography") {
+    return context.specializedComponentMappings.DynamicTypography ?? context.specializedComponentMappings.Typography;
+  }
   return context.specializedComponentMappings[semanticType];
 };
 
@@ -360,6 +363,76 @@ const appendMappedPropLine = ({
     return;
   }
   lines.push(`${targetName}={${expression}}`);
+};
+
+const normalizeVariantLookupToken = (value: string): string => {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+};
+
+const collectDynamicTypographyVariantCandidates = (element: ScreenElementIR): string[] => {
+  const candidates = new Set<string>();
+  const appendCandidate = (value: string | undefined): void => {
+    if (!value) {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    candidates.add(trimmed);
+  };
+
+  if (element.variantMapping?.properties) {
+    for (const [key, value] of Object.entries(element.variantMapping.properties)) {
+      appendCandidate(key);
+      appendCandidate(value);
+      appendCandidate(value.split(/[=:]/).at(-1));
+    }
+  }
+
+  const normalizedName = element.name.replace(/[<>]/g, " ").trim();
+  appendCandidate(normalizedName);
+  for (const chunk of normalizedName.split(/[,;|]/)) {
+    appendCandidate(chunk);
+    appendCandidate(chunk.split(/[=:]/).at(-1));
+  }
+  for (const token of normalizedName.split(/[\s,;:/\\|()[\]{}_.=-]+/)) {
+    appendCandidate(token);
+  }
+
+  return [...candidates];
+};
+
+const resolveStorybookVariantNameByCandidates = ({
+  element,
+  context
+}: {
+  element: ScreenElementIR;
+  context: RenderContext;
+}): string | undefined => {
+  const variants = context.storybookTypographyVariants;
+  if (!variants || Object.keys(variants).length === 0) {
+    return undefined;
+  }
+
+  const variantByNormalizedToken = new Map<string, string>();
+  for (const variantName of Object.keys(variants)) {
+    const normalizedToken = normalizeVariantLookupToken(variantName);
+    if (normalizedToken && !variantByNormalizedToken.has(normalizedToken)) {
+      variantByNormalizedToken.set(normalizedToken, variantName);
+    }
+  }
+
+  const candidates = collectDynamicTypographyVariantCandidates(element);
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeVariantLookupToken(candidate);
+    const variantName = variantByNormalizedToken.get(normalizedCandidate);
+    if (variantName) {
+      return variantName;
+    }
+  }
+
+  return undefined;
 };
 
 const resolveStorybookTypographyVariantName = ({
@@ -542,19 +615,27 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     }
   }
 
-  // Specialized Typography component mapping (Storybook-driven).
-  const specializedTypographyMapping =
-    element.semanticType === "Typography"
-      ? resolveSpecializedComponentMapping({
-          context,
-          semanticType: element.semanticType
-        })
+  const dynamicTypographyVariant =
+    element.semanticType === "DynamicTypography"
+      ? resolveDynamicTypographyVariant(element, context)
       : undefined;
+
+  // Specialized Typography component mapping (Storybook-driven).
+  const hasSpecializedTypographySemantic = element.semanticType === "Typography" || element.semanticType === "DynamicTypography";
+  const specializedTypographyMapping = hasSpecializedTypographySemantic
+    ? resolveSpecializedComponentMapping({
+        context,
+        semanticType: element.semanticType
+      })
+    : undefined;
   if (specializedTypographyMapping) {
-    const storybookVariantName = resolveStorybookTypographyVariantName({
-      element,
-      context
-    });
+    const storybookVariantName =
+      element.semanticType === "DynamicTypography"
+        ? dynamicTypographyVariant
+        : resolveStorybookTypographyVariantName({
+            element,
+            context
+          });
     if (storybookVariantName) {
       const componentLocalName = registerSpecializedComponentImport({
         context,
@@ -589,14 +670,7 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
     }
   }
 
-  // DynamicTypography variant mapping (issue #693): when the element has
-  // semanticType "DynamicTypography", resolve a variant from the Storybook
-  // catalog and prefer it over the token-derived variant.
-  const dynamicTypoVariant =
-    element.semanticType === "DynamicTypography"
-      ? resolveDynamicTypographyVariant(element)
-      : undefined;
-  const resolvedVariantName = dynamicTypoVariant ?? typographyVariantName;
+  const resolvedVariantName = dynamicTypographyVariant ?? typographyVariantName;
 
   registerMuiImports(context, "Typography");
   const variantProp = resolvedVariantName ? ` variant="${resolvedVariantName}"` : "";
@@ -638,16 +712,29 @@ export const DYNAMIC_TYPOGRAPHY_VARIANT_CATALOG: ReadonlyMap<string, string> = n
  * or name. Returns the MUI Typography variant string, or `undefined` when
  * no catalogue match is found.
  */
-export const resolveDynamicTypographyVariant = (element: ScreenElementIR): string | undefined => {
-  const candidates: string[] = [];
-  if (element.variantMapping?.properties) {
-    for (const [key, value] of Object.entries(element.variantMapping.properties)) {
-      candidates.push(value.toLowerCase(), key.toLowerCase());
+export const resolveDynamicTypographyVariant = (
+  element: ScreenElementIR,
+  context?: RenderContext
+): string | undefined => {
+  const hasStorybookVariants = Boolean(context?.storybookTypographyVariants) &&
+    Object.keys(context?.storybookTypographyVariants ?? {}).length > 0;
+  if (context && hasStorybookVariants) {
+    const directStorybookMatch = resolveStorybookVariantNameByCandidates({
+      element,
+      context
+    });
+    if (directStorybookMatch) {
+      return directStorybookMatch;
     }
-  }
-  const nameParts = element.name.replace(/[^a-zA-Z0-9-]/g, " ").trim().toLowerCase().split(/\s+/);
-  candidates.push(...nameParts);
 
+    // Fall back to style-based matching against Storybook typography variants.
+    return resolveStorybookTypographyVariantName({
+      element: element as TextElementIR,
+      context
+    });
+  }
+
+  const candidates = collectDynamicTypographyVariantCandidates(element).map((candidate) => candidate.toLowerCase());
   for (const candidate of candidates) {
     const variant = DYNAMIC_TYPOGRAPHY_VARIANT_CATALOG.get(candidate);
     if (variant) {
@@ -692,7 +779,7 @@ ${indent}      onChange={(newValue) => controllerField.onChange(newValue)}
 ${indent}      slotProps={{
 ${indent}        textField: {
 ${indent}          onBlur: controllerField.onBlur,
-${indent}          aria-label: ${literal(field.label)},
+${indent}          "aria-label": ${literal(field.label)},
 ${indent}          sx: { ${fieldSx} }
 ${indent}        }
 ${indent}      }}
@@ -707,7 +794,7 @@ ${indent}  onChange={(newValue) => updateFieldValue(${literal(field.key)}, newVa
 ${indent}  slotProps={{
 ${indent}    textField: {
 ${indent}      onBlur: () => handleFieldBlur(${literal(field.key)}),
-${indent}      aria-label: ${literal(field.label)},
+${indent}      "aria-label": ${literal(field.label)},
 ${indent}      sx: { ${fieldSx} }
 ${indent}    }
 ${indent}  }}
@@ -827,7 +914,19 @@ export const renderSemanticInput = (
   // Specialized component mappings take priority; the built-in renderers
   // below serve as deterministic fallbacks when no mapping is configured.
   const hasSpecializedMapping = element.semanticType
-    ? Boolean(resolveSpecializedComponentMapping({ context, semanticType: element.semanticType }))
+    ? (() => {
+        const mapping = resolveSpecializedComponentMapping({
+          context,
+          semanticType: element.semanticType
+        });
+        if (!mapping) {
+          return false;
+        }
+        if (element.semanticType === "DatePicker" && !context.datePickerProvider) {
+          return false;
+        }
+        return true;
+      })()
     : false;
   if (!hasSpecializedMapping && element.semanticType === "DatePicker") {
     return renderDatePickerInput(element, depth, parent, context);

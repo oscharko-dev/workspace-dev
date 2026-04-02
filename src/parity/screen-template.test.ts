@@ -296,6 +296,97 @@ test("renderText prefers mapped customer typography for semantic Typography node
   ]);
 });
 
+test("renderText prefers DynamicTypography mapping over Typography mapping for semantic DynamicTypography nodes", () => {
+  const context = createRenderContext({
+    specializedComponentMappings: {
+      DynamicTypography: makeSpecializedMapping({
+        componentKey: "DynamicTypography",
+        modulePath: "@customer/typography",
+        importedName: "CustomerDynamicTypography"
+      }),
+      Typography: makeSpecializedMapping({
+        componentKey: "Typography",
+        modulePath: "@customer/typography",
+        importedName: "CustomerTypography"
+      })
+    },
+    storybookTypographyVariants: {
+      "H1-light": {
+        fontFamily: "Storybook Sans",
+        fontSizePx: 32,
+        fontWeight: 700,
+        lineHeight: 40,
+        letterSpacing: "0em"
+      }
+    }
+  });
+
+  const rendered = renderText(
+    makeText({
+      id: "dynamic-variant-heading",
+      text: "Dynamic Headline",
+      name: "<Dynamic Typography>, Variant=H1 light",
+      semanticType: "DynamicTypography",
+      variantMapping: {
+        properties: {
+          Variant: "H1 light"
+        }
+      },
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<CustomerDynamicTypography/);
+  assert.match(rendered, /variant=\{"H1-light"\}/);
+  assert.equal(rendered.includes("CustomerTypography"), false);
+});
+
+test("renderText falls back to Typography mapping for DynamicTypography when no dedicated mapping exists", () => {
+  const context = createRenderContext({
+    specializedComponentMappings: {
+      Typography: makeSpecializedMapping({
+        componentKey: "Typography",
+        modulePath: "@customer/typography",
+        importedName: "CustomerTypography"
+      })
+    },
+    storybookTypographyVariants: {
+      displayLg: {
+        fontFamily: "Storybook Sans",
+        fontSizePx: 32,
+        fontWeight: 700,
+        lineHeight: 40,
+        letterSpacing: "0em"
+      }
+    }
+  });
+
+  const rendered = renderText(
+    makeText({
+      id: "dynamic-fallback-heading",
+      text: "Dynamic Headline",
+      semanticType: "DynamicTypography",
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<CustomerTypography/);
+  assert.match(rendered, /variant=\{"displayLg"\}/);
+  assert.equal(rendered.includes("<Typography"), false);
+});
+
 test("renderButton renders icon-only router links and submit buttons with end icons", () => {
   const iconOnlyContext = createRenderContext({
     routePathByScreenId: navigationRouteMap()
@@ -1405,7 +1496,7 @@ test("fallbackScreenFile wraps specialized date pickers with a single configured
   );
 });
 
-test("fallbackScreenFile keeps DatePicker on the generic fallback path when no provider configuration is available", () => {
+test("fallbackScreenFile keeps DatePicker on the MUI DatePicker fallback path when no provider configuration is available", () => {
   const screen: ScreenIR = {
     id: "screen-generic-date-picker",
     name: "Generic Date Picker",
@@ -1449,5 +1540,7 @@ test("fallbackScreenFile keeps DatePicker on the generic fallback path when no p
 
   assert.equal(generated.file.content.includes("CustomerDatePickerProvider"), false);
   assert.equal(generated.file.content.includes("CustomerDatePicker"), false);
-  assert.match(generated.file.content, /<TextField/);
+  assert.match(generated.file.content, /<LocalizationProvider dateAdapter=\{AdapterDateFns\}>/);
+  assert.match(generated.file.content, /<DatePicker/);
+  assert.equal(generated.file.content.includes("<TextField"), false);
 });

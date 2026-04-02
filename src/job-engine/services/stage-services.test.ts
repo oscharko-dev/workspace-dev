@@ -775,7 +775,7 @@ const createIssue693IrForStageServices = (): DesignIR =>
             name: "<Dynamic Typography>",
             nodeType: "TEXT",
             type: "text",
-            semanticType: "Typography",
+            semanticType: "DynamicTypography",
             text: "Payment Schedule",
             fontFamily: "Brand Sans",
             fontSize: 32,
@@ -2627,6 +2627,52 @@ test("CodegenGenerateService generates Issue #693 customer form specializations 
     screenContent,
     /<Issue693ScreenFormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<Issue693ScreenScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/Issue693ScreenFormContextProvider>/
   );
+});
+
+test("CodegenGenerateService applies Issue #693 customer form specializations without storybook-first mode", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createIssue693IrForStageServices();
+  const dynamicTypographyNode = ir.screens[0]?.children[0];
+  if (dynamicTypographyNode && dynamicTypographyNode.type === "text") {
+    dynamicTypographyNode.name = "headline-medium";
+  }
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  executionContext.resolvedCustomerProfile = createIssue693CustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "issue-693-non-storybook-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  const screenContent = await readFile(
+    path.join(executionContext.paths.generatedProjectDir, toDeterministicScreenPath("Issue 693 Screen")),
+    "utf8"
+  );
+
+  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
+  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"h5"\}/);
+  assert.match(screenContent, /<CustomerIbanInput/);
+  assert.match(screenContent, /<CustomerDatePicker/);
 });
 
 test("CodegenGenerateService treats requestedStorybookStaticDir as storybook-first intent when resolved path is unavailable", async () => {

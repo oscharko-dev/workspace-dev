@@ -7108,7 +7108,7 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
       name: "<Dynamic Typography>",
       nodeType: "TEXT",
       type: "text",
-      semanticType: "Typography",
+      semanticType: "DynamicTypography",
       text: "Payment Schedule",
       fontFamily: "Storybook Sans",
       fontSize: 32,
@@ -7235,4 +7235,103 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
     /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/
   );
   assert.equal(screenContent.includes("<TextField"), false);
+});
+
+test("generateArtifacts applies Issue #693 customer form specializations outside storybook-first mode", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-issue-693-non-storybook-"));
+  const ir = createIr();
+  ir.screens[0]!.children = [
+    {
+      id: "dynamic-typography",
+      name: "headline-medium",
+      nodeType: "TEXT",
+      type: "text",
+      semanticType: "DynamicTypography",
+      text: "Payment Schedule",
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    },
+    {
+      id: "iban-field",
+      name: "IBAN field",
+      nodeType: "FRAME",
+      type: "input",
+      semanticType: "InputIBAN",
+      width: 320,
+      height: 56,
+      children: [
+        {
+          id: "iban-label",
+          name: "IBAN label",
+          nodeType: "TEXT",
+          type: "text",
+          text: "IBAN",
+          y: 0
+        },
+        {
+          id: "iban-value",
+          name: "IBAN value",
+          nodeType: "TEXT",
+          type: "text",
+          text: "DE89 3704 0044 0532 0130 00",
+          y: 28
+        }
+      ]
+    },
+    {
+      id: "date-field",
+      name: "Date field",
+      nodeType: "FRAME",
+      type: "input",
+      semanticType: "DatePicker",
+      width: 320,
+      height: 56,
+      y: 88,
+      children: [
+        {
+          id: "date-label",
+          name: "Date label",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Execution date",
+          y: 88
+        },
+        {
+          id: "date-value",
+          name: "Date value",
+          nodeType: "TEXT",
+          type: "text",
+          text: "2026-04-02",
+          y: 116
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createIssue693CustomerProfileForGeneratorTests(),
+    formHandlingMode: "react_hook_form",
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+
+  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
+  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
+  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
+  assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"h5"\}/);
+  assert.match(screenContent, /<CustomerIbanInput/);
+  assert.match(screenContent, /<CustomerDatePicker/);
+  assert.match(
+    screenContent,
+    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/
+  );
 });
