@@ -563,7 +563,21 @@ export interface ValidatedDesignIR {
 }
 
 export interface IRValidationError {
-  readonly code: "IR_EMPTY_SCREENS" | "IR_INVALID_SCREEN" | "IR_MISSING_TOKENS" | "IR_MISSING_SOURCE_NAME" | "IR_INVALID_APP_SHELL" | "IR_APP_SHELL_MISSING_SOURCE_SCREEN" | "IR_APP_SHELL_MISSING_SCREEN";
+  readonly code:
+    | "IR_EMPTY_SCREENS"
+    | "IR_INVALID_SCREEN"
+    | "IR_MISSING_TOKENS"
+    | "IR_MISSING_SOURCE_NAME"
+    | "IR_INVALID_APP_SHELL"
+    | "IR_INVALID_SCREEN_APP_SHELL"
+    | "IR_APP_SHELL_MISSING_SOURCE_SCREEN"
+    | "IR_APP_SHELL_MISSING_SCREEN"
+    | "IR_APP_SHELL_EMPTY_SHELL_NODES"
+    | "IR_APP_SHELL_INVALID_SHELL_NODE"
+    | "IR_SCREEN_APP_SHELL_MISSING_DEFINITION"
+    | "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH"
+    | "IR_SCREEN_APP_SHELL_EMPTY_CONTENT"
+    | "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE";
   readonly message: string;
 }
 
@@ -578,6 +592,7 @@ export type IRValidationResult =
  * - `screens` is a non-empty array where every screen has `id`, `name`, and `children`
  * - `tokens` has a valid palette with `primary` and `background` colours
  * - `tokens.typography` is present and non-empty
+ * - optional app-shell declarations and screen references are internally consistent
  */
 export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   const errors: IRValidationError[] = [];
@@ -619,28 +634,124 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     });
   }
 
+  const screenById = new Map<string, ScreenIR>();
+  if (Array.isArray(raw.screens)) {
+    for (const screen of raw.screens) {
+      if (!screen.id || !Array.isArray(screen.children)) {
+        continue;
+      }
+      screenById.set(screen.id, screen);
+    }
+  }
+  const screenIdSet = new Set(screenById.keys());
+  const appShellById = new Map<string, AppShellIR>();
+
   if (Array.isArray(raw.appShells)) {
-    const screenIdSet = new Set(raw.screens.map((s) => s.id));
     for (let i = 0; i < raw.appShells.length; i++) {
       const appShell = raw.appShells[i];
-      if (!appShell || !appShell.id || !appShell.sourceScreenId || !Array.isArray(appShell.screenIds)) {
+      if (
+        !appShell ||
+        !appShell.id ||
+        !appShell.sourceScreenId ||
+        !Array.isArray(appShell.screenIds) ||
+        !Array.isArray(appShell.shellNodeIds)
+      ) {
         errors.push({
           code: "IR_INVALID_APP_SHELL",
-          message: `DesignIR.appShells[${i}] must have id, sourceScreenId, and screenIds array.`
+          message: `DesignIR.appShells[${i}] must have id, sourceScreenId, screenIds array, and shellNodeIds array.`
         });
         continue;
       }
+
+      appShellById.set(appShell.id, appShell);
+
       if (!screenIdSet.has(appShell.sourceScreenId)) {
         errors.push({
           code: "IR_APP_SHELL_MISSING_SOURCE_SCREEN",
           message: `DesignIR.appShells[${i}].sourceScreenId '${appShell.sourceScreenId}' does not reference an existing screen.`
         });
       }
+
       for (const screenId of appShell.screenIds) {
         if (!screenIdSet.has(screenId)) {
           errors.push({
             code: "IR_APP_SHELL_MISSING_SCREEN",
             message: `DesignIR.appShells[${i}].screenIds references '${screenId}' which does not exist in screens.`
+          });
+        }
+      }
+
+      if (appShell.shellNodeIds.length === 0) {
+        errors.push({
+          code: "IR_APP_SHELL_EMPTY_SHELL_NODES",
+          message: `DesignIR.appShells[${i}].shellNodeIds must include at least one top-level source screen node id.`
+        });
+      } else {
+        const sourceScreen = screenById.get(appShell.sourceScreenId);
+        if (sourceScreen) {
+          const sourceTopLevelNodeIds = new Set(sourceScreen.children.map((child) => child.id));
+          for (const shellNodeId of appShell.shellNodeIds) {
+            if (!sourceTopLevelNodeIds.has(shellNodeId)) {
+              errors.push({
+                code: "IR_APP_SHELL_INVALID_SHELL_NODE",
+                message:
+                  `DesignIR.appShells[${i}].shellNodeIds references '${shellNodeId}' ` +
+                  `which is not a top-level node of source screen '${appShell.sourceScreenId}'.`
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(raw.screens)) {
+    for (let i = 0; i < raw.screens.length; i++) {
+      const screen = raw.screens[i];
+      if (!screen || !screen.id || !Array.isArray(screen.children) || !screen.appShell) {
+        continue;
+      }
+
+      const { appShell } = screen;
+      if (!appShell.id || !Array.isArray(appShell.contentNodeIds)) {
+        errors.push({
+          code: "IR_INVALID_SCREEN_APP_SHELL",
+          message: `DesignIR.screens[${i}].appShell must have id and contentNodeIds array.`
+        });
+        continue;
+      }
+
+      const declaredAppShell = appShellById.get(appShell.id);
+      if (!declaredAppShell) {
+        errors.push({
+          code: "IR_SCREEN_APP_SHELL_MISSING_DEFINITION",
+          message: `DesignIR.screens[${i}].appShell.id '${appShell.id}' does not reference a declared appShell.`
+        });
+      } else if (!declaredAppShell.screenIds.includes(screen.id)) {
+        errors.push({
+          code: "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH",
+          message:
+            `DesignIR.screens[${i}].appShell.id '${appShell.id}' does not include screen '${screen.id}' ` +
+            "in its screenIds."
+        });
+      }
+
+      if (appShell.contentNodeIds.length === 0) {
+        errors.push({
+          code: "IR_SCREEN_APP_SHELL_EMPTY_CONTENT",
+          message: `DesignIR.screens[${i}].appShell.contentNodeIds must include at least one top-level content node id.`
+        });
+        continue;
+      }
+
+      const topLevelNodeIds = new Set(screen.children.map((child) => child.id));
+      for (const contentNodeId of appShell.contentNodeIds) {
+        if (!topLevelNodeIds.has(contentNodeId)) {
+          errors.push({
+            code: "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE",
+            message:
+              `DesignIR.screens[${i}].appShell.contentNodeIds references '${contentNodeId}' ` +
+              `which is not a top-level node of screen '${screen.id}'.`
           });
         }
       }
