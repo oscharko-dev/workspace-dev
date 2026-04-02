@@ -965,6 +965,7 @@ export interface RenderContext {
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
   currentFormGroupId?: string | undefined;
+  usesDatePicker?: boolean | undefined;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {

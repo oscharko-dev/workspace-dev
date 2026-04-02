@@ -270,10 +270,16 @@ const EXPLICIT_BOARD_COMPONENT_DESCRIPTORS: readonly ExplicitBoardComponentDescr
     wordPatterns: [/\bstack(?:\d+)?\b/i]
   },
   {
+    canonicalName: "DynamicTypography",
+    type: "text",
+    exactPatterns: [/^dynamic\s*typography$/i, /^dynamictypography$/i],
+    wordPatterns: [/\bdynamic[-_\s]*typography\b/i]
+  },
+  {
     canonicalName: "Typography",
     type: "text",
-    exactPatterns: [/^typography$/i, /^dynamic\s+typography$/i],
-    wordPatterns: [/\btypography\b/i, /\bdynamic\s+typography\b/i]
+    exactPatterns: [/^typography$/i],
+    wordPatterns: [/\btypography\b/i]
   },
   {
     canonicalName: "AppBar",
