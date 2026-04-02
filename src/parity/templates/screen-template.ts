@@ -538,11 +538,18 @@ export const renderSemanticAccordion = (
   parent: VirtualParent,
   context: RenderContext
 ): string => {
+  const accordionSignals = [
+    element.name,
+    element.semanticType,
+    ...Object.entries(element.variantMapping?.properties ?? {}).flatMap(([key, value]) => [key, value])
+  ]
+    .join(" ")
+    .toLowerCase();
   const indent = "  ".repeat(depth);
   const accordionModel = registerInteractiveAccordion({
     context,
     element,
-    defaultExpanded: true
+    defaultExpanded: accordionSignals.includes("collapsed") ? false : true
   });
   const summaryRoot = findFirstByName(element, "muibuttonbaseroot") ?? element.children?.[0] ?? element;
   const summaryContent = findFirstByName(summaryRoot, "accordionsummarycontent") ?? summaryRoot;
@@ -3539,6 +3546,7 @@ export const runElementPreDispatchStrategies = ({
 export const elementRenderStrategies: Partial<Record<ScreenElementIR["type"], ElementRenderStrategy>> = {
   text: ({ element, depth, parent, context }) =>
     isTextElement(element) ? renderText(element, depth, parent, context) : renderContainer(element, depth, parent, context),
+  accordion: ({ element, depth, parent, context }) => renderSemanticAccordion(element, depth, parent, context),
   input: ({ element, depth, parent, context }) => renderSemanticInput(element, depth, parent, context),
   select: ({ element, depth, parent, context }) => renderSelectElement(element, depth, parent, context),
   button: ({ element, depth, parent, context }) => renderButton(element, depth, parent, context),

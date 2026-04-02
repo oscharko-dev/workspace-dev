@@ -12,11 +12,13 @@ import {
   renderChip,
   renderCssGridLayout,
   renderDialog,
+  renderSemanticAccordion,
   renderPaper,
   renderProgress,
   renderSelectionControl,
   renderSelectElement,
   renderSemanticInput,
+  resolveElementRenderStrategy,
   renderSimpleFlexContainerAsStack,
   renderStack,
   renderStepper,
@@ -308,6 +310,49 @@ test("renderButton upgrades composite button surfaces to cards", () => {
 
   assert.match(rendered, /<Card/);
   assert.match(rendered, /<CardContent>/);
+});
+
+test("accordion render strategy dispatches directly and respects collapsed board state", () => {
+  const context = createRenderContext();
+  const element = makeNode({
+    id: "loan-accordion",
+    type: "accordion",
+    name: "Accordion, State=Collapsed",
+    semanticType: "Accordion",
+    variantMapping: {
+      properties: {
+        State: "Collapsed"
+      },
+      muiProps: {}
+    },
+    children: [
+      makeNode({
+        id: "loan-accordion-summary",
+        type: "container",
+        name: "AccordionSummaryContent",
+        children: [makeText({ id: "loan-accordion-summary-text", text: "Details" })]
+      }),
+      makeNode({
+        id: "loan-accordion-details",
+        type: "container",
+        name: "CollapseWrapper",
+        children: [makeText({ id: "loan-accordion-details-text", text: "Hidden content" })]
+      })
+    ]
+  });
+
+  const rendered = resolveElementRenderStrategy("accordion")({
+    element,
+    depth: 1,
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered, renderSemanticAccordion(element, 1, rootParent, context));
+  assert.match(rendered ?? "", /<Accordion/);
+  assert.match(rendered ?? "", /AccordionSummary/);
+  assert.match(rendered ?? "", /AccordionDetails/);
+  assert.equal(context.accordions[0]?.defaultExpanded, false);
 });
 
 test("renderCard renders media, actions, and navigation handlers", () => {
