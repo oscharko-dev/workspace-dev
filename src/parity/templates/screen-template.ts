@@ -5398,6 +5398,13 @@ export interface FallbackScreenFileInput {
   disallowedStyledRootMuiComponents?: ReadonlySet<string>;
 }
 
+export interface AppShellFileInput extends FallbackScreenFileInput {}
+
+export interface WrappedFallbackScreenFileInput extends FallbackScreenFileInput {
+  appShellComponentName: string;
+  appShellImportPath: string;
+}
+
 export interface PreparedFallbackScreenModel {
   screen: ScreenIR;
   componentName: string;
@@ -5438,6 +5445,7 @@ export interface FallbackRenderState {
   hasTextInputField: boolean;
   containerMaxWidth: string;
   screenContainerSx: string;
+  contentContainerSx: string;
   formGroups: FormGroupAssignment[];
 }
 
@@ -5744,6 +5752,10 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
       spacingBase: renderContext.spacingBase
     })
   ]);
+  const contentContainerSx = sxString([
+    ["position", literal("relative")],
+    ["width", literal("100%")]
+  ]);
 
   return {
     renderContext,
@@ -5754,6 +5766,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     hasTextInputField,
     containerMaxWidth,
     screenContainerSx,
+    contentContainerSx,
     formGroups
   };
 };
@@ -6062,6 +6075,75 @@ const ${dialogCloseHandlerVar} = (): void => {
   };
 };
 
+const EMPTY_SCREEN_PLACEHOLDER = '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>';
+
+const wrapContentWithProviders = ({
+  baseContent,
+  patternContextFileSpec,
+  formContextFileSpec,
+  renderContext
+}: {
+  baseContent: string;
+  patternContextFileSpec: PatternContextFileSpec | undefined;
+  formContextFileSpec: FormContextFileSpec | undefined;
+  renderContext: RenderContext;
+}): {
+  wrappedContent: string;
+  hasContextProviders: boolean;
+  needsDatePickerFallbackProvider: boolean;
+} => {
+  const hasDatePickerProvider = Boolean(renderContext.usesDatePickerProvider && renderContext.datePickerProvider);
+  const needsDatePickerFallbackProvider = Boolean(renderContext.usesDatePicker) && !hasDatePickerProvider;
+  const hasContextProviders =
+    Boolean(patternContextFileSpec) || Boolean(formContextFileSpec) || hasDatePickerProvider || needsDatePickerFallbackProvider;
+  let wrappedContent = baseContent;
+  if (hasDatePickerProvider && renderContext.datePickerProvider && renderContext.datePickerProviderResolvedImports) {
+    const providerProps = [
+      ...Object.entries(renderContext.datePickerProvider.props).map(([propName, value]) =>
+        `${propName}={${typeof value === "string" ? literal(value) : JSON.stringify(value)}}`
+      ),
+      ...(renderContext.datePickerProvider.adapter
+        ? [
+            `${renderContext.datePickerProvider.adapter.propName}={${renderContext.datePickerProviderResolvedImports.adapterLocalName ?? renderContext.datePickerProvider.adapter.localName}}`
+          ]
+        : [])
+    ].join(" ");
+    wrappedContent = `      <${renderContext.datePickerProviderResolvedImports.providerLocalName}${providerProps ? ` ${providerProps}` : ""}>
+${wrappedContent}
+      </${renderContext.datePickerProviderResolvedImports.providerLocalName}>`;
+  }
+  if (formContextFileSpec) {
+    wrappedContent = `      <${formContextFileSpec.providerName}>
+${wrappedContent}
+      </${formContextFileSpec.providerName}>`;
+  }
+  if (patternContextFileSpec) {
+    wrappedContent = `      <${patternContextFileSpec.providerName} initialState={patternContextInitialState}>
+${wrappedContent}
+      </${patternContextFileSpec.providerName}>`;
+  }
+  if (needsDatePickerFallbackProvider) {
+    wrappedContent = `      <LocalizationProvider dateAdapter={AdapterDateFns}>
+${wrappedContent}
+      </LocalizationProvider>`;
+  }
+
+  return {
+    wrappedContent,
+    hasContextProviders,
+    needsDatePickerFallbackProvider
+  };
+};
+
+const buildDatePickerImportBlock = ({ needsDatePickerFallbackProvider }: { needsDatePickerFallbackProvider: boolean }): string => {
+  return needsDatePickerFallbackProvider
+    ? `import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+`
+    : "";
+};
+
 export const composeFallbackScreenModule = ({
   prepared,
   renderState,
@@ -6101,45 +6183,17 @@ ${[navigationHookBlock, stateBlock]
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
     <Container id="main-content" maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
-${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+${rendered || EMPTY_SCREEN_PLACEHOLDER}
     </Container>
   );
 }`;
-  // --- DatePicker provider wiring (issue #693) ---
-  const hasDatePickerProvider = Boolean(renderContext.usesDatePickerProvider && renderContext.datePickerProvider);
-  const needsDatePickerFallbackProvider = Boolean(renderContext.usesDatePicker) && !hasDatePickerProvider;
-  const hasContextProviders = Boolean(patternContextFileSpec) || Boolean(formContextFileSpec) || hasDatePickerProvider || needsDatePickerFallbackProvider;
-  let wrappedScreenContent = `      <${contentFunctionName} />`;
-  if (hasDatePickerProvider && renderContext.datePickerProvider && renderContext.datePickerProviderResolvedImports) {
-    const providerProps = [
-      ...Object.entries(renderContext.datePickerProvider.props).map(([propName, value]) =>
-        `${propName}={${typeof value === "string" ? literal(value) : JSON.stringify(value)}}`
-      ),
-      ...(renderContext.datePickerProvider.adapter
-        ? [
-            `${renderContext.datePickerProvider.adapter.propName}={${renderContext.datePickerProviderResolvedImports.adapterLocalName ?? renderContext.datePickerProvider.adapter.localName}}`
-          ]
-        : [])
-    ].join(" ");
-    wrappedScreenContent = `      <${renderContext.datePickerProviderResolvedImports.providerLocalName}${providerProps ? ` ${providerProps}` : ""}>
-${wrappedScreenContent}
-      </${renderContext.datePickerProviderResolvedImports.providerLocalName}>`;
-  }
-  if (formContextFileSpec) {
-    wrappedScreenContent = `      <${formContextFileSpec.providerName}>
-${wrappedScreenContent}
-      </${formContextFileSpec.providerName}>`;
-  }
-  if (patternContextFileSpec) {
-    wrappedScreenContent = `      <${patternContextFileSpec.providerName} initialState={patternContextInitialState}>
-${wrappedScreenContent}
-      </${patternContextFileSpec.providerName}>`;
-  }
-  if (needsDatePickerFallbackProvider) {
-    wrappedScreenContent = `      <LocalizationProvider dateAdapter={AdapterDateFns}>
-${wrappedScreenContent}
-      </LocalizationProvider>`;
-  }
+  const { wrappedContent: wrappedScreenContent, hasContextProviders, needsDatePickerFallbackProvider } =
+    wrapContentWithProviders({
+      baseContent: `      <${contentFunctionName} />`,
+      patternContextFileSpec,
+      formContextFileSpec,
+      renderContext
+    });
   const screenExportSource = hasContextProviders
     ? `${contentFunctionSource}
 
@@ -6154,16 +6208,11 @@ ${[navigationHookBlock, stateBlock]
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
     <Container id="main-content" maxWidth="${containerMaxWidth}" role="main"${containerFormProps} sx={{ ${screenContainerSx} }}>
-${rendered || '      <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>'}
+${rendered || EMPTY_SCREEN_PLACEHOLDER}
     </Container>
   );
 }`;
-  const datePickerImportBlock = needsDatePickerFallbackProvider
-    ? `import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
-`
-    : "";
+  const datePickerImportBlock = buildDatePickerImportBlock({ needsDatePickerFallbackProvider });
   const screenContent = `${truncationComment}${reactImportBlock}${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
 ${datePickerImportBlock}${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
 ${patternContextInitialStateDeclaration}${screenExportSource}
@@ -6224,6 +6273,230 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
     renderState,
     dependencies
   });
+  for (const generatedFile of [...result.componentFiles, ...result.contextFiles]) {
+    if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
+      continue;
+    }
+    validateGeneratedSourceFile({
+      filePath: generatedFile.path,
+      content: generatedFile.content,
+      context: {
+        screenName: prepared.screen.name
+      }
+    });
+  }
+  return result;
+};
+
+export const appShellFile = (input: AppShellFileInput): FallbackScreenFileResult => {
+  const prepared = prepareFallbackScreenModel(input);
+  const renderState = buildFallbackRenderState({ prepared });
+  const dependencies = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  const { componentName, filePath, truncationComment, extractionPlan, simplificationStats } = prepared;
+  const { renderContext, rendered, containerMaxWidth, screenContainerSx } = renderState;
+  const {
+    formContextFileSpec,
+    formContextFileSpecs,
+    patternContextFileSpec,
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  } = dependencies;
+
+  const propsName = `${componentName}Props`;
+  const contentFunctionName = `${componentName}Content`;
+  const shellBody = rendered.length > 0 ? `${rendered}\n      {children}` : "      {children}";
+  const contentFunctionSource = `export interface ${propsName} {
+  children: ReactNode;
+}
+
+function ${contentFunctionName}({ children }: Readonly<${propsName}>) {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container id="app-shell" maxWidth="${containerMaxWidth}" sx={{ ${screenContainerSx} }}>
+${shellBody}
+    </Container>
+  );
+}`;
+  const { wrappedContent: wrappedShellContent, needsDatePickerFallbackProvider } = wrapContentWithProviders({
+    baseContent: `      <${contentFunctionName}>{props.children}</${contentFunctionName}>`,
+    patternContextFileSpec,
+    formContextFileSpec,
+    renderContext
+  });
+  const datePickerImportBlock = buildDatePickerImportBlock({ needsDatePickerFallbackProvider });
+  const shellContent = `${truncationComment}${reactImportBlock}import type { ReactNode } from "react";
+${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+${datePickerImportBlock}${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
+${patternContextInitialStateDeclaration}${contentFunctionSource}
+
+export default function ${componentName}(props: Readonly<${propsName}>) {
+  return (
+${wrappedShellContent}
+  );
+}
+`;
+  const optimizedShellContent = extractSharedSxConstantsFromScreenContent(shellContent);
+  validateGeneratedSourceFile({
+    filePath,
+    content: optimizedShellContent,
+    context: {
+      screenName: prepared.screen.name
+    }
+  });
+  const contextFiles: GeneratedFile[] = [
+    ...extractionPlan.contextFiles,
+    ...(formContextFileSpec ? [formContextFileSpec.file] : []),
+    ...(formContextFileSpecs ? formContextFileSpecs.map((spec) => spec.file) : [])
+  ];
+  const result: FallbackScreenFileResult = {
+    file: {
+      path: filePath,
+      content: optimizedShellContent
+    },
+    prototypeNavigationRenderedCount: renderContext.prototypeNavigationRenderedCount,
+    simplificationStats,
+    usedMappingNodeIds: renderContext.usedMappingNodeIds,
+    mappingWarnings: renderContext.mappingWarnings,
+    iconWarnings: renderContext.iconWarnings ?? [],
+    accessibilityWarnings: renderContext.accessibilityWarnings,
+    componentFiles: extractionPlan.componentFiles,
+    contextFiles,
+    testFiles: []
+  };
+  for (const generatedFile of [...result.componentFiles, ...result.contextFiles]) {
+    if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
+      continue;
+    }
+    validateGeneratedSourceFile({
+      filePath: generatedFile.path,
+      content: generatedFile.content,
+      context: {
+        screenName: prepared.screen.name
+      }
+    });
+  }
+  return result;
+};
+
+export const wrappedFallbackScreenFile = (input: WrappedFallbackScreenFileInput): FallbackScreenFileResult => {
+  const prepared = prepareFallbackScreenModel(input);
+  const renderState = buildFallbackRenderState({ prepared });
+  const dependencies = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  const { componentName, filePath, truncationComment, extractionPlan, simplifiedChildren, simplificationStats } = prepared;
+  const { renderContext, rendered, contentContainerSx } = renderState;
+  const {
+    formContextFileSpec,
+    formContextFileSpecs,
+    patternContextFileSpec,
+    patternContextInitialStateDeclaration,
+    navigationHookBlock,
+    stateBlock,
+    containerFormProps,
+    reactImportBlock,
+    reactHookFormImport,
+    zodImportBlock,
+    reactRouterImport,
+    selectChangeEventTypeImport,
+    uniqueMuiImports,
+    iconImports,
+    mappedImports,
+    extractedComponentImports,
+    patternContextImport,
+    formContextImport
+  } = dependencies;
+
+  const contentFunctionName = `${componentName}ScreenContent`;
+  const contentFunctionSource = `function ${contentFunctionName}() {
+${[navigationHookBlock, stateBlock]
+  .filter((chunk) => chunk.length > 0)
+  .map((chunk) => `${indentBlock(chunk, 2)}\n`)
+  .join("")}  return (
+    <Container id="main-content" maxWidth={false} disableGutters role="main"${containerFormProps} sx={{ ${contentContainerSx} }}>
+${rendered || EMPTY_SCREEN_PLACEHOLDER}
+    </Container>
+  );
+}`;
+  const { wrappedContent: wrappedScreenContent, needsDatePickerFallbackProvider } = wrapContentWithProviders({
+    baseContent: `      <${input.appShellComponentName}>
+        <${contentFunctionName} />
+      </${input.appShellComponentName}>`,
+    patternContextFileSpec,
+    formContextFileSpec,
+    renderContext
+  });
+  const datePickerImportBlock = buildDatePickerImportBlock({ needsDatePickerFallbackProvider });
+  const screenContent = `${truncationComment}${reactImportBlock}${reactHookFormImport}${zodImportBlock}${reactRouterImport}${selectChangeEventTypeImport}import { ${uniqueMuiImports.join(", ")} } from "@mui/material";
+import ${input.appShellComponentName} from "${input.appShellImportPath}";
+${datePickerImportBlock}${iconImports ? `${iconImports}\n` : ""}${mappedImports ? `${mappedImports}\n` : ""}${extractedComponentImports ? `${extractedComponentImports}\n` : ""}${patternContextImport ? `${patternContextImport}\n` : ""}${formContextImport ? `${formContextImport}\n` : ""}
+${patternContextInitialStateDeclaration}${contentFunctionSource}
+
+export default function ${componentName}Screen() {
+  return (
+${wrappedScreenContent}
+  );
+}
+`;
+  const optimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
+  validateGeneratedSourceFile({
+    filePath,
+    content: optimizedScreenContent,
+    context: {
+      screenName: prepared.screen.name
+    }
+  });
+  const screenTestPlan = buildScreenTestTargetPlan({
+    roots: simplifiedChildren,
+    renderedOutput: rendered,
+    buttons: renderContext.buttons,
+    fields: renderContext.fields
+  });
+  const testFiles: GeneratedFile[] = [
+    buildScreenUnitTestFile({
+      componentName,
+      screenFilePath: filePath,
+      plan: screenTestPlan
+    })
+  ];
+  const contextFiles: GeneratedFile[] = [
+    ...extractionPlan.contextFiles,
+    ...(formContextFileSpec ? [formContextFileSpec.file] : []),
+    ...(formContextFileSpecs ? formContextFileSpecs.map((spec) => spec.file) : [])
+  ];
+  const result: FallbackScreenFileResult = {
+    file: {
+      path: filePath,
+      content: optimizedScreenContent
+    },
+    prototypeNavigationRenderedCount: renderContext.prototypeNavigationRenderedCount,
+    simplificationStats,
+    usedMappingNodeIds: renderContext.usedMappingNodeIds,
+    mappingWarnings: renderContext.mappingWarnings,
+    iconWarnings: renderContext.iconWarnings ?? [],
+    accessibilityWarnings: renderContext.accessibilityWarnings,
+    componentFiles: extractionPlan.componentFiles,
+    contextFiles,
+    testFiles
+  };
   for (const generatedFile of [...result.componentFiles, ...result.contextFiles]) {
     if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
       continue;

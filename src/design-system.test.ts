@@ -497,6 +497,32 @@ export const PromoPattern1 = () => <Button>Buy</Button>;
   assert.equal(transformed.includes("@mui/material"), false);
 });
 
+test("applyDesignSystemMappingsToGeneratedTsx transforms AppShell component files", () => {
+  const transformed = applyDesignSystemMappingsToGeneratedTsx({
+    filePath: "src/components/AppShell1.tsx",
+    content: `import { Button, Container } from "@mui/material";
+
+export default function AppShell1() {
+  return (
+    <Container>
+      <Button>Open</Button>
+    </Container>
+  );
+}
+`,
+    config: {
+      library: "@acme/ui",
+      mappings: {
+        Button: { component: "PrimaryButton" }
+      }
+    }
+  });
+
+  assert.match(transformed, /import \{ PrimaryButton \} from "@acme\/ui";/);
+  assert.match(transformed, /import \{ Container \} from "@mui\/material";/);
+  assert.match(transformed, /<PrimaryButton>Open<\/PrimaryButton>/);
+});
+
 test("applyDesignSystemMappingsToGeneratedTsx skips namespace and default MUI imports (#674)", () => {
   const namespaceContent = `import * as MUI from "@mui/material";
 export const Checkout = () => <MUI.Button>Click</MUI.Button>;

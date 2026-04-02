@@ -1,0 +1,1255 @@
+{
+  "sourceName": "Variant Shell Signals Board",
+  "screens": [
+    {
+      "id": "1:63230",
+      "name": "ID-003.5 Brutto + Betriebsmittel, alle Cluster eingeklappt",
+      "layoutMode": "VERTICAL",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "1:63230-header",
+          "name": "Header",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 0,
+          "y": 0,
+          "width": 1336,
+          "height": 128,
+          "children": [
+            {
+              "id": "1:63230-title",
+              "name": "Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Bedarfsermittlung Investitionskredit",
+              "x": 32,
+              "y": 24,
+              "width": 520,
+              "height": 36
+            },
+            {
+              "id": "1:63230-mode",
+              "name": "Mode",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Brutto",
+              "x": 32,
+              "y": 72,
+              "width": 160,
+              "height": 24
+            }
+          ]
+        },
+        {
+          "id": "1:63230-body",
+          "name": "Form Body",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 24,
+          "y": 152,
+          "width": 1288,
+          "height": 2178,
+          "children": [
+            {
+              "id": "1:63230-card-1",
+              "name": "Card / Summary",
+              "nodeType": "INSTANCE",
+              "semanticType": "Card",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 32,
+              "y": 176,
+              "width": 1240,
+              "height": 192
+            },
+            {
+              "id": "1:63230-accordion-1",
+              "name": "Accordion, State=Collapsed",
+              "nodeType": "INSTANCE",
+              "semanticType": "Accordion",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "state": "Collapsed"
+                },
+                "muiProps": {}
+              },
+              "type": "accordion",
+              "x": 32,
+              "y": 392,
+              "width": 1240,
+              "height": 320,
+              "children": [
+                {
+                  "id": "1:63230-accordion-card-a",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 48,
+                  "y": 432,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:63230-accordion-card-b",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 48,
+                  "y": 576,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:63230-accordion-card-c",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 48,
+                  "y": 720,
+                  "width": 1180,
+                  "height": 128
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1336,
+      "height": 2354,
+      "appShell": {
+        "id": "id-003-1-fehlermeldungen-5",
+        "contentNodeIds": [
+          "1:63230-body"
+        ]
+      }
+    },
+    {
+      "id": "1:64644",
+      "name": "ID-003.4 Netto + Betriebsmittel, alle Cluster expanded",
+      "layoutMode": "VERTICAL",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "1:64644-header",
+          "name": "Header",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 1400,
+          "y": 0,
+          "width": 1336,
+          "height": 128,
+          "children": [
+            {
+              "id": "1:64644-title",
+              "name": "Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Bedarfsermittlung Investitionskredit",
+              "x": 1432,
+              "y": 24,
+              "width": 520,
+              "height": 36
+            },
+            {
+              "id": "1:64644-mode",
+              "name": "Mode",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Netto",
+              "x": 1432,
+              "y": 72,
+              "width": 160,
+              "height": 24
+            }
+          ]
+        },
+        {
+          "id": "1:64644-body",
+          "name": "Form Body",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 1424,
+          "y": 152,
+          "width": 1288,
+          "height": 3542,
+          "children": [
+            {
+              "id": "1:64644-card-1",
+              "name": "Card / Summary",
+              "nodeType": "INSTANCE",
+              "semanticType": "Card",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 1432,
+              "y": 176,
+              "width": 1240,
+              "height": 192
+            },
+            {
+              "id": "1:64644-accordion-1",
+              "name": "Accordion, State=Expanded",
+              "nodeType": "INSTANCE",
+              "semanticType": "Accordion",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "state": "Expanded"
+                },
+                "muiProps": {}
+              },
+              "type": "accordion",
+              "x": 1432,
+              "y": 392,
+              "width": 1240,
+              "height": 680,
+              "children": [
+                {
+                  "id": "1:64644-accordion-card-a",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 1448,
+                  "y": 432,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:64644-accordion-card-b",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 1448,
+                  "y": 576,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:64644-accordion-card-c",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 1448,
+                  "y": 720,
+                  "width": 1180,
+                  "height": 128
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1336,
+      "height": 3718,
+      "appShell": {
+        "id": "id-003-1-fehlermeldungen-5",
+        "contentNodeIds": [
+          "1:64644-body"
+        ]
+      }
+    },
+    {
+      "id": "1:66050",
+      "name": "ID-003.3 Netto + Betriebsmittel, alle Cluster eingeklappt",
+      "layoutMode": "VERTICAL",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "1:66050-header",
+          "name": "Header",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 2800,
+          "y": 0,
+          "width": 1336,
+          "height": 128,
+          "children": [
+            {
+              "id": "1:66050-title",
+              "name": "Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Bedarfsermittlung Investitionskredit",
+              "x": 2832,
+              "y": 24,
+              "width": 520,
+              "height": 36
+            },
+            {
+              "id": "1:66050-mode",
+              "name": "Mode",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Netto",
+              "x": 2832,
+              "y": 72,
+              "width": 160,
+              "height": 24
+            }
+          ]
+        },
+        {
+          "id": "1:66050-body",
+          "name": "Form Body",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 2824,
+          "y": 152,
+          "width": 1288,
+          "height": 2202,
+          "children": [
+            {
+              "id": "1:66050-card-1",
+              "name": "Card / Summary",
+              "nodeType": "INSTANCE",
+              "semanticType": "Card",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 2832,
+              "y": 176,
+              "width": 1240,
+              "height": 192
+            },
+            {
+              "id": "1:66050-accordion-1",
+              "name": "Accordion, State=Collapsed",
+              "nodeType": "INSTANCE",
+              "semanticType": "Accordion",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "state": "Collapsed"
+                },
+                "muiProps": {}
+              },
+              "type": "accordion",
+              "x": 2832,
+              "y": 392,
+              "width": 1240,
+              "height": 320,
+              "children": [
+                {
+                  "id": "1:66050-accordion-card-a",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 2848,
+                  "y": 432,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:66050-accordion-card-b",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 2848,
+                  "y": 576,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:66050-accordion-card-c",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 2848,
+                  "y": 720,
+                  "width": 1180,
+                  "height": 128
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1336,
+      "height": 2378,
+      "appShell": {
+        "id": "id-003-1-fehlermeldungen-5",
+        "contentNodeIds": [
+          "1:66050-body"
+        ]
+      }
+    },
+    {
+      "id": "1:67464",
+      "name": "ID-003.2 Netto + Betriebsmittel, alle Cluster eingeklappt v1",
+      "layoutMode": "VERTICAL",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "1:67464-header",
+          "name": "Header",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 4200,
+          "y": 0,
+          "width": 1336,
+          "height": 128,
+          "children": [
+            {
+              "id": "1:67464-title",
+              "name": "Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Bedarfsermittlung Investitionskredit",
+              "x": 4232,
+              "y": 24,
+              "width": 520,
+              "height": 36
+            },
+            {
+              "id": "1:67464-mode",
+              "name": "Mode",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Netto",
+              "x": 4232,
+              "y": 72,
+              "width": 160,
+              "height": 24
+            }
+          ]
+        },
+        {
+          "id": "1:67464-body",
+          "name": "Form Body",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 4224,
+          "y": 152,
+          "width": 1288,
+          "height": 1958,
+          "children": [
+            {
+              "id": "1:67464-card-1",
+              "name": "Card / Summary",
+              "nodeType": "INSTANCE",
+              "semanticType": "Card",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 4232,
+              "y": 176,
+              "width": 1240,
+              "height": 192
+            },
+            {
+              "id": "1:67464-accordion-1",
+              "name": "Accordion, State=Collapsed",
+              "nodeType": "INSTANCE",
+              "semanticType": "Accordion",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "state": "Collapsed"
+                },
+                "muiProps": {}
+              },
+              "type": "accordion",
+              "x": 4232,
+              "y": 392,
+              "width": 1240,
+              "height": 320,
+              "children": [
+                {
+                  "id": "1:67464-accordion-card-a",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 4248,
+                  "y": 432,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:67464-accordion-card-b",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 4248,
+                  "y": 576,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:67464-accordion-card-c",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 4248,
+                  "y": 720,
+                  "width": 1180,
+                  "height": 128
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1336,
+      "height": 2134,
+      "appShell": {
+        "id": "id-003-1-fehlermeldungen-5",
+        "contentNodeIds": [
+          "1:67464-body"
+        ]
+      }
+    },
+    {
+      "id": "1:68884",
+      "name": "ID-003.1 Fehlermeldungen",
+      "layoutMode": "VERTICAL",
+      "gap": 0,
+      "padding": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "children": [
+        {
+          "id": "1:68884-header",
+          "name": "Header",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "stack",
+          "x": 5600,
+          "y": 0,
+          "width": 1336,
+          "height": 128,
+          "children": [
+            {
+              "id": "1:68884-title",
+              "name": "Title",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Bedarfsermittlung Investitionskredit",
+              "x": 5632,
+              "y": 24,
+              "width": 520,
+              "height": 36
+            },
+            {
+              "id": "1:68884-mode",
+              "name": "Mode",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Netto",
+              "x": 5632,
+              "y": 72,
+              "width": 160,
+              "height": 24
+            }
+          ]
+        },
+        {
+          "id": "1:68884-body",
+          "name": "Form Body",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 5624,
+          "y": 152,
+          "width": 1288,
+          "height": 2230,
+          "children": [
+            {
+              "id": "1:68884-card-1",
+              "name": "Card / Summary",
+              "nodeType": "INSTANCE",
+              "semanticType": "Card",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 5632,
+              "y": 176,
+              "width": 1240,
+              "height": 192
+            },
+            {
+              "id": "1:68884-accordion-1",
+              "name": "Accordion, State=Collapsed",
+              "nodeType": "INSTANCE",
+              "semanticType": "Accordion",
+              "semanticSource": "board",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "state": "Collapsed"
+                },
+                "muiProps": {}
+              },
+              "type": "accordion",
+              "x": 5632,
+              "y": 392,
+              "width": 1240,
+              "height": 320,
+              "children": [
+                {
+                  "id": "1:68884-accordion-card-a",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 5648,
+                  "y": 432,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:68884-accordion-card-b",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 5648,
+                  "y": 576,
+                  "width": 1180,
+                  "height": 128
+                },
+                {
+                  "id": "1:68884-accordion-card-c",
+                  "name": "Card / Detail",
+                  "nodeType": "INSTANCE",
+                  "semanticType": "Card",
+                  "semanticSource": "board",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "card",
+                  "x": 5648,
+                  "y": 720,
+                  "width": 1180,
+                  "height": 128
+                }
+              ]
+            },
+            {
+              "id": "1:68884-error",
+              "name": "Error Text",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "variantMapping": {
+                "properties": {
+                  "variant": "text"
+                },
+                "muiProps": {
+                  "variant": "text"
+                }
+              },
+              "type": "text",
+              "text": "Fehler bei der Validierung",
+              "x": 5632,
+              "y": 2300,
+              "width": 420,
+              "height": 24
+            }
+          ]
+        }
+      ],
+      "width": 1336,
+      "height": 2406,
+      "appShell": {
+        "id": "id-003-1-fehlermeldungen-5",
+        "contentNodeIds": [
+          "1:68884-body"
+        ]
+      }
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#d4001a",
+      "secondary": "#5f8f2f",
+      "background": "#f7f8fb",
+      "text": "#1f2937",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#0288D1",
+      "divider": "#1f29371f",
+      "action": {
+        "active": "#1f29378a",
+        "hover": "#d4001a0a",
+        "selected": "#d4001a14",
+        "disabled": "#1f293742",
+        "disabledBackground": "#1f29371f",
+        "focus": "#d4001a1f"
+      }
+    },
+    "borderRadius": 8,
+    "spacingBase": 8,
+    "fontFamily": "Roboto, Arial, sans-serif",
+    "headingSize": 24,
+    "bodySize": 24,
+    "typography": {
+      "h1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "h2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "h3": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "h4": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "h5": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "h6": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "subtitle1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "subtitle2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "body1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 21,
+        "fontFamily": "Roboto"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 31,
+        "fontFamily": "Roboto",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 21,
+        "fontFamily": "Roboto"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 21,
+        "fontFamily": "Roboto",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "1:63230",
+        "screenName": "ID-003.5 Brutto + Betriebsmittel, alle Cluster eingeklappt",
+        "elements": 9
+      },
+      {
+        "screenId": "1:64644",
+        "screenName": "ID-003.4 Netto + Betriebsmittel, alle Cluster expanded",
+        "elements": 9
+      },
+      {
+        "screenId": "1:66050",
+        "screenName": "ID-003.3 Netto + Betriebsmittel, alle Cluster eingeklappt",
+        "elements": 9
+      },
+      {
+        "screenId": "1:67464",
+        "screenName": "ID-003.2 Netto + Betriebsmittel, alle Cluster eingeklappt v1",
+        "elements": 9
+      },
+      {
+        "screenId": "1:68884",
+        "screenName": "ID-003.1 Fehlermeldungen",
+        "elements": 10
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  },
+  "appShells": [
+    {
+      "id": "id-003-1-fehlermeldungen-5",
+      "sourceScreenId": "1:66050",
+      "screenIds": [
+        "1:63230",
+        "1:64644",
+        "1:66050",
+        "1:67464",
+        "1:68884"
+      ],
+      "shellNodeIds": [
+        "1:66050-header"
+      ],
+      "slotIndex": 1,
+      "signalIds": [
+        "id-003-1-fehlermeldungen-5-shell-1"
+      ]
+    }
+  ]
+}
