@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { figmaToDesignIrWithOptions } from "./ir.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 import type { DesignIR } from "./types.js";
 import {
   createDeterministicThemeFile,
@@ -28,13 +29,10 @@ const deriveIrOnce = async (): Promise<DesignIR> => {
   if (cachedIr) {
     return cachedIr;
   }
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
+  const figmaFile = await fetchParityFigmaFileOnce({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN
   });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  const figmaFile: unknown = await response.json();
   cachedIr = figmaToDesignIrWithOptions(figmaFile);
   return cachedIr;
 };

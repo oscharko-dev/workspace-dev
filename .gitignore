@@ -20,10 +20,11 @@ pnpm-debug.log*
 /FIGMA_GUIDE.md
 /FIGMA_LEITFADEN.md
 /FIGMA_LEITFADEN_V2.md
-CLAUDE.md
 docs/Checkliste und Anleitung.pdf
 /Glossar.md
 /REUSE.toml
 storybook-static/
 reference/storybook/storybook.evidence.json
 /PR-Wellen.md
+/CODEX.md
+/CLAUDE.md

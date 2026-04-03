@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { cleanFigmaForCodegen } from "../job-engine/figma-clean.js";
 import { buildFigmaAnalysis } from "./figma-analysis.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 
 const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? "";
 const FIGMA_ACCESS_TOKEN = process.env["FIGMA_ACCESS_TOKEN"] ?? "";
@@ -18,13 +19,10 @@ async function fetchLiveAnalysis() {
     return cachedAnalysis;
   }
 
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
-  });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  const raw = (await response.json()) as Parameters<typeof cleanFigmaForCodegen>[0]["file"];
+  const raw = (await fetchParityFigmaFileOnce({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN
+  })) as Parameters<typeof cleanFigmaForCodegen>[0]["file"];
   const cleaned = cleanFigmaForCodegen({ file: raw });
   cachedAnalysis = buildFigmaAnalysis({ file: cleaned.cleanedFile });
   return cachedAnalysis;

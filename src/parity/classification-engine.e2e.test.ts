@@ -4,9 +4,8 @@
 // ---------------------------------------------------------------------------
 import assert from "node:assert/strict";
 import test from "node:test";
-import os from "node:os";
 import { figmaToDesignIrWithOptions } from "./ir.js";
-import { fetchFigmaFile } from "../job-engine/figma-source.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 import type { ScreenElementIR } from "./types.js";
 import {
   NODE_CLASSIFICATION_RULES,
@@ -27,30 +26,11 @@ const skipBoardFamiliesReason =
     ? `Board-specific family assertions only apply to reference board ${REFERENCE_BOARD_KEY}`
     : undefined);
 
-let cachedFigmaFile: unknown;
-
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
-  if (cachedFigmaFile) {
-    return cachedFigmaFile;
-  }
-  const result = await fetchFigmaFile({
+  return await fetchParityFigmaFileOnce({
     fileKey: FIGMA_FILE_KEY,
-    accessToken: FIGMA_ACCESS_TOKEN,
-    timeoutMs: 45_000,
-    maxRetries: 5,
-    fetchImpl: fetch,
-    onLog: () => {},
-    bootstrapDepth: 5,
-    nodeBatchSize: 1,
-    nodeFetchConcurrency: 1,
-    adaptiveBatchingEnabled: false,
-    maxScreenCandidates: 1,
-    cacheEnabled: true,
-    cacheTtlMs: 15 * 60_000,
-    cacheDir: os.tmpdir()
+    accessToken: FIGMA_ACCESS_TOKEN
   });
-  cachedFigmaFile = result.file;
-  return cachedFigmaFile;
 };
 
 const collectAllElements = (children: ScreenElementIR[]): ScreenElementIR[] => {

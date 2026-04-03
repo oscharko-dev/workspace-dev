@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 import { createDeterministicScreenFile } from "./generator-core.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 
 const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? "xZkvYk9KOezMsi9LmPEFGX";
 const FIGMA_ACCESS_TOKEN = process.env["FIGMA_ACCESS_TOKEN"] ?? "";
@@ -14,20 +15,11 @@ const skipReason =
 // Match opening JSX <Stack ...> tags at line start, while tolerating '>' characters in quoted attrs.
 const STACK_OPEN_TAG_REGEX = /^\s*<Stack\b(?:"[^"]*"|'[^']*'|[^'"<>])*>/gm;
 
-let cachedFigmaFile: unknown;
-
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
-  if (cachedFigmaFile) {
-    return cachedFigmaFile;
-  }
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
+  return await fetchParityFigmaFileOnce({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN
   });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  cachedFigmaFile = await response.json();
-  return cachedFigmaFile;
 };
 
 test("E2E: generated screens use Stack components with direction and spacing props", { skip: skipReason }, async () => {
