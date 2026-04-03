@@ -1318,6 +1318,44 @@ test("createJobEngine rejects customerProfilePath that traverses outside the wor
   assert.match(status.error?.message ?? "", /resolves outside the workspace root/);
 });
 
+test("#698 createJobEngine rejects customerProfilePath containing a null byte", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-nullbyte-"));
+  const outputRoot = path.join(workspaceRoot, ".workspace-dev");
+  const figmaJsonPath = path.join(workspaceRoot, "figma.json");
+  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      workspaceRoot,
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath,
+    customerProfilePath: "profile\0.json"
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000
+  });
+  assert.equal(status.status, "failed");
+  assert.equal(status.error?.code, "E_CUSTOMER_PROFILE_LOAD_FAILED");
+  assert.match(status.error?.message ?? "", /null byte/);
+});
+
 test("createJobEngine defensively falls back invalid direct-submit generationLocale and emits deterministic warning log", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"));
   const payload = {

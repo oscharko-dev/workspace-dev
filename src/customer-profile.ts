@@ -12,6 +12,7 @@ const CUSTOMER_PROFILE_VERSION = 1 as const;
 const JS_IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
 const PROFILE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[\w.-]+\/)?[\w.-]+(?:\/[\w.-]+)*$/;
+const UNSAFE_VERSION_PATTERN = /^(?:git\+|git:|github:|file:|https?:|link:)/i;
 const SOURCE_IMPORT_PATTERN = /import\s+([^;]+?)\s+from\s+["']([^"']+)["'];?/g;
 const NAMED_IMPORT_CLAUSE_PATTERN = /\{([\s\S]*?)\}/;
 
@@ -456,6 +457,14 @@ const normalizeDependencyRecord = ({
         issues,
         path: `${path}.${rawName}`,
         message: "Dependency version must be a non-empty string."
+      });
+      continue;
+    }
+    if (UNSAFE_VERSION_PATTERN.test(version)) {
+      pushIssue({
+        issues,
+        path: `${path}.${rawName}`,
+        message: "Dependency version must be a semver range or dist-tag, not a URL or file path."
       });
       continue;
     }
