@@ -171,7 +171,11 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
   assert.ok(figmaJsonFile, "Completed customer-board live submission must emit a cleaned figma.json artifact.");
   const actualBundle = await buildCustomerBoardGoldenBundleFromFigmaInput({
     storybookBuildDir: liveEnvironment.storybookBuildDir,
-    figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>
+    figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>,
+    figmaLibrarySeed: {
+      fileKey: liveEnvironment.figmaFileKey,
+      accessToken: liveEnvironment.figmaAccessToken
+    }
   });
   await assertCustomerBoardBundlesEqual({
     actual: actualBundle,

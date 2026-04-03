@@ -131,7 +131,11 @@ const run = async (): Promise<void> => {
     assert.ok(figmaJsonFile, "Completed customer-board fixture refresh must emit a cleaned figma.json artifact.");
     const bundle = await buildCustomerBoardGoldenBundleFromFigmaInput({
       storybookBuildDir,
-      figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>
+      figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>,
+      figmaLibrarySeed: {
+        fileKey: figmaFileKey,
+        accessToken: figmaAccessToken
+      }
     });
 
     const fixtureRoot = getCustomerBoardFixtureRoot();

@@ -87,9 +87,11 @@ const createResolverFigmaAnalysis = ({
   }) as unknown as FigmaAnalysis;
 
 const createResolverComponentMatchReport = ({
-  includeSecondFamily = false
+  includeSecondFamily = false,
+  includeFigmaLibraryResolution = false
 }: {
   includeSecondFamily?: boolean;
+  includeFigmaLibraryResolution?: boolean;
 } = {}): ComponentMatchReportArtifact =>
   ({
     artifact: "component.match_report",
@@ -144,7 +146,25 @@ const createResolverComponentMatchReport = ({
           familyKey: "button-family",
           familyName: "Button",
           nodeCount: 1,
-          variantProperties: []
+          variantProperties: [],
+          ...(includeFigmaLibraryResolution
+            ? {
+                figmaLibraryResolution: {
+                  status: "resolved",
+                  resolutionSource: "cache",
+                  originFileKey: "library-file-key",
+                  canonicalFamilyName: "Button",
+                  canonicalFamilyNameSource: "published_component_set",
+                  issues: [],
+                  designLinks: [
+                    {
+                      fileKey: "library-file-key",
+                      nodeId: "button-node-1"
+                    }
+                  ]
+                }
+              }
+            : {})
         },
         match: {
           status: "matched",
@@ -198,7 +218,25 @@ const createResolverComponentMatchReport = ({
                 familyKey: "card-family",
                 familyName: "Card",
                 nodeCount: 1,
-                variantProperties: []
+                variantProperties: [],
+                ...(includeFigmaLibraryResolution
+                  ? {
+                      figmaLibraryResolution: {
+                        status: "resolved",
+                        resolutionSource: "cache",
+                        originFileKey: "library-file-key",
+                        canonicalFamilyName: "Card",
+                        canonicalFamilyNameSource: "published_component_set",
+                        issues: [],
+                        designLinks: [
+                          {
+                            fileKey: "library-file-key",
+                            nodeId: "card-node-1"
+                          }
+                        ]
+                      }
+                    }
+                  : {})
               },
               match: {
                 status: "matched",
@@ -249,37 +287,6 @@ const createResolverComponentMatchReport = ({
         : [])
     ]
   }) as unknown as ComponentMatchReportArtifact;
-
-const createResolverFigmaLibraryResolution = (): FigmaLibraryResolutionArtifact =>
-  ({
-    artifact: "figma.library_resolution",
-    version: 1,
-    figmaSourceMode: "rest",
-    fingerprint: "resolver-library-fingerprint",
-    summary: {
-      total: 1,
-      resolved: 1,
-      partial: 0,
-      error: 0,
-      cacheHit: 0,
-      offlineReused: 0
-    },
-    entries: [
-      {
-        status: "resolved",
-        resolutionSource: "local_catalog",
-        componentId: "1:100",
-        componentSetId: "1:200",
-        familyKey: "button-family",
-        heuristicFamilyName: "Button",
-        canonicalFamilyName: "Button",
-        canonicalFamilyNameSource: "analysis",
-        referringNodeIds: ["button-node-1"],
-        variantProperties: [],
-        originFileKey: "library-file-key"
-      }
-    ]
-  }) as FigmaLibraryResolutionArtifact;
 
 const createRule = (overrides: Partial<WorkspaceComponentMappingRule> = {}): WorkspaceComponentMappingRule => ({
   boardKey: "board-1",
@@ -436,8 +443,9 @@ test("resolveComponentMappingRules only matches figmaLibrary selectors when libr
     ],
     ir: createResolverIr(),
     figmaAnalysis: createResolverFigmaAnalysis(),
-    componentMatchReportArtifact: createResolverComponentMatchReport(),
-    figmaLibraryResolutionArtifact: createResolverFigmaLibraryResolution()
+    componentMatchReportArtifact: createResolverComponentMatchReport({
+      includeFigmaLibraryResolution: true
+    })
   });
   assert.equal(withLibraryResolution.componentMappings[0]?.nodeId, "button-node-1");
   assert.equal(withLibraryResolution.componentMappings[0]?.componentName, "LibraryButton");

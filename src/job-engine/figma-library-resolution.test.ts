@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -80,6 +80,134 @@ const createFile = (): FigmaFileResponse => ({
     children: []
   }
 });
+
+const createVariantMergeAnalysis = (): FigmaAnalysis =>
+  ({
+    ...createAnalysis(),
+    componentFamilies: [
+      {
+        ...createAnalysis().componentFamilies[0]!,
+        variantProperties: [
+          {
+            property: "Mode",
+            values: ["Standalone"]
+          }
+        ]
+      }
+    ]
+  }) as FigmaAnalysis;
+
+const createVariantMergeFile = (): FigmaFileResponse => ({
+  name: "Test Board",
+  lastModified: "2026-04-01T00:00:00Z",
+  components: {
+    "1:100": {
+      key: "cmp-key",
+      name: "Button/Primary, State=Pressed",
+      description: "Primary button",
+      componentSetId: "1:200",
+      remote: true
+    }
+  },
+  componentSets: {
+    "1:200": {
+      key: "set-key",
+      name: "Button, Size=Large, Tone=Warm",
+      description: "Button family",
+      remote: true
+    }
+  },
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: []
+  }
+});
+
+const createOverlappingAnalysis = (): FigmaAnalysis =>
+  ({
+    ...createAnalysis(),
+    componentFamilies: [
+      ...createAnalysis().componentFamilies,
+      {
+        familyKey: "badge-family",
+        familyName: "Badge",
+        componentIds: ["1:101"],
+        componentSetIds: ["1:201"],
+        referringNodeIds: ["instance-2"],
+        nodeCount: 1,
+        variantProperties: [
+          {
+            property: "Tone",
+            values: ["Secondary"]
+          }
+        ]
+      }
+    ],
+    externalComponents: [
+      ...createAnalysis().externalComponents,
+      {
+        componentId: "1:101",
+        componentSetId: "1:201",
+        familyKey: "badge-family",
+        familyName: "Badge",
+        referringNodeIds: ["instance-2"]
+      }
+    ]
+  }) as FigmaAnalysis;
+
+const createOverlappingFile = (): FigmaFileResponse => ({
+  name: "Test Board",
+  lastModified: "2026-04-01T00:00:00Z",
+  components: {
+    "1:100": {
+      key: "cmp-key",
+      name: "Button/Primary",
+      description: "Primary button",
+      componentSetId: "1:200",
+      remote: true
+    },
+    "1:101": {
+      key: "cmp-key-2",
+      name: "Badge/Secondary",
+      description: "Secondary badge",
+      componentSetId: "1:201",
+      remote: true
+    }
+  },
+  componentSets: {
+    "1:200": {
+      key: "set-key",
+      name: "Button",
+      description: "Button family",
+      remote: true
+    },
+    "1:201": {
+      key: "set-key-2",
+      name: "Badge",
+      description: "Badge family",
+      remote: true
+    }
+  },
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: []
+  }
+});
+
+const createLegacySeedAnalysis = (): FigmaAnalysis => createAnalysis();
+
+const createLegacySeedFile = (): FigmaFileResponse => createFile();
+
+const toVariantPropertyMap = (
+  properties: Array<{
+    property: string;
+    values: string[];
+  }>
+): Record<string, string[]> => {
+  return Object.fromEntries(properties.map((property) => [property.property, [...property.values].sort()]));
+};
 
 const createFetchImpl = ({
   responses,
@@ -164,11 +292,13 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   assert.equal(onlineArtifact.entries[0]?.canonicalFamilyName, "Button");
   assert.deepEqual(onlineArtifact.entries[0]?.variantProperties, [
     {
-      property: "State",
+      property: "state",
       values: ["Primary"]
     }
   ]);
   assert.equal(calls.length, 2);
+  const cachedAssetFiles = (await readdir(cacheDir)).filter((name) => name.startsWith("figma-library-resolution-asset-"));
+  assert.equal(cachedAssetFiles.length, 2);
 
   const offlineArtifact = await resolveFigmaLibraryResolutionArtifact({
     analysis: createAnalysis(),
@@ -190,6 +320,348 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   assert.equal(offlineArtifact.entries[0]?.canonicalFamilyName, "Button");
   assert.equal(offlineArtifact.entries[0]?.publishedComponent?.fileKey, "lib-file");
   assert.equal(offlineArtifact.entries[0]?.publishedComponentSet?.fileKey, "lib-file");
+});
+
+test("resolveFigmaLibraryResolutionArtifact reuses cached assets when only part of the key set overlaps", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-overlap-"));
+  const seededFetchCalls: string[] = [];
+  const seededFetchImpl = createFetchImpl({
+    calls: seededFetchCalls,
+    responses: {
+      "https://api.figma.com/v1/components/cmp-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "cmp-key",
+            file_key: "lib-file",
+            node_id: "10:20",
+            name: "Button/Primary"
+          }
+        }
+      },
+      "https://api.figma.com/v1/component_sets/set-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "set-key",
+            file_key: "lib-file",
+            node_id: "10:10",
+            name: "Button"
+          }
+        }
+      }
+    }
+  });
+
+  const seededArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl: seededFetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(seededArtifact);
+  assert.equal(seededFetchCalls.length, 2);
+
+  const overlappingArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createOverlappingAnalysis(),
+    file: createOverlappingFile(),
+    figmaSourceMode: "local_json",
+    cacheDir,
+    fetchImpl: async () => {
+      throw new Error("network should not be used in local_json mode");
+    },
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(overlappingArtifact);
+  assert.equal(overlappingArtifact.summary.total, 2);
+  assert.equal(overlappingArtifact.summary.resolved, 1);
+  assert.equal(overlappingArtifact.summary.partial, 1);
+  assert.equal(overlappingArtifact.summary.cacheHit, 1);
+  assert.equal(overlappingArtifact.summary.offlineReused, 1);
+  const resolvedEntry = overlappingArtifact.entries.find((entry) => entry.componentId === "1:100");
+  const partialEntry = overlappingArtifact.entries.find((entry) => entry.componentId === "1:101");
+  assert.equal(resolvedEntry?.resolutionSource, "cache");
+  assert.equal(resolvedEntry?.status, "resolved");
+  assert.equal(partialEntry?.resolutionSource, "local_catalog");
+  assert.equal(partialEntry?.status, "partial");
+  assert.deepEqual(partialEntry?.issues?.map((issue) => issue.code).sort(), [
+    "E_LIBRARY_CACHE_ENTRY_MISSING",
+    "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING",
+    "E_LIBRARY_OFFLINE_CACHE_MISS",
+    "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
+  ]);
+});
+
+test("resolveFigmaLibraryResolutionArtifact only persists successful live lookups for offline replay", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-success-only-"));
+  const fetchImpl = createFetchImpl({
+    calls: [],
+    responses: {
+      "https://api.figma.com/v1/components/cmp-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "cmp-key",
+            file_key: "lib-file",
+            node_id: "10:20",
+            name: "Button/Primary"
+          }
+        }
+      },
+      "https://api.figma.com/v1/component_sets/set-key": {
+        status: 403,
+        body: {
+          message: "Missing scope"
+        }
+      }
+    }
+  });
+
+  const liveArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(liveArtifact);
+  const cachedAssetFiles = (await readdir(cacheDir)).filter((name) => name.startsWith("figma-library-resolution-asset-"));
+  assert.equal(cachedAssetFiles.length, 1);
+
+  const offlineArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "local_json",
+    cacheDir,
+    fetchImpl: async () => {
+      throw new Error("network should not be used in local_json mode");
+    },
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(offlineArtifact);
+  assert.equal(offlineArtifact.summary.resolved, 0);
+  assert.equal(offlineArtifact.summary.partial, 1);
+  assert.equal(offlineArtifact.summary.cacheHit, 1);
+  assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
+  assert.deepEqual(
+    offlineArtifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
+    ["E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING", "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"]
+  );
+});
+
+test("resolveFigmaLibraryResolutionArtifact replays legacy fingerprint cache entries in local_json mode", async () => {
+  const seedCacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-legacy-seed-"));
+  const seedArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createLegacySeedAnalysis(),
+    file: createLegacySeedFile(),
+    figmaSourceMode: "rest",
+    cacheDir: seedCacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl: createFetchImpl({
+      calls: [],
+      responses: {
+        "https://api.figma.com/v1/components/cmp-key": {
+          status: 200,
+          body: {
+            meta: {
+              key: "cmp-key",
+              file_key: "lib-file",
+              node_id: "10:20",
+              name: "Button/Primary"
+            }
+          }
+        },
+        "https://api.figma.com/v1/component_sets/set-key": {
+          status: 200,
+          body: {
+            meta: {
+              key: "set-key",
+              file_key: "lib-file",
+              node_id: "10:10",
+              name: "Button"
+            }
+          }
+        }
+      }
+    }),
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(seedArtifact);
+
+  const legacyCacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-legacy-"));
+  const legacyCacheFilePath = path.join(legacyCacheDir, `figma-library-resolution-${seedArtifact.fingerprint}.json`);
+  await writeFile(
+    legacyCacheFilePath,
+    `${JSON.stringify(
+      {
+        version: 1,
+        fingerprint: seedArtifact.fingerprint,
+        cachedAt: Date.now(),
+        componentKeys: ["cmp-key"],
+        componentSetKeys: ["set-key"],
+        componentResults: {
+          "cmp-key": {
+            status: "ok",
+            meta: seedArtifact.entries[0]?.publishedComponent
+          }
+        },
+        componentSetResults: {
+          "set-key": {
+            status: "ok",
+            meta: seedArtifact.entries[0]?.publishedComponentSet
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const offlineArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createLegacySeedAnalysis(),
+    file: createLegacySeedFile(),
+    figmaSourceMode: "local_json",
+    cacheDir: legacyCacheDir,
+    fetchImpl: async () => {
+      throw new Error("network should not be used in local_json mode");
+    },
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(offlineArtifact);
+  assert.equal(offlineArtifact.summary.resolved, 1);
+  assert.equal(offlineArtifact.summary.partial, 0);
+  assert.equal(offlineArtifact.summary.cacheHit, 1);
+  assert.equal(offlineArtifact.summary.offlineReused, 1);
+  assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
+  assert.equal(offlineArtifact.entries[0]?.canonicalFamilyName, "Button");
+});
+
+test("resolveFigmaLibraryResolutionArtifact merges published, analysis, and local variant hints", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-variant-"));
+  const fetchImpl = createFetchImpl({
+    calls: [],
+    responses: {
+      "https://api.figma.com/v1/components/cmp-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "cmp-key",
+            file_key: "lib-file",
+            node_id: "10:20",
+            name: "Button/Primary, State=Pressed"
+          }
+        }
+      },
+      "https://api.figma.com/v1/component_sets/set-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "set-key",
+            file_key: "lib-file",
+            node_id: "10:10",
+            name: "Button, Size=Large, Tone=Warm"
+          }
+        }
+      }
+    }
+  });
+
+  const liveArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createVariantMergeAnalysis(),
+    file: {
+      ...createVariantMergeFile(),
+      components: {
+        "1:100": {
+          key: "cmp-key",
+          name: "Button/Primary, Density=Compact",
+          description: "Primary button",
+          componentSetId: "1:200",
+          remote: true
+        }
+      },
+      componentSets: {
+        "1:200": {
+          key: "set-key",
+          name: "Button, Tone=Local",
+          description: "Button family",
+          remote: true
+        }
+      }
+    },
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(liveArtifact);
+  const variantPropertyMap = toVariantPropertyMap(liveArtifact.entries[0]?.variantProperties ?? []);
+  assert.deepEqual(variantPropertyMap, {
+    density: ["Compact"],
+    mode: ["Standalone"],
+    size: ["Large"],
+    state: ["Pressed"],
+    tone: ["Local", "Warm"]
+  });
+
+  const offlineArtifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createVariantMergeAnalysis(),
+    file: {
+      ...createVariantMergeFile(),
+      components: {
+        "1:100": {
+          key: "cmp-key",
+          name: "Button/Primary, Density=Compact",
+          description: "Primary button",
+          componentSetId: "1:200",
+          remote: true
+        }
+      },
+      componentSets: {
+        "1:200": {
+          key: "set-key",
+          name: "Button, Tone=Local",
+          description: "Button family",
+          remote: true
+        }
+      }
+    },
+    figmaSourceMode: "local_json",
+    cacheDir,
+    fetchImpl: async () => {
+      throw new Error("network should not be used in local_json mode");
+    },
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(offlineArtifact);
+  assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
+  assert.deepEqual(toVariantPropertyMap(offlineArtifact.entries[0]?.variantProperties ?? []), variantPropertyMap);
 });
 
 test("resolveFigmaLibraryResolutionArtifact reports partial local_json results when no cache is available", async () => {
@@ -216,7 +688,12 @@ test("resolveFigmaLibraryResolutionArtifact reports partial local_json results w
   assert.equal(artifact.entries[0]?.canonicalFamilyName, "Button");
   assert.deepEqual(
     artifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
-    ["E_LIBRARY_OFFLINE_CACHE_MISS", "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"]
+    [
+      "E_LIBRARY_CACHE_ENTRY_MISSING",
+      "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING",
+      "E_LIBRARY_OFFLINE_CACHE_MISS",
+      "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
+    ]
   );
 });
 

@@ -72,6 +72,25 @@ interface ValidationArtifactStatusSummary {
   filePath?: string;
 }
 
+interface ValidationFigmaLibraryResolutionSummary {
+  total: number;
+  resolved: number;
+  partial: number;
+  error: number;
+  cacheHit: number;
+  offlineReused: number;
+  bySource: {
+    live: number;
+    cache: number;
+    localCatalog: number;
+  };
+  entriesWithOriginFileKey: number;
+}
+
+interface ValidationFigmaLibraryResolutionStatusSummary extends ValidationArtifactStatusSummary {
+  summary?: ValidationFigmaLibraryResolutionSummary;
+}
+
 interface ValidationStorybookArtifactSet {
   catalog: ValidationArtifactStatusSummary;
   evidence: ValidationArtifactStatusSummary;
@@ -151,7 +170,7 @@ interface ValidationSummaryArtifact {
       };
   mapping: {
     status: "ok" | "warn" | "failed" | "partial" | "not_available";
-    figmaLibraryResolution: ValidationArtifactStatusSummary;
+    figmaLibraryResolution: ValidationFigmaLibraryResolutionStatusSummary;
     componentMatchReport: ValidationArtifactStatusSummary;
     customerProfileMatch:
       | {
@@ -436,6 +455,61 @@ const parseComponentMatchReportArtifact = ({
   return parsed as ComponentMatchReportArtifact;
 };
 
+const parseFigmaLibraryResolutionSummary = ({
+  input
+}: {
+  input: string;
+}): ValidationFigmaLibraryResolutionSummary => {
+  const parsed: unknown = JSON.parse(input);
+  if (!isRecord(parsed) || parsed.artifact !== "figma.library_resolution" || !Array.isArray(parsed.entries) || !isRecord(parsed.summary)) {
+    throw new Error("Expected a figma.library_resolution artifact with entries and summary.");
+  }
+  const summary = parsed.summary;
+
+  const numericField = (
+    key: "total" | "resolved" | "partial" | "error" | "cacheHit" | "offlineReused"
+  ): number => {
+    const value = summary[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  };
+
+  let live = 0;
+  let cache = 0;
+  let localCatalog = 0;
+  let entriesWithOriginFileKey = 0;
+  for (const entry of parsed.entries) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const resolutionSource = typeof entry.resolutionSource === "string" ? entry.resolutionSource : "";
+    if (resolutionSource === "live") {
+      live += 1;
+    } else if (resolutionSource === "cache") {
+      cache += 1;
+    } else if (resolutionSource === "local_catalog") {
+      localCatalog += 1;
+    }
+    if (typeof entry.originFileKey === "string" && entry.originFileKey.trim().length > 0) {
+      entriesWithOriginFileKey += 1;
+    }
+  }
+
+  return {
+    total: numericField("total"),
+    resolved: numericField("resolved"),
+    partial: numericField("partial"),
+    error: numericField("error"),
+    cacheHit: numericField("cacheHit"),
+    offlineReused: numericField("offlineReused"),
+    bySource: {
+      live,
+      cache,
+      localCatalog
+    },
+    entriesWithOriginFileKey
+  };
+};
+
 const parseStorybookEvidenceArtifact = ({
   input
 }: {
@@ -534,7 +608,43 @@ const toArtifactStatusSummary = (filePath: string | undefined): ValidationArtifa
       }
     : {
         status: "not_available"
-      };
+    };
+};
+
+const toFigmaLibraryResolutionStatusSummary = async ({
+  filePath
+}: {
+  filePath: string | undefined;
+}): Promise<ValidationFigmaLibraryResolutionStatusSummary> => {
+  if (!filePath) {
+    return {
+      status: "not_available"
+    };
+  }
+
+  let input: string;
+  try {
+    input = await readFile(filePath, "utf8");
+  } catch {
+    return {
+      status: "missing"
+    };
+  }
+
+  try {
+    return {
+      status: "ok",
+      filePath,
+      summary: parseFigmaLibraryResolutionSummary({
+        input
+      })
+    };
+  } catch {
+    return {
+      status: "ok",
+      filePath
+    };
+  }
 };
 
 const persistValidationSummaryArtifacts = async ({
@@ -585,6 +695,9 @@ const buildValidationSummaryArtifact = async ({
   const storybookComponentsFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
   const figmaLibraryResolutionFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
   const componentMatchReportFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+  const figmaLibraryResolutionSummary = await toFigmaLibraryResolutionStatusSummary({
+    filePath: figmaLibraryResolutionFile
+  });
 
   const requestedStorybookStaticDir = context.requestedStorybookStaticDir;
   const toRequiredStorybookArtifactStatus = (filePath: string | undefined): ValidationArtifactStatusSummary => {
@@ -639,7 +752,7 @@ const buildValidationSummaryArtifact = async ({
         : figmaLibraryResolutionFile
           ? "partial"
           : "not_available",
-    figmaLibraryResolution: toArtifactStatusSummary(figmaLibraryResolutionFile),
+    figmaLibraryResolution: figmaLibraryResolutionSummary,
     componentMatchReport: toArtifactStatusSummary(componentMatchReportFile),
     customerProfileMatch: customerProfileMatchSummary
       ? {

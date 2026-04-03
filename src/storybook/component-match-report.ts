@@ -27,6 +27,9 @@ import type {
   ComponentMatchConfidence,
   ComponentMatchEvidenceClass,
   ComponentMatchFallbackReason,
+  ComponentMatchReportFigmaLibraryDesignLink,
+  ComponentMatchReportFigmaLibraryIssue,
+  ComponentMatchReportFigmaLibraryResolution,
   ComponentMatchReportIconFallbackWrapperImport,
   ComponentMatchReportIconResolution,
   ComponentMatchReportIconResolutionRecord,
@@ -116,8 +119,9 @@ interface ParsedFigmaLink {
 interface AggregatedFigmaResolution {
   canonicalFamilyName?: string;
   variantProperties: ComponentMatchReportVariantProperty[];
-  designLinks: ParsedFigmaLink[];
+  designLinks: ComponentMatchReportFigmaLibraryDesignLink[];
   fallbackReasons: ComponentMatchFallbackReason[];
+  figmaLibraryResolution?: ComponentMatchReportFigmaLibraryResolution;
 }
 
 interface ResolvedFigmaFamily {
@@ -332,6 +336,49 @@ const toSortedVariantProperties = (
     .sort((left, right) => left.property.localeCompare(right.property));
 };
 
+const compareFigmaLibraryResolutionIssues = (
+  left: ComponentMatchReportFigmaLibraryIssue,
+  right: ComponentMatchReportFigmaLibraryIssue
+): number => {
+  const byCode = left.code.localeCompare(right.code);
+  if (byCode !== 0) {
+    return byCode;
+  }
+  const byScope = left.scope.localeCompare(right.scope);
+  if (byScope !== 0) {
+    return byScope;
+  }
+  const byMessage = left.message.localeCompare(right.message);
+  if (byMessage !== 0) {
+    return byMessage;
+  }
+  const leftRetriable = left.retriable === true ? 1 : 0;
+  const rightRetriable = right.retriable === true ? 1 : 0;
+  return leftRetriable - rightRetriable;
+};
+
+const toUniqueFigmaLibraryResolutionIssues = (
+  issues: readonly ComponentMatchReportFigmaLibraryIssue[]
+): ComponentMatchReportFigmaLibraryIssue[] => {
+  const byKey = new Map<string, ComponentMatchReportFigmaLibraryIssue>();
+  for (const issue of issues) {
+    byKey.set(`${issue.code}:${issue.scope}:${issue.message}:${issue.retriable === true ? "1" : "0"}`, {
+      code: issue.code,
+      message: issue.message,
+      scope: issue.scope,
+      ...(issue.retriable !== undefined ? { retriable: issue.retriable } : {})
+    });
+  }
+  return [...byKey.values()].sort(compareFigmaLibraryResolutionIssues);
+};
+
+const toFigmaLibraryDesignLink = (asset: { fileKey: string; nodeId: string }): ComponentMatchReportFigmaLibraryDesignLink => {
+  return {
+    fileKey: asset.fileKey,
+    nodeId: asset.nodeId
+  };
+};
+
 const parseFigmaLink = (value: string | undefined): ParsedFigmaLink | undefined => {
   if (!value) {
     return undefined;
@@ -500,20 +547,36 @@ const inferFigmaResolution = ({
       fallbackReasons: ["used_figma_analysis_family_name"]
     };
   }
-  const designLinkMap = new Map<string, ParsedFigmaLink>();
+  const designLinkMap = new Map<string, ComponentMatchReportFigmaLibraryDesignLink>();
   for (const entry of sortedEntries) {
     for (const asset of [entry.publishedComponentSet, entry.publishedComponent]) {
       if (!asset) {
         continue;
       }
       const normalizedNodeId = normalizeNodeId(asset.nodeId);
-      const parsedLink: ParsedFigmaLink = {
+      const parsedLink = toFigmaLibraryDesignLink({
         fileKey: asset.fileKey,
-        ...(normalizedNodeId ? { nodeId: normalizedNodeId } : {})
-      };
+        nodeId: normalizedNodeId ?? asset.nodeId
+      });
       designLinkMap.set(`${parsedLink.fileKey}:${parsedLink.nodeId ?? "*"}`, parsedLink);
     }
   }
+
+  const figmaLibraryResolution: ComponentMatchReportFigmaLibraryResolution = {
+    status: selectedEntry.status,
+    resolutionSource: selectedEntry.resolutionSource,
+    ...(selectedEntry.originFileKey ? { originFileKey: selectedEntry.originFileKey } : {}),
+    canonicalFamilyName: selectedEntry.canonicalFamilyName,
+    canonicalFamilyNameSource: selectedEntry.canonicalFamilyNameSource,
+    issues: toUniqueFigmaLibraryResolutionIssues(sortedEntries.flatMap((entry) => entry.issues ?? [])),
+    designLinks: [...designLinkMap.values()].sort((left, right) => {
+      const byFileKey = left.fileKey.localeCompare(right.fileKey);
+      if (byFileKey !== 0) {
+        return byFileKey;
+      }
+      return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
+    })
+  };
 
   const canonicalFamilyName =
     selectedEntry.canonicalFamilyNameSource === "analysis"
@@ -527,14 +590,9 @@ const inferFigmaResolution = ({
   return {
     ...(canonicalFamilyName ? { canonicalFamilyName } : {}),
     variantProperties: toSortedVariantProperties(sortedEntries.flatMap((entry) => entry.variantProperties)),
-    designLinks: [...designLinkMap.values()].sort((left, right) => {
-      const byFileKey = left.fileKey.localeCompare(right.fileKey);
-      if (byFileKey !== 0) {
-        return byFileKey;
-      }
-      return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
-    }),
-    fallbackReasons
+    designLinks: figmaLibraryResolution.designLinks,
+    fallbackReasons,
+    figmaLibraryResolution
   };
 };
 
@@ -566,7 +624,8 @@ const buildResolvedFigmaFamily = ({
       familyName: family.familyName,
       nodeCount: family.nodeCount,
       variantProperties,
-      ...(canonicalFamilyName !== family.familyName ? { canonicalFamilyName } : {})
+      ...(canonicalFamilyName !== family.familyName ? { canonicalFamilyName } : {}),
+      ...(resolution.figmaLibraryResolution ? { figmaLibraryResolution: resolution.figmaLibraryResolution } : {})
     },
     semanticBucket: toSemanticBucket([canonicalFamilyName, family.familyName]),
     canonicalName: canonicalFamilyName,

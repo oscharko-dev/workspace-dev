@@ -6,6 +6,7 @@ import type {
   FigmaAnalysisComponentFamily,
   FigmaAnalysisVariantProperty
 } from "../parity/figma-analysis.js";
+import { extractVariantNameProperties, normalizeVariantKey, normalizeVariantValue } from "../parity/ir-variants.js";
 import { getErrorMessage } from "./errors.js";
 import { computeContentHash } from "./ir-cache.js";
 import type {
@@ -16,6 +17,7 @@ import type {
 
 const LIBRARY_RESOLUTION_CACHE_VERSION = 1;
 const LIBRARY_RESOLUTION_CACHE_PREFIX = "figma-library-resolution-";
+const LIBRARY_RESOLUTION_ASSET_CACHE_PREFIX = "figma-library-resolution-asset-";
 const MAX_LIBRARY_RESOLUTION_CACHE_ENTRIES = 50;
 const FIGMA_API_BASE_URL = "https://api.figma.com/v1";
 const LIBRARY_RESOLUTION_FETCH_CONCURRENCY = 6;
@@ -54,6 +56,7 @@ type FigmaLibraryLookupResult = FigmaLibraryLookupSuccess | FigmaLibraryLookupEr
 type FigmaLibraryResolutionStatus = "resolved" | "partial" | "error";
 type FigmaLibraryResolutionSource = "live" | "cache" | "local_catalog";
 type FigmaLibraryFamilyNameSource = "published_component_set" | "published_component" | "analysis";
+type FigmaLibraryResolutionAssetKind = "component" | "component_set";
 
 export interface FigmaLibraryResolutionEntry {
   status: FigmaLibraryResolutionStatus;
@@ -104,6 +107,14 @@ interface FigmaLibraryResolutionCacheEntry {
   componentSetKeys: string[];
   componentResults: Record<string, FigmaLibraryLookupResult>;
   componentSetResults: Record<string, FigmaLibraryLookupResult>;
+}
+
+interface FigmaLibraryResolutionAssetCacheEntry {
+  version: number;
+  cachedAt: number;
+  assetKind: FigmaLibraryResolutionAssetKind;
+  key: string;
+  result: FigmaLibraryLookupSuccess;
 }
 
 interface ResolveFigmaLibraryResolutionArtifactInput {
@@ -213,6 +224,10 @@ const cloneLookupResult = (value: FigmaLibraryLookupResult): FigmaLibraryLookupR
   };
 };
 
+const isLookupSuccess = (value: FigmaLibraryLookupResult): value is FigmaLibraryLookupSuccess => {
+  return value.status === "ok";
+};
+
 const cloneLookupResultMap = (
   value: Record<string, FigmaLibraryLookupResult>
 ): Record<string, FigmaLibraryLookupResult> => {
@@ -223,7 +238,7 @@ const cloneLookupResultMap = (
   return output;
 };
 
-const toCacheFilePath = ({
+const toLegacyCacheFilePath = ({
   cacheDir,
   fingerprint
 }: {
@@ -231,6 +246,31 @@ const toCacheFilePath = ({
   fingerprint: string;
 }): string => {
   return path.join(cacheDir, `${LIBRARY_RESOLUTION_CACHE_PREFIX}${fingerprint}.json`);
+};
+
+const toAssetCacheFingerprint = ({
+  assetKind,
+  key
+}: {
+  assetKind: FigmaLibraryResolutionAssetKind;
+  key: string;
+}): string => {
+  return computeContentHash({
+    assetKind,
+    key
+  });
+};
+
+const toAssetCacheFilePath = ({
+  cacheDir,
+  assetKind,
+  key
+}: {
+  cacheDir: string;
+  assetKind: FigmaLibraryResolutionAssetKind;
+  key: string;
+}): string => {
+  return path.join(cacheDir, `${LIBRARY_RESOLUTION_ASSET_CACHE_PREFIX}${assetKind}-${toAssetCacheFingerprint({ assetKind, key })}.json`);
 };
 
 const toLookupIssue = ({
@@ -290,6 +330,32 @@ const normalizeLookupResult = (value: unknown): FigmaLibraryLookupResult | undef
     };
   }
   return undefined;
+};
+
+const normalizeAssetCacheEntry = (value: unknown): FigmaLibraryResolutionAssetCacheEntry | undefined => {
+  if (
+    !isRecord(value) ||
+    isFiniteNumber(value.version) === false ||
+    isFiniteNumber(value.cachedAt) === false ||
+    typeof value.assetKind !== "string" ||
+    (value.assetKind !== "component" && value.assetKind !== "component_set") ||
+    typeof value.key !== "string" ||
+    value.key.trim().length === 0 ||
+    !isRecord(value.result)
+  ) {
+    return undefined;
+  }
+  const result = normalizeLookupResult(value.result);
+  if (!result || result.status !== "ok") {
+    return undefined;
+  }
+  return {
+    version: value.version,
+    cachedAt: value.cachedAt,
+    assetKind: value.assetKind,
+    key: value.key,
+    result
+  };
 };
 
 const toLookupResultMap = (value: unknown): Record<string, FigmaLibraryLookupResult> | undefined => {
@@ -383,7 +449,7 @@ const toCacheEntry = (value: unknown): FigmaLibraryResolutionCacheEntry | undefi
   };
 };
 
-const loadCachedFigmaLibraryResolution = async ({
+const loadLegacyCachedFigmaLibraryResolution = async ({
   cacheDir,
   fingerprint,
   onLog
@@ -392,7 +458,7 @@ const loadCachedFigmaLibraryResolution = async ({
   fingerprint: string;
   onLog?: (message: string) => void;
 }): Promise<FigmaLibraryResolutionCacheEntry | undefined> => {
-  const cacheFilePath = toCacheFilePath({ cacheDir, fingerprint });
+  const cacheFilePath = toLegacyCacheFilePath({ cacheDir, fingerprint });
   let raw: string;
   try {
     raw = await readFile(cacheFilePath, "utf8");
@@ -437,6 +503,50 @@ const loadCachedFigmaLibraryResolution = async ({
   };
 };
 
+const loadCachedFigmaLibraryAsset = async ({
+  cacheDir,
+  assetKind,
+  key,
+  onLog
+}: {
+  cacheDir: string;
+  assetKind: FigmaLibraryResolutionAssetKind;
+  key: string;
+  onLog?: (message: string) => void;
+}): Promise<FigmaLibraryResolutionAssetCacheEntry | undefined> => {
+  const cacheFilePath = toAssetCacheFilePath({
+    cacheDir,
+    assetKind,
+    key
+  });
+  let raw: string;
+  try {
+    raw = await readFile(cacheFilePath, "utf8");
+  } catch {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    onLog?.(`Figma library resolution asset cache: corrupt entry ignored for ${assetKind} '${key}'.`);
+    return undefined;
+  }
+
+  const entry = normalizeAssetCacheEntry(parsed);
+  if (!entry) {
+    onLog?.(`Figma library resolution asset cache: invalid entry ignored for ${assetKind} '${key}'.`);
+    return undefined;
+  }
+  if (entry.assetKind !== assetKind || entry.key !== key || entry.version !== LIBRARY_RESOLUTION_CACHE_VERSION) {
+    onLog?.(`Figma library resolution asset cache: mismatched entry ignored for ${assetKind} '${key}'.`);
+    return undefined;
+  }
+  onLog?.(`Figma library resolution asset cache hit for ${assetKind} '${key}'.`);
+  return entry;
+};
+
 const evictLibraryResolutionCacheEntries = async ({
   cacheDir,
   onLog
@@ -451,7 +561,7 @@ const evictLibraryResolutionCacheEntries = async ({
     return;
   }
   const candidateNames = entries.filter(
-    (name) => name.startsWith(LIBRARY_RESOLUTION_CACHE_PREFIX) && name.endsWith(".json")
+    (name) => name.startsWith(LIBRARY_RESOLUTION_ASSET_CACHE_PREFIX) && name.endsWith(".json")
   );
   if (candidateNames.length <= MAX_LIBRARY_RESOLUTION_CACHE_ENTRIES) {
     return;
@@ -483,35 +593,33 @@ const evictLibraryResolutionCacheEntries = async ({
   }
 };
 
-const saveCachedFigmaLibraryResolution = async ({
+const saveCachedFigmaLibraryAsset = async ({
   cacheDir,
   entry,
   onLog
 }: {
   cacheDir: string;
-  entry: FigmaLibraryResolutionCacheEntry;
+  entry: FigmaLibraryResolutionAssetCacheEntry;
   onLog?: (message: string) => void;
 }): Promise<void> => {
-  const cacheFilePath = toCacheFilePath({ cacheDir, fingerprint: entry.fingerprint });
-  const serialized: FigmaLibraryResolutionCacheEntry = {
+  const cacheFilePath = toAssetCacheFilePath({
+    cacheDir,
+    assetKind: entry.assetKind,
+    key: entry.key
+  });
+  const serialized: FigmaLibraryResolutionAssetCacheEntry = {
     version: LIBRARY_RESOLUTION_CACHE_VERSION,
-    fingerprint: entry.fingerprint,
     cachedAt: Date.now(),
-    ...(entry.fileKey ? { fileKey: entry.fileKey } : {}),
-    ...(entry.lastModified ? { lastModified: entry.lastModified } : {}),
-    componentKeys: [...entry.componentKeys].sort(compareStrings),
-    componentSetKeys: [...entry.componentSetKeys].sort(compareStrings),
-    componentResults: cloneLookupResultMap(entry.componentResults),
-    componentSetResults: cloneLookupResultMap(entry.componentSetResults)
+    assetKind: entry.assetKind,
+    key: entry.key,
+    result: cloneLookupResult(entry.result) as FigmaLibraryLookupSuccess
   };
   try {
     await mkdir(cacheDir, { recursive: true });
     await writeFile(cacheFilePath, `${JSON.stringify(serialized, null, 2)}\n`, "utf8");
-    onLog?.(
-      `Figma library resolution cache write completed (components=${serialized.componentKeys.length}, componentSets=${serialized.componentSetKeys.length}).`
-    );
+    onLog?.(`Figma library resolution asset cache write completed for ${entry.assetKind} '${entry.key}'.`);
   } catch (error) {
-    onLog?.(`Figma library resolution cache write failed: ${getErrorMessage(error)}.`);
+    onLog?.(`Figma library resolution asset cache write failed for ${entry.assetKind} '${entry.key}': ${getErrorMessage(error)}.`);
     return;
   }
   try {
@@ -522,6 +630,39 @@ const saveCachedFigmaLibraryResolution = async ({
   } catch {
     // best effort eviction
   }
+};
+
+const loadLegacyCacheLookupResults = async ({
+  cacheDir,
+  fingerprint,
+  onLog
+}: {
+  cacheDir: string;
+  fingerprint: string;
+  onLog?: (message: string) => void;
+}): Promise<
+  | {
+      componentResults: Record<string, FigmaLibraryLookupResult>;
+      componentSetResults: Record<string, FigmaLibraryLookupResult>;
+    }
+  | undefined
+> => {
+  const legacyEntry = await loadLegacyCachedFigmaLibraryResolution({
+    cacheDir,
+    fingerprint,
+    ...(onLog ? { onLog } : {})
+  });
+  if (!legacyEntry) {
+    return undefined;
+  }
+  return {
+    componentResults: Object.fromEntries(
+      Object.entries(legacyEntry.componentResults).filter(([, result]) => result.status === "ok")
+    ),
+    componentSetResults: Object.fromEntries(
+      Object.entries(legacyEntry.componentSetResults).filter(([, result]) => result.status === "ok")
+    )
+  };
 };
 
 const mapWithConcurrency = async <TValue, TResult>({
@@ -562,6 +703,84 @@ const toCacheFingerprint = ({
     componentKeys: [...componentKeys].sort(compareStrings),
     componentSetKeys: [...componentSetKeys].sort(compareStrings)
   });
+};
+
+const mergeVariantProperties = ({
+  publishedComponentName,
+  publishedComponentSetName,
+  analysisVariantProperties,
+  localComponentName,
+  localComponentSetName
+}: {
+  publishedComponentName?: string | undefined;
+  publishedComponentSetName?: string | undefined;
+  analysisVariantProperties: FigmaAnalysisVariantProperty[];
+  localComponentName?: string | undefined;
+  localComponentSetName?: string | undefined;
+}): FigmaAnalysisVariantProperty[] => {
+  const variantsByProperty = new Map<string, Set<string>>();
+
+  const addProperty = (property: string | undefined, value: string | undefined): void => {
+    if (!property || !value) {
+      return;
+    }
+    const propertyName = normalizeVariantKey(property)?.trim();
+    const propertyValue = normalizeVariantValue(value).trim();
+    if (!propertyName || !propertyValue) {
+      return;
+    }
+    const values = variantsByProperty.get(propertyName) ?? new Set<string>();
+    values.add(propertyValue);
+    variantsByProperty.set(propertyName, values);
+  };
+
+  const addPropertyRecord = (property: string | undefined, value: string | undefined): void => {
+    if (!property || !value) {
+      return;
+    }
+    const normalizedProperty = normalizeVariantKey(property)?.trim();
+    const normalizedValue = normalizeVariantValue(value).trim();
+    if (!normalizedProperty || !normalizedValue) {
+      return;
+    }
+    const values = variantsByProperty.get(normalizedProperty) ?? new Set<string>();
+    values.add(normalizedValue);
+    variantsByProperty.set(normalizedProperty, values);
+  };
+
+  const addVariantRecord = (value: Record<string, string> | undefined): void => {
+    if (!value) {
+      return;
+    }
+    for (const [property, propertyValue] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
+      addPropertyRecord(property, propertyValue);
+    }
+  };
+
+  const addVariantArray = (value: FigmaAnalysisVariantProperty[] | undefined): void => {
+    if (!value) {
+      return;
+    }
+    for (const entry of [...value].sort((left, right) => left.property.localeCompare(right.property))) {
+      const values = [...entry.values].sort(compareStrings);
+      for (const variantValue of values) {
+        addProperty(entry.property, variantValue);
+      }
+    }
+  };
+
+  addVariantRecord(publishedComponentSetName ? extractVariantNameProperties(publishedComponentSetName) : undefined);
+  addVariantRecord(publishedComponentName ? extractVariantNameProperties(publishedComponentName) : undefined);
+  addVariantArray(analysisVariantProperties);
+  addVariantRecord(localComponentSetName ? extractVariantNameProperties(localComponentSetName) : undefined);
+  addVariantRecord(localComponentName ? extractVariantNameProperties(localComponentName) : undefined);
+
+  return [...variantsByProperty.entries()]
+    .map(([property, values]) => ({
+      property,
+      values: [...values].sort(compareStrings)
+    }))
+    .sort((left, right) => left.property.localeCompare(right.property));
 };
 
 const buildResolvedExternalComponents = ({
@@ -897,15 +1116,17 @@ const resolveLiveLookupResults = async ({
 const buildLibraryResolutionEntry = ({
   externalComponent,
   figmaSourceMode,
-  usedCache,
   componentResult,
-  componentSetResult
+  componentResultSource,
+  componentSetResult,
+  componentSetResultSource
 }: {
   externalComponent: ResolvedExternalComponentCatalogEntry;
   figmaSourceMode: WorkspaceFigmaSourceMode;
-  usedCache: boolean;
   componentResult?: FigmaLibraryLookupResult;
+  componentResultSource?: FigmaLibraryResolutionSource;
   componentSetResult?: FigmaLibraryLookupResult;
+  componentSetResultSource?: FigmaLibraryResolutionSource;
 }): FigmaLibraryResolutionEntry => {
   const issues: FigmaLibraryResolutionIssue[] = [];
 
@@ -933,7 +1154,7 @@ const buildLibraryResolutionEntry = ({
   if (componentSetResult?.status === "error") {
     issues.push(cloneIssue(componentSetResult.issue));
   }
-  if (usedCache && externalComponent.componentKey && !componentResult) {
+  if (figmaSourceMode === "local_json" && externalComponent.componentKey && !componentResult) {
     issues.push({
       code: "E_LIBRARY_CACHE_ENTRY_MISSING",
       message:
@@ -941,7 +1162,7 @@ const buildLibraryResolutionEntry = ({
       scope: "cache"
     });
   }
-  if (usedCache && externalComponent.componentSetKey && !componentSetResult) {
+  if (figmaSourceMode === "local_json" && externalComponent.componentSetKey && !componentSetResult) {
     issues.push({
       code: "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING",
       message:
@@ -950,8 +1171,7 @@ const buildLibraryResolutionEntry = ({
     });
   }
 
-  const isOfflineModeWithoutCache = figmaSourceMode === "local_json" && !usedCache;
-  if (isOfflineModeWithoutCache && externalComponent.componentKey) {
+  if (figmaSourceMode === "local_json" && externalComponent.componentKey && !componentResult) {
     issues.push({
       code: "E_LIBRARY_OFFLINE_CACHE_MISS",
       message:
@@ -959,7 +1179,7 @@ const buildLibraryResolutionEntry = ({
       scope: "cache"
     });
   }
-  if (isOfflineModeWithoutCache && externalComponent.componentSetKey) {
+  if (figmaSourceMode === "local_json" && externalComponent.componentSetKey && !componentSetResult) {
     issues.push({
       code: "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS",
       message:
@@ -977,9 +1197,22 @@ const buildLibraryResolutionEntry = ({
       ? "published_component"
       : "analysis";
 
+  const hasCacheHit = componentResultSource === "cache" || componentSetResultSource === "cache";
+  const resolutionSource: FigmaLibraryResolutionSource = hasCacheHit
+    ? "cache"
+    : figmaSourceMode === "local_json"
+      ? "local_catalog"
+      : "live";
+
   let status: FigmaLibraryResolutionStatus;
-  if (isOfflineModeWithoutCache) {
-    status = externalComponent.componentKey ? "partial" : "error";
+  if (figmaSourceMode === "local_json") {
+    if (!externalComponent.componentKey) {
+      status = "error";
+    } else if (!componentResult || (externalComponent.componentSetKey && !componentSetResult)) {
+      status = "partial";
+    } else {
+      status = "resolved";
+    }
   } else if (!externalComponent.componentKey || !publishedComponent) {
     status = "error";
   } else if (
@@ -991,12 +1224,14 @@ const buildLibraryResolutionEntry = ({
     status = "resolved";
   }
 
-  const resolutionSource: FigmaLibraryResolutionSource = usedCache
-    ? "cache"
-    : figmaSourceMode === "local_json"
-      ? "local_catalog"
-      : "live";
   const originFileKey = publishedComponentSet?.fileKey ?? publishedComponent?.fileKey;
+  const variantProperties = mergeVariantProperties({
+    analysisVariantProperties: externalComponent.variantProperties,
+    ...(publishedComponent?.name ? { publishedComponentName: publishedComponent.name } : {}),
+    ...(publishedComponentSet?.name ? { publishedComponentSetName: publishedComponentSet.name } : {}),
+    ...(externalComponent.localComponent?.name ? { localComponentName: externalComponent.localComponent.name } : {}),
+    ...(externalComponent.localComponentSet?.name ? { localComponentSetName: externalComponent.localComponentSet.name } : {})
+  });
 
   return {
     status,
@@ -1010,10 +1245,7 @@ const buildLibraryResolutionEntry = ({
     canonicalFamilyName,
     canonicalFamilyNameSource,
     referringNodeIds: [...externalComponent.referringNodeIds],
-    variantProperties: externalComponent.variantProperties.map((property) => ({
-      property: property.property,
-      values: [...property.values]
-    })),
+    variantProperties,
     ...(originFileKey ? { originFileKey } : {}),
     ...(publishedComponent ? { publishedComponent: clonePublishedAsset(publishedComponent) } : {}),
     ...(publishedComponentSet ? { publishedComponentSet: clonePublishedAsset(publishedComponentSet) } : {}),
@@ -1055,21 +1287,70 @@ export const resolveFigmaLibraryResolutionArtifact = async ({
     componentSetKeys: componentSetKeys.map((entry) => `componentSet:${entry}`)
   });
 
-  let usedCache = false;
   let componentResults: Record<string, FigmaLibraryLookupResult> = {};
   let componentSetResults: Record<string, FigmaLibraryLookupResult> = {};
+  let componentResultSources: Record<string, FigmaLibraryResolutionSource> = {};
+  let componentSetResultSources: Record<string, FigmaLibraryResolutionSource> = {};
 
   if (figmaSourceMode === "local_json") {
-    const cacheEntry = await loadCachedFigmaLibraryResolution({
+    const componentCacheEntries = await Promise.all(
+      componentKeys.map(async (componentKey) => {
+        const cacheEntry = await loadCachedFigmaLibraryAsset({
+          cacheDir,
+          assetKind: "component",
+          key: componentKey,
+          ...(onLog ? { onLog } : {})
+        });
+        return cacheEntry ? ([componentKey, cacheEntry.result] as const) : undefined;
+      })
+    );
+    const componentSetCacheEntries = await Promise.all(
+      componentSetKeys.map(async (componentSetKey) => {
+        const cacheEntry = await loadCachedFigmaLibraryAsset({
+          cacheDir,
+          assetKind: "component_set",
+          key: componentSetKey,
+          ...(onLog ? { onLog } : {})
+        });
+        return cacheEntry ? ([componentSetKey, cacheEntry.result] as const) : undefined;
+      })
+    );
+    componentResults = {};
+    for (const entry of componentCacheEntries) {
+      if (entry) {
+        componentResults[entry[0]] = entry[1];
+      }
+    }
+    componentSetResults = {};
+    for (const entry of componentSetCacheEntries) {
+      if (entry) {
+        componentSetResults[entry[0]] = entry[1];
+      }
+    }
+
+    const legacyCache = await loadLegacyCacheLookupResults({
       cacheDir,
       fingerprint,
       ...(onLog ? { onLog } : {})
     });
-    if (cacheEntry) {
-      usedCache = true;
-      componentResults = cloneLookupResultMap(cacheEntry.componentResults);
-      componentSetResults = cloneLookupResultMap(cacheEntry.componentSetResults);
+    if (legacyCache) {
+      for (const [key, result] of Object.entries(legacyCache.componentResults)) {
+        if (!componentResults[key]) {
+          componentResults[key] = result;
+        }
+      }
+      for (const [key, result] of Object.entries(legacyCache.componentSetResults)) {
+        if (!componentSetResults[key]) {
+          componentSetResults[key] = result;
+        }
+      }
     }
+    componentResultSources = Object.fromEntries(
+      componentKeys.map((componentKey) => [componentKey, componentResults[componentKey] ? "cache" : "local_catalog"] as const)
+    ) as Record<string, FigmaLibraryResolutionSource>;
+    componentSetResultSources = Object.fromEntries(
+      componentSetKeys.map((componentSetKey) => [componentSetKey, componentSetResults[componentSetKey] ? "cache" : "local_catalog"] as const)
+    ) as Record<string, FigmaLibraryResolutionSource>;
   } else if (!accessToken?.trim()) {
     onLog?.("Figma library resolution skipped live lookup because no Figma access token was available.");
     componentResults = Object.fromEntries(
@@ -1108,21 +1389,52 @@ export const resolveFigmaLibraryResolutionArtifact = async ({
     });
     componentResults = liveResults.componentResults;
     componentSetResults = liveResults.componentSetResults;
-    await saveCachedFigmaLibraryResolution({
-      cacheDir,
-      entry: {
-        version: LIBRARY_RESOLUTION_CACHE_VERSION,
-        fingerprint,
-        cachedAt: Date.now(),
-        ...(fileKey ? { fileKey } : {}),
-        ...(file.lastModified ? { lastModified: file.lastModified } : {}),
-        componentKeys,
-        componentSetKeys,
-        componentResults,
-        componentSetResults
-      },
-      ...(onLog ? { onLog } : {})
-    });
+    const cacheWrites: Array<Promise<void>> = [];
+    for (const [key, result] of Object.entries(componentResults)) {
+      if (!isLookupSuccess(result)) {
+        continue;
+      }
+      cacheWrites.push(
+        saveCachedFigmaLibraryAsset({
+          cacheDir,
+          entry: {
+            version: LIBRARY_RESOLUTION_CACHE_VERSION,
+            cachedAt: Date.now(),
+            assetKind: "component",
+            key,
+            result
+          },
+          ...(onLog ? { onLog } : {})
+        })
+      );
+    }
+    for (const [key, result] of Object.entries(componentSetResults)) {
+      if (!isLookupSuccess(result)) {
+        continue;
+      }
+      cacheWrites.push(
+        saveCachedFigmaLibraryAsset({
+          cacheDir,
+          entry: {
+            version: LIBRARY_RESOLUTION_CACHE_VERSION,
+            cachedAt: Date.now(),
+            assetKind: "component_set",
+            key,
+            result
+          },
+          ...(onLog ? { onLog } : {})
+        })
+      );
+    }
+    await Promise.all(cacheWrites);
+    componentResultSources = Object.fromEntries(componentKeys.map((componentKey) => [componentKey, "live"] as const)) as Record<
+      string,
+      FigmaLibraryResolutionSource
+    >;
+    componentSetResultSources = Object.fromEntries(componentSetKeys.map((componentSetKey) => [componentSetKey, "live"] as const)) as Record<
+      string,
+      FigmaLibraryResolutionSource
+    >;
   }
 
   const entries = externalComponents
@@ -1130,10 +1442,17 @@ export const resolveFigmaLibraryResolutionArtifact = async ({
       buildLibraryResolutionEntry({
         externalComponent,
         figmaSourceMode,
-        usedCache,
-        ...(externalComponent.componentKey ? { componentResult: componentResults[externalComponent.componentKey] } : {}),
+        ...(externalComponent.componentKey
+          ? {
+              componentResult: componentResults[externalComponent.componentKey],
+              componentResultSource: componentResultSources[externalComponent.componentKey]
+            }
+          : {}),
         ...(externalComponent.componentSetKey
-          ? { componentSetResult: componentSetResults[externalComponent.componentSetKey] }
+          ? {
+              componentSetResult: componentSetResults[externalComponent.componentSetKey],
+              componentSetResultSource: componentSetResultSources[externalComponent.componentSetKey]
+            }
           : {})
       })
     )

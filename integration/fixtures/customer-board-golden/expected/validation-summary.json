@@ -88,39 +88,39 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 19,
-          "match_unmatched": 16,
+          "match_ambiguous": 18,
+          "match_unmatched": 14,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 7,
+          "profile_import_missing": 10,
           "profile_import_resolved": 0
         },
         "byStatus": {
-          "mui_fallback_allowed": 7,
+          "mui_fallback_allowed": 10,
           "mui_fallback_denied": 0,
-          "not_applicable": 35,
+          "not_applicable": 32,
           "resolved_import": 0
         },
         "iconByReason": {
-          "match_ambiguous": 15,
+          "match_ambiguous": 6,
           "match_unmatched": 36,
-          "not_icon_family": 27,
+          "not_icon_family": 28,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 0,
           "profile_icon_wrapper_allowed": 0,
-          "profile_icon_wrapper_denied": 6,
+          "profile_icon_wrapper_denied": 10,
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 15,
-          "not_applicable": 27,
+          "ambiguous": 6,
+          "not_applicable": 28,
           "resolved_import": 0,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
-          "wrapper_fallback_denied": 6
+          "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 92,
+      "issueCount": 84,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -151,71 +151,44 @@
           "figmaFamilyName": "<Avatar>",
           "iconKey": "avatar",
           "kind": "icon",
-          "message": "icon 'avatar' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'avatar' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:41120",
           "figmaFamilyName": "<Avatar>",
           "iconKey": "circular",
           "kind": "icon",
-          "message": "icon 'circular' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'circular' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:41120",
           "figmaFamilyName": "<Avatar>",
-          "iconKey": "circular_mit_icon",
+          "iconKey": "data_size_medium_variant_circular_content_icon_data_color",
           "kind": "icon",
-          "message": "icon 'circular_mit_icon' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'data_size_medium_variant_circular_content_icon_data_color' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:41120",
           "figmaFamilyName": "<Avatar>",
-          "iconKey": "display.avatar.avatar",
+          "iconKey": "docs",
           "kind": "icon",
-          "message": "icon 'display.avatar.avatar' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:41120",
-          "figmaFamilyName": "<Avatar>",
-          "iconKey": "logo_mit_icon",
-          "kind": "icon",
-          "message": "icon 'logo_mit_icon' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:41120",
-          "figmaFamilyName": "<Avatar>",
-          "iconKey": "rounded_mit_icon",
-          "kind": "icon",
-          "message": "icon 'rounded_mit_icon' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:41120",
-          "figmaFamilyName": "<Avatar>",
-          "iconKey": "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by",
-          "kind": "icon",
-          "message": "icon 'the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by' in Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:41120",
-          "figmaFamilyName": "<Avatar>",
-          "kind": "component",
-          "message": "Figma family '<Avatar>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
+          "message": "icon 'docs' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:62629",
@@ -224,6 +197,60 @@
           "message": "Figma family '<Button>' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "button",
+          "kind": "icon",
+          "message": "icon 'button' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "children",
+          "kind": "icon",
+          "message": "icon 'children' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "display.button",
+          "kind": "icon",
+          "message": "icon 'display.button' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "docs",
+          "kind": "icon",
+          "message": "icon 'docs' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "space_around",
+          "kind": "icon",
+          "message": "icon 'space_around' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:62821",
+          "figmaFamilyName": "<Button>",
+          "iconKey": "variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around",
+          "kind": "icon",
+          "message": "icon 'variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around' in Figma family '<Button>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
         },
         {
           "figmaFamilyKey": "component:1:62821",
@@ -428,100 +455,12 @@
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack6>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "mit_icons",
-          "kind": "icon",
-          "message": "icon 'mit_icons' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "react_ui.core.text_field",
-          "kind": "icon",
-          "message": "icon 'react_ui.core.text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "src.core.text_field.text_field_tsx",
-          "kind": "icon",
-          "message": "icon 'src.core.text_field.text_field_tsx' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "text_field",
-          "kind": "icon",
-          "message": "icon 'text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
           "figmaFamilyKey": "component:1:51269",
           "figmaFamilyName": "<TextField>",
           "kind": "component",
           "message": "Figma family '<TextField>' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "mit_icons",
-          "kind": "icon",
-          "message": "icon 'mit_icons' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "react_ui.core.text_field",
-          "kind": "icon",
-          "message": "icon 'react_ui.core.text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "src.core.text_field.text_field_tsx",
-          "kind": "icon",
-          "message": "icon 'src.core.text_field.text_field_tsx' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "text_field",
-          "kind": "icon",
-          "message": "icon 'text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
         },
         {
           "figmaFamilyKey": "component:1:53140",
@@ -933,7 +872,21 @@
     },
     "figmaLibraryResolution": {
       "filePath": "<fixture-root>/derived/figma-library-resolution.json",
-      "status": "ok"
+      "status": "ok",
+      "summary": {
+        "bySource": {
+          "cache": 9,
+          "live": 0,
+          "localCatalog": 32
+        },
+        "cacheHit": 9,
+        "entriesWithOriginFileKey": 9,
+        "error": 0,
+        "offlineReused": 9,
+        "partial": 32,
+        "resolved": 9,
+        "total": 41
+      }
     },
     "status": "warn"
   },
@@ -961,12 +914,12 @@
       }
     },
     "composition": {
-      "ambiguous": 19,
+      "ambiguous": 18,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 7,
+      "matched": 10,
       "totalFigmaFamilies": 42,
-      "unmatched": 16
+      "unmatched": 14
     },
     "requestedPath": "storybook-static/storybook-static",
     "status": "failed"

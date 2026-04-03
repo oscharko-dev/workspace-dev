@@ -469,6 +469,35 @@ export type ComponentMatchLibraryResolutionReason =
   | "match_ambiguous"
   | "match_unmatched";
 
+export type ComponentMatchFigmaLibraryResolutionStatus = "resolved" | "partial" | "error";
+export type ComponentMatchFigmaLibraryResolutionSource = "live" | "cache" | "local_catalog";
+export type ComponentMatchFigmaLibraryFamilyNameSource =
+  | "published_component_set"
+  | "published_component"
+  | "analysis";
+
+export interface ComponentMatchReportFigmaLibraryIssue {
+  code: string;
+  message: string;
+  scope: "component" | "component_set" | "cache";
+  retriable?: boolean;
+}
+
+export interface ComponentMatchReportFigmaLibraryDesignLink {
+  fileKey: string;
+  nodeId?: string;
+}
+
+export interface ComponentMatchReportFigmaLibraryResolution {
+  status: ComponentMatchFigmaLibraryResolutionStatus;
+  resolutionSource: ComponentMatchFigmaLibraryResolutionSource;
+  originFileKey?: string;
+  canonicalFamilyName?: string;
+  canonicalFamilyNameSource: ComponentMatchFigmaLibraryFamilyNameSource;
+  issues: ComponentMatchReportFigmaLibraryIssue[];
+  designLinks: ComponentMatchReportFigmaLibraryDesignLink[];
+}
+
 export type ComponentMatchIconResolutionStatus =
   | "resolved_import"
   | "wrapper_fallback_allowed"
@@ -498,6 +527,7 @@ export interface ComponentMatchReportFigmaFamily {
   nodeCount: number;
   variantProperties: ComponentMatchReportVariantProperty[];
   canonicalFamilyName?: string;
+  figmaLibraryResolution?: ComponentMatchReportFigmaLibraryResolution;
 }
 
 export interface ComponentMatchReportStorybookFamily {
