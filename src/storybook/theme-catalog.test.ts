@@ -224,6 +224,64 @@ test("buildStorybookThemeCatalog extracts MUI colorSchemes, spacing scales, font
   assert.equal(catalog.diagnostics.length, 0);
 });
 
+test("buildStorybookThemeCatalog promotes canonical spacing.base from authoritative CSS variables", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-css-base-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme.js";
+  const stylesheetPath = "assets/theme.css";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = createTheme({
+        shape: { borderRadius: 14 },
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#444444" },
+          background: { default: "#fafafa", paper: "#ffffff" }
+        },
+        typography: {
+          fontFamily: "Brand Sans, sans-serif",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        },
+        components: {
+          MuiCssBaseline: {
+            styleOverrides: {
+              "@font-face": [{ fontFamily: "Brand Sans", fontWeight: 400, src: "url('ignored-font')" }]
+            }
+          }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, stylesheetPath),
+    `
+      :root {
+        --fi-space-base: 12px;
+      }
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(bundlePath), createCssEvidenceItem(stylesheetPath)]
+  });
+
+  const spacingBase = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base");
+  assert.equal(spacingBase?.tokenType, "dimension");
+  assert.deepEqual(spacingBase?.value, { value: 12, unit: "px" });
+  assert.deepEqual(spacingBase?.cssVariableNames, ["--fi-space-base"]);
+  assert.equal(
+    catalog.tokenGraph.some((token) => token.path.join(".") === "theme.default.spacing.css.fi-space-base"),
+    true
+  );
+});
+
 test("buildStorybookThemeCatalog surfaces hard diagnostics for dynamic spacing functions", async () => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-diagnostics-"));
   const assetsDir = path.join(buildDir, "assets");

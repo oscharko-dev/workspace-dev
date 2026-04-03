@@ -1908,6 +1908,7 @@ const classifyCssDefinition = ({
       tokenClass: StorybookTokenClass;
       tokenType: StorybookTokenValueType;
       value: unknown;
+      normalizedName: string;
       pathSuffix: string[];
     }
   | undefined => {
@@ -1918,6 +1919,7 @@ const classifyCssDefinition = ({
       tokenClass: "color",
       tokenType: "color",
       value: colorValue,
+      normalizedName,
       pathSuffix: [CSS_CONTEXT_PREFIX, normalizedName]
     };
   }
@@ -1928,6 +1930,7 @@ const classifyCssDefinition = ({
       tokenClass: "z-index",
       tokenType: "number",
       value: plainNumber,
+      normalizedName,
       pathSuffix: [CSS_CONTEXT_PREFIX, normalizedName]
     };
   }
@@ -1941,6 +1944,7 @@ const classifyCssDefinition = ({
       tokenClass: "radius",
       tokenType: "dimension",
       value: dimension,
+      normalizedName,
       pathSuffix: [CSS_CONTEXT_PREFIX, normalizedName]
     };
   }
@@ -1949,6 +1953,7 @@ const classifyCssDefinition = ({
       tokenClass: "spacing",
       tokenType: "dimension",
       value: dimension,
+      normalizedName,
       pathSuffix: [CSS_CONTEXT_PREFIX, normalizedName]
     };
   }
@@ -1957,9 +1962,39 @@ const classifyCssDefinition = ({
       tokenClass: "dimension",
       tokenType: "dimension",
       value: dimension,
+      normalizedName,
       pathSuffix: [CSS_CONTEXT_PREFIX, normalizedName]
     };
   }
+  return undefined;
+};
+
+const toCanonicalCssThemePathSuffix = ({
+  tokenClass,
+  normalizedName
+}: {
+  tokenClass: StorybookTokenClass;
+  normalizedName: string;
+}): string[] | undefined => {
+  if (
+    tokenClass === "spacing" &&
+    (/(^|-)fi-space-base$/u.test(normalizedName) ||
+      /(^|-)space-base($|-)/u.test(normalizedName) ||
+      /(^|-)spacing-base($|-)/u.test(normalizedName) ||
+      /(^|-)base-spacing($|-)/u.test(normalizedName))
+  ) {
+    return ["base"];
+  }
+
+  if (
+    tokenClass === "radius" &&
+    (/^border-radius$/u.test(normalizedName) ||
+      /(^|-)border-radius($|-)/u.test(normalizedName) ||
+      /(^|-)shape-border-radius($|-)/u.test(normalizedName))
+  ) {
+    return ["shape", "border-radius"];
+  }
+
   return undefined;
 };
 
@@ -1987,6 +2022,24 @@ const applyCssDirectTokens = ({
         const classified = classifyCssDefinition({ definition });
         if (!classified) {
           continue;
+        }
+        const canonicalPathSuffix = toCanonicalCssThemePathSuffix({
+          tokenClass: classified.tokenClass,
+          normalizedName: classified.normalizedName
+        });
+        if (canonicalPathSuffix) {
+          addTokenEntry({
+            tokenGraphByPath,
+            themeId: theme.id,
+            path: [THEME_CONTEXT_PREFIX, theme.id, classified.tokenClass, ...canonicalPathSuffix],
+            tokenClass: classified.tokenClass,
+            tokenType: classified.tokenType,
+            value: classified.value,
+            evidenceItems: [evidenceItem],
+            diagnostics,
+            isBackfilled: false,
+            cssVariableNames: [definition.name]
+          });
         }
         addTokenEntry({
           tokenGraphByPath,
