@@ -8,6 +8,25 @@
       "figma": {
         "familyKey": "component:1:49959",
         "familyName": "_<CharacterCount>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "_<CharacterCount>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '765383815cc421926c0aed89191fd97f829ba396' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -85,6 +104,25 @@
       "figma": {
         "familyKey": "component:1:45022",
         "familyName": "_<InputAdornment>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "_<InputAdornment>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 2,
         "variantProperties": [
           {
@@ -175,6 +213,25 @@
       "figma": {
         "familyKey": "component:1:54808",
         "familyName": "<Alert>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Alert>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ba69ca5620a6cf229730e580c17e86fdd3793605' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'ba69ca5620a6cf229730e580c17e86fdd3793605' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -263,12 +320,30 @@
     {
       "fallbackReasons": [
         "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker"
+        "used_family_name_token_overlap",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
+        "used_reference_only_docs_tiebreaker",
+        "used_semantic_bucket"
       ],
       "figma": {
+        "canonicalFamilyName": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
         "familyKey": "component:1:41120",
         "familyName": "<Avatar>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "1302:97713"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -302,69 +377,52 @@
         "byKey": {
           "avatar": {
             "iconKey": "avatar",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
+            "reason": "profile_icon_wrapper_denied",
+            "status": "wrapper_fallback_denied"
           },
           "circular": {
             "iconKey": "circular",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
+            "reason": "profile_icon_wrapper_denied",
+            "status": "wrapper_fallback_denied"
           },
-          "circular_mit_icon": {
-            "iconKey": "circular_mit_icon",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
+          "data_size_medium_variant_circular_content_icon_data_color": {
+            "iconKey": "data_size_medium_variant_circular_content_icon_data_color",
+            "reason": "profile_icon_wrapper_denied",
+            "status": "wrapper_fallback_denied"
           },
-          "display.avatar.avatar": {
-            "iconKey": "display.avatar.avatar",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "logo_mit_icon": {
-            "iconKey": "logo_mit_icon",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "rounded_mit_icon": {
-            "iconKey": "rounded_mit_icon",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by": {
-            "iconKey": "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
+          "docs": {
+            "iconKey": "docs",
+            "reason": "profile_icon_wrapper_denied",
+            "status": "wrapper_fallback_denied"
           }
         },
         "counts": {
-          "ambiguous": 7,
+          "ambiguous": 0,
           "exactImportResolved": 0,
           "unresolved": 0,
           "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
+          "wrapperFallbackDenied": 4
         },
         "iconKeys": [
           "avatar",
           "circular",
-          "circular_mit_icon",
-          "display.avatar.avatar",
-          "logo_mit_icon",
-          "rounded_mit_icon",
-          "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by"
+          "data_size_medium_variant_circular_content_icon_data_color",
+          "docs"
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Icon",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 36,
-        "status": "ambiguous"
+        "confidence": "medium",
+        "confidenceScore": 65,
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -384,6 +442,7 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
+        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -394,15 +453,15 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:f067e5a58c566f6d",
-        "name": "Avatar",
-        "storyCount": 10,
+        "familyId": "family:dc489f432d373f73",
+        "name": "Icon",
+        "storyCount": 1,
         "tier": "Components",
-        "title": "Components/Display/Avatar/Avatar"
+        "title": "Components/Display/Icon"
       },
       "storyVariant": {
-        "entryId": "components-display-avatar-avatar--circular-mit-icon",
-        "storyName": "Circular mit Icon"
+        "entryId": "components-display-icon--default",
+        "storyName": "Default"
       },
       "usedEvidence": [
         {
@@ -411,9 +470,19 @@
           "role": "candidate_selection"
         },
         {
+          "class": "design_link",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
+        },
+        {
+          "class": "semantic_type",
+          "reliability": "derived",
+          "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
@@ -437,6 +506,25 @@
       "figma": {
         "familyKey": "component:1:62629",
         "familyName": "<Button>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Button>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -466,7 +554,8 @@
           {
             "property": "variant",
             "values": [
-              "Contained"
+              "Contained",
+              "SpaceAround"
             ]
           }
         ]
@@ -553,14 +642,29 @@
     },
     {
       "fallbackReasons": [
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
+        "canonicalFamilyName": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
         "familyKey": "component:1:62821",
         "familyName": "<Button>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "9403:23050"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -590,9 +694,60 @@
           {
             "property": "variant",
             "values": [
-              "Outlined"
+              "Outlined",
+              "SpaceAround"
             ]
           }
+        ]
+      },
+      "iconResolution": {
+        "assetKind": "icon",
+        "byKey": {
+          "button": {
+            "iconKey": "button",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "children": {
+            "iconKey": "children",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "display.button": {
+            "iconKey": "display.button",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "docs": {
+            "iconKey": "docs",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "space_around": {
+            "iconKey": "space_around",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around": {
+            "iconKey": "variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          }
+        },
+        "counts": {
+          "ambiguous": 6,
+          "exactImportResolved": 0,
+          "unresolved": 0,
+          "wrapperFallbackAllowed": 0,
+          "wrapperFallbackDenied": 0
+        },
+        "iconKeys": [
+          "button",
+          "children",
+          "display.button",
+          "docs",
+          "space_around",
+          "variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around"
         ]
       },
       "libraryResolution": {
@@ -600,13 +755,12 @@
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 41,
+        "confidence": "medium",
+        "confidenceScore": 58,
         "status": "ambiguous"
       },
       "rejectionReasons": [
-        "insufficient_authoritative_lead",
-        "insufficient_total_score"
+        "insufficient_authoritative_lead"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -637,19 +791,19 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:7368118c318b285c",
-        "name": "Button",
-        "storyCount": 5,
+        "familyId": "family:79b93d8ab4a3b4b6",
+        "name": "IconButton",
+        "storyCount": 1,
         "tier": "Components",
-        "title": "Components/Inputs/Button/Button"
+        "title": "Components/Display/IconButton"
       },
       "storyVariant": {
-        "entryId": "components-inputs-button-button--secondary",
-        "storyName": "Secondary"
+        "entryId": "components-display-iconbutton--default",
+        "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -667,11 +821,6 @@
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
         }
       ]
     },
@@ -685,6 +834,25 @@
       "figma": {
         "familyKey": "component:1:48552",
         "familyName": "<Chip>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Chip>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -797,12 +965,28 @@
     },
     {
       "fallbackReasons": [
-        "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
+        "canonicalFamilyName": "Orientation=Horizontal, TextAlign=-",
         "familyKey": "component:1:38908",
         "familyName": "<Divider>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Orientation=Horizontal, TextAlign=-",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "6641:130"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 4,
         "variantProperties": [
           {
@@ -824,12 +1008,12 @@
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 36,
+        "confidence": "low",
+        "confidenceScore": 47,
         "status": "ambiguous"
       },
       "rejectionReasons": [
-        "insufficient_total_score"
+        "insufficient_authoritative_lead"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -872,7 +1056,7 @@
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -898,6 +1082,25 @@
       "figma": {
         "familyKey": "component:1:39153",
         "familyName": "<Dynamic Typography> (headlines)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '4754a2591b823963bf63c3cc8c7052453c128a72' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -1003,6 +1206,25 @@
       "figma": {
         "familyKey": "component:1:39169",
         "familyName": "<Dynamic Typography> (headlines)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 3,
         "variantProperties": [
           {
@@ -1107,6 +1329,25 @@
       "figma": {
         "familyKey": "component:1:38938",
         "familyName": "<Icon>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Icon>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 3,
         "variantProperties": [
           {
@@ -1228,6 +1469,25 @@
       "figma": {
         "familyKey": "component:1:39046",
         "familyName": "<Icon>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Icon>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '8e26e1153c3f052fe18bff56d3802a05af6d4241' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 4,
         "variantProperties": [
           {
@@ -1350,6 +1610,25 @@
       "figma": {
         "familyKey": "component:1:43449",
         "familyName": "<IconButton>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<IconButton>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'ea64a1291d4fba6d4a845d263db73482975431fb' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -1500,6 +1779,25 @@
       "figma": {
         "familyKey": "component:1:54308",
         "familyName": "<Radio>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Radio>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'bb8fa91a46daa5091a930960600f4bc86d708798' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 5,
         "variantProperties": [
           {
@@ -1597,6 +1895,25 @@
       "figma": {
         "familyKey": "component:1:54316",
         "familyName": "<Radio>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Radio>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '58c36fb2138d057ea2e87ee54859f85f71dad734' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -1694,6 +2011,25 @@
       "figma": {
         "familyKey": "component:1:45038",
         "familyName": "<Select>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Select>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '5add493da3b40cdb711f4444f933d0d7e25c2acb' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '5add493da3b40cdb711f4444f933d0d7e25c2acb' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -1819,6 +2155,25 @@
       "figma": {
         "familyKey": "component:1:45150",
         "familyName": "<Select>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Select>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '37294278bceb18ffb2a30c4161fafc08f86e8c14' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 2,
         "variantProperties": [
           {
@@ -1943,6 +2298,25 @@
       "figma": {
         "familyKey": "component:1:42583",
         "familyName": "<Stack>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 2,
         "variantProperties": [
           {
@@ -2048,6 +2422,25 @@
       "figma": {
         "familyKey": "component:1:42805",
         "familyName": "<Stack>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2153,6 +2546,25 @@
       "figma": {
         "familyKey": "component:1:62521",
         "familyName": "<Stack>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '27028de27105923597aa8fb3fd2edac3082bf822' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '27028de27105923597aa8fb3fd2edac3082bf822' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2337,6 +2749,25 @@
       "figma": {
         "familyKey": "component:1:63214",
         "familyName": "<Stack> ButtonCombination",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack> ButtonCombination",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2427,6 +2858,25 @@
       "figma": {
         "familyKey": "component:1:54341",
         "familyName": "<Stack> FormControlLabel Radio",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack> FormControlLabel Radio",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '832a9533454b00d3463057dc1e140b8530be96db' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 6,
         "variantProperties": [
           {
@@ -2517,6 +2967,25 @@
       "figma": {
         "familyKey": "component:1:41763",
         "familyName": "<Stack2>(Nested)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack2>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '290ec8d2964f3d827ab56b8a9c4b781092328db6' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 5,
         "variantProperties": [
           {
@@ -2624,6 +3093,25 @@
       "figma": {
         "familyKey": "component:1:42114",
         "familyName": "<Stack3>(Nested)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack3>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '9a4fa985303a81ffa4144d787f72543a43be1984' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2731,6 +3219,25 @@
       "figma": {
         "familyKey": "component:1:42234",
         "familyName": "<Stack3>(Nested)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Stack3>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2831,13 +3338,29 @@
     },
     {
       "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name"
+        "used_family_name_token_overlap",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
+        "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
+        "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "familyKey": "component:1:40054",
         "familyName": "<Stack4>(Nested)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "9445:29979"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 3,
         "variantProperties": [
           {
@@ -2867,18 +3390,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
+        "componentKey": "Divider",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
+        "confidence": "low",
+        "confidenceScore": 54,
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -2898,6 +3421,7 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
+        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -2908,43 +3432,64 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:09856bac732f00a2",
-        "name": "Player",
-        "storyCount": 2,
-        "tier": "Reactlib",
-        "title": "Reactlib/Player"
+        "familyId": "family:456ad848bd366d33",
+        "name": "Divider",
+        "storyCount": 1,
+        "tier": "Components",
+        "title": "Components/Display/Divider"
       },
       "storyVariant": {
-        "entryId": "reactlib-player--default",
+        "entryId": "components-display-divider--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "component_path_present",
-          "reliability": "authoritative",
+          "class": "canonical_family_name",
+          "reliability": "derived",
           "role": "candidate_selection"
+        },
+        {
+          "class": "design_link",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "reference_only_docs",
+          "reliability": "reference_only",
+          "role": "tie_breaker"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
         }
       ]
     },
     {
       "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name"
+        "used_family_name_token_overlap",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
+        "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
+        "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "familyKey": "component:1:43658",
         "familyName": "<Stack6>(Nested)",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "9445:32105"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 3,
         "variantProperties": [
           {
@@ -2974,18 +3519,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
+        "componentKey": "Divider",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
+        "confidence": "low",
+        "confidenceScore": 54,
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3005,6 +3550,7 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
+        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -3015,44 +3561,65 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:09856bac732f00a2",
-        "name": "Player",
-        "storyCount": 2,
-        "tier": "Reactlib",
-        "title": "Reactlib/Player"
+        "familyId": "family:456ad848bd366d33",
+        "name": "Divider",
+        "storyCount": 1,
+        "tier": "Components",
+        "title": "Components/Display/Divider"
       },
       "storyVariant": {
-        "entryId": "reactlib-player--default",
+        "entryId": "components-display-divider--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "component_path_present",
-          "reliability": "authoritative",
+          "class": "canonical_family_name",
+          "reliability": "derived",
           "role": "candidate_selection"
+        },
+        {
+          "class": "design_link",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "reference_only_docs",
+          "reliability": "reference_only",
+          "role": "tie_breaker"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
         }
       ]
     },
     {
       "fallbackReasons": [
         "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
+        "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
         "familyKey": "component:1:51269",
         "familyName": "<TextField>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "2736:207711"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 3,
         "variantProperties": [
           {
@@ -3105,51 +3672,13 @@
           }
         ]
       },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "mit_icons": {
-            "iconKey": "mit_icons",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "react_ui.core.text_field": {
-            "iconKey": "react_ui.core.text_field",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "src.core.text_field.text_field_tsx": {
-            "iconKey": "src.core.text_field.text_field_tsx",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "text_field": {
-            "iconKey": "text_field",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          }
-        },
-        "counts": {
-          "ambiguous": 4,
-          "exactImportResolved": 0,
-          "unresolved": 0,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "mit_icons",
-          "react_ui.core.text_field",
-          "src.core.text_field.text_field_tsx",
-          "text_field"
-        ]
-      },
       "libraryResolution": {
         "reason": "match_ambiguous",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "low",
-        "confidenceScore": 52,
+        "confidence": "medium",
+        "confidenceScore": 60,
         "status": "ambiguous"
       },
       "rejectionReasons": [
@@ -3184,25 +3713,20 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:07d620820cf5c051",
+        "familyId": "family:54ebf974864973f0",
         "name": "TextField",
-        "storyCount": 2,
-        "tier": "ReactUI",
-        "title": "ReactUI/Core/TextField"
+        "storyCount": 4,
+        "tier": "Components",
+        "title": "Components/Inputs/TextField"
       },
       "storyVariant": {
-        "entryId": "reactui-core-textfield--default",
-        "storyName": "Default"
+        "entryId": "components-inputs-textfield--medium",
+        "storyName": "Medium"
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "design_link",
           "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
@@ -3230,13 +3754,29 @@
     {
       "fallbackReasons": [
         "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
+        "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
         "familyKey": "component:1:53140",
         "familyName": "<TextField>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "10796:42262"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -3289,51 +3829,13 @@
           }
         ]
       },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "mit_icons": {
-            "iconKey": "mit_icons",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "react_ui.core.text_field": {
-            "iconKey": "react_ui.core.text_field",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "src.core.text_field.text_field_tsx": {
-            "iconKey": "src.core.text_field.text_field_tsx",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          },
-          "text_field": {
-            "iconKey": "text_field",
-            "reason": "match_ambiguous",
-            "status": "ambiguous"
-          }
-        },
-        "counts": {
-          "ambiguous": 4,
-          "exactImportResolved": 0,
-          "unresolved": 0,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "mit_icons",
-          "react_ui.core.text_field",
-          "src.core.text_field.text_field_tsx",
-          "text_field"
-        ]
-      },
       "libraryResolution": {
         "reason": "match_ambiguous",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "low",
-        "confidenceScore": 52,
+        "confidence": "medium",
+        "confidenceScore": 60,
         "status": "ambiguous"
       },
       "rejectionReasons": [
@@ -3368,25 +3870,20 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:07d620820cf5c051",
+        "familyId": "family:54ebf974864973f0",
         "name": "TextField",
-        "storyCount": 2,
-        "tier": "ReactUI",
-        "title": "ReactUI/Core/TextField"
+        "storyCount": 4,
+        "tier": "Components",
+        "title": "Components/Inputs/TextField"
       },
       "storyVariant": {
-        "entryId": "reactui-core-textfield--default",
-        "storyName": "Default"
+        "entryId": "components-inputs-textfield--medium",
+        "storyName": "Medium"
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "design_link",
           "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
@@ -3422,6 +3919,25 @@
       "figma": {
         "familyKey": "component:1:38311",
         "familyName": "<Typography>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Typography>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 10,
         "variantProperties": [
           {
@@ -3523,13 +4039,29 @@
       "fallbackReasons": [
         "selected_variant_by_entry_id_tiebreak",
         "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_library_resolution_canonical_name",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
+        "canonicalFamilyName": "Variant=label04, Color=Default",
         "familyKey": "component:1:38313",
         "familyName": "<Typography>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "Variant=label04, Color=Default",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "7841:103569"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -3554,8 +4086,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "low",
-        "confidenceScore": 46,
+        "confidence": "medium",
+        "confidenceScore": 57,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -3601,7 +4133,7 @@
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -3637,6 +4169,25 @@
       "figma": {
         "familyKey": "component:1:38329",
         "familyName": "<Typography>",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "<Typography>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -3742,6 +4293,25 @@
       "figma": {
         "familyKey": "component:1:38926",
         "familyName": "ic_arrow_subitem_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_arrow_subitem_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -3850,12 +4420,26 @@
     },
     {
       "fallbackReasons": [
-        "used_figma_analysis_family_name",
+        "used_library_resolution_canonical_name",
         "used_semantic_bucket"
       ],
       "figma": {
         "familyKey": "component:1:42111",
         "familyName": "ic_chart_upward_s 1",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_chart_upward_s 1",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
+            {
+              "fileKey": "aF8QEt4HOW6I5aGnmV9hAa",
+              "nodeId": "8238:13"
+            }
+          ],
+          "issues": [],
+          "originFileKey": "aF8QEt4HOW6I5aGnmV9hAa",
+          "resolutionSource": "cache",
+          "status": "resolved"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -3970,6 +4554,25 @@
       "figma": {
         "familyKey": "component:1:43496",
         "familyName": "ic_circle_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_circle_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 5,
         "variantProperties": []
       },
@@ -4084,6 +4687,25 @@
       "figma": {
         "familyKey": "component:1:54357",
         "familyName": "ic_coin_stack_s",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_coin_stack_s",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '3158d6bd65092cc526a20a67f94d00d1b86e7919' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -4198,6 +4820,25 @@
       "figma": {
         "familyKey": "component:1:636",
         "familyName": "ic_down_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_down_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 3,
         "variantProperties": []
       },
@@ -4312,6 +4953,25 @@
       "figma": {
         "familyKey": "component:1:43307",
         "familyName": "ic_info_circle_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_info_circle_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '683ca71963a6efdc806651d53e03e8b7cc56369b' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 2,
         "variantProperties": []
       },
@@ -4426,6 +5086,25 @@
       "figma": {
         "familyKey": "component:1:43500",
         "familyName": "ic_radio_selected_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_radio_selected_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -4540,6 +5219,25 @@
       "figma": {
         "familyKey": "component:1:54302",
         "familyName": "ic_shopping_cart_s",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_shopping_cart_s",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -4654,6 +5352,25 @@
       "figma": {
         "familyKey": "component:1:40602",
         "familyName": "ic_user_s 🔥",
+        "figmaLibraryResolution": {
+          "canonicalFamilyName": "ic_user_s 🔥",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
+            {
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' was missing from the library-resolution cache entry.",
+              "scope": "cache"
+            },
+            {
+              "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+              "message": "No cached published component metadata is available for '6e99374fc7708f8d9226cbe8575212ba80f94b86' in local_json mode.",
+              "scope": "cache"
+            }
+          ],
+          "resolutionSource": "local_catalog",
+          "status": "partial"
+        },
         "nodeCount": 1,
         "variantProperties": []
       },
@@ -4762,48 +5479,48 @@
     }
   ],
   "summary": {
-    "ambiguous": 19,
+    "ambiguous": 18,
     "iconResolution": {
       "byReason": {
-        "match_ambiguous": 15,
+        "match_ambiguous": 6,
         "match_unmatched": 36,
-        "not_icon_family": 27,
+        "not_icon_family": 28,
         "profile_icon_import_missing": 0,
         "profile_icon_import_resolved": 0,
         "profile_icon_wrapper_allowed": 0,
-        "profile_icon_wrapper_denied": 6,
+        "profile_icon_wrapper_denied": 10,
         "profile_icon_wrapper_missing": 0
       },
       "byStatus": {
-        "ambiguous": 15,
-        "not_applicable": 27,
+        "ambiguous": 6,
+        "not_applicable": 28,
         "resolved_import": 0,
         "unresolved": 36,
         "wrapper_fallback_allowed": 0,
-        "wrapper_fallback_denied": 6
+        "wrapper_fallback_denied": 10
       }
     },
     "libraryResolution": {
       "byReason": {
-        "match_ambiguous": 19,
-        "match_unmatched": 16,
+        "match_ambiguous": 18,
+        "match_unmatched": 14,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 7,
+        "profile_import_missing": 10,
         "profile_import_resolved": 0
       },
       "byStatus": {
-        "mui_fallback_allowed": 7,
+        "mui_fallback_allowed": 10,
         "mui_fallback_denied": 0,
-        "not_applicable": 35,
+        "not_applicable": 32,
         "resolved_import": 0
       }
     },
-    "matched": 7,
+    "matched": 10,
     "storybookEntryCount": 499,
     "storybookFamilyCount": 289,
     "totalFigmaFamilies": 42,
-    "unmatched": 16
+    "unmatched": 14
   },
   "version": 1
 }

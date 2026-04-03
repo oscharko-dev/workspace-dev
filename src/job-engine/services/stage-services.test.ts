@@ -120,6 +120,52 @@ const createLocalFigmaPayloadWithExternalComponent = () => ({
   }
 });
 
+const createFigmaLibraryResolverFetchImpl = (): typeof fetch => {
+  return async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+
+    if (url === "https://api.figma.com/v1/components/cmp-key") {
+      return new Response(
+        JSON.stringify({
+          meta: {
+            key: "cmp-key",
+            file_key: "library-file",
+            node_id: "10:20",
+            name: "Button, Variant=Primary, State=Default"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+
+    if (url === "https://api.figma.com/v1/component_sets/set-key") {
+      return new Response(
+        JSON.stringify({
+          meta: {
+            key: "set-key",
+            file_key: "library-file",
+            node_id: "10:10",
+            name: "Button, Variant=Primary, State=Default"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+};
+
 const createLocalFigmaPayloadWithMatchFamilies = () => ({
   name: "Stage Service Match Board",
   lastModified: "2026-04-01T00:00:00Z",
@@ -1920,18 +1966,22 @@ test("IrDeriveService cache hits still write and register figma.analysis", async
   assert.equal((await readFile(second.executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
-test("IrDeriveService cache hits still write and register figma.library_resolution", async () => {
+test("IrDeriveService local_json reuses seeded figma.library_resolution cache entries end-to-end", async () => {
   const sharedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-service-library-cache-hit-"));
+  const fetchImpl = createFigmaLibraryResolverFetchImpl();
   const first = await createExecutionContext({
-    input: {
-      figmaSourceMode: "local_json"
+    runtimeOverrides: {
+      fetchImpl
     },
     rootDir: sharedRoot,
     jobId: "job-stage-library-cache-seed"
   });
   const second = await createExecutionContext({
-    input: {
+    requestOverrides: {
       figmaSourceMode: "local_json"
+    },
+    runtimeOverrides: {
+      fetchImpl
     },
     rootDir: sharedRoot,
     jobId: "job-stage-library-cache-hit"
@@ -1948,22 +1998,14 @@ test("IrDeriveService cache hits still write and register figma.library_resoluti
     },
     first.stageContextFor("figma.source")
   );
-  const cleanedFile = JSON.parse(await readFile(first.executionContext.paths.figmaJsonFile, "utf8")) as unknown;
-  await saveCachedIr({
-    cacheDir: first.executionContext.paths.irCacheDir,
-    contentHash: computeContentHash(cleanedFile),
-    optionsHash: computeOptionsHash({
-      screenElementBudget: first.executionContext.runtime.figmaScreenElementBudget,
-      screenElementMaxDepth: first.executionContext.runtime.figmaScreenElementMaxDepth,
-      brandTheme: first.executionContext.resolvedBrandTheme,
-      figmaSourceMode: first.executionContext.resolvedFigmaSourceMode
-    }),
-    ttlMs: first.executionContext.runtime.irCacheTtlMs,
-    ir: createMinimalIr(),
-    onLog: () => {
-      // no-op for cache seeding in tests
-    }
-  });
+  first.executionContext.resolvedFigmaSourceMode = "rest";
+  await IrDeriveService.execute(
+    {
+      figmaFileKey: "board-key",
+      figmaAccessToken: "token"
+    },
+    first.stageContextFor("ir.derive")
+  );
 
   await FigmaSourceService.execute(
     {
@@ -1979,10 +2021,40 @@ test("IrDeriveService cache hits still write and register figma.library_resoluti
     path.join(second.executionContext.paths.jobDir, "storybook", "public", "figma-library-resolution.json")
   );
   const artifact = JSON.parse(await readFile(libraryResolutionPath as string, "utf8")) as {
-    summary: { total: number; partial: number };
+    entries: Array<{
+      status?: string;
+      resolutionSource?: string;
+      originFileKey?: string;
+      canonicalFamilyNameSource?: string;
+      variantProperties?: Array<{ property?: string; values?: string[] }>;
+    }>;
+    summary: {
+      total: number;
+      resolved: number;
+      partial: number;
+      cacheHit: number;
+      offlineReused: number;
+    };
   };
   assert.equal(artifact.summary.total, 1);
-  assert.equal(artifact.summary.partial, 1);
+  assert.equal(artifact.summary.resolved, 1);
+  assert.equal(artifact.summary.partial, 0);
+  assert.equal(artifact.summary.cacheHit, 1);
+  assert.equal(artifact.summary.offlineReused, 1);
+  assert.equal(artifact.entries[0]?.status, "resolved");
+  assert.equal(artifact.entries[0]?.resolutionSource, "cache");
+  assert.equal(artifact.entries[0]?.originFileKey, "library-file");
+  assert.equal(artifact.entries[0]?.canonicalFamilyNameSource, "published_component_set");
+  assert.deepEqual(artifact.entries[0]?.variantProperties, [
+    {
+      property: "state",
+      values: ["Default", "Primary"]
+    },
+    {
+      property: "variant",
+      values: ["Primary"]
+    }
+  ]);
 });
 
 test("IrDeriveService cache hits still write and register component.match_report", async () => {

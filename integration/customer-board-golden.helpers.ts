@@ -166,6 +166,11 @@ export interface CustomerBoardGoldenBundle {
   files: Map<string, CustomerBoardBundleFile>;
 }
 
+export interface CustomerBoardFigmaLibrarySeedInput {
+  fileKey: string;
+  accessToken: string;
+}
+
 const compareStrings = (left: string, right: string): number => left.localeCompare(right);
 
 const normalizeText = (value: string): string => `${value.replace(/\r\n/g, "\n").trimEnd()}\n`;
@@ -1251,6 +1256,10 @@ export const buildCustomerBoardGoldenBundle = async ({
   return buildCustomerBoardGoldenBundleFromFigmaInput({
     storybookBuildDir,
     figmaInput,
+    figmaLibrarySeed: {
+      fileKey: figmaFileKey,
+      accessToken: figmaAccessToken
+    },
     files
   });
 };
@@ -1258,10 +1267,12 @@ export const buildCustomerBoardGoldenBundle = async ({
 export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   storybookBuildDir,
   figmaInput,
+  figmaLibrarySeed,
   files = createBundleFiles()
 }: {
   storybookBuildDir: string;
   figmaInput: Record<string, unknown>;
+  figmaLibrarySeed?: CustomerBoardFigmaLibrarySeedInput;
   files?: Map<string, CustomerBoardBundleFile>;
 }): Promise<CustomerBoardGoldenBundle> => {
   const customerProfileInput = createCustomerBoardCustomerProfileInput();
@@ -1303,6 +1314,20 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   const libraryResolutionCacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-library-resolution-"));
   const tempFixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-bundle-"));
   try {
+    if (figmaLibrarySeed) {
+      await resolveFigmaLibraryResolutionArtifact({
+        analysis: figmaAnalysis,
+        file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
+        figmaSourceMode: "rest",
+        cacheDir: libraryResolutionCacheDir,
+        fileKey: figmaLibrarySeed.fileKey,
+        accessToken: figmaLibrarySeed.accessToken,
+        fetchImpl: fetch,
+        timeoutMs: 30_000,
+        maxRetries: 4
+      });
+    }
+
     const libraryResolutionArtifact = await resolveFigmaLibraryResolutionArtifact({
       analysis: figmaAnalysis,
       file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
