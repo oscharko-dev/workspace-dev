@@ -13,6 +13,7 @@ const JS_IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
 const PROFILE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[\w.-]+\/)?[\w.-]+(?:\/[\w.-]+)*$/;
 const UNSAFE_VERSION_PATTERN = /^(?:git\+|git:|github:|file:|https?:|link:)/i;
+const PROTECTED_ALIAS_KEYS = new Set(["react", "react-dom", "react/jsx-runtime", "vite", "@vitejs/plugin-react"]);
 const SOURCE_IMPORT_PATTERN = /import\s+([^;]+?)\s+from\s+["']([^"']+)["'];?/g;
 const NAMED_IMPORT_CLAUSE_PATTERN = /\{([\s\S]*?)\}/;
 
@@ -255,6 +256,10 @@ const isValidPackageName = (value: string): boolean => {
   return PACKAGE_NAME_PATTERN.test(value);
 };
 
+const isScopedPackageName = (value: string): boolean => {
+  return value.startsWith("@") && PACKAGE_NAME_PATTERN.test(value);
+};
+
 const normalizeAlias = (value: string): string => {
   return value.trim().toLowerCase();
 };
@@ -351,22 +356,28 @@ const normalizeStringArray = ({
     return [];
   }
 
+  if (input.some((entry) => typeof entry !== "string")) {
+    pushIssue({
+      issues,
+      path,
+      message: "All alias entries must be strings."
+    });
+  }
+
+  const validStrings = input.filter((entry): entry is string => typeof entry === "string");
+  if (validStrings.some((entry) => normalizeAlias(entry).length === 0)) {
+    pushIssue({
+      issues,
+      path,
+      message: "Aliases must be non-empty strings."
+    });
+  }
+
   const aliases = [...new Set(
-    input
-      .map((entry) => (typeof entry === "string" ? normalizeAlias(entry) : ""))
+    validStrings
+      .map((entry) => normalizeAlias(entry))
       .filter((entry) => entry.length > 0)
   )].sort((left, right) => left.localeCompare(right));
-
-  if (aliases.length !== input.filter((entry) => typeof entry === "string" && normalizeAlias(entry).length > 0).length) {
-    const invalidEntryPresent = input.some((entry) => typeof entry !== "string" || normalizeAlias(entry).length === 0);
-    if (invalidEntryPresent) {
-      pushIssue({
-        issues,
-        path,
-        message: "Aliases must be non-empty strings."
-      });
-    }
-  }
 
   return aliases;
 };
@@ -444,11 +455,11 @@ const normalizeDependencyRecord = ({
   for (const [rawName, rawVersion] of Object.entries(input)) {
     const name = rawName.trim();
     const version = typeof rawVersion === "string" ? rawVersion.trim() : "";
-    if (!isValidPackageName(name)) {
+    if (!isScopedPackageName(name)) {
       pushIssue({
         issues,
         path: `${path}.${rawName}`,
-        message: "Dependency name must be a valid package name."
+        message: "Dependency name must be a scoped package name (e.g. @scope/package)."
       });
       continue;
     }
@@ -504,6 +515,14 @@ const normalizeImportAliasRecord = ({
         issues,
         path: `${path}.${rawAlias}`,
         message: "Import alias key must be a valid package name."
+      });
+      continue;
+    }
+    if (PROTECTED_ALIAS_KEYS.has(alias)) {
+      pushIssue({
+        issues,
+        path: `${path}.${rawAlias}`,
+        message: `Import alias '${alias}' targets a protected core package and cannot be overridden.`
       });
       continue;
     }
@@ -589,7 +608,8 @@ const parseTemplateImportBinding = ({
   }
 
   const packageName = typeof input.package === "string" ? input.package.trim() : "";
-  if (!isValidPackageName(packageName)) {
+  const packageValid = isValidPackageName(packageName);
+  if (!packageValid) {
     pushIssue({
       issues,
       path: `${path}.package`,
@@ -598,7 +618,8 @@ const parseTemplateImportBinding = ({
   }
 
   const exportName = typeof input.export === "string" ? input.export.trim() : "";
-  if (!isValidIdentifier(exportName)) {
+  const exportValid = isValidIdentifier(exportName);
+  if (!exportValid) {
     pushIssue({
       issues,
       path: `${path}.export`,
@@ -608,12 +629,17 @@ const parseTemplateImportBinding = ({
 
   const importAlias =
     typeof input.importAlias === "string" && input.importAlias.trim().length > 0 ? input.importAlias.trim() : exportName;
-  if (!isValidIdentifier(importAlias)) {
+  const aliasValid = isValidIdentifier(importAlias);
+  if (!aliasValid) {
     pushIssue({
       issues,
       path: `${path}.importAlias`,
       message: "importAlias must be a valid identifier."
     });
+  }
+
+  if (!packageValid || !exportValid) {
+    return undefined;
   }
 
   return {

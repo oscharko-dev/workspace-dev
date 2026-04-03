@@ -1642,3 +1642,37 @@ test("runProjectValidation forwards optional seed and abort settings to the shar
     await rm(generatedProjectDir, { recursive: true, force: true });
   }
 });
+
+test("#698 lockfileMutable uses --ignore-scripts instead of --frozen-lockfile", async () => {
+  const generatedProjectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-validation-lockfile-mutable-")
+  );
+  try {
+    await writeValidationFeedbackProject({ generatedProjectDir });
+    await linkLocalTypescript({ generatedProjectDir });
+
+    const calls: string[] = [];
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      onLog: () => {},
+      lockfileMutable: true,
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+        },
+        runValidationFeedback: async () => ({ applied: false })
+      }
+    });
+
+    const installCall = calls.find((call) => call.startsWith("pnpm install"));
+    assert.ok(installCall, "Expected a pnpm install call");
+    assert.match(installCall, /--ignore-scripts/, "Expected --ignore-scripts in mutable lockfile install");
+    assert.ok(
+      !installCall.includes("--frozen-lockfile"),
+      "Expected no --frozen-lockfile in mutable lockfile install"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
