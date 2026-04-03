@@ -1298,7 +1298,7 @@ const toCustomerProfileMatchIssueMessage = ({
   if (reason === "profile_import_missing") {
     return `${componentLabel} has no customer profile import for family '${profileFamily ?? "unknown"}'.`;
   }
-  return `${componentLabel} resolved successfully.`;
+  return `${componentLabel} has unrecognized resolution reason '${reason}'.`;
 };
 
 export const validateCustomerProfileComponentMatchReport = ({

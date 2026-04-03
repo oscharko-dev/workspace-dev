@@ -1989,6 +1989,9 @@ export const toCustomerProfileDesignSystemConfigFromComponentMatchReport = ({
     const representativeEntry = entries[0];
     const resolvedImport = representativeEntry?.resolvedImport;
     if (!resolvedImport) {
+      warnings.push(
+        `Component match report entry for component key '${componentKey}' has status 'resolved_import' but no resolved import data; excluding it from storybook-first design-system mappings.`
+      );
       continue;
     }
     const propMappings = resolvedImport.propMappings ? toSortedPropMappings(resolvedImport.propMappings) : undefined;
