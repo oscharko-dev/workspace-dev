@@ -332,6 +332,45 @@ export default defineConfig({
   }
 });
 
+test("#698 applyCustomerProfileToTemplate correctly replaces nested resolve block with brace depth", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-profile-template-nested-resolve-"));
+  const customerProfile = createTemplateProfile();
+
+  try {
+    await seedTemplateProject({
+      generatedProjectDir,
+      packageJsonContent: `${JSON.stringify({ name: "generated-app", private: true, dependencies: { react: "^19.0.0" } }, null, 2)}\n`,
+      tsconfigContent: `${JSON.stringify({ compilerOptions: { baseUrl: ".", paths: {} } }, null, 2)}\n`,
+      viteConfigContent: `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@old/pkg": "@old/target",
+    },
+    extensions: [".ts", ".tsx"],
+  },
+  test: {
+    globals: true
+  }
+});
+`
+    });
+
+    await applyCustomerProfileToTemplate({
+      generatedProjectDir,
+      customerProfile
+    });
+
+    const viteConfig = await readFile(path.join(generatedProjectDir, "vite.config.ts"), "utf8");
+    assert.equal(viteConfig.includes("\"@old/pkg\""), false, "Old alias should be replaced");
+    assert.equal(viteConfig.includes("\"@customer/ui\": \"@customer/components\""), true, "New alias should be present");
+    assert.equal(viteConfig.includes("globals: true"), true, "Other config should be preserved");
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("applyCustomerProfileToTemplate throws when vite.config.ts does not expose a defineConfig block", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-profile-template-invalid-vite-"));
   const customerProfile = createTemplateProfile();

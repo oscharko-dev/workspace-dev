@@ -47,8 +47,28 @@ const upsertViteResolveAliases = ({
     "  },"
   ].join("\n");
 
-  if (/^\s*resolve:\s*\{/m.test(content)) {
-    return content.replace(/^\s*resolve:\s*\{[\s\S]*?^\s*\},\n/m, `${aliasBlock}\n`);
+  const resolveMatch = /^\s*resolve:\s*\{/m.exec(content);
+  if (resolveMatch) {
+    const start = resolveMatch.index;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < content.length; i++) {
+      if (content[i] === "{") {
+        depth++;
+      } else if (content[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i + 1;
+          while (end < content.length && (content[end] === "," || content[end] === "\n")) {
+            end++;
+          }
+          break;
+        }
+      }
+    }
+    if (end > start) {
+      return `${content.slice(0, start)}${aliasBlock}\n${content.slice(end)}`;
+    }
   }
 
   if (content.includes("  base: normalizedBasePath,\n")) {

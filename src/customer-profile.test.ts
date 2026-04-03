@@ -458,7 +458,7 @@ test("safeParseCustomerProfileConfig rejects malformed values across sections", 
   assert.equal(messages.some((message) => message.includes("Expected an object with string values")), true);
   assert.equal(messages.some((message) => message.includes("Fallback policy must be one of")), true);
   assert.equal(messages.some((message) => message.includes("Fallback component key must be a valid identifier")), true);
-  assert.equal(messages.some((message) => message.includes("Dependency name must be a valid package name")), true);
+  assert.equal(messages.some((message) => message.includes("Dependency name must be a scoped package name")), true);
   assert.equal(messages.some((message) => message.includes("Dependency version must be a non-empty string")), true);
   assert.equal(messages.some((message) => message.includes("Expected an object with dependency versions")), true);
   assert.equal(messages.some((message) => message.includes("Strictness must be one of")), true);
@@ -1558,5 +1558,77 @@ test("#698 accepts valid dependency version specifiers", () => {
     });
 
     assert.equal(parsed.success, true, `Expected version '${safeVersion}' to be accepted`);
+  }
+});
+
+test("#698 rejects unscoped dependency package names", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      template: {
+        ...createRawCustomerProfile().template,
+        dependencies: { "lodash": "^4.17.0" }
+      }
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (!parsed.success) {
+    assert.equal(
+      parsed.issues.some((issue) => issue.message.includes("scoped package name")),
+      true
+    );
+  }
+});
+
+test("#698 rejects aliasing protected core packages", () => {
+  const protectedKeys = ["react", "react-dom", "react/jsx-runtime", "vite", "@vitejs/plugin-react"];
+
+  for (const key of protectedKeys) {
+    const parsed = safeParseCustomerProfileConfig({
+      input: {
+        ...createRawCustomerProfile(),
+        template: {
+          ...createRawCustomerProfile().template,
+          importAliases: { [key]: "@customer/replacement" }
+        }
+      }
+    });
+
+    assert.equal(parsed.success, false, `Expected alias key '${key}' to be rejected`);
+    if (!parsed.success) {
+      assert.equal(
+        parsed.issues.some((issue) => issue.message.includes("protected core package")),
+        true,
+        `Expected protected core package message for '${key}'`
+      );
+    }
+  }
+});
+
+test("#698 reports non-string entries in alias arrays explicitly", () => {
+  const parsed = safeParseCustomerProfileConfig({
+    input: {
+      ...createRawCustomerProfile(),
+      families: [
+        {
+          id: "TestFamily",
+          tierPriority: 1,
+          aliases: {
+            figma: ["ValidAlias", 123, null],
+            storybook: ["Valid"],
+            code: ["@test/code"]
+          }
+        }
+      ]
+    }
+  });
+
+  assert.equal(parsed.success, false);
+  if (!parsed.success) {
+    assert.equal(
+      parsed.issues.some((issue) => issue.message.includes("All alias entries must be strings")),
+      true
+    );
   }
 });
