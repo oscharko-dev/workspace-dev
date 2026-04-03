@@ -760,7 +760,7 @@ test("buildComponentMatchReportArtifact marks equal authoritative candidates as 
   const entry = artifact.entries[0];
   assert.equal(entry?.match.status, "ambiguous");
   assert.equal(entry?.storybookFamily?.title, "Components/Dialog");
-  assert.deepEqual(entry?.rejectionReasons, ["insufficient_authoritative_lead", "insufficient_total_score"]);
+  assert.deepEqual(entry?.rejectionReasons, ["insufficient_primary_lead", "insufficient_total_score"]);
 });
 
 test("buildComponentMatchReportArtifact selects the best story variant from Figma variant values", () => {
@@ -2023,9 +2023,12 @@ test("buildComponentMatchReportArtifact resolves sanitized component APIs across
 
   const datePickerEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "DatePicker");
   assert.notEqual(datePickerEntry, undefined);
+  assert.equal(datePickerEntry?.match.status, "ambiguous");
+  assert.equal(datePickerEntry?.match.confidence, "none");
 
   const accordionEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Accordion");
   assert.notEqual(accordionEntry, undefined);
+  assert.equal(accordionEntry?.match.status, "matched");
 
   const iconEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Icon");
   assert.equal(iconEntry?.resolvedProps?.codegenCompatible, true);
@@ -2033,4 +2036,6 @@ test("buildComponentMatchReportArtifact resolves sanitized component APIs across
   const typographyEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Typography");
   assert.equal(typographyEntry?.resolvedProps?.codegenCompatible, true);
   assert.equal(typographyEntry?.resolvedProps?.children.policy, "supported");
+  assert.equal(typographyEntry?.match.status, "matched");
+  assert.equal(typographyEntry?.match.confidence !== "none", true);
 });

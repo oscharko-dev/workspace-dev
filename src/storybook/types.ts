@@ -439,9 +439,9 @@ export type ComponentMatchEvidenceRole = "candidate_selection" | "story_variant_
 
 export type ComponentMatchRejectionReason =
   | "no_candidates"
-  | "insufficient_authoritative_score"
+  | "insufficient_primary_score"
   | "insufficient_total_score"
-  | "insufficient_authoritative_lead";
+  | "insufficient_primary_lead";
 
 export type ComponentMatchFallbackReason =
   | "used_library_resolution_canonical_name"

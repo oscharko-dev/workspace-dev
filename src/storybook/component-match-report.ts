@@ -61,10 +61,10 @@ const COMPONENT_MATCH_REPORT_OUTPUT_FILE_NAME = "component-match-report.json";
 const MAX_CONFIDENCE_SCORE = 100;
 const MAX_REFERENCE_ONLY_DOCS_SCORE = 5;
 const MAX_VARIANT_OR_PROP_SCORE = 10;
-const MATCHED_AUTHORITATIVE_THRESHOLD = 35;
+const MATCHED_PRIMARY_THRESHOLD = 35;
 const MATCHED_TOTAL_THRESHOLD = 45;
-const AMBIGUOUS_AUTHORITATIVE_MIN = 20;
-const AUTHORITATIVE_LEAD_THRESHOLD = 8;
+const AMBIGUOUS_PRIMARY_MIN = 20;
+const PRIMARY_LEAD_THRESHOLD = 8;
 const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
   "resolved_import",
   "mui_fallback_allowed",
@@ -139,7 +139,7 @@ interface ResolvedFigmaFamily {
 interface CandidateScore {
   family: StorybookCatalogFamily;
   totalScore: number;
-  authoritativeScore: number;
+  primaryScore: number;
   usedEvidence: ComponentMatchReportUsedEvidence[];
   fallbackReasons: ComponentMatchFallbackReason[];
   referenceOnlyDocsScore: number;
@@ -989,7 +989,7 @@ const scoreCandidateFamily = ({
     });
   }
 
-  const authoritativeScore =
+  const primaryScore =
     designLinkScore.score +
     canonicalNameScore.score +
     semanticScore +
@@ -997,7 +997,7 @@ const scoreCandidateFamily = ({
     componentPathScore;
 
   const referenceOnlyDocsScore =
-    authoritativeScore > 0
+    primaryScore > 0
       ? scoreReferenceOnlyDocs({
           figmaFamily,
           storybookFamily,
@@ -1015,8 +1015,8 @@ const scoreCandidateFamily = ({
 
   return {
     family: storybookFamily,
-    totalScore: authoritativeScore + referenceOnlyDocsScore,
-    authoritativeScore,
+    totalScore: primaryScore + referenceOnlyDocsScore,
+    primaryScore,
     referenceOnlyDocsScore,
     usedEvidence: toUniqueUsedEvidence(usedEvidence),
     fallbackReasons: sortUniqueStrings([...fallbackReasons])
@@ -1027,8 +1027,8 @@ const compareCandidateScores = (left: CandidateScore, right: CandidateScore): nu
   if (left.totalScore !== right.totalScore) {
     return right.totalScore - left.totalScore;
   }
-  if (left.authoritativeScore !== right.authoritativeScore) {
-    return right.authoritativeScore - left.authoritativeScore;
+  if (left.primaryScore !== right.primaryScore) {
+    return right.primaryScore - left.primaryScore;
   }
   const byTitle = left.family.title.localeCompare(right.family.title);
   if (byTitle !== 0) {
@@ -1069,11 +1069,11 @@ const resolveMatchStatus = ({
     };
   }
 
-  const authoritativeLead = topCandidate.authoritativeScore - (runnerUp?.authoritativeScore ?? 0);
+  const primaryLead = topCandidate.primaryScore - (runnerUp?.primaryScore ?? 0);
   if (
-    topCandidate.authoritativeScore >= MATCHED_AUTHORITATIVE_THRESHOLD &&
+    topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD &&
     topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD &&
-    authoritativeLead >= AUTHORITATIVE_LEAD_THRESHOLD
+    primaryLead >= PRIMARY_LEAD_THRESHOLD
   ) {
     return {
       status: "matched",
@@ -1082,17 +1082,17 @@ const resolveMatchStatus = ({
   }
 
   const hasViableCandidate =
-    topCandidate.authoritativeScore >= AMBIGUOUS_AUTHORITATIVE_MIN || topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD;
+    topCandidate.primaryScore >= AMBIGUOUS_PRIMARY_MIN || topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD;
   if (hasViableCandidate) {
     const rejectionReasons: ComponentMatchRejectionReason[] = [];
-    if (topCandidate.authoritativeScore < MATCHED_AUTHORITATIVE_THRESHOLD) {
-      rejectionReasons.push("insufficient_authoritative_score");
+    if (topCandidate.primaryScore < MATCHED_PRIMARY_THRESHOLD) {
+      rejectionReasons.push("insufficient_primary_score");
     }
     if (topCandidate.totalScore < MATCHED_TOTAL_THRESHOLD) {
       rejectionReasons.push("insufficient_total_score");
     }
-    if (authoritativeLead < AUTHORITATIVE_LEAD_THRESHOLD) {
-      rejectionReasons.push("insufficient_authoritative_lead");
+    if (primaryLead < PRIMARY_LEAD_THRESHOLD) {
+      rejectionReasons.push("insufficient_primary_lead");
     }
     return {
       status: "ambiguous",
@@ -1101,8 +1101,8 @@ const resolveMatchStatus = ({
   }
 
   const rejectionReasons: ComponentMatchRejectionReason[] = [];
-  if (topCandidate.authoritativeScore < MATCHED_AUTHORITATIVE_THRESHOLD) {
-    rejectionReasons.push("insufficient_authoritative_score");
+  if (topCandidate.primaryScore < MATCHED_PRIMARY_THRESHOLD) {
+    rejectionReasons.push("insufficient_primary_score");
   }
   if (topCandidate.totalScore < MATCHED_TOTAL_THRESHOLD) {
     rejectionReasons.push("insufficient_total_score");
