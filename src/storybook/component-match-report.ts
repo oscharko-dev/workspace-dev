@@ -1238,7 +1238,7 @@ const resolveLibraryResolution = ({
 
   if (!resolvedCustomerProfile) {
     return {
-      status: "not_applicable",
+      status: "mui_fallback_denied",
       reason: "profile_family_unresolved",
       ...baseResolution
     };
