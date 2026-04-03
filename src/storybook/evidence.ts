@@ -11,7 +11,12 @@ import {
   collectTopLevelFieldKeys
 } from "./bundle-analysis.js";
 import { extractImportPathToBundlePath, resolveIframeBundlePath } from "./iframe-import-map.js";
-import { normalizePosixPath, uniqueSorted } from "./text.js";
+import {
+  normalizePosixPath,
+  normalizeStorybookComponentPath,
+  normalizeStorybookDocsRoutePath,
+  uniqueSorted
+} from "./text.js";
 import type {
   StorybookBuildContext,
   StorybookEvidenceArtifact,
@@ -336,9 +341,9 @@ export const buildStorybookEvidenceArtifact = async ({
         createEvidenceItem({
           type: "story_componentPath",
           source,
-          subjectKey: entry.componentPath,
+          subjectKey: normalizeStorybookComponentPath(entry.componentPath),
           summary: {
-            componentPath: entry.componentPath
+            componentPath: normalizeStorybookComponentPath(entry.componentPath)
           }
         })
       );
@@ -425,13 +430,14 @@ export const buildStorybookEvidenceArtifact = async ({
     });
 
     for (const linkTarget of extractMdxLinks(bundleText)) {
+      const normalizedLinkTarget = normalizeStorybookDocsRoutePath(linkTarget);
       evidenceItems.push(
         createEvidenceItem({
           type: "mdx_link",
           source,
-          subjectKey: linkTarget,
+          subjectKey: normalizedLinkTarget,
           summary: {
-            linkTarget
+            linkTarget: normalizedLinkTarget
           }
         })
       );

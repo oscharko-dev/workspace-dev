@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { CONTRACT_VERSION } from "./contracts/index.js";
-import { getWorkspaceDefaults } from "./mode-lock.js";
+import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, getWorkspaceDefaults } from "./mode-lock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -27,6 +27,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const tsconfigDoc = await readRepoFile("tsconfig.json");
   const schemasSource = await readRepoFile("src/schemas.ts");
   const defaults = getWorkspaceDefaults();
+  const figmaModeLock = `figmaSourceMode=${getAllowedFigmaSourceModes().join("|")}`;
+  const codegenModeLock = `llmCodegenMode=${getAllowedLlmCodegenModes().join("|")}`;
   const escapedContractVersion = escapeRegExp(CONTRACT_VERSION);
 
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
@@ -34,14 +36,21 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(architectureDoc, /not safe for `worker_threads`/i);
   assert.match(architectureDoc, /waits up to 3 seconds for process exit, then falls back to `SIGKILL`/i);
   assert.match(architectureDoc, /best-effort `SIGTERM`/i);
-  assert.match(architectureDoc, /figmaSourceMode=rest\|hybrid\|local_json/);
-  assert.match(architectureDoc, /llmCodegenMode=deterministic/);
+  assert.match(architectureDoc, new RegExp(escapeRegExp(figmaModeLock)));
+  assert.match(architectureDoc, new RegExp(escapeRegExp(codegenModeLock)));
   assert.match(architectureDoc, /template\/react-mui-app\/pnpm-lock\.yaml/);
   assert.match(architectureDoc, /package\.json[` ]+`files`|`package\.json` `files`|package\.json `files`/);
   assert.match(architectureDoc, /template:install|--frozen-lockfile/);
   assert.match(architectureDoc, /verify:airgap/);
   assert.match(architectureDoc, /verify:reproducible-build/);
-  assert.match(localRuntimeDoc, /Enforce mode lock \(`rest\|hybrid\|local_json` \+ `deterministic`\)/);
+  assert.match(
+    localRuntimeDoc,
+    new RegExp(
+      escapeRegExp(
+        `Enforce mode lock (\`${getAllowedFigmaSourceModes().join("|")}\` + \`${getAllowedLlmCodegenModes().join("|")}\`)`
+      )
+    )
+  );
   assert.match(tsconfigDoc, /"moduleResolution": "node16"/);
   assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
   assert.doesNotMatch(complianceDoc, /npm-publish\.yml/);
@@ -49,10 +58,12 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(compatibilityDoc, /\| TypeScript consumer compiler \| 5\.0\.0 \| >=5\.0\.0 \|/);
   assert.match(compatibilityDoc, /TypeScript 4\.x consumers are unsupported and must upgrade to TypeScript `>=5\.0\.0`/);
   assert.match(compatibilityDoc, /\| `figmaSourceMode=hybrid` \| Supported \|/);
-  assert.match(readmeDoc, /`figmaSourceMode=rest`/);
-  assert.match(readmeDoc, /`figmaSourceMode=hybrid`/);
-  assert.match(readmeDoc, /`figmaSourceMode=local_json`/);
-  assert.match(readmeDoc, /`llmCodegenMode=deterministic`/);
+  for (const figmaMode of getAllowedFigmaSourceModes()) {
+    assert.match(readmeDoc, new RegExp(escapeRegExp(`\`figmaSourceMode=${figmaMode}\``)));
+  }
+  for (const codegenMode of getAllowedLlmCodegenModes()) {
+    assert.match(readmeDoc, new RegExp(escapeRegExp(`\`llmCodegenMode=${codegenMode}\``)));
+  }
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
   assert.match(contributingDoc, /dev -> dev-gate -> main/);

@@ -9,7 +9,13 @@ import {
   writeStorybookCatalogArtifact
 } from "./catalog.js";
 
-const createCatalogFixtureBuild = async (): Promise<string> => {
+const createCatalogFixtureBuild = async ({
+  componentPath = ".\\src\\core\\Tooltip\\Tooltip.tsx",
+  internalDocsLink = "/docs/if-components-button--docs?viewMode=docs#usage"
+}: {
+  componentPath?: string;
+  internalDocsLink?: string;
+} = {}): Promise<string> => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-catalog-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -34,7 +40,7 @@ const createCatalogFixtureBuild = async (): Promise<string> => {
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: ".\\src\\core\\Tooltip\\Tooltip.tsx"
+        componentPath
       },
       "components-button--default": {
         id: "components-button--default",
@@ -127,7 +133,7 @@ const createCatalogFixtureBuild = async (): Promise<string> => {
           e.jsxs("p", {
             children: [
               "Verwandte Doku unter ",
-              e.jsx("a", { href: "/docs/if-components-button--docs?viewMode=docs#usage", children: "IF Button" }),
+              e.jsx("a", { href: "${internalDocsLink}", children: "IF Button" }),
               " sowie ",
               e.jsx("a", { href: "https://example.com/design", children: "extern" })
             ]
@@ -316,6 +322,22 @@ test("buildStorybookCatalogArtifact family signalReferences aggregate entry-leve
   assert.equal(ifFamily.storyCount, 0);
   assert.deepEqual(ifFamily.storyEntryIds, []);
   assert.equal(ifFamily.docsEntryIds.length, 1);
+});
+
+test("buildStorybookCatalogArtifact stays byte-stable across equivalent componentPath and internal docs link variants", async () => {
+  const windowsBuildDir = await createCatalogFixtureBuild({
+    componentPath: ".\\src\\core\\Tooltip\\Tooltip.tsx",
+    internalDocsLink: "/docs/if-components-button--docs?viewMode=docs#usage"
+  });
+  const posixBuildDir = await createCatalogFixtureBuild({
+    componentPath: "./src/core/Tooltip/Tooltip.tsx",
+    internalDocsLink: "/docs/if-components-button--docs"
+  });
+
+  const windowsArtifact = await buildStorybookCatalogArtifact({ buildDir: windowsBuildDir });
+  const posixArtifact = await buildStorybookCatalogArtifact({ buildDir: posixBuildDir });
+
+  assert.deepEqual(windowsArtifact, posixArtifact);
 });
 
 test("buildStorybookCatalogArtifact all signal reference IDs are non-empty strings with a colon-separated prefix", async () => {

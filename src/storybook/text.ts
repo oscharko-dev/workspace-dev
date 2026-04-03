@@ -61,6 +61,22 @@ export const normalizePosixPath = (input: string): string => {
   return input.replace(/\\/gu, "/").replace(/^\.\//u, "");
 };
 
+export const normalizeStorybookComponentPath = (input: string): string => {
+  return normalizePosixPath(input).trim();
+};
+
+export const normalizeStorybookDocsRoutePath = (input: string): string => {
+  const [pathWithoutQuery] = input.split(/[?#]/u, 1);
+  const normalizedPath = normalizePosixPath(pathWithoutQuery ?? input).trim();
+  if (normalizedPath.startsWith("/docs/")) {
+    return normalizedPath;
+  }
+  if (normalizedPath.startsWith("docs/")) {
+    return `/${normalizedPath}`;
+  }
+  return normalizedPath;
+};
+
 export const normalizeWhitespace = (input: string): string => {
   return input.replace(/\s+/gu, " ").trim();
 };

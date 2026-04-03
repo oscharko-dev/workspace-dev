@@ -9,7 +9,12 @@ import {
   loadStorybookBuildContext
 } from "./evidence.js";
 import { extractStaticObjectField } from "./static-object-field.js";
-import { normalizePosixPath, uniqueSorted } from "./text.js";
+import {
+  normalizePosixPath,
+  normalizeStorybookComponentPath,
+  normalizeStorybookDocsRoutePath,
+  uniqueSorted
+} from "./text.js";
 import type {
   StorybookBuildContext,
   StorybookCatalogArtifact,
@@ -212,24 +217,8 @@ const toCatalogSignalType = (evidenceType: StorybookEvidenceArtifact["evidence"]
   }
 };
 
-const normalizeDocsRoutePath = (value: string): string => {
-  const [pathWithoutQuery] = value.split(/[?#]/u, 1);
-  const normalizedPath = normalizePosixPath(pathWithoutQuery ?? value).trim();
-  if (normalizedPath.startsWith("/docs/")) {
-    return normalizedPath;
-  }
-  if (normalizedPath.startsWith("docs/")) {
-    return `/${normalizedPath}`;
-  }
-  return normalizedPath;
-};
-
-const normalizeCatalogComponentPath = (value: string): string => {
-  return normalizePosixPath(value);
-};
-
 const resolveDocsRouteEntryId = (value: string): string | undefined => {
-  const normalizedPath = normalizeDocsRoutePath(value);
+  const normalizedPath = normalizeStorybookDocsRoutePath(value);
   if (!normalizedPath.startsWith("/docs/")) {
     return undefined;
   }
@@ -375,7 +364,7 @@ const buildDocsMetadataByImportPath = async ({
     const external: string[] = [];
 
     for (const linkTarget of extractMdxLinks(bundleText)) {
-      const normalizedInternalDocsPath = normalizeDocsRoutePath(linkTarget);
+      const normalizedInternalDocsPath = normalizeStorybookDocsRoutePath(linkTarget);
       if (normalizedInternalDocsPath.startsWith("/docs/")) {
         const linkedEntryId = resolveDocsRouteEntryId(normalizedInternalDocsPath);
         const linkedEntry = linkedEntryId ? entryById.get(linkedEntryId) : undefined;
@@ -424,7 +413,9 @@ const buildCatalogEntries = ({
   return buildContext.indexEntries
     .map((entry) => {
       const normalizedImportPath = normalizePosixPath(entry.importPath);
-      const normalizedComponentPath = entry.componentPath ? normalizeCatalogComponentPath(entry.componentPath) : undefined;
+      const normalizedComponentPath = entry.componentPath
+        ? normalizeStorybookComponentPath(entry.componentPath)
+        : undefined;
       const tier = resolveTier(entry.title);
       const storyMetadata = storyMetadataByImportPath.get(normalizedImportPath);
       const docsMetadata = docsMetadataByImportPath.get(normalizedImportPath);
