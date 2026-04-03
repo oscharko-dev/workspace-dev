@@ -98,6 +98,16 @@ export class PipelineOrchestrator {
     this.deps = deps;
   }
 
+  private createResolvedArtifactContract(contract?: StageArtifactContract): ResolvedStageArtifactContract {
+    return {
+      reads: mergeArtifactKeys(contract?.reads),
+      optionalReads: mergeArtifactKeys(contract?.optionalReads),
+      writes: mergeArtifactKeys(contract?.writes),
+      skipWrites: mergeArtifactKeys(contract?.skipWrites),
+      optionalWrites: mergeArtifactKeys(contract?.optionalWrites)
+    };
+  }
+
   private async resolveArtifactContract({
     context,
     entry
@@ -105,14 +115,14 @@ export class PipelineOrchestrator {
     context: PipelineExecutionContext;
     entry: PipelineStagePlanEntry<unknown>;
   }): Promise<ResolvedStageArtifactContract> {
-    const staticContract = entry.artifacts;
+    const staticContract = this.createResolvedArtifactContract(entry.artifacts);
     const dynamicContract = await entry.resolveArtifacts?.(context);
     return {
-      reads: mergeArtifactKeys(staticContract?.reads, dynamicContract?.reads),
-      optionalReads: mergeArtifactKeys(staticContract?.optionalReads, dynamicContract?.optionalReads),
-      writes: mergeArtifactKeys(staticContract?.writes, dynamicContract?.writes),
-      skipWrites: mergeArtifactKeys(staticContract?.skipWrites, dynamicContract?.skipWrites),
-      optionalWrites: mergeArtifactKeys(staticContract?.optionalWrites, dynamicContract?.optionalWrites)
+      reads: mergeArtifactKeys(staticContract.reads, dynamicContract?.reads),
+      optionalReads: mergeArtifactKeys(staticContract.optionalReads, dynamicContract?.optionalReads),
+      writes: mergeArtifactKeys(staticContract.writes, dynamicContract?.writes),
+      skipWrites: mergeArtifactKeys(staticContract.skipWrites, dynamicContract?.skipWrites),
+      optionalWrites: mergeArtifactKeys(staticContract.optionalWrites, dynamicContract?.optionalWrites)
     };
   }
 
@@ -390,19 +400,28 @@ export class PipelineOrchestrator {
     for (const entry of plan) {
       const service = entry.service;
       const skipReason = entry.shouldSkip?.(context);
-      const artifactContract = await this.resolveArtifactContract({
-        context,
-        entry
-      });
       if (skipReason) {
         await this.skipStage({
           context,
           entry,
-          artifactContract,
+          artifactContract: this.createResolvedArtifactContract(entry.artifacts),
           reason: skipReason,
           stage: service.stageName
         });
         continue;
+      }
+      let artifactContract: ResolvedStageArtifactContract;
+      try {
+        artifactContract = await this.resolveArtifactContract({
+          context,
+          entry
+        });
+      } catch (error) {
+        this.handleStageError({
+          context,
+          error,
+          stage: service.stageName
+        });
       }
       for (const key of artifactContract.reads) {
         const reference = await context.artifactStore.getReference(key);

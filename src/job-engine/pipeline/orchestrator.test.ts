@@ -411,6 +411,78 @@ test("PipelineOrchestrator rejects missing dynamically required read artifacts b
   assert.equal(executed, false);
 });
 
+test("PipelineOrchestrator normalizes resolveArtifacts failures through the stage error path", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "codegen.generate": {
+            execute: async () => {},
+            resolveArtifacts: async () => {
+              throw new Error("artifact contract resolution failed");
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      "stage" in error &&
+      (error as WorkspacePipelineError).code === "E_PIPELINE_UNKNOWN" &&
+      (error as WorkspacePipelineError).stage === "codegen.generate" &&
+      error.message.includes("artifact contract resolution failed")
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "codegen.generate")?.status, "failed");
+});
+
+test("PipelineOrchestrator skips stages without resolving dynamic artifacts", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  let resolveArtifactsCalls = 0;
+
+  await orchestrator.execute({
+    context,
+    plan: createCanonicalPlan({
+      "git.pr": {
+        execute: async () => {
+          assert.fail("skipped stages must not execute");
+        },
+        shouldSkip: () => "Git/PR flow disabled by request.",
+        onSkipped: async (executionContext, reason) => {
+          await executionContext.artifactStore.setValue({
+            key: STAGE_ARTIFACT_KEYS.gitPrStatus,
+            stage: "git.pr",
+            value: {
+              status: "skipped",
+              reason
+            }
+          });
+        },
+        artifacts: {
+          skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
+        },
+        resolveArtifacts: async () => {
+          resolveArtifactsCalls += 1;
+          throw new Error("skip path should not resolve artifacts");
+        }
+      }
+    })
+  });
+
+  assert.equal(resolveArtifactsCalls, 0);
+  assert.equal(context.job.stages.find((stage) => stage.name === "git.pr")?.status, "skipped");
+  assert.deepEqual(context.job.gitPr, {
+    status: "skipped",
+    reason: "Git/PR flow disabled by request."
+  });
+});
+
 test("PipelineOrchestrator marks stage failed when a required write artifact is missing", async () => {
   const context = await createContext();
   const orchestrator = createOrchestrator();
