@@ -7,8 +7,9 @@ coverage/
 .workspace-dev/
 .sandbox/
 test-results/
-.intent/
-.claude/
+/.codex/
+/.claude/
+/.intent/
 openvex.json
 *.tgz
 pnpm-debug.log*
