@@ -60,8 +60,8 @@ Added:
 - `WorkspaceJobArtifacts.storybookTokensFile?: string` for the curated `storybook.tokens` artifact path.
 - `WorkspaceJobArtifacts.storybookThemesFile?: string` for the curated `storybook.themes` artifact path.
 - `WorkspaceJobArtifacts.storybookComponentsFile?: string` for the curated `storybook.components` artifact path.
-- `WorkspaceJobArtifacts.figmaLibraryResolutionFile?: string` for a future public `figma.library_resolution` artifact path when present.
-- `WorkspaceJobArtifacts.componentMatchReportFile?: string` for a future public `component.match_report` artifact path when present.
+- `WorkspaceJobArtifacts.figmaLibraryResolutionFile?: string` for the public `figma.library_resolution` artifact path when present.
+- `WorkspaceJobArtifacts.componentMatchReportFile?: string` for the public `component.match_report` artifact path when present.
 - `WorkspaceJobArtifacts.validationSummaryFile?: string` for the structured `validation-summary.json` artifact path produced by `validate.project`.
 
 Changed:

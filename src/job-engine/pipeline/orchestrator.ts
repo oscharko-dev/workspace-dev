@@ -43,6 +43,7 @@ const createPipelinePlanValidationError = ({
 export interface PipelineStagePlanEntry<TInput = unknown> {
   service: StageService<TInput>;
   artifacts?: StageArtifactContract;
+  resolveArtifacts?: (context: PipelineExecutionContext) => Promise<StageArtifactContract> | StageArtifactContract;
   resolveInput?: (context: PipelineExecutionContext) => Promise<TInput> | TInput;
   shouldSkip?: (context: PipelineExecutionContext) => string | undefined;
   onSkipped?: (context: PipelineExecutionContext, reason: string) => void | Promise<void>;
@@ -52,6 +53,30 @@ interface PipelineOrchestratorDeps {
   toPipelineError: (input: { error: unknown; fallbackStage: WorkspaceJobStageName }) => WorkspacePipelineError;
   isAbortLikeError: (error: unknown) => boolean;
 }
+
+interface ResolvedStageArtifactContract {
+  reads: StageArtifactKey[];
+  optionalReads: StageArtifactKey[];
+  writes: StageArtifactKey[];
+  skipWrites: StageArtifactKey[];
+  optionalWrites: StageArtifactKey[];
+}
+
+const mergeArtifactKeys = (...groups: ReadonlyArray<readonly StageArtifactKey[] | undefined>): StageArtifactKey[] => {
+  const merged: StageArtifactKey[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const key of group ?? []) {
+      const serializedKey = String(key);
+      if (seen.has(serializedKey)) {
+        continue;
+      }
+      seen.add(serializedKey);
+      merged.push(key);
+    }
+  }
+  return merged;
+};
 
 const resolveCancellationReason = ({
   context,
@@ -73,17 +98,21 @@ export class PipelineOrchestrator {
     this.deps = deps;
   }
 
-  private resolveArtifactContract({
+  private async resolveArtifactContract({
+    context,
     entry
   }: {
+    context: PipelineExecutionContext;
     entry: PipelineStagePlanEntry<unknown>;
-  }): { reads: StageArtifactKey[]; writes: StageArtifactKey[]; skipWrites: StageArtifactKey[]; optionalWrites: StageArtifactKey[] } {
-    const contract = entry.artifacts;
+  }): Promise<ResolvedStageArtifactContract> {
+    const staticContract = entry.artifacts;
+    const dynamicContract = await entry.resolveArtifacts?.(context);
     return {
-      reads: [...(contract?.reads ?? [])],
-      writes: [...(contract?.writes ?? [])],
-      skipWrites: [...(contract?.skipWrites ?? [])],
-      optionalWrites: [...(contract?.optionalWrites ?? [])]
+      reads: mergeArtifactKeys(staticContract?.reads, dynamicContract?.reads),
+      optionalReads: mergeArtifactKeys(staticContract?.optionalReads, dynamicContract?.optionalReads),
+      writes: mergeArtifactKeys(staticContract?.writes, dynamicContract?.writes),
+      skipWrites: mergeArtifactKeys(staticContract?.skipWrites, dynamicContract?.skipWrites),
+      optionalWrites: mergeArtifactKeys(staticContract?.optionalWrites, dynamicContract?.optionalWrites)
     };
   }
 
@@ -257,11 +286,13 @@ export class PipelineOrchestrator {
     context,
     stage,
     entry,
+    artifactContract,
     input
   }: {
     context: PipelineExecutionContext;
     stage: WorkspaceJobStageName;
     entry: PipelineStagePlanEntry<TInput>;
+    artifactContract: ResolvedStageArtifactContract;
     input: TInput;
   }): Promise<void> {
     this.ensureStageNotCanceled({ context, stage });
@@ -281,10 +312,9 @@ export class PipelineOrchestrator {
         stage
       });
       await entry.service.execute(input, stageContext);
-      const { writes: requiredWrites } = this.resolveArtifactContract({ entry });
       await this.ensureRequiredArtifactsPersisted({
         context,
-        requiredKeys: requiredWrites,
+        requiredKeys: artifactContract.writes,
         stage
       });
       await context.syncPublicJobProjection();
@@ -309,11 +339,13 @@ export class PipelineOrchestrator {
   private async skipStage({
     context,
     entry,
+    artifactContract,
     reason,
     stage
   }: {
     context: PipelineExecutionContext;
     entry: PipelineStagePlanEntry<unknown>;
+    artifactContract: ResolvedStageArtifactContract;
     reason: string;
     stage: WorkspaceJobStageName;
   }): Promise<void> {
@@ -322,10 +354,9 @@ export class PipelineOrchestrator {
 
     try {
       await entry.onSkipped?.(context, reason);
-      const { skipWrites: requiredSkipWrites } = this.resolveArtifactContract({ entry });
       await this.ensureRequiredArtifactsPersisted({
         context,
-        requiredKeys: requiredSkipWrites,
+        requiredKeys: artifactContract.skipWrites,
         stage
       });
       await context.syncPublicJobProjection();
@@ -359,17 +390,21 @@ export class PipelineOrchestrator {
     for (const entry of plan) {
       const service = entry.service;
       const skipReason = entry.shouldSkip?.(context);
+      const artifactContract = await this.resolveArtifactContract({
+        context,
+        entry
+      });
       if (skipReason) {
         await this.skipStage({
           context,
           entry,
+          artifactContract,
           reason: skipReason,
           stage: service.stageName
         });
         continue;
       }
-      const { reads: requiredReads } = this.resolveArtifactContract({ entry });
-      for (const key of requiredReads) {
+      for (const key of artifactContract.reads) {
         const reference = await context.artifactStore.getReference(key);
         if (!reference) {
           throw this.deps.toPipelineError({
@@ -383,6 +418,7 @@ export class PipelineOrchestrator {
         context,
         stage: service.stageName,
         entry,
+        artifactContract,
         input
       });
     }

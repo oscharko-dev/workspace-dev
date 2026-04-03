@@ -125,6 +125,7 @@ const createCanonicalPlan = (
         execute: override?.execute ?? (async () => {})
       },
       ...(override?.artifacts ? { artifacts: override.artifacts } : {}),
+      ...(override?.resolveArtifacts ? { resolveArtifacts: override.resolveArtifacts } : {}),
       ...(override?.resolveInput ? { resolveInput: override.resolveInput } : {}),
       ...(override?.shouldSkip ? { shouldSkip: override.shouldSkip } : {}),
       ...(override?.onSkipped ? { onSkipped: override.onSkipped } : {})
@@ -371,6 +372,40 @@ test("PipelineOrchestrator rejects missing required read artifacts before stage 
       });
     },
     /requires missing artifact 'design\.ir'/
+  );
+
+  assert.equal(executed, false);
+});
+
+test("PipelineOrchestrator rejects missing dynamically required read artifacts before stage execution", async () => {
+  const context = await createContext();
+  context.requestedStorybookStaticDir = "storybook-static/customer";
+  context.resolvedStorybookStaticDir = "/tmp/storybook-static/customer";
+  const orchestrator = createOrchestrator();
+  let executed = false;
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "codegen.generate": {
+            execute: async () => {
+              executed = true;
+            },
+            resolveArtifacts: (executionContext) => {
+              if (!executionContext.requestedStorybookStaticDir) {
+                return {};
+              }
+              return {
+                reads: [STAGE_ARTIFACT_KEYS.storybookTokens]
+              };
+            }
+          }
+        })
+      });
+    },
+    /requires missing artifact 'storybook\.tokens'/
   );
 
   assert.equal(executed, false);
