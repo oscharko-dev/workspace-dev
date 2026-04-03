@@ -236,6 +236,15 @@ const loadCustomerProfileActivationFromRequest = async ({
   resolvedWorkspaceRoot: string;
   limits: PipelineDiagnosticLimits;
 }): Promise<ResolvedCustomerProfileActivation> => {
+  if (customerProfilePath.includes("\0")) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message: "Customer profile path contains a null byte.",
+      limits
+    });
+  }
+
   const resolvedPath = path.resolve(resolvedWorkspaceRoot, customerProfilePath);
 
   if (!isWithinRoot({ candidatePath: resolvedPath, rootPath: resolvedWorkspaceRoot })) {
@@ -245,6 +254,17 @@ const loadCustomerProfileActivationFromRequest = async ({
       message:
         `Customer profile path '${customerProfilePath}' resolves outside the workspace root ` +
         `('${resolvedWorkspaceRoot}').`,
+      limits
+    });
+  }
+
+  if (await hasSymlinkInPath({ candidatePath: resolvedPath, rootPath: resolvedWorkspaceRoot })) {
+    throw createPipelineError({
+      code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
+      stage: "figma.source",
+      message:
+        `Customer profile path '${customerProfilePath}' contains a symbolic link ` +
+        `and cannot be loaded.`,
       limits
     });
   }

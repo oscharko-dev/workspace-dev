@@ -1509,3 +1509,54 @@ test("resolveCustomerProfileFamily is case-insensitive and trims whitespace", ()
   assert.equal(resolveCustomerProfileFamily({ profile: parsed.config, candidate: "components" })?.id, "Components");
   assert.equal(resolveCustomerProfileFamily({ profile: parsed.config, candidate: "@CUSTOMER/REACT-UI" })?.id, "ReactUI");
 });
+
+test("#698 rejects unsafe dependency version specifiers (git URLs, file paths, tarball URLs)", () => {
+  const unsafeVersions = [
+    "git+https://github.com/attacker/evil.git",
+    "git+ssh://git@github.com/attacker/evil.git",
+    "git://github.com/attacker/evil.git",
+    "github:attacker/evil",
+    "file:../local-pkg",
+    "https://evil.com/package.tgz",
+    "http://evil.com/package.tgz",
+    "link:../sibling"
+  ];
+
+  for (const unsafeVersion of unsafeVersions) {
+    const parsed = safeParseCustomerProfileConfig({
+      input: {
+        ...createRawCustomerProfile(),
+        template: {
+          ...createRawCustomerProfile().template,
+          dependencies: { "@customer/dep": unsafeVersion }
+        }
+      }
+    });
+
+    assert.equal(parsed.success, false, `Expected version '${unsafeVersion}' to be rejected`);
+    if (!parsed.success) {
+      const hasVersionError = parsed.issues.some((issue) =>
+        issue.message.includes("semver range or dist-tag, not a URL or file path")
+      );
+      assert.equal(hasVersionError, true, `Expected version rejection message for '${unsafeVersion}'`);
+    }
+  }
+});
+
+test("#698 accepts valid dependency version specifiers", () => {
+  const safeVersions = ["^1.0.0", "~2.3.4", ">=1.0.0 <3.0.0", "1.x", "*", "latest", "next", "0.0.1-alpha.1"];
+
+  for (const safeVersion of safeVersions) {
+    const parsed = safeParseCustomerProfileConfig({
+      input: {
+        ...createRawCustomerProfile(),
+        template: {
+          ...createRawCustomerProfile().template,
+          dependencies: { "@customer/dep": safeVersion }
+        }
+      }
+    });
+
+    assert.equal(parsed.success, true, `Expected version '${safeVersion}' to be accepted`);
+  }
+});
