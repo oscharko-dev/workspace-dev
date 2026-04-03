@@ -335,8 +335,8 @@ const normalizeLookupResult = (value: unknown): FigmaLibraryLookupResult | undef
 const normalizeAssetCacheEntry = (value: unknown): FigmaLibraryResolutionAssetCacheEntry | undefined => {
   if (
     !isRecord(value) ||
-    isFiniteNumber(value.version) === false ||
-    isFiniteNumber(value.cachedAt) === false ||
+    !isFiniteNumber(value.version) ||
+    !isFiniteNumber(value.cachedAt) ||
     typeof value.assetKind !== "string" ||
     (value.assetKind !== "component" && value.assetKind !== "component_set") ||
     typeof value.key !== "string" ||
