@@ -1,249 +1,114 @@
 {
-  "appShellSignals": [
-    {
-      "confidence": 1,
-      "fingerprint": "header + titel|FRAME|VERTICAL|28|3",
-      "frameIds": [
-        "1:63230",
-        "1:64644",
-        "1:66050",
-        "1:67464",
-        "1:68884"
-      ],
-      "groupId": "bedarfsermittlung-brutto-betriebsmittel-alle-cluster-eingeklappt-id-003-5-v1-5",
-      "nodeIds": [
-        "1:63232",
-        "1:64646",
-        "1:66052",
-        "1:67466",
-        "1:68886"
-      ],
-      "reasons": [
-        "Fingerprint repeated in 5 of 5 grouped frames.",
-        "Shell detection is based on repeated top-level structure and positional heuristics."
-      ],
-      "role": "header",
-      "signalId": "bedarfsermittlung-brutto-betriebsmittel-alle-cluster-eingeklappt-id-003-5-v1-5-shell-2"
-    },
-    {
-      "confidence": 1,
-      "fingerprint": "markenbühne|INSTANCE|HORIZONTAL|28|2",
-      "frameIds": [
-        "1:63230",
-        "1:64644",
-        "1:66050",
-        "1:67464",
-        "1:68884"
-      ],
-      "groupId": "bedarfsermittlung-brutto-betriebsmittel-alle-cluster-eingeklappt-id-003-5-v1-5",
-      "nodeIds": [
-        "1:63231",
-        "1:64645",
-        "1:66051",
-        "1:67465",
-        "1:68885"
-      ],
-      "reasons": [
-        "Fingerprint repeated in 5 of 5 grouped frames.",
-        "Shell detection is based on repeated top-level structure and positional heuristics."
-      ],
-      "role": "header",
-      "signalId": "bedarfsermittlung-brutto-betriebsmittel-alle-cluster-eingeklappt-id-003-5-v1-5-shell-1"
-    }
-  ],
+  "appShellSignals": [],
   "artifactVersion": 1,
   "componentDensity": {
     "boardDominantFamilies": [
       {
-        "count": 13,
-        "familyKey": "component:1:38307",
+        "count": 10,
+        "familyKey": "component:1:38311",
         "familyName": "<Typography>",
-        "ratio": 0.083
+        "ratio": 0.112
       },
       {
-        "count": 8,
-        "familyKey": "component:1:38915",
-        "familyName": "<Icon>",
-        "ratio": 0.051
-      },
-      {
-        "count": 8,
-        "familyKey": "component:1:39071",
-        "familyName": "<Divider>",
-        "ratio": 0.051
-      },
-      {
-        "count": 8,
+        "count": 6,
         "familyKey": "component:1:54341",
         "familyName": "<Stack> FormControlLabel Radio",
-        "ratio": 0.051
-      },
-      {
-        "count": 8,
-        "familyKey": "component:1:636",
-        "familyName": "ic_down_s 🔥",
-        "ratio": 0.051
-      },
-      {
-        "count": 6,
-        "familyKey": "component:1:39679",
-        "familyName": "<Stack3>(Nested)",
-        "ratio": 0.038
-      },
-      {
-        "count": 6,
-        "familyKey": "component:1:42234",
-        "familyName": "<Stack2>(Nested)",
-        "ratio": 0.038
+        "ratio": 0.067
       },
       {
         "count": 5,
-        "familyKey": "component:1:21503",
-        "familyName": "Markenbühne",
-        "ratio": 0.032
+        "familyKey": "component:1:41763",
+        "familyName": "<Stack2>(Nested)",
+        "ratio": 0.056
+      },
+      {
+        "count": 5,
+        "familyKey": "component:1:43496",
+        "familyName": "ic_circle_s 🔥",
+        "ratio": 0.056
+      },
+      {
+        "count": 5,
+        "familyKey": "component:1:54308",
+        "familyName": "<Radio>",
+        "ratio": 0.056
+      },
+      {
+        "count": 4,
+        "familyKey": "component:1:38908",
+        "familyName": "<Divider>",
+        "ratio": 0.045
+      },
+      {
+        "count": 4,
+        "familyKey": "component:1:39046",
+        "familyName": "<Icon>",
+        "ratio": 0.045
+      },
+      {
+        "count": 3,
+        "familyKey": "component:1:38938",
+        "familyName": "<Icon>",
+        "ratio": 0.034
       }
     ],
     "byFrame": [
       {
-        "density": 0.2,
+        "density": 0.337,
         "dominantFamilies": [
           {
-            "count": 1,
-            "familyKey": "component:1:21503",
-            "familyName": "Markenbühne",
-            "ratio": 0.5
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:63214",
-            "familyName": "<Stack> ButtonCombination",
-            "ratio": 0.5
-          }
-        ],
-        "frameId": "1:63230",
-        "frameName": "Bedarfsermittlung; Brutto + Betriebsmittel; alle Cluster eingeklappt ID-003.5_v1",
-        "instanceCount": 2,
-        "subtreeNodeCount": 10
-      },
-      {
-        "density": 0.2,
-        "dominantFamilies": [
-          {
-            "count": 1,
-            "familyKey": "component:1:21503",
-            "familyName": "Markenbühne",
-            "ratio": 0.5
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:63214",
-            "familyName": "<Stack> ButtonCombination",
-            "ratio": 0.5
-          }
-        ],
-        "frameId": "1:64644",
-        "frameName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded ID-003.4_v1",
-        "instanceCount": 2,
-        "subtreeNodeCount": 10
-      },
-      {
-        "density": 0.335,
-        "dominantFamilies": [
-          {
-            "count": 13,
-            "familyKey": "component:1:38307",
+            "count": 10,
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
-            "ratio": 0.087
+            "ratio": 0.112
           },
           {
-            "count": 8,
-            "familyKey": "component:1:38915",
-            "familyName": "<Icon>",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:39071",
-            "familyName": "<Divider>",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
+            "count": 6,
             "familyKey": "component:1:54341",
             "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:636",
-            "familyName": "ic_down_s 🔥",
-            "ratio": 0.054
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:39679",
-            "familyName": "<Stack3>(Nested)",
-            "ratio": 0.04
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.04
+            "ratio": 0.067
           },
           {
             "count": 5,
-            "familyKey": "component:1:38305",
-            "familyName": "<Typography>",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.056
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.056
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.056
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.045
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.045
+          },
+          {
+            "count": 3,
+            "familyKey": "component:1:38938",
+            "familyName": "<Icon>",
             "ratio": 0.034
           }
         ],
-        "frameId": "1:66050",
-        "frameName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.2_v1",
-        "instanceCount": 149,
-        "subtreeNodeCount": 445
-      },
-      {
-        "density": 0.2,
-        "dominantFamilies": [
-          {
-            "count": 1,
-            "familyKey": "component:1:21503",
-            "familyName": "Markenbühne",
-            "ratio": 0.5
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:63214",
-            "familyName": "<Stack> ButtonCombination",
-            "ratio": 0.5
-          }
-        ],
-        "frameId": "1:67464",
+        "frameId": "1:65671",
         "frameName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.1_v1",
-        "instanceCount": 2,
-        "subtreeNodeCount": 10
-      },
-      {
-        "density": 0.2,
-        "dominantFamilies": [
-          {
-            "count": 1,
-            "familyKey": "component:1:21503",
-            "familyName": "Markenbühne",
-            "ratio": 0.5
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:63214",
-            "familyName": "<Stack> ButtonCombination",
-            "ratio": 0.5
-          }
-        ],
-        "frameId": "1:68884",
-        "frameName": "Bedarfsermittlung; Fehlermeldungen ID-003.3_v1",
-        "instanceCount": 2,
-        "subtreeNodeCount": 10
+        "instanceCount": 89,
+        "subtreeNodeCount": 264
       }
     ],
     "hotspots": [
@@ -251,191 +116,132 @@
         "density": 0.338,
         "dominantFamilies": [
           {
-            "count": 13,
-            "familyKey": "component:1:38307",
+            "count": 10,
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
-            "ratio": 0.088
+            "ratio": 0.112
           },
           {
-            "count": 8,
-            "familyKey": "component:1:38915",
-            "familyName": "<Icon>",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:39071",
-            "familyName": "<Divider>",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
+            "count": 6,
             "familyKey": "component:1:54341",
             "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.054
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:636",
-            "familyName": "ic_down_s 🔥",
-            "ratio": 0.054
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:39679",
-            "familyName": "<Stack3>(Nested)",
-            "ratio": 0.041
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.041
+            "ratio": 0.067
           },
           {
             "count": 5,
-            "familyKey": "component:1:38305",
-            "familyName": "<Typography>",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.056
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.056
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.056
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.045
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.045
+          },
+          {
+            "count": 3,
+            "familyKey": "component:1:38938",
+            "familyName": "<Icon>",
             "ratio": 0.034
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66138",
-        "instanceCount": 148,
-        "nodeId": "1:66138",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65759",
+        "instanceCount": 89,
+        "nodeId": "1:65759",
         "nodeName": "SeitenContent",
-        "subtreeNodeCount": 438
+        "subtreeNodeCount": 263
       },
       {
-        "density": 0.336,
+        "density": 0.335,
         "dominantFamilies": [
           {
-            "count": 13,
-            "familyKey": "component:1:38307",
+            "count": 10,
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
-            "ratio": 0.09
+            "ratio": 0.118
           },
           {
-            "count": 8,
-            "familyKey": "component:1:38915",
-            "familyName": "<Icon>",
-            "ratio": 0.056
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:39071",
-            "familyName": "<Divider>",
-            "ratio": 0.056
-          },
-          {
-            "count": 8,
+            "count": 6,
             "familyKey": "component:1:54341",
             "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.056
-          },
-          {
-            "count": 8,
-            "familyKey": "component:1:636",
-            "familyName": "ic_down_s 🔥",
-            "ratio": 0.056
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:39679",
-            "familyName": "<Stack3>(Nested)",
-            "ratio": 0.042
-          },
-          {
-            "count": 6,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.042
+            "ratio": 0.071
           },
           {
             "count": 5,
-            "familyKey": "component:1:38305",
-            "familyName": "<Typography>",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.059
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.059
+          },
+          {
+            "count": 5,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.059
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.047
+          },
+          {
+            "count": 4,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.047
+          },
+          {
+            "count": 3,
+            "familyKey": "component:1:38938",
+            "familyName": "<Icon>",
             "ratio": 0.035
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66141",
-        "instanceCount": 144,
-        "nodeId": "1:66141",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:2:1042",
+        "instanceCount": 85,
+        "nodeId": "2:1042",
         "nodeName": "<Stack>",
-        "subtreeNodeCount": 429
+        "subtreeNodeCount": 254
       },
       {
-        "density": 0.344,
-        "dominantFamilies": [
-          {
-            "count": 6,
-            "familyKey": "component:1:38307",
-            "familyName": "<Typography>",
-            "ratio": 0.188
-          },
-          {
-            "count": 4,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.125
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.094
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:54308",
-            "familyName": "<Radio>",
-            "ratio": 0.094
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.063
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.063
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:38325",
-            "familyName": "<Typography>",
-            "ratio": 0.031
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:38915",
-            "familyName": "<Icon>",
-            "ratio": 0.031
-          }
-        ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66196",
-        "instanceCount": 32,
-        "nodeId": "1:66196",
-        "nodeName": "<Stack>",
-        "subtreeNodeCount": 93
-      },
-      {
-        "density": 0.284,
+        "density": 0.301,
         "dominantFamilies": [
           {
             "count": 4,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.129
           },
           {
             "count": 2,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.065
           },
@@ -453,7 +259,7 @@
           },
           {
             "count": 2,
-            "familyKey": "component:1:50189",
+            "familyKey": "component:1:51269",
             "familyName": "<TextField>",
             "ratio": 0.065
           },
@@ -465,154 +271,36 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:38915",
-            "familyName": "<Icon>",
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
             "ratio": 0.032
           },
           {
             "count": 1,
-            "familyKey": "component:1:39023",
+            "familyKey": "component:1:38938",
             "familyName": "<Icon>",
             "ratio": 0.032
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66245",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65866",
         "instanceCount": 31,
-        "nodeId": "1:66245",
+        "nodeId": "1:65866",
         "nodeName": "<Stack>",
-        "subtreeNodeCount": 109
+        "subtreeNodeCount": 103
       },
       {
-        "density": 0.346,
-        "dominantFamilies": [
-          {
-            "count": 6,
-            "familyKey": "component:1:38307",
-            "familyName": "<Typography>",
-            "ratio": 0.214
-          },
-          {
-            "count": 4,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.143
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.107
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:54308",
-            "familyName": "<Radio>",
-            "ratio": 0.107
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.071
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.071
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:38325",
-            "familyName": "<Typography>",
-            "ratio": 0.036
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:39023",
-            "familyName": "<Icon>",
-            "ratio": 0.036
-          }
-        ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66204",
-        "instanceCount": 28,
-        "nodeId": "1:66204",
-        "nodeName": "_<CardContent>",
-        "subtreeNodeCount": 81
-      },
-      {
-        "density": 0.341,
-        "dominantFamilies": [
-          {
-            "count": 6,
-            "familyKey": "component:1:38307",
-            "familyName": "<Typography>",
-            "ratio": 0.214
-          },
-          {
-            "count": 4,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.143
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.107
-          },
-          {
-            "count": 3,
-            "familyKey": "component:1:54308",
-            "familyName": "<Radio>",
-            "ratio": 0.107
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.071
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.071
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:38325",
-            "familyName": "<Typography>",
-            "ratio": 0.036
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:39023",
-            "familyName": "<Icon>",
-            "ratio": 0.036
-          }
-        ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66199",
-        "instanceCount": 28,
-        "nodeId": "1:66199",
-        "nodeName": "<Card>",
-        "subtreeNodeCount": 82
-      },
-      {
-        "density": 0.281,
+        "density": 0.3,
         "dominantFamilies": [
           {
             "count": 4,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.148
           },
           {
             "count": 2,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.074
           },
@@ -630,7 +318,7 @@
           },
           {
             "count": 2,
-            "familyKey": "component:1:50189",
+            "familyKey": "component:1:51269",
             "familyName": "<TextField>",
             "ratio": 0.074
           },
@@ -642,36 +330,36 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:39023",
-            "familyName": "<Icon>",
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
             "ratio": 0.037
           },
           {
             "count": 1,
-            "familyKey": "component:1:39071",
-            "familyName": "<Divider>",
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
             "ratio": 0.037
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66253",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65874",
         "instanceCount": 27,
-        "nodeId": "1:66253",
+        "nodeId": "1:65874",
         "nodeName": "_<CardContent>",
-        "subtreeNodeCount": 96
+        "subtreeNodeCount": 90
       },
       {
-        "density": 0.278,
+        "density": 0.297,
         "dominantFamilies": [
           {
             "count": 4,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.148
           },
           {
             "count": 2,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.074
           },
@@ -689,7 +377,7 @@
           },
           {
             "count": 2,
-            "familyKey": "component:1:50189",
+            "familyKey": "component:1:51269",
             "familyName": "<TextField>",
             "ratio": 0.074
           },
@@ -701,89 +389,207 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:39023",
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.037
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:39046",
             "familyName": "<Icon>",
             "ratio": 0.037
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:39071",
-            "familyName": "<Divider>",
-            "ratio": 0.037
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66248",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65869",
         "instanceCount": 27,
-        "nodeId": "1:66248",
+        "nodeId": "1:65869",
         "nodeName": "<Card>",
-        "subtreeNodeCount": 97
+        "subtreeNodeCount": 91
       },
       {
-        "density": 0.429,
+        "density": 0.344,
         "dominantFamilies": [
           {
-            "count": 6,
-            "familyKey": "component:1:38307",
-            "familyName": "<Typography>",
-            "ratio": 0.25
-          },
-          {
-            "count": 4,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.167
-          },
-          {
             "count": 3,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.143
+          },
+          {
+            "count": 2,
             "familyKey": "component:1:43496",
             "familyName": "ic_circle_s 🔥",
-            "ratio": 0.125
+            "ratio": 0.095
           },
           {
-            "count": 3,
+            "count": 2,
             "familyKey": "component:1:54308",
             "familyName": "<Radio>",
-            "ratio": 0.125
+            "ratio": 0.095
           },
           {
             "count": 2,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.083
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.083
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.095
           },
           {
             "count": 1,
-            "familyKey": "component:1:38325",
+            "familyKey": "component:1:38329",
             "familyName": "<Typography>",
-            "ratio": 0.042
+            "ratio": 0.048
           },
           {
             "count": 1,
-            "familyKey": "component:1:39071",
+            "familyKey": "component:1:38908",
             "familyName": "<Divider>",
-            "ratio": 0.042
+            "ratio": 0.048
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:38938",
+            "familyName": "<Icon>",
+            "ratio": 0.048
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.048
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66208",
-        "instanceCount": 24,
-        "nodeId": "1:66208",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65817",
+        "instanceCount": 21,
+        "nodeId": "1:65817",
         "nodeName": "<Stack>",
-        "subtreeNodeCount": 56
+        "subtreeNodeCount": 61
+      },
+      {
+        "density": 0.347,
+        "dominantFamilies": [
+          {
+            "count": 3,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.176
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.118
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.118
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.118
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:38329",
+            "familyName": "<Typography>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.059
+          }
+        ],
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65825",
+        "instanceCount": 17,
+        "nodeId": "1:65825",
+        "nodeName": "_<CardContent>",
+        "subtreeNodeCount": 49
+      },
+      {
+        "density": 0.34,
+        "dominantFamilies": [
+          {
+            "count": 3,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.176
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.118
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.118
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.118
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:38329",
+            "familyName": "<Typography>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:39046",
+            "familyName": "<Icon>",
+            "ratio": 0.059
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.059
+          }
+        ],
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65820",
+        "instanceCount": 17,
+        "nodeId": "1:65820",
+        "nodeName": "<Card>",
+        "subtreeNodeCount": 50
       },
       {
         "density": 0.349,
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.2
           },
@@ -801,7 +607,7 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.067
           },
@@ -830,196 +636,78 @@
             "ratio": 0.067
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66256",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65877",
         "instanceCount": 15,
-        "nodeId": "1:66256",
+        "nodeId": "1:65877",
         "nodeName": "<Stack>",
         "subtreeNodeCount": 43
       },
       {
-        "density": 0.294,
+        "density": 0.433,
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
-            "ratio": 0.2
+            "ratio": 0.231
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.154
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.154
           },
           {
             "count": 2,
             "familyKey": "component:1:54341",
             "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.133
+            "ratio": 0.154
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43307",
-            "familyName": "ic_info_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43500",
-            "familyName": "ic_radio_selected_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:45022",
-            "familyName": "_<InputAdornment>",
-            "ratio": 0.067
-          }
-        ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66314",
-        "instanceCount": 15,
-        "nodeId": "1:66314",
-        "nodeName": "_<CardContent>",
-        "subtreeNodeCount": 51
-      },
-      {
-        "density": 0.288,
-        "dominantFamilies": [
-          {
-            "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38329",
             "familyName": "<Typography>",
-            "ratio": 0.2
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.133
+            "ratio": 0.077
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:38908",
+            "familyName": "<Divider>",
+            "ratio": 0.077
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43307",
-            "familyName": "ic_info_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43500",
-            "familyName": "ic_radio_selected_s 🔥",
-            "ratio": 0.067
+            "ratio": 0.077
           },
           {
             "count": 1,
             "familyKey": "component:1:43658",
             "familyName": "<Stack6>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:45022",
-            "familyName": "_<InputAdornment>",
-            "ratio": 0.067
+            "ratio": 0.077
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66309",
-        "instanceCount": 15,
-        "nodeId": "1:66309",
-        "nodeName": "<Card>",
-        "subtreeNodeCount": 52
-      },
-      {
-        "density": 0.283,
-        "dominantFamilies": [
-          {
-            "count": 3,
-            "familyKey": "component:1:38307",
-            "familyName": "<Typography>",
-            "ratio": 0.2
-          },
-          {
-            "count": 2,
-            "familyKey": "component:1:54341",
-            "familyName": "<Stack> FormControlLabel Radio",
-            "ratio": 0.133
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:42234",
-            "familyName": "<Stack2>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43307",
-            "familyName": "ic_info_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43500",
-            "familyName": "ic_radio_selected_s 🔥",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43658",
-            "familyName": "<Stack6>(Nested)",
-            "ratio": 0.067
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:45022",
-            "familyName": "_<InputAdornment>",
-            "ratio": 0.067
-          }
-        ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66307",
-        "instanceCount": 15,
-        "nodeId": "1:66307",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65829",
+        "instanceCount": 13,
+        "nodeId": "1:65829",
         "nodeName": "<Stack>",
-        "subtreeNodeCount": 53
+        "subtreeNodeCount": 30
       },
       {
         "density": 0.406,
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.231
           },
@@ -1031,7 +719,7 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.077
           },
@@ -1066,10 +754,10 @@
             "ratio": 0.077
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66258",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65879",
         "instanceCount": 13,
-        "nodeId": "1:66258",
+        "nodeId": "1:65879",
         "nodeName": "<Stack2>(Nested)",
         "subtreeNodeCount": 32
       },
@@ -1078,57 +766,57 @@
         "dominantFamilies": [
           {
             "count": 2,
-            "familyKey": "component:1:39071",
+            "familyKey": "component:1:38908",
             "familyName": "<Divider>",
             "ratio": 0.167
           },
           {
             "count": 1,
-            "familyKey": "component:1:38309",
+            "familyKey": "component:1:38313",
             "familyName": "<Typography>",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:38903",
+            "familyKey": "component:1:38926",
             "familyName": "ic_arrow_subitem_s 🔥",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:39023",
+            "familyKey": "component:1:39046",
             "familyName": "<Icon>",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:39210",
+            "familyKey": "component:1:39153",
+            "familyName": "<Dynamic Typography> (headlines)",
+            "ratio": 0.083
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:40054",
             "familyName": "<Stack4>(Nested)",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:39559",
-            "familyName": "<Stack3>(Nested)",
-            "ratio": 0.083
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:40764",
+            "familyKey": "component:1:41120",
             "familyName": "<Avatar>",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:41335",
-            "familyName": "<Dynamic Typography> (headlines)",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
             "ratio": 0.083
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66143",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65764",
         "instanceCount": 12,
-        "nodeId": "1:66143",
+        "nodeId": "1:65764",
         "nodeName": "<Stack>",
         "subtreeNodeCount": 22
       },
@@ -1137,7 +825,7 @@
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.25
           },
@@ -1161,13 +849,13 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:38325",
+            "familyKey": "component:1:38329",
             "familyName": "<Typography>",
             "ratio": 0.083
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
             "ratio": 0.083
           },
@@ -1178,21 +866,33 @@
             "ratio": 0.083
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66217",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65838",
         "instanceCount": 12,
-        "nodeId": "1:66217",
+        "nodeId": "1:65838",
         "nodeName": "<Stack2>(Nested)",
         "subtreeNodeCount": 26
       },
       {
-        "density": 0.423,
+        "density": 0.458,
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.273
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.182
           },
           {
             "count": 2,
@@ -1202,20 +902,8 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
-            "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43500",
-            "familyName": "ic_radio_selected_s 🔥",
             "ratio": 0.091
           },
           {
@@ -1223,35 +911,35 @@
             "familyKey": "component:1:43658",
             "familyName": "<Stack6>(Nested)",
             "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:54308",
-            "familyName": "<Radio>",
-            "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:54316",
-            "familyName": "<Radio>",
-            "ratio": 0.091
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66210",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65940",
         "instanceCount": 11,
-        "nodeId": "1:66210",
+        "nodeId": "1:65940",
         "nodeName": "<Stack2>(Nested)",
-        "subtreeNodeCount": 26
+        "subtreeNodeCount": 24
       },
       {
-        "density": 0.423,
+        "density": 0.44,
         "dominantFamilies": [
           {
             "count": 3,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.273
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.182
           },
           {
             "count": 2,
@@ -1261,20 +949,8 @@
           },
           {
             "count": 1,
-            "familyKey": "component:1:42234",
+            "familyKey": "component:1:41763",
             "familyName": "<Stack2>(Nested)",
-            "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43496",
-            "familyName": "ic_circle_s 🔥",
-            "ratio": 0.091
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:43500",
-            "familyName": "ic_radio_selected_s 🔥",
             "ratio": 0.091
           },
           {
@@ -1282,70 +958,152 @@
             "familyKey": "component:1:43658",
             "familyName": "<Stack6>(Nested)",
             "ratio": 0.091
+          }
+        ],
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65935",
+        "instanceCount": 11,
+        "nodeId": "1:65935",
+        "nodeName": "_<CardContent>",
+        "subtreeNodeCount": 25
+      },
+      {
+        "density": 0.423,
+        "dominantFamilies": [
+          {
+            "count": 3,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.273
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.182
           },
           {
             "count": 1,
-            "familyKey": "component:1:54308",
-            "familyName": "<Radio>",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
             "ratio": 0.091
           },
           {
             "count": 1,
-            "familyKey": "component:1:54316",
-            "familyName": "<Radio>",
+            "familyKey": "component:1:43658",
+            "familyName": "<Stack6>(Nested)",
             "ratio": 0.091
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:1:66319",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65930",
         "instanceCount": 11,
-        "nodeId": "1:66319",
-        "nodeName": "<Stack2>(Nested)",
+        "nodeId": "1:65930",
+        "nodeName": "<Card>",
         "subtreeNodeCount": 26
+      },
+      {
+        "density": 0.407,
+        "dominantFamilies": [
+          {
+            "count": 3,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.273
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.182
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.182
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
+            "ratio": 0.091
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:43658",
+            "familyName": "<Stack6>(Nested)",
+            "ratio": 0.091
+          }
+        ],
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:1:65928",
+        "instanceCount": 11,
+        "nodeId": "1:65928",
+        "nodeName": "<Stack>",
+        "subtreeNodeCount": 27
       },
       {
         "density": 0.6,
         "dominantFamilies": [
           {
             "count": 1,
-            "familyKey": "component:1:38309",
+            "familyKey": "component:1:38313",
             "familyName": "<Typography>",
             "ratio": 0.111
           },
           {
             "count": 1,
-            "familyKey": "component:1:38903",
+            "familyKey": "component:1:38926",
             "familyName": "ic_arrow_subitem_s 🔥",
             "ratio": 0.111
           },
           {
             "count": 1,
-            "familyKey": "component:1:39023",
+            "familyKey": "component:1:39046",
             "familyName": "<Icon>",
             "ratio": 0.111
           },
           {
             "count": 1,
-            "familyKey": "component:1:39210",
+            "familyKey": "component:1:39153",
+            "familyName": "<Dynamic Typography> (headlines)",
+            "ratio": 0.111
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:40054",
             "familyName": "<Stack4>(Nested)",
             "ratio": 0.111
           },
           {
             "count": 1,
-            "familyKey": "component:1:39559",
-            "familyName": "<Stack3>(Nested)",
-            "ratio": 0.111
-          },
-          {
-            "count": 1,
-            "familyKey": "component:1:40764",
+            "familyKey": "component:1:41120",
             "familyName": "<Avatar>",
             "ratio": 0.111
           },
           {
             "count": 1,
-            "familyKey": "component:1:41335",
-            "familyName": "<Dynamic Typography> (headlines)",
+            "familyKey": "component:1:41763",
+            "familyName": "<Stack2>(Nested)",
             "ratio": 0.111
           },
           {
@@ -1355,10 +1113,10 @@
             "ratio": 0.111
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:I1:66143;4919:306280",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:I1:65764;4919:306280",
         "instanceCount": 9,
-        "nodeId": "I1:66143;4919:306280",
+        "nodeId": "I1:65764;4919:306280",
         "nodeName": "<Stack2>(Nested)",
         "subtreeNodeCount": 15
       },
@@ -1367,7 +1125,7 @@
         "dominantFamilies": [
           {
             "count": 2,
-            "familyKey": "component:1:38307",
+            "familyKey": "component:1:38311",
             "familyName": "<Typography>",
             "ratio": 0.222
           },
@@ -1396,10 +1154,51 @@
             "ratio": 0.111
           }
         ],
-        "frameId": "1:66050",
-        "hotspotId": "1:66050:I1:66217;9445:27870",
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:I1:65838;9445:27870",
         "instanceCount": 9,
-        "nodeId": "I1:66217;9445:27870",
+        "nodeId": "I1:65838;9445:27870",
+        "nodeName": "<Stack6>(Nested)",
+        "subtreeNodeCount": 21
+      },
+      {
+        "density": 0.429,
+        "dominantFamilies": [
+          {
+            "count": 2,
+            "familyKey": "component:1:38311",
+            "familyName": "<Typography>",
+            "ratio": 0.222
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:43496",
+            "familyName": "ic_circle_s 🔥",
+            "ratio": 0.222
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54308",
+            "familyName": "<Radio>",
+            "ratio": 0.222
+          },
+          {
+            "count": 2,
+            "familyKey": "component:1:54341",
+            "familyName": "<Stack> FormControlLabel Radio",
+            "ratio": 0.222
+          },
+          {
+            "count": 1,
+            "familyKey": "component:1:43658",
+            "familyName": "<Stack6>(Nested)",
+            "ratio": 0.111
+          }
+        ],
+        "frameId": "1:65671",
+        "hotspotId": "1:65671:I1:65940;9445:27870",
+        "instanceCount": 9,
+        "nodeId": "I1:65940;9445:27870",
         "nodeName": "<Stack6>(Nested)",
         "subtreeNodeCount": 21
       }
@@ -1408,26 +1207,23 @@
   "componentFamilies": [
     {
       "componentIds": [
-        "1:38307"
+        "1:38311"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:38307",
+      "familyKey": "component:1:38311",
       "familyName": "<Typography>",
-      "nodeCount": 13,
+      "nodeCount": 10,
       "referringNodeIds": [
-        "I1:66210;9445:27854",
-        "I1:66210;9445:27870;9445:32106;5646:54709",
-        "I1:66210;9445:27870;9445:32122;5646:54709",
-        "I1:66217;9445:27854",
-        "I1:66217;9445:27870;9445:32106;5646:54709",
-        "I1:66217;9445:27870;9445:32122;5646:54709",
-        "I1:66258;9445:27854",
-        "I1:66258;9445:27870;9445:32106;5646:54709",
-        "I1:66258;9445:27870;9445:32122;5646:54709",
-        "I1:66280;9445:27854;9445:29980",
-        "I1:66319;9445:27854",
-        "I1:66319;9445:27870;9445:32106;5646:54709",
-        "I1:66319;9445:27870;9445:32122;5646:54709"
+        "I1:65838;9445:27854",
+        "I1:65838;9445:27870;9445:32106;5646:54709",
+        "I1:65838;9445:27870;9445:32122;5646:54709",
+        "I1:65879;9445:27854",
+        "I1:65879;9445:27870;9445:32106;5646:54709",
+        "I1:65879;9445:27870;9445:32122;5646:54709",
+        "I1:65901;9445:27854;9445:29980",
+        "I1:65940;9445:27854",
+        "I1:65940;9445:27870;9445:32106;5646:54709",
+        "I1:65940;9445:27870;9445:32122;5646:54709"
       ],
       "variantProperties": [
         {
@@ -1446,301 +1242,25 @@
     },
     {
       "componentIds": [
-        "1:39071"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:39071",
-      "familyName": "<Divider>",
-      "nodeCount": 8,
-      "referringNodeIds": [
-        "1:66214",
-        "1:66279",
-        "1:67439",
-        "1:67441",
-        "1:67443",
-        "1:67445",
-        "I1:66143;4919:305782",
-        "I1:66143;4919:306286"
-      ],
-      "variantProperties": [
-        {
-          "property": "orientation",
-          "values": [
-            "Horizontal"
-          ]
-        },
-        {
-          "property": "textalign",
-          "values": [
-            "-"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:38915"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:38915",
-      "familyName": "<Icon>",
-      "nodeCount": 8,
-      "referringNodeIds": [
-        "I1:66177;5213:6541",
-        "I1:66198;9445:29980",
-        "I1:66247;9445:28917",
-        "I1:67438;6585:1197;9445:28917",
-        "I1:67440;6585:1197;9445:28917",
-        "I1:67442;6585:1197;9445:28917",
-        "I1:67444;6585:1197;9445:28917",
-        "I1:67446;6585:1197;9445:28917"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Action"
-          ]
-        },
-        {
-          "property": "size",
-          "values": [
-            "Medium"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
         "1:54341"
       ],
       "componentSetIds": [],
       "familyKey": "component:1:54341",
       "familyName": "<Stack> FormControlLabel Radio",
-      "nodeCount": 8,
+      "nodeCount": 6,
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106",
-        "I1:66210;9445:27870;9445:32122",
-        "I1:66217;9445:27870;9445:32106",
-        "I1:66217;9445:27870;9445:32122",
-        "I1:66258;9445:27870;9445:32106",
-        "I1:66258;9445:27870;9445:32122",
-        "I1:66319;9445:27870;9445:32106",
-        "I1:66319;9445:27870;9445:32122"
+        "I1:65838;9445:27870;9445:32106",
+        "I1:65838;9445:27870;9445:32122",
+        "I1:65879;9445:27870;9445:32106",
+        "I1:65879;9445:27870;9445:32122",
+        "I1:65940;9445:27870;9445:32106",
+        "I1:65940;9445:27870;9445:32122"
       ],
       "variantProperties": [
         {
           "property": "disabled",
           "values": [
             "False"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:636"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:636",
-      "familyName": "ic_down_s 🔥",
-      "nodeCount": 8,
-      "referringNodeIds": [
-        "I1:66186;16712:36388;1288:87615",
-        "I1:66207;16712:36388;1288:87615",
-        "I1:66277;16712:36388;1288:87615",
-        "I1:67438;9959:72915;1288:87522",
-        "I1:67440;9959:72915;1288:87522",
-        "I1:67442;9959:72915;1288:87522",
-        "I1:67444;9959:72915;1288:87522",
-        "I1:67446;9959:72915;1288:87522"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:42234"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:42234",
-      "familyName": "<Stack2>(Nested)",
-      "nodeCount": 6,
-      "referringNodeIds": [
-        "1:66210",
-        "1:66217",
-        "1:66258",
-        "1:66280",
-        "1:66319",
-        "I1:66143;4919:306280"
-      ],
-      "variantProperties": [
-        {
-          "property": "alignitems",
-          "values": [
-            "Start"
-          ]
-        },
-        {
-          "property": "direction",
-          "values": [
-            "Row"
-          ]
-        },
-        {
-          "property": "direction s",
-          "values": [
-            "column"
-          ]
-        },
-        {
-          "property": "divider",
-          "values": [
-            "false"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:39679"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:39679",
-      "familyName": "<Stack3>(Nested)",
-      "nodeCount": 6,
-      "referringNodeIds": [
-        "1:66247",
-        "I1:67438;6585:1197",
-        "I1:67440;6585:1197",
-        "I1:67442;6585:1197",
-        "I1:67444;6585:1197",
-        "I1:67446;6585:1197"
-      ],
-      "variantProperties": [
-        {
-          "property": "alignitems",
-          "values": [
-            "Start"
-          ]
-        },
-        {
-          "property": "direction",
-          "values": [
-            "Row"
-          ]
-        },
-        {
-          "property": "direction s",
-          "values": [
-            "column"
-          ]
-        },
-        {
-          "property": "divider",
-          "values": [
-            "false"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:54957"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:54957",
-      "familyName": "<Accordion>",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "1:67438",
-        "1:67440",
-        "1:67442",
-        "1:67444",
-        "1:67446"
-      ],
-      "variantProperties": [
-        {
-          "property": "elevation",
-          "values": [
-            "0"
-          ]
-        },
-        {
-          "property": "expanded",
-          "values": [
-            "false"
-          ]
-        },
-        {
-          "property": "last of type",
-          "values": [
-            "false"
-          ]
-        },
-        {
-          "property": "state",
-          "values": [
-            "Enabled"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:41343"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:41343",
-      "familyName": "<Dynamic Typography> (headlines)",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28918",
-        "I1:67440;6585:1197;9445:28918",
-        "I1:67442;6585:1197;9445:28918",
-        "I1:67444;6585:1197;9445:28918",
-        "I1:67446;6585:1197;9445:28918"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Default"
-          ]
-        },
-        {
-          "property": "variant",
-          "values": [
-            "headline04"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:39032"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:39032",
-      "familyName": "<Icon>",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "I1:67438;9959:72915",
-        "I1:67440;9959:72915",
-        "I1:67442;9959:72915",
-        "I1:67444;9959:72915",
-        "I1:67446;9959:72915"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Secondary"
-          ]
-        },
-        {
-          "property": "size",
-          "values": [
-            "Extra small"
           ]
         }
       ]
@@ -1754,11 +1274,11 @@
       "familyName": "<Radio>",
       "nodeCount": 5,
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32122;5646:54691",
-        "I1:66217;9445:27870;9445:32106;5646:54691",
-        "I1:66217;9445:27870;9445:32122;5646:54691",
-        "I1:66258;9445:27870;9445:32122;5646:54691",
-        "I1:66319;9445:27870;9445:32122;5646:54691"
+        "I1:65838;9445:27870;9445:32106;5646:54691",
+        "I1:65838;9445:27870;9445:32122;5646:54691",
+        "I1:65879;9445:27870;9445:32122;5646:54691",
+        "I1:65940;9445:27870;9445:32106;5646:54691",
+        "I1:65940;9445:27870;9445:32122;5646:54691"
       ],
       "variantProperties": [
         {
@@ -1783,141 +1303,18 @@
     },
     {
       "componentIds": [
-        "1:63214"
+        "1:41763"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:63214",
-      "familyName": "<Stack> ButtonCombination",
+      "familyKey": "component:1:41763",
+      "familyName": "<Stack2>(Nested)",
       "nodeCount": 5,
       "referringNodeIds": [
-        "1:64639",
-        "1:66045",
-        "1:67459",
-        "1:68873",
-        "1:70293"
-      ],
-      "variantProperties": [
-        {
-          "property": "small screen",
-          "values": [
-            "false"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:38305"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:38305",
-      "familyName": "<Typography>",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28933",
-        "I1:67440;6585:1197;9445:28933",
-        "I1:67442;6585:1197;9445:28933",
-        "I1:67444;6585:1197;9445:28933",
-        "I1:67446;6585:1197;9445:28933"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Default"
-          ]
-        },
-        {
-          "property": "variant",
-          "values": [
-            "label02"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:43496"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:43496",
-      "familyName": "ic_circle_s 🔥",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66217;9445:27870;9445:32106;5646:54691;5908:49260",
-        "I1:66217;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66258;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66319;9445:27870;9445:32122;5646:54691;5908:49260"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:21503"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:21503",
-      "familyName": "Markenbühne",
-      "nodeCount": 5,
-      "referringNodeIds": [
-        "1:63231",
-        "1:64645",
-        "1:66051",
-        "1:67465",
-        "1:68885"
-      ],
-      "variantProperties": [
-        {
-          "property": "property 1",
-          "values": [
-            "Default"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:39023"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:39023",
-      "familyName": "<Icon>",
-      "nodeCount": 4,
-      "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980",
-        "I1:66186;16712:36388",
-        "I1:66207;16712:36388",
-        "I1:66277;16712:36388"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Action"
-          ]
-        },
-        {
-          "property": "size",
-          "values": [
-            "Extra small"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:43658"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:43658",
-      "familyName": "<Stack6>(Nested)",
-      "nodeCount": 4,
-      "referringNodeIds": [
-        "I1:66210;9445:27870",
-        "I1:66217;9445:27870",
-        "I1:66258;9445:27870",
-        "I1:66319;9445:27870"
+        "1:65838",
+        "1:65879",
+        "1:65901",
+        "1:65940",
+        "I1:65764;4919:306280"
       ],
       "variantProperties": [
         {
@@ -1948,17 +1345,227 @@
     },
     {
       "componentIds": [
-        "1:50189"
+        "1:43496"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:50189",
-      "familyName": "<TextField>",
+      "familyKey": "component:1:43496",
+      "familyName": "ic_circle_s 🔥",
+      "nodeCount": 5,
+      "referringNodeIds": [
+        "I1:65838;9445:27870;9445:32106;5646:54691;5908:49260",
+        "I1:65838;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:65879;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:65940;9445:27870;9445:32106;5646:54691;5908:49260",
+        "I1:65940;9445:27870;9445:32122;5646:54691;5908:49260"
+      ],
+      "variantProperties": []
+    },
+    {
+      "componentIds": [
+        "1:38908"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:38908",
+      "familyName": "<Divider>",
       "nodeCount": 4,
       "referringNodeIds": [
-        "1:66206",
-        "1:66276",
-        "1:66278",
-        "1:66322"
+        "1:65835",
+        "1:65900",
+        "I1:65764;4919:305782",
+        "I1:65764;4919:306286"
+      ],
+      "variantProperties": [
+        {
+          "property": "orientation",
+          "values": [
+            "Horizontal"
+          ]
+        },
+        {
+          "property": "textalign",
+          "values": [
+            "-"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:39046"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:39046",
+      "familyName": "<Icon>",
+      "nodeCount": 4,
+      "referringNodeIds": [
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29980",
+        "I1:65807;16712:36388",
+        "I1:65828;16712:36149",
+        "I1:65898;16712:36388"
+      ],
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Action"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Extra small"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:39169"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:39169",
+      "familyName": "<Dynamic Typography> (headlines)",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "I1:65798;5213:6557",
+        "I1:65819;9445:29996",
+        "I1:65868;9445:28933"
+      ],
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "headline05"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:38938"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:38938",
+      "familyName": "<Icon>",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "I1:65798;5213:6541",
+        "I1:65819;9445:29980",
+        "I1:65868;9445:28917"
+      ],
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Action"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:40054"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:40054",
+      "familyName": "<Stack4>(Nested)",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "1:65819",
+        "I1:65764;4919:306280;9445:27870;9445:28813",
+        "I1:65901;9445:27854"
+      ],
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:43658"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:43658",
+      "familyName": "<Stack6>(Nested)",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "I1:65838;9445:27870",
+        "I1:65879;9445:27870",
+        "I1:65940;9445:27870"
+      ],
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:51269"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:51269",
+      "familyName": "<TextField>",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "1:65827",
+        "1:65897",
+        "1:65899"
       ],
       "variantProperties": [
         {
@@ -1976,7 +1583,7 @@
         {
           "property": "has value",
           "values": [
-            "true"
+            "false"
           ]
         },
         {
@@ -2013,16 +1620,30 @@
     },
     {
       "componentIds": [
+        "1:636"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:636",
+      "familyName": "ic_down_s 🔥",
+      "nodeCount": 3,
+      "referringNodeIds": [
+        "I1:65807;16712:36388;1288:87615",
+        "I1:65828;16712:36149;1288:87615",
+        "I1:65898;16712:36388;1288:87615"
+      ],
+      "variantProperties": []
+    },
+    {
+      "componentIds": [
         "1:45022"
       ],
       "componentSetIds": [],
       "familyKey": "component:1:45022",
       "familyName": "_<InputAdornment>",
-      "nodeCount": 3,
+      "nodeCount": 2,
       "referringNodeIds": [
-        "I1:66276;16398:91055",
-        "I1:66278;16398:91055",
-        "I1:66322;16398:91055"
+        "I1:65897;26925:38678",
+        "I1:65899;26925:38678"
       ],
       "variantProperties": [
         {
@@ -2041,78 +1662,15 @@
     },
     {
       "componentIds": [
-        "1:41351"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:41351",
-      "familyName": "<Dynamic Typography> (headlines)",
-      "nodeCount": 3,
-      "referringNodeIds": [
-        "I1:66177;5213:6557",
-        "I1:66198;9445:29996",
-        "I1:66247;9445:28933"
-      ],
-      "variantProperties": [
-        {
-          "property": "color",
-          "values": [
-            "Default"
-          ]
-        },
-        {
-          "property": "variant",
-          "values": [
-            "headline05"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:54316"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:54316",
-      "familyName": "<Radio>",
-      "nodeCount": 3,
-      "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106;5646:54691",
-        "I1:66258;9445:27870;9445:32106;5646:54691",
-        "I1:66319;9445:27870;9445:32106;5646:54691"
-      ],
-      "variantProperties": [
-        {
-          "property": "checked",
-          "values": [
-            "True"
-          ]
-        },
-        {
-          "property": "size",
-          "values": [
-            "Medium"
-          ]
-        },
-        {
-          "property": "state",
-          "values": [
-            "Enabled"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
         "1:45150"
       ],
       "componentSetIds": [],
       "familyKey": "component:1:45150",
       "familyName": "<Select>",
-      "nodeCount": 3,
+      "nodeCount": 2,
       "referringNodeIds": [
-        "1:66186",
-        "1:66207",
-        "1:66277"
+        "1:65807",
+        "1:65898"
       ],
       "variantProperties": [
         {
@@ -2161,16 +1719,15 @@
     },
     {
       "componentIds": [
-        "1:39210"
+        "1:42583"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:39210",
-      "familyName": "<Stack4>(Nested)",
-      "nodeCount": 3,
+      "familyKey": "component:1:42583",
+      "familyName": "<Stack>",
+      "nodeCount": 2,
       "referringNodeIds": [
-        "1:66198",
-        "I1:66143;4919:306280;9445:27870;9445:28813",
-        "I1:66280;9445:27854"
+        "1:65764",
+        "2:656"
       ],
       "variantProperties": [
         {
@@ -2182,7 +1739,7 @@
         {
           "property": "direction",
           "values": [
-            "Row"
+            "Column"
           ]
         },
         {
@@ -2206,28 +1763,32 @@
       "componentSetIds": [],
       "familyKey": "component:1:43307",
       "familyName": "ic_info_circle_s 🔥",
-      "nodeCount": 3,
+      "nodeCount": 2,
       "referringNodeIds": [
-        "I1:66258;9445:27856;11940:107548",
-        "I1:66275;1857:134907",
-        "I1:66323;1857:134907"
+        "I1:65879;9445:27856;11940:107548",
+        "I1:65896;1857:134907"
       ],
       "variantProperties": []
     },
     {
       "componentIds": [
-        "1:43500"
+        "1:49959"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:43500",
-      "familyName": "ic_radio_selected_s 🔥",
-      "nodeCount": 3,
+      "familyKey": "component:1:49959",
+      "familyName": "_<CharacterCount>",
+      "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106;5646:54691;5908:49316",
-        "I1:66258;9445:27870;9445:32106;5646:54691;5908:49316",
-        "I1:66319;9445:27870;9445:32106;5646:54691;5908:49316"
+        "I2:656;4919:305782;10861:42763"
       ],
-      "variantProperties": []
+      "variantProperties": [
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
     },
     {
       "componentIds": [
@@ -2236,10 +1797,9 @@
       "componentSetIds": [],
       "familyKey": "component:1:54808",
       "familyName": "<Alert>",
-      "nodeCount": 2,
+      "nodeCount": 1,
       "referringNodeIds": [
-        "1:66275",
-        "1:66323"
+        "1:65896"
       ],
       "variantProperties": [
         {
@@ -2258,48 +1818,14 @@
     },
     {
       "componentIds": [
-        "1:42111"
+        "1:41120"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:42111",
-      "familyName": "ic_chart_upward_s 1",
-      "nodeCount": 2,
-      "referringNodeIds": [
-        "1:70303",
-        "I1:66143;4919:306280;9445:27854;24755:10564"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:49959"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:49959",
-      "familyName": "_<CharacterCount>",
-      "nodeCount": 1,
-      "referringNodeIds": [
-        "I1:67447;9445:27734;10861:42763"
-      ],
-      "variantProperties": [
-        {
-          "property": "state",
-          "values": [
-            "Enabled"
-          ]
-        }
-      ]
-    },
-    {
-      "componentIds": [
-        "1:40764"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:40764",
+      "familyKey": "component:1:41120",
       "familyName": "<Avatar>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27854"
+        "I1:65764;4919:306280;9445:27854"
       ],
       "variantProperties": [
         {
@@ -2337,7 +1863,7 @@
       "familyName": "<Button>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67459;32:73283;5213:6575"
+        "I1:67080;32:73283;23570:19653"
       ],
       "variantProperties": [
         {
@@ -2381,7 +1907,7 @@
       "familyName": "<Button>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67459;32:73283;5213:6559"
+        "I1:67080;32:73283;23570:19637"
       ],
       "variantProperties": [
         {
@@ -2425,7 +1951,7 @@
       "familyName": "<Chip>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66280;9445:27870"
+        "I1:65901;9445:27870"
       ],
       "variantProperties": [
         {
@@ -2462,14 +1988,14 @@
     },
     {
       "componentIds": [
-        "1:41335"
+        "1:39153"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:41335",
+      "familyKey": "component:1:39153",
       "familyName": "<Dynamic Typography> (headlines)",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28797"
+        "I1:65764;4919:306280;9445:27870;9445:28797"
       ],
       "variantProperties": [
         {
@@ -2495,7 +2021,7 @@
       "familyName": "<IconButton>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66258;9445:27856"
+        "I1:65879;9445:27856"
       ],
       "variantProperties": [
         {
@@ -2520,38 +2046,88 @@
     },
     {
       "componentIds": [
-        "1:42583"
+        "1:54316"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:42583",
-      "familyName": "<Stack>",
+      "familyKey": "component:1:54316",
+      "familyName": "<Radio>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "1:66143"
+        "I1:65879;9445:27870;9445:32106;5646:54691"
       ],
       "variantProperties": [
         {
-          "property": "alignitems",
+          "property": "checked",
           "values": [
-            "Start"
+            "True"
           ]
         },
         {
-          "property": "direction",
+          "property": "size",
           "values": [
-            "Column"
+            "Medium"
           ]
         },
         {
-          "property": "direction s",
+          "property": "state",
           "values": [
-            "column"
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [
+        "1:45038"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:45038",
+      "familyName": "<Select>",
+      "nodeCount": 1,
+      "referringNodeIds": [
+        "1:65828"
+      ],
+      "variantProperties": [
+        {
+          "property": "autowidth",
+          "values": [
+            "False"
           ]
         },
         {
-          "property": "divider",
+          "property": "disabled",
           "values": [
-            "false"
+            "False"
+          ]
+        },
+        {
+          "property": "has value",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "placeholder",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Default"
           ]
         }
       ]
@@ -2565,7 +2141,7 @@
       "familyName": "<Stack>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "1:66177"
+        "1:65798"
       ],
       "variantProperties": [
         {
@@ -2596,14 +2172,14 @@
     },
     {
       "componentIds": [
-        "1:62397"
+        "1:62521"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:62397",
+      "familyKey": "component:1:62521",
       "familyName": "<Stack>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67459;32:73283"
+        "I1:67080;32:73283"
       ],
       "variantProperties": [
         {
@@ -2621,11 +2197,42 @@
         {
           "property": "direction s",
           "values": [
-            "row"
+            "column"
           ]
         },
         {
           "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "componentIds": [],
+      "componentSetIds": [],
+      "familyKey": "name:stack",
+      "familyName": "<Stack>",
+      "nodeCount": 1,
+      "referringNodeIds": [
+        "2:1042"
+      ],
+      "variantProperties": []
+    },
+    {
+      "componentIds": [
+        "1:63214"
+      ],
+      "componentSetIds": [],
+      "familyKey": "component:1:63214",
+      "familyName": "<Stack> ButtonCombination",
+      "nodeCount": 1,
+      "referringNodeIds": [
+        "1:67080"
+      ],
+      "variantProperties": [
+        {
+          "property": "small screen",
           "values": [
             "false"
           ]
@@ -2638,10 +2245,10 @@
       ],
       "componentSetIds": [],
       "familyKey": "component:1:42114",
-      "familyName": "<Stack2>(Nested)",
+      "familyName": "<Stack3>(Nested)",
       "nodeCount": 1,
       "referringNodeIds": [
-        "1:67447"
+        "I1:65764;4919:306280;9445:27870"
       ],
       "variantProperties": [
         {
@@ -2672,14 +2279,14 @@
     },
     {
       "componentIds": [
-        "1:39559"
+        "1:42234"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:39559",
+      "familyKey": "component:1:42234",
       "familyName": "<Stack3>(Nested)",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870"
+        "1:65868"
       ],
       "variantProperties": [
         {
@@ -2691,7 +2298,7 @@
         {
           "property": "direction",
           "values": [
-            "Column"
+            "Row"
           ]
         },
         {
@@ -2717,7 +2324,7 @@
       "familyName": "<TextField>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67447;9445:27734"
+        "I2:656;4919:305782"
       ],
       "variantProperties": [
         {
@@ -2772,14 +2379,14 @@
     },
     {
       "componentIds": [
-        "1:38309"
+        "1:38313"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:38309",
+      "familyKey": "component:1:38313",
       "familyName": "<Typography>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29996"
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29996"
       ],
       "variantProperties": [
         {
@@ -2798,14 +2405,14 @@
     },
     {
       "componentIds": [
-        "1:38325"
+        "1:38329"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:38325",
+      "familyKey": "component:1:38329",
       "familyName": "<Typography>",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66217;9445:27855"
+        "I1:65838;9445:27855"
       ],
       "variantProperties": [
         {
@@ -2824,53 +2431,27 @@
     },
     {
       "componentIds": [
-        "1:60466"
+        "1:38926"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:60466",
-      "familyName": "ic_abacus_m 🔥",
-      "nodeCount": 1,
-      "referringNodeIds": [
-        "I1:67440;6585:1197;9445:28917;1288:87607"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:38903"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:38903",
+      "familyKey": "component:1:38926",
       "familyName": "ic_arrow_subitem_s 🔥",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
       ],
       "variantProperties": []
     },
     {
       "componentIds": [
-        "1:55061"
+        "1:42111"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:55061",
-      "familyName": "ic_calendar_m 🔥",
+      "familyKey": "component:1:42111",
+      "familyName": "ic_chart_upward_s 1",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28917;1288:87607"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:60457"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:60457",
-      "familyName": "ic_chart_upward_m 🔥",
-      "nodeCount": 1,
-      "referringNodeIds": [
-        "1:70302"
+        "I1:65764;4919:306280;9445:27854;24755:10564"
       ],
       "variantProperties": []
     },
@@ -2883,46 +2464,20 @@
       "familyName": "ic_coin_stack_s",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66247;9445:28917;1288:87607"
+        "I1:65868;9445:28917;1288:87607"
       ],
       "variantProperties": []
     },
     {
       "componentIds": [
-        "1:60468"
+        "1:43500"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:60468",
-      "familyName": "ic_document_euro_m",
+      "familyKey": "component:1:43500",
+      "familyName": "ic_radio_selected_s 🔥",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:67446;6585:1197;9445:28917;1288:87607"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:60453"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:60453",
-      "familyName": "ic_hand_leaf_m",
-      "nodeCount": 1,
-      "referringNodeIds": [
-        "I1:67442;6585:1197;9445:28917;1288:87607"
-      ],
-      "variantProperties": []
-    },
-    {
-      "componentIds": [
-        "1:60455"
-      ],
-      "componentSetIds": [],
-      "familyKey": "component:1:60455",
-      "familyName": "ic_shield_empty_m",
-      "nodeCount": 1,
-      "referringNodeIds": [
-        "I1:67444;6585:1197;9445:28917;1288:87607"
+        "I1:65879;9445:27870;9445:32106;5646:54691;5908:49316"
       ],
       "variantProperties": []
     },
@@ -2935,20 +2490,20 @@
       "familyName": "ic_shopping_cart_s",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66198;9445:29980;1288:87607"
+        "I1:65819;9445:29980;1288:87607"
       ],
       "variantProperties": []
     },
     {
       "componentIds": [
-        "1:40246"
+        "1:40602"
       ],
       "componentSetIds": [],
-      "familyKey": "component:1:40246",
+      "familyKey": "component:1:40602",
       "familyName": "ic_user_s 🔥",
       "nodeCount": 1,
       "referringNodeIds": [
-        "I1:66177;5213:6541;1288:87607"
+        "I1:65798;5213:6541;1288:87607"
       ],
       "variantProperties": []
     }
@@ -2959,83 +2514,51 @@
       "componentIds": [
         "1:49959",
         "1:45022",
-        "1:54957",
         "1:54808",
-        "1:40764",
+        "1:41120",
         "1:62629",
         "1:62821",
         "1:48552",
-        "1:39071",
-        "1:41335",
-        "1:41343",
-        "1:41351",
-        "1:38915",
-        "1:39023",
-        "1:39032",
+        "1:38908",
+        "1:39153",
+        "1:39169",
+        "1:38938",
+        "1:39046",
         "1:43449",
         "1:54308",
         "1:54316",
+        "1:45038",
         "1:45150",
         "1:42583",
         "1:42805",
-        "1:62397",
+        "1:62521",
         "1:63214",
         "1:54341",
+        "1:41763",
         "1:42114",
         "1:42234",
-        "1:39559",
-        "1:39679",
-        "1:39210",
+        "1:40054",
         "1:43658",
-        "1:50189",
+        "1:51269",
         "1:53140",
-        "1:38305",
-        "1:38307",
-        "1:38309",
-        "1:38325",
-        "1:60466",
-        "1:38903",
-        "1:55061",
-        "1:60457",
+        "1:38311",
+        "1:38313",
+        "1:38329",
+        "1:38926",
         "1:42111",
         "1:43496",
         "1:54357",
-        "1:60468",
         "1:636",
-        "1:60453",
         "1:43307",
         "1:43500",
-        "1:60455",
         "1:54302",
-        "1:40246",
-        "1:21503"
+        "1:40602"
       ],
-      "message": "Detected 52 external component reference(s) without a local component definition.",
+      "message": "Detected 41 external component reference(s) without a local component definition.",
       "reasons": [
         "Referenced componentId values are not present as local COMPONENT or COMPONENT_SET nodes in the cleaned board."
       ],
       "severity": "warning"
-    },
-    {
-      "code": "MISSING_LOCAL_STYLES",
-      "message": "Detected 11 referenced style ID(s) without a local style definition.",
-      "reasons": [
-        "Referenced style IDs are used by nodes but are absent from the cleaned file-level style catalog."
-      ],
-      "severity": "warning",
-      "styleIds": [
-        "1:38165",
-        "1:38191",
-        "1:38194",
-        "1:38197",
-        "1:38221",
-        "1:38240",
-        "1:38249",
-        "1:40222",
-        "1:41297",
-        "1:41302",
-        "1:60633"
-      ]
     }
   ],
   "externalComponents": [
@@ -3044,7 +2567,7 @@
       "familyKey": "component:1:49959",
       "familyName": "_<CharacterCount>",
       "referringNodeIds": [
-        "I1:67447;9445:27734;10861:42763"
+        "I2:656;4919:305782;10861:42763"
       ]
     },
     {
@@ -3052,21 +2575,8 @@
       "familyKey": "component:1:45022",
       "familyName": "_<InputAdornment>",
       "referringNodeIds": [
-        "I1:66276;16398:91055",
-        "I1:66278;16398:91055",
-        "I1:66322;16398:91055"
-      ]
-    },
-    {
-      "componentId": "1:54957",
-      "familyKey": "component:1:54957",
-      "familyName": "<Accordion>",
-      "referringNodeIds": [
-        "1:67438",
-        "1:67440",
-        "1:67442",
-        "1:67444",
-        "1:67446"
+        "I1:65897;26925:38678",
+        "I1:65899;26925:38678"
       ]
     },
     {
@@ -3074,16 +2584,15 @@
       "familyKey": "component:1:54808",
       "familyName": "<Alert>",
       "referringNodeIds": [
-        "1:66275",
-        "1:66323"
+        "1:65896"
       ]
     },
     {
-      "componentId": "1:40764",
-      "familyKey": "component:1:40764",
+      "componentId": "1:41120",
+      "familyKey": "component:1:41120",
       "familyName": "<Avatar>",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27854"
+        "I1:65764;4919:306280;9445:27854"
       ]
     },
     {
@@ -3091,7 +2600,7 @@
       "familyKey": "component:1:62629",
       "familyName": "<Button>",
       "referringNodeIds": [
-        "I1:67459;32:73283;5213:6575"
+        "I1:67080;32:73283;23570:19653"
       ]
     },
     {
@@ -3099,7 +2608,7 @@
       "familyKey": "component:1:62821",
       "familyName": "<Button>",
       "referringNodeIds": [
-        "I1:67459;32:73283;5213:6559"
+        "I1:67080;32:73283;23570:19637"
       ]
     },
     {
@@ -3107,90 +2616,57 @@
       "familyKey": "component:1:48552",
       "familyName": "<Chip>",
       "referringNodeIds": [
-        "I1:66280;9445:27870"
+        "I1:65901;9445:27870"
       ]
     },
     {
-      "componentId": "1:39071",
-      "familyKey": "component:1:39071",
+      "componentId": "1:38908",
+      "familyKey": "component:1:38908",
       "familyName": "<Divider>",
       "referringNodeIds": [
-        "1:66214",
-        "1:66279",
-        "1:67439",
-        "1:67441",
-        "1:67443",
-        "1:67445",
-        "I1:66143;4919:305782",
-        "I1:66143;4919:306286"
+        "1:65835",
+        "1:65900",
+        "I1:65764;4919:305782",
+        "I1:65764;4919:306286"
       ]
     },
     {
-      "componentId": "1:41335",
-      "familyKey": "component:1:41335",
+      "componentId": "1:39153",
+      "familyKey": "component:1:39153",
       "familyName": "<Dynamic Typography> (headlines)",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28797"
+        "I1:65764;4919:306280;9445:27870;9445:28797"
       ]
     },
     {
-      "componentId": "1:41343",
-      "familyKey": "component:1:41343",
+      "componentId": "1:39169",
+      "familyKey": "component:1:39169",
       "familyName": "<Dynamic Typography> (headlines)",
       "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28918",
-        "I1:67440;6585:1197;9445:28918",
-        "I1:67442;6585:1197;9445:28918",
-        "I1:67444;6585:1197;9445:28918",
-        "I1:67446;6585:1197;9445:28918"
+        "I1:65798;5213:6557",
+        "I1:65819;9445:29996",
+        "I1:65868;9445:28933"
       ]
     },
     {
-      "componentId": "1:41351",
-      "familyKey": "component:1:41351",
-      "familyName": "<Dynamic Typography> (headlines)",
-      "referringNodeIds": [
-        "I1:66177;5213:6557",
-        "I1:66198;9445:29996",
-        "I1:66247;9445:28933"
-      ]
-    },
-    {
-      "componentId": "1:38915",
-      "familyKey": "component:1:38915",
+      "componentId": "1:38938",
+      "familyKey": "component:1:38938",
       "familyName": "<Icon>",
       "referringNodeIds": [
-        "I1:66177;5213:6541",
-        "I1:66198;9445:29980",
-        "I1:66247;9445:28917",
-        "I1:67438;6585:1197;9445:28917",
-        "I1:67440;6585:1197;9445:28917",
-        "I1:67442;6585:1197;9445:28917",
-        "I1:67444;6585:1197;9445:28917",
-        "I1:67446;6585:1197;9445:28917"
+        "I1:65798;5213:6541",
+        "I1:65819;9445:29980",
+        "I1:65868;9445:28917"
       ]
     },
     {
-      "componentId": "1:39023",
-      "familyKey": "component:1:39023",
+      "componentId": "1:39046",
+      "familyKey": "component:1:39046",
       "familyName": "<Icon>",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980",
-        "I1:66186;16712:36388",
-        "I1:66207;16712:36388",
-        "I1:66277;16712:36388"
-      ]
-    },
-    {
-      "componentId": "1:39032",
-      "familyKey": "component:1:39032",
-      "familyName": "<Icon>",
-      "referringNodeIds": [
-        "I1:67438;9959:72915",
-        "I1:67440;9959:72915",
-        "I1:67442;9959:72915",
-        "I1:67444;9959:72915",
-        "I1:67446;9959:72915"
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29980",
+        "I1:65807;16712:36388",
+        "I1:65828;16712:36149",
+        "I1:65898;16712:36388"
       ]
     },
     {
@@ -3198,7 +2674,7 @@
       "familyKey": "component:1:43449",
       "familyName": "<IconButton>",
       "referringNodeIds": [
-        "I1:66258;9445:27856"
+        "I1:65879;9445:27856"
       ]
     },
     {
@@ -3206,11 +2682,11 @@
       "familyKey": "component:1:54308",
       "familyName": "<Radio>",
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32122;5646:54691",
-        "I1:66217;9445:27870;9445:32106;5646:54691",
-        "I1:66217;9445:27870;9445:32122;5646:54691",
-        "I1:66258;9445:27870;9445:32122;5646:54691",
-        "I1:66319;9445:27870;9445:32122;5646:54691"
+        "I1:65838;9445:27870;9445:32106;5646:54691",
+        "I1:65838;9445:27870;9445:32122;5646:54691",
+        "I1:65879;9445:27870;9445:32122;5646:54691",
+        "I1:65940;9445:27870;9445:32106;5646:54691",
+        "I1:65940;9445:27870;9445:32122;5646:54691"
       ]
     },
     {
@@ -3218,9 +2694,15 @@
       "familyKey": "component:1:54316",
       "familyName": "<Radio>",
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106;5646:54691",
-        "I1:66258;9445:27870;9445:32106;5646:54691",
-        "I1:66319;9445:27870;9445:32106;5646:54691"
+        "I1:65879;9445:27870;9445:32106;5646:54691"
+      ]
+    },
+    {
+      "componentId": "1:45038",
+      "familyKey": "component:1:45038",
+      "familyName": "<Select>",
+      "referringNodeIds": [
+        "1:65828"
       ]
     },
     {
@@ -3228,9 +2710,8 @@
       "familyKey": "component:1:45150",
       "familyName": "<Select>",
       "referringNodeIds": [
-        "1:66186",
-        "1:66207",
-        "1:66277"
+        "1:65807",
+        "1:65898"
       ]
     },
     {
@@ -3238,7 +2719,8 @@
       "familyKey": "component:1:42583",
       "familyName": "<Stack>",
       "referringNodeIds": [
-        "1:66143"
+        "1:65764",
+        "2:656"
       ]
     },
     {
@@ -3246,15 +2728,15 @@
       "familyKey": "component:1:42805",
       "familyName": "<Stack>",
       "referringNodeIds": [
-        "1:66177"
+        "1:65798"
       ]
     },
     {
-      "componentId": "1:62397",
-      "familyKey": "component:1:62397",
+      "componentId": "1:62521",
+      "familyKey": "component:1:62521",
       "familyName": "<Stack>",
       "referringNodeIds": [
-        "I1:67459;32:73283"
+        "I1:67080;32:73283"
       ]
     },
     {
@@ -3262,11 +2744,7 @@
       "familyKey": "component:1:63214",
       "familyName": "<Stack> ButtonCombination",
       "referringNodeIds": [
-        "1:64639",
-        "1:66045",
-        "1:67459",
-        "1:68873",
-        "1:70293"
+        "1:67080"
       ]
     },
     {
@@ -3274,66 +2752,50 @@
       "familyKey": "component:1:54341",
       "familyName": "<Stack> FormControlLabel Radio",
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106",
-        "I1:66210;9445:27870;9445:32122",
-        "I1:66217;9445:27870;9445:32106",
-        "I1:66217;9445:27870;9445:32122",
-        "I1:66258;9445:27870;9445:32106",
-        "I1:66258;9445:27870;9445:32122",
-        "I1:66319;9445:27870;9445:32106",
-        "I1:66319;9445:27870;9445:32122"
+        "I1:65838;9445:27870;9445:32106",
+        "I1:65838;9445:27870;9445:32122",
+        "I1:65879;9445:27870;9445:32106",
+        "I1:65879;9445:27870;9445:32122",
+        "I1:65940;9445:27870;9445:32106",
+        "I1:65940;9445:27870;9445:32122"
+      ]
+    },
+    {
+      "componentId": "1:41763",
+      "familyKey": "component:1:41763",
+      "familyName": "<Stack2>(Nested)",
+      "referringNodeIds": [
+        "1:65838",
+        "1:65879",
+        "1:65901",
+        "1:65940",
+        "I1:65764;4919:306280"
       ]
     },
     {
       "componentId": "1:42114",
       "familyKey": "component:1:42114",
-      "familyName": "<Stack2>(Nested)",
+      "familyName": "<Stack3>(Nested)",
       "referringNodeIds": [
-        "1:67447"
+        "I1:65764;4919:306280;9445:27870"
       ]
     },
     {
       "componentId": "1:42234",
       "familyKey": "component:1:42234",
-      "familyName": "<Stack2>(Nested)",
-      "referringNodeIds": [
-        "1:66210",
-        "1:66217",
-        "1:66258",
-        "1:66280",
-        "1:66319",
-        "I1:66143;4919:306280"
-      ]
-    },
-    {
-      "componentId": "1:39559",
-      "familyKey": "component:1:39559",
       "familyName": "<Stack3>(Nested)",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870"
+        "1:65868"
       ]
     },
     {
-      "componentId": "1:39679",
-      "familyKey": "component:1:39679",
-      "familyName": "<Stack3>(Nested)",
-      "referringNodeIds": [
-        "1:66247",
-        "I1:67438;6585:1197",
-        "I1:67440;6585:1197",
-        "I1:67442;6585:1197",
-        "I1:67444;6585:1197",
-        "I1:67446;6585:1197"
-      ]
-    },
-    {
-      "componentId": "1:39210",
-      "familyKey": "component:1:39210",
+      "componentId": "1:40054",
+      "familyKey": "component:1:40054",
       "familyName": "<Stack4>(Nested)",
       "referringNodeIds": [
-        "1:66198",
-        "I1:66143;4919:306280;9445:27870;9445:28813",
-        "I1:66280;9445:27854"
+        "1:65819",
+        "I1:65764;4919:306280;9445:27870;9445:28813",
+        "I1:65901;9445:27854"
       ]
     },
     {
@@ -3341,21 +2803,19 @@
       "familyKey": "component:1:43658",
       "familyName": "<Stack6>(Nested)",
       "referringNodeIds": [
-        "I1:66210;9445:27870",
-        "I1:66217;9445:27870",
-        "I1:66258;9445:27870",
-        "I1:66319;9445:27870"
+        "I1:65838;9445:27870",
+        "I1:65879;9445:27870",
+        "I1:65940;9445:27870"
       ]
     },
     {
-      "componentId": "1:50189",
-      "familyKey": "component:1:50189",
+      "componentId": "1:51269",
+      "familyKey": "component:1:51269",
       "familyName": "<TextField>",
       "referringNodeIds": [
-        "1:66206",
-        "1:66276",
-        "1:66278",
-        "1:66322"
+        "1:65827",
+        "1:65897",
+        "1:65899"
       ]
     },
     {
@@ -3363,96 +2823,56 @@
       "familyKey": "component:1:53140",
       "familyName": "<TextField>",
       "referringNodeIds": [
-        "I1:67447;9445:27734"
+        "I2:656;4919:305782"
       ]
     },
     {
-      "componentId": "1:38305",
-      "familyKey": "component:1:38305",
+      "componentId": "1:38311",
+      "familyKey": "component:1:38311",
       "familyName": "<Typography>",
       "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28933",
-        "I1:67440;6585:1197;9445:28933",
-        "I1:67442;6585:1197;9445:28933",
-        "I1:67444;6585:1197;9445:28933",
-        "I1:67446;6585:1197;9445:28933"
+        "I1:65838;9445:27854",
+        "I1:65838;9445:27870;9445:32106;5646:54709",
+        "I1:65838;9445:27870;9445:32122;5646:54709",
+        "I1:65879;9445:27854",
+        "I1:65879;9445:27870;9445:32106;5646:54709",
+        "I1:65879;9445:27870;9445:32122;5646:54709",
+        "I1:65901;9445:27854;9445:29980",
+        "I1:65940;9445:27854",
+        "I1:65940;9445:27870;9445:32106;5646:54709",
+        "I1:65940;9445:27870;9445:32122;5646:54709"
       ]
     },
     {
-      "componentId": "1:38307",
-      "familyKey": "component:1:38307",
+      "componentId": "1:38313",
+      "familyKey": "component:1:38313",
       "familyName": "<Typography>",
       "referringNodeIds": [
-        "I1:66210;9445:27854",
-        "I1:66210;9445:27870;9445:32106;5646:54709",
-        "I1:66210;9445:27870;9445:32122;5646:54709",
-        "I1:66217;9445:27854",
-        "I1:66217;9445:27870;9445:32106;5646:54709",
-        "I1:66217;9445:27870;9445:32122;5646:54709",
-        "I1:66258;9445:27854",
-        "I1:66258;9445:27870;9445:32106;5646:54709",
-        "I1:66258;9445:27870;9445:32122;5646:54709",
-        "I1:66280;9445:27854;9445:29980",
-        "I1:66319;9445:27854",
-        "I1:66319;9445:27870;9445:32106;5646:54709",
-        "I1:66319;9445:27870;9445:32122;5646:54709"
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29996"
       ]
     },
     {
-      "componentId": "1:38309",
-      "familyKey": "component:1:38309",
+      "componentId": "1:38329",
+      "familyKey": "component:1:38329",
       "familyName": "<Typography>",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29996"
+        "I1:65838;9445:27855"
       ]
     },
     {
-      "componentId": "1:38325",
-      "familyKey": "component:1:38325",
-      "familyName": "<Typography>",
-      "referringNodeIds": [
-        "I1:66217;9445:27855"
-      ]
-    },
-    {
-      "componentId": "1:60466",
-      "familyKey": "component:1:60466",
-      "familyName": "ic_abacus_m 🔥",
-      "referringNodeIds": [
-        "I1:67440;6585:1197;9445:28917;1288:87607"
-      ]
-    },
-    {
-      "componentId": "1:38903",
-      "familyKey": "component:1:38903",
+      "componentId": "1:38926",
+      "familyKey": "component:1:38926",
       "familyName": "ic_arrow_subitem_s 🔥",
       "referringNodeIds": [
-        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
-      ]
-    },
-    {
-      "componentId": "1:55061",
-      "familyKey": "component:1:55061",
-      "familyName": "ic_calendar_m 🔥",
-      "referringNodeIds": [
-        "I1:67438;6585:1197;9445:28917;1288:87607"
-      ]
-    },
-    {
-      "componentId": "1:60457",
-      "familyKey": "component:1:60457",
-      "familyName": "ic_chart_upward_m 🔥",
-      "referringNodeIds": [
-        "1:70302"
+        "I1:65764;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
       ]
     },
     {
       "componentId": "1:42111",
       "familyKey": "component:1:42111",
-      "familyName": "ic_chart_upward_s 2",
+      "familyName": "ic_chart_upward_s 1",
       "referringNodeIds": [
-        "1:70303",
-        "I1:66143;4919:306280;9445:27854;24755:10564"
+        "I1:65764;4919:306280;9445:27854;24755:10564"
       ]
     },
     {
@@ -3460,11 +2880,11 @@
       "familyKey": "component:1:43496",
       "familyName": "ic_circle_s 🔥",
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66217;9445:27870;9445:32106;5646:54691;5908:49260",
-        "I1:66217;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66258;9445:27870;9445:32122;5646:54691;5908:49260",
-        "I1:66319;9445:27870;9445:32122;5646:54691;5908:49260"
+        "I1:65838;9445:27870;9445:32106;5646:54691;5908:49260",
+        "I1:65838;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:65879;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:65940;9445:27870;9445:32106;5646:54691;5908:49260",
+        "I1:65940;9445:27870;9445:32122;5646:54691;5908:49260"
       ]
     },
     {
@@ -3472,15 +2892,7 @@
       "familyKey": "component:1:54357",
       "familyName": "ic_coin_stack_s",
       "referringNodeIds": [
-        "I1:66247;9445:28917;1288:87607"
-      ]
-    },
-    {
-      "componentId": "1:60468",
-      "familyKey": "component:1:60468",
-      "familyName": "ic_document_euro_m",
-      "referringNodeIds": [
-        "I1:67446;6585:1197;9445:28917;1288:87607"
+        "I1:65868;9445:28917;1288:87607"
       ]
     },
     {
@@ -3488,22 +2900,9 @@
       "familyKey": "component:1:636",
       "familyName": "ic_down_s 🔥",
       "referringNodeIds": [
-        "I1:66186;16712:36388;1288:87615",
-        "I1:66207;16712:36388;1288:87615",
-        "I1:66277;16712:36388;1288:87615",
-        "I1:67438;9959:72915;1288:87522",
-        "I1:67440;9959:72915;1288:87522",
-        "I1:67442;9959:72915;1288:87522",
-        "I1:67444;9959:72915;1288:87522",
-        "I1:67446;9959:72915;1288:87522"
-      ]
-    },
-    {
-      "componentId": "1:60453",
-      "familyKey": "component:1:60453",
-      "familyName": "ic_hand_leaf_m",
-      "referringNodeIds": [
-        "I1:67442;6585:1197;9445:28917;1288:87607"
+        "I1:65807;16712:36388;1288:87615",
+        "I1:65828;16712:36149;1288:87615",
+        "I1:65898;16712:36388;1288:87615"
       ]
     },
     {
@@ -3511,9 +2910,8 @@
       "familyKey": "component:1:43307",
       "familyName": "ic_info_circle_s 🔥",
       "referringNodeIds": [
-        "I1:66258;9445:27856;11940:107548",
-        "I1:66275;1857:134907",
-        "I1:66323;1857:134907"
+        "I1:65879;9445:27856;11940:107548",
+        "I1:65896;1857:134907"
       ]
     },
     {
@@ -3521,17 +2919,7 @@
       "familyKey": "component:1:43500",
       "familyName": "ic_radio_selected_s 🔥",
       "referringNodeIds": [
-        "I1:66210;9445:27870;9445:32106;5646:54691;5908:49316",
-        "I1:66258;9445:27870;9445:32106;5646:54691;5908:49316",
-        "I1:66319;9445:27870;9445:32106;5646:54691;5908:49316"
-      ]
-    },
-    {
-      "componentId": "1:60455",
-      "familyKey": "component:1:60455",
-      "familyName": "ic_shield_empty_m",
-      "referringNodeIds": [
-        "I1:67444;6585:1197;9445:28917;1288:87607"
+        "I1:65879;9445:27870;9445:32106;5646:54691;5908:49316"
       ]
     },
     {
@@ -3539,286 +2927,114 @@
       "familyKey": "component:1:54302",
       "familyName": "ic_shopping_cart_s",
       "referringNodeIds": [
-        "I1:66198;9445:29980;1288:87607"
+        "I1:65819;9445:29980;1288:87607"
       ]
     },
     {
-      "componentId": "1:40246",
-      "familyKey": "component:1:40246",
+      "componentId": "1:40602",
+      "familyKey": "component:1:40602",
       "familyName": "ic_user_s 🔥",
       "referringNodeIds": [
-        "I1:66177;5213:6541;1288:87607"
-      ]
-    },
-    {
-      "componentId": "1:21503",
-      "familyKey": "component:1:21503",
-      "familyName": "Markenbühne",
-      "referringNodeIds": [
-        "1:63231",
-        "1:64645",
-        "1:66051",
-        "1:67465",
-        "1:68885"
+        "I1:65798;5213:6541;1288:87607"
       ]
     }
   ],
-  "frameVariantGroups": [
-    {
-      "canonicalFrameId": "1:67464",
-      "confidence": 0.659,
-      "fallbackReasons": [
-        "Frame grouping is heuristic and based on structural similarity across top-level frames."
-      ],
-      "frameIds": [
-        "1:63230",
-        "1:64644",
-        "1:66050",
-        "1:67464",
-        "1:68884"
-      ],
-      "frameNames": [
-        "Bedarfsermittlung; Brutto + Betriebsmittel; alle Cluster eingeklappt ID-003.5_v1",
-        "Bedarfsermittlung; Fehlermeldungen ID-003.3_v1",
-        "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.1_v1",
-        "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.2_v1",
-        "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded ID-003.4_v1"
-      ],
-      "groupId": "bedarfsermittlung-brutto-betriebsmittel-alle-cluster-eingeklappt-id-003-5-v1-5",
-      "similarityReasons": [
-        "matching-width",
-        "shared-component-families",
-        "shared-name-tokens",
-        "shared-top-level-structure"
-      ],
-      "variantAxes": [
-        {
-          "axis": "expansion-state",
-          "source": "structure",
-          "values": [
-            "collapsed",
-            "expanded"
-          ]
-        },
-        {
-          "axis": "name-variants",
-          "source": "name",
-          "values": [
-            "alle",
-            "betriebsmittel",
-            "brutto",
-            "cluster",
-            "eingeklappt",
-            "expanded",
-            "fehlermeldungen",
-            "maximalausprägung",
-            "netto"
-          ]
-        },
-        {
-          "axis": "pricing-mode",
-          "source": "text",
-          "values": [
-            "brutto",
-            "netto"
-          ]
-        }
-      ]
-    }
-  ],
+  "frameVariantGroups": [],
   "layoutGraph": {
     "edges": [
       {
-        "childId": "1:63225",
-        "childType": "section",
+        "childId": "1:65671",
+        "childType": "frame",
         "parentId": "0:1",
         "parentType": "page"
-      },
-      {
-        "childId": "1:63230",
-        "childType": "frame",
-        "parentId": "1:63225",
-        "parentType": "section"
-      },
-      {
-        "childId": "1:64644",
-        "childType": "frame",
-        "parentId": "1:63225",
-        "parentType": "section"
-      },
-      {
-        "childId": "1:66050",
-        "childType": "frame",
-        "parentId": "1:63225",
-        "parentType": "section"
-      },
-      {
-        "childId": "1:67464",
-        "childType": "frame",
-        "parentId": "1:63225",
-        "parentType": "section"
-      },
-      {
-        "childId": "1:68884",
-        "childType": "frame",
-        "parentId": "1:63225",
-        "parentType": "section"
       }
     ],
     "frames": [
       {
-        "directChildCount": 3,
-        "height": 2354,
-        "id": "1:63230",
-        "instanceCount": 2,
-        "layoutMode": "VERTICAL",
-        "name": "Bedarfsermittlung; Brutto + Betriebsmittel; alle Cluster eingeklappt ID-003.5_v1",
-        "nodeType": "FRAME",
-        "pageId": "0:1",
-        "parentSectionId": "1:63225",
-        "subtreeNodeCount": 10,
-        "width": 1336
-      },
-      {
-        "directChildCount": 3,
-        "height": 3718,
-        "id": "1:64644",
-        "instanceCount": 2,
-        "layoutMode": "VERTICAL",
-        "name": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded ID-003.4_v1",
-        "nodeType": "FRAME",
-        "pageId": "0:1",
-        "parentSectionId": "1:63225",
-        "subtreeNodeCount": 10,
-        "width": 1336
-      },
-      {
-        "directChildCount": 3,
-        "height": 2378,
-        "id": "1:66050",
-        "instanceCount": 149,
-        "layoutMode": "VERTICAL",
-        "name": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.2_v1",
-        "nodeType": "FRAME",
-        "pageId": "0:1",
-        "parentSectionId": "1:63225",
-        "subtreeNodeCount": 445,
-        "width": 1336
-      },
-      {
-        "directChildCount": 3,
-        "height": 2134,
-        "id": "1:67464",
-        "instanceCount": 2,
+        "directChildCount": 1,
+        "height": 1578,
+        "id": "1:65671",
+        "instanceCount": 89,
         "layoutMode": "VERTICAL",
         "name": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt ID-003.1_v1",
         "nodeType": "FRAME",
         "pageId": "0:1",
-        "parentSectionId": "1:63225",
-        "subtreeNodeCount": 10,
-        "width": 1336
-      },
-      {
-        "directChildCount": 3,
-        "height": 2406,
-        "id": "1:68884",
-        "instanceCount": 2,
-        "layoutMode": "VERTICAL",
-        "name": "Bedarfsermittlung; Fehlermeldungen ID-003.3_v1",
-        "nodeType": "FRAME",
-        "pageId": "0:1",
-        "parentSectionId": "1:63225",
-        "subtreeNodeCount": 10,
+        "subtreeNodeCount": 264,
         "width": 1336
       }
     ],
     "pages": [
       {
-        "frameIds": [],
+        "frameIds": [
+          "1:65671"
+        ],
         "id": "0:1",
         "name": "Page 1",
-        "sectionIds": [
-          "1:63225"
-        ]
+        "sectionIds": []
       }
     ],
-    "sections": [
-      {
-        "childSectionIds": [],
-        "directChildCount": 23,
-        "frameIds": [
-          "1:63230",
-          "1:64644",
-          "1:66050",
-          "1:67464",
-          "1:68884"
-        ],
-        "id": "1:63225",
-        "name": "Bedarfsermittlung Investitionskredit Flow ID-003",
-        "pageId": "0:1"
-      }
-    ]
+    "sections": []
   },
-  "sourceName": "Sample-Board",
+  "sourceName": "Simple-Test-Board",
   "summary": {
-    "externalComponentCount": 52,
-    "localComponentCount": 0,
-    "localStyleCount": 0,
+    "externalComponentCount": 41,
+    "localComponentCount": 1,
+    "localStyleCount": 18,
     "pageCount": 1,
-    "sectionCount": 1,
-    "topLevelFrameCount": 5,
-    "totalInstanceCount": 159,
-    "totalNodeCount": 515
+    "sectionCount": 0,
+    "topLevelFrameCount": 1,
+    "totalInstanceCount": 89,
+    "totalNodeCount": 266
   },
   "tokenSignals": {
     "boundVariableIds": [],
     "styleReferences": {
       "allStyleIds": [
-        "1:38165",
-        "1:38191",
-        "1:38194",
-        "1:38197",
-        "1:38221",
-        "1:38240",
-        "1:38249",
-        "1:40222",
-        "1:41297",
-        "1:41302",
+        "1:38172",
+        "1:38196",
+        "1:38199",
+        "1:38202",
+        "1:38226",
+        "1:38245",
+        "1:38254",
+        "1:38293",
+        "1:39105",
+        "1:39115",
         "1:60633"
       ],
       "byType": {
         "effect": [],
         "fill": [],
         "generic": [
-          "1:38165",
-          "1:38191",
-          "1:38194",
-          "1:38197",
-          "1:38221",
-          "1:38240",
-          "1:38249",
-          "1:40222",
-          "1:41297",
-          "1:41302",
+          "1:38172",
+          "1:38196",
+          "1:38199",
+          "1:38202",
+          "1:38226",
+          "1:38245",
+          "1:38254",
+          "1:38293",
+          "1:39105",
+          "1:39115",
           "1:60633"
         ],
         "stroke": [],
         "text": []
       },
-      "linkedStyleIds": [
-        "1:38165",
-        "1:38191",
-        "1:38194",
-        "1:38197",
-        "1:38221",
-        "1:38240",
-        "1:38249",
-        "1:40222",
-        "1:41297",
-        "1:41302",
+      "linkedStyleIds": [],
+      "localStyleIds": [
+        "1:38172",
+        "1:38196",
+        "1:38199",
+        "1:38202",
+        "1:38226",
+        "1:38245",
+        "1:38254",
+        "1:38293",
+        "1:39105",
+        "1:39115",
         "1:60633"
-      ],
-      "localStyleIds": []
+      ]
     },
     "variableModeIds": []
   }

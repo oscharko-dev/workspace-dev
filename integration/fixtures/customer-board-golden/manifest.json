@@ -17,28 +17,28 @@
         "name": "src-App-tsx"
       },
       {
-        "actual": "src/components/AppShell1.tsx",
-        "expected": "expected/generated/src/components/AppShell1.tsx",
+        "actual": "src/context/SeitenContentFormContext.tsx",
+        "expected": "expected/generated/src/context/SeitenContentFormContext.tsx",
         "kind": "text",
-        "name": "src-components-AppShell1-tsx"
+        "name": "src-context-SeitenContentFormContext-tsx"
       },
       {
-        "actual": "src/context/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.tsx",
-        "expected": "expected/generated/src/context/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.tsx",
+        "actual": "src/context/SeitenContentPatternContext.tsx",
+        "expected": "expected/generated/src/context/SeitenContentPatternContext.tsx",
         "kind": "text",
-        "name": "src-context-BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext-tsx"
+        "name": "src-context-SeitenContentPatternContext-tsx"
       },
       {
-        "actual": "src/screens/__tests__/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1.test.tsx",
-        "expected": "expected/generated/src/screens/__tests__/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1.test.tsx",
+        "actual": "src/screens/__tests__/SeitenContent.test.tsx",
+        "expected": "expected/generated/src/screens/__tests__/SeitenContent.test.tsx",
         "kind": "text",
-        "name": "src-screens-tests-BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1-test-tsx"
+        "name": "src-screens-tests-SeitenContent-test-tsx"
       },
       {
-        "actual": "src/screens/Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1.tsx",
-        "expected": "expected/generated/src/screens/Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1.tsx",
+        "actual": "src/screens/SeitenContent.tsx",
+        "expected": "expected/generated/src/screens/SeitenContent.tsx",
         "kind": "text",
-        "name": "src-screens-Bedarfsermittlung-Netto-Betriebsmittel-alle-Cluster-eingeklappt-ID-003-1-v1-tsx"
+        "name": "src-screens-SeitenContent-tsx"
       },
       {
         "actual": "src/theme/theme.ts",

@@ -5,12 +5,12 @@ import path from "node:path";
 import { createJobEngine } from "../src/job-engine.js";
 import {
   buildCustomerBoardGoldenBundleFromFigmaInput,
+  createCustomerBoardHybridLiveRuntimeSettings,
   getCustomerBoardBrandId,
   getCustomerBoardFixtureRoot,
   getCustomerBoardRequestedStorybookStaticDir,
   loadCustomerBoardGoldenManifest,
   readCommittedCustomerBoardGoldenBundle,
-  resolveCustomerBoardLiveRuntimeSettings,
   writeCustomerBoardGoldenBundle
 } from "./customer-board-golden.helpers.js";
 
@@ -89,6 +89,12 @@ const run = async (): Promise<void> => {
       })
     );
 
+    const runtime = createCustomerBoardHybridLiveRuntimeSettings();
+    assert.ok(
+      runtime.figmaMcpEnrichmentLoader,
+      "Customer-board fixture refresh requires figmaMcpEnrichmentLoader for hybrid low-fidelity recovery."
+    );
+
     const engine = createJobEngine({
       resolveBaseUrl: () => "http://127.0.0.1:1983",
       paths: {
@@ -97,11 +103,11 @@ const run = async (): Promise<void> => {
         reprosRoot: path.join(outputRoot, "repros"),
         workspaceRoot: process.cwd()
       },
-      runtime: resolveCustomerBoardLiveRuntimeSettings()
+      runtime
     });
     const accepted = engine.submitJob({
       enableGitPr: false,
-      figmaSourceMode: "rest",
+      figmaSourceMode: "hybrid",
       figmaFileKey,
       figmaAccessToken,
       brandTheme: "derived",

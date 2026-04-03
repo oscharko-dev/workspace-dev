@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ScreenSkeleton from "./components/ScreenSkeleton";
-import BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen from "./screens/Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1";
+import SeitenContentScreen from "./screens/SeitenContent";
 
 
 const routeLoadingFallback = <ScreenSkeleton />;
@@ -28,13 +28,9 @@ export default function App() {
 
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
-          <Route path="/bedarfsermittlung_netto_betriebsmittel_alle_cluster_eingeklappt_id-003_1_v1" element={<ErrorBoundary><BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen /></ErrorBoundary>} />
-          <Route path="/bedarfsermittlung_brutto_betriebsmittel_alle_cluster_eingeklappt_id-003_5_v1" element={<ErrorBoundary><BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen initialVariantId="1:63230" /></ErrorBoundary>} />
-          <Route path="/bedarfsermittlung_netto_betriebsmittel_maximalauspr_gung_alle_cluster_expanded_id-003_4_v1" element={<ErrorBoundary><BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen initialVariantId="1:64644" /></ErrorBoundary>} />
-          <Route path="/bedarfsermittlung_netto_betriebsmittel_alle_cluster_eingeklappt_id-003_2_v1" element={<ErrorBoundary><BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen initialVariantId="1:66050" /></ErrorBoundary>} />
-          <Route path="/bedarfsermittlung_fehlermeldungen_id-003_3_v1" element={<ErrorBoundary><BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen initialVariantId="1:68884" /></ErrorBoundary>} />
-          <Route path="/" element={<Navigate to="/bedarfsermittlung_netto_betriebsmittel_alle_cluster_eingeklappt_id-003_1_v1" replace />} />
-          <Route path="*" element={<Navigate to="/bedarfsermittlung_netto_betriebsmittel_alle_cluster_eingeklappt_id-003_1_v1" replace />} />
+          <Route path="/seitencontent" element={<ErrorBoundary><SeitenContentScreen /></ErrorBoundary>} />
+          <Route path="/" element={<Navigate to="/seitencontent" replace />} />
+          <Route path="*" element={<Navigate to="/seitencontent" replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

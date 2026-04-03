@@ -10,13 +10,13 @@ import {
   assertCustomerBoardBundlesEqual,
   assertCustomerBoardPublicArtifactSanitized,
   buildCustomerBoardGoldenBundleFromFigmaInput,
+  createCustomerBoardHybridLiveRuntimeSettings,
   collectCustomerBoardFixtureOutputsFromPaths,
   getCustomerBoardBrandId,
   getCustomerBoardFixtureRoot,
   getCustomerBoardRequestedStorybookStaticDir,
   loadCustomerBoardGoldenManifest,
-  readCommittedCustomerBoardGoldenBundle,
-  resolveCustomerBoardLiveRuntimeSettings
+  readCommittedCustomerBoardGoldenBundle
 } from "./customer-board-golden.helpers.js";
 
 const waitForTerminalStatus = async ({
@@ -123,6 +123,12 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
     })
   );
 
+  const runtime = createCustomerBoardHybridLiveRuntimeSettings();
+  assert.ok(
+    runtime.figmaMcpEnrichmentLoader,
+    "Customer-board live parity must configure figmaMcpEnrichmentLoader for hybrid low-fidelity recovery."
+  );
+
   const outputRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-live-"));
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -132,7 +138,7 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
       reprosRoot: path.join(outputRoot, "repros"),
       workspaceRoot: process.cwd()
     },
-    runtime: resolveCustomerBoardLiveRuntimeSettings()
+    runtime
   });
   t.after(async () => {
     await rm(outputRoot, { recursive: true, force: true });
@@ -140,7 +146,7 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
 
   const accepted = engine.submitJob({
     enableGitPr: false,
-    figmaSourceMode: "rest",
+    figmaSourceMode: "hybrid",
     figmaFileKey: liveEnvironment.figmaFileKey,
     figmaAccessToken: liveEnvironment.figmaAccessToken,
     brandTheme: "derived",

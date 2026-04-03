@@ -8,6 +8,7 @@ import {
   type ResolvedCustomerProfile
 } from "../src/customer-profile.js";
 import { cleanFigmaForCodegen } from "../src/job-engine/figma-clean.js";
+import { createDefaultFigmaMcpEnrichmentLoader } from "../src/job-engine/figma-hybrid-enrichment.js";
 import { fetchFigmaFile } from "../src/job-engine/figma-source.js";
 import {
   resolveFigmaLibraryResolutionArtifact,
@@ -104,6 +105,19 @@ export const resolveCustomerBoardLiveRuntimeSettings = () =>
     figmaMaxScreenCandidates: 1,
     figmaScreenNamePattern: "SeitenContent"
   });
+
+export const createCustomerBoardHybridLiveRuntimeSettings = () => {
+  const runtime = resolveCustomerBoardLiveRuntimeSettings();
+  runtime.figmaMcpEnrichmentLoader ??= createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: runtime.figmaTimeoutMs,
+    maxRetries: runtime.figmaMaxRetries,
+    maxScreenCandidates: runtime.figmaMaxScreenCandidates,
+    ...(runtime.figmaScreenNamePattern !== undefined
+      ? { screenNamePattern: runtime.figmaScreenNamePattern }
+      : {})
+  });
+  return runtime;
+};
 
 type FixtureArtifactKind = "json" | "text";
 

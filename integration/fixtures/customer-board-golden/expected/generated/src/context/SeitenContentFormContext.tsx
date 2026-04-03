@@ -1,12 +1,12 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { createContext, useContext, type ReactNode } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 const initialVisualErrors: Record<string, string> = {};
 const defaultValidationMessages: Record<string, string> = {};
 const fieldSchemaSpecs = {
-  "_select__1_66186": {
+  "_select__1_65807": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [
@@ -14,7 +14,7 @@ const fieldSchemaSpecs = {
     ],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_select__1_66207": {
+  "_select__1_65828": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [
@@ -22,7 +22,7 @@ const fieldSchemaSpecs = {
     ],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_select__1_66277": {
+  "_select__1_65898": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [
@@ -30,31 +30,25 @@ const fieldSchemaSpecs = {
     ],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_textfield__1_66206": {
+  "_textfield__1_65827": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_textfield__1_66276": {
+  "_textfield__1_65897": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_textfield__1_66278": {
+  "_textfield__1_65899": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [],
     "selectValidationMessage": "Please select a valid option."
   },
-  "_textfield__1_66322": {
-    "required": false,
-    "validationMessage": "Invalid value.",
-    "selectOptions": [],
-    "selectValidationMessage": "Please select a valid option."
-  },
-  "_textfield__I1_67447_9445_27734": {
+  "_textfield__I2_656_4919_305782": {
     "required": false,
     "validationMessage": "Invalid value.",
     "selectOptions": [],
@@ -62,13 +56,13 @@ const fieldSchemaSpecs = {
   }
 } as const;
 const selectOptions: Record<string, string[]> = {
-  "_select__1_66186": [
+  "_select__1_65807": [
     "Person"
   ],
-  "_select__1_66207": [
+  "_select__1_65828": [
     "Art des Investitionsobjekts"
   ],
-  "_select__1_66277": [
+  "_select__1_65898": [
     "Anfallender MwSt.-Satz bei Kauf"
   ]
 };
@@ -349,25 +343,24 @@ const createFieldSchema = <TSpec extends FieldSchemaSpec>({ spec }: { spec: TSpe
 };
 
 const formSchema = z.object({
-    "_select__1_66186": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_66186"] }),
-    "_select__1_66207": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_66207"] }),
-    "_select__1_66277": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_66277"] }),
-    "_textfield__1_66206": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_66206"] }),
-    "_textfield__1_66276": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_66276"] }),
-    "_textfield__1_66278": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_66278"] }),
-    "_textfield__1_66322": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_66322"] }),
-    "_textfield__I1_67447_9445_27734": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__I1_67447_9445_27734"] })
+    "_select__1_65807": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_65807"] }),
+    "_select__1_65828": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_65828"] }),
+    "_select__1_65898": createFieldSchema({ spec: fieldSchemaSpecs["_select__1_65898"] }),
+    "_textfield__1_65827": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_65827"] }),
+    "_textfield__1_65897": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_65897"] }),
+    "_textfield__1_65899": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__1_65899"] }),
+    "_textfield__I2_656_4919_305782": createFieldSchema({ spec: fieldSchemaSpecs["_textfield__I2_656_4919_305782"] })
 });
 
-export type BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput = z.input<typeof formSchema>;
-export type BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormOutput = z.output<typeof formSchema>;
+export type SeitenContentFormInput = z.input<typeof formSchema>;
+export type SeitenContentFormOutput = z.output<typeof formSchema>;
 
-export interface BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextValue {
+export interface SeitenContentFormContextValue {
   initialVisualErrors: Record<string, string>;
   selectOptions: Record<string, string[]>;
-  control: UseFormReturn<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput>["control"];
-  handleSubmit: UseFormReturn<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput>["handleSubmit"];
-  onSubmit: (values: BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormOutput) => Promise<void>;
+  control: UseFormReturn<SeitenContentFormInput>["control"];
+  handleSubmit: UseFormReturn<SeitenContentFormInput>["handleSubmit"];
+  onSubmit: (values: SeitenContentFormOutput) => Promise<void>;
   resolveFieldErrorMessage: (input: {
     fieldKey: string;
     isTouched: boolean;
@@ -376,39 +369,37 @@ export interface BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID003
   }) => string;
   isSubmitting: boolean;
   isSubmitted: boolean;
-  reset: UseFormReturn<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput>["reset"];
-  setError: UseFormReturn<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput>["setError"];
+  reset: UseFormReturn<SeitenContentFormInput>["reset"];
+  setError: UseFormReturn<SeitenContentFormInput>["setError"];
 }
 
-const BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext = createContext<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextValue | undefined>(undefined);
+const SeitenContentFormContext = createContext<SeitenContentFormContextValue | undefined>(undefined);
 
-export interface BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextProviderProps {
+export interface SeitenContentFormContextProviderProps {
   children: ReactNode;
   initialVisualErrorsOverride?: Record<string, string>;
   validationMessagesOverride?: Record<string, string>;
 }
 
-export function BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextProvider({ children, initialVisualErrorsOverride, validationMessagesOverride }: BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextProviderProps) {
-  const defaultValues: BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput = {
-  "_select__1_66186": "Person",
-  "_textfield__1_66206": "Volkswagen ID.3",
-  "_select__1_66207": "Art des Investitionsobjekts",
-  "_textfield__1_66276": "45.000,00",
-  "_select__1_66277": "Anfallender MwSt.-Satz bei Kauf",
-  "_textfield__1_66278": "5.000,00",
-  "_textfield__1_66322": "8.550,00",
-  "_textfield__I1_67447_9445_27734": "10000"
+export function SeitenContentFormContextProvider({ children, initialVisualErrorsOverride, validationMessagesOverride }: SeitenContentFormContextProviderProps) {
+  const defaultValues: SeitenContentFormInput = {
+  "_select__1_65807": "Person",
+  "_textfield__1_65827": "",
+  "_select__1_65828": "Art des Investitionsobjekts",
+  "_textfield__1_65897": "EUR",
+  "_select__1_65898": "Anfallender MwSt.-Satz bei Kauf",
+  "_textfield__1_65899": "EUR",
+  "_textfield__I2_656_4919_305782": "10000"
 };
   const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
   const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
-  const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormInput>({
-    mode: "onBlur",
+  const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<SeitenContentFormInput>({
     resolver: zodResolver(formSchema),
     defaultValues
   });
 
-  const onSubmit = async (values: BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormOutput): Promise<void> => {
+  const onSubmit = async (values: SeitenContentFormOutput): Promise<void> => {
     void values;
     // TODO: Replace with actual API call.
     // Example server-side error: setError("fieldKey", { message: "Server error message." });
@@ -440,7 +431,7 @@ export function BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031
   };
 
   return (
-    <BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.Provider
+    <SeitenContentFormContext.Provider
       value={{
         initialVisualErrors: resolvedInitialVisualErrors,
         selectOptions,
@@ -455,15 +446,15 @@ export function BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031
       }}
     >
       {children}
-    </BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.Provider>
+    </SeitenContentFormContext.Provider>
   );
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export const useBedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext = (): BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextValue => {
-  const context = useContext(BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext);
+export const useSeitenContentFormContext = (): SeitenContentFormContextValue => {
+  const context = useContext(SeitenContentFormContext);
   if (!context) {
-    throw new Error("useBedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext must be used within BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContextProvider");
+    throw new Error("useSeitenContentFormContext must be used within SeitenContentFormContextProvider");
   }
   return context;
 };

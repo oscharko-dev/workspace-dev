@@ -1,16 +1,38 @@
+import { ThemeProvider } from "@mui/material/styles";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ThemeProvider } from "@mui/material/styles";
 import { axe } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import { appTheme } from "../../theme/theme";
-import BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen from "../Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1";
+import SeitenContentScreen from "../SeitenContent";
 
-const expectedTexts: string[] = [];
-const expectedButtonLabels: string[] = [];
-const clickableButtonLabels: string[] = [];
-const expectedTextInputLabels: string[] = [];
-const expectedSelectLabels: string[] = [];
+const expectedTexts: string[] = [
+  "Person",
+  "Konkrete Bezeichnung des Investitionsobjekts",
+  "Art des Investitionsobjekts",
+  "Die MwSt. ist nicht Teil des Finanzierungsbedarfs.",
+  "Höhe des Kaufpreises (Netto)",
+  "Anfallender MwSt.-Satz bei Kauf"
+];
+const expectedButtonLabels: string[] = [
+  "Abbrechen",
+  "Bedarf anlegen"
+];
+const clickableButtonLabels: string[] = [
+  "Abbrechen",
+  "Bedarf anlegen"
+];
+const expectedTextInputLabels: string[] = [
+  "Konkrete Bezeichnung des Investitionsobjekts",
+  "Höhe des Kaufpreises (Netto)",
+  "Höhe der Nebenkosten (Brutto)",
+  "Interner Vermerk"
+];
+const expectedSelectLabels: string[] = [
+  "Person",
+  "Art des Investitionsobjekts",
+  "Anfallender MwSt.-Satz bei Kauf"
+];
 
 const normalizeTextForAssertion = (value: string): string => {
   return value.replace(/\s+/g, " ").trim();
@@ -36,13 +58,13 @@ const renderScreen = () => {
   return render(
     <ThemeProvider theme={appTheme} defaultMode="system" noSsr>
       <MemoryRouter>
-        <BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen />
+        <SeitenContentScreen />
       </MemoryRouter>
     </ThemeProvider>
   );
 };
 
-describe("BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Screen", () => {
+describe("SeitenContentScreen", () => {
   it("renders without crashing", () => {
     const { container } = renderScreen();
     expect(container.firstChild).not.toBeNull();

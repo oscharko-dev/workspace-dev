@@ -85,7 +85,7 @@
       "figma": {
         "familyKey": "component:1:45022",
         "familyName": "_<InputAdornment>",
-        "nodeCount": 3,
+        "nodeCount": 2,
         "variantProperties": [
           {
             "property": "adornment type",
@@ -168,112 +168,6 @@
     },
     {
       "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:54957",
-        "familyName": "<Accordion>",
-        "nodeCount": 5,
-        "variantProperties": [
-          {
-            "property": "elevation",
-            "values": [
-              "0"
-            ]
-          },
-          {
-            "property": "expanded",
-            "values": [
-              "false"
-            ]
-          },
-          {
-            "property": "last of type",
-            "values": [
-              "false"
-            ]
-          },
-          {
-            "property": "state",
-            "values": [
-              "Enabled"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 36,
-        "status": "ambiguous"
-      },
-      "rejectionReasons": [
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:c67ca83043a4306f",
-        "name": "Accordion",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Surfaces/Accordion"
-      },
-      "storyVariant": {
-        "entryId": "components-surfaces-accordion--default",
-        "storyName": "Accordion"
-      },
-      "usedEvidence": [
-        {
-          "class": "canonical_family_name",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "reference_only_docs",
-          "reliability": "reference_only",
-          "role": "tie_breaker"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
         "selected_variant_by_entry_id_tiebreak",
         "used_figma_analysis_family_name",
         "used_reference_only_docs_tiebreaker"
@@ -281,7 +175,7 @@
       "figma": {
         "familyKey": "component:1:54808",
         "familyName": "<Alert>",
-        "nodeCount": 2,
+        "nodeCount": 1,
         "variantProperties": [
           {
             "property": "severity",
@@ -373,7 +267,7 @@
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
-        "familyKey": "component:1:40764",
+        "familyKey": "component:1:41120",
         "familyName": "<Avatar>",
         "nodeCount": 1,
         "variantProperties": [
@@ -907,9 +801,9 @@
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
-        "familyKey": "component:1:39071",
+        "familyKey": "component:1:38908",
         "familyName": "<Divider>",
-        "nodeCount": 8,
+        "nodeCount": 4,
         "variantProperties": [
           {
             "property": "orientation",
@@ -1002,7 +896,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:41335",
+        "familyKey": "component:1:39153",
         "familyName": "<Dynamic Typography> (headlines)",
         "nodeCount": 1,
         "variantProperties": [
@@ -1107,112 +1001,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:41343",
-        "familyName": "<Dynamic Typography> (headlines)",
-        "nodeCount": 5,
-        "variantProperties": [
-          {
-            "property": "color",
-            "values": [
-              "Default"
-            ]
-          },
-          {
-            "property": "variant",
-            "values": [
-              "headline04"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 40,
-        "status": "ambiguous"
-      },
-      "rejectionReasons": [
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:b5aee49ef09bcb1a",
-        "name": "DynamicTypography",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/DynamicTypography"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-dynamictypography--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "canonical_family_name",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "selected_variant_by_overlap",
-        "used_family_name_token_overlap",
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:41351",
+        "familyKey": "component:1:39169",
         "familyName": "<Dynamic Typography> (headlines)",
         "nodeCount": 3,
         "variantProperties": [
@@ -1316,9 +1105,9 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:38915",
+        "familyKey": "component:1:38938",
         "familyName": "<Icon>",
-        "nodeCount": 8,
+        "nodeCount": 3,
         "variantProperties": [
           {
             "property": "color",
@@ -1437,7 +1226,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:39023",
+        "familyKey": "component:1:39046",
         "familyName": "<Icon>",
         "nodeCount": 4,
         "variantProperties": [
@@ -1445,127 +1234,6 @@
             "property": "color",
             "values": [
               "Action"
-            ]
-          },
-          {
-            "property": "size",
-            "values": [
-              "Extra small"
-            ]
-          }
-        ]
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "docs": {
-            "iconKey": "docs",
-            "reason": "profile_icon_wrapper_denied",
-            "status": "wrapper_fallback_denied"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 0,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 1
-        },
-        "iconKeys": [
-          "docs"
-        ]
-      },
-      "libraryResolution": {
-        "componentKey": "Icon",
-        "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Components"
-      },
-      "match": {
-        "confidence": "low",
-        "confidenceScore": 46,
-        "status": "matched"
-      },
-      "rejectionReasons": [],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "fallbackPolicy": "allow",
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:dc489f432d373f73",
-        "name": "Icon",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Icon"
-      },
-      "storyVariant": {
-        "entryId": "components-display-icon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "canonical_family_name",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "reference_only_docs",
-          "reliability": "reference_only",
-          "role": "tie_breaker"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:39032",
-        "familyName": "<Icon>",
-        "nodeCount": 5,
-        "variantProperties": [
-          {
-            "property": "color",
-            "values": [
-              "Secondary"
             ]
           },
           {
@@ -1929,7 +1597,7 @@
       "figma": {
         "familyKey": "component:1:54316",
         "familyName": "<Radio>",
-        "nodeCount": 3,
+        "nodeCount": 1,
         "variantProperties": [
           {
             "property": "checked",
@@ -2024,9 +1692,134 @@
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
+        "familyKey": "component:1:45038",
+        "familyName": "<Select>",
+        "nodeCount": 1,
+        "variantProperties": [
+          {
+            "property": "autowidth",
+            "values": [
+              "False"
+            ]
+          },
+          {
+            "property": "disabled",
+            "values": [
+              "False"
+            ]
+          },
+          {
+            "property": "has value",
+            "values": [
+              "False"
+            ]
+          },
+          {
+            "property": "placeholder",
+            "values": [
+              "False"
+            ]
+          },
+          {
+            "property": "size",
+            "values": [
+              "Medium"
+            ]
+          },
+          {
+            "property": "state",
+            "values": [
+              "Enabled"
+            ]
+          },
+          {
+            "property": "variant",
+            "values": [
+              "Default"
+            ]
+          }
+        ]
+      },
+      "libraryResolution": {
+        "reason": "match_ambiguous",
+        "status": "not_applicable"
+      },
+      "match": {
+        "confidence": "none",
+        "confidenceScore": 36,
+        "status": "ambiguous"
+      },
+      "rejectionReasons": [
+        "insufficient_authoritative_lead",
+        "insufficient_total_score"
+      ],
+      "resolvedApi": {
+        "allowedProps": [],
+        "children": {
+          "policy": "unknown"
+        },
+        "defaultProps": [],
+        "diagnostics": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "resolvedProps": {
+        "children": {
+          "policy": "unknown"
+        },
+        "codegenCompatible": true,
+        "diagnostics": [],
+        "omittedDefaults": [],
+        "omittedProps": [],
+        "props": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "storybookFamily": {
+        "familyId": "family:707df9156603cf5e",
+        "name": "Select",
+        "storyCount": 4,
+        "tier": "Components",
+        "title": "Components/Inputs/Select"
+      },
+      "storyVariant": {
+        "entryId": "components-inputs-select--filled",
+        "storyName": "Filled"
+      },
+      "usedEvidence": [
+        {
+          "class": "canonical_family_name",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "reference_only_docs",
+          "reliability": "reference_only",
+          "role": "tie_breaker"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "candidate_selection"
+        }
+      ]
+    },
+    {
+      "fallbackReasons": [
+        "selected_variant_by_entry_id_tiebreak",
+        "used_figma_analysis_family_name",
+        "used_reference_only_docs_tiebreaker"
+      ],
+      "figma": {
         "familyKey": "component:1:45150",
         "familyName": "<Select>",
-        "nodeCount": 3,
+        "nodeCount": 2,
         "variantProperties": [
           {
             "property": "autowidth",
@@ -2150,7 +1943,7 @@
       "figma": {
         "familyKey": "component:1:42583",
         "familyName": "<Stack>",
-        "nodeCount": 1,
+        "nodeCount": 2,
         "variantProperties": [
           {
             "property": "alignitems",
@@ -2358,7 +2151,7 @@
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
-        "familyKey": "component:1:62397",
+        "familyKey": "component:1:62521",
         "familyName": "<Stack>",
         "nodeCount": 1,
         "variantProperties": [
@@ -2377,7 +2170,7 @@
           {
             "property": "direction s",
             "values": [
-              "row"
+              "column"
             ]
           },
           {
@@ -2459,6 +2252,82 @@
     },
     {
       "fallbackReasons": [
+        "used_figma_analysis_family_name",
+        "used_reference_only_docs_tiebreaker"
+      ],
+      "figma": {
+        "familyKey": "name:stack",
+        "familyName": "<Stack>",
+        "nodeCount": 1,
+        "variantProperties": []
+      },
+      "libraryResolution": {
+        "reason": "match_ambiguous",
+        "status": "not_applicable"
+      },
+      "match": {
+        "confidence": "none",
+        "confidenceScore": 26,
+        "status": "ambiguous"
+      },
+      "rejectionReasons": [
+        "insufficient_authoritative_score",
+        "insufficient_total_score"
+      ],
+      "resolvedApi": {
+        "allowedProps": [],
+        "children": {
+          "policy": "unknown"
+        },
+        "defaultProps": [],
+        "diagnostics": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "resolvedProps": {
+        "children": {
+          "policy": "unknown"
+        },
+        "codegenCompatible": true,
+        "diagnostics": [],
+        "omittedDefaults": [],
+        "omittedProps": [],
+        "props": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "storybookFamily": {
+        "familyId": "family:460bc794dff8d6d2",
+        "name": "Stack",
+        "storyCount": 1,
+        "tier": "Components",
+        "title": "Components/Layout/Stack"
+      },
+      "storyVariant": {
+        "entryId": "components-layout-stack--default",
+        "storyName": "Default"
+      },
+      "usedEvidence": [
+        {
+          "class": "canonical_family_name",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "reference_only_docs",
+          "reliability": "reference_only",
+          "role": "tie_breaker"
+        }
+      ]
+    },
+    {
+      "fallbackReasons": [
         "selected_docs_entry_fallback",
         "used_family_name_token_overlap",
         "used_figma_analysis_family_name",
@@ -2468,7 +2337,7 @@
       "figma": {
         "familyKey": "component:1:63214",
         "familyName": "<Stack> ButtonCombination",
-        "nodeCount": 5,
+        "nodeCount": 1,
         "variantProperties": [
           {
             "property": "small screen",
@@ -2558,7 +2427,7 @@
       "figma": {
         "familyKey": "component:1:54341",
         "familyName": "<Stack> FormControlLabel Radio",
-        "nodeCount": 8,
+        "nodeCount": 6,
         "variantProperties": [
           {
             "property": "disabled",
@@ -2646,8 +2515,115 @@
         "used_figma_analysis_family_name"
       ],
       "figma": {
-        "familyKey": "component:1:42114",
+        "familyKey": "component:1:41763",
         "familyName": "<Stack2>(Nested)",
+        "nodeCount": 5,
+        "variantProperties": [
+          {
+            "property": "alignitems",
+            "values": [
+              "Start"
+            ]
+          },
+          {
+            "property": "direction",
+            "values": [
+              "Row"
+            ]
+          },
+          {
+            "property": "direction s",
+            "values": [
+              "column"
+            ]
+          },
+          {
+            "property": "divider",
+            "values": [
+              "false"
+            ]
+          }
+        ]
+      },
+      "libraryResolution": {
+        "reason": "match_unmatched",
+        "status": "not_applicable"
+      },
+      "match": {
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
+      },
+      "rejectionReasons": [
+        "insufficient_authoritative_score",
+        "insufficient_total_score"
+      ],
+      "resolvedApi": {
+        "allowedProps": [],
+        "children": {
+          "policy": "unknown"
+        },
+        "defaultProps": [],
+        "diagnostics": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "resolvedProps": {
+        "children": {
+          "policy": "unknown"
+        },
+        "codegenCompatible": true,
+        "diagnostics": [],
+        "omittedDefaults": [],
+        "omittedProps": [],
+        "props": [],
+        "slots": {
+          "policy": "not_used",
+          "props": []
+        },
+        "status": "not_applicable"
+      },
+      "storybookFamily": {
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
+      },
+      "storyVariant": {
+        "entryId": "reactlib-player--default",
+        "storyName": "Default"
+      },
+      "usedEvidence": [
+        {
+          "class": "component_path_present",
+          "reliability": "authoritative",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
+        }
+      ]
+    },
+    {
+      "fallbackReasons": [
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
+      ],
+      "figma": {
+        "familyKey": "component:1:42114",
+        "familyName": "<Stack3>(Nested)",
         "nodeCount": 1,
         "variantProperties": [
           {
@@ -2754,113 +2730,6 @@
       ],
       "figma": {
         "familyKey": "component:1:42234",
-        "familyName": "<Stack2>(Nested)",
-        "nodeCount": 6,
-        "variantProperties": [
-          {
-            "property": "alignitems",
-            "values": [
-              "Start"
-            ]
-          },
-          {
-            "property": "direction",
-            "values": [
-              "Row"
-            ]
-          },
-          {
-            "property": "direction s",
-            "values": [
-              "column"
-            ]
-          },
-          {
-            "property": "divider",
-            "values": [
-              "false"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:09856bac732f00a2",
-        "name": "Player",
-        "storyCount": 2,
-        "tier": "Reactlib",
-        "title": "Reactlib/Player"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-player--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name"
-      ],
-      "figma": {
-        "familyKey": "component:1:39559",
         "familyName": "<Stack3>(Nested)",
         "nodeCount": 1,
         "variantProperties": [
@@ -2873,113 +2742,6 @@
           {
             "property": "direction",
             "values": [
-              "Column"
-            ]
-          },
-          {
-            "property": "direction s",
-            "values": [
-              "column"
-            ]
-          },
-          {
-            "property": "divider",
-            "values": [
-              "false"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:09856bac732f00a2",
-        "name": "Player",
-        "storyCount": 2,
-        "tier": "Reactlib",
-        "title": "Reactlib/Player"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-player--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name"
-      ],
-      "figma": {
-        "familyKey": "component:1:39679",
-        "familyName": "<Stack3>(Nested)",
-        "nodeCount": 6,
-        "variantProperties": [
-          {
-            "property": "alignitems",
-            "values": [
-              "Start"
-            ]
-          },
-          {
-            "property": "direction",
-            "values": [
               "Row"
             ]
           },
@@ -3074,7 +2836,7 @@
         "used_figma_analysis_family_name"
       ],
       "figma": {
-        "familyKey": "component:1:39210",
+        "familyKey": "component:1:40054",
         "familyName": "<Stack4>(Nested)",
         "nodeCount": 3,
         "variantProperties": [
@@ -3183,7 +2945,7 @@
       "figma": {
         "familyKey": "component:1:43658",
         "familyName": "<Stack6>(Nested)",
-        "nodeCount": 4,
+        "nodeCount": 3,
         "variantProperties": [
           {
             "property": "alignitems",
@@ -3289,9 +3051,9 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:50189",
+        "familyKey": "component:1:51269",
         "familyName": "<TextField>",
-        "nodeCount": 4,
+        "nodeCount": 3,
         "variantProperties": [
           {
             "property": "(password)",
@@ -3308,7 +3070,7 @@
           {
             "property": "has value",
             "values": [
-              "true"
+              "false"
             ]
           },
           {
@@ -3658,117 +3420,9 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:38305",
+        "familyKey": "component:1:38311",
         "familyName": "<Typography>",
-        "nodeCount": 5,
-        "variantProperties": [
-          {
-            "property": "color",
-            "values": [
-              "Default"
-            ]
-          },
-          {
-            "property": "variant",
-            "values": [
-              "label02"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "componentKey": "Typography",
-        "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Components"
-      },
-      "match": {
-        "confidence": "low",
-        "confidenceScore": 46,
-        "status": "matched"
-      },
-      "rejectionReasons": [],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "fallbackPolicy": "allow",
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:551261f1f5319081",
-        "name": "Typography",
-        "storyCount": 42,
-        "tier": "Components",
-        "title": "Components/Display/Typography"
-      },
-      "storyVariant": {
-        "entryId": "components-display-typography--label-02",
-        "storyName": "label02"
-      },
-      "usedEvidence": [
-        {
-          "class": "canonical_family_name",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "reference_only_docs",
-          "reliability": "reference_only",
-          "role": "tie_breaker"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:38307",
-        "familyName": "<Typography>",
-        "nodeCount": 13,
+        "nodeCount": 10,
         "variantProperties": [
           {
             "property": "color",
@@ -3874,7 +3528,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:38309",
+        "familyKey": "component:1:38313",
         "familyName": "<Typography>",
         "nodeCount": 1,
         "variantProperties": [
@@ -3981,7 +3635,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:38325",
+        "familyKey": "component:1:38329",
         "familyName": "<Typography>",
         "nodeCount": 1,
         "variantProperties": [
@@ -4086,121 +3740,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:60466",
-        "familyName": "ic_abacus_m 🔥",
-        "nodeCount": 1,
-        "variantProperties": []
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "abacus_m": {
-            "iconKey": "abacus_m",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "docs": {
-            "iconKey": "docs",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "finanzinformatik.cpl_module_reactlib": {
-            "iconKey": "finanzinformatik.cpl_module_reactlib",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "reactlib.brand_icon": {
-            "iconKey": "reactlib.brand_icon",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 4,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "abacus_m",
-          "docs",
-          "finanzinformatik.cpl_module_reactlib",
-          "reactlib.brand_icon"
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:00b0fa1ac20ecad6",
-        "name": "BrandIcon",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/BrandIcon"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-brandicon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:38903",
+        "familyKey": "component:1:38926",
         "familyName": "ic_arrow_subitem_s 🔥",
         "nodeCount": 1,
         "variantProperties": []
@@ -4314,92 +3854,16 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:55061",
-        "familyName": "ic_calendar_m 🔥",
-        "nodeCount": 1,
-        "variantProperties": []
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:3c27a2ba5da03870",
-        "name": "DatePickerConstrained",
-        "storyCount": 1,
-        "tier": "ReactUI",
-        "title": "ReactUI/Components/DatePickerConstrained"
-      },
-      "storyVariant": {
-        "entryId": "reactui-components-datepickerconstrained--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:60457",
-        "familyName": "ic_chart_upward_m 🔥",
+        "familyKey": "component:1:42111",
+        "familyName": "ic_chart_upward_s 1",
         "nodeCount": 1,
         "variantProperties": []
       },
       "iconResolution": {
         "assetKind": "icon",
         "byKey": {
-          "chart_upward_m": {
-            "iconKey": "chart_upward_m",
+          "chart_upward_s_1": {
+            "iconKey": "chart_upward_s_1",
             "reason": "match_unmatched",
             "status": "unresolved"
           },
@@ -4427,128 +3891,7 @@
           "wrapperFallbackDenied": 0
         },
         "iconKeys": [
-          "chart_upward_m",
-          "docs",
-          "finanzinformatik.cpl_module_reactlib",
-          "reactlib.brand_icon"
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:00b0fa1ac20ecad6",
-        "name": "BrandIcon",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/BrandIcon"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-brandicon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "canonicalFamilyName": "ic_chart_upward_s 2",
-        "familyKey": "component:1:42111",
-        "familyName": "ic_chart_upward_s 1",
-        "nodeCount": 2,
-        "variantProperties": []
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "chart_upward_s_1": {
-            "iconKey": "chart_upward_s_1",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "chart_upward_s_2": {
-            "iconKey": "chart_upward_s_2",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "docs": {
-            "iconKey": "docs",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "finanzinformatik.cpl_module_reactlib": {
-            "iconKey": "finanzinformatik.cpl_module_reactlib",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "reactlib.brand_icon": {
-            "iconKey": "reactlib.brand_icon",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 5,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
           "chart_upward_s_1",
-          "chart_upward_s_2",
           "docs",
           "finanzinformatik.cpl_module_reactlib",
           "reactlib.brand_icon"
@@ -4853,123 +4196,9 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:60468",
-        "familyName": "ic_document_euro_m",
-        "nodeCount": 1,
-        "variantProperties": []
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "docs": {
-            "iconKey": "docs",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "document_euro_m": {
-            "iconKey": "document_euro_m",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "finanzinformatik.cpl_module_reactlib": {
-            "iconKey": "finanzinformatik.cpl_module_reactlib",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "reactlib.brand_icon": {
-            "iconKey": "reactlib.brand_icon",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 4,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "docs",
-          "document_euro_m",
-          "finanzinformatik.cpl_module_reactlib",
-          "reactlib.brand_icon"
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:00b0fa1ac20ecad6",
-        "name": "BrandIcon",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/BrandIcon"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-brandicon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
         "familyKey": "component:1:636",
         "familyName": "ic_down_s 🔥",
-        "nodeCount": 8,
+        "nodeCount": 3,
         "variantProperties": []
       },
       "iconResolution": {
@@ -5081,123 +4310,9 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:60453",
-        "familyName": "ic_hand_leaf_m",
-        "nodeCount": 1,
-        "variantProperties": []
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "docs": {
-            "iconKey": "docs",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "finanzinformatik.cpl_module_reactlib": {
-            "iconKey": "finanzinformatik.cpl_module_reactlib",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "hand_leaf_m": {
-            "iconKey": "hand_leaf_m",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "reactlib.brand_icon": {
-            "iconKey": "reactlib.brand_icon",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 4,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "docs",
-          "finanzinformatik.cpl_module_reactlib",
-          "hand_leaf_m",
-          "reactlib.brand_icon"
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:00b0fa1ac20ecad6",
-        "name": "BrandIcon",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/BrandIcon"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-brandicon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
         "familyKey": "component:1:43307",
         "familyName": "ic_info_circle_s 🔥",
-        "nodeCount": 3,
+        "nodeCount": 2,
         "variantProperties": []
       },
       "iconResolution": {
@@ -5311,7 +4426,7 @@
       "figma": {
         "familyKey": "component:1:43500",
         "familyName": "ic_radio_selected_s 🔥",
-        "nodeCount": 3,
+        "nodeCount": 1,
         "variantProperties": []
       },
       "iconResolution": {
@@ -5350,120 +4465,6 @@
           "finanzinformatik.cpl_module_reactlib",
           "radio_selected_s",
           "reactlib.brand_icon"
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 15,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:00b0fa1ac20ecad6",
-        "name": "BrandIcon",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/BrandIcon"
-      },
-      "storyVariant": {
-        "entryId": "reactlib-brandicon--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "semantic_type",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        }
-      ]
-    },
-    {
-      "fallbackReasons": [
-        "used_figma_analysis_family_name",
-        "used_semantic_bucket"
-      ],
-      "figma": {
-        "familyKey": "component:1:60455",
-        "familyName": "ic_shield_empty_m",
-        "nodeCount": 1,
-        "variantProperties": []
-      },
-      "iconResolution": {
-        "assetKind": "icon",
-        "byKey": {
-          "docs": {
-            "iconKey": "docs",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "finanzinformatik.cpl_module_reactlib": {
-            "iconKey": "finanzinformatik.cpl_module_reactlib",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "reactlib.brand_icon": {
-            "iconKey": "reactlib.brand_icon",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          },
-          "shield_empty_m": {
-            "iconKey": "shield_empty_m",
-            "reason": "match_unmatched",
-            "status": "unresolved"
-          }
-        },
-        "counts": {
-          "ambiguous": 0,
-          "exactImportResolved": 0,
-          "unresolved": 4,
-          "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 0
-        },
-        "iconKeys": [
-          "docs",
-          "finanzinformatik.cpl_module_reactlib",
-          "reactlib.brand_icon",
-          "shield_empty_m"
         ]
       },
       "libraryResolution": {
@@ -5651,7 +4652,7 @@
         "used_semantic_bucket"
       ],
       "figma": {
-        "familyKey": "component:1:40246",
+        "familyKey": "component:1:40602",
         "familyName": "ic_user_s 🔥",
         "nodeCount": 1,
         "variantProperties": []
@@ -5758,94 +4759,6 @@
           "role": "candidate_selection"
         }
       ]
-    },
-    {
-      "fallbackReasons": [
-        "selected_variant_by_overlap",
-        "used_figma_analysis_family_name"
-      ],
-      "figma": {
-        "familyKey": "component:1:21503",
-        "familyName": "Markenbühne",
-        "nodeCount": 5,
-        "variantProperties": [
-          {
-            "property": "property 1",
-            "values": [
-              "Default"
-            ]
-          }
-        ]
-      },
-      "libraryResolution": {
-        "reason": "match_unmatched",
-        "status": "not_applicable"
-      },
-      "match": {
-        "confidence": "none",
-        "confidenceScore": 10,
-        "status": "unmatched"
-      },
-      "rejectionReasons": [
-        "insufficient_authoritative_score",
-        "insufficient_total_score"
-      ],
-      "resolvedApi": {
-        "allowedProps": [],
-        "children": {
-          "policy": "unknown"
-        },
-        "defaultProps": [],
-        "diagnostics": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "resolvedProps": {
-        "children": {
-          "policy": "unknown"
-        },
-        "codegenCompatible": true,
-        "diagnostics": [],
-        "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
-        "slots": {
-          "policy": "not_used",
-          "props": []
-        },
-        "status": "not_applicable"
-      },
-      "storybookFamily": {
-        "familyId": "family:d21d8444f976b00e",
-        "name": "Tooltip",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Tooltip"
-      },
-      "storyVariant": {
-        "entryId": "components-display-tooltip--default",
-        "storyName": "Default"
-      },
-      "usedEvidence": [
-        {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "variant_or_prop_overlap",
-          "reliability": "authoritative",
-          "role": "story_variant_selection"
-        }
-      ]
     }
   ],
   "summary": {
@@ -5853,44 +4766,44 @@
     "iconResolution": {
       "byReason": {
         "match_ambiguous": 15,
-        "match_unmatched": 57,
-        "not_icon_family": 31,
+        "match_unmatched": 36,
+        "not_icon_family": 27,
         "profile_icon_import_missing": 0,
         "profile_icon_import_resolved": 0,
         "profile_icon_wrapper_allowed": 0,
-        "profile_icon_wrapper_denied": 7,
+        "profile_icon_wrapper_denied": 6,
         "profile_icon_wrapper_missing": 0
       },
       "byStatus": {
         "ambiguous": 15,
-        "not_applicable": 31,
+        "not_applicable": 27,
         "resolved_import": 0,
-        "unresolved": 57,
+        "unresolved": 36,
         "wrapper_fallback_allowed": 0,
-        "wrapper_fallback_denied": 7
+        "wrapper_fallback_denied": 6
       }
     },
     "libraryResolution": {
       "byReason": {
         "match_ambiguous": 19,
-        "match_unmatched": 24,
+        "match_unmatched": 16,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 9,
+        "profile_import_missing": 7,
         "profile_import_resolved": 0
       },
       "byStatus": {
-        "mui_fallback_allowed": 9,
+        "mui_fallback_allowed": 7,
         "mui_fallback_denied": 0,
-        "not_applicable": 43,
+        "not_applicable": 35,
         "resolved_import": 0
       }
     },
-    "matched": 9,
+    "matched": 7,
     "storybookEntryCount": 499,
     "storybookFamilyCount": 289,
-    "totalFigmaFamilies": 52,
-    "unmatched": 24
+    "totalFigmaFamilies": 42,
+    "unmatched": 16
   },
   "version": 1
 }

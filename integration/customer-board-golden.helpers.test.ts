@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   assertCustomerBoardPublicArtifactSanitized,
+  createCustomerBoardHybridLiveRuntimeSettings,
   loadCustomerBoardGoldenManifest,
   normalizeCustomerBoardFixtureValue
 } from "./customer-board-golden.helpers.js";
@@ -169,5 +170,14 @@ test("customer-board helper rejects public artifact leaks for internal Storybook
       });
     },
     /forbidden public artifact leakage/
+  );
+});
+
+test("customer-board helper configures hybrid live runtime with MCP enrichment loader", () => {
+  const runtime = createCustomerBoardHybridLiveRuntimeSettings();
+
+  assert.ok(
+    runtime.figmaMcpEnrichmentLoader,
+    "Hybrid live runtime must configure figmaMcpEnrichmentLoader for low-fidelity recovery."
   );
 });
