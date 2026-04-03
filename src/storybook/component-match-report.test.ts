@@ -884,6 +884,20 @@ test("buildComponentMatchReportArtifact resolves customer-profile imports for ma
   });
 
   const entry = artifact.entries[0];
+  assert.deepEqual(entry?.figma.figmaLibraryResolution, {
+    status: "resolved",
+    resolutionSource: "cache",
+    originFileKey: "workspace-board",
+    canonicalFamilyName: "Button",
+    canonicalFamilyNameSource: "published_component_set",
+    issues: [],
+    designLinks: [
+      {
+        fileKey: "lib-file",
+        nodeId: "11:22"
+      }
+    ]
+  });
   assert.deepEqual(entry?.libraryResolution, {
     status: "resolved_import",
     reason: "profile_import_resolved",
@@ -1308,7 +1322,7 @@ test("buildComponentMatchReportArtifact marks denied MUI fallbacks when profile 
   });
 });
 
-test("buildComponentMatchReportArtifact reports family mismatches without leaking private path data", () => {
+test("buildComponentMatchReportArtifact reports family mismatches while preserving figma provenance and omitting private path data", () => {
   const entries = [
     createCatalogEntry({
       id: "button--default",
@@ -1377,11 +1391,13 @@ test("buildComponentMatchReportArtifact reports family mismatches without leakin
   assert.equal(serialized.includes("importPath"), false);
   assert.equal(serialized.includes("componentPath"), false);
   assert.equal(serialized.includes("https://www.figma.com"), false);
-  assert.equal(serialized.includes("lib-file"), false);
-  assert.equal(serialized.includes("11:22"), false);
+  assert.equal(serialized.includes("figmaLibraryResolution"), true);
+  assert.equal(serialized.includes("originFileKey"), true);
+  assert.equal(serialized.includes("lib-file"), true);
+  assert.equal(serialized.includes("11:22"), true);
 });
 
-test("serializeComponentMatchReportArtifact is byte-stable and excludes raw private source details", () => {
+test("serializeComponentMatchReportArtifact is byte-stable and preserves figma provenance without leaking private source details", () => {
   const figmaAnalysis = createFigmaAnalysis({
     componentFamilies: [createFigmaFamily({ familyKey: "button-family", familyName: "Button" })]
   });
@@ -1439,8 +1455,10 @@ test("serializeComponentMatchReportArtifact is byte-stable and excludes raw priv
   assert.equal(firstBytes.includes("iframeBundlePath"), false);
   assert.equal(firstBytes.includes("buildRoot"), false);
   assert.equal(firstBytes.includes("https://www.figma.com"), false);
-  assert.equal(firstBytes.includes("lib-file"), false);
-  assert.equal(firstBytes.includes("11:22"), false);
+  assert.equal(firstBytes.includes("figmaLibraryResolution"), true);
+  assert.equal(firstBytes.includes("originFileKey"), true);
+  assert.equal(firstBytes.includes("lib-file"), true);
+  assert.equal(firstBytes.includes("11:22"), true);
   assert.equal(firstBytes.includes("componentPath"), false);
 });
 

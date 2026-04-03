@@ -7,7 +7,10 @@ import type {
   ComponentMappingWarning
 } from "./parity/types-mapping.js";
 import type { DesignIR, ScreenElementIR } from "./parity/types-ir.js";
-import type { ComponentMatchReportArtifact } from "./storybook/types.js";
+import type {
+  ComponentMatchReportArtifact,
+  ComponentMatchReportFigmaLibraryResolution
+} from "./storybook/types.js";
 
 type ComponentMappingPatternSelectorKey =
   | "nodeNamePattern"
@@ -33,6 +36,7 @@ interface ComponentMappingNodeContext {
   canonicalComponentName?: string;
   storybookTier?: string;
   figmaLibrary?: string;
+  figmaLibraryResolution?: ComponentMatchReportFigmaLibraryResolution;
 }
 
 interface NormalizedComponentMappingRule extends ComponentMappingRule {
@@ -76,6 +80,60 @@ const normalizeOptionalString = (value: string | undefined): string | undefined 
 
 const normalizeComparableToken = (value: string | undefined): string | undefined => {
   return normalizeOptionalString(value)?.toLowerCase();
+};
+
+const normalizeFigmaLibraryResolution = ({
+  entry
+}: {
+  entry:
+    | ComponentMatchReportArtifact["entries"][number]["figma"]["figmaLibraryResolution"]
+    | FigmaLibraryResolutionArtifact["entries"][number]
+    | undefined;
+}): ComponentMatchReportFigmaLibraryResolution | undefined => {
+  if (!entry) {
+    return undefined;
+  }
+  if ("designLinks" in entry) {
+    return entry;
+  }
+  const designLinks = [
+    ...(entry.publishedComponentSet
+      ? [
+          {
+            fileKey: entry.publishedComponentSet.fileKey,
+            ...(entry.publishedComponentSet.nodeId ? { nodeId: entry.publishedComponentSet.nodeId } : {})
+          }
+        ]
+      : []),
+    ...(entry.publishedComponent
+      ? [
+          {
+            fileKey: entry.publishedComponent.fileKey,
+            ...(entry.publishedComponent.nodeId ? { nodeId: entry.publishedComponent.nodeId } : {})
+          }
+        ]
+      : [])
+  ].sort((left, right) => {
+    const byFileKey = left.fileKey.localeCompare(right.fileKey);
+    if (byFileKey !== 0) {
+      return byFileKey;
+    }
+    return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
+  });
+  return {
+    status: entry.status,
+    resolutionSource: entry.resolutionSource,
+    ...(entry.originFileKey ? { originFileKey: entry.originFileKey } : {}),
+    ...(entry.canonicalFamilyName ? { canonicalFamilyName: entry.canonicalFamilyName } : {}),
+    canonicalFamilyNameSource: entry.canonicalFamilyNameSource,
+    issues: (entry.issues ?? []).map((issue) => ({
+      code: issue.code,
+      message: issue.message,
+      scope: issue.scope,
+      ...(issue.retriable !== undefined ? { retriable: issue.retriable } : {})
+    })),
+    designLinks
+  };
 };
 
 const toSourceOrder = (source: ComponentMappingSource | undefined): number => {
@@ -374,18 +432,23 @@ const buildComponentMappingNodeContexts = ({
       if (!componentMatchEntry) {
         return [];
       }
-      const figmaLibraryEntry = figmaLibraryEntriesByFamilyKey.get(familyKey);
+      const figmaLibraryResolution =
+        componentMatchEntry.figma.figmaLibraryResolution ??
+        normalizeFigmaLibraryResolution({
+          entry: figmaLibraryEntriesByFamilyKey.get(familyKey)
+        });
       const nodeContext: ComponentMappingNodeContext = {
         nodeId: element.id,
         nodeName: normalizeOptionalString(element.name) ?? "",
-        familyKey
+        familyKey,
+        ...(figmaLibraryResolution ? { figmaLibraryResolution } : {})
       };
       const normalizedSemanticType = normalizeOptionalString(element.semanticType);
       if (normalizedSemanticType) {
         nodeContext.semanticType = normalizedSemanticType;
       }
       const normalizedCanonicalComponentName = normalizeOptionalString(
-        componentMatchEntry.figma.canonicalFamilyName ?? figmaLibraryEntry?.canonicalFamilyName ?? componentMatchEntry.figma.familyName
+        figmaLibraryResolution?.canonicalFamilyName ?? componentMatchEntry.figma.canonicalFamilyName ?? componentMatchEntry.figma.familyName
       );
       if (normalizedCanonicalComponentName) {
         nodeContext.canonicalComponentName = normalizedCanonicalComponentName;
@@ -394,7 +457,7 @@ const buildComponentMappingNodeContexts = ({
       if (normalizedStorybookTier) {
         nodeContext.storybookTier = normalizedStorybookTier;
       }
-      const normalizedFigmaLibrary = normalizeOptionalString(figmaLibraryEntry?.originFileKey);
+      const normalizedFigmaLibrary = normalizeOptionalString(figmaLibraryResolution?.originFileKey);
       if (normalizedFigmaLibrary) {
         nodeContext.figmaLibrary = normalizedFigmaLibrary;
       }
