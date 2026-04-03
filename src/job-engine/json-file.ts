@@ -50,7 +50,9 @@ const writeScalarValue = async ({
   stream: ReturnType<typeof createWriteStream>;
   value: unknown;
 }): Promise<void> => {
-  const serialized = JSON.stringify(value);
+  // JSON.stringify returns undefined for undefined/function/symbol at runtime,
+  // despite TypeScript's return type of string.
+  const serialized = JSON.stringify(value) as string | undefined;
   await writeChunk({
     stream,
     chunk: serialized ?? "null"
@@ -103,7 +105,7 @@ const writeJsonValue = async ({
     for (let index = 0; index < normalizedValue.length; index += 1) {
       await writeChunk({
         stream,
-        chunk: `${INDENT.repeat(depth + 1)}`
+        chunk: INDENT.repeat(depth + 1)
       });
       await writeJsonValue({
         stream,
@@ -136,7 +138,7 @@ const writeJsonValue = async ({
       value: entryValue,
       key
     });
-    return JSON.stringify(transformedEntry) !== undefined || Array.isArray(transformedEntry) || isObjectRecord(transformedEntry);
+    return transformedEntry !== undefined && typeof transformedEntry !== "function" && typeof transformedEntry !== "symbol";
   });
 
   if (entries.length === 0) {

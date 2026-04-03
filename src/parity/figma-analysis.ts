@@ -599,7 +599,7 @@ const collectVariantProperties = (node: FigmaNode): Record<string, string> => {
       continue;
     }
     if (Array.isArray(definition.variantOptions)) {
-      const options = [...definition.variantOptions].filter((option): option is string => typeof option === "string");
+      const options = (definition.variantOptions as unknown[]).filter((option): option is string => typeof option === "string");
       options.sort((left, right) => left.localeCompare(right));
       for (const option of options) {
         if (typeof option === "string") {
