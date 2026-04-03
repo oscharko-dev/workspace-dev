@@ -9,7 +9,13 @@ import {
   writeStorybookEvidenceArtifact
 } from "./evidence.js";
 
-const createMiniStorybookBuild = async (): Promise<string> => {
+const createMiniStorybookBuild = async ({
+  componentPath = "./src/core/Tooltip/Tooltip.tsx",
+  internalDocsLink = "/docs/base-colors-sk-theme--docs"
+}: {
+  componentPath?: string;
+  internalDocsLink?: string;
+} = {}): Promise<string> => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-evidence-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -25,7 +31,7 @@ const createMiniStorybookBuild = async (): Promise<string> => {
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+        componentPath
       },
       "base-colors--docs": {
         id: "base-colors--docs",
@@ -83,7 +89,7 @@ const createMiniStorybookBuild = async (): Promise<string> => {
           e.jsxs(p, {
             children: [
               "Weitere Details unter ",
-              e.jsx("a", { href: "/docs/base-colors-sk-theme--docs", children: "SK-Theme" }),
+              e.jsx("a", { href: "${internalDocsLink}", children: "SK-Theme" }),
               " sowie ",
               e.jsx("a", { href: "https://example.com/design", children: "extern" })
             ]
@@ -137,6 +143,16 @@ test("buildStorybookEvidenceArtifact assigns reliability and usage gates determi
   assert.equal(docsImage?.usage.canDriveImports, false);
   assert.equal(docsImage?.usage.canDriveStyling, false);
   assert.equal(docsImage?.usage.canProvideMatchHints, true);
+
+  const componentPath = firstArtifact.evidence.find((item) => item.type === "story_componentPath");
+  assert.ok(componentPath);
+  assert.equal(componentPath?.summary.componentPath, "src/core/Tooltip/Tooltip.tsx");
+
+  const internalDocsLink = firstArtifact.evidence.find(
+    (item) => item.type === "mdx_link" && item.summary.linkTarget?.startsWith("/docs/")
+  );
+  assert.ok(internalDocsLink);
+  assert.equal(internalDocsLink?.summary.linkTarget, "/docs/base-colors-sk-theme--docs");
 });
 
 test("every evidence item is classified as authoritative or reference_only with no derived items", async () => {
@@ -231,6 +247,25 @@ test("evidence IDs are unique and stable across builds", async () => {
 
   const secondIds = secondArtifact.evidence.map((item) => item.id);
   assert.deepEqual(firstIds, secondIds, "Evidence IDs must be stable across builds");
+});
+
+test("evidence IDs stay canonical across equivalent componentPath and internal docs link variants", async () => {
+  const windowsBuildDir = await createMiniStorybookBuild({
+    componentPath: ".\\src\\core\\Tooltip\\Tooltip.tsx",
+    internalDocsLink: "/docs/base-colors-sk-theme--docs?viewMode=docs#tokens"
+  });
+  const posixBuildDir = await createMiniStorybookBuild({
+    componentPath: "./src/core/Tooltip/Tooltip.tsx",
+    internalDocsLink: "/docs/base-colors-sk-theme--docs"
+  });
+
+  const windowsArtifact = await buildStorybookEvidenceArtifact({ buildDir: windowsBuildDir });
+  const posixArtifact = await buildStorybookEvidenceArtifact({ buildDir: posixBuildDir });
+
+  const { buildRoot: _windowsBuildRoot, ...windowsComparable } = windowsArtifact;
+  const { buildRoot: _posixBuildRoot, ...posixComparable } = posixArtifact;
+
+  assert.deepEqual(windowsComparable, posixComparable);
 });
 
 test("writeStorybookEvidenceArtifact emits byte-identical JSON across repeated writes", async () => {
