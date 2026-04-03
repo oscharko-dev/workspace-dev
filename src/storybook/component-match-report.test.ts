@@ -929,6 +929,98 @@ test("buildComponentMatchReportArtifact resolves customer-profile imports for ma
   });
 });
 
+test("buildComponentMatchReportArtifact preserves structured prop object semantics for resolved imports", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "alert--default",
+      title: "Components/Alert",
+      name: "Default",
+      familyId: "family-alert",
+      componentPath: "./src/components/Alert.tsx",
+      designUrls: ["https://www.figma.com/design/lib-file/Alert?node-id=10-20"],
+      args: {
+        severity: "error",
+        sx: {
+          mt: 2
+        }
+      },
+      argTypes: {
+        severity: {
+          options: ["Error", "Warning"]
+        }
+      }
+    })
+  ];
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "alert-family",
+          familyName: "Alert",
+          variantProperties: [
+            { property: "Severity", values: ["Error"] },
+            { property: "sx", values: ["{}"] }
+          ]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-alert",
+          title: "Components/Alert",
+          name: "Alert",
+          entryIds: ["alert--default"],
+          storyEntryIds: ["alert--default"],
+          componentPath: "./src/components/Alert.tsx",
+          designUrls: ["https://www.figma.com/design/lib-file/Alert?node-id=10-20"],
+          propKeys: ["children", "severity", "sx"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "alert-design-link",
+          type: "story_design_link",
+          entryId: "alert--default",
+          url: "https://www.figma.com/design/lib-file/Alert?node-id=10-20"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "alert-family",
+      canonicalFamilyName: "Alert",
+      fileKey: "lib-file",
+      nodeId: "10:20",
+      variantProperties: [
+        { property: "Severity", values: ["Error"] },
+        { property: "sx", values: ["{}"] }
+      ]
+    }),
+    resolvedCustomerProfile: createCustomerProfileForComponentMatchTests({
+      imports: {
+        Alert: {
+          family: "Components",
+          package: "@customer/feedback",
+          export: "CustomerAlert"
+        }
+      }
+    })
+  });
+
+  const entry = artifact.entries[0];
+  assert.equal(entry?.resolvedApi?.status, "resolved");
+  const sxAllowedProp = entry?.resolvedApi?.allowedProps.find((prop) => prop.name === "sx");
+  assert.equal(sxAllowedProp?.kind, "object");
+  assert.equal(sxAllowedProp?.allowedValues, undefined);
+  const sxResolvedProp = entry?.resolvedProps?.props.find((prop) => prop.sourceProp === "sx");
+  assert.equal(sxResolvedProp?.kind, "object");
+  assert.equal(sxResolvedProp?.values, undefined);
+});
+
 test("buildComponentMatchReportArtifact resolves exact customer icon imports per normalized icon key", () => {
   const entries = [
     createCatalogEntry({

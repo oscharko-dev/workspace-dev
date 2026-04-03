@@ -77,6 +77,8 @@ const BOOLEAN_PROP_NAMES = new Set<string>([
   "selected"
 ]);
 
+const STRUCTURED_PROP_NAMES = new Set<string>(["slotProps", "sx"]);
+
 const COMPONENT_GENERATOR_SURFACES: Record<string, GeneratorSurface> = {
   Accordion: {
     semanticProps: ["expanded"],
@@ -166,6 +168,47 @@ const normalizeEnumStringValue = (value: string): string => {
   return normalizeVariantValue(value).trim().toLowerCase().replace(/[\s_]+/g, "-");
 };
 
+const isObjectLikeValue = (value: StorybookCatalogJsonValue | undefined): boolean => {
+  if (Array.isArray(value) || isPlainRecord(value)) {
+    return true;
+  }
+  if (typeof value !== "string") {
+    return false;
+  }
+  const trimmed = value.trim();
+  const firstCharacter = trimmed.at(0);
+  const lastCharacter = trimmed.at(-1);
+  const isWrappedJsonLikeValue =
+    (firstCharacter === "{" && lastCharacter === "}") ||
+    (firstCharacter === "[" && lastCharacter === "]");
+  if (!trimmed || !isWrappedJsonLikeValue) {
+    return false;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return typeof parsed === "object" && parsed !== null;
+  } catch {
+    return trimmed === "{}" || trimmed === "[]";
+  }
+};
+
+const getExplicitPropKind = ({
+  propName
+}: {
+  propName: string;
+}): "boolean" | "enum" | "object" | undefined => {
+  if (STRUCTURED_PROP_NAMES.has(propName)) {
+    return "object";
+  }
+  if (BOOLEAN_PROP_NAMES.has(propName)) {
+    return "boolean";
+  }
+  if (ENUM_PROP_NAMES.has(propName)) {
+    return "enum";
+  }
+  return undefined;
+};
+
 const toPrimitiveValue = ({
   value,
   kindHint
@@ -183,6 +226,9 @@ const toPrimitiveValue = ({
   if (!trimmed) {
     return undefined;
   }
+  if (kindHint === "object" || isObjectLikeValue(trimmed)) {
+    return undefined;
+  }
   const booleanValue = BOOLEAN_STRING_VALUES.get(trimmed.toLowerCase());
   if (kindHint === "boolean" && booleanValue !== undefined) {
     return booleanValue;
@@ -195,19 +241,19 @@ const toPrimitiveValue = ({
 
 const inferPropKind = ({
   propName,
-  values
+  values,
+  rawValues = []
 }: {
   propName: string;
   values: readonly PrimitiveValue[];
+  rawValues?: readonly StorybookCatalogJsonValue[];
 }): ComponentMatchResolvedPropKind => {
-  if (propName === "slotProps") {
+  const explicitKind = getExplicitPropKind({ propName });
+  if (explicitKind) {
+    return explicitKind;
+  }
+  if (rawValues.some((value) => isObjectLikeValue(value))) {
     return "object";
-  }
-  if (BOOLEAN_PROP_NAMES.has(propName)) {
-    return "boolean";
-  }
-  if (ENUM_PROP_NAMES.has(propName)) {
-    return "enum";
   }
   if (values.length > 0) {
     if (values.every((value) => typeof value === "boolean")) {
@@ -224,9 +270,11 @@ const inferPropKind = ({
 };
 
 const extractArgTypeOptions = ({
-  value
+  value,
+  kindHint
 }: {
   value: StorybookCatalogJsonValue | undefined;
+  kindHint?: ComponentMatchResolvedPropKind;
 }): PrimitiveValue[] => {
   if (!isPlainRecord(value) || !Array.isArray(value.options)) {
     return [];
@@ -234,15 +282,12 @@ const extractArgTypeOptions = ({
   return sortUniquePrimitiveValues(
     value.options
       .flatMap((entry): PrimitiveValue[] => {
-        if (typeof entry === "boolean" || typeof entry === "number") {
-          return [entry];
-        }
-        if (typeof entry === "string") {
-          return [entry.trim()];
-        }
-        return [];
+        const normalizedValue = toPrimitiveValue({
+          value: entry,
+          ...(kindHint ? { kindHint } : {})
+        });
+        return normalizedValue === undefined ? [] : [normalizedValue];
       })
-      .filter((entry) => (typeof entry === "string" ? entry.length > 0 : true))
   );
 };
 
@@ -431,15 +476,17 @@ const buildAllowedPropMetadata = ({
     .map((targetProp): ComponentMatchResolvedApiAllowedProp => {
       const sourceProp = inversePropMappings.get(targetProp) ?? targetProp;
       const observed = observedSourceProps.get(sourceProp);
-      const argTypeOptions = extractArgTypeOptions({ value: storyArgTypes[targetProp] });
+      const kindHint = observed?.kind !== "unknown" ? observed?.kind : getExplicitPropKind({ propName: sourceProp });
+      const argTypeOptions = extractArgTypeOptions({
+        value: storyArgTypes[targetProp],
+        ...(kindHint ? { kindHint } : {})
+      });
       const defaultValue = defaultsByName.get(targetProp);
-      const storyArgValue =
-        observed?.kind === "enum"
-          ? toPrimitiveValue({ value: storyArgs[targetProp], kindHint: "enum" })
-          : observed?.kind === "boolean"
-            ? toPrimitiveValue({ value: storyArgs[targetProp], kindHint: "boolean" })
-            : toPrimitiveValue({ value: storyArgs[targetProp] });
-      const values = sortUniquePrimitiveValues([
+      const storyArgValue = toPrimitiveValue({
+        value: storyArgs[targetProp],
+        ...(kindHint ? { kindHint } : {})
+      });
+      const candidateValues = sortUniquePrimitiveValues([
         ...argTypeOptions,
         ...(storyArgValue !== undefined ? [storyArgValue] : []),
         ...(observed?.values ?? []),
@@ -447,7 +494,15 @@ const buildAllowedPropMetadata = ({
           ? [defaultValue]
           : [])
       ]);
-      const kind = observed?.kind ?? inferPropKind({ propName: sourceProp, values });
+      const kind =
+        observed?.kind && observed.kind !== "unknown"
+          ? observed.kind
+          : inferPropKind({
+              propName: sourceProp,
+              values: candidateValues,
+              rawValues: storyArgs[targetProp] === undefined ? [] : [storyArgs[targetProp]]
+            });
+      const values = kind === "object" ? [] : candidateValues;
       const allowedValues =
         kind === "boolean"
           ? [false, true]
@@ -553,11 +608,18 @@ export const resolveComponentApiContract = ({
     }
     figmaVariantPropNames.add(sourceProp);
     const targetProp = normalizePropName(resolvedImport.propMappings?.[sourceProp]) ?? sourceProp;
+    const kindHint = getExplicitPropKind({ propName: sourceProp });
     const kind = inferPropKind({
       propName: sourceProp,
       values: variantProperty.values
-        .map((value) => toPrimitiveValue({ value, kindHint: BOOLEAN_PROP_NAMES.has(sourceProp) ? "boolean" : "enum" }))
-        .filter((value): value is PrimitiveValue => value !== undefined)
+        .map((value) =>
+          toPrimitiveValue({
+            value,
+            ...(kindHint ? { kindHint } : {})
+          })
+        )
+        .filter((value): value is PrimitiveValue => value !== undefined),
+      rawValues: variantProperty.values
     });
     addObservedValue({
       target: observedSourceProps,
@@ -596,26 +658,22 @@ export const resolveComponentApiContract = ({
     if (!relevantSourceProps.has(sourceProp) && targetProp !== "slotProps") {
       continue;
     }
-    const kindHint =
-      BOOLEAN_PROP_NAMES.has(sourceProp)
-        ? "boolean"
-        : ENUM_PROP_NAMES.has(sourceProp)
-          ? "enum"
-          : undefined;
+    const kindHint = getExplicitPropKind({ propName: sourceProp });
     const primitiveValue = toPrimitiveValue({
       value: storyArgs[targetPropName],
       ...(kindHint ? { kindHint } : {})
     });
     const kind = inferPropKind({
       propName: sourceProp,
-      values: primitiveValue === undefined ? [] : [primitiveValue]
+      values: primitiveValue === undefined ? [] : [primitiveValue],
+      rawValues: storyArgs[targetPropName] === undefined ? [] : [storyArgs[targetPropName]]
     });
     addObservedValue({
       target: observedSourceProps,
       sourceProp,
       targetProp,
       kind,
-      ...(primitiveValue !== undefined ? { value: primitiveValue } : {})
+      ...(kind !== "object" && primitiveValue !== undefined ? { value: primitiveValue } : {})
     });
   }
 
@@ -707,7 +765,7 @@ export const resolveComponentApiContract = ({
       sourceProp: observed.sourceProp,
       targetProp: observed.targetProp,
       kind: observed.kind,
-      ...(values.length > 0 ? { values } : {})
+      ...(observed.kind !== "object" && values.length > 0 ? { values } : {})
     });
   }
 

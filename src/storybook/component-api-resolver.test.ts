@@ -317,6 +317,14 @@ test("resolveComponentApiContract resolves Alert family with severity, sx, and c
     },
     storybookFamily: createStorybookFamily({
       propKeys: ["severity", "sx", "children"]
+    }),
+    storyEntry: createStoryEntry({
+      args: {
+        severity: "error",
+        sx: {
+          mt: 2
+        }
+      }
     })
   });
 
@@ -324,7 +332,14 @@ test("resolveComponentApiContract resolves Alert family with severity, sx, and c
   assert.equal(result.resolvedApi.componentKey, "Alert");
   assert.equal(result.resolvedApi.children.policy, "supported");
   assert.ok(result.resolvedApi.allowedProps.some((prop) => prop.name === "severity"));
-  assert.ok(result.resolvedApi.allowedProps.some((prop) => prop.name === "sx"));
+  const sxAllowedProp = result.resolvedApi.allowedProps.find((prop) => prop.name === "sx");
+  assert.ok(sxAllowedProp);
+  assert.equal(sxAllowedProp.kind, "object");
+  assert.equal(sxAllowedProp.allowedValues, undefined);
+  const sxResolvedProp = result.resolvedProps.props.find((prop) => prop.sourceProp === "sx");
+  assert.ok(sxResolvedProp);
+  assert.equal(sxResolvedProp.kind, "object");
+  assert.equal(sxResolvedProp.values, undefined);
 });
 
 test("resolveComponentApiContract handles slotProps support and unsupported diagnostics", () => {
@@ -535,6 +550,60 @@ test("resolveComponentApiContract merges argType options into allowed values", (
   assert.ok(colorProp.allowedValues.includes("secondary"));
   assert.ok(colorProp.allowedValues.includes("error"));
   assert.ok(colorProp.allowedValues.includes("info"));
+});
+
+test("resolveComponentApiContract normalizes mixed-format argType enum options", () => {
+  const result = resolveComponentApiContract({
+    figmaFamily: createFigmaFamily({
+      variantProperties: [{ property: "color", values: ["Primary"] }]
+    }),
+    libraryResolution: {
+      status: "resolved_import",
+      componentKey: "Button",
+      import: createResolvedImport()
+    },
+    storybookFamily: createStorybookFamily({
+      propKeys: ["color", "children"]
+    }),
+    storyEntry: createStoryEntry({
+      args: { color: "Secondary Action" },
+      argTypes: {
+        color: { options: ["Primary", "Secondary Action", "accent_value"] }
+      }
+    })
+  });
+
+  const colorProp = result.resolvedApi.allowedProps.find((p) => p.name === "color");
+  assert.ok(colorProp);
+  assert.equal(colorProp.kind, "enum");
+  assert.deepEqual(colorProp.allowedValues, ["accent-value", "primary", "secondary-action"]);
+});
+
+test("resolveComponentApiContract normalizes argType enum options consistently", () => {
+  const result = resolveComponentApiContract({
+    figmaFamily: createFigmaFamily({
+      variantProperties: [{ property: "color", values: ["Primary"] }]
+    }),
+    libraryResolution: {
+      status: "resolved_import",
+      componentKey: "Button",
+      import: createResolvedImport()
+    },
+    storybookFamily: createStorybookFamily({
+      propKeys: ["color", "children"]
+    }),
+    storyEntry: createStoryEntry({
+      args: { color: "SECONDARY" },
+      argTypes: {
+        color: { options: ["Primary", "secondary", "Error State", "error_state"] }
+      }
+    })
+  });
+
+  const colorProp = result.resolvedApi.allowedProps.find((p) => p.name === "color");
+  assert.ok(colorProp);
+  assert.equal(colorProp.kind, "enum");
+  assert.deepEqual(colorProp.allowedValues, ["error-state", "primary", "secondary"]);
 });
 
 test("resolveComponentApiContract finds public component via componentsArtifact", () => {
