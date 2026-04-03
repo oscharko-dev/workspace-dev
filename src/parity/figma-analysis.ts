@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DesignIR, FigmaMcpEnrichment } from "./types.js";
 import { resolveNodeStyleCatalog } from "./ir-palette.js";
 import type { FigmaFile, FigmaNode } from "./ir-helpers.js";
@@ -274,6 +275,10 @@ const toSlug = (value: string): string => {
     .replace(/^-+/g, "")
     .replace(/-+$/g, "");
   return normalized.length > 0 ? normalized : "group";
+};
+
+const toShortDeterministicHash = (value: string): string => {
+  return createHash("sha256").update(value).digest("hex").slice(0, 8);
 };
 
 const tokenize = (value: string | undefined): Set<string> => {
@@ -985,7 +990,7 @@ const buildFrameVariantGroups = ({
 }): FigmaAnalysisFrameVariantGroup[] => {
   const signatures = buildFrameSignatures({ frameContexts, familyKeyByNodeId });
   const visited = new Set<string>();
-  const groups: FigmaAnalysisFrameVariantGroup[] = [];
+  const groups: Array<Omit<FigmaAnalysisFrameVariantGroup, "groupId"> & { baseGroupId: string }> = [];
 
   for (const signature of signatures) {
     if (visited.has(signature.frameId)) {
@@ -1036,13 +1041,14 @@ const buildFrameVariantGroups = ({
     const variantAxes = resolveVariantAxes(matches);
     const frameNames = matches.map((entry) => entry.frameName).sort(compareStrings);
     const groupIdBase = frameNames[0] ?? matches[0]!.frameName;
+    const frameIds = matches.map((entry) => entry.frameId).sort(compareStrings);
     const fallbackReasons = [
       "Frame grouping is heuristic and based on structural similarity across top-level frames."
     ];
 
     groups.push({
-      groupId: `${toSlug(groupIdBase)}-${matches.length}`,
-      frameIds: matches.map((entry) => entry.frameId).sort(compareStrings),
+      baseGroupId: `${toSlug(groupIdBase)}-${matches.length}`,
+      frameIds,
       frameNames,
       canonicalFrameId: canonicalFrame.frameId,
       confidence,
@@ -1057,12 +1063,31 @@ const buildFrameVariantGroups = ({
         severity: "warning",
         message: `Frame variant grouping for '${groupIdBase}' is heuristic (confidence ${confidence}).`,
         reasons: fallbackReasons,
-        nodeIds: matches.map((entry) => entry.frameId).sort(compareStrings)
+        nodeIds: frameIds
       });
     }
   }
 
-  return groups.sort((left, right) => compareStrings(left.groupId, right.groupId));
+  const baseGroupIdCounts = new Map<string, number>();
+  for (const group of groups) {
+    baseGroupIdCounts.set(group.baseGroupId, (baseGroupIdCounts.get(group.baseGroupId) ?? 0) + 1);
+  }
+
+  return groups
+    .map((group) => {
+      const duplicateCount = baseGroupIdCounts.get(group.baseGroupId) ?? 0;
+      const groupId =
+        duplicateCount > 1
+          ? `${group.baseGroupId}-${toShortDeterministicHash(JSON.stringify(group.frameIds))}`
+          : group.baseGroupId;
+      const { baseGroupId, ...resolvedGroup } = group;
+      void baseGroupId;
+      return {
+        ...resolvedGroup,
+        groupId
+      };
+    })
+    .sort((left, right) => compareStrings(left.groupId, right.groupId));
 };
 
 const classifyShellRole = ({ node, frame }: { node: FigmaNode; frame: FigmaNode }): "header" | "sidebar" | "navigation" | "frame" => {
@@ -1383,7 +1408,50 @@ export const buildFigmaAnalysis = ({
   };
 };
 
-export const buildRegenerationFallbackFigmaAnalysis = ({ ir }: { ir: DesignIR }): FigmaAnalysis => {
+type RegenerationFallbackReason = "overrides_applied" | "source_analysis_missing" | "source_analysis_invalid";
+
+const resolveRegenerationFallbackDiagnostic = ({
+  reason
+}: {
+  reason: RegenerationFallbackReason;
+}): FigmaAnalysisDiagnostic => {
+  if (reason === "overrides_applied") {
+    return {
+      code: "REGEN_SOURCE_ANALYSIS_STALE",
+      severity: "warning",
+      message:
+        "Regeneration overrides changed the Design IR; emitted a deterministic fallback figma.analysis summary instead of reusing stale source-board analysis.",
+      reasons: [
+        "Source figma.analysis is derived from the original board structure and can become inconsistent after regeneration overrides."
+      ]
+    };
+  }
+
+  if (reason === "source_analysis_invalid") {
+    return {
+      code: "REGEN_SOURCE_ANALYSIS_INVALID",
+      severity: "warning",
+      message:
+        "Source job figma.analysis was invalid; emitted a deterministic fallback figma.analysis summary for regeneration.",
+      reasons: ["Regeneration can reuse source-board analysis only when the persisted figma.analysis payload is valid artifactVersion 1 JSON."]
+    };
+  }
+
+  return {
+    code: "REGEN_SOURCE_ANALYSIS_UNAVAILABLE",
+    severity: "warning",
+    message: "Reused source job had no readable figma.analysis artifact; emitted a deterministic fallback summary for regeneration.",
+    reasons: ["Regeneration can reuse the source board analysis only when the source job already persisted a readable figma.analysis artifact."]
+  };
+};
+
+export const buildRegenerationFallbackFigmaAnalysis = ({
+  ir,
+  reason
+}: {
+  ir: DesignIR;
+  reason: RegenerationFallbackReason;
+}): FigmaAnalysis => {
   const totalElements = ir.screens.reduce((sum, screen) => sum + screen.children.length, 0);
   return {
     artifactVersion: 1,
@@ -1452,12 +1520,7 @@ export const buildRegenerationFallbackFigmaAnalysis = ({ ir }: { ir: DesignIR })
       hotspots: []
     },
     diagnostics: [
-      {
-        code: "REGEN_SOURCE_ANALYSIS_UNAVAILABLE",
-        severity: "warning",
-        message: "Reused source job had no figma.analysis artifact; emitted a deterministic fallback summary for regeneration.",
-        reasons: ["Regeneration can reuse the source board analysis only when the source job already persisted figma.analysis."]
-      }
+      resolveRegenerationFallbackDiagnostic({ reason })
     ]
   };
 };

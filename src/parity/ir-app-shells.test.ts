@@ -209,6 +209,89 @@ test("applyAppShellsToDesignIr derives one shared shell from grouped variant fra
   });
 });
 
+test("applyAppShellsToDesignIr preserves collision-resolved suffixed group ids", () => {
+  const groupId = "loan-flow-1-error-2-a1b2c3d4";
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-1",
+        name: "Loan Flow 1 Error",
+        children: [
+          createContainerNode({ id: "shell-brand-1", name: "Markenbühne" }),
+          createContainerNode({ id: "shell-header-1", name: "Header + Titel" }),
+          createTextNode({ id: "content-1", name: "SeitenContent", text: "Offen" })
+        ]
+      }),
+      createScreen({
+        id: "frame-2",
+        name: "Loan Flow 1 Error",
+        children: [
+          createContainerNode({ id: "shell-brand-2", name: "Markenbühne" }),
+          createContainerNode({ id: "shell-header-2", name: "Header + Titel" }),
+          createTextNode({ id: "content-2", name: "SeitenContent", text: "Fertig" })
+        ]
+      })
+    ]
+  });
+  const analysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId,
+        frameIds: ["frame-1", "frame-2"],
+        frameNames: ["Loan Flow 1 Error", "Loan Flow 1 Error"],
+        canonicalFrameId: "frame-1",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: [
+      {
+        signalId: `${groupId}-shell-1`,
+        groupId,
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-1", "frame-2"],
+        nodeIds: ["shell-brand-1", "shell-brand-2"],
+        confidence: 1,
+        reasons: []
+      },
+      {
+        signalId: `${groupId}-shell-2`,
+        groupId,
+        role: "header",
+        fingerprint: "header",
+        frameIds: ["frame-1", "frame-2"],
+        nodeIds: ["shell-header-1", "shell-header-2"],
+        confidence: 1,
+        reasons: []
+      }
+    ]
+  });
+
+  const result = applyAppShellsToDesignIr({ ir, figmaAnalysis: analysis });
+
+  assert.deepEqual(result.appShells, [
+    {
+      id: groupId,
+      sourceScreenId: "frame-1",
+      screenIds: ["frame-1", "frame-2"],
+      shellNodeIds: ["shell-brand-1", "shell-header-1"],
+      slotIndex: 2,
+      signalIds: [`${groupId}-shell-1`, `${groupId}-shell-2`]
+    }
+  ]);
+  assert.deepEqual(result.screens[0]?.appShell, {
+    id: groupId,
+    contentNodeIds: ["content-1"]
+  });
+  assert.deepEqual(result.screens[1]?.appShell, {
+    id: groupId,
+    contentNodeIds: ["content-2"]
+  });
+});
+
 test("applyAppShellsToDesignIr skips shell extraction when a signal is not top-level in every grouped screen", () => {
   const ir = createIr({
     screens: [

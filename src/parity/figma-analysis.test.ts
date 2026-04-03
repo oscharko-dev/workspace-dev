@@ -289,6 +289,128 @@ const createAnalysisFixture = () => ({
   }
 });
 
+const createCollisionFrame = ({
+  id,
+  name,
+  x,
+  y,
+  width,
+  height,
+  marker,
+  componentId
+}: {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  marker: string;
+  componentId: string;
+}) => ({
+  id,
+  type: "FRAME",
+  name,
+  layoutMode: "VERTICAL",
+  absoluteBoundingBox: { x, y, width, height },
+  children: [
+    {
+      id: `${id}-header`,
+      type: "FRAME",
+      name: `${marker} Header`,
+      layoutMode: "HORIZONTAL",
+      absoluteBoundingBox: { x, y, width, height: 96 },
+      children: [
+        createTextNode({
+          id: `${id}-title`,
+          name: "Title",
+          characters: `${marker} Overview`,
+          x: x + 24,
+          y: y + 24,
+          width: Math.max(240, width / 2),
+          height: 32
+        })
+      ]
+    },
+    {
+      id: `${id}-body`,
+      type: "FRAME",
+      name: `${marker} Body`,
+      layoutMode: "VERTICAL",
+      absoluteBoundingBox: { x: x + 24, y: y + 120, width: width - 48, height: height - 144 },
+      children: [
+        createInstanceNode({
+          id: `${id}-card`,
+          name: `${marker} Card`,
+          componentId,
+          x: x + 32,
+          y: y + 136,
+          width: width - 64,
+          height: 180
+        })
+      ]
+    }
+  ]
+});
+
+const createCollisionAnalysisFixture = () => ({
+  name: "Collision Board",
+  styles: {},
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        name: "Page 1",
+        children: [
+          createCollisionFrame({
+            id: "alpha-default",
+            name: "Loan Flow 2 Default",
+            x: 0,
+            y: 0,
+            width: 1336,
+            height: 2080,
+            marker: "Alpha",
+            componentId: "alpha-card"
+          }),
+          createCollisionFrame({
+            id: "alpha-error",
+            name: "Loan Flow 1 Error",
+            x: 1400,
+            y: 0,
+            width: 1336,
+            height: 2240,
+            marker: "Alpha",
+            componentId: "alpha-card"
+          }),
+          createCollisionFrame({
+            id: "beta-default",
+            name: "Loan Flow 2 Default",
+            x: 0,
+            y: 2400,
+            width: 900,
+            height: 1120,
+            marker: "Beta",
+            componentId: "beta-card"
+          }),
+          createCollisionFrame({
+            id: "beta-error",
+            name: "Loan Flow 1 Error",
+            x: 980,
+            y: 2400,
+            width: 900,
+            height: 1280,
+            marker: "Beta",
+            componentId: "beta-card"
+          })
+        ]
+      }
+    ]
+  }
+});
+
 test("buildFigmaAnalysis collects token, style, component, and diagnostic signals", () => {
   const analysis = buildFigmaAnalysis({
     file: createAnalysisFixture()
@@ -393,4 +515,21 @@ test("buildFigmaAnalysis prefers canonical variant properties over data aliases 
   assert.equal(firstFamily?.variantProperties.find((entry) => entry.property === "variant")?.values[0], "Contained");
   assert.equal(secondFamily?.variantProperties.find((entry) => entry.property === "variant")?.values[0], "Contained");
   assert.deepEqual(first, second);
+});
+
+test("buildFigmaAnalysis appends deterministic suffixes when frame-group base ids collide", () => {
+  const fixture = createCollisionAnalysisFixture();
+  const first = buildFigmaAnalysis({ file: fixture });
+  const second = buildFigmaAnalysis({ file: fixture });
+
+  assert.deepEqual(first, second);
+  assert.equal(first.frameVariantGroups.length, 2);
+  assert.deepEqual(
+    first.frameVariantGroups.map((group) => [...group.frameIds].sort()),
+    [["alpha-default", "alpha-error"].sort(), ["beta-default", "beta-error"].sort()]
+  );
+
+  const groupIds = first.frameVariantGroups.map((group) => group.groupId);
+  assert.equal(new Set(groupIds).size, 2);
+  assert.equal(groupIds.every((groupId) => groupId.startsWith("loan-flow-1-error-2-")), true);
 });

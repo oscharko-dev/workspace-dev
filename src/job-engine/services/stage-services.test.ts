@@ -2068,12 +2068,21 @@ test("IrDeriveService regeneration reads seeded artifacts and writes design.ir a
   });
   const sourceIrPath = path.join(executionContext.paths.jobDir, "source-ir.json");
   const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-figma-analysis.json");
+  const sourceAnalysis = {
+    artifactVersion: 1,
+    sourceName: "test",
+    summary: { topLevelFrameCount: 1 },
+    diagnostics: [
+      {
+        code: "SOURCE_ANALYSIS_PRESERVED",
+        severity: "info",
+        message: "Preserve this analysis",
+        reasons: []
+      }
+    ]
+  };
   await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
-  await writeFile(
-    sourceAnalysisPath,
-    `${JSON.stringify({ artifactVersion: 1, sourceName: "test", summary: { topLevelFrameCount: 1 } }, null, 2)}\n`,
-    "utf8"
-  );
+  await writeFile(sourceAnalysisPath, `${JSON.stringify(sourceAnalysis, null, 2)}\n`, "utf8");
   await seedRegenerationArtifacts({
     executionContext,
     sourceJobId: "source-job",
@@ -2089,7 +2098,78 @@ test("IrDeriveService regeneration reads seeded artifacts and writes design.ir a
     executionContext.paths.figmaAnalysisFile
   );
   assert.equal((await readFile(executionContext.paths.designIrFile, "utf8")).includes("Screen 1"), true);
-  assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
+  assert.deepEqual(JSON.parse(await readFile(executionContext.paths.figmaAnalysisFile, "utf8")), sourceAnalysis);
+});
+
+test("IrDeriveService regeneration emits fallback figma.analysis when applied overrides would stale the source analysis", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-stale-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-stale-figma-analysis.json");
+  const sourceIr = createMinimalIr();
+  sourceIr.screens[0]!.children = [
+    {
+      id: "box-1",
+      name: "Box",
+      nodeType: "FRAME",
+      type: "container",
+      width: 320,
+      height: 180,
+      children: []
+    }
+  ];
+  await writeFile(sourceIrPath, `${JSON.stringify(sourceIr, null, 2)}\n`, "utf8");
+  await writeFile(
+    sourceAnalysisPath,
+    `${JSON.stringify(
+      {
+        artifactVersion: 1,
+        sourceName: "stale-analysis",
+        frameVariantGroups: [
+          {
+            groupId: "stale-group",
+            frameIds: ["stale-screen"],
+            frameNames: ["Stale Screen"],
+            canonicalFrameId: "stale-screen",
+            confidence: 1,
+            similarityReasons: [],
+            fallbackReasons: [],
+            variantAxes: []
+          }
+        ],
+        diagnostics: []
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath,
+    overrides: [
+      {
+        nodeId: "box-1",
+        field: "width",
+        value: 440
+      }
+    ]
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedAnalysis = JSON.parse(await readFile(executionContext.paths.figmaAnalysisFile, "utf8")) as {
+    diagnostics?: Array<{ code?: string }>;
+    frameVariantGroups?: unknown[];
+  };
+  assert.deepEqual(regeneratedAnalysis.frameVariantGroups, []);
+  assert.equal(
+    regeneratedAnalysis.diagnostics?.some((entry) => entry.code === "REGEN_SOURCE_ANALYSIS_STALE"),
+    true
+  );
 });
 
 test("IrDeriveService regeneration strips affected screenVariantFamilies when overrides touch a family member", async () => {
@@ -2177,6 +2257,67 @@ test("IrDeriveService regeneration strips affected screenVariantFamilies when ov
 
   const regeneratedIr = JSON.parse(await readFile(executionContext.paths.designIrFile, "utf8")) as DesignIR;
   assert.equal(regeneratedIr.screenVariantFamilies?.length ?? 0, 0);
+});
+
+test("IrDeriveService regeneration emits fallback figma.analysis when source analysis is invalid", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-invalid-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-invalid-figma-analysis.json");
+  await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
+  await writeFile(sourceAnalysisPath, "{invalid-json\n", "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedAnalysis = JSON.parse(await readFile(executionContext.paths.figmaAnalysisFile, "utf8")) as {
+    artifactVersion: number;
+    diagnostics?: Array<{ code?: string }>;
+  };
+  assert.equal(regeneratedAnalysis.artifactVersion, 1);
+  assert.equal(
+    regeneratedAnalysis.diagnostics?.some((entry) => entry.code === "REGEN_SOURCE_ANALYSIS_INVALID"),
+    true
+  );
+  assert.equal(
+    regeneratedAnalysis.diagnostics?.some((entry) => entry.code === "SOURCE_ANALYSIS_PRESERVED"),
+    false
+  );
+});
+
+test("IrDeriveService regeneration emits fallback figma.analysis when source analysis is missing", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-missing-analysis-ir.json");
+  await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedAnalysis = JSON.parse(await readFile(executionContext.paths.figmaAnalysisFile, "utf8")) as {
+    artifactVersion: number;
+    diagnostics?: Array<{ code?: string }>;
+    frameVariantGroups?: unknown[];
+    appShellSignals?: unknown[];
+  };
+  assert.equal(regeneratedAnalysis.artifactVersion, 1);
+  assert.deepEqual(regeneratedAnalysis.frameVariantGroups, []);
+  assert.deepEqual(regeneratedAnalysis.appShellSignals, []);
+  assert.equal(
+    regeneratedAnalysis.diagnostics?.some((entry) => entry.code === "REGEN_SOURCE_ANALYSIS_UNAVAILABLE"),
+    true
+  );
 });
 
 test("IrDeriveService maps missing source design IR to E_REGEN_SOURCE_IR_MISSING", async () => {
