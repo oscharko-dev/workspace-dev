@@ -239,6 +239,16 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const irBody = irResult.body as Record<string, unknown>;
     const screens = irBody.screens as Array<Record<string, unknown>>;
     assert.ok(screens && screens.length > 0);
+    const sourceAnalysisResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/figma-analysis`);
+    assert.equal(sourceAnalysisResult.status, 200);
+    const sourceAnalysisBody = sourceAnalysisResult.body as Record<string, unknown>;
+    assert.equal(
+      Array.isArray(sourceAnalysisBody.diagnostics) &&
+        sourceAnalysisBody.diagnostics.some(
+          (entry) => (entry as Record<string, unknown>).code === "REGEN_SOURCE_ANALYSIS_STALE"
+        ),
+      false
+    );
 
     // 4. POST regeneration with overrides
     const regenResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`, {
@@ -317,6 +327,19 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(regenCard?.cornerRadius, 24);
     assert.equal(regenCard?.width, 440);
     assert.equal(regenCard?.layoutMode, "HORIZONTAL");
+    const regenAnalysisResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/figma-analysis`);
+    assert.equal(regenAnalysisResult.status, 200);
+    const regenAnalysisBody = regenAnalysisResult.body as Record<string, unknown>;
+    assert.equal(regenAnalysisBody.jobId, regenJobId);
+    assert.equal(
+      Array.isArray(regenAnalysisBody.diagnostics) &&
+        regenAnalysisBody.diagnostics.some(
+          (entry) => (entry as Record<string, unknown>).code === "REGEN_SOURCE_ANALYSIS_STALE"
+        ),
+      true
+    );
+    assert.deepEqual(regenAnalysisBody.frameVariantGroups, []);
+    assert.deepEqual(regenAnalysisBody.appShellSignals, []);
 
     // 11. Local sync dry-run returns plan + confirmation token without writing files yet
     const dryRunResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {

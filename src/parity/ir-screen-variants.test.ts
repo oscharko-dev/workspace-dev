@@ -576,6 +576,78 @@ test("applyScreenVariantFamiliesToDesignIr falls back when shell matching is amb
   assert.equal(result.screenVariantFamilies, undefined);
 });
 
+test("applyScreenVariantFamiliesToDesignIr keeps collision-prone groups as separate families when group ids are unique", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "alpha-brutto",
+        name: "Alpha Brutto",
+        children: [createTextNode({ id: "alpha-brutto-text", name: "Mode", text: "Brutto" })]
+      }),
+      createScreen({
+        id: "alpha-netto",
+        name: "Alpha Netto",
+        children: [createTextNode({ id: "alpha-netto-text", name: "Mode", text: "Netto" })]
+      }),
+      createScreen({
+        id: "beta-brutto",
+        name: "Beta Brutto",
+        children: [createTextNode({ id: "beta-brutto-text", name: "Mode", text: "Brutto" })]
+      }),
+      createScreen({
+        id: "beta-netto",
+        name: "Beta Netto",
+        children: [createTextNode({ id: "beta-netto-text", name: "Mode", text: "Netto" })]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "loan-flow-1-error-2-a1b2c3d4",
+        frameIds: ["alpha-brutto", "alpha-netto"],
+        frameNames: ["Loan Flow 1 Error", "Loan Flow 2 Default"],
+        canonicalFrameId: "alpha-netto",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "pricing-mode",
+            values: ["brutto", "netto"],
+            source: "text"
+          }
+        ]
+      },
+      {
+        groupId: "loan-flow-1-error-2-e5f6a7b8",
+        frameIds: ["beta-brutto", "beta-netto"],
+        frameNames: ["Loan Flow 1 Error", "Loan Flow 2 Default"],
+        canonicalFrameId: "beta-netto",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "pricing-mode",
+            values: ["brutto", "netto"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+
+  assert.deepEqual(
+    result.screenVariantFamilies?.map((family) => family.familyId).sort(),
+    ["loan-flow-1-error-2-a1b2c3d4", "loan-flow-1-error-2-e5f6a7b8"]
+  );
+});
+
 test("resolveEmittedScreenTargets emits one canonical screen target and preserves alias routes", () => {
   const ir = createIr({
     screens: [

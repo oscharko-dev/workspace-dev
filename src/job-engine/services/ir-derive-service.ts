@@ -44,6 +44,56 @@ interface RegenerationSourceIrSeed {
   sourceAnalysisFile?: string;
 }
 
+type ReusableSourceAnalysisResult =
+  | {
+      status: "valid";
+      analysis: Record<string, unknown> & { artifactVersion: 1 };
+    }
+  | {
+      status: "missing" | "invalid";
+    };
+
+const isReusableSourceAnalysis = (
+  value: unknown
+): value is Record<string, unknown> & { artifactVersion: 1 } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { artifactVersion?: unknown }).artifactVersion === 1
+  );
+};
+
+const loadReusableSourceAnalysis = async ({
+  sourceAnalysisPath
+}: {
+  sourceAnalysisPath: string | undefined;
+}): Promise<ReusableSourceAnalysisResult> => {
+  if (typeof sourceAnalysisPath !== "string" || sourceAnalysisPath.trim().length === 0) {
+    return { status: "missing" };
+  }
+
+  let rawContent: string;
+  try {
+    rawContent = await readFile(sourceAnalysisPath, "utf8");
+  } catch {
+    return { status: "missing" };
+  }
+
+  try {
+    const parsed = JSON.parse(rawContent) as unknown;
+    if (!isReusableSourceAnalysis(parsed)) {
+      return { status: "invalid" };
+    }
+    return {
+      status: "valid",
+      analysis: parsed
+    };
+  } catch {
+    return { status: "invalid" };
+  }
+};
+
 const collectScreenNodeIds = (elements: readonly ScreenElementIR[]): Set<string> => {
   const nodeIds = new Set<string>();
   const stack = [...elements];
@@ -315,13 +365,23 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       });
 
       await writeFile(context.paths.designIrFile, `${JSON.stringify(regeneratedIr, null, 2)}\n`, "utf8");
-      const regeneratedAnalysis =
-        typeof sourceAnalysisPath === "string" && sourceAnalysisPath.trim().length > 0
-          ? await readFile(sourceAnalysisPath, "utf8").catch(() => undefined)
+      const sourceAnalysis =
+        overrideResult.appliedCount === 0
+          ? await loadReusableSourceAnalysis({ sourceAnalysisPath })
           : undefined;
-      const analysisContent =
-        regeneratedAnalysis ?? `${JSON.stringify(buildRegenerationFallbackFigmaAnalysis({ ir: regeneratedIr }), null, 2)}\n`;
-      await writeFile(context.paths.figmaAnalysisFile, analysisContent.endsWith("\n") ? analysisContent : `${analysisContent}\n`, "utf8");
+      const regeneratedAnalysis =
+        overrideResult.appliedCount > 0
+          ? buildRegenerationFallbackFigmaAnalysis({
+              ir: regeneratedIr,
+              reason: "overrides_applied"
+            })
+          : sourceAnalysis?.status === "valid"
+            ? sourceAnalysis.analysis
+            : buildRegenerationFallbackFigmaAnalysis({
+                ir: regeneratedIr,
+                reason: sourceAnalysis?.status === "invalid" ? "source_analysis_invalid" : "source_analysis_missing"
+              });
+      await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(regeneratedAnalysis, null, 2)}\n`, "utf8");
       context.log({
         level: "info",
         message:
