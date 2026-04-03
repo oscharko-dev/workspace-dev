@@ -2291,6 +2291,35 @@ test("IrDeriveService regeneration emits fallback figma.analysis when source ana
   );
 });
 
+test("IrDeriveService regeneration emits fallback figma.analysis when source analysis is missing", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-missing-analysis-ir.json");
+  await writeFile(sourceIrPath, `${JSON.stringify(createMinimalIr(), null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedAnalysis = JSON.parse(await readFile(executionContext.paths.figmaAnalysisFile, "utf8")) as {
+    artifactVersion: number;
+    diagnostics?: Array<{ code?: string }>;
+    frameVariantGroups?: unknown[];
+    appShellSignals?: unknown[];
+  };
+  assert.equal(regeneratedAnalysis.artifactVersion, 1);
+  assert.deepEqual(regeneratedAnalysis.frameVariantGroups, []);
+  assert.deepEqual(regeneratedAnalysis.appShellSignals, []);
+  assert.equal(
+    regeneratedAnalysis.diagnostics?.some((entry) => entry.code === "REGEN_SOURCE_ANALYSIS_UNAVAILABLE"),
+    true
+  );
+});
+
 test("IrDeriveService maps missing source design IR to E_REGEN_SOURCE_IR_MISSING", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     mode: "regeneration"
