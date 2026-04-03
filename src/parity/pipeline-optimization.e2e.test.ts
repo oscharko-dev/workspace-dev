@@ -14,6 +14,7 @@ import test from "node:test";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 import { createDeterministicScreenFile, generateArtifacts } from "./generator-core.js";
 import { validateGeneratedSourceFile } from "./generated-source-validation.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 import {
   HEADING_FONT_SIZE_MIN,
   HEADING_FONT_WEIGHT_MIN,
@@ -33,20 +34,11 @@ const skipReason =
 // Match opening JSX <Stack ...> tags at line start, while tolerating '>' characters in quoted attrs.
 const STACK_OPEN_TAG_REGEX = /^\s*<Stack\b(?:"[^"]*"|'[^']*'|[^'"<>])*>/gm;
 
-let cachedFigmaFile: unknown;
-
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
-  if (cachedFigmaFile) {
-    return cachedFigmaFile;
-  }
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
+  return await fetchParityFigmaFileOnce({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN
   });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  cachedFigmaFile = await response.json();
-  return cachedFigmaFile;
 };
 
 const collectAllElements = (elements: Array<{ type: string; children?: unknown[] }>): Array<{ type: string; children?: unknown[] }> => {

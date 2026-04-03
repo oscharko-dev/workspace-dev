@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { figmaToDesignIrWithOptions } from "./ir.js";
+import { fetchParityFigmaFileOnce } from "./live-figma-file.js";
 import {
   computeContentHash,
   computeOptionsHash,
@@ -30,20 +31,11 @@ const skipReason =
     ? "FIGMA_ACCESS_TOKEN not set – skipping IR cache E2E tests"
     : undefined;
 
-let cachedFigmaFile: unknown;
-
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
-  if (cachedFigmaFile) {
-    return cachedFigmaFile;
-  }
-  const response = await fetch(`https://api.figma.com/v1/files/${FIGMA_FILE_KEY}?geometry=paths`, {
-    headers: {
-      "X-Figma-Token": FIGMA_ACCESS_TOKEN
-    }
+  return await fetchParityFigmaFileOnce({
+    fileKey: FIGMA_FILE_KEY,
+    accessToken: FIGMA_ACCESS_TOKEN
   });
-  assert.equal(response.ok, true, `Figma API responded with status ${response.status}`);
-  cachedFigmaFile = await response.json();
-  return cachedFigmaFile;
 };
 
 const createTempCacheDir = async (): Promise<string> => {
