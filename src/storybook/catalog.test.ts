@@ -34,7 +34,7 @@ const createCatalogFixtureBuild = async (): Promise<string> => {
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+        componentPath: ".\\src\\core\\Tooltip\\Tooltip.tsx"
       },
       "components-button--default": {
         id: "components-button--default",
@@ -127,7 +127,7 @@ const createCatalogFixtureBuild = async (): Promise<string> => {
           e.jsxs("p", {
             children: [
               "Verwandte Doku unter ",
-              e.jsx("a", { href: "/docs/if-components-button--docs", children: "IF Button" }),
+              e.jsx("a", { href: "/docs/if-components-button--docs?viewMode=docs#usage", children: "IF Button" }),
               " sowie ",
               e.jsx("a", { href: "https://example.com/design", children: "extern" })
             ]
@@ -207,7 +207,7 @@ test("buildStorybookCatalogArtifact captures normalized entries, families, and d
   assert.ok(tooltipStory);
   assert.equal(tooltipStory?.tier, "ReactUI");
   assert.equal(tooltipStory?.docsAttachment, "not_applicable");
-  assert.equal(tooltipStory?.componentPath, "./src/core/Tooltip/Tooltip.tsx");
+  assert.equal(tooltipStory?.componentPath, "src/core/Tooltip/Tooltip.tsx");
   assert.deepEqual(tooltipStory?.metadata.args, {
     infos: "Ohne Infos",
     title: "Einfach"
@@ -259,8 +259,10 @@ test("buildStorybookCatalogArtifact captures normalized entries, families, and d
   const tooltipFamily = firstArtifact.families.find((family) => family.title === "ReactUI/Core/Tooltip");
   assert.ok(tooltipFamily);
   assert.equal(tooltipFamily?.hasDesignReference, true);
+  assert.equal(tooltipFamily?.componentPath, "src/core/Tooltip/Tooltip.tsx");
   assert.deepEqual(tooltipFamily?.metadata.designUrls, ["https://www.figma.com/design/demo-tooltip"]);
   assert.deepEqual(tooltipFamily?.metadata.mdxLinks.external, ["https://example.com/design"]);
+  assert.equal(tooltipFamily?.metadata.mdxLinks.internal[0]?.path, "/docs/if-components-button--docs");
   assert.equal(tooltipFamily?.metadata.mdxLinks.internal[0]?.entryId, "if-components-button--docs");
 });
 

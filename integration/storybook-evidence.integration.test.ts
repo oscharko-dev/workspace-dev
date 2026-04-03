@@ -27,7 +27,7 @@ const createIntegrationStorybookBuild = async (): Promise<string> => {
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: "./src/core/Tooltip/Tooltip.tsx"
+        componentPath: ".\\src\\core\\Tooltip\\Tooltip.tsx"
       },
       "base-colors--docs": {
         id: "base-colors--docs",
@@ -83,7 +83,7 @@ const createIntegrationStorybookBuild = async (): Promise<string> => {
           e.jsxs(p, {
             children: [
               "Weitere Details unter ",
-              e.jsx("a", { href: "/docs/base-colors-sk-theme--docs", children: "SK-Theme" }),
+              e.jsx("a", { href: "/docs/base-colors-sk-theme--docs?viewMode=docs#tokens", children: "SK-Theme" }),
               " sowie ",
               e.jsx("a", { href: "https://example.com/design", children: "extern" })
             ]
@@ -207,6 +207,17 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
       entryCount: number;
       familyCount: number;
     };
+    entries: Array<{
+      id: string;
+      componentPath?: string;
+      metadata: {
+        mdxLinks: {
+          internal: Array<{
+            path: string;
+          }>;
+        };
+      };
+    }>;
   };
   const firstTokensArtifact = JSON.parse(firstTokensBytes) as {
     $extensions: {
@@ -251,6 +262,7 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
     };
     components: Array<{
       title: string;
+      componentPath: string;
       propKeys: string[];
     }>;
   };
@@ -271,6 +283,14 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   assert.equal(firstCatalogArtifact.stats.entryCount, 2);
   assert.equal(firstCatalogArtifact.stats.familyCount, 2);
   assert.deepEqual(firstCatalogArtifact.stats.docsOnlyTiers, ["Base"]);
+  assert.equal(
+    firstCatalogArtifact.entries.find((entry) => entry.id === "reactui-tooltip--default")?.componentPath,
+    "src/core/Tooltip/Tooltip.tsx"
+  );
+  assert.equal(
+    firstCatalogArtifact.entries.find((entry) => entry.id === "base-colors--docs")?.metadata.mdxLinks.internal[0]?.path,
+    "/docs/base-colors-sk-theme--docs"
+  );
 
   assert.equal(
     firstTokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].stats.errorCount,
@@ -288,6 +308,7 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   assert.equal(firstComponentsArtifact.stats.componentWithDesignReferenceCount, 1);
   assert.equal(firstComponentsArtifact.stats.propKeyCount, 2);
   assert.equal(firstComponentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
+  assert.equal(firstComponentsArtifact.components[0]?.componentPath, "src/core/Tooltip/Tooltip.tsx");
   assert.deepEqual(firstComponentsArtifact.components[0]?.propKeys, ["infos", "title"]);
 
   const secondSummary = await runGenerator();

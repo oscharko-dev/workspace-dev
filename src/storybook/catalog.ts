@@ -214,7 +214,18 @@ const toCatalogSignalType = (evidenceType: StorybookEvidenceArtifact["evidence"]
 
 const normalizeDocsRoutePath = (value: string): string => {
   const [pathWithoutQuery] = value.split(/[?#]/u, 1);
-  return pathWithoutQuery ?? value;
+  const normalizedPath = normalizePosixPath(pathWithoutQuery ?? value).trim();
+  if (normalizedPath.startsWith("/docs/")) {
+    return normalizedPath;
+  }
+  if (normalizedPath.startsWith("docs/")) {
+    return `/${normalizedPath}`;
+  }
+  return normalizedPath;
+};
+
+const normalizeCatalogComponentPath = (value: string): string => {
+  return normalizePosixPath(value);
 };
 
 const resolveDocsRouteEntryId = (value: string): string | undefined => {
@@ -364,11 +375,12 @@ const buildDocsMetadataByImportPath = async ({
     const external: string[] = [];
 
     for (const linkTarget of extractMdxLinks(bundleText)) {
-      if (linkTarget.startsWith("/docs/")) {
-        const linkedEntryId = resolveDocsRouteEntryId(linkTarget);
+      const normalizedInternalDocsPath = normalizeDocsRoutePath(linkTarget);
+      if (normalizedInternalDocsPath.startsWith("/docs/")) {
+        const linkedEntryId = resolveDocsRouteEntryId(normalizedInternalDocsPath);
         const linkedEntry = linkedEntryId ? entryById.get(linkedEntryId) : undefined;
         internal.push({
-          path: linkTarget,
+          path: normalizedInternalDocsPath,
           ...(linkedEntryId ? { entryId: linkedEntryId } : {}),
           ...(linkedEntry
             ? {
@@ -412,6 +424,7 @@ const buildCatalogEntries = ({
   return buildContext.indexEntries
     .map((entry) => {
       const normalizedImportPath = normalizePosixPath(entry.importPath);
+      const normalizedComponentPath = entry.componentPath ? normalizeCatalogComponentPath(entry.componentPath) : undefined;
       const tier = resolveTier(entry.title);
       const storyMetadata = storyMetadataByImportPath.get(normalizedImportPath);
       const docsMetadata = docsMetadataByImportPath.get(normalizedImportPath);
@@ -419,7 +432,7 @@ const buildCatalogEntries = ({
         title: entry.title,
         name: entry.name,
         tags: entry.tags,
-        ...(entry.componentPath ? { componentPath: entry.componentPath } : {}),
+        ...(normalizedComponentPath ? { componentPath: normalizedComponentPath } : {}),
         ...(entry.type === "story" && storyMetadata?.args ? { args: storyMetadata.args } : {}),
         ...(entry.type === "story" && storyMetadata?.argTypes ? { argTypes: storyMetadata.argTypes } : {})
       });
@@ -446,7 +459,7 @@ const buildCatalogEntries = ({
         familyId: buildFamilyId(entry.title),
         familyTitle: entry.title,
         isDocsOnlyTier: docsOnlyTiers.has(tier),
-        ...(entry.componentPath ? { componentPath: entry.componentPath } : {}),
+        ...(normalizedComponentPath ? { componentPath: normalizedComponentPath } : {}),
         signalReferences,
         metadata: {
           ...(entry.type === "story" && storyMetadata?.args ? { args: storyMetadata.args } : {}),
