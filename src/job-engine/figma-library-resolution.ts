@@ -734,26 +734,12 @@ const mergeVariantProperties = ({
     variantsByProperty.set(propertyName, values);
   };
 
-  const addPropertyRecord = (property: string | undefined, value: string | undefined): void => {
-    if (!property || !value) {
-      return;
-    }
-    const normalizedProperty = normalizeVariantKey(property)?.trim();
-    const normalizedValue = normalizeVariantValue(value).trim();
-    if (!normalizedProperty || !normalizedValue) {
-      return;
-    }
-    const values = variantsByProperty.get(normalizedProperty) ?? new Set<string>();
-    values.add(normalizedValue);
-    variantsByProperty.set(normalizedProperty, values);
-  };
-
   const addVariantRecord = (value: Record<string, string> | undefined): void => {
     if (!value) {
       return;
     }
     for (const [property, propertyValue] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
-      addPropertyRecord(property, propertyValue);
+      addProperty(property, propertyValue);
     }
   };
 

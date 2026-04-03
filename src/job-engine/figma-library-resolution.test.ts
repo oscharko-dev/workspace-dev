@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -282,6 +282,10 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   });
 
   assert.ok(onlineArtifact);
+  assert.equal(onlineArtifact.artifact, "figma.library_resolution");
+  assert.equal(onlineArtifact.version, 1);
+  assert.equal(onlineArtifact.figmaSourceMode, "rest");
+  assert.equal(onlineArtifact.summary.total, 1);
   assert.equal(onlineArtifact.summary.resolved, 1);
   assert.equal(onlineArtifact.summary.partial, 0);
   assert.equal(onlineArtifact.summary.error, 0);
@@ -290,6 +294,7 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   assert.equal(onlineArtifact.entries[0]?.status, "resolved");
   assert.equal(onlineArtifact.entries[0]?.resolutionSource, "live");
   assert.equal(onlineArtifact.entries[0]?.canonicalFamilyName, "Button");
+  assert.equal(onlineArtifact.entries[0]?.canonicalFamilyNameSource, "published_component_set");
   assert.deepEqual(onlineArtifact.entries[0]?.variantProperties, [
     {
       property: "state",
@@ -313,6 +318,9 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   });
 
   assert.ok(offlineArtifact);
+  assert.equal(offlineArtifact.artifact, "figma.library_resolution");
+  assert.equal(offlineArtifact.figmaSourceMode, "local_json");
+  assert.equal(offlineArtifact.summary.total, 1);
   assert.equal(offlineArtifact.summary.resolved, 1);
   assert.equal(offlineArtifact.summary.cacheHit, 1);
   assert.equal(offlineArtifact.summary.offlineReused, 1);
@@ -320,6 +328,7 @@ test("resolveFigmaLibraryResolutionArtifact resolves live metadata and reuses ca
   assert.equal(offlineArtifact.entries[0]?.canonicalFamilyName, "Button");
   assert.equal(offlineArtifact.entries[0]?.publishedComponent?.fileKey, "lib-file");
   assert.equal(offlineArtifact.entries[0]?.publishedComponentSet?.fileKey, "lib-file");
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact reuses cached assets when only part of the key set overlaps", async () => {
@@ -398,6 +407,7 @@ test("resolveFigmaLibraryResolutionArtifact reuses cached assets when only part 
     "E_LIBRARY_OFFLINE_CACHE_MISS",
     "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
   ]);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact only persists successful live lookups for offline replay", async () => {
@@ -462,6 +472,7 @@ test("resolveFigmaLibraryResolutionArtifact only persists successful live lookup
     offlineArtifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
     ["E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING", "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"]
   );
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact replays legacy fingerprint cache entries in local_json mode", async () => {
@@ -555,6 +566,8 @@ test("resolveFigmaLibraryResolutionArtifact replays legacy fingerprint cache ent
   assert.equal(offlineArtifact.summary.offlineReused, 1);
   assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
   assert.equal(offlineArtifact.entries[0]?.canonicalFamilyName, "Button");
+  await rm(seedCacheDir, { recursive: true, force: true });
+  await rm(legacyCacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact merges published, analysis, and local variant hints", async () => {
@@ -662,6 +675,7 @@ test("resolveFigmaLibraryResolutionArtifact merges published, analysis, and loca
   assert.ok(offlineArtifact);
   assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
   assert.deepEqual(toVariantPropertyMap(offlineArtifact.entries[0]?.variantProperties ?? []), variantPropertyMap);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact reports partial local_json results when no cache is available", async () => {
@@ -695,6 +709,7 @@ test("resolveFigmaLibraryResolutionArtifact reports partial local_json results w
       "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
     ]
   );
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact records partial live results when component-set lookup is forbidden", async () => {
@@ -741,6 +756,7 @@ test("resolveFigmaLibraryResolutionArtifact records partial live results when co
   assert.equal(artifact.entries[0]?.canonicalFamilyName, "Button/Primary");
   assert.equal(artifact.entries[0]?.publishedComponent?.name, "Button/Primary");
   assert.deepEqual(artifact.entries[0]?.issues?.map((issue) => issue.code), ["E_LIBRARY_ASSET_FORBIDDEN"]);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact records errors when published component metadata is missing", async () => {
@@ -776,14 +792,19 @@ test("resolveFigmaLibraryResolutionArtifact records errors when published compon
   });
 
   assert.ok(artifact);
+  assert.equal(artifact.summary.total, 1);
   assert.equal(artifact.summary.resolved, 0);
   assert.equal(artifact.summary.partial, 0);
   assert.equal(artifact.summary.error, 1);
   assert.equal(artifact.entries[0]?.status, "error");
-  assert.deepEqual(
-    artifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
-    ["E_LIBRARY_ASSET_NOT_FOUND", "E_LIBRARY_ASSET_NOT_FOUND"]
-  );
+  assert.equal(artifact.entries[0]?.issues?.length, 2);
+  const componentIssue = artifact.entries[0]?.issues?.find((issue) => issue.scope === "component");
+  const componentSetIssue = artifact.entries[0]?.issues?.find((issue) => issue.scope === "component_set");
+  assert.equal(componentIssue?.code, "E_LIBRARY_ASSET_NOT_FOUND");
+  assert.equal(componentIssue?.retriable, false);
+  assert.equal(componentSetIssue?.code, "E_LIBRARY_ASSET_NOT_FOUND");
+  assert.equal(componentSetIssue?.retriable, false);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact returns undefined when no external components exist", async () => {
@@ -809,6 +830,7 @@ test("resolveFigmaLibraryResolutionArtifact returns undefined when no external c
   });
 
   assert.equal(artifact, undefined);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact marks all entries as error when access token is missing", async () => {
@@ -830,10 +852,14 @@ test("resolveFigmaLibraryResolutionArtifact marks all entries as error when acce
   assert.equal(artifact.summary.total, 1);
   assert.equal(artifact.summary.error, 1);
   assert.equal(artifact.entries[0]?.status, "error");
-  assert.deepEqual(
-    artifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
-    ["E_LIBRARY_ACCESS_TOKEN_MISSING", "E_LIBRARY_ACCESS_TOKEN_MISSING"]
-  );
+  assert.equal(artifact.entries[0]?.issues?.length, 2);
+  const tokenComponentIssue = artifact.entries[0]?.issues?.find((issue) => issue.scope === "component");
+  const tokenComponentSetIssue = artifact.entries[0]?.issues?.find((issue) => issue.scope === "component_set");
+  assert.equal(tokenComponentIssue?.code, "E_LIBRARY_ACCESS_TOKEN_MISSING");
+  assert.equal(tokenComponentIssue?.retriable, false);
+  assert.equal(tokenComponentSetIssue?.code, "E_LIBRARY_ACCESS_TOKEN_MISSING");
+  assert.equal(tokenComponentSetIssue?.retriable, false);
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact retries with Bearer token on PAT 403 with invalid token body", async () => {
@@ -911,6 +937,7 @@ test("resolveFigmaLibraryResolutionArtifact retries with Bearer token on PAT 403
   assert.equal(artifact.entries[0]?.canonicalFamilyName, "Button");
   assert.ok(componentCallCount >= 2, "component endpoint should have been called at least twice (PAT + Bearer)");
   assert.ok(componentSetCallCount >= 2, "component_set endpoint should have been called at least twice (PAT + Bearer)");
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 test("resolveFigmaLibraryResolutionArtifact abort signal cancels retry wait", async () => {
@@ -960,4 +987,335 @@ test("resolveFigmaLibraryResolutionArtifact abort signal cancels retry wait", as
 
   assert.ok(artifact);
   assert.ok(elapsed < 3_000, `Expected abort to cancel retry wait quickly, but took ${elapsed}ms`);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records error when component key is missing from catalog", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-nokey-"));
+  const analysis = {
+    ...createAnalysis(),
+    externalComponents: [
+      {
+        componentId: "1:999",
+        componentSetId: "1:200",
+        familyKey: "button-family",
+        familyName: "Button",
+        referringNodeIds: ["instance-1"]
+      }
+    ]
+  } as FigmaAnalysis;
+  const file: FigmaFileResponse = {
+    ...createFile(),
+    components: {},
+    componentSets: {}
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis,
+    file,
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl: async () => {
+      throw new Error("network should not be used when component key is missing");
+    },
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.total, 1);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const keyIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_COMPONENT_KEY_MISSING");
+  assert.ok(keyIssue, "Expected E_LIBRARY_COMPONENT_KEY_MISSING issue");
+  assert.equal(keyIssue?.scope, "component");
+  const setKeyIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_COMPONENT_SET_KEY_MISSING");
+  assert.ok(setKeyIssue, "Expected E_LIBRARY_COMPONENT_SET_KEY_MISSING issue");
+  assert.equal(setKeyIssue?.scope, "component_set");
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records error when API returns unparseable JSON", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-parse-"));
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    if (url.includes("/components/")) {
+      return new Response("not-valid-json{{{", {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        meta: {
+          key: "set-key",
+          file_key: "lib-file",
+          node_id: "10:10",
+          name: "Button"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const parseIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_ASSET_PARSE");
+  assert.ok(parseIssue, "Expected E_LIBRARY_ASSET_PARSE issue");
+  assert.equal(parseIssue?.scope, "component");
+  assert.equal(parseIssue?.retriable, false);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records error when API returns invalid payload structure", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-invalid-"));
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    if (url.includes("/components/")) {
+      return new Response(JSON.stringify({ data: "no meta field" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        meta: {
+          key: "set-key",
+          file_key: "lib-file",
+          node_id: "10:10",
+          name: "Button"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const invalidIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_ASSET_INVALID");
+  assert.ok(invalidIssue, "Expected E_LIBRARY_ASSET_INVALID issue");
+  assert.equal(invalidIssue?.scope, "component");
+  assert.equal(invalidIssue?.retriable, false);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records error when API returns server error after retries", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-http-"));
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    if (url.includes("/components/")) {
+      return new Response(JSON.stringify({ message: "Internal Server Error" }), {
+        status: 500,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        meta: {
+          key: "set-key",
+          file_key: "lib-file",
+          node_id: "10:10",
+          name: "Button"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const httpIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_ASSET_HTTP");
+  assert.ok(httpIssue, "Expected E_LIBRARY_ASSET_HTTP issue");
+  assert.equal(httpIssue?.scope, "component");
+  assert.equal(httpIssue?.retriable, true);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records error on network failure after retries", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-network-"));
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    if (url.includes("/components/")) {
+      throw new Error("ECONNREFUSED: connection refused");
+    }
+    return new Response(
+      JSON.stringify({
+        meta: {
+          key: "set-key",
+          file_key: "lib-file",
+          node_id: "10:10",
+          name: "Button"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const networkIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_ASSET_NETWORK");
+  assert.ok(networkIssue, "Expected E_LIBRARY_ASSET_NETWORK issue");
+  assert.equal(networkIssue?.scope, "component");
+  assert.equal(networkIssue?.retriable, false);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact records timeout error after retries", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-timeout-"));
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    if (url.includes("/components/")) {
+      const abortError = new DOMException("The operation was aborted", "AbortError");
+      throw abortError;
+    }
+    return new Response(
+      JSON.stringify({
+        meta: {
+          key: "set-key",
+          file_key: "lib-file",
+          node_id: "10:10",
+          name: "Button"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.error, 1);
+  assert.equal(artifact.entries[0]?.status, "error");
+  const timeoutIssue = artifact.entries[0]?.issues?.find((issue) => issue.code === "E_LIBRARY_ASSET_TIMEOUT");
+  assert.ok(timeoutIssue, "Expected E_LIBRARY_ASSET_TIMEOUT issue");
+  assert.equal(timeoutIssue?.scope, "component");
+  assert.equal(timeoutIssue?.retriable, true);
+  await rm(cacheDir, { recursive: true, force: true });
+});
+
+test("resolveFigmaLibraryResolutionArtifact evicts stale cache entries beyond limit", async () => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-figma-library-resolution-evict-"));
+  await mkdir(cacheDir, { recursive: true });
+  for (let i = 0; i < 55; i++) {
+    const fileName = `figma-library-resolution-asset-component-fake${String(i).padStart(3, "0")}.json`;
+    await writeFile(
+      path.join(cacheDir, fileName),
+      JSON.stringify({ version: 1, cachedAt: Date.now() - (55 - i) * 1000, assetKind: "component", key: `k${i}`, result: { status: "ok", meta: { key: `k${i}`, fileKey: "f", nodeId: "n", name: "N" } } }),
+      "utf8"
+    );
+  }
+
+  const filesBefore = (await readdir(cacheDir)).filter((name) => name.startsWith("figma-library-resolution-asset-"));
+  assert.equal(filesBefore.length, 55);
+
+  const fetchImpl = createFetchImpl({
+    calls: [],
+    responses: {
+      "https://api.figma.com/v1/components/cmp-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "cmp-key",
+            file_key: "lib-file",
+            node_id: "10:20",
+            name: "Button/Primary"
+          }
+        }
+      },
+      "https://api.figma.com/v1/component_sets/set-key": {
+        status: 200,
+        body: {
+          meta: {
+            key: "set-key",
+            file_key: "lib-file",
+            node_id: "10:10",
+            name: "Button"
+          }
+        }
+      }
+    }
+  });
+
+  const artifact = await resolveFigmaLibraryResolutionArtifact({
+    analysis: createAnalysis(),
+    file: createFile(),
+    figmaSourceMode: "rest",
+    cacheDir,
+    fileKey: "board-key",
+    accessToken: "token",
+    fetchImpl,
+    timeoutMs: 1_000,
+    maxRetries: 1
+  });
+
+  assert.ok(artifact);
+  assert.equal(artifact.summary.resolved, 1);
+
+  const filesAfter = (await readdir(cacheDir)).filter((name) => name.startsWith("figma-library-resolution-asset-"));
+  assert.ok(filesAfter.length <= 50, `Expected at most 50 cache files after eviction, got ${filesAfter.length}`);
+  await rm(cacheDir, { recursive: true, force: true });
 });
