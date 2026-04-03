@@ -118,6 +118,109 @@ export const normalizeVariantValue = (value: string): string => {
   return value.trim().replace(/[#*]+$/g, "").trim();
 };
 
+const normalizeVariantPropertyLabel = (key: string): string => {
+  return key
+    .trim()
+    .replace(/[#*]+$/g, "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const getVariantPropertySpecificity = ({
+  rawKey,
+  normalizedKey
+}: {
+  rawKey: string;
+  normalizedKey: string;
+}): number => {
+  const normalizedLabel = normalizeVariantPropertyLabel(rawKey);
+  if (!normalizedLabel) {
+    return 0;
+  }
+  if (normalizedLabel === normalizedKey) {
+    return 4;
+  }
+  if (
+    normalizedKey === "variant" &&
+    (normalizedLabel === "type" ||
+      normalizedLabel === "style" ||
+      normalizedLabel === "button type" ||
+      normalizedLabel === "button style" ||
+      normalizedLabel === "button variant")
+  ) {
+    return 3;
+  }
+  if (normalizedLabel === `button ${normalizedKey}`) {
+    return 3;
+  }
+  if (normalizedLabel === `data ${normalizedKey}` || normalizedLabel === `date ${normalizedKey}`) {
+    return 1;
+  }
+  if (normalizedLabel.endsWith(` ${normalizedKey}`)) {
+    return 2;
+  }
+  return 1;
+};
+
+const compareVariantPropertyCandidates = (
+  left: {
+    key: string;
+    rawKey: string;
+    specificity: number;
+    value: string;
+  },
+  right: {
+    key: string;
+    rawKey: string;
+    specificity: number;
+    value: string;
+  }
+): number => {
+  if (left.key !== right.key) {
+    return left.key.localeCompare(right.key);
+  }
+  if (left.specificity !== right.specificity) {
+    return left.specificity - right.specificity;
+  }
+  const rawKeyComparison = normalizeVariantPropertyLabel(left.rawKey).localeCompare(normalizeVariantPropertyLabel(right.rawKey));
+  if (rawKeyComparison !== 0) {
+    return rawKeyComparison;
+  }
+  return left.value.localeCompare(right.value);
+};
+
+const toVariantPropertyCandidate = ({
+  rawKey,
+  rawValue
+}: {
+  rawKey: string;
+  rawValue: string;
+}):
+  | {
+      key: string;
+      rawKey: string;
+      specificity: number;
+      value: string;
+    }
+  | undefined => {
+  const key = normalizeVariantKey(rawKey);
+  const value = normalizeVariantValue(rawValue);
+  if (!key || value.length === 0) {
+    return undefined;
+  }
+  return {
+    key,
+    rawKey,
+    specificity: getVariantPropertySpecificity({
+      rawKey,
+      normalizedKey: key
+    }),
+    value
+  };
+};
+
 export const toSortedVariantProperties = (input: Record<string, string>): Record<string, string> => {
   return Object.fromEntries(Object.entries(input).sort(([left], [right]) => left.localeCompare(right)));
 };
@@ -150,8 +253,14 @@ export const extractVariantPropertiesFromComponentProperties = (
   if (!componentProperties) {
     return {};
   }
-  const parsed: Record<string, string> = {};
-  for (const [rawKey, propertyValue] of Object.entries(componentProperties)) {
+  const candidates: Array<{
+    key: string;
+    rawKey: string;
+    specificity: number;
+    value: string;
+  }> = [];
+  const entries = Object.entries(componentProperties).sort(([left], [right]) => left.localeCompare(right));
+  for (const [rawKey, propertyValue] of entries) {
     const propertyType = typeof propertyValue.type === "string" ? propertyValue.type.trim().toUpperCase() : "";
     if (propertyType !== "VARIANT") {
       continue;
@@ -159,12 +268,18 @@ export const extractVariantPropertiesFromComponentProperties = (
     if (typeof propertyValue.value !== "string") {
       continue;
     }
-    const key = normalizeVariantKey(rawKey);
-    const value = normalizeVariantValue(propertyValue.value);
-    if (!key || value.length === 0) {
-      continue;
+    const candidate = toVariantPropertyCandidate({
+      rawKey,
+      rawValue: propertyValue.value
+    });
+    if (candidate) {
+      candidates.push(candidate);
     }
-    parsed[key] = value;
+  }
+
+  const parsed: Record<string, string> = {};
+  for (const candidate of candidates.sort(compareVariantPropertyCandidates)) {
+    parsed[candidate.key] = candidate.value;
   }
   return parsed;
 };
@@ -408,8 +523,14 @@ export const extractDefaultVariantProperties = (
   if (!componentPropertyDefinitions) {
     return {};
   }
-  const properties: Record<string, string> = {};
-  for (const [rawKey, definition] of Object.entries(componentPropertyDefinitions)) {
+  const candidates: Array<{
+    key: string;
+    rawKey: string;
+    specificity: number;
+    value: string;
+  }> = [];
+  const entries = Object.entries(componentPropertyDefinitions).sort(([left], [right]) => left.localeCompare(right));
+  for (const [rawKey, definition] of entries) {
     const definitionType = typeof definition.type === "string" ? definition.type.trim().toUpperCase() : "";
     if (definitionType !== "VARIANT") {
       continue;
@@ -417,12 +538,18 @@ export const extractDefaultVariantProperties = (
     if (typeof definition.defaultValue !== "string") {
       continue;
     }
-    const key = normalizeVariantKey(rawKey);
-    const value = normalizeVariantValue(definition.defaultValue);
-    if (!key || value.length === 0) {
-      continue;
+    const candidate = toVariantPropertyCandidate({
+      rawKey,
+      rawValue: definition.defaultValue
+    });
+    if (candidate) {
+      candidates.push(candidate);
     }
-    properties[key] = value;
+  }
+
+  const properties: Record<string, string> = {};
+  for (const candidate of candidates.sort(compareVariantPropertyCandidates)) {
+    properties[candidate.key] = candidate.value;
   }
   return properties;
 };

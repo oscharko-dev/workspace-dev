@@ -338,3 +338,59 @@ test("buildFigmaAnalysis groups variant frames, detects shell signals and densit
   assert.equal(first.componentDensity.hotspots.length > 0, true);
   assert.equal(first.componentDensity.boardDominantFamilies[0]?.familyKey, "component:component-card");
 });
+
+test("buildFigmaAnalysis prefers canonical variant properties over data aliases regardless of property order", () => {
+  const createDuplicateVariantFixture = (componentProperties: Record<string, { type: string; value: string }>) => ({
+    name: "Duplicate Variant Fixture",
+    styles: {},
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          name: "Page 1",
+          children: [
+            {
+              id: "1:1",
+              type: "FRAME",
+              name: "Frame",
+              layoutMode: "VERTICAL",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 320 },
+              children: [
+                {
+                  id: "1:2",
+                  type: "INSTANCE",
+                  name: "Variant=Contained, Data-variant=SpaceAround",
+                  componentId: "button-primary",
+                  absoluteBoundingBox: { x: 16, y: 16, width: 160, height: 48 },
+                  componentProperties
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  const first = buildFigmaAnalysis({
+    file: createDuplicateVariantFixture({
+      "Data-variant": { type: "VARIANT", value: "SpaceAround" },
+      Variant: { type: "VARIANT", value: "Contained" }
+    })
+  });
+  const second = buildFigmaAnalysis({
+    file: createDuplicateVariantFixture({
+      Variant: { type: "VARIANT", value: "Contained" },
+      "Data-variant": { type: "VARIANT", value: "SpaceAround" }
+    })
+  });
+
+  const firstFamily = first.componentFamilies.find((entry) => entry.familyKey === "component:button-primary");
+  const secondFamily = second.componentFamilies.find((entry) => entry.familyKey === "component:button-primary");
+  assert.equal(firstFamily?.variantProperties.find((entry) => entry.property === "variant")?.values[0], "Contained");
+  assert.equal(secondFamily?.variantProperties.find((entry) => entry.property === "variant")?.values[0], "Contained");
+  assert.deepEqual(first, second);
+});

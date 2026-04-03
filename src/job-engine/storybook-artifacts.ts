@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobStageName } from "../contracts/index.js";
 import { createPipelineError, getErrorMessage, type PipelineDiagnosticLimits } from "./errors.js";
@@ -47,7 +47,67 @@ interface StorybookArtifactCopyPathEntry {
   targetPath: string;
 }
 
+interface PrecomputedStorybookArtifacts {
+  sourcePaths: {
+    catalogFile: string;
+    evidenceFile: string;
+    tokensFile: string;
+    themesFile: string;
+    componentsFile: string;
+  };
+  catalogArtifact: StorybookCatalogArtifact;
+  evidenceArtifact: StorybookEvidenceArtifact;
+  publicArtifacts: StorybookPublicArtifacts;
+}
+
 const STORYBOOK_LIBRARY_RESOLUTION_FILE_NAME = "figma-library-resolution.json";
+
+const hasFile = async (filePath: string): Promise<boolean> => {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const loadPrecomputedStorybookArtifacts = async ({
+  buildDir
+}: {
+  buildDir: string;
+}): Promise<PrecomputedStorybookArtifacts | undefined> => {
+  const publicFileNames = getStorybookPublicArtifactFileNames();
+  const sourcePaths = {
+    catalogFile: path.join(buildDir, getStorybookCatalogOutputFileName()),
+    evidenceFile: path.join(buildDir, getStorybookEvidenceOutputFileName()),
+    tokensFile: path.join(buildDir, publicFileNames.tokens),
+    themesFile: path.join(buildDir, publicFileNames.themes),
+    componentsFile: path.join(buildDir, publicFileNames.components)
+  };
+  const available = await Promise.all(Object.values(sourcePaths).map((filePath) => hasFile(filePath)));
+  if (!available.every(Boolean)) {
+    return undefined;
+  }
+
+  const [catalogArtifact, evidenceArtifact, tokensArtifact, themesArtifact, componentsArtifact] = (await Promise.all([
+    readFile(sourcePaths.catalogFile, "utf8"),
+    readFile(sourcePaths.evidenceFile, "utf8"),
+    readFile(sourcePaths.tokensFile, "utf8"),
+    readFile(sourcePaths.themesFile, "utf8"),
+    readFile(sourcePaths.componentsFile, "utf8")
+  ])).map((content) => JSON.parse(content) as unknown);
+
+  return {
+    sourcePaths,
+    catalogArtifact: catalogArtifact as StorybookCatalogArtifact,
+    evidenceArtifact: evidenceArtifact as StorybookEvidenceArtifact,
+    publicArtifacts: {
+      tokensArtifact: tokensArtifact as StorybookPublicArtifacts["tokensArtifact"],
+      themesArtifact: themesArtifact as StorybookPublicArtifacts["themesArtifact"],
+      componentsArtifact: componentsArtifact as StorybookPublicArtifacts["componentsArtifact"]
+    }
+  };
+};
 const toMissingReusableArtifactError = ({
   artifactKey,
   sourceJobId,
@@ -147,6 +207,80 @@ export const generateStorybookArtifactsForJob = async ({
   limits: PipelineDiagnosticLimits;
 }): Promise<GeneratedJobStorybookArtifacts> => {
   const artifactPaths = createJobStorybookArtifactPaths({ jobDir });
+  const precomputedArtifacts = await loadPrecomputedStorybookArtifacts({
+    buildDir: storybookStaticDir
+  });
+  if (precomputedArtifacts) {
+    await Promise.all([
+      copyReusableArtifact({
+        sourcePath: precomputedArtifacts.sourcePaths.evidenceFile,
+        targetPath: artifactPaths.evidenceFile,
+        artifactKey: STAGE_ARTIFACT_KEYS.storybookEvidence,
+        sourceJobId: "storybook-build",
+        sourceRequestedStorybookStaticDir: storybookStaticDir
+      }),
+      copyReusableArtifact({
+        sourcePath: precomputedArtifacts.sourcePaths.catalogFile,
+        targetPath: artifactPaths.catalogFile,
+        artifactKey: STAGE_ARTIFACT_KEYS.storybookCatalog,
+        sourceJobId: "storybook-build",
+        sourceRequestedStorybookStaticDir: storybookStaticDir
+      }),
+      copyReusableArtifact({
+        sourcePath: precomputedArtifacts.sourcePaths.tokensFile,
+        targetPath: artifactPaths.tokensFile,
+        artifactKey: STAGE_ARTIFACT_KEYS.storybookTokens,
+        sourceJobId: "storybook-build",
+        sourceRequestedStorybookStaticDir: storybookStaticDir
+      }),
+      copyReusableArtifact({
+        sourcePath: precomputedArtifacts.sourcePaths.themesFile,
+        targetPath: artifactPaths.themesFile,
+        artifactKey: STAGE_ARTIFACT_KEYS.storybookThemes,
+        sourceJobId: "storybook-build",
+        sourceRequestedStorybookStaticDir: storybookStaticDir
+      }),
+      copyReusableArtifact({
+        sourcePath: precomputedArtifacts.sourcePaths.componentsFile,
+        targetPath: artifactPaths.componentsFile,
+        artifactKey: STAGE_ARTIFACT_KEYS.storybookComponents,
+        sourceJobId: "storybook-build",
+        sourceRequestedStorybookStaticDir: storybookStaticDir
+      })
+    ]);
+    await artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+      stage,
+      absolutePath: artifactPaths.evidenceFile
+    });
+    await artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.storybookCatalog,
+      stage,
+      absolutePath: artifactPaths.catalogFile
+    });
+    await artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.storybookTokens,
+      stage,
+      absolutePath: artifactPaths.tokensFile
+    });
+    await artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.storybookThemes,
+      stage,
+      absolutePath: artifactPaths.themesFile
+    });
+    await artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.storybookComponents,
+      stage,
+      absolutePath: artifactPaths.componentsFile
+    });
+
+    return {
+      paths: artifactPaths,
+      catalogArtifact: precomputedArtifacts.catalogArtifact,
+      evidenceArtifact: precomputedArtifacts.evidenceArtifact,
+      publicArtifacts: precomputedArtifacts.publicArtifacts
+    };
+  }
   const buildContext = await loadStorybookBuildContext({
     buildDir: storybookStaticDir
   });

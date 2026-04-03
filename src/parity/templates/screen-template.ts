@@ -422,10 +422,12 @@ const renderAlertExpression = ({
 
 const buildScreenLevelErrorEvidenceBlock = ({
   context,
-  indent
+  indent,
+  expression
 }: {
   context: RenderContext;
   indent: string;
+  expression: string;
 }): string => {
   const alertExpression = renderAlertExpression({
     context,
@@ -433,7 +435,7 @@ const buildScreenLevelErrorEvidenceBlock = ({
     messageExpression: "screenLevelError.message",
     severityExpression: "screenLevelError.severity"
   });
-  return `${indent}{screenLevelErrorEvidence?.map((screenLevelError) => (
+  return `${indent}{${expression}?.map((screenLevelError) => (
 ${alertExpression}
 ${indent}))}`;
 };
@@ -6471,7 +6473,8 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
 };
 
 const collectTextOverrideExpressionByNodeId = (
-  elements: readonly ScreenElementIR[]
+  elements: readonly ScreenElementIR[],
+  textOverridesExpression = "textOverrides"
 ): Map<string, string> => {
   const expressions = new Map<string, string>();
   const stack = [...elements];
@@ -6483,7 +6486,7 @@ const collectTextOverrideExpressionByNodeId = (
     if (current.type === "text") {
       expressions.set(
         current.id,
-        `textOverrides?.[${literal(current.id)}] ?? ${literal(current.text.trim() || current.name)}`
+        `${textOverridesExpression}?.[${literal(current.id)}] ?? ${literal(current.text.trim() || current.name)}`
       );
     }
     for (const child of current.children ?? []) {
@@ -6494,9 +6497,14 @@ const collectTextOverrideExpressionByNodeId = (
 };
 
 export const appShellFile = (input: AppShellFileInput): FallbackScreenFileResult => {
+  const textOverrideExpressionByNodeId = collectTextOverrideExpressionByNodeId(
+    input.screen.children,
+    "props.textOverrides"
+  );
+  const hasTextOverrides = textOverrideExpressionByNodeId.size > 0;
   const prepared = prepareFallbackScreenModel({
     ...input,
-    textOverrideExpressionByNodeId: collectTextOverrideExpressionByNodeId(input.screen.children)
+    textOverrideExpressionByNodeId
   });
   const renderState = buildFallbackRenderState({ prepared });
   const dependencies = assembleFallbackDependencies({
@@ -6528,18 +6536,21 @@ export const appShellFile = (input: AppShellFileInput): FallbackScreenFileResult
   const propsName = `${componentName}Props`;
   const contentFunctionName = `${componentName}Content`;
   const shellBody = rendered.length > 0 ? `${rendered}\n      {children}` : "      {children}";
+  const appShellPropsLines = ["  children: ReactNode;"];
+  if (hasTextOverrides) {
+    appShellPropsLines.push("  textOverrides?: Record<string, string>;");
+  }
   const contentFunctionSource = `export interface ${propsName} {
-  children: ReactNode;
-  textOverrides?: Record<string, string>;
+${appShellPropsLines.join("\n")}
 }
 
-function ${contentFunctionName}({ children, textOverrides }: Readonly<${propsName}>) {
+function ${contentFunctionName}(props: Readonly<${propsName}>) {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
   .join("")}  return (
     <Container id="app-shell" maxWidth="${containerMaxWidth}" sx={{ ${screenContainerSx} }}>
-${shellBody}
+${shellBody.replaceAll("{children}", "{props.children}")}
     </Container>
   );
 }`;
@@ -6607,6 +6618,7 @@ ${wrappedShellContent}
 interface StatefulScenarioModule {
   contentScreenId: string;
   componentFunctionName: string;
+  componentInvocation: string;
   source: string;
   renderState: FallbackRenderState;
   dependencies: FallbackDependencyAssembly;
@@ -6677,14 +6689,15 @@ const buildStatefulScenarioModule = ({
   const renderState = buildFallbackRenderState({ prepared });
   const screenLevelErrorEvidenceBlock = buildScreenLevelErrorEvidenceBlock({
     context: renderState.renderContext,
-    indent: "      "
+    indent: "      ",
+    expression: "props.screenLevelErrorEvidence"
   });
   const dependencies = assembleFallbackDependencies({
     prepared,
     renderState,
     variantFieldEvidenceByFieldKey,
-    initialVisualErrorsOverrideExpression: "initialVisualErrorsOverride",
-    validationMessagesOverrideExpression: "validationMessagesOverride"
+    initialVisualErrorsOverrideExpression: "props.initialVisualErrorsOverride",
+    validationMessagesOverrideExpression: "props.validationMessagesOverride"
   });
   const {
     patternContextFileSpec,
@@ -6697,6 +6710,15 @@ const buildStatefulScenarioModule = ({
   const { renderContext, rendered, contentContainerSx } = renderState;
   const propsName = `${componentName}Props`;
   const bodyFunctionName = `${componentName}Body`;
+  const bodyUsesInitialVisualErrorsOverride =
+    rendered.includes("props.initialVisualErrorsOverride") || stateBlock.includes("props.initialVisualErrorsOverride");
+  const bodyUsesValidationMessagesOverride =
+    rendered.includes("props.validationMessagesOverride") || stateBlock.includes("props.validationMessagesOverride");
+  const bodyUsesScreenLevelErrorEvidence = screenLevelErrorEvidenceBlock.includes("props.screenLevelErrorEvidence");
+  const componentUsesInitialVisualErrorsOverride = bodyUsesInitialVisualErrorsOverride || Boolean(formContextFileSpec);
+  const componentUsesValidationMessagesOverride = bodyUsesValidationMessagesOverride || Boolean(formContextFileSpec);
+  const bodyUsesProps =
+    bodyUsesInitialVisualErrorsOverride || bodyUsesValidationMessagesOverride || bodyUsesScreenLevelErrorEvidence;
   const bodyFunctionSource = `interface ${propsName} {
   initialVisualErrorsOverride?: Record<string, string>;
   validationMessagesOverride?: Record<string, string>;
@@ -6707,7 +6729,7 @@ const buildStatefulScenarioModule = ({
   }>;
 }
 
-function ${bodyFunctionName}({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<${propsName}>) {
+function ${bodyFunctionName}${bodyUsesProps ? `(props: Readonly<${propsName}>)` : "()"} {
 ${[navigationHookBlock, stateBlock]
   .filter((chunk) => chunk.length > 0)
   .map((chunk) => `${indentBlock(chunk, 2)}\n`)
@@ -6718,12 +6740,18 @@ ${rendered || EMPTY_SCREEN_PLACEHOLDER}
     </Container>
   );
 }`;
+  const componentBodyInvocationProps = [
+    ...(bodyUsesInitialVisualErrorsOverride ? ["initialVisualErrorsOverride={props.initialVisualErrorsOverride}"] : []),
+    ...(bodyUsesValidationMessagesOverride ? ["validationMessagesOverride={props.validationMessagesOverride}"] : []),
+    ...(bodyUsesScreenLevelErrorEvidence ? ["screenLevelErrorEvidence={props.screenLevelErrorEvidence}"] : [])
+  ];
   const { wrappedContent: wrappedScenarioContent, hasContextProviders } = wrapContentWithProviders({
-    baseContent: `      <${bodyFunctionName}
-        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
-        validationMessagesOverride={props.validationMessagesOverride}
-        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
-      />`,
+    baseContent:
+      componentBodyInvocationProps.length > 0
+        ? `      <${bodyFunctionName}
+        ${componentBodyInvocationProps.join("\n        ")}
+      />`
+        : `      <${bodyFunctionName} />`,
     patternContextFileSpec,
     formContextFileSpec,
     renderContext,
@@ -6732,11 +6760,22 @@ ${rendered || EMPTY_SCREEN_PLACEHOLDER}
   });
   const componentRenderSource = hasContextProviders
     ? wrappedScenarioContent
-    : `      <${bodyFunctionName}
-        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
-        validationMessagesOverride={props.validationMessagesOverride}
-        screenLevelErrorEvidence={props.screenLevelErrorEvidence}
-      />`;
+    : componentBodyInvocationProps.length > 0
+      ? `      <${bodyFunctionName}
+        ${componentBodyInvocationProps.join("\n        ")}
+      />`
+      : `      <${bodyFunctionName} />`;
+  const componentInvocationProps = [
+    ...(componentUsesInitialVisualErrorsOverride ? ["initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"] : []),
+    ...(componentUsesValidationMessagesOverride ? ["validationMessagesOverride={scenario.validationMessagesOverride}"] : []),
+    ...(bodyUsesScreenLevelErrorEvidence ? ["screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}"] : [])
+  ];
+  const componentInvocation =
+    componentInvocationProps.length > 0
+      ? `        <${componentName}
+          ${componentInvocationProps.join("\n          ")}
+        />`
+      : `        <${componentName} />`;
   const source = `${hasContextProviders ? patternContextInitialStateDeclaration : ""}${bodyFunctionSource}
 
 function ${componentName}(props: Readonly<${propsName}>) {
@@ -6748,6 +6787,7 @@ ${componentRenderSource}
   return {
     contentScreenId: screen.id,
     componentFunctionName: componentName,
+    componentInvocation,
     source,
     renderState,
     dependencies,
@@ -6901,6 +6941,27 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
     );
   }
 
+  const toOrderedVariantInitialState = (
+    initialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"]
+  ): ScreenVariantFamilyIR["scenarios"][number]["initialState"] => {
+    const orderedInitialState: ScreenVariantFamilyIR["scenarios"][number]["initialState"] = {};
+    if (initialState.pricingMode !== undefined) {
+      orderedInitialState.pricingMode = initialState.pricingMode;
+    }
+    if (initialState.expansionState !== undefined) {
+      orderedInitialState.expansionState = initialState.expansionState;
+    }
+    if (initialState.validationState !== undefined) {
+      orderedInitialState.validationState = initialState.validationState;
+    }
+    if (initialState.accordionStateByKey !== undefined) {
+      orderedInitialState.accordionStateByKey = Object.fromEntries(
+        Object.entries(initialState.accordionStateByKey).sort((left, right) => left[0].localeCompare(right[0]))
+      );
+    }
+    return orderedInitialState;
+  };
+
   const scenarioOrderLiteral = JSON.stringify(input.family.memberScreenIds);
   const scenarioConfigLiteral = JSON.stringify(
     input.family.scenarios.reduce<Record<string, {
@@ -6924,7 +6985,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
         );
         result[scenario.screenId] = {
           contentScreenId: scenario.contentScreenId,
-          initialState: scenario.initialState,
+          initialState: toOrderedVariantInitialState(scenario.initialState),
           ...(scenario.shellTextOverrides ? { shellTextOverrides: scenario.shellTextOverrides } : {}),
           ...(Object.keys(initialVisualErrorsOverride).length > 0 ? { initialVisualErrorsOverride } : {}),
           ...(Object.keys(validationMessagesOverride).length > 0 ? { validationMessagesOverride } : {}),
@@ -6945,11 +7006,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
       }
       return `    case ${literal(scenario.screenId)}:
       return (
-        <${scenarioModule.componentFunctionName}
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
-          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
-        />
+${scenarioModule.componentInvocation}
       );`;
     })
     .filter((chunk) => chunk.length > 0)
@@ -6965,6 +7022,9 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
     input.appShellComponentName && input.appShellImportPath
       ? `import ${input.appShellComponentName} from "${input.appShellImportPath}";`
       : "";
+  const hasShellTextOverrides = input.family.scenarios.some((scenario) => {
+    return Boolean(scenario.shellTextOverrides && Object.keys(scenario.shellTextOverrides).length > 0);
+  });
   const screenSource = `${canonicalPrepared.truncationComment}${importLines.length > 0 ? `${importLines.join("\n")}\n` : ""}import { ${[...muiImports].sort((left, right) => left.localeCompare(right)).join(", ")} } from "@mui/material";
 ${shellImportLine ? `${shellImportLine}\n` : ""}
 interface ${componentName}VariantState {
@@ -6978,27 +7038,42 @@ export interface ${componentName}ScreenProps {
   initialState?: Partial<${componentName}VariantState>;
 }
 
-const variantScenarioOrder = ${scenarioOrderLiteral} as const;
-const variantScenarioConfig = ${scenarioConfigLiteral} as const;
+interface ${componentName}VariantScenario {
+  contentScreenId: string;
+  initialState: Partial<${componentName}VariantState>;
+  shellTextOverrides?: Record<string, string>;
+  initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
+  screenLevelErrorEvidence?: ReadonlyArray<{
+    message: string;
+    severity: "error";
+    sourceNodeId?: string;
+  }>;
+}
+
+const variantScenarioConfig = ${scenarioConfigLiteral} as const satisfies Record<string, ${componentName}VariantScenario>;
+type ${componentName}VariantId = keyof typeof variantScenarioConfig;
+const defaultVariantId: ${componentName}VariantId = ${literal(defaultVariantId)};
+const variantScenarioOrder = ${scenarioOrderLiteral} as const satisfies ReadonlyArray<${componentName}VariantId>;
+
+const hasVariantScenario = (variantId: string): variantId is ${componentName}VariantId => {
+  return Object.prototype.hasOwnProperty.call(variantScenarioConfig, variantId);
+};
 
 const matchesRequestedInitialState = (
-  variantId: string,
+  scenario: ${componentName}VariantScenario,
   requestedState: Partial<${componentName}VariantState> | undefined
 ): boolean => {
-  if (!requestedState) {
+  if (requestedState === undefined) {
     return false;
   }
-  const scenario = variantScenarioConfig[variantId as keyof typeof variantScenarioConfig];
-  if (!scenario) {
+  if (requestedState.pricingMode !== undefined && scenario.initialState.pricingMode !== requestedState.pricingMode) {
     return false;
   }
-  if (requestedState.pricingMode && scenario.initialState.pricingMode !== requestedState.pricingMode) {
+  if (requestedState.expansionState !== undefined && scenario.initialState.expansionState !== requestedState.expansionState) {
     return false;
   }
-  if (requestedState.expansionState && scenario.initialState.expansionState !== requestedState.expansionState) {
-    return false;
-  }
-  if (requestedState.validationState && scenario.initialState.validationState !== requestedState.validationState) {
+  if (requestedState.validationState !== undefined && scenario.initialState.validationState !== requestedState.validationState) {
     return false;
   }
   return true;
@@ -7007,46 +7082,46 @@ const matchesRequestedInitialState = (
 const resolveInitialVariantId = ({
   initialVariantId,
   initialState
-}: Readonly<${componentName}ScreenProps>): string => {
-  if (initialVariantId && initialVariantId in variantScenarioConfig) {
+}: Readonly<${componentName}ScreenProps>): ${componentName}VariantId => {
+  if (initialVariantId !== undefined && hasVariantScenario(initialVariantId)) {
     return initialVariantId;
   }
   for (const variantId of variantScenarioOrder) {
-    if (matchesRequestedInitialState(variantId, initialState)) {
+    if (matchesRequestedInitialState(variantScenarioConfig[variantId], initialState)) {
       return variantId;
     }
   }
-  return ${literal(defaultVariantId)};
+  return defaultVariantId;
 };
 
 ${scenarioSources.join("\n\n")}
 
 function renderVariantContent(
-  variantId: string,
-  scenario: (typeof variantScenarioConfig)[keyof typeof variantScenarioConfig]
+  variantId: ${componentName}VariantId,
+  scenario: ${componentName}VariantScenario
 ) {
   switch (variantId) {
 ${contentSwitchCases}
     default:
       return (
-        <${defaultScenarioModule.componentFunctionName}
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
-          screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
-        />
+${defaultScenarioModule.componentInvocation}
       );
   }
 }
 
 export default function ${componentName}Screen(props: Readonly<${componentName}ScreenProps>) {
   const resolvedVariantId = resolveInitialVariantId(props);
-  const resolvedScenario = variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??
-    variantScenarioConfig[${literal(defaultVariantId)} as keyof typeof variantScenarioConfig];
+  const resolvedScenario = variantScenarioConfig[resolvedVariantId];
   const screenContent = renderVariantContent(resolvedVariantId, resolvedScenario);
   return (
-${input.appShellComponentName ? `    <${input.appShellComponentName} textOverrides={resolvedScenario.shellTextOverrides}>
+${input.appShellComponentName ? hasShellTextOverrides
+      ? `    <${input.appShellComponentName} textOverrides={resolvedScenario.shellTextOverrides}>
       {screenContent}
-    </${input.appShellComponentName}>` : "    {screenContent}"}
+    </${input.appShellComponentName}>`
+      : `    <${input.appShellComponentName}>
+      {screenContent}
+    </${input.appShellComponentName}>`
+    : "    <>{screenContent}</>"}
   );
 }
 `;

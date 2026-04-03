@@ -2,7 +2,13 @@ import type { DesignIR, FigmaMcpEnrichment } from "./types.js";
 import { resolveNodeStyleCatalog } from "./ir-palette.js";
 import type { FigmaFile, FigmaNode } from "./ir-helpers.js";
 import { collectNodes, countSubtreeNodes } from "./ir-tree.js";
-import { extractVariantNameProperties, normalizeVariantKey, normalizeVariantValue } from "./ir-variants.js";
+import {
+  extractDefaultVariantProperties,
+  extractVariantNameProperties,
+  extractVariantPropertiesFromComponentProperties,
+  normalizeVariantKey,
+  normalizeVariantValue
+} from "./ir-variants.js";
 
 export interface FigmaAnalysisDiagnostic {
   code: string;
@@ -580,22 +586,22 @@ const collectVariantProperties = (node: FigmaNode): Record<string, string> => {
   for (const [key, value] of Object.entries(extractVariantNameProperties(node.name))) {
     mergeProperty(key, value);
   }
-  for (const [rawKey, property] of Object.entries(node.componentProperties ?? {})) {
-    if (property.type !== "VARIANT" || typeof property.value !== "string") {
-      continue;
-    }
-    mergeProperty(rawKey, property.value);
+  for (const [key, value] of Object.entries(extractVariantPropertiesFromComponentProperties(node.componentProperties))) {
+    mergeProperty(key, value);
   }
-  for (const [rawKey, definition] of Object.entries(node.componentPropertyDefinitions ?? {})) {
+  for (const [key, value] of Object.entries(extractDefaultVariantProperties(node.componentPropertyDefinitions))) {
+    mergeProperty(key, value);
+  }
+  const definitionEntries = Object.entries(node.componentPropertyDefinitions ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  for (const [rawKey, definition] of definitionEntries) {
     const definitionType = typeof definition.type === "string" ? definition.type.toUpperCase() : "";
     if (definitionType !== "VARIANT") {
       continue;
     }
-    if (typeof definition.defaultValue === "string") {
-      mergeProperty(rawKey, definition.defaultValue);
-    }
     if (Array.isArray(definition.variantOptions)) {
-      for (const option of definition.variantOptions) {
+      const options = [...definition.variantOptions].filter((option): option is string => typeof option === "string");
+      options.sort((left, right) => left.localeCompare(right));
+      for (const option of options) {
         if (typeof option === "string") {
           mergeProperty(rawKey, option);
         }

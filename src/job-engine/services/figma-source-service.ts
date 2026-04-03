@@ -1,10 +1,11 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobInput } from "../../contracts/index.js";
 import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../../figma-payload-validation.js";
 import { cleanFigmaForCodegen } from "../figma-clean.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import { applyAuthoritativeFigmaSubtrees, fetchFigmaFile } from "../figma-source.js";
+import { writePrettyJsonFile } from "../json-file.js";
 import type { FigmaFileResponse } from "../types.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
 import type { StageService } from "../pipeline/stage-service.js";
@@ -55,9 +56,15 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         authoritativeSubtreeCount?: number;
       };
     }) => {
-      await writeFile(context.paths.figmaRawJsonFile, `${JSON.stringify(sourceFile, null, 2)}\n`, "utf8");
+      await writePrettyJsonFile({
+        filePath: context.paths.figmaRawJsonFile,
+        value: sourceFile
+      });
       const cleaning = cleanFigmaForCodegen({ file: sourceFile });
-      await writeFile(context.paths.figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
+      await writePrettyJsonFile({
+        filePath: context.paths.figmaJsonFile,
+        value: cleaning.cleanedFile
+      });
       context.log({
         level: "info",
         message:
@@ -288,8 +295,14 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       });
       if (mergedSource.appliedNodeIds.length > 0) {
         const cleaning = cleanFigmaForCodegen({ file: mergedSource.file });
-        await writeFile(context.paths.figmaRawJsonFile, `${JSON.stringify(mergedSource.file, null, 2)}\n`, "utf8");
-        await writeFile(context.paths.figmaJsonFile, `${JSON.stringify(cleaning.cleanedFile, null, 2)}\n`, "utf8");
+        await writePrettyJsonFile({
+          filePath: context.paths.figmaRawJsonFile,
+          value: mergedSource.file
+        });
+        await writePrettyJsonFile({
+          filePath: context.paths.figmaJsonFile,
+          value: cleaning.cleanedFile
+        });
         figmaFetch = {
           ...figmaFetch,
           file: cleaning.cleanedFile,

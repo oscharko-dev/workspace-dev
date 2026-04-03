@@ -3290,6 +3290,7 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.ok(patternContextContent.includes("export interface OffersPattern1State"));
   assert.ok(patternContextContent.includes("offerTitleText: string;"));
   assert.ok(patternContextContent.includes("offerImageSrc: string;"));
+  assert.ok(patternContextContent.includes("OffersPattern1: Partial<Record<string, OffersPattern1State>>;"));
   assert.ok(patternContextContent.includes("export function OffersPatternContextProvider"));
 });
 
@@ -4084,7 +4085,7 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
   const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
   assert.ok(appShellContent.includes("Gemeinsame Bühne"));
   assert.ok(appShellContent.includes("Gemeinsamer Header"));
-  assert.ok(appShellContent.includes("{children}"));
+  assert.ok(appShellContent.includes("{props.children}"));
   assert.equal(appShellContent.includes("Nur Inhalt Offen"), false);
   assert.equal(appShellContent.includes("Nur Inhalt Fertig"), false);
 
@@ -4341,6 +4342,211 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
   assert.ok(appContent.includes('path="/pricing_expanded"'));
   assert.ok(appContent.includes('<PricingNettoScreen initialVariantId="family-expanded" />'));
   assert.ok(appContent.includes('<Route path="/" element={<Navigate to="/pricing_netto" replace />} />'));
+});
+
+test("generateArtifacts omits unused override props for stateful variant families without scenario overrides", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-no-overrides-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "family-canonical",
+      name: "Pricing Netto",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "family-shell",
+        contentNodeIds: ["family-canonical-content"]
+      },
+      children: [
+        {
+          id: "family-canonical-header",
+          name: "Header",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: []
+        },
+        {
+          id: "family-canonical-content",
+          name: "Body",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Netto content"
+        }
+      ]
+    },
+    {
+      id: "family-brutto",
+      name: "Pricing Brutto",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "family-shell",
+        contentNodeIds: ["family-brutto-content"]
+      },
+      children: [
+        {
+          id: "family-brutto-header",
+          name: "Header",
+          nodeType: "FRAME",
+          type: "container" as const,
+          children: []
+        },
+        {
+          id: "family-brutto-content",
+          name: "Body",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Brutto content"
+        }
+      ]
+    }
+  ];
+  ir.appShells = [
+    {
+      id: "family-shell",
+      sourceScreenId: "family-canonical",
+      screenIds: ["family-canonical", "family-brutto"],
+      shellNodeIds: ["family-canonical-header"],
+      slotIndex: 1,
+      signalIds: ["family-shell-signal"]
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-shell",
+      canonicalScreenId: "family-canonical",
+      memberScreenIds: ["family-canonical", "family-brutto"],
+      axes: ["pricing-mode"],
+      scenarios: [
+        {
+          screenId: "family-canonical",
+          contentScreenId: "family-canonical",
+          initialState: {
+            pricingMode: "netto"
+          }
+        },
+        {
+          screenId: "family-brutto",
+          contentScreenId: "family-brutto",
+          initialState: {
+            pricingMode: "brutto"
+          }
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  assert.equal(appShellContent.includes("textOverrides?: Record<string, string>;"), false);
+  assert.equal(appShellContent.includes("props.textOverrides"), false);
+
+  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Netto")), "utf8");
+  assert.ok(canonicalScreenContent.includes('const defaultVariantId: PricingNettoVariantId = "family-canonical";'));
+  assert.equal(canonicalScreenContent.includes("textOverrides={resolvedScenario.shellTextOverrides}"), false);
+  assert.equal(canonicalScreenContent.includes("initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"), false);
+  assert.equal(canonicalScreenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"), false);
+  assert.equal(
+    canonicalScreenContent.includes("variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??"),
+    false
+  );
+});
+
+test("generateArtifacts serializes stateful variant initialState with canonical key ordering", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-initial-state-order-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "family-canonical",
+      name: "Pricing Canonical",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "family-canonical-content",
+          name: "Body",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Canonical content"
+        }
+      ]
+    },
+    {
+      id: "family-variant",
+      name: "Pricing Variant",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "family-variant-content",
+          name: "Body",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Variant content"
+        }
+      ]
+    }
+  ];
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-ordering",
+      canonicalScreenId: "family-canonical",
+      memberScreenIds: ["family-canonical", "family-variant"],
+      axes: ["pricing-mode", "expansion-state", "validation-state"],
+      scenarios: [
+        {
+          screenId: "family-canonical",
+          contentScreenId: "family-canonical",
+          initialState: {
+            expansionState: "collapsed",
+            pricingMode: "netto"
+          }
+        },
+        {
+          screenId: "family-variant",
+          contentScreenId: "family-variant",
+          initialState: {
+            accordionStateByKey: {
+              "accordion-b": false,
+              "accordion-a": true
+            },
+            validationState: "error",
+            expansionState: "expanded",
+            pricingMode: "brutto"
+          }
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Canonical")), "utf8");
+  assert.match(
+    canonicalScreenContent,
+    /"initialState": \{\n\s+"pricingMode": "brutto",\n\s+"expansionState": "expanded",\n\s+"validationState": "error",\n\s+"accordionStateByKey": \{\n\s+"accordion-a": true,\n\s+"accordion-b": false/m
+  );
 });
 
 test("generateArtifacts keeps RHF/Zod generation and scenario-specific validation overlays for stateful error variants", async () => {

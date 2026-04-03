@@ -12,14 +12,26 @@ export interface ID0033NettoBetriebsmittelAlleClusterEingeklapptScreenProps {
   initialState?: Partial<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantState>;
 }
 
-const variantScenarioOrder = ["1:63230","1:64644","1:66050","1:67464","1:68884"] as const;
+interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantScenario {
+  contentScreenId: string;
+  initialState: Partial<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantState>;
+  shellTextOverrides?: Record<string, string>;
+  initialVisualErrorsOverride?: Record<string, string>;
+  validationMessagesOverride?: Record<string, string>;
+  screenLevelErrorEvidence?: ReadonlyArray<{
+    message: string;
+    severity: "error";
+    sourceNodeId?: string;
+  }>;
+}
+
 const variantScenarioConfig = {
   "1:63230": {
     "contentScreenId": "1:66050",
     "initialState": {
       "pricingMode": "brutto",
-      "validationState": "default",
       "expansionState": "collapsed",
+      "validationState": "default",
       "accordionStateByKey": {
         "accordion_state_collapsed_1_63230_accordion_1": false
       }
@@ -32,8 +44,8 @@ const variantScenarioConfig = {
     "contentScreenId": "1:64644",
     "initialState": {
       "pricingMode": "netto",
-      "validationState": "default",
       "expansionState": "expanded",
+      "validationState": "default",
       "accordionStateByKey": {
         "accordion_state_expanded_1_64644_accordion_1": true
       }
@@ -43,8 +55,8 @@ const variantScenarioConfig = {
     "contentScreenId": "1:66050",
     "initialState": {
       "pricingMode": "netto",
-      "validationState": "default",
       "expansionState": "collapsed",
+      "validationState": "default",
       "accordionStateByKey": {
         "accordion_state_collapsed_1_66050_accordion_1": false
       }
@@ -54,8 +66,8 @@ const variantScenarioConfig = {
     "contentScreenId": "1:66050",
     "initialState": {
       "pricingMode": "netto",
-      "validationState": "default",
       "expansionState": "collapsed",
+      "validationState": "default",
       "accordionStateByKey": {
         "accordion_state_collapsed_1_67464_accordion_1": false
       }
@@ -65,8 +77,8 @@ const variantScenarioConfig = {
     "contentScreenId": "1:66050",
     "initialState": {
       "pricingMode": "netto",
-      "validationState": "error",
       "expansionState": "collapsed",
+      "validationState": "error",
       "accordionStateByKey": {
         "accordion_state_collapsed_1_68884_accordion_1": false
       }
@@ -79,26 +91,29 @@ const variantScenarioConfig = {
       }
     ]
   }
-} as const;
+} as const satisfies Record<string, ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantScenario>;
+type ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId = keyof typeof variantScenarioConfig;
+const defaultVariantId: ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId = "1:66050";
+const variantScenarioOrder = ["1:63230","1:64644","1:66050","1:67464","1:68884"] as const satisfies ReadonlyArray<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId>;
+
+const hasVariantScenario = (variantId: string): variantId is ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId => {
+  return Object.prototype.hasOwnProperty.call(variantScenarioConfig, variantId);
+};
 
 const matchesRequestedInitialState = (
-  variantId: string,
+  scenario: ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantScenario,
   requestedState: Partial<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantState> | undefined
 ): boolean => {
-  if (!requestedState) {
+  if (requestedState === undefined) {
     return false;
   }
-  const scenario = variantScenarioConfig[variantId as keyof typeof variantScenarioConfig];
-  if (!scenario) {
+  if (requestedState.pricingMode !== undefined && scenario.initialState.pricingMode !== requestedState.pricingMode) {
     return false;
   }
-  if (requestedState.pricingMode && scenario.initialState.pricingMode !== requestedState.pricingMode) {
+  if (requestedState.expansionState !== undefined && scenario.initialState.expansionState !== requestedState.expansionState) {
     return false;
   }
-  if (requestedState.expansionState && scenario.initialState.expansionState !== requestedState.expansionState) {
-    return false;
-  }
-  if (requestedState.validationState && scenario.initialState.validationState !== requestedState.validationState) {
+  if (requestedState.validationState !== undefined && scenario.initialState.validationState !== requestedState.validationState) {
     return false;
   }
   return true;
@@ -107,16 +122,16 @@ const matchesRequestedInitialState = (
 const resolveInitialVariantId = ({
   initialVariantId,
   initialState
-}: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptScreenProps>): string => {
-  if (initialVariantId && initialVariantId in variantScenarioConfig) {
+}: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptScreenProps>): ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId => {
+  if (initialVariantId !== undefined && hasVariantScenario(initialVariantId)) {
     return initialVariantId;
   }
   for (const variantId of variantScenarioOrder) {
-    if (matchesRequestedInitialState(variantId, initialState)) {
+    if (matchesRequestedInitialState(variantScenarioConfig[variantId], initialState)) {
       return variantId;
     }
   }
-  return "1:66050";
+  return defaultVariantId;
 };
 
 interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps {
@@ -129,10 +144,10 @@ interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentPr
   }>;
 }
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps>) {
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps>) {
   return (
     <Container id="main-content" maxWidth={false} disableGutters role="main" sx={{ position: "relative", width: "100%" }}>
-      {screenLevelErrorEvidence?.map((screenLevelError) => (
+      {props.screenLevelErrorEvidence?.map((screenLevelError) => (
         <Alert severity={screenLevelError.severity}>{screenLevelError.message}</Alert>
       ))}
       <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
@@ -143,8 +158,6 @@ function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBod
 function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentProps>) {
   return (
       <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050ContentBody
-        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
-        validationMessagesOverride={props.validationMessagesOverride}
         screenLevelErrorEvidence={props.screenLevelErrorEvidence}
       />
   );
@@ -160,10 +173,10 @@ interface ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentPr
   }>;
 }
 
-function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody({ initialVisualErrorsOverride, validationMessagesOverride, screenLevelErrorEvidence }: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps>) {
+function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps>) {
   return (
     <Container id="main-content" maxWidth={false} disableGutters role="main" sx={{ position: "relative", width: "100%" }}>
-      {screenLevelErrorEvidence?.map((screenLevelError) => (
+      {props.screenLevelErrorEvidence?.map((screenLevelError) => (
         <Alert severity={screenLevelError.severity}>{screenLevelError.message}</Alert>
       ))}
       <Typography variant="body1">{"Screen generated from Figma IR"}</Typography>
@@ -174,63 +187,49 @@ function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBod
 function ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentProps>) {
   return (
       <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644ContentBody
-        initialVisualErrorsOverride={props.initialVisualErrorsOverride}
-        validationMessagesOverride={props.validationMessagesOverride}
         screenLevelErrorEvidence={props.screenLevelErrorEvidence}
       />
   );
 }
 
 function renderVariantContent(
-  variantId: string,
-  scenario: (typeof variantScenarioConfig)[keyof typeof variantScenarioConfig]
+  variantId: ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantId,
+  scenario: ID0033NettoBetriebsmittelAlleClusterEingeklapptVariantScenario
 ) {
   switch (variantId) {
     case "1:63230":
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
     case "1:64644":
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant2164644Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
     case "1:66050":
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
     case "1:67464":
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
     case "1:68884":
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
     default:
       return (
         <ID0033NettoBetriebsmittelAlleClusterEingeklapptVariant1166050Content
-          initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}
-          validationMessagesOverride={scenario.validationMessagesOverride}
           screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}
         />
       );
@@ -239,8 +238,7 @@ function renderVariantContent(
 
 export default function ID0033NettoBetriebsmittelAlleClusterEingeklapptScreen(props: Readonly<ID0033NettoBetriebsmittelAlleClusterEingeklapptScreenProps>) {
   const resolvedVariantId = resolveInitialVariantId(props);
-  const resolvedScenario = variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??
-    variantScenarioConfig["1:66050" as keyof typeof variantScenarioConfig];
+  const resolvedScenario = variantScenarioConfig[resolvedVariantId];
   const screenContent = renderVariantContent(resolvedVariantId, resolvedScenario);
   return (
     <AppShell1 textOverrides={resolvedScenario.shellTextOverrides}>

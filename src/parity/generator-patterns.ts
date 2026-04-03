@@ -750,7 +750,7 @@ const buildScreenPatternStatePlan = ({
     })
     .join("\n\n");
   const contextInterfaceEntries = clusterSpecs
-    .map((clusterSpec) => `  ${clusterSpec.componentName}: Record<string, ${clusterSpec.stateTypeName}>;`)
+    .map((clusterSpec) => `  ${clusterSpec.componentName}: Partial<Record<string, ${clusterSpec.stateTypeName}>>;`)
     .join("\n");
   const providerPropsName = `${providerName}Props`;
   const contextSource = `/* eslint-disable react-refresh/only-export-components */

@@ -3,6 +3,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { buildStorybookCatalogArtifact, writeStorybookCatalogArtifact } from "../storybook/catalog.js";
+import { buildStorybookEvidenceArtifact, loadStorybookBuildContext, writeStorybookEvidenceArtifact } from "../storybook/evidence.js";
+import { buildStorybookPublicArtifacts, getStorybookPublicArtifactFileNames, writeStorybookPublicArtifacts } from "../storybook/public-extracts.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { resolveRuntimeSettings } from "./runtime.js";
@@ -310,6 +313,99 @@ test("generateStorybookArtifactsForJob fails with E_STORYBOOK_TOKEN_EXTRACTION_I
       );
       return true;
     }
+  );
+});
+
+test("generateStorybookArtifactsForJob reuses precomputed sidecar artifacts when the build already contains them", async () => {
+  const reusableBuildDir = await createSyntheticStorybookBuild();
+  const reusableBuildContext = await loadStorybookBuildContext({
+    buildDir: reusableBuildDir
+  });
+  const reusableEvidence = await buildStorybookEvidenceArtifact({
+    buildDir: reusableBuildDir,
+    buildContext: reusableBuildContext
+  });
+  const reusableCatalog = await buildStorybookCatalogArtifact({
+    buildDir: reusableBuildDir,
+    buildContext: reusableBuildContext,
+    evidenceArtifact: reusableEvidence
+  });
+  const reusablePublicArtifacts = await buildStorybookPublicArtifacts({
+    buildDir: reusableBuildDir,
+    buildContext: reusableBuildContext,
+    evidenceArtifact: reusableEvidence,
+    catalogArtifact: reusableCatalog
+  });
+  await writeStorybookEvidenceArtifact({
+    buildDir: reusableBuildDir,
+    artifact: reusableEvidence,
+    outputFilePath: path.join(reusableBuildDir, "storybook.evidence.json")
+  });
+  await writeStorybookCatalogArtifact({
+    buildDir: reusableBuildDir,
+    artifact: reusableCatalog,
+    outputFilePath: path.join(reusableBuildDir, "storybook.catalog.json")
+  });
+  const publicFileNames = getStorybookPublicArtifactFileNames();
+  await writeStorybookPublicArtifacts({
+    artifacts: reusablePublicArtifacts,
+    outputDirPath: reusableBuildDir
+  });
+
+  const invalidBuildDir = await createInvalidStorybookBuild();
+  await writeFile(
+    path.join(invalidBuildDir, "storybook.evidence.json"),
+    await readFile(path.join(reusableBuildDir, "storybook.evidence.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(invalidBuildDir, "storybook.catalog.json"),
+    await readFile(path.join(reusableBuildDir, "storybook.catalog.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(invalidBuildDir, publicFileNames.tokens),
+    await readFile(path.join(reusableBuildDir, publicFileNames.tokens), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(invalidBuildDir, publicFileNames.themes),
+    await readFile(path.join(reusableBuildDir, publicFileNames.themes), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(invalidBuildDir, publicFileNames.components),
+    await readFile(path.join(reusableBuildDir, publicFileNames.components), "utf8"),
+    "utf8"
+  );
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-precomputed-job-"));
+  const jobDir = path.join(root, "jobs", "job-1");
+  await mkdir(jobDir, { recursive: true });
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
+
+  const storybookArtifacts = await generateStorybookArtifactsForJob({
+    storybookStaticDir: invalidBuildDir,
+    jobDir,
+    artifactStore,
+    stage: "ir.derive",
+    limits: runtime.pipelineDiagnosticLimits
+  });
+
+  assert.equal(storybookArtifacts.catalogArtifact.artifact, "storybook.catalog");
+  assert.equal(storybookArtifacts.evidenceArtifact.artifact, "storybook.evidence");
+  assert.equal(
+    storybookArtifacts.publicArtifacts.tokensArtifact.$extensions?.[STORYBOOK_PUBLIC_EXTENSION_KEY]?.stats.errorCount,
+    0
+  );
+  assert.equal(
+    await artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog),
+    path.join(jobDir, "storybook", "internal", "storybook.catalog.json")
+  );
+  assert.equal(
+    await artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens),
+    path.join(jobDir, "storybook", "public", publicFileNames.tokens)
   );
 });
 

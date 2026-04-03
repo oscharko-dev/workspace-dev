@@ -337,6 +337,31 @@ test("extractVariantDataFromNode maps Style property to variant", () => {
   assert.equal(result.muiProps.variant, "text");
 });
 
+test("extractVariantDataFromNode prefers canonical variant keys over data aliases regardless of object key order", () => {
+  const first = extractVariantDataFromNode({
+    id: "btn-order-a",
+    type: "COMPONENT",
+    name: "Variant=Contained, Data-variant=SpaceAround",
+    componentProperties: {
+      "Data-variant": { type: "VARIANT", value: "SpaceAround" },
+      Variant: { type: "VARIANT", value: "Contained" }
+    }
+  });
+  const second = extractVariantDataFromNode({
+    id: "btn-order-b",
+    type: "COMPONENT",
+    name: "Variant=Contained, Data-variant=SpaceAround",
+    componentProperties: {
+      Variant: { type: "VARIANT", value: "Contained" },
+      "Data-variant": { type: "VARIANT", value: "SpaceAround" }
+    }
+  });
+
+  assert.equal(first?.properties.variant, "Contained");
+  assert.equal(second?.properties.variant, "Contained");
+  assert.deepEqual(first, second);
+});
+
 test("toComponentSetVariantMapping resolves color from component properties", () => {
   const mapping = toComponentSetVariantMapping({
     id: "btn-set",

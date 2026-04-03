@@ -1,0 +1,148 @@
+{
+  "$extensions": {
+    "io.github.oscharko-dev.workspace-dev": {
+      "artifact": "storybook.tokens",
+      "diagnostics": [],
+      "provenance": {},
+      "stats": {
+        "byType": {
+          "color": 7,
+          "dimension": 2,
+          "fontFamily": 1,
+          "fontWeight": 0,
+          "number": 0,
+          "typography": 3
+        },
+        "diagnosticCount": 0,
+        "errorCount": 0,
+        "themeCount": 1,
+        "tokenCount": 13
+      },
+      "themes": [
+        {
+          "categories": [
+            "color",
+            "spacing",
+            "radius",
+            "typography",
+            "font"
+          ],
+          "context": "default",
+          "id": "customer-board-light",
+          "name": "Customer Board Light",
+          "tokenCount": 13
+        }
+      ],
+      "version": 3
+    }
+  },
+  "$schema": "https://www.designtokens.org/TR/2025.10/format/",
+  "font": {
+    "family": {
+      "body-text": {
+        "$type": "fontFamily",
+        "$value": "Body Text"
+      }
+    }
+  },
+  "theme": {
+    "customer-board-light": {
+      "color": {
+        "background": {
+          "default": {
+            "$type": "color",
+            "$value": "#f5f5f5"
+          },
+          "paper": {
+            "$type": "color",
+            "$value": "#ffffff"
+          }
+        },
+        "divider": {
+          "$type": "color",
+          "$value": "#d9d9d9"
+        },
+        "primary": {
+          "contrast-text": {
+            "$type": "color",
+            "$value": "#ffffff"
+          },
+          "main": {
+            "$type": "color",
+            "$value": "#d20a11"
+          }
+        },
+        "secondary": {
+          "main": {
+            "$type": "color",
+            "$value": "#1a3d8f"
+          }
+        },
+        "text": {
+          "primary": {
+            "$type": "color",
+            "$value": "#212121"
+          }
+        }
+      },
+      "radius": {
+        "shape": {
+          "border-radius": {
+            "$type": "dimension",
+            "$value": {
+              "unit": "px",
+              "value": 12
+            }
+          }
+        }
+      },
+      "spacing": {
+        "base": {
+          "$type": "dimension",
+          "$value": {
+            "unit": "px",
+            "value": 8
+          }
+        }
+      },
+      "typography": {
+        "base": {
+          "$type": "typography",
+          "$value": {
+            "fontFamily": "{font.family.body-text}",
+            "fontSize": {
+              "unit": "px",
+              "value": 16
+            },
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          }
+        },
+        "body1": {
+          "$type": "typography",
+          "$value": {
+            "fontFamily": "{font.family.body-text}",
+            "fontSize": {
+              "unit": "px",
+              "value": 16
+            },
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          }
+        },
+        "h1": {
+          "$type": "typography",
+          "$value": {
+            "fontFamily": "{font.family.body-text}",
+            "fontSize": {
+              "unit": "px",
+              "value": 28
+            },
+            "fontWeight": 700,
+            "lineHeight": 1.25
+          }
+        }
+      }
+    }
+  }
+}

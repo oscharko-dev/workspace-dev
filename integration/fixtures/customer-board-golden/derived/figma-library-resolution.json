@@ -1,0 +1,1953 @@
+{
+  "artifact": "figma.library_resolution",
+  "entries": [
+    {
+      "canonicalFamilyName": "Markenbühne",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:21503",
+      "componentKey": "28b4e2ffb83017e7e84fa29255cb089133e2a512",
+      "familyKey": "component:1:21503",
+      "heuristicFamilyName": "Markenbühne",
+      "issues": [
+        {
+          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+          "message": "No cached published component metadata is available for '28b4e2ffb83017e7e84fa29255cb089133e2a512' in local_json mode.",
+          "scope": "cache"
+        }
+      ],
+      "localComponent": {
+        "componentSetId": "1:21502",
+        "key": "28b4e2ffb83017e7e84fa29255cb089133e2a512",
+        "name": "Property 1=Default",
+        "remote": true
+      },
+      "referringNodeIds": [
+        "1:63231",
+        "1:64645",
+        "1:66051",
+        "1:67465",
+        "1:68885"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "partial",
+      "variantProperties": [
+        {
+          "property": "property 1",
+          "values": [
+            "Default"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Typography>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38305",
+      "familyKey": "component:1:38305",
+      "heuristicFamilyName": "<Typography>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38305' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67438;6585:1197;9445:28933",
+        "I1:67440;6585:1197;9445:28933",
+        "I1:67442;6585:1197;9445:28933",
+        "I1:67444;6585:1197;9445:28933",
+        "I1:67446;6585:1197;9445:28933"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "label02"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Typography>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38307",
+      "familyKey": "component:1:38307",
+      "heuristicFamilyName": "<Typography>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38307' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27854",
+        "I1:66210;9445:27870;9445:32106;5646:54709",
+        "I1:66210;9445:27870;9445:32122;5646:54709",
+        "I1:66217;9445:27854",
+        "I1:66217;9445:27870;9445:32106;5646:54709",
+        "I1:66217;9445:27870;9445:32122;5646:54709",
+        "I1:66258;9445:27854",
+        "I1:66258;9445:27870;9445:32106;5646:54709",
+        "I1:66258;9445:27870;9445:32122;5646:54709",
+        "I1:66280;9445:27854;9445:29980",
+        "I1:66319;9445:27854",
+        "I1:66319;9445:27870;9445:32106;5646:54709",
+        "I1:66319;9445:27870;9445:32122;5646:54709"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "label03"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Typography>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38309",
+      "familyKey": "component:1:38309",
+      "heuristicFamilyName": "<Typography>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38309' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29996"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "label04"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Typography>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38325",
+      "familyKey": "component:1:38325",
+      "heuristicFamilyName": "<Typography>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38325' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66217;9445:27855"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "label04Light"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_arrow_subitem_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38903",
+      "familyKey": "component:1:38903",
+      "heuristicFamilyName": "ic_arrow_subitem_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38903' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Icon>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:38915",
+      "familyKey": "component:1:38915",
+      "heuristicFamilyName": "<Icon>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:38915' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66177;5213:6541",
+        "I1:66198;9445:29980",
+        "I1:66247;9445:28917",
+        "I1:67438;6585:1197;9445:28917",
+        "I1:67440;6585:1197;9445:28917",
+        "I1:67442;6585:1197;9445:28917",
+        "I1:67444;6585:1197;9445:28917",
+        "I1:67446;6585:1197;9445:28917"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Action"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Icon>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39023",
+      "familyKey": "component:1:39023",
+      "heuristicFamilyName": "<Icon>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39023' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27870;9445:28813;9445:29980",
+        "I1:66186;16712:36388",
+        "I1:66207;16712:36388",
+        "I1:66277;16712:36388"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Action"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Extra small"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Icon>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39032",
+      "familyKey": "component:1:39032",
+      "heuristicFamilyName": "<Icon>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39032' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67438;9959:72915",
+        "I1:67440;9959:72915",
+        "I1:67442;9959:72915",
+        "I1:67444;9959:72915",
+        "I1:67446;9959:72915"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Secondary"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Extra small"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Divider>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39071",
+      "familyKey": "component:1:39071",
+      "heuristicFamilyName": "<Divider>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39071' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66214",
+        "1:66279",
+        "1:67439",
+        "1:67441",
+        "1:67443",
+        "1:67445",
+        "I1:66143;4919:305782",
+        "I1:66143;4919:306286"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "orientation",
+          "values": [
+            "Horizontal"
+          ]
+        },
+        {
+          "property": "textalign",
+          "values": [
+            "-"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack4>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39210",
+      "familyKey": "component:1:39210",
+      "heuristicFamilyName": "<Stack4>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39210' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66198",
+        "I1:66143;4919:306280;9445:27870;9445:28813",
+        "I1:66280;9445:27854"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack3>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39559",
+      "familyKey": "component:1:39559",
+      "heuristicFamilyName": "<Stack3>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39559' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27870"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Column"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack3>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:39679",
+      "familyKey": "component:1:39679",
+      "heuristicFamilyName": "<Stack3>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:39679' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66247",
+        "I1:67438;6585:1197",
+        "I1:67440;6585:1197",
+        "I1:67442;6585:1197",
+        "I1:67444;6585:1197",
+        "I1:67446;6585:1197"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_user_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:40246",
+      "familyKey": "component:1:40246",
+      "heuristicFamilyName": "ic_user_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:40246' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66177;5213:6541;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Avatar>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:40764",
+      "familyKey": "component:1:40764",
+      "heuristicFamilyName": "<Avatar>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:40764' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27854"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "content",
+          "values": [
+            "Icon"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Circular"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:41335",
+      "familyKey": "component:1:41335",
+      "heuristicFamilyName": "<Dynamic Typography> (headlines)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:41335' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66143;4919:306280;9445:27870;9445:28797"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "headline03"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:41343",
+      "familyKey": "component:1:41343",
+      "heuristicFamilyName": "<Dynamic Typography> (headlines)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:41343' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67438;6585:1197;9445:28918",
+        "I1:67440;6585:1197;9445:28918",
+        "I1:67442;6585:1197;9445:28918",
+        "I1:67444;6585:1197;9445:28918",
+        "I1:67446;6585:1197;9445:28918"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "headline04"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:41351",
+      "familyKey": "component:1:41351",
+      "heuristicFamilyName": "<Dynamic Typography> (headlines)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:41351' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66177;5213:6557",
+        "I1:66198;9445:29996",
+        "I1:66247;9445:28933"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "headline05"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_chart_upward_s 2",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:42111",
+      "componentKey": "41016ac98a47d6dbf915c75e969a256866bdb16b",
+      "familyKey": "component:1:42111",
+      "heuristicFamilyName": "ic_chart_upward_s 2",
+      "issues": [
+        {
+          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+          "message": "No cached published component metadata is available for '41016ac98a47d6dbf915c75e969a256866bdb16b' in local_json mode.",
+          "scope": "cache"
+        }
+      ],
+      "localComponent": {
+        "key": "41016ac98a47d6dbf915c75e969a256866bdb16b",
+        "name": "ic_chart_upward_s 1",
+        "remote": true
+      },
+      "referringNodeIds": [
+        "1:70303",
+        "I1:66143;4919:306280;9445:27854;24755:10564"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "partial",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Stack2>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:42114",
+      "familyKey": "component:1:42114",
+      "heuristicFamilyName": "<Stack2>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:42114' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:67447"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Column"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack2>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:42234",
+      "familyKey": "component:1:42234",
+      "heuristicFamilyName": "<Stack2>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:42234' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66210",
+        "1:66217",
+        "1:66258",
+        "1:66280",
+        "1:66319",
+        "I1:66143;4919:306280"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:42583",
+      "familyKey": "component:1:42583",
+      "heuristicFamilyName": "<Stack>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:42583' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66143"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Column"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:42805",
+      "familyKey": "component:1:42805",
+      "heuristicFamilyName": "<Stack>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:42805' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66177"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "row"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_info_circle_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:43307",
+      "familyKey": "component:1:43307",
+      "heuristicFamilyName": "ic_info_circle_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:43307' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66258;9445:27856;11940:107548",
+        "I1:66275;1857:134907",
+        "I1:66323;1857:134907"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<IconButton>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:43449",
+      "familyKey": "component:1:43449",
+      "heuristicFamilyName": "<IconButton>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:43449' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66258;9445:27856"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Default"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Small"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_circle_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:43496",
+      "familyKey": "component:1:43496",
+      "heuristicFamilyName": "ic_circle_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:43496' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:66217;9445:27870;9445:32106;5646:54691;5908:49260",
+        "I1:66217;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:66258;9445:27870;9445:32122;5646:54691;5908:49260",
+        "I1:66319;9445:27870;9445:32122;5646:54691;5908:49260"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_radio_selected_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:43500",
+      "familyKey": "component:1:43500",
+      "heuristicFamilyName": "ic_radio_selected_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:43500' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870;9445:32106;5646:54691;5908:49316",
+        "I1:66258;9445:27870;9445:32106;5646:54691;5908:49316",
+        "I1:66319;9445:27870;9445:32106;5646:54691;5908:49316"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Stack6>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:43658",
+      "familyKey": "component:1:43658",
+      "heuristicFamilyName": "<Stack6>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:43658' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870",
+        "I1:66217;9445:27870",
+        "I1:66258;9445:27870",
+        "I1:66319;9445:27870"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Start"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "column"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "_<InputAdornment>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:45022",
+      "familyKey": "component:1:45022",
+      "heuristicFamilyName": "_<InputAdornment>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:45022' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66276;16398:91055",
+        "I1:66278;16398:91055",
+        "I1:66322;16398:91055"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "adornment type",
+          "values": [
+            "ValueUnit"
+          ]
+        },
+        {
+          "property": "position",
+          "values": [
+            "End"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Select>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:45150",
+      "familyKey": "component:1:45150",
+      "heuristicFamilyName": "<Select>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:45150' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66186",
+        "1:66207",
+        "1:66277"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "autowidth",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "disabled",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "has value",
+          "values": [
+            "True"
+          ]
+        },
+        {
+          "property": "placeholder",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Default"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Chip>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:48552",
+      "familyKey": "component:1:48552",
+      "heuristicFamilyName": "<Chip>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:48552' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66280;9445:27870"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "clickable",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "color",
+          "values": [
+            "Secondary"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Filled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "_<CharacterCount>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:49959",
+      "familyKey": "component:1:49959",
+      "heuristicFamilyName": "_<CharacterCount>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:49959' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67447;9445:27734;10861:42763"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<TextField>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:50189",
+      "familyKey": "component:1:50189",
+      "heuristicFamilyName": "<TextField>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:50189' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66206",
+        "1:66276",
+        "1:66278",
+        "1:66322"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "(password)",
+          "values": [
+            "None"
+          ]
+        },
+        {
+          "property": "disabled",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "has value",
+          "values": [
+            "true"
+          ]
+        },
+        {
+          "property": "multiline",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "placeholder",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<TextField>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:53140",
+      "familyKey": "component:1:53140",
+      "heuristicFamilyName": "<TextField>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:53140' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67447;9445:27734"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "(password)",
+          "values": [
+            "None"
+          ]
+        },
+        {
+          "property": "disabled",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "has value",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "multiline",
+          "values": [
+            "True"
+          ]
+        },
+        {
+          "property": "placeholder",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_shopping_cart_s",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54302",
+      "familyKey": "component:1:54302",
+      "heuristicFamilyName": "ic_shopping_cart_s",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54302' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66198;9445:29980;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Radio>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54308",
+      "familyKey": "component:1:54308",
+      "heuristicFamilyName": "<Radio>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54308' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870;9445:32122;5646:54691",
+        "I1:66217;9445:27870;9445:32106;5646:54691",
+        "I1:66217;9445:27870;9445:32122;5646:54691",
+        "I1:66258;9445:27870;9445:32122;5646:54691",
+        "I1:66319;9445:27870;9445:32122;5646:54691"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "checked",
+          "values": [
+            "False"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Radio>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54316",
+      "familyKey": "component:1:54316",
+      "heuristicFamilyName": "<Radio>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54316' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870;9445:32106;5646:54691",
+        "I1:66258;9445:27870;9445:32106;5646:54691",
+        "I1:66319;9445:27870;9445:32106;5646:54691"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "checked",
+          "values": [
+            "True"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Medium"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack> FormControlLabel Radio",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54341",
+      "familyKey": "component:1:54341",
+      "heuristicFamilyName": "<Stack> FormControlLabel Radio",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54341' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66210;9445:27870;9445:32106",
+        "I1:66210;9445:27870;9445:32122",
+        "I1:66217;9445:27870;9445:32106",
+        "I1:66217;9445:27870;9445:32122",
+        "I1:66258;9445:27870;9445:32106",
+        "I1:66258;9445:27870;9445:32122",
+        "I1:66319;9445:27870;9445:32106",
+        "I1:66319;9445:27870;9445:32122"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "disabled",
+          "values": [
+            "False"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_coin_stack_s",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54357",
+      "familyKey": "component:1:54357",
+      "heuristicFamilyName": "ic_coin_stack_s",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54357' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66247;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Alert>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54808",
+      "familyKey": "component:1:54808",
+      "heuristicFamilyName": "<Alert>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54808' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:66275",
+        "1:66323"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "severity",
+          "values": [
+            "Info"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "filled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Accordion>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:54957",
+      "familyKey": "component:1:54957",
+      "heuristicFamilyName": "<Accordion>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:54957' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "1:67438",
+        "1:67440",
+        "1:67442",
+        "1:67444",
+        "1:67446"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "elevation",
+          "values": [
+            "0"
+          ]
+        },
+        {
+          "property": "expanded",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "last of type",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_calendar_m 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:55061",
+      "familyKey": "component:1:55061",
+      "heuristicFamilyName": "ic_calendar_m 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:55061' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67438;6585:1197;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_hand_leaf_m",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:60453",
+      "familyKey": "component:1:60453",
+      "heuristicFamilyName": "ic_hand_leaf_m",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:60453' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67442;6585:1197;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_shield_empty_m",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:60455",
+      "familyKey": "component:1:60455",
+      "heuristicFamilyName": "ic_shield_empty_m",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:60455' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67444;6585:1197;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_chart_upward_m 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:60457",
+      "componentKey": "32fd0c2604df309d4d5996256fb3ce3e45397fbf",
+      "familyKey": "component:1:60457",
+      "heuristicFamilyName": "ic_chart_upward_m 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+          "message": "No cached published component metadata is available for '32fd0c2604df309d4d5996256fb3ce3e45397fbf' in local_json mode.",
+          "scope": "cache"
+        }
+      ],
+      "localComponent": {
+        "description": "CHART_UPWARD_M",
+        "key": "32fd0c2604df309d4d5996256fb3ce3e45397fbf",
+        "name": "ic_chart_upward_m 🔥",
+        "remote": true
+      },
+      "referringNodeIds": [
+        "1:70302"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "partial",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_abacus_m 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:60466",
+      "familyKey": "component:1:60466",
+      "heuristicFamilyName": "ic_abacus_m 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:60466' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67440;6585:1197;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "ic_document_euro_m",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:60468",
+      "familyKey": "component:1:60468",
+      "heuristicFamilyName": "ic_document_euro_m",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:60468' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67446;6585:1197;9445:28917;1288:87607"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    },
+    {
+      "canonicalFamilyName": "<Stack>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:62397",
+      "familyKey": "component:1:62397",
+      "heuristicFamilyName": "<Stack>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:62397' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67459;32:73283"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "alignitems",
+          "values": [
+            "Center"
+          ]
+        },
+        {
+          "property": "direction",
+          "values": [
+            "Row"
+          ]
+        },
+        {
+          "property": "direction s",
+          "values": [
+            "row"
+          ]
+        },
+        {
+          "property": "divider",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Button>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:62629",
+      "familyKey": "component:1:62629",
+      "heuristicFamilyName": "<Button>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:62629' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67459;32:73283;5213:6575"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Primary"
+          ]
+        },
+        {
+          "property": "fullwidth",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Large"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Contained"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Button>",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:62821",
+      "familyKey": "component:1:62821",
+      "heuristicFamilyName": "<Button>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:62821' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:67459;32:73283;5213:6559"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": [
+        {
+          "property": "color",
+          "values": [
+            "Secondary"
+          ]
+        },
+        {
+          "property": "fullwidth",
+          "values": [
+            "false"
+          ]
+        },
+        {
+          "property": "size",
+          "values": [
+            "Large"
+          ]
+        },
+        {
+          "property": "state",
+          "values": [
+            "Enabled"
+          ]
+        },
+        {
+          "property": "variant",
+          "values": [
+            "Outlined"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "<Stack> ButtonCombination",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:63214",
+      "componentKey": "a49272dcbf68347cec3dd2f932ae46edf0cb7153",
+      "familyKey": "component:1:63214",
+      "heuristicFamilyName": "<Stack> ButtonCombination",
+      "issues": [
+        {
+          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
+          "message": "No cached published component metadata is available for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' in local_json mode.",
+          "scope": "cache"
+        }
+      ],
+      "localComponent": {
+        "componentSetId": "1:63213",
+        "key": "a49272dcbf68347cec3dd2f932ae46edf0cb7153",
+        "name": "Small Screen=false",
+        "remote": true
+      },
+      "referringNodeIds": [
+        "1:64639",
+        "1:66045",
+        "1:67459",
+        "1:68873",
+        "1:70293"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "partial",
+      "variantProperties": [
+        {
+          "property": "small screen",
+          "values": [
+            "false"
+          ]
+        }
+      ]
+    },
+    {
+      "canonicalFamilyName": "ic_down_s 🔥",
+      "canonicalFamilyNameSource": "analysis",
+      "componentId": "1:636",
+      "familyKey": "component:1:636",
+      "heuristicFamilyName": "ic_down_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_COMPONENT_KEY_MISSING",
+          "message": "External component '1:636' has no component key in the sanitized Figma catalog.",
+          "scope": "component"
+        }
+      ],
+      "referringNodeIds": [
+        "I1:66186;16712:36388;1288:87615",
+        "I1:66207;16712:36388;1288:87615",
+        "I1:66277;16712:36388;1288:87615",
+        "I1:67438;9959:72915;1288:87522",
+        "I1:67440;9959:72915;1288:87522",
+        "I1:67442;9959:72915;1288:87522",
+        "I1:67444;9959:72915;1288:87522",
+        "I1:67446;9959:72915;1288:87522"
+      ],
+      "resolutionSource": "local_catalog",
+      "status": "error",
+      "variantProperties": []
+    }
+  ],
+  "figmaSourceMode": "local_json",
+  "fingerprint": "8b155645c217365d879f2b8f7a3d644e02e500098f7eabc9dd0914ea6b524836",
+  "summary": {
+    "cacheHit": 0,
+    "error": 48,
+    "offlineReused": 0,
+    "partial": 4,
+    "resolved": 0,
+    "total": 52
+  },
+  "version": 1
+}

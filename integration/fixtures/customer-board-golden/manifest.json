@@ -1,0 +1,58 @@
+{
+  "derived": {
+    "componentMatchReport": "derived/component-match-report.json",
+    "figmaAnalysis": "derived/figma-analysis.json",
+    "figmaLibraryResolution": "derived/figma-library-resolution.json",
+    "storybookCatalog": "derived/storybook.catalog.json",
+    "storybookComponents": "derived/storybook.components.json",
+    "storybookThemes": "derived/storybook.themes.json",
+    "storybookTokens": "derived/storybook.tokens.json"
+  },
+  "expected": {
+    "generated": [
+      {
+        "actual": "src/App.tsx",
+        "expected": "expected/generated/src/App.tsx",
+        "kind": "text",
+        "name": "src-App-tsx"
+      },
+      {
+        "actual": "src/components/AppShell1.tsx",
+        "expected": "expected/generated/src/components/AppShell1.tsx",
+        "kind": "text",
+        "name": "src-components-AppShell1-tsx"
+      },
+      {
+        "actual": "src/context/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.tsx",
+        "expected": "expected/generated/src/context/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext.tsx",
+        "kind": "text",
+        "name": "src-context-BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1Variant2166050ContentFormContext-tsx"
+      },
+      {
+        "actual": "src/screens/__tests__/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1.test.tsx",
+        "expected": "expected/generated/src/screens/__tests__/BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1.test.tsx",
+        "kind": "text",
+        "name": "src-screens-tests-BedarfsermittlungNettoBetriebsmittelAlleClusterEingeklapptID0031V1-test-tsx"
+      },
+      {
+        "actual": "src/screens/Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1.tsx",
+        "expected": "expected/generated/src/screens/Bedarfsermittlung_Netto_Betriebsmittel_alle_Cluster_eingeklappt_ID-003_1_v1.tsx",
+        "kind": "text",
+        "name": "src-screens-Bedarfsermittlung-Netto-Betriebsmittel-alle-Cluster-eingeklappt-ID-003-1-v1-tsx"
+      },
+      {
+        "actual": "src/theme/theme.ts",
+        "expected": "expected/generated/src/theme/theme.ts",
+        "kind": "text",
+        "name": "src-theme-theme-ts"
+      }
+    ],
+    "validationSummary": "expected/validation-summary.json"
+  },
+  "fixtureId": "customer-board-golden",
+  "inputs": {
+    "customerProfile": "inputs/customer-profile.json",
+    "figma": "inputs/figma.json"
+  },
+  "version": 1
+}

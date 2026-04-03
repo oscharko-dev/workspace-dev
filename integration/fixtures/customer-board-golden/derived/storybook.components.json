@@ -1,0 +1,540 @@
+{
+  "artifact": "storybook.components",
+  "components": [
+    {
+      "componentPath": "@mui/material",
+      "hasDesignReference": true,
+      "id": "component:a3e9c46a86aa4f97",
+      "name": "Tooltip",
+      "propKeys": [
+        "arrow",
+        "buttonText",
+        "disableFocusListener",
+        "disableHoverListener",
+        "disableTouchListener",
+        "open",
+        "placement",
+        "style",
+        "title"
+      ],
+      "storyCount": 1,
+      "title": "Components/Display/Tooltip"
+    },
+    {
+      "componentPath": "@finanzinformatik/cpl-module-reactlib",
+      "hasDesignReference": false,
+      "id": "component:8abace4519137db3",
+      "name": "BrandIcon",
+      "propKeys": [
+        "color",
+        "fontSize"
+      ],
+      "storyCount": 1,
+      "title": "Reactlib/BrandIcon"
+    },
+    {
+      "componentPath": "@finanzinformatik/cpl-module-reactlib",
+      "hasDesignReference": false,
+      "id": "component:9c904f7ed95b6b35",
+      "name": "DynamicTypography",
+      "propKeys": [
+        "align",
+        "label",
+        "noWrap",
+        "paragraph",
+        "variant"
+      ],
+      "storyCount": 1,
+      "title": "Reactlib/DynamicTypography"
+    },
+    {
+      "componentPath": "@finanzinformatik/cpl-module-reactlib",
+      "hasDesignReference": false,
+      "id": "component:42938285fdfc72ec",
+      "name": "Player",
+      "propKeys": [
+        "src",
+        "startFrame",
+        "style"
+      ],
+      "storyCount": 2,
+      "title": "Reactlib/Player"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:b3773079102fdaf5",
+      "name": "AnmeldeDialog",
+      "propKeys": [
+        "host"
+      ],
+      "storyCount": 4,
+      "title": "ReactUI/Components/AnmeldeDialog"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:d785d52c9f3426e3",
+      "name": "Anwendungsbenachrichtungen",
+      "propKeys": [],
+      "storyCount": 2,
+      "title": "ReactUI/Components/Anwendungsbenachrichtungen"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:f60a62257509666b",
+      "name": "AnwendungsLink",
+      "propKeys": [
+        "anwendung",
+        "host",
+        "url"
+      ],
+      "storyCount": 3,
+      "title": "ReactUI/Components/AnwendungsLink"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:feeffae871458075",
+      "name": "BenutzerInfo",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/BenutzerInfo"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:918dcd8ed7fac929",
+      "name": "BestaetigenDialog",
+      "propKeys": [
+        "cancelText",
+        "confirmText",
+        "dialogContent",
+        "dialogContentText",
+        "dialogTitle",
+        "disableBackdropClick",
+        "onCancel",
+        "onConfirm"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/BestaetigenDialog"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:11ac06ec41680d92",
+      "name": "DatePickerConstrained",
+      "propKeys": [
+        "initDate",
+        "keyboardDatePickerProps",
+        "shouldDisableDateOverride"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/DatePickerConstrained"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:511fac9ab61f3457",
+      "name": "DetailInfo",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/DetailInfo"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:e0bdd8ba2964c407",
+      "name": "FIAnwendung",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/FIAnwendung"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:ff4e4c8e33bb2d5b",
+      "name": "BenutzerInfoScreen",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/FIAnwendung/BenutzerInfoScreen"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:c67269e49c267d47",
+      "name": "FINachrichtenzentrale",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/FINachrichtenzentrale"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:de1711036b1ea06b",
+      "name": "FITabelle",
+      "propKeys": [],
+      "storyCount": 7,
+      "title": "ReactUI/Components/FITabelle"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:598653eb9df62a53",
+      "name": "Hinweismeldung",
+      "propKeys": [
+        "reason"
+      ],
+      "storyCount": 3,
+      "title": "ReactUI/Components/Hinweismeldung"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:4df2a003b850a418",
+      "name": "InformationCard",
+      "propKeys": [
+        "actions",
+        "children",
+        "title"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/Information/InformationCard"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:7a67feb88f217504",
+      "name": "InformationDisplay",
+      "propKeys": [
+        "title",
+        "value"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/Information/InformationDisplay"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:9136e0ce37c83184",
+      "name": "Navigationsleiste",
+      "propKeys": [
+        "onLogout",
+        "sitemap"
+      ],
+      "storyCount": 2,
+      "title": "ReactUI/Components/Navigationsleiste"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:731b2c407b702000",
+      "name": "ParamsResultLayout",
+      "propKeys": [
+        "params",
+        "paramsImage",
+        "paramsTitle",
+        "result",
+        "resultImage",
+        "resultTitle"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/ParamsResultLayout"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:e5c08815458aa008",
+      "name": "ServerdefinierteTabelle",
+      "propKeys": [
+        "uiModule",
+        "userSettings"
+      ],
+      "storyCount": 3,
+      "title": "ReactUI/Components/ServerdefinierteTabelle"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:c4aedd65b23de660",
+      "name": "SettingsSection",
+      "propKeys": [
+        "onReady",
+        "onReset",
+        "onSelect",
+        "uiModule",
+        "userSettings"
+      ],
+      "storyCount": 2,
+      "title": "ReactUI/Components/ServerdefinierteTabelle/SettingsSection"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:062dc60982ede31a",
+      "name": "Startseite",
+      "propKeys": [
+        "legacy",
+        "title"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/Startseite"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:9f10d834670be276",
+      "name": "SupportDialog",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Components/SupportDialog"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:559005193e6b1987",
+      "name": "UngespeicherteAenderungenDialog",
+      "propKeys": [
+        "when"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Components/UngespeicherteAenderungenDialog"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:aa17218d258a7f15",
+      "name": "ActionButton",
+      "propKeys": [
+        "action",
+        "centerRipple",
+        "children",
+        "classes",
+        "disableFocusRipple",
+        "disableRipple",
+        "disableTouchRipple",
+        "edge",
+        "focusRipple",
+        "focusVisibleClassName",
+        "LinkComponent",
+        "onClick",
+        "onFocusVisible",
+        "ref",
+        "size",
+        "sx",
+        "tabIndex",
+        "title",
+        "TouchRippleProps",
+        "touchRippleRef"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/ActionButton"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:2ad9adaca1ef7b67",
+      "name": "ActionMenu",
+      "propKeys": [
+        "children",
+        "size"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/ActionMenu"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:822da5c16d4bb0bf",
+      "name": "Breadcrumbs",
+      "propKeys": [
+        "base",
+        "levelItem",
+        "staticEntries"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Breadcrumbs"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:85bcacacba89db01",
+      "name": "CustomAutocomplete",
+      "propKeys": [],
+      "storyCount": 2,
+      "title": "ReactUI/Core/CustomAutocomplete"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:1c87dae3d79f2985",
+      "name": "ErrorBoundary",
+      "propKeys": [],
+      "storyCount": 2,
+      "title": "ReactUI/Core/ErrorBoundary"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:1951d5d9a6f8df1f",
+      "name": "Feldauswahl",
+      "propKeys": [
+        "onChange",
+        "options",
+        "tooltip",
+        "value"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Feldauswahl"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:80bcdf2f90323b90",
+      "name": "FiGrid",
+      "propKeys": [
+        "children",
+        "spacing"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Grid/FiGrid"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:0e1083a25e0e0287",
+      "name": "FiGridActionGroup",
+      "propKeys": [],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Grid/FiGridActionGroup"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:ef21b6684e09da83",
+      "name": "FiGridButton",
+      "propKeys": [
+        "children",
+        "onClick",
+        "size",
+        "variant"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Grid/FiGridButton"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:896153891560585e",
+      "name": "FiGridGroup",
+      "propKeys": [
+        "children",
+        "onClick",
+        "size",
+        "variant"
+      ],
+      "storyCount": 2,
+      "title": "ReactUI/Core/Grid/FiGridGroup"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:c13b256c6033c7c0",
+      "name": "FiGridItem",
+      "propKeys": [
+        "lg",
+        "md",
+        "sm",
+        "xl",
+        "xs"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/Grid/FiGridItem"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:8b5e690bacc1ca10",
+      "name": "Hinweismeldung",
+      "propKeys": [
+        "type"
+      ],
+      "storyCount": 8,
+      "title": "ReactUI/Core/Hinweismeldung"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:8a7945fafcb84544",
+      "name": "Ladebalken",
+      "propKeys": [],
+      "storyCount": 2,
+      "title": "ReactUI/Core/Ladebalken"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:9cf19fea94a489c6",
+      "name": "LayoutBase",
+      "propKeys": [
+        "breadcrumbs",
+        "toolbar"
+      ],
+      "storyCount": 2,
+      "title": "ReactUI/Core/LayoutBase"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:c6befc61ba647627",
+      "name": "LoadingContainer",
+      "propKeys": [
+        "children"
+      ],
+      "storyCount": 7,
+      "title": "ReactUI/Core/LoadingContainer"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:abe83ecb1c4d7b6e",
+      "name": "Parametergruppe",
+      "propKeys": [],
+      "storyCount": 3,
+      "title": "ReactUI/Core/Parametergruppe"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:75d21349458fefdb",
+      "name": "SeitenLayout",
+      "propKeys": [],
+      "storyCount": 5,
+      "title": "ReactUI/Core/SeitenLayout"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:f142ff57b20c938a",
+      "name": "SimpleLayout",
+      "propKeys": [
+        "initialOpen",
+        "stickyTitle",
+        "subTitle",
+        "title"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/SimpleLayout"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:97ac938703171a06",
+      "name": "TextField",
+      "propKeys": [
+        "clearable",
+        "disabled",
+        "helperText",
+        "label",
+        "minLength",
+        "multiline",
+        "onEnter",
+        "required",
+        "rows",
+        "tooltip"
+      ],
+      "storyCount": 2,
+      "title": "ReactUI/Core/TextField"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:bdaf74c8b2a7f892",
+      "name": "Tooltip",
+      "propKeys": [
+        "infos",
+        "title"
+      ],
+      "storyCount": 3,
+      "title": "ReactUI/Core/Tooltip"
+    },
+    {
+      "hasDesignReference": false,
+      "id": "component:4b6da35bc3c43a8e",
+      "name": "TooltipCard",
+      "propKeys": [
+        "info",
+        "name"
+      ],
+      "storyCount": 1,
+      "title": "ReactUI/Core/TooltipCard"
+    }
+  ],
+  "stats": {
+    "componentCount": 46,
+    "componentWithDesignReferenceCount": 1,
+    "entryCount": 499,
+    "propKeyCount": 98
+  },
+  "version": 1
+}

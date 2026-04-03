@@ -1,0 +1,133 @@
+{
+  "brandMappings": [
+    {
+      "aliases": [
+        "customer-board",
+        "sparkasse"
+      ],
+      "brandTheme": "sparkasse",
+      "id": "customer-board",
+      "storybookThemes": {
+        "light": "customer-board-light"
+      }
+    }
+  ],
+  "fallbacks": {
+    "icons": {
+      "defaultPolicy": "deny",
+      "icons": {}
+    },
+    "mui": {
+      "components": {},
+      "defaultPolicy": "allow"
+    }
+  },
+  "families": [
+    {
+      "aliases": {
+        "code": [
+          "@customer/components"
+        ],
+        "figma": [
+          "Components"
+        ],
+        "storybook": [
+          "components"
+        ]
+      },
+      "id": "Components",
+      "tierPriority": 10
+    },
+    {
+      "aliases": {
+        "code": [
+          "@customer/reactui"
+        ],
+        "figma": [
+          "ReactUI"
+        ],
+        "storybook": [
+          "reactui"
+        ]
+      },
+      "id": "ReactUI",
+      "tierPriority": 20
+    },
+    {
+      "aliases": {
+        "code": [
+          "@customer/reactlib"
+        ],
+        "figma": [
+          "Reactlib"
+        ],
+        "storybook": [
+          "reactlib"
+        ]
+      },
+      "id": "Reactlib",
+      "tierPriority": 30
+    },
+    {
+      "aliases": {
+        "code": [
+          "@customer/if-components"
+        ],
+        "figma": [
+          "IF-Components"
+        ],
+        "storybook": [
+          "if-components"
+        ]
+      },
+      "id": "IF-Components",
+      "tierPriority": 40
+    },
+    {
+      "aliases": {
+        "code": [
+          "@customer/osplus-neo-components"
+        ],
+        "figma": [
+          "OSPlus_neo-Components"
+        ],
+        "storybook": [
+          "osplus_neo-components",
+          "osplus-neo-components"
+        ]
+      },
+      "id": "OSPlus_neo-Components",
+      "tierPriority": 50
+    },
+    {
+      "aliases": {
+        "code": [
+          "@customer/base"
+        ],
+        "figma": [
+          "Base"
+        ],
+        "storybook": [
+          "base"
+        ]
+      },
+      "id": "Base",
+      "tierPriority": 60
+    }
+  ],
+  "imports": {
+    "components": {},
+    "icons": {}
+  },
+  "strictness": {
+    "import": "error",
+    "match": "warn",
+    "token": "warn"
+  },
+  "template": {
+    "dependencies": {},
+    "devDependencies": {},
+    "importAliases": {}
+  },
+  "version": 1
+}

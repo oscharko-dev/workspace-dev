@@ -1,0 +1,60 @@
+{
+  "$extensions": {
+    "io.github.oscharko-dev.workspace-dev": {
+      "artifact": "storybook.themes",
+      "diagnostics": [],
+      "provenance": {},
+      "stats": {
+        "contextCount": 1,
+        "diagnosticCount": 0,
+        "errorCount": 0,
+        "themeCount": 1
+      },
+      "themes": [
+        {
+          "categories": [
+            "color",
+            "spacing",
+            "radius",
+            "typography",
+            "font"
+          ],
+          "context": "default",
+          "id": "customer-board-light",
+          "name": "Customer Board Light",
+          "tokenCount": 13
+        }
+      ],
+      "version": 3
+    }
+  },
+  "$schema": "https://www.designtokens.org/TR/2025.10/resolver/",
+  "modifiers": {
+    "theme": {
+      "contexts": {
+        "default": [
+          {
+            "$ref": "#/sets/customer-board-light"
+          }
+        ]
+      },
+      "default": "default"
+    }
+  },
+  "name": "storybook.themes",
+  "resolutionOrder": [
+    {
+      "$ref": "#/modifiers/theme"
+    }
+  ],
+  "sets": {
+    "customer-board-light": {
+      "sources": [
+        {
+          "$ref": "./tokens.json#/theme/customer-board-light"
+        }
+      ]
+    }
+  },
+  "version": "2025.10"
+}
