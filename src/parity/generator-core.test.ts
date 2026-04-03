@@ -20,7 +20,8 @@ import { validateGeneratedSourceFile } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
-import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
+import { buildStorybookPublicArtifacts } from "../storybook/public-extracts.js";
+import { resolveStorybookTheme, type ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
 
 const toRgba = (hex: string): { r: number; g: number; b: number } => {
   const normalized = hex.replace("#", "");
@@ -463,6 +464,129 @@ const createResolvedStorybookTheme = ({
         : {})
     }
   };
+};
+
+const createIssue690CustomerProfileForGeneratorTests = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [],
+      brandMappings: [
+        {
+          id: "storybook-default",
+          aliases: ["storybook-default"],
+          brandTheme: "derived",
+          storybookThemes: {
+            light: "default"
+          }
+        }
+      ],
+      imports: {
+        components: {}
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "allow"
+        }
+      },
+      template: {
+        dependencies: {}
+      },
+      strictness: {
+        match: "warn",
+        token: "warn",
+        import: "warn"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create Issue #690 customer profile generator test fixture.");
+  }
+  return customerProfile;
+};
+
+const createIssue690BackfilledStorybookBuild = async (): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-issue-690-storybook-build-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "storybook-theme-test--default": {
+        id: "storybook-theme-test--default",
+        title: "Theme/Regression",
+        name: "Default",
+        importPath: "./src/theme/Regression.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/theme/Regression.tsx"
+      }
+    }
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeBundle = `
+    const gq0 = {
+      "./src/theme/Regression.stories.tsx": n(() => c0(() => import("./Regression.stories-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/theme/Regression.stories.tsx")
+    };
+  `;
+
+  const storyBundle = `
+    const meta = {
+      title: "Theme/Regression",
+      args: {
+        spacing: 12
+      },
+      argTypes: {
+        fontFamily: {
+          defaultValue: "Brand Sans"
+        }
+      }
+    };
+    export default meta;
+  `;
+
+  const themeBundle = `
+    const appTheme = createTheme({
+      shape: { borderRadius: 20 },
+      palette: {
+        primary: { main: "#1357be", contrastText: "#ffffff" },
+        text: { primary: "#101820" },
+        background: { default: "#f7f8fa", paper: "#ffffff" }
+      },
+      typography: {
+        fontFamily: "Theme Bundle Sans, sans-serif",
+        fontSize: 15,
+        body1: { fontSize: 15, lineHeight: 1.5 }
+      }
+    });
+    export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+  `;
+
+  const cssText = `
+    :root {
+      --fi-space-base: 12px;
+    }
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "Regression.stories-test.js"), storyBundle, "utf8");
+  await writeFile(path.join(assetsDir, "shared-theme.js"), themeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
+
+  return buildDir;
 };
 
 const collectDeterministicSnapshot = async ({
@@ -8264,6 +8388,79 @@ test("generateArtifacts uses the resolved Storybook theme payload instead of IR-
   assert.equal(tokensContent.customerBrandId, "sparkasse-retail");
   assert.equal(tokensContent.light.spacingBase, 10);
   assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
+});
+
+test("generateArtifacts keeps Storybook-first theme output pinned to public artifacts instead of legacy fallback tokens", async () => {
+  const buildDir = await createIssue690BackfilledStorybookBuild();
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-provenance-"));
+  const artifacts = await buildStorybookPublicArtifacts({ buildDir });
+  const customerProfile = createIssue690CustomerProfileForGeneratorTests();
+  const resolvedStorybookTheme = resolveStorybookTheme({
+    customerBrandId: "storybook-default",
+    customerProfile,
+    tokensArtifact: artifacts.tokensArtifact,
+    themesArtifact: artifacts.themesArtifact
+  });
+  const tokensTheme = artifacts.tokensArtifact.theme as Record<string, unknown>;
+  const defaultTheme = tokensTheme.default as Record<string, unknown>;
+  const spacingGroup = defaultTheme.spacing as Record<string, unknown>;
+  const cssSpacingGroup = (spacingGroup.css ?? {}) as Record<string, unknown>;
+  const themeFontGroup = defaultTheme.font as Record<string, unknown>;
+  const themeFontFamilies = themeFontGroup.family as Record<string, unknown>;
+  const ir = createIr();
+
+  ir.tokens.palette.primary = "#00ff00";
+  ir.tokens.spacingBase = 2;
+  ir.tokens.borderRadius = 4;
+  ir.tokens.fontFamily = "Legacy Local Brand";
+  ir.tokens.typography = buildTypographyScaleFromAliases({
+    fontFamily: "Legacy Local Brand",
+    headingSize: 22,
+    bodySize: 11
+  });
+
+  assert.equal((spacingGroup.base as Record<string, unknown>).$type, "dimension");
+  assert.deepEqual((spacingGroup.base as Record<string, unknown>).$value, { value: 12, unit: "px" });
+  assert.deepEqual((cssSpacingGroup["fi-space-base"] as Record<string, unknown>).$value, { value: 12, unit: "px" });
+  assert.equal((themeFontFamilies["theme-bundle-sans"] as Record<string, unknown>).$type, "fontFamily");
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    resolvedStorybookTheme,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {}
+  });
+
+  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
+  const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8")) as {
+    customerBrandId: string;
+    light: {
+      spacingBase: number;
+      borderRadius: number;
+      palette: {
+        primary: {
+          main: string;
+        };
+      };
+      typography: {
+        fontFamily: string;
+      };
+    };
+  };
+
+  assert.ok(themeContent.includes('main: "#1357be"'));
+  assert.ok(themeContent.includes("spacing: 12"));
+  assert.ok(themeContent.includes("borderRadius: 20"));
+  assert.ok(themeContent.includes('fontFamily: "Theme Bundle Sans, sans-serif"'));
+  assert.equal(themeContent.includes("#00ff00"), false);
+  assert.equal(themeContent.includes("Legacy Local Brand"), false);
+  assert.equal(tokensContent.customerBrandId, "storybook-default");
+  assert.equal(tokensContent.light.spacingBase, 12);
+  assert.equal(tokensContent.light.borderRadius, 20);
+  assert.equal(tokensContent.light.palette.primary.main, "#1357be");
+  assert.equal(tokensContent.light.typography.fontFamily, "Theme Bundle Sans, sans-serif");
 });
 
 test("generateArtifacts omits the theme mode toggle when the resolved Storybook theme has no dark scheme", async () => {

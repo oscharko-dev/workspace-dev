@@ -2806,6 +2806,131 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
   assert.equal(forwardedGeneratorCount, 1);
 });
 
+test("CodegenGenerateService fails hard before generation when Storybook-first theme artifacts are insufficient", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  let generationStarted = false;
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(
+    tokensPath,
+    `${JSON.stringify(
+      {
+        ...createStorybookTokensArtifactForStageServices(),
+        theme: {
+          "sparkasse-light": {
+            color: {
+              primary: {
+                main: { $type: "color", $value: "#dd0000" },
+                "contrast-text": { $type: "color", $value: "#ffffff" }
+              },
+              text: {
+                primary: { $type: "color", $value: "#111111" }
+              },
+              background: {
+                default: { $type: "color", $value: "#f8f8f8" }
+              }
+            },
+            spacing: {
+              base: { $type: "dimension", $value: { value: 8, unit: "px" } }
+            },
+            radius: {
+              shape: {
+                "border-radius": { $type: "dimension", $value: { value: 12, unit: "px" } }
+              }
+            },
+            typography: {
+              base: {
+                $type: "typography",
+                $value: {
+                  fontFamily: "Brand Sans",
+                  fontSize: { value: 16, unit: "px" },
+                  fontWeight: 400,
+                  lineHeight: 1.5
+                }
+              }
+            }
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createIssue693CustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    generateArtifactsStreamingFn: async function* () {
+      generationStarted = true;
+      throw new Error("generateArtifactsStreamingFn must not run when Storybook-first theme resolution fails.");
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(
+        {
+          boardKeySeed: "storybook-theme-failure"
+        },
+        stageContextFor("codegen.generate")
+      );
+    },
+    (
+      error: Error & {
+        code?: string;
+        diagnostics?: Array<{ code?: string; message?: string; details?: Record<string, unknown> }>;
+      }
+    ) => {
+      assert.equal(error.code, "E_STORYBOOK_THEME_REQUIRED_TOKEN_MISSING");
+      assert.equal(
+        error.diagnostics?.some((diagnostic) => diagnostic.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_MISSING"),
+        true
+      );
+      assert.equal(error.message.includes("palette.background.paper"), true);
+      return true;
+    }
+  );
+
+  assert.equal(generationStarted, false);
+});
+
 test("CodegenGenerateService derives storybook-first customer profile mappings from component.match_report", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createMinimalIr();
