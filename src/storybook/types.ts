@@ -620,6 +620,7 @@ export type ComponentMatchResolvedDiagnosticSeverity = "warning" | "error";
 
 export type ComponentMatchResolvedDiagnosticCode =
   | "component_api_children_unsupported"
+  | "component_api_prop_mapping_collision"
   | "component_api_prop_unsupported"
   | "component_api_slot_unsupported";
 
