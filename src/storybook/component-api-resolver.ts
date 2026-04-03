@@ -188,7 +188,7 @@ const isObjectLikeValue = (value: StorybookCatalogJsonValue | undefined): boolea
     const parsed: unknown = JSON.parse(trimmed);
     return typeof parsed === "object" && parsed !== null;
   } catch {
-    return trimmed === "{}" || trimmed === "[]";
+    return false;
   }
 };
 
@@ -263,7 +263,7 @@ const inferPropKind = ({
       return "number";
     }
     if (values.every((value) => typeof value === "string")) {
-      return values.length > 1 ? "enum" : "string";
+      return "enum";
     }
   }
   return "unknown";
@@ -355,7 +355,6 @@ const toAllowedTargetPropNames = ({
 const getThemeComponentAliases = ({ componentKey }: { componentKey: string }): string[] => {
   const aliases = new Set<string>([`Mui${componentKey}`]);
   if (componentKey === "Icon") {
-    aliases.add("MuiIcon");
     aliases.add("MuiSvgIcon");
   }
   return [...aliases].sort(compareStrings);
@@ -432,7 +431,11 @@ const addObservedValue = ({
     });
     return;
   }
-  existing.kind = existing.kind === "unknown" ? kind : existing.kind;
+  existing.kind = existing.kind === "unknown"
+    ? kind
+    : existing.kind === "string" && kind === "enum"
+      ? "enum"
+      : existing.kind;
   if (value !== undefined) {
     existing.values = sortUniquePrimitiveValues([...existing.values, value]);
   }
@@ -442,17 +445,26 @@ const toInversePropMappings = ({
   resolvedImport
 }: {
   resolvedImport: ComponentMatchReportResolvedImport | undefined;
-}): Map<string, string> => {
+}): { mappings: Map<string, string>; collisions: Array<{ targetProp: string; droppedSourceProp: string; keptSourceProp: string }> } => {
   const result = new Map<string, string>();
+  const collisions: Array<{ targetProp: string; droppedSourceProp: string; keptSourceProp: string }> = [];
   for (const [sourceProp, rawTargetProp] of Object.entries(resolvedImport?.propMappings ?? {})) {
     const targetProp = normalizePropName(rawTargetProp);
     const normalizedSourceProp = normalizePropName(sourceProp);
-    if (!targetProp || !normalizedSourceProp || result.has(targetProp)) {
+    if (!targetProp || !normalizedSourceProp) {
+      continue;
+    }
+    if (result.has(targetProp)) {
+      collisions.push({
+        targetProp,
+        droppedSourceProp: normalizedSourceProp,
+        keptSourceProp: result.get(targetProp)!
+      });
       continue;
     }
     result.set(targetProp, normalizedSourceProp);
   }
-  return result;
+  return { mappings: result, collisions };
 };
 
 const buildAllowedPropMetadata = ({
@@ -595,7 +607,7 @@ export const resolveComponentApiContract = ({
   });
   const allowedTargetPropSet = new Set(allowedTargetProps);
   const defaultsByName = new Map(themeDefaultProps.map((entry) => [entry.name, entry] as const));
-  const inversePropMappings = toInversePropMappings({
+  const { mappings: inversePropMappings, collisions: propMappingCollisions } = toInversePropMappings({
     resolvedImport
   });
   const observedSourceProps = new Map<string, ObservedSourceProp>();
@@ -678,6 +690,15 @@ export const resolveComponentApiContract = ({
   }
 
   const diagnostics: ComponentMatchResolvedContractDiagnostic[] = [];
+  for (const collision of propMappingCollisions) {
+    diagnostics.push({
+      severity: "warning",
+      code: "component_api_prop_mapping_collision",
+      message: `Prop mapping collision: both '${collision.keptSourceProp}' and '${collision.droppedSourceProp}' map to target prop '${collision.targetProp}'. Only '${collision.keptSourceProp}' is used.`,
+      sourceProp: collision.droppedSourceProp,
+      targetProp: collision.targetProp
+    });
+  }
   const props: ComponentMatchResolvedProps["props"] = [];
   const omittedProps: ComponentMatchResolvedProps["omittedProps"] = [];
   const omittedDefaults: ComponentMatchResolvedProps["omittedDefaults"] = [];

@@ -390,26 +390,43 @@ test("resolveComponentApiContract emits slot unsupported diagnostic", () => {
 });
 
 test("resolveComponentApiContract suppresses redundant defaults from theme", () => {
+  const lightScheme = {
+    themeId: "light",
+    palette: {
+      primary: { main: "#000" },
+      secondary: { main: "#fff" },
+      background: { default: "#fff", paper: "#fff" },
+      text: { primary: "#000", secondary: "#666" },
+      divider: "#ccc",
+      error: { main: "#f00" },
+      warning: { main: "#fa0" },
+      info: { main: "#0af" },
+      success: { main: "#0f0" }
+    },
+    spacingBase: 8,
+    borderRadius: 4,
+    typography: {
+      fontFamily: "Roboto",
+      base: { fontSizePx: 14, fontWeight: 400, lineHeight: 1.5, letterSpacing: "0em" },
+      variants: {}
+    },
+    components: {
+      MuiButton: {
+        defaultProps: { variant: "contained", size: "medium" }
+      }
+    }
+  };
+
   const resolvedStorybookTheme: ResolvedStorybookTheme = {
-    brandId: "brand-1",
-    brandName: "TestBrand",
-    brandTheme: { primaryColor: "#000", secondaryColor: "#fff" },
-    light: {
-      themeId: "light",
-      components: {
-        MuiButton: {
-          defaultProps: { variant: "contained", size: "medium" }
-        }
-      },
-      palette: {},
-      typography: {},
-      spacing: {},
-      shape: {},
-      shadows: {},
-      transitions: {},
-      zIndex: {},
-      breakpoints: {},
-      diagnostics: []
+    customerBrandId: "brand-1",
+    brandMappingId: "mapping-1",
+    includeThemeModeToggle: false,
+    light: lightScheme,
+    tokensDocument: {
+      customerBrandId: "brand-1",
+      brandMappingId: "mapping-1",
+      includeThemeModeToggle: false,
+      light: lightScheme
     }
   };
 
@@ -471,6 +488,62 @@ test("resolveComponentApiContract applies propMappings to map source to target",
     `Expected prop 'inputSize' but found: ${JSON.stringify(result.resolvedProps.props)}`
   );
   assert.equal(mappedProp.targetProp, "size");
+});
+
+test("resolveComponentApiContract emits diagnostic for prop mapping collision", () => {
+  const result = resolveComponentApiContract({
+    figmaFamily: createFigmaFamily({
+      variantProperties: [
+        { property: "Type", values: ["outlined"] },
+        { property: "Kind", values: ["filled"] }
+      ]
+    }),
+    libraryResolution: {
+      status: "resolved_import",
+      componentKey: "TextField",
+      import: createResolvedImport({
+        propMappings: {
+          Type: "variant",
+          Kind: "variant"
+        }
+      })
+    },
+    storybookFamily: createStorybookFamily({
+      propKeys: ["variant", "children"]
+    })
+  });
+
+  const collisionDiag = result.resolvedProps.diagnostics.find(
+    (d) => d.code === "component_api_prop_mapping_collision"
+  );
+  assert.ok(collisionDiag, "Expected a prop mapping collision diagnostic");
+  assert.equal(collisionDiag.severity, "warning");
+  assert.equal(collisionDiag.targetProp, "variant");
+});
+
+test("resolveComponentApiContract treats single-value string variant as enum with allowedValues", () => {
+  const result = resolveComponentApiContract({
+    figmaFamily: createFigmaFamily({
+      variantProperties: [
+        { property: "variant", values: ["text"] }
+      ]
+    }),
+    libraryResolution: {
+      status: "resolved_import",
+      componentKey: "Button",
+      import: createResolvedImport()
+    },
+    storybookFamily: createStorybookFamily({
+      propKeys: ["variant", "children"]
+    })
+  });
+
+  const variantProp = result.resolvedApi.allowedProps.find(
+    (p) => p.name === "variant"
+  );
+  assert.ok(variantProp);
+  assert.equal(variantProp.kind, "enum");
+  assert.deepEqual(variantProp.allowedValues, ["text"]);
 });
 
 test("resolveComponentApiContract normalizes Figma 'type' variant key to 'variant'", () => {
