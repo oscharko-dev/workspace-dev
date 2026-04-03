@@ -117,6 +117,10 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   });
 
   assert.deepEqual(codegenEntry?.artifacts?.reads, [STAGE_ARTIFACT_KEYS.designIr]);
+  assert.deepEqual(await codegenEntry?.resolveArtifacts?.(context), {
+    reads: [],
+    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution]
+  });
   assert.deepEqual(
     plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.writes,
     [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
@@ -145,6 +149,15 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   assert.deepEqual(validateEntry?.artifacts?.reads, [
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.generationDiffContext
+  ]);
+  assert.deepEqual(validateEntry?.artifacts?.optionalReads, [
+    STAGE_ARTIFACT_KEYS.storybookCatalog,
+    STAGE_ARTIFACT_KEYS.storybookEvidence,
+    STAGE_ARTIFACT_KEYS.storybookTokens,
+    STAGE_ARTIFACT_KEYS.storybookThemes,
+    STAGE_ARTIFACT_KEYS.storybookComponents,
+    STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    STAGE_ARTIFACT_KEYS.componentMatchReport
   ]);
   assert.deepEqual(validateEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.validationSummary,
@@ -243,6 +256,15 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.generatedProject,
     STAGE_ARTIFACT_KEYS.generationDiffContext
   ]);
+  assert.deepEqual(validateEntry?.artifacts?.optionalReads, [
+    STAGE_ARTIFACT_KEYS.storybookCatalog,
+    STAGE_ARTIFACT_KEYS.storybookEvidence,
+    STAGE_ARTIFACT_KEYS.storybookTokens,
+    STAGE_ARTIFACT_KEYS.storybookThemes,
+    STAGE_ARTIFACT_KEYS.storybookComponents,
+    STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    STAGE_ARTIFACT_KEYS.componentMatchReport
+  ]);
   assert.deepEqual(validateEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.validationSummary,
     STAGE_ARTIFACT_KEYS.validationSummaryFile
@@ -253,6 +275,52 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
   );
   assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
   assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
+});
+
+test("submission pipeline codegen contract requires storybook-first artifacts when Storybook input is active", async () => {
+  const plan = buildSubmissionPipelinePlan();
+  const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
+  const context = await createPlanContext({
+    requestedStorybookStaticDir: "storybook-static/customer",
+    resolvedStorybookStaticDir: "/tmp/storybook-static/customer"
+  });
+
+  assert.deepEqual(await codegenEntry?.resolveArtifacts?.(context), {
+    reads: [
+      STAGE_ARTIFACT_KEYS.storybookTokens,
+      STAGE_ARTIFACT_KEYS.storybookThemes,
+      STAGE_ARTIFACT_KEYS.componentMatchReport
+    ],
+    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution]
+  });
+});
+
+test("submission pipeline codegen contract requires figma.analysis for pattern component mappings", async () => {
+  const plan = buildSubmissionPipelinePlan();
+  const codegenEntry = plan.find((entry) => entry.service.stageName === "codegen.generate");
+  const context = await createPlanContext({
+    input: {
+      enableGitPr: false,
+      figmaSourceMode: "local_json",
+      figmaJsonPath: "/tmp/local.json",
+      componentMappings: [
+        {
+          boardKey: "board-key",
+          nodeNamePattern: "Primary Button",
+          componentName: "CustomerButton",
+          importPath: "@customer/components",
+          priority: 1,
+          source: "local_override",
+          enabled: true
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(await codegenEntry?.resolveArtifacts?.(context), {
+    reads: [STAGE_ARTIFACT_KEYS.figmaAnalysis],
+    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution]
+  });
 });
 
 test("pipeline plans keep the canonical seven stages without introducing a customer_storybook plan", () => {

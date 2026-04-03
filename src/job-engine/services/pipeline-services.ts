@@ -1,7 +1,8 @@
-import type { WorkspaceJobInput, WorkspaceGitPrStatus } from "../../contracts/index.js";
+import type { WorkspaceComponentMappingRule, WorkspaceJobInput, WorkspaceGitPrStatus } from "../../contracts/index.js";
 import type { PipelineStagePlanEntry } from "../pipeline/orchestrator.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import type { PipelineExecutionContext } from "../pipeline/context.js";
+import type { StageArtifactContract } from "../pipeline/stage-service.js";
 import { CodegenGenerateService } from "./codegen-generate-service.js";
 import type { CodegenGenerateStageInput } from "./codegen-generate-service.js";
 import { FigmaSourceService } from "./figma-source-service.js";
@@ -30,6 +31,26 @@ const buildFigmaSourceInput = (context: PipelineExecutionContext): FigmaSourceSt
   };
 };
 
+const resolveComponentMappingsFromContext = (
+  context: PipelineExecutionContext
+): WorkspaceComponentMappingRule[] | undefined => {
+  if (context.mode === "submission") {
+    return context.input?.componentMappings;
+  }
+  if (context.regenerationInput?.componentMappings !== undefined) {
+    return context.regenerationInput.componentMappings;
+  }
+  return context.sourceJob?.request.componentMappings;
+};
+
+const hasPatternComponentMappings = ({
+  componentMappings
+}: {
+  componentMappings: WorkspaceComponentMappingRule[] | undefined;
+}): boolean => {
+  return componentMappings?.some((rule) => !rule.nodeId?.trim()) ?? false;
+};
+
 const buildCodegenInput = ({
   boardKeySeed,
   context
@@ -38,17 +59,35 @@ const buildCodegenInput = ({
   context: PipelineExecutionContext;
 }): CodegenGenerateStageInput => {
   const input = context.input;
+  const componentMappings = resolveComponentMappingsFromContext(context);
   return {
     boardKeySeed,
     ...(input?.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
     ...(input?.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
-    ...(context.mode === "submission"
-      ? (input?.componentMappings !== undefined ? { componentMappings: input.componentMappings } : {})
-      : (context.regenerationInput?.componentMappings !== undefined
-          ? { componentMappings: context.regenerationInput.componentMappings }
-          : context.sourceJob?.request.componentMappings !== undefined
-            ? { componentMappings: context.sourceJob.request.componentMappings }
-            : {}))
+    ...(componentMappings !== undefined ? { componentMappings } : {})
+  };
+};
+
+const resolveCodegenArtifactContract = (context: PipelineExecutionContext): StageArtifactContract => {
+  const reads: NonNullable<StageArtifactContract["reads"]> = [];
+  const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
+  if (isStorybookFirst) {
+    reads.push(
+      STAGE_ARTIFACT_KEYS.storybookTokens,
+      STAGE_ARTIFACT_KEYS.storybookThemes,
+      STAGE_ARTIFACT_KEYS.componentMatchReport
+    );
+  }
+  if (
+    hasPatternComponentMappings({
+      componentMappings: resolveComponentMappingsFromContext(context)
+    })
+  ) {
+    reads.push(STAGE_ARTIFACT_KEYS.figmaAnalysis);
+  }
+  return {
+    reads,
+    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution]
   };
 };
 
@@ -111,6 +150,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
     },
     {
       service: CodegenGenerateService,
+      resolveArtifacts: resolveCodegenArtifactContract,
       resolveInput: (context) =>
         buildCodegenInput({
           context,
@@ -130,6 +170,15 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
+        optionalReads: [
+          STAGE_ARTIFACT_KEYS.storybookCatalog,
+          STAGE_ARTIFACT_KEYS.storybookEvidence,
+          STAGE_ARTIFACT_KEYS.storybookTokens,
+          STAGE_ARTIFACT_KEYS.storybookThemes,
+          STAGE_ARTIFACT_KEYS.storybookComponents,
+          STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+          STAGE_ARTIFACT_KEYS.componentMatchReport
+        ],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }
@@ -202,6 +251,7 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
     },
     {
       service: CodegenGenerateService,
+      resolveArtifacts: resolveCodegenArtifactContract,
       resolveInput: (context) =>
         buildCodegenInput({
           context,
@@ -222,6 +272,15 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: ValidateProjectService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
+        optionalReads: [
+          STAGE_ARTIFACT_KEYS.storybookCatalog,
+          STAGE_ARTIFACT_KEYS.storybookEvidence,
+          STAGE_ARTIFACT_KEYS.storybookTokens,
+          STAGE_ARTIFACT_KEYS.storybookThemes,
+          STAGE_ARTIFACT_KEYS.storybookComponents,
+          STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+          STAGE_ARTIFACT_KEYS.componentMatchReport
+        ],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
         optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
       }

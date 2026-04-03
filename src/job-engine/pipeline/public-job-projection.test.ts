@@ -73,6 +73,10 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const figmaJsonFile = path.join(jobDir, "figma.json");
   const reproDir = path.join(jobDir, "repro");
   const storybookTokensFile = path.join(jobDir, "storybook", "public", "tokens.json");
+  const storybookThemesFile = path.join(jobDir, "storybook", "public", "themes.json");
+  const storybookComponentsFile = path.join(jobDir, "storybook", "public", "components.json");
+  const figmaLibraryResolutionFile = path.join(jobDir, "storybook", "public", "figma-library-resolution.json");
+  const componentMatchReportFile = path.join(jobDir, "storybook", "public", "component-match-report.json");
   const validationSummaryFile = path.join(jobDir, "validation-summary.json");
 
   await artifactStore.setPath({
@@ -104,6 +108,26 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.storybookTokens,
     stage: "ir.derive",
     absolutePath: storybookTokensFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "ir.derive",
+    absolutePath: storybookThemesFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookComponents,
+    stage: "ir.derive",
+    absolutePath: storybookComponentsFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+    stage: "ir.derive",
+    absolutePath: figmaLibraryResolutionFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportFile
   });
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
@@ -139,10 +163,10 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.artifacts.componentManifestFile, undefined);
   assert.equal(job.artifacts.generationDiffFile, undefined);
   assert.equal(job.artifacts.storybookTokensFile, storybookTokensFile);
-  assert.equal(job.artifacts.storybookThemesFile, undefined);
-  assert.equal(job.artifacts.storybookComponentsFile, undefined);
-  assert.equal(job.artifacts.figmaLibraryResolutionFile, undefined);
-  assert.equal(job.artifacts.componentMatchReportFile, undefined);
+  assert.equal(job.artifacts.storybookThemesFile, storybookThemesFile);
+  assert.equal(job.artifacts.storybookComponentsFile, storybookComponentsFile);
+  assert.equal(job.artifacts.figmaLibraryResolutionFile, figmaLibraryResolutionFile);
+  assert.equal(job.artifacts.componentMatchReportFile, componentMatchReportFile);
   assert.equal(job.artifacts.validationSummaryFile, validationSummaryFile);
   assert.deepEqual(job.generationDiff, { summary: "fresh diff" });
   assert.deepEqual(job.gitPr, {

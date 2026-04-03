@@ -126,6 +126,10 @@ Optional Git/PR input:
 - `projectName` (optional)
 - `targetPath` (optional, defaults to `figma-generated`)
 
+Optional storybook-first input:
+
+- `storybookStaticDir` (optional local filesystem path to a Storybook static build; relative paths resolve from the workspace root)
+
 Optional customer profile input:
 
 - `customerProfilePath` (optional local filesystem path; relative paths resolve from the workspace root)
