@@ -1157,23 +1157,6 @@ const buildLibraryResolutionEntry = ({
     });
   }
 
-  if (figmaSourceMode === "local_json" && externalComponent.componentKey && !componentResult) {
-    issues.push({
-      code: "E_LIBRARY_OFFLINE_CACHE_MISS",
-      message:
-        `No cached published component metadata is available for '${externalComponent.componentKey}' in local_json mode.`,
-      scope: "cache"
-    });
-  }
-  if (figmaSourceMode === "local_json" && externalComponent.componentSetKey && !componentSetResult) {
-    issues.push({
-      code: "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS",
-      message:
-        `No cached published component-set metadata is available for '${externalComponent.componentSetKey}' in local_json mode.`,
-      scope: "cache"
-    });
-  }
-
   const publishedComponent = componentResult?.status === "ok" ? componentResult.meta : undefined;
   const publishedComponentSet = componentSetResult?.status === "ok" ? componentSetResult.meta : undefined;
   const canonicalFamilyName = publishedComponentSet?.name ?? publishedComponent?.name ?? externalComponent.familyName;
