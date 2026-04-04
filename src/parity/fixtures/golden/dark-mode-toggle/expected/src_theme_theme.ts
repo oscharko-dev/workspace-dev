@@ -23,8 +23,7 @@ export const appTheme = extendTheme({
         focus: "#191c231f"
       }
     }
-    }
-,
+    },
     dark: {
       palette: {
       mode: "dark",

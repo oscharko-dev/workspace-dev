@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
 import { resolveStorybookTheme } from "./theme-resolver.js";
+import { storybookThemeFile } from "../parity/templates/theme-template.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY, type StorybookPublicThemesArtifact, type StorybookPublicTokensArtifact } from "./types.js";
 
 const createCustomerProfile = () => {
@@ -345,6 +346,28 @@ test("resolveStorybookTheme resolves a valid light and dark brand mapping and ke
   assert.equal(resolved.tokensDocument.light.themeId, "sparkasse-light");
 });
 
+test("resolveStorybookTheme extracts component default-props from Storybook tokens", () => {
+  const tokensArtifact = createTokensArtifact({ includeDark: false });
+  (tokensArtifact.theme["sparkasse-light"] as Record<string, unknown>)["elevation"] = {
+    components: {
+      "mui-card": {
+        "default-props": {
+          elevation: { $type: "number", $value: 0 }
+        }
+      }
+    }
+  };
+
+  const resolved = resolveStorybookTheme({
+    customerBrandId: "sparkasse-light-only",
+    customerProfile: createCustomerProfile(),
+    tokensArtifact,
+    themesArtifact: createThemesArtifact({ includeDark: false })
+  });
+
+  assert.equal(resolved.light.components.MuiCard?.defaultProps?.elevation, 0);
+});
+
 test("resolveStorybookTheme fails hard when the selected brand mapping is missing", () => {
   assert.throws(
     () =>
@@ -506,4 +529,45 @@ test("resolveStorybookTheme rejects negative dimension values in spacing and bor
     (error: Error & { code?: string }) =>
       error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_MISSING" || error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_INVALID"
   );
+});
+
+test("storybookThemeFile produces valid theme output for light-and-dark resolved theme", () => {
+  const resolved = resolveStorybookTheme({
+    customerBrandId: "sk",
+    customerProfile: createCustomerProfile(),
+    tokensArtifact: createTokensArtifact(),
+    themesArtifact: createThemesArtifact()
+  });
+
+  const file = storybookThemeFile({
+    resolvedTheme: resolved
+  });
+
+  assert.equal(file.path, "src/theme/theme.ts");
+  assert.ok(file.content.includes('import { extendTheme } from "@mui/material/styles"'));
+  assert.ok(file.content.includes("colorSchemes:"));
+  assert.ok(file.content.includes('mode: "light"'));
+  assert.ok(file.content.includes('mode: "dark"'));
+  assert.ok(file.content.includes("#dd0000"));
+  assert.ok(file.content.includes("Brand Sans"));
+  assert.ok(!file.content.includes("\n,\n"), "comma must not appear on its own line");
+  assert.ok(!file.content.includes("}\n\n  },"), "no extra blank line before closing colorSchemes");
+});
+
+test("storybookThemeFile produces valid theme output for light-only resolved theme", () => {
+  const resolved = resolveStorybookTheme({
+    customerBrandId: "sparkasse-light-only",
+    customerProfile: createCustomerProfile(),
+    tokensArtifact: createTokensArtifact({ includeDark: false }),
+    themesArtifact: createThemesArtifact({ includeDark: false })
+  });
+
+  const file = storybookThemeFile({
+    resolvedTheme: resolved
+  });
+
+  assert.equal(file.path, "src/theme/theme.ts");
+  assert.ok(file.content.includes('mode: "light"'));
+  assert.ok(!file.content.includes('mode: "dark"'));
+  assert.ok(!file.content.includes("}\n\n  },"), "no extra blank line in light-only output");
 });
