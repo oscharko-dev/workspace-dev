@@ -298,7 +298,7 @@ const IMPLICIT_ALLOWED_COMPONENT_PROP_NAMES = new Set<string>(["key", "ref"]);
 const HEX_COLOR_PATTERN = /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/iu;
 const COLOR_FUNCTION_PATTERN = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/iu;
 const NAMED_COLOR_PATTERN =
-  /^(?:black|blue|currentcolor|gray|green|grey|red|transparent|white)$/iu;
+  /^(?:aqua|beige|bisque|black|blue|brown|coral|cornsilk|crimson|cyan|darkblue|darkgray|darkgreen|darkgrey|darkred|dimgray|dimgrey|fuchsia|gold|goldenrod|gray|green|grey|hotpink|indigo|ivory|khaki|lavender|lime|limegreen|magenta|maroon|midnightblue|mintcream|navy|olive|orange|orangered|orchid|peru|pink|plum|purple|red|salmon|seagreen|sienna|silver|skyblue|slategray|slategrey|steelblue|tan|teal|tomato|turquoise|violet|wheat|white|yellow|yellowgreen|currentcolor|transparent)$/iu;
 const SPACING_UNIT_PATTERN = /^-?(?:\d+|\d*\.\d+)(?:px|rem|em|vh|vw)$/iu;
 const TYPOGRAPHY_KEYWORD_PATTERN = /^(?:inherit|initial|normal|revert|unset)$/iu;
 const TYPOGRAPHY_TOKEN_REFERENCE_PATTERN = /^(?:theme\.|tokens?\.|var\(--)/iu;
