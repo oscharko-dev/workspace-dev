@@ -171,7 +171,8 @@ const addSignalReference = ({
 };
 
 const resolveTier = (title: string): string => {
-  return title.split("/")[0] ?? title;
+  const segment = title.split("/").map((s) => s.trim()).find((s) => s.length > 0);
+  return segment ?? "(untitled)";
 };
 
 const resolveDocsAttachment = (entry: StorybookIndexEntry): StorybookCatalogDocsAttachment => {
@@ -223,7 +224,12 @@ const resolveDocsRouteEntryId = (value: string): string | undefined => {
     return undefined;
   }
 
-  const candidate = decodeURIComponent(normalizedPath.slice("/docs/".length)).trim();
+  let candidate: string;
+  try {
+    candidate = decodeURIComponent(normalizedPath.slice("/docs/".length)).trim();
+  } catch {
+    return undefined;
+  }
   return candidate.length > 0 ? candidate : undefined;
 };
 

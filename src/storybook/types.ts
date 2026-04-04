@@ -450,6 +450,7 @@ export type ComponentMatchFallbackReason =
   | "used_semantic_bucket"
   | "used_file_key_design_link"
   | "used_reference_only_docs_tiebreaker"
+  | "used_customer_profile_tier_priority_tiebreaker"
   | "selected_variant_by_overlap"
   | "selected_variant_by_attached_story_tiebreak"
   | "selected_variant_by_entry_id_tiebreak"

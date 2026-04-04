@@ -2039,3 +2039,118 @@ test("buildComponentMatchReportArtifact resolves sanitized component APIs across
   assert.equal(typographyEntry?.match.status, "matched");
   assert.equal(typographyEntry?.match.confidence !== "none", true);
 });
+
+test("buildComponentMatchReportArtifact uses customer profile tierPriority as tiebreaker when candidate scores are identical", () => {
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({
+        familyKey: "card-family",
+        familyName: "Card"
+      })
+    ]
+  });
+  const entries = [
+    createCatalogEntry({
+      id: "reactui-card--default",
+      title: "ReactUI/Card",
+      name: "Default",
+      familyId: "family-reactui-card",
+      componentPath: "./src/reactui/Card.tsx"
+    }),
+    createCatalogEntry({
+      id: "components-card--default",
+      title: "Components/Card",
+      name: "Default",
+      familyId: "family-components-card",
+      componentPath: "./src/components/Card.tsx"
+    })
+  ];
+  const catalogArtifact = createCatalogArtifact({
+    entries,
+    families: [
+      createCatalogFamily({
+        id: "family-reactui-card",
+        title: "ReactUI/Card",
+        name: "Card",
+        entryIds: ["reactui-card--default"],
+        storyEntryIds: ["reactui-card--default"],
+        componentPath: "./src/reactui/Card.tsx"
+      }),
+      createCatalogFamily({
+        id: "family-components-card",
+        title: "Components/Card",
+        name: "Card",
+        entryIds: ["components-card--default"],
+        storyEntryIds: ["components-card--default"],
+        componentPath: "./src/components/Card.tsx"
+      })
+    ]
+  });
+  const evidenceArtifact = createEvidenceArtifact({
+    evidence: [
+      createEvidenceItem({
+        id: "ev-reactui-card-componentpath",
+        type: "story_componentPath",
+        entryId: "reactui-card--default"
+      }),
+      createEvidenceItem({
+        id: "ev-components-card-componentpath",
+        type: "story_componentPath",
+        entryId: "components-card--default"
+      })
+    ]
+  });
+  const componentsArtifact = createComponentsArtifact({
+    components: [
+      { name: "Card", title: "ReactUI/Card", componentPath: "./src/reactui/Card.tsx", propKeys: [] },
+      { name: "Card", title: "Components/Card", componentPath: "./src/components/Card.tsx", propKeys: [] }
+    ]
+  });
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 20,
+          aliases: { figma: ["Components"], storybook: ["components"], code: ["@customer/components"] }
+        },
+        {
+          id: "ReactUI",
+          tierPriority: 5,
+          aliases: { figma: ["ReactUI"], storybook: ["reactui"], code: ["@customer/react-ui"] }
+        }
+      ],
+      brandMappings: [
+        { id: "sparkasse", aliases: ["sparkasse"], brandTheme: "sparkasse", storybookThemes: { light: "sparkasse-light" } }
+      ],
+      imports: { components: {}, icons: {} },
+      fallbacks: { mui: { defaultPolicy: "deny" }, icons: { defaultPolicy: "deny" } },
+      template: { dependencies: {} },
+      strictness: { match: "warn", token: "off", import: "error" }
+    }
+  });
+  assert.notEqual(customerProfile, undefined);
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact,
+    evidenceArtifact,
+    componentsArtifact,
+    resolvedCustomerProfile: customerProfile!,
+    resolvedStorybookTheme: createResolvedStorybookThemeFixture()
+  });
+
+  const cardEntry = artifact.entries.find((entry) => entry.figma.familyName === "Card");
+  assert.notEqual(cardEntry, undefined);
+  assert.equal(
+    cardEntry?.storybookFamily?.tier,
+    "ReactUI",
+    "ReactUI (tierPriority 5) should win over Components (tierPriority 20) despite alphabetical order"
+  );
+  assert.equal(
+    cardEntry?.fallbackReasons.includes("used_customer_profile_tier_priority_tiebreaker"),
+    true,
+    "Expected tier priority tiebreaker to be recorded in fallback reasons"
+  );
+});

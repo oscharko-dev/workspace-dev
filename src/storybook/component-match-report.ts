@@ -1023,18 +1023,31 @@ const scoreCandidateFamily = ({
   };
 };
 
-const compareCandidateScores = (left: CandidateScore, right: CandidateScore): number => {
-  if (left.totalScore !== right.totalScore) {
-    return right.totalScore - left.totalScore;
-  }
-  if (left.primaryScore !== right.primaryScore) {
-    return right.primaryScore - left.primaryScore;
-  }
-  const byTitle = left.family.title.localeCompare(right.family.title);
-  if (byTitle !== 0) {
-    return byTitle;
-  }
-  return left.family.id.localeCompare(right.family.id);
+const buildCompareCandidateScores = ({
+  tierPriorityByAlias
+}: {
+  tierPriorityByAlias?: ReadonlyMap<string, number>;
+}): ((left: CandidateScore, right: CandidateScore) => number) => {
+  return (left, right) => {
+    if (left.totalScore !== right.totalScore) {
+      return right.totalScore - left.totalScore;
+    }
+    if (left.primaryScore !== right.primaryScore) {
+      return right.primaryScore - left.primaryScore;
+    }
+    if (tierPriorityByAlias && tierPriorityByAlias.size > 0) {
+      const leftPriority = tierPriorityByAlias.get(left.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+      const rightPriority = tierPriorityByAlias.get(right.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+    }
+    const byTitle = left.family.title.localeCompare(right.family.title);
+    if (byTitle !== 0) {
+      return byTitle;
+    }
+    return left.family.id.localeCompare(right.family.id);
+  };
 };
 
 const toConfidenceScore = (totalScore: number): number => Math.max(0, Math.min(MAX_CONFIDENCE_SCORE, totalScore));
@@ -1525,6 +1538,19 @@ export const buildComponentMatchReportArtifact = ({
     evidenceArtifact
   });
 
+  const tierPriorityByAlias = new Map<string, number>();
+  if (resolvedCustomerProfile) {
+    for (const family of resolvedCustomerProfile.families) {
+      const priority = family.tierPriority;
+      tierPriorityByAlias.set(family.id.toLowerCase(), priority);
+      for (const source of ["figma", "storybook", "code"] as const) {
+        for (const alias of family.aliases[source]) {
+          tierPriorityByAlias.set(alias.toLowerCase(), priority);
+        }
+      }
+    }
+  }
+
   const entries = [...figmaAnalysis.componentFamilies]
     .sort((left, right) => {
       const byName = left.familyName.localeCompare(right.familyName);
@@ -1546,9 +1572,22 @@ export const buildComponentMatchReportArtifact = ({
             lookup
           })
         )
-        .sort(compareCandidateScores);
+        .sort(buildCompareCandidateScores({ tierPriorityByAlias }));
       const topCandidate = candidates[0];
       const runnerUp = candidates[1];
+      if (
+        topCandidate &&
+        runnerUp &&
+        topCandidate.totalScore === runnerUp.totalScore &&
+        topCandidate.primaryScore === runnerUp.primaryScore &&
+        tierPriorityByAlias.size > 0
+      ) {
+        const topPriority = tierPriorityByAlias.get(topCandidate.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+        const runnerUpPriority = tierPriorityByAlias.get(runnerUp.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+        if (topPriority !== runnerUpPriority) {
+          topCandidate.fallbackReasons.push("used_customer_profile_tier_priority_tiebreaker");
+        }
+      }
       const match = resolveMatchStatus({
         topCandidate,
         runnerUp
