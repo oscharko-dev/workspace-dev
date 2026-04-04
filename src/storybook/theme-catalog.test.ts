@@ -1360,3 +1360,71 @@ test("buildStorybookThemeCatalog ignores reference_only docs evidence for token 
   assert.deepEqual(withReferenceOnlyEvidence.tokenGraph, baseline.tokenGraph);
   assert.deepEqual(withReferenceOnlyEvidence.diagnostics, baseline.diagnostics);
 });
+
+test("buildStorybookThemeCatalog extracts named CSS colors and HSL values from authoritative palette entries", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-named-colors-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-named-colors.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = createTheme({
+        spacing: 8,
+        palette: {
+          primary: { main: "#ff0000", contrastText: "white" },
+          secondary: { main: "hsl(240, 100%, 50%)", contrastText: "black" },
+          text: { primary: "#222222" },
+          background: { default: "ivory", paper: "white" }
+        },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(bundlePath)]
+  });
+
+  const contrastText = catalog.tokenGraph.find(
+    (token) => token.path.join(".") === "theme.default.color.primary.contrast-text"
+  );
+  assert.equal(contrastText?.tokenType, "color");
+  assert.deepEqual(contrastText?.value, {
+    colorSpace: "srgb",
+    components: [1, 1, 1]
+  });
+
+  const secondaryMain = catalog.tokenGraph.find(
+    (token) => token.path.join(".") === "theme.default.color.secondary.main"
+  );
+  assert.equal(secondaryMain?.tokenType, "color");
+  assert.ok(secondaryMain?.value);
+  const secondaryValue = secondaryMain?.value as { colorSpace: string; components: number[] };
+  assert.equal(secondaryValue.colorSpace, "srgb");
+  assert.ok(secondaryValue.components[2]! > 0.99, "blue channel should be ~1.0 for hsl(240, 100%, 50%)");
+  assert.ok(secondaryValue.components[0]! < 0.01, "red channel should be ~0 for hsl(240, 100%, 50%)");
+
+  const blackToken = catalog.tokenGraph.find(
+    (token) => token.path.join(".") === "theme.default.color.secondary.contrast-text"
+  );
+  assert.equal(blackToken?.tokenType, "color");
+  assert.deepEqual(blackToken?.value, {
+    colorSpace: "srgb",
+    components: [0, 0, 0]
+  });
+
+  const bgDefault = catalog.tokenGraph.find(
+    (token) => token.path.join(".") === "theme.default.color.background.default"
+  );
+  assert.equal(bgDefault?.tokenType, "color");
+
+  assert.equal(catalog.diagnostics.filter((d) => d.severity === "error").length, 0);
+});

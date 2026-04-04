@@ -60,6 +60,71 @@ const FONT_CONTEXT_PREFIX = "font";
 const STORYBACKFILL_CONTEXT_PREFIX = "stories";
 const CSS_CONTEXT_PREFIX = "css";
 
+const NAMED_CSS_COLORS: ReadonlyMap<string, { components: [number, number, number]; alpha?: number }> = new Map([
+  ["transparent", { components: [0, 0, 0], alpha: 0 }],
+  ["aqua", { components: [0, 1, 1] }],
+  ["beige", { components: [0.9607843137254902, 0.9607843137254902, 0.8627450980392157] }],
+  ["bisque", { components: [1, 0.8941176470588236, 0.7686274509803922] }],
+  ["black", { components: [0, 0, 0] }],
+  ["blue", { components: [0, 0, 1] }],
+  ["brown", { components: [0.6470588235294118, 0.16470588235294117, 0.16470588235294117] }],
+  ["coral", { components: [1, 0.4980392156862745, 0.3137254901960784] }],
+  ["cornsilk", { components: [1, 0.9725490196078431, 0.8627450980392157] }],
+  ["crimson", { components: [0.8627450980392157, 0.0784313725490196, 0.23529411764705882] }],
+  ["cyan", { components: [0, 1, 1] }],
+  ["darkblue", { components: [0, 0, 0.5450980392156862] }],
+  ["darkgray", { components: [0.6627450980392157, 0.6627450980392157, 0.6627450980392157] }],
+  ["darkgreen", { components: [0, 0.39215686274509803, 0] }],
+  ["darkgrey", { components: [0.6627450980392157, 0.6627450980392157, 0.6627450980392157] }],
+  ["darkred", { components: [0.5450980392156862, 0, 0] }],
+  ["dimgray", { components: [0.4117647058823529, 0.4117647058823529, 0.4117647058823529] }],
+  ["dimgrey", { components: [0.4117647058823529, 0.4117647058823529, 0.4117647058823529] }],
+  ["fuchsia", { components: [1, 0, 1] }],
+  ["gold", { components: [1, 0.8431372549019608, 0] }],
+  ["goldenrod", { components: [0.8549019607843137, 0.6470588235294118, 0.12549019607843137] }],
+  ["gray", { components: [0.5019607843137255, 0.5019607843137255, 0.5019607843137255] }],
+  ["green", { components: [0, 0.5019607843137255, 0] }],
+  ["grey", { components: [0.5019607843137255, 0.5019607843137255, 0.5019607843137255] }],
+  ["hotpink", { components: [1, 0.4117647058823529, 0.7058823529411765] }],
+  ["indigo", { components: [0.29411764705882354, 0, 0.5098039215686275] }],
+  ["ivory", { components: [1, 1, 0.9411764705882353] }],
+  ["khaki", { components: [0.9411764705882353, 0.9019607843137255, 0.5490196078431373] }],
+  ["lavender", { components: [0.9019607843137255, 0.9019607843137255, 0.9803921568627451] }],
+  ["lime", { components: [0, 1, 0] }],
+  ["limegreen", { components: [0.19607843137254902, 0.803921568627451, 0.19607843137254902] }],
+  ["magenta", { components: [1, 0, 1] }],
+  ["maroon", { components: [0.5019607843137255, 0, 0] }],
+  ["midnightblue", { components: [0.09803921568627451, 0.09803921568627451, 0.4392156862745098] }],
+  ["mintcream", { components: [0.9607843137254902, 1, 0.9803921568627451] }],
+  ["navy", { components: [0, 0, 0.5019607843137255] }],
+  ["olive", { components: [0.5019607843137255, 0.5019607843137255, 0] }],
+  ["orange", { components: [1, 0.6470588235294118, 0] }],
+  ["orangered", { components: [1, 0.27058823529411763, 0] }],
+  ["orchid", { components: [0.8549019607843137, 0.4392156862745098, 0.8392156862745098] }],
+  ["peru", { components: [0.803921568627451, 0.5215686274509804, 0.24705882352941178] }],
+  ["pink", { components: [1, 0.7529411764705882, 0.796078431372549] }],
+  ["plum", { components: [0.8666666666666667, 0.6274509803921569, 0.8666666666666667] }],
+  ["purple", { components: [0.5019607843137255, 0, 0.5019607843137255] }],
+  ["red", { components: [1, 0, 0] }],
+  ["salmon", { components: [0.9803921568627451, 0.5019607843137255, 0.4470588235294118] }],
+  ["seagreen", { components: [0.1803921568627451, 0.5450980392156862, 0.3411764705882353] }],
+  ["sienna", { components: [0.6274509803921569, 0.3215686274509804, 0.17647058823529413] }],
+  ["silver", { components: [0.7529411764705882, 0.7529411764705882, 0.7529411764705882] }],
+  ["skyblue", { components: [0.5294117647058824, 0.807843137254902, 0.9215686274509803] }],
+  ["slategray", { components: [0.4392156862745098, 0.5019607843137255, 0.5647058823529412] }],
+  ["slategrey", { components: [0.4392156862745098, 0.5019607843137255, 0.5647058823529412] }],
+  ["steelblue", { components: [0.27450980392156865, 0.5098039215686275, 0.7058823529411765] }],
+  ["tan", { components: [0.8235294117647058, 0.7058823529411765, 0.5490196078431373] }],
+  ["teal", { components: [0, 0.5019607843137255, 0.5019607843137255] }],
+  ["tomato", { components: [1, 0.38823529411764707, 0.2784313725490196] }],
+  ["turquoise", { components: [0.25098039215686274, 0.8784313725490196, 0.8156862745098039] }],
+  ["violet", { components: [0.9333333333333333, 0.5098039215686275, 0.9333333333333333] }],
+  ["wheat", { components: [0.9607843137254902, 0.8705882352941177, 0.7019607843137254] }],
+  ["white", { components: [1, 1, 1] }],
+  ["yellow", { components: [1, 1, 0] }],
+  ["yellowgreen", { components: [0.6039215686274509, 0.803921568627451, 0.19607843137254902] }]
+]);
+
 interface ThemeBundleExtraction {
   bundlePath: string;
   themeName: string;
@@ -548,8 +613,94 @@ const parseRgbColor = (value: string): { colorSpace: "srgb"; components: [number
   };
 };
 
+const parseNamedCssColor = (value: string): { colorSpace: "srgb"; components: [number, number, number]; alpha?: number } | undefined => {
+  const entry = NAMED_CSS_COLORS.get(value.trim().toLowerCase());
+  if (!entry) {
+    return undefined;
+  }
+  return {
+    colorSpace: "srgb",
+    components: entry.components,
+    ...(entry.alpha !== undefined ? { alpha: entry.alpha } : {})
+  };
+};
+
+const parseHslColor = (value: string): { colorSpace: "srgb"; components: [number, number, number]; alpha?: number } | undefined => {
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(/^hsla?\(([^)]+)\)$/u);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const inner = match[1].trim();
+
+  let huePart: string;
+  let satPart: string;
+  let lightPart: string;
+  let alphaRaw: string | undefined;
+
+  if (inner.includes(",")) {
+    const parts = inner.split(",").map((part) => part.trim());
+    if (parts.length !== 3 && parts.length !== 4) {
+      return undefined;
+    }
+    huePart = parts[0] ?? "";
+    satPart = parts[1] ?? "";
+    lightPart = parts[2] ?? "";
+    alphaRaw = parts[3];
+  } else {
+    const slashIndex = inner.indexOf("/");
+    const colorPart = slashIndex === -1 ? inner : inner.slice(0, slashIndex);
+    alphaRaw = slashIndex === -1 ? undefined : inner.slice(slashIndex + 1).trim();
+    const spaceParts = colorPart.trim().split(/\s+/u);
+    if (spaceParts.length !== 3) {
+      return undefined;
+    }
+    huePart = spaceParts[0] ?? "";
+    satPart = spaceParts[1] ?? "";
+    lightPart = spaceParts[2] ?? "";
+  }
+
+  const hue = (((Number(huePart.replace(/deg$/u, "")) % 360) + 360) % 360) / 360;
+  const saturation = Number(satPart.replace(/%$/u, "")) / 100;
+  const lightness = Number(lightPart.replace(/%$/u, "")) / 100;
+
+  if ([hue, saturation, lightness].some((v) => Number.isNaN(v))) {
+    return undefined;
+  }
+
+  const hueToRgb = (p: number, q: number, t: number): number => {
+    const adjusted = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    if (adjusted < 1 / 6) return p + (q - p) * 6 * adjusted;
+    if (adjusted < 1 / 2) return q;
+    if (adjusted < 2 / 3) return p + (q - p) * (2 / 3 - adjusted) * 6;
+    return p;
+  };
+
+  let red: number;
+  let green: number;
+  let blue: number;
+
+  if (saturation === 0) {
+    red = green = blue = lightness;
+  } else {
+    const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+    const p = 2 * lightness - q;
+    red = hueToRgb(p, q, hue + 1 / 3);
+    green = hueToRgb(p, q, hue);
+    blue = hueToRgb(p, q, hue - 1 / 3);
+  }
+
+  const alpha = alphaRaw === undefined ? undefined : Number(alphaRaw.replace(/%$/u, "")) / (alphaRaw.endsWith("%") ? 100 : 1);
+
+  return {
+    colorSpace: "srgb",
+    components: [red, green, blue],
+    ...(alpha !== undefined && !Number.isNaN(alpha) ? { alpha } : {})
+  };
+};
+
 const toColorTokenValue = (value: string): unknown => {
-  return parseHexColor(value) ?? parseRgbColor(value);
+  return parseHexColor(value) ?? parseRgbColor(value) ?? parseHslColor(value) ?? parseNamedCssColor(value);
 };
 
 const parseDimensionString = (value: string): { value: number; unit: string } | undefined => {
