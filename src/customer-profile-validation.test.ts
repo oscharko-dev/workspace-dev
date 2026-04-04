@@ -1033,6 +1033,64 @@ test("validateGeneratedProjectStorybookStyles rejects inline style objects", asy
   }
 });
 
+test("validateGeneratedProjectStorybookStyles detects named CSS colors as hard-coded color literals", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-named-color-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box sx={{ color: "orange", backgroundColor: "pink" }} />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.filter((issue) => issue.category === "hard_coded_color_literal").length,
+      2,
+      "Expected two hard-coded named color violations (orange and pink)"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles allows Storybook-derived theme outputs", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-theme-output-"));
   const customerProfile = createCustomerProfileForStyleValidation({
