@@ -354,6 +354,99 @@ test("buildStorybookCatalogArtifact all signal reference IDs are non-empty strin
   }
 });
 
+test("buildStorybookCatalogArtifact does not throw on malformed percent-encoded docs links", async () => {
+  const buildDir = await createCatalogFixtureBuild({
+    internalDocsLink: "/docs/foo%ZZbar"
+  });
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+
+  const tooltipDocs = artifact.entries.find((entry) => entry.id === "reactui-tooltip--docs");
+  assert.ok(tooltipDocs);
+  assert.equal(tooltipDocs.metadata.mdxLinks.internal.length, 1);
+  assert.equal(tooltipDocs.metadata.mdxLinks.internal[0]?.path, "/docs/foo%ZZbar");
+  assert.equal(tooltipDocs.metadata.mdxLinks.internal[0]?.entryId, undefined);
+});
+
+test("buildStorybookCatalogArtifact resolves tier to (untitled) for empty title and trims leading slash", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-catalog-tier-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const indexJson = {
+    v: 5,
+    entries: {
+      "empty-title--default": {
+        id: "empty-title--default",
+        title: "",
+        name: "Default",
+        importPath: "./src/empty/stories/Empty.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/empty/Empty.tsx"
+      },
+      "slash-button--default": {
+        id: "slash-button--default",
+        title: "/Button",
+        name: "Default",
+        importPath: "./src/slash/stories/Button.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "./src/slash/Button.tsx"
+      }
+    }
+  };
+
+  const iframeHtml = `
+    <!doctype html>
+    <html>
+      <body>
+        <script type="module" crossorigin src="./assets/iframe-test.js"></script>
+      </body>
+    </html>
+  `;
+
+  const iframeBundle = `
+    const gq0 = {
+      "./src/empty/stories/Empty.stories.tsx": n(() => c0(() => import("./empty-stories.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/empty/stories/Empty.stories.tsx"),
+      "./src/slash/stories/Button.stories.tsx": n(() => c0(() => import("./slash-button-stories.js"), true ? __vite__mapDeps([2]) : void 0, import.meta.url), "./src/slash/stories/Button.stories.tsx")
+    };
+  `;
+
+  const emptyStoryBundle = `
+    const meta = {
+      title: "",
+      args: {},
+      argTypes: {}
+    };
+  `;
+
+  const slashButtonStoryBundle = `
+    const meta = {
+      title: "/Button",
+      args: {},
+      argTypes: {}
+    };
+  `;
+
+  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
+  await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
+  await writeFile(path.join(assetsDir, "empty-stories.js"), emptyStoryBundle, "utf8");
+  await writeFile(path.join(assetsDir, "slash-button-stories.js"), slashButtonStoryBundle, "utf8");
+
+  const artifact = await buildStorybookCatalogArtifact({ buildDir });
+
+  const emptyTitleEntry = artifact.entries.find((entry) => entry.id === "empty-title--default");
+  assert.ok(emptyTitleEntry);
+  assert.equal(emptyTitleEntry.tier, "(untitled)");
+
+  const slashButtonEntry = artifact.entries.find((entry) => entry.id === "slash-button--default");
+  assert.ok(slashButtonEntry);
+  assert.equal(slashButtonEntry.tier, "Button");
+});
+
 test("writeStorybookCatalogArtifact emits stable JSON into the build directory by default", async () => {
   const buildDir = await createCatalogFixtureBuild();
   const artifact = await buildStorybookCatalogArtifact({ buildDir });
