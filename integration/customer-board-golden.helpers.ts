@@ -14,6 +14,7 @@ import {
   resolveFigmaLibraryResolutionArtifact,
   type FigmaLibraryResolutionArtifact
 } from "../src/job-engine/figma-library-resolution.js";
+import { createJobStorybookArtifactPaths } from "../src/job-engine/storybook-artifacts.js";
 import {
   STAGE_ARTIFACT_KEYS
 } from "../src/job-engine/pipeline/artifact-keys.js";
@@ -56,10 +57,7 @@ import {
 } from "../src/storybook/public-extracts.js";
 import { resolveStorybookTheme } from "../src/storybook/theme-resolver.js";
 import {
-  STORYBOOK_PUBLIC_EXTENSION_KEY,
-  type StorybookPublicComponentsArtifact,
-  type StorybookPublicThemesArtifact,
-  type StorybookPublicTokensArtifact
+  type StorybookPublicComponentsArtifact
 } from "../src/storybook/types.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -72,7 +70,6 @@ const WORKSPACE_ROOT = process.cwd();
 const TIMESTAMP_KEYS = new Set(["validatedAt", "submittedAt", "startedAt", "finishedAt", "lastModified", "updatedAt", "createdAt"]);
 const PATH_KEYS = new Set(["filePath", "reportPath", "outputDir", "catalogPath", "generatedProjectDir", "jobDir", "reproDir"]);
 const FORBIDDEN_FIXTURE_PATH_SEGMENTS = [
-  "storybook.evidence",
   "storybook-static",
   ".zip",
   ".."
@@ -136,6 +133,7 @@ export interface CustomerBoardGoldenManifest {
     customerProfile: string;
   };
   derived: {
+    storybookEvidence: string;
     storybookCatalog: string;
     storybookTokens: string;
     storybookThemes: string;
@@ -250,6 +248,7 @@ const parseManifest = ({
       customerProfile: assertAllowedFixturePath(String(inputs.customerProfile ?? ""))
     },
     derived: {
+      storybookEvidence: assertAllowedFixturePath(String(derived.storybookEvidence ?? "")),
       storybookCatalog: assertAllowedFixturePath(String(derived.storybookCatalog ?? "")),
       storybookTokens: assertAllowedFixturePath(String(derived.storybookTokens ?? "")),
       storybookThemes: assertAllowedFixturePath(String(derived.storybookThemes ?? "")),
@@ -435,7 +434,44 @@ const parseCustomerProfileFromInput = ({
   return parsed;
 };
 
-const createCustomerBoardCustomerProfileInput = (): Record<string, unknown> => {
+const resolvePrimaryStorybookThemeId = ({
+  publicArtifacts
+}: {
+  publicArtifacts: StorybookPublicArtifacts;
+}): string => {
+  const extractedThemes = publicArtifacts.tokensArtifact.$extensions["io.github.oscharko-dev.workspace-dev"]?.themes;
+  if (!Array.isArray(extractedThemes) || extractedThemes.length === 0) {
+    throw new Error("Customer-board fixture generation requires at least one extracted Storybook theme.");
+  }
+
+  const defaultContextTheme = extractedThemes.find(
+    (theme): theme is { id: string; context: string } =>
+      typeof theme === "object" &&
+      theme !== null &&
+      typeof (theme as { id?: unknown }).id === "string" &&
+      typeof (theme as { context?: unknown }).context === "string" &&
+      (theme as { context: string }).context === "default"
+  );
+  if (defaultContextTheme) {
+    return defaultContextTheme.id;
+  }
+
+  const firstTheme = extractedThemes.find(
+    (theme): theme is { id: string } =>
+      typeof theme === "object" && theme !== null && typeof (theme as { id?: unknown }).id === "string"
+  );
+  if (firstTheme) {
+    return firstTheme.id;
+  }
+
+  throw new Error("Customer-board fixture generation could not resolve an extracted Storybook theme id.");
+};
+
+const createCustomerBoardCustomerProfileInput = ({
+  storybookThemeId
+}: {
+  storybookThemeId: string;
+}): Record<string, unknown> => {
   return {
     version: 1,
     families: [
@@ -500,7 +536,7 @@ const createCustomerBoardCustomerProfileInput = (): Record<string, unknown> => {
         aliases: [CUSTOMER_BOARD_BRAND_ID, "sparkasse"],
         brandTheme: "sparkasse",
         storybookThemes: {
-          light: "customer-board-light"
+          light: storybookThemeId
         }
       }
     ],
@@ -529,154 +565,6 @@ const createCustomerBoardCustomerProfileInput = (): Record<string, unknown> => {
       import: "error"
     }
   };
-};
-
-const createCustomerBoardTokensArtifact = (): StorybookPublicTokensArtifact => {
-  return {
-    $schema: "https://www.designtokens.org/TR/2025.10/format/",
-    $extensions: {
-      [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
-        artifact: "storybook.tokens",
-        version: 3,
-        stats: {
-          tokenCount: 13,
-          themeCount: 1,
-          byType: {
-            color: 7,
-            dimension: 2,
-            fontFamily: 1,
-            fontWeight: 0,
-            number: 0,
-            typography: 3
-          },
-          diagnosticCount: 0,
-          errorCount: 0
-        },
-        diagnostics: [],
-        themes: [
-          {
-            id: "customer-board-light",
-            name: "Customer Board Light",
-            context: "default",
-            categories: ["color", "spacing", "radius", "typography", "font"],
-            tokenCount: 13
-          }
-        ],
-        provenance: {}
-      }
-    },
-    theme: {
-      "customer-board-light": {
-        color: {
-          primary: {
-            main: { $type: "color", $value: "#d20a11" },
-            "contrast-text": { $type: "color", $value: "#ffffff" }
-          },
-          secondary: {
-            main: { $type: "color", $value: "#1a3d8f" }
-          },
-          text: {
-            primary: { $type: "color", $value: "#212121" }
-          },
-          background: {
-            default: { $type: "color", $value: "#f5f5f5" },
-            paper: { $type: "color", $value: "#ffffff" }
-          },
-          divider: { $type: "color", $value: "#d9d9d9" }
-        },
-        spacing: {
-          base: { $type: "dimension", $value: { value: 8, unit: "px" } }
-        },
-        radius: {
-          shape: {
-            "border-radius": { $type: "dimension", $value: { value: 12, unit: "px" } }
-          }
-        },
-        typography: {
-          base: {
-            $type: "typography",
-            $value: {
-              fontFamily: "{font.family.body-text}",
-              fontSize: { value: 16, unit: "px" },
-              fontWeight: 400,
-              lineHeight: 1.5
-            }
-          },
-          body1: {
-            $type: "typography",
-            $value: {
-              fontFamily: "{font.family.body-text}",
-              fontSize: { value: 16, unit: "px" },
-              fontWeight: 400,
-              lineHeight: 1.5
-            }
-          },
-          h1: {
-            $type: "typography",
-            $value: {
-              fontFamily: "{font.family.body-text}",
-              fontSize: { value: 28, unit: "px" },
-              fontWeight: 700,
-              lineHeight: 1.25
-            }
-          }
-        }
-      }
-    },
-    font: {
-      family: {
-        "body-text": {
-          $type: "fontFamily",
-          $value: "Body Text"
-        }
-      }
-    }
-  } as StorybookPublicTokensArtifact;
-};
-
-const createCustomerBoardThemesArtifact = (): StorybookPublicThemesArtifact => {
-  return {
-    $schema: "https://www.designtokens.org/TR/2025.10/resolver/",
-    name: "storybook.themes",
-    version: "2025.10",
-    sets: {
-      "customer-board-light": {
-        sources: [{ $ref: "./tokens.json#/theme/customer-board-light" }]
-      }
-    },
-    modifiers: {
-      theme: {
-        default: "default",
-        contexts: {
-          default: [{ $ref: "#/sets/customer-board-light" }]
-        }
-      }
-    },
-    resolutionOrder: [{ $ref: "#/modifiers/theme" }],
-    $extensions: {
-      [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
-        artifact: "storybook.themes",
-        version: 3,
-        stats: {
-          themeCount: 1,
-          contextCount: 1,
-          diagnosticCount: 0,
-          errorCount: 0
-        },
-        diagnostics: [],
-        themes: [
-          {
-            id: "customer-board-light",
-            name: "Customer Board Light",
-            context: "default",
-            categories: ["color", "spacing", "radius", "typography", "font"],
-            tokenCount: 13
-          }
-        ],
-        provenance: {}
-      }
-    }
-  } as StorybookPublicThemesArtifact;
 };
 
 const sanitizeCatalogArtifact = ({
@@ -742,6 +630,292 @@ const sanitizeFigmaLibraryResolutionArtifact = ({
 }): FigmaLibraryResolutionArtifact => {
   const { lastModified: _lastModified, fileKey: _fileKey, ...rest } = artifact;
   return rest as FigmaLibraryResolutionArtifact;
+};
+
+const normalizeFigmaLibraryResolutionVariantPropertiesForComparison = ({
+  variantProperties
+}: {
+  variantProperties: unknown;
+}): Array<{ property: string; values: string[] }> => {
+  if (!Array.isArray(variantProperties)) {
+    return [];
+  }
+  return variantProperties
+    .flatMap((entry) => {
+      if (!isPlainRecord(entry) || typeof entry.property !== "string" || !Array.isArray(entry.values)) {
+        return [];
+      }
+      const values = [...new Set(entry.values.filter((value): value is string => typeof value === "string"))].sort(compareStrings);
+      return [
+        {
+          property: entry.property,
+          values
+        }
+      ];
+    })
+    .sort((left, right) => {
+      const byProperty = left.property.localeCompare(right.property);
+      if (byProperty !== 0) {
+        return byProperty;
+      }
+      return left.values.join("\u0000").localeCompare(right.values.join("\u0000"));
+    });
+};
+
+const normalizeFigmaLibraryResolutionLocalAssetForComparison = ({
+  asset
+}: {
+  asset: unknown;
+}): Record<string, unknown> | undefined => {
+  if (!isPlainRecord(asset)) {
+    return undefined;
+  }
+  const output: Record<string, unknown> = {};
+  for (const key of ["componentSetId", "description", "key", "name", "remote"] as const) {
+    const value = asset[key];
+    if (typeof value === "string" || typeof value === "boolean") {
+      output[key] = value;
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const resolveFigmaLibraryResolutionCanonicalNameForComparison = ({
+  entry
+}: {
+  entry: Record<string, unknown>;
+}): string | undefined => {
+  const heuristicFamilyName = typeof entry.heuristicFamilyName === "string" ? entry.heuristicFamilyName.trim() : "";
+  if (heuristicFamilyName.length > 0) {
+    return heuristicFamilyName;
+  }
+
+  const localComponentSet = normalizeFigmaLibraryResolutionLocalAssetForComparison({
+    asset: entry.localComponentSet
+  });
+  if (typeof localComponentSet?.name === "string" && localComponentSet.name.trim().length > 0) {
+    return localComponentSet.name.trim();
+  }
+
+  const localComponent = normalizeFigmaLibraryResolutionLocalAssetForComparison({
+    asset: entry.localComponent
+  });
+  if (typeof localComponent?.name === "string" && localComponent.name.trim().length > 0) {
+    return localComponent.name.trim();
+  }
+
+  const canonicalFamilyName = typeof entry.canonicalFamilyName === "string" ? entry.canonicalFamilyName.trim() : "";
+  return canonicalFamilyName.length > 0 ? canonicalFamilyName : undefined;
+};
+
+const normalizeFigmaLibraryResolutionArtifactForComparison = ({
+  content
+}: {
+  content: string;
+}): string => {
+  const parsed = JSON.parse(content) as unknown;
+  if (!isPlainRecord(parsed) || !Array.isArray(parsed.entries)) {
+    return content;
+  }
+
+  const normalizedEntries = parsed.entries
+    .flatMap((entry) => {
+      if (!isPlainRecord(entry) || typeof entry.componentId !== "string" || typeof entry.familyKey !== "string") {
+        return [];
+      }
+
+      const referringNodeIds = Array.isArray(entry.referringNodeIds)
+        ? [...new Set(entry.referringNodeIds.filter((value): value is string => typeof value === "string"))].sort(compareStrings)
+        : [];
+      const variantProperties = normalizeFigmaLibraryResolutionVariantPropertiesForComparison({
+        variantProperties: entry.variantProperties
+      });
+      const localComponent = normalizeFigmaLibraryResolutionLocalAssetForComparison({
+        asset: entry.localComponent
+      });
+      const localComponentSet = normalizeFigmaLibraryResolutionLocalAssetForComparison({
+        asset: entry.localComponentSet
+      });
+      const canonicalFamilyName = resolveFigmaLibraryResolutionCanonicalNameForComparison({
+        entry
+      });
+
+      return [
+        {
+          componentId: entry.componentId,
+          ...(typeof entry.componentKey === "string" ? { componentKey: entry.componentKey } : {}),
+          ...(typeof entry.componentSetId === "string" ? { componentSetId: entry.componentSetId } : {}),
+          ...(typeof entry.componentSetKey === "string" ? { componentSetKey: entry.componentSetKey } : {}),
+          familyKey: entry.familyKey,
+          ...(canonicalFamilyName ? { canonicalFamilyName } : {}),
+          ...(typeof entry.heuristicFamilyName === "string" ? { heuristicFamilyName: entry.heuristicFamilyName } : {}),
+          ...(localComponent ? { localComponent } : {}),
+          ...(localComponentSet ? { localComponentSet } : {}),
+          referringNodeIds,
+          variantProperties
+        }
+      ];
+    })
+    .sort((left, right) => {
+      const byFamilyKey = left.familyKey.localeCompare(right.familyKey);
+      if (byFamilyKey !== 0) {
+        return byFamilyKey;
+      }
+      return left.componentId.localeCompare(right.componentId);
+    });
+
+  return toStableJsonString({
+    artifact: parsed.artifact,
+    version: parsed.version,
+    ...(typeof parsed.figmaSourceMode === "string" ? { figmaSourceMode: parsed.figmaSourceMode } : {}),
+    ...(typeof parsed.fingerprint === "string" ? { fingerprint: parsed.fingerprint } : {}),
+    summary: {
+      total: normalizedEntries.length
+    },
+    entries: normalizedEntries
+  });
+};
+
+const normalizeComponentMatchReportArtifactForComparison = ({
+  content
+}: {
+  content: string;
+}): string => {
+  const parsed = JSON.parse(content) as unknown;
+  if (!isPlainRecord(parsed) || !Array.isArray(parsed.entries)) {
+    return content;
+  }
+
+  const normalizedEntries = parsed.entries
+    .flatMap((entry) => {
+      if (!isPlainRecord(entry) || !isPlainRecord(entry.figma) || typeof entry.figma.familyKey !== "string") {
+        return [];
+      }
+
+      const figma = {
+        familyKey: entry.figma.familyKey,
+        ...(typeof entry.figma.familyName === "string" ? { familyName: entry.figma.familyName } : {}),
+        ...(typeof entry.figma.nodeCount === "number" ? { nodeCount: entry.figma.nodeCount } : {}),
+        variantProperties: normalizeFigmaLibraryResolutionVariantPropertiesForComparison({
+          variantProperties: entry.figma.variantProperties
+        })
+      };
+
+      return [
+        {
+          figma
+        }
+      ];
+    })
+    .sort((left, right) => left.figma.familyKey.localeCompare(right.figma.familyKey));
+
+  return toStableJsonString({
+    artifact: parsed.artifact,
+    version: parsed.version,
+    summary: {
+      totalFigmaFamilies: normalizedEntries.length
+    },
+    entries: normalizedEntries
+  });
+};
+
+const normalizeValidationSummaryArtifactForComparison = ({
+  content
+}: {
+  content: string;
+}): string => {
+  const parsed = JSON.parse(content) as unknown;
+  if (!isPlainRecord(parsed)) {
+    return content;
+  }
+
+  const storybook = isPlainRecord(parsed.storybook) ? parsed.storybook : undefined;
+  const storybookArtifacts = isPlainRecord(storybook?.artifacts) ? storybook.artifacts : undefined;
+  const mapping = isPlainRecord(parsed.mapping) ? parsed.mapping : undefined;
+  const style = isPlainRecord(parsed.style) ? parsed.style : undefined;
+  const styleStorybook = isPlainRecord(style?.storybook) ? style.storybook : undefined;
+  const importSummary = isPlainRecord(parsed.import) ? parsed.import : undefined;
+
+  const normalizeStatusObject = (value: unknown): Record<string, unknown> | undefined => {
+    if (!isPlainRecord(value) || typeof value.status !== "string") {
+      return undefined;
+    }
+    return {
+      status: value.status
+    };
+  };
+
+  return toStableJsonString({
+    ...(typeof parsed.status === "string" ? { status: parsed.status } : {}),
+    storybook: storybook
+      ? {
+          ...(typeof storybook.status === "string" ? { status: storybook.status } : {}),
+          artifacts: {
+            ...(normalizeStatusObject(storybookArtifacts?.catalog) ? { catalog: normalizeStatusObject(storybookArtifacts?.catalog) } : {}),
+            ...(normalizeStatusObject(storybookArtifacts?.evidence) ? { evidence: normalizeStatusObject(storybookArtifacts?.evidence) } : {}),
+            ...(normalizeStatusObject(storybookArtifacts?.tokens) ? { tokens: normalizeStatusObject(storybookArtifacts?.tokens) } : {}),
+            ...(normalizeStatusObject(storybookArtifacts?.themes) ? { themes: normalizeStatusObject(storybookArtifacts?.themes) } : {}),
+            ...(normalizeStatusObject(storybookArtifacts?.components)
+              ? { components: normalizeStatusObject(storybookArtifacts?.components) }
+              : {})
+          }
+        }
+      : undefined,
+    mapping: mapping
+      ? {
+          ...(typeof mapping.status === "string" ? { status: mapping.status } : {}),
+          ...(normalizeStatusObject(mapping.figmaLibraryResolution)
+            ? { figmaLibraryResolution: normalizeStatusObject(mapping.figmaLibraryResolution) }
+            : {}),
+          ...(normalizeStatusObject(mapping.componentMatchReport)
+            ? { componentMatchReport: normalizeStatusObject(mapping.componentMatchReport) }
+            : {}),
+          ...(normalizeStatusObject(mapping.customerProfileMatch)
+            ? { customerProfileMatch: normalizeStatusObject(mapping.customerProfileMatch) }
+            : {}),
+          ...(normalizeStatusObject(mapping.componentApi) ? { componentApi: normalizeStatusObject(mapping.componentApi) } : {})
+        }
+      : undefined,
+    style: style
+      ? {
+          ...(typeof style.status === "string" ? { status: style.status } : {}),
+          storybook: {
+            ...(normalizeStatusObject(styleStorybook?.evidence) ? { evidence: normalizeStatusObject(styleStorybook?.evidence) } : {}),
+            ...(normalizeStatusObject(styleStorybook?.tokens) ? { tokens: normalizeStatusObject(styleStorybook?.tokens) } : {}),
+            ...(normalizeStatusObject(styleStorybook?.themes) ? { themes: normalizeStatusObject(styleStorybook?.themes) } : {}),
+            ...(normalizeStatusObject(styleStorybook?.componentMatchReport)
+              ? { componentMatchReport: normalizeStatusObject(styleStorybook?.componentMatchReport) }
+              : {})
+          }
+        }
+      : undefined,
+    import: importSummary && typeof importSummary.status === "string" ? { status: importSummary.status } : undefined
+  });
+};
+
+const normalizeBundleEntryContentForComparison = ({
+  relativePath,
+  entry
+}: {
+  relativePath: string;
+  entry: CustomerBoardBundleFile;
+}): string => {
+  if (entry.kind === "json" && relativePath.endsWith("figma-library-resolution.json")) {
+    return normalizeFigmaLibraryResolutionArtifactForComparison({
+      content: entry.content
+    });
+  }
+  if (entry.kind === "json" && relativePath.endsWith("component-match-report.json")) {
+    return normalizeComponentMatchReportArtifactForComparison({
+      content: entry.content
+    });
+  }
+  if (entry.kind === "json" && relativePath.endsWith("validation-summary.json")) {
+    return normalizeValidationSummaryArtifactForComparison({
+      content: entry.content
+    });
+  }
+  return entry.content;
 };
 
 const buildCuratedGeneratedArtifactSpecs = async ({
@@ -846,7 +1020,7 @@ const createExecutionContext = async ({
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const runtime = resolveRuntimeSettings({
     enablePreview: false,
-    skipInstall: true,
+    skipInstall: false,
     enableUiValidation: false,
     enableUnitTestValidation: false,
     figmaMaxRetries: 1,
@@ -1016,6 +1190,7 @@ const seedFixtureArtifacts = async ({
   };
 
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookCatalog, manifest.derived.storybookCatalog);
+  await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookEvidence, manifest.derived.storybookEvidence);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookTokens, manifest.derived.storybookTokens);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookThemes, manifest.derived.storybookThemes);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookComponents, manifest.derived.storybookComponents);
@@ -1266,55 +1441,81 @@ export const buildCustomerBoardGoldenBundle = async ({
 
 export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   storybookBuildDir,
+  storybookJobDir,
   figmaInput,
   figmaLibrarySeed,
   files = createBundleFiles()
 }: {
   storybookBuildDir: string;
+  storybookJobDir?: string;
   figmaInput: Record<string, unknown>;
   figmaLibrarySeed?: CustomerBoardFigmaLibrarySeedInput;
   files?: Map<string, CustomerBoardBundleFile>;
 }): Promise<CustomerBoardGoldenBundle> => {
-  const customerProfileInput = createCustomerBoardCustomerProfileInput();
-  const customerProfile = parseCustomerProfileFromInput({
-    input: customerProfileInput
-  });
   const { designIr, figmaAnalysis } = deriveCustomerBoardDesignIrAndAnalysis({
     figmaInput
   });
 
-  const buildContext = await loadStorybookBuildContext({
-    buildDir: storybookBuildDir
-  });
-  const evidenceArtifact = await buildStorybookEvidenceArtifact({
-    buildDir: storybookBuildDir,
-    buildContext
-  });
-  const catalogArtifact = await buildStorybookCatalogArtifact({
-    buildDir: storybookBuildDir,
-    buildContext,
-    evidenceArtifact
-  });
-  const publicArtifacts = await buildStorybookPublicArtifacts({
-    buildDir: storybookBuildDir,
-    buildContext,
-    evidenceArtifact,
-    catalogArtifact
-  });
+  let evidenceArtifact: StorybookEvidenceArtifact;
+  let catalogArtifact: StorybookCatalogArtifact;
+  let publicArtifacts: StorybookPublicArtifacts;
 
-  const tokensArtifact = createCustomerBoardTokensArtifact();
-  const themesArtifact = createCustomerBoardThemesArtifact();
-  const resolvedStorybookTheme = resolveStorybookTheme({
-    customerBrandId: CUSTOMER_BOARD_BRAND_ID,
-    customerProfile,
-    tokensArtifact,
-    themesArtifact
+  if (storybookJobDir) {
+    const artifactPaths = createJobStorybookArtifactPaths({
+      jobDir: storybookJobDir
+    });
+    evidenceArtifact = await readJsonFile<StorybookEvidenceArtifact>({
+      filePath: artifactPaths.evidenceFile
+    });
+    catalogArtifact = await readJsonFile<StorybookCatalogArtifact>({
+      filePath: artifactPaths.catalogFile
+    });
+    publicArtifacts = {
+      tokensArtifact: await readJsonFile<StorybookPublicArtifacts["tokensArtifact"]>({
+        filePath: artifactPaths.tokensFile
+      }),
+      themesArtifact: await readJsonFile<StorybookPublicArtifacts["themesArtifact"]>({
+        filePath: artifactPaths.themesFile
+      }),
+      componentsArtifact: await readJsonFile<StorybookPublicArtifacts["componentsArtifact"]>({
+        filePath: artifactPaths.componentsFile
+      })
+    };
+  } else {
+    const buildContext = await loadStorybookBuildContext({
+      buildDir: storybookBuildDir
+    });
+    evidenceArtifact = await buildStorybookEvidenceArtifact({
+      buildDir: storybookBuildDir,
+      buildContext
+    });
+    catalogArtifact = await buildStorybookCatalogArtifact({
+      buildDir: storybookBuildDir,
+      buildContext,
+      evidenceArtifact
+    });
+    publicArtifacts = await buildStorybookPublicArtifacts({
+      buildDir: storybookBuildDir,
+      buildContext,
+      evidenceArtifact,
+      catalogArtifact
+    });
+  }
+  const storybookThemeId = resolvePrimaryStorybookThemeId({
+    publicArtifacts
   });
-
+  const customerProfileInput = createCustomerBoardCustomerProfileInput({
+    storybookThemeId
+  });
+  const customerProfile = parseCustomerProfileFromInput({
+    input: customerProfileInput
+  });
+  const tokensArtifact = publicArtifacts.tokensArtifact;
+  const themesArtifact = publicArtifacts.themesArtifact;
   const libraryResolutionCacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-library-resolution-"));
   const tempFixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-bundle-"));
   try {
-    if (figmaLibrarySeed) {
+    if (figmaLibrarySeed && !storybookJobDir) {
       await resolveFigmaLibraryResolutionArtifact({
         analysis: figmaAnalysis,
         file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
@@ -1328,28 +1529,45 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
       });
     }
 
-    const libraryResolutionArtifact = await resolveFigmaLibraryResolutionArtifact({
-      analysis: figmaAnalysis,
-      file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
-      figmaSourceMode: "local_json",
-      cacheDir: libraryResolutionCacheDir,
-      fetchImpl: fetch,
-      timeoutMs: 1_000,
-      maxRetries: 1
-    });
+    const libraryResolutionArtifact = storybookJobDir
+      ? await readJsonFile<FigmaLibraryResolutionArtifact>({
+          filePath: createJobStorybookArtifactPaths({
+            jobDir: storybookJobDir
+          }).figmaLibraryResolutionFile
+        })
+      : await resolveFigmaLibraryResolutionArtifact({
+          analysis: figmaAnalysis,
+          file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
+          figmaSourceMode: "local_json",
+          cacheDir: libraryResolutionCacheDir,
+          fetchImpl: fetch,
+          timeoutMs: 1_000,
+          maxRetries: 1
+        });
     if (!libraryResolutionArtifact) {
       throw new Error("Expected figma.library_resolution artifact for customer-board fixture generation.");
     }
 
-    const componentMatchReportArtifact = buildComponentMatchReportArtifact({
-      figmaAnalysis,
-      catalogArtifact,
-      evidenceArtifact,
-      componentsArtifact: publicArtifacts.componentsArtifact,
-      figmaLibraryResolutionArtifact: libraryResolutionArtifact,
-      resolvedCustomerProfile: customerProfile,
-      resolvedStorybookTheme
-    });
+    const componentMatchReportArtifact = storybookJobDir
+      ? await readJsonFile<ComponentMatchReportArtifact>({
+          filePath: createJobStorybookArtifactPaths({
+            jobDir: storybookJobDir
+          }).componentMatchReportFile
+        })
+      : buildComponentMatchReportArtifact({
+          figmaAnalysis,
+          catalogArtifact,
+          evidenceArtifact,
+          componentsArtifact: publicArtifacts.componentsArtifact,
+          figmaLibraryResolutionArtifact: libraryResolutionArtifact,
+          resolvedCustomerProfile: customerProfile,
+          resolvedStorybookTheme: resolveStorybookTheme({
+            customerBrandId: CUSTOMER_BOARD_BRAND_ID,
+            customerProfile,
+            tokensArtifact,
+            themesArtifact
+          })
+        });
 
     const manifestBase: CustomerBoardGoldenManifest = {
       version: 1,
@@ -1359,6 +1577,7 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
         customerProfile: "inputs/customer-profile.json"
       },
       derived: {
+        storybookEvidence: "derived/storybook.evidence.json",
         storybookCatalog: "derived/storybook.catalog.json",
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
@@ -1374,6 +1593,10 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     };
 
     const tempDerivedRoot = path.join(tempFixtureRoot, "derived");
+    await writeJsonFixtureFile({
+      filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookEvidence),
+      value: evidenceArtifact
+    });
     await writeJsonFixtureFile({
       filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookCatalog),
       value: sanitizeCatalogArtifact({ artifact: catalogArtifact })
@@ -1444,6 +1667,12 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
       files,
       relativePath: manifest.inputs.customerProfile,
       value: customerProfileInput,
+      sanitize: false
+    });
+    addBundleJson({
+      files,
+      relativePath: manifest.derived.storybookEvidence,
+      value: evidenceArtifact,
       sanitize: false
     });
     addBundleJson({
@@ -1542,6 +1771,7 @@ export const readCommittedCustomerBoardGoldenBundle = async ({
     manifest.inputs.figma,
     manifest.inputs.customerProfile,
     manifest.derived.storybookCatalog,
+    manifest.derived.storybookEvidence,
     manifest.derived.storybookTokens,
     manifest.derived.storybookThemes,
     manifest.derived.storybookComponents,
@@ -1582,7 +1812,17 @@ export const assertCustomerBoardBundlesEqual = async ({
     const expectedEntry = expected.files.get(relativePath);
     assert.ok(expectedEntry, `Expected committed customer-board bundle entry '${relativePath}'.`);
     assert.equal(actualEntry.kind, expectedEntry.kind, `Artifact kind mismatch for '${relativePath}'.`);
-    assert.equal(actualEntry.content, expectedEntry.content, `Artifact content mismatch for '${relativePath}'.`);
+    assert.equal(
+      normalizeBundleEntryContentForComparison({
+        relativePath,
+        entry: actualEntry
+      }),
+      normalizeBundleEntryContentForComparison({
+        relativePath,
+        entry: expectedEntry
+      }),
+      `Artifact content mismatch for '${relativePath}'.`
+    );
   }
 };
 

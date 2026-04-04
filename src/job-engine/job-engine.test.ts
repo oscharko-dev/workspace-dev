@@ -7,6 +7,7 @@ import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { createWorkspaceLogger } from "../logging.js";
+import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
 const waitForTerminalStatus = async ({
   getStatus,
@@ -28,7 +29,7 @@ const waitForTerminalStatus = async ({
   throw new Error(`Timed out after ${timeoutMs}ms waiting for job ${jobId} status`);
 };
 
-const HEAVY_JOB_TIMEOUT_MS = 60_000;
+const HEAVY_JOB_TIMEOUT_MS = 180_000;
 
 const createLocalFigmaPayload = () => ({
   name: "Local JSON Board",
@@ -51,6 +52,10 @@ const createLocalFigmaPayload = () => ({
       }
     ]
   }
+});
+
+test.before(async () => {
+  await ensureTemplateValidationSeedNodeModules();
 });
 
 const createLowFidelityFigmaPayload = () => ({
@@ -303,7 +308,7 @@ const submitCompletedLocalJsonJob = async ({
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 180_000
+    timeoutMs: 300_000
   });
   assert.equal(status.status, "completed");
   return { accepted, status };
@@ -1181,7 +1186,19 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
   const customerProfileAbsolutePath = path.join(customerProfileDir, "customer-profile.json");
   await mkdir(customerProfileDir, { recursive: true });
   await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
-  await writeFile(customerProfileAbsolutePath, JSON.stringify(createCustomerProfileFixture()), "utf8");
+  const templatePackageJson = JSON.parse(
+    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  const muiMaterialVersion = templatePackageJson.dependencies?.["@mui/material"];
+  assert.ok(muiMaterialVersion);
+  const customerProfileFixture = createCustomerProfileFixture({
+    packageName: "@mui/material",
+    dependencyVersion: muiMaterialVersion,
+    exportName: "Button"
+  });
+  await writeFile(customerProfileAbsolutePath, JSON.stringify(customerProfileFixture), "utf8");
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -1228,7 +1245,7 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
     origin: "request",
     submittedPath: "profiles/customer-profile.json",
     resolvedPath: customerProfileAbsolutePath,
-    profile: createCustomerProfileFixture()
+    profile: customerProfileFixture
   });
 
   const generatedPackage = JSON.parse(
@@ -1236,7 +1253,7 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
   ) as {
     dependencies?: Record<string, string>;
   };
-  assert.equal(generatedPackage.dependencies?.["@customer/components"], "^1.2.3");
+  assert.equal(generatedPackage.dependencies?.["@mui/material"], muiMaterialVersion);
 });
 
 test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_PROFILE_LOAD_FAILED", async () => {

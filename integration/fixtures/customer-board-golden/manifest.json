@@ -5,6 +5,7 @@
     "figmaLibraryResolution": "derived/figma-library-resolution.json",
     "storybookCatalog": "derived/storybook.catalog.json",
     "storybookComponents": "derived/storybook.components.json",
+    "storybookEvidence": "derived/storybook.evidence.json",
     "storybookThemes": "derived/storybook.themes.json",
     "storybookTokens": "derived/storybook.tokens.json"
   },

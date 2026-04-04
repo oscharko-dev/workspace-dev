@@ -14,6 +14,16 @@ export type StaticJsonValue =
   | StaticJsonValue[]
   | { [key: string]: StaticJsonValue };
 
+export interface StaticJsonRecordMergeResult {
+  record: Record<string, StaticJsonValue> | undefined;
+  conflictingKeys: string[];
+}
+
+export interface StaticObjectFieldExtraction {
+  records: Array<Record<string, StaticJsonValue>>;
+  mergeResult: StaticJsonRecordMergeResult;
+}
+
 const isStaticJsonRecord = (value: StaticJsonValue | undefined): value is Record<string, StaticJsonValue> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
@@ -48,35 +58,23 @@ const toStaticJsonValue = (value: JsStaticValue): StaticJsonValue | undefined =>
   }
 };
 
-export const extractStaticObjectField = ({
-  bundleText,
-  fieldName
+export const mergeStaticJsonRecords = ({
+  records
 }: {
-  bundleText: string;
-  fieldName: string;
-}): Record<string, StaticJsonValue> | undefined => {
-  const env = createJsEvaluationEnvironment(bundleText);
-  const normalizedObjects = findObjectLiteralValuesByFieldName({
-    source: bundleText,
-    fieldName
-  })
-    .map((objectLiteral) =>
-      toStaticJsonValue(
-        evaluateJsExpression({
-          source: objectLiteral,
-          env,
-          state: createEvaluationState()
-        })
-      )
-    )
-    .filter(isStaticJsonRecord);
-
-  if (normalizedObjects.length === 0) {
-    return undefined;
+  records: Array<Record<string, StaticJsonValue>>;
+}): StaticJsonRecordMergeResult => {
+  if (records.length === 0) {
+    return {
+      record: undefined,
+      conflictingKeys: []
+    };
   }
 
-  if (normalizedObjects.length === 1) {
-    return normalizedObjects[0];
+  if (records.length === 1) {
+    return {
+      record: records[0],
+      conflictingKeys: []
+    };
   }
 
   const occurrenceCount = new Map<string, number>();
@@ -84,7 +82,7 @@ export const extractStaticObjectField = ({
   const valueByKey = new Map<string, StaticJsonValue>();
   const inconsistentKeys = new Set<string>();
 
-  for (const objectValue of normalizedObjects) {
+  for (const objectValue of records) {
     for (const [key, propertyValue] of Object.entries(objectValue)) {
       occurrenceCount.set(key, (occurrenceCount.get(key) ?? 0) + 1);
       const serialized = JSON.stringify(propertyValue);
@@ -102,7 +100,7 @@ export const extractStaticObjectField = ({
 
   const commonRecord: Record<string, StaticJsonValue> = {};
   for (const key of [...occurrenceCount.keys()].sort((left, right) => left.localeCompare(right))) {
-    if (occurrenceCount.get(key) !== normalizedObjects.length || inconsistentKeys.has(key)) {
+    if (occurrenceCount.get(key) !== records.length || inconsistentKeys.has(key)) {
       continue;
     }
 
@@ -112,5 +110,52 @@ export const extractStaticObjectField = ({
     }
   }
 
-  return Object.keys(commonRecord).length > 0 ? commonRecord : undefined;
+  return {
+    record: Object.keys(commonRecord).length > 0 ? commonRecord : undefined,
+    conflictingKeys: [...inconsistentKeys].sort((left, right) => left.localeCompare(right))
+  };
+};
+
+export const extractStaticObjectFieldDetails = ({
+  bundleText,
+  fieldName
+}: {
+  bundleText: string;
+  fieldName: string;
+}): StaticObjectFieldExtraction => {
+  const env = createJsEvaluationEnvironment(bundleText);
+  const records = findObjectLiteralValuesByFieldName({
+    source: bundleText,
+    fieldName
+  })
+    .map((objectLiteral) =>
+      toStaticJsonValue(
+        evaluateJsExpression({
+          source: objectLiteral,
+          env,
+          state: createEvaluationState()
+        })
+      )
+    )
+    .filter(isStaticJsonRecord);
+
+  return {
+    records,
+    mergeResult: mergeStaticJsonRecords({
+      records
+    })
+  };
+};
+
+export const extractStaticObjectField = ({
+  bundleText,
+  fieldName
+}: {
+  bundleText: string;
+  fieldName: string;
+}): Record<string, StaticJsonValue> | undefined => {
+  return extractStaticObjectFieldDetails({
+    bundleText,
+    fieldName
+  }).mergeResult.record;
 };

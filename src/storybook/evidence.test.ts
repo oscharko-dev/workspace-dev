@@ -218,6 +218,24 @@ test("authoritative evidence types can drive their designated capabilities", asy
   assert.equal(css.usage.canDriveStyling, true);
 });
 
+test("provider-only bundles do not become authoritative theme_bundle evidence", async () => {
+  const buildDir = await createMiniStorybookBuild();
+  await writeFile(
+    path.join(buildDir, "assets", "provider-only.js"),
+    `
+      export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
+    `,
+    "utf8"
+  );
+
+  const artifact = await buildStorybookEvidenceArtifact({ buildDir });
+  assert.equal(artifact.stats.byType.theme_bundle, 1);
+  assert.equal(
+    artifact.evidence.some((item) => item.type === "theme_bundle" && item.source.bundlePath === "assets/provider-only.js"),
+    false
+  );
+});
+
 test("artifact stats match actual evidence counts by type and reliability", async () => {
   const buildDir = await createMiniStorybookBuild();
   const artifact = await buildStorybookEvidenceArtifact({ buildDir });

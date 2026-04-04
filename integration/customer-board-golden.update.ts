@@ -10,7 +10,6 @@ import {
   getCustomerBoardFixtureRoot,
   getCustomerBoardRequestedStorybookStaticDir,
   loadCustomerBoardGoldenManifest,
-  readCommittedCustomerBoardGoldenBundle,
   writeCustomerBoardGoldenBundle
 } from "./customer-board-golden.helpers.js";
 
@@ -54,19 +53,21 @@ const run = async (): Promise<void> => {
   const storybookBuildDir = path.resolve(process.cwd(), getCustomerBoardRequestedStorybookStaticDir());
   await access(path.join(storybookBuildDir, "index.json"));
   const manifest = await loadCustomerBoardGoldenManifest();
-  const committedBundle = await readCommittedCustomerBoardGoldenBundle();
   const outputRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-update-"));
   const sidecarTargets = [
     {
-      relativePath: manifest.derived.storybookTokens,
+      targetPath: path.join(storybookBuildDir, "storybook.evidence.json")
+    },
+    {
+      targetPath: path.join(storybookBuildDir, "storybook.catalog.json")
+    },
+    {
       targetPath: path.join(storybookBuildDir, "tokens.json")
     },
     {
-      relativePath: manifest.derived.storybookThemes,
       targetPath: path.join(storybookBuildDir, "themes.json")
     },
     {
-      relativePath: manifest.derived.storybookComponents,
       targetPath: path.join(storybookBuildDir, "components.json")
     }
   ] as const;
@@ -81,13 +82,7 @@ const run = async (): Promise<void> => {
   );
 
   try {
-    await Promise.all(
-      sidecarTargets.map(async (entry) => {
-        const committedSidecar = committedBundle.files.get(entry.relativePath);
-        assert.ok(committedSidecar, `Committed sidecar '${entry.relativePath}' must exist for fixture refresh.`);
-        await writeFile(entry.targetPath, committedSidecar.content, "utf8");
-      })
-    );
+    await Promise.all(sidecarTargets.map(async (entry) => rm(entry.targetPath, { force: true })));
 
     const runtime = createCustomerBoardHybridLiveRuntimeSettings();
     assert.ok(
@@ -131,6 +126,7 @@ const run = async (): Promise<void> => {
     assert.ok(figmaJsonFile, "Completed customer-board fixture refresh must emit a cleaned figma.json artifact.");
     const bundle = await buildCustomerBoardGoldenBundleFromFigmaInput({
       storybookBuildDir,
+      storybookJobDir: String(status.artifacts.jobDir),
       figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>,
       figmaLibrarySeed: {
         fileKey: figmaFileKey,

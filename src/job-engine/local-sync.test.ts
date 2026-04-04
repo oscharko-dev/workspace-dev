@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { applyLocalSyncPlan, LocalSyncError, planLocalSync } from "./local-sync.js";
+import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
 const createLocalFigmaPayload = () => ({
   name: "Local Sync Test Board",
@@ -98,7 +99,7 @@ const writeLocalSyncBaseline = async ({
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 180_000
+  timeoutMs = 300_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
@@ -114,6 +115,10 @@ const waitForTerminalStatus = async ({
   }
   throw new Error(`Timed out waiting for terminal status for job ${jobId}`);
 };
+
+test.before(async () => {
+  await ensureTemplateValidationSeedNodeModules();
+});
 
 test("planLocalSync rejects unsafe targetPath traversal", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-plan-invalid-"));

@@ -2,11 +2,115 @@
   "$extensions": {
     "io.github.oscharko-dev.workspace-dev": {
       "artifact": "storybook.themes",
-      "diagnostics": [],
-      "provenance": {},
+      "diagnostics": [
+        {
+          "code": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+          "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook args declared 'max' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'max' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+          "message": "Storybook args declared 'maxRows' without a static backfill value.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+          "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+          "severity": "warning"
+        },
+        {
+          "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+          "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+          "severity": "warning"
+        }
+      ],
+      "provenance": {
+        "default": {
+          "color": [
+            {
+              "reliability": "authoritative",
+              "themeMarkers": [
+                "createTheme"
+              ],
+              "type": "theme_bundle"
+            }
+          ],
+          "font": [
+            {
+              "reliability": "authoritative",
+              "themeMarkers": [
+                "createTheme"
+              ],
+              "type": "theme_bundle"
+            }
+          ],
+          "radius": [
+            {
+              "reliability": "authoritative",
+              "themeMarkers": [
+                "createTheme"
+              ],
+              "type": "theme_bundle"
+            }
+          ],
+          "spacing": [
+            {
+              "reliability": "authoritative",
+              "themeMarkers": [
+                "createTheme"
+              ],
+              "type": "theme_bundle"
+            }
+          ],
+          "typography": [
+            {
+              "reliability": "authoritative",
+              "themeMarkers": [
+                "createTheme"
+              ],
+              "type": "theme_bundle"
+            }
+          ]
+        }
+      },
       "stats": {
         "contextCount": 1,
-        "diagnosticCount": 0,
+        "diagnosticCount": 11,
         "errorCount": 0,
         "themeCount": 1
       },
@@ -14,15 +118,15 @@
         {
           "categories": [
             "color",
-            "spacing",
+            "font",
             "radius",
-            "typography",
-            "font"
+            "spacing",
+            "typography"
           ],
           "context": "default",
-          "id": "customer-board-light",
-          "name": "Customer Board Light",
-          "tokenCount": 13
+          "id": "default",
+          "name": "Navigationsleiste-lAL0ACLc",
+          "tokenCount": 110
         }
       ],
       "version": 3
@@ -34,7 +138,7 @@
       "contexts": {
         "default": [
           {
-            "$ref": "#/sets/customer-board-light"
+            "$ref": "#/sets/default"
           }
         ]
       },
@@ -48,10 +152,10 @@
     }
   ],
   "sets": {
-    "customer-board-light": {
+    "default": {
       "sources": [
         {
-          "$ref": "./tokens.json#/theme/customer-board-light"
+          "$ref": "./tokens.json#/theme/default"
         }
       ]
     }

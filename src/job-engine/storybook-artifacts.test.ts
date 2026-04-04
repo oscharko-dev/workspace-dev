@@ -409,6 +409,201 @@ test("generateStorybookArtifactsForJob reuses precomputed sidecar artifacts when
   );
 });
 
+test("generateStorybookArtifactsForJob rejects reused precomputed sidecar artifacts with fatal extraction diagnostics", async () => {
+  const invalidBuildDir = await createInvalidStorybookBuild();
+  const invalidBuildContext = await loadStorybookBuildContext({
+    buildDir: invalidBuildDir
+  });
+  const invalidEvidence = await buildStorybookEvidenceArtifact({
+    buildDir: invalidBuildDir,
+    buildContext: invalidBuildContext
+  });
+  const invalidCatalog = await buildStorybookCatalogArtifact({
+    buildDir: invalidBuildDir,
+    buildContext: invalidBuildContext,
+    evidenceArtifact: invalidEvidence
+  });
+  const invalidPublicArtifacts = await buildStorybookPublicArtifacts({
+    buildDir: invalidBuildDir,
+    buildContext: invalidBuildContext,
+    evidenceArtifact: invalidEvidence,
+    catalogArtifact: invalidCatalog
+  });
+  await writeStorybookEvidenceArtifact({
+    buildDir: invalidBuildDir,
+    artifact: invalidEvidence,
+    outputFilePath: path.join(invalidBuildDir, "storybook.evidence.json")
+  });
+  await writeStorybookCatalogArtifact({
+    buildDir: invalidBuildDir,
+    artifact: invalidCatalog,
+    outputFilePath: path.join(invalidBuildDir, "storybook.catalog.json")
+  });
+  await writeStorybookPublicArtifacts({
+    artifacts: invalidPublicArtifacts,
+    outputDirPath: invalidBuildDir
+  });
+
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-invalid-precomputed-job-"));
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
+
+  await assert.rejects(
+    () =>
+      generateStorybookArtifactsForJob({
+        storybookStaticDir: invalidBuildDir,
+        jobDir,
+        artifactStore,
+        stage: "ir.derive",
+        limits: runtime.pipelineDiagnosticLimits
+      }),
+    (error: unknown) => {
+      assert.equal(typeof error, "object");
+      assert.equal((error as { code?: string }).code, "E_STORYBOOK_TOKEN_EXTRACTION_INVALID");
+      return true;
+    }
+  );
+});
+
+test("generateStorybookArtifactsForJob ignores malformed precomputed sidecar artifacts and regenerates from the build", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const buildContext = await loadStorybookBuildContext({
+    buildDir
+  });
+  const evidenceArtifact = await buildStorybookEvidenceArtifact({
+    buildDir,
+    buildContext
+  });
+  const catalogArtifact = await buildStorybookCatalogArtifact({
+    buildDir,
+    buildContext,
+    evidenceArtifact
+  });
+  const publicArtifacts = await buildStorybookPublicArtifacts({
+    buildDir,
+    buildContext,
+    evidenceArtifact,
+    catalogArtifact
+  });
+  await writeStorybookEvidenceArtifact({
+    buildDir,
+    artifact: evidenceArtifact,
+    outputFilePath: path.join(buildDir, "storybook.evidence.json")
+  });
+  await writeStorybookCatalogArtifact({
+    buildDir,
+    artifact: catalogArtifact,
+    outputFilePath: path.join(buildDir, "storybook.catalog.json")
+  });
+  await writeStorybookPublicArtifacts({
+    artifacts: publicArtifacts,
+    outputDirPath: buildDir
+  });
+
+  const publicFileNames = getStorybookPublicArtifactFileNames();
+  await writeFile(
+    path.join(buildDir, publicFileNames.components),
+    `${JSON.stringify(
+      {
+        artifact: "storybook.components",
+        version: 1,
+        stats: {
+          entryCount: 0,
+          componentCount: 0,
+          componentWithDesignReferenceCount: 0,
+          propKeyCount: 0
+        },
+        components: [
+          {
+            id: 42
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-malformed-precomputed-job-"));
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
+
+  const storybookArtifacts = await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir,
+    artifactStore,
+    stage: "ir.derive",
+    limits: runtime.pipelineDiagnosticLimits
+  });
+
+  assert.equal(storybookArtifacts.publicArtifacts.componentsArtifact.artifact, "storybook.components");
+  assert.equal(storybookArtifacts.publicArtifacts.componentsArtifact.components.length > 0, true);
+});
+
+test("generateStorybookArtifactsForJob regenerates stale precomputed storybook.tokens and storybook.themes artifacts", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const buildContext = await loadStorybookBuildContext({
+    buildDir
+  });
+  const evidenceArtifact = await buildStorybookEvidenceArtifact({
+    buildDir,
+    buildContext
+  });
+  const catalogArtifact = await buildStorybookCatalogArtifact({
+    buildDir,
+    buildContext,
+    evidenceArtifact
+  });
+  const publicArtifacts = await buildStorybookPublicArtifacts({
+    buildDir,
+    buildContext,
+    evidenceArtifact,
+    catalogArtifact
+  });
+  await writeStorybookEvidenceArtifact({
+    buildDir,
+    artifact: evidenceArtifact,
+    outputFilePath: path.join(buildDir, "storybook.evidence.json")
+  });
+  await writeStorybookCatalogArtifact({
+    buildDir,
+    artifact: catalogArtifact,
+    outputFilePath: path.join(buildDir, "storybook.catalog.json")
+  });
+  const { writtenFiles } = await writeStorybookPublicArtifacts({
+    artifacts: publicArtifacts,
+    outputDirPath: buildDir
+  });
+
+  const staleTokens = JSON.parse(await readFile(writtenFiles.tokens, "utf8")) as {
+    $extensions: Record<string, { version?: number }>;
+  };
+  staleTokens.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].version = 2;
+  await writeFile(writtenFiles.tokens, `${JSON.stringify(staleTokens, null, 2)}\n`, "utf8");
+
+  const staleThemes = JSON.parse(await readFile(writtenFiles.themes, "utf8")) as {
+    $extensions: Record<string, { version?: number }>;
+  };
+  staleThemes.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].version = 2;
+  await writeFile(writtenFiles.themes, `${JSON.stringify(staleThemes, null, 2)}\n`, "utf8");
+
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-stale-precomputed-job-"));
+  const artifactStore = new StageArtifactStore({ jobDir });
+  const runtime = resolveRuntimeSettings({ enablePreview: false });
+
+  const storybookArtifacts = await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir,
+    artifactStore,
+    stage: "ir.derive",
+    limits: runtime.pipelineDiagnosticLimits
+  });
+
+  assert.equal(storybookArtifacts.publicArtifacts.tokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]?.version, 3);
+  assert.equal(storybookArtifacts.publicArtifacts.themesArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]?.version, 3);
+});
+
 test("reuseStorybookArtifactsFromSourceJob copies all required artifacts and registers them in the target store", async () => {
   const buildDir = await createSyntheticStorybookBuild();
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-"));

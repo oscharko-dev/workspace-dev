@@ -124,7 +124,7 @@ const createReferenceOnlyEvidenceItem = ({
         : { linkTarget: "https://example.com/reference" }
 });
 
-test("buildStorybookThemeCatalog extracts MUI colorSchemes, spacing scales, fonts, and CSS aliases", async () => {
+test("buildStorybookThemeCatalog extracts MUI colorSchemes, spacing scales, and fonts while failing closed on ambiguous CSS aliases", async () => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-catalog-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -220,8 +220,7 @@ test("buildStorybookThemeCatalog extracts MUI colorSchemes, spacing scales, font
 
   const radius = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.light.radius.shape.border-radius");
   assert.equal(radius?.tokenType, "dimension");
-
-  assert.equal(catalog.diagnostics.length, 0);
+  assert.equal(catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_CSS_THEME_SCOPE_AMBIGUOUS"), false);
 });
 
 test("buildStorybookThemeCatalog promotes canonical spacing.base from authoritative CSS variables", async () => {
@@ -279,6 +278,107 @@ test("buildStorybookThemeCatalog promotes canonical spacing.base from authoritat
   assert.equal(
     catalog.tokenGraph.some((token) => token.path.join(".") === "theme.default.spacing.css.fi-space-base"),
     true
+  );
+});
+
+test("buildStorybookThemeCatalog derives background tokens from authoritative Storybook surfaces when palette.background is absent", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-background-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-background.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#444444" },
+          supplementary: {
+            light: "#ffffff",
+            main: "#fafafa",
+            dark: "#f0f0f0"
+          }
+        },
+        components: {
+          MuiCssBaseline: {
+            styleOverrides: {
+              body: {
+                backgroundColor: "#f0f0f0"
+              }
+            }
+          }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(bundlePath)]
+  });
+
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.background.default")?.value,
+    {
+      colorSpace: "srgb",
+      components: [0.9411764705882353, 0.9411764705882353, 0.9411764705882353]
+    }
+  );
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.background.paper")?.value,
+    {
+      colorSpace: "srgb",
+      components: [1, 1, 1]
+    }
+  );
+});
+
+test("buildStorybookThemeCatalog derives MUI default spacing and shape foundations when createTheme omits them", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-default-foundations-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-default-foundations.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#444444" },
+          background: { default: "#fafafa", paper: "#ffffff" }
+        },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(bundlePath)]
+  });
+
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base")?.value,
+    {
+      value: 8,
+      unit: "px"
+    }
+  );
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.radius.shape.border-radius")?.value,
+    {
+      value: 4,
+      unit: "px"
+    }
   );
 });
 
@@ -418,7 +518,150 @@ test("buildStorybookThemeCatalog merges complementary authoritative theme bundle
   assert.equal(catalog.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length, 0);
 });
 
-test("buildStorybookThemeCatalog backfills missing classes from story args and argTypes without overriding canonical tokens", async () => {
+test("buildStorybookThemeCatalog skips lower-priority duplicate theme bundles that conflict with the selected context theme", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-duplicate-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const primaryBundlePath = "assets/iframe-preview-theme.js";
+  const duplicateBundlePath = "assets/SelectableFITabelle-theme.js";
+  await writeFile(
+    path.join(buildDir, primaryBundlePath),
+    `
+      const previewTheme = createTheme({
+        spacing: 8,
+        shape: { borderRadius: 12 },
+        palette: {
+          primary: { main: "#ff0000" },
+          info: { main: "#00acd3" },
+          success: { main: "#009864" }
+        },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        },
+        components: {
+          MuiCssBaseline: {
+            styleOverrides: {
+              body: { backgroundColor: "#ffffff" }
+            }
+          }
+        },
+        zIndex: { drawer: 1200 }
+      });
+      export { previewTheme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, duplicateBundlePath),
+    `
+      const dynamicSpacing = (...args) => args.length;
+      const dynamicShape = getShape();
+      const localTheme = createTheme({
+        spacing: dynamicSpacing,
+        shape: dynamicShape,
+        palette: {
+          info: { main: "#304ffe" },
+          success: { main: "#4caf50" }
+        },
+        typography: {
+          fontFamily: "Local Sans"
+        }
+      });
+      export { localTheme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(primaryBundlePath), createThemeBundleEvidenceItem(duplicateBundlePath)]
+  });
+
+  assert.deepEqual(catalog.themes.map((theme) => theme.id), ["default"]);
+  assert.equal(
+    catalog.diagnostics.some(
+      (diagnostic) => diagnostic.code === "STORYBOOK_THEME_BUNDLE_SKIPPED" && diagnostic.bundlePath === duplicateBundlePath
+    ),
+    true
+  );
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) =>
+      diagnostic.code === "MUI_THEME_RADIUS_UNRESOLVED" || diagnostic.code === "MUI_THEME_SPACING_DYNAMIC_UNSUPPORTED"
+    ),
+    false
+  );
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_TOKEN_CONFLICT"),
+    false
+  );
+
+  const infoMain = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.info.main");
+  const successMain = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.success.main");
+  assert.deepEqual(infoMain?.value, {
+    colorSpace: "srgb",
+    components: [0, 0.6745098039215687, 0.8274509803921568]
+  });
+  assert.deepEqual(successMain?.value, {
+    colorSpace: "srgb",
+    components: [0, 0.596078431372549, 0.39215686274509803]
+  });
+});
+
+test("buildStorybookThemeCatalog prefers canonical palette keys over case-only aliases", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-palette-aliases-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-palette-aliases.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = createTheme({
+        spacing: 8,
+        shape: { borderRadius: 12 },
+        palette: {
+          info: { main: "#00acd3" },
+          INFO: { main: "#304ffe" },
+          success: { main: "#009864" },
+          SUCCESS: { main: "#4caf50" }
+        },
+        typography: {
+          fontFamily: "Brand Sans"
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [createThemeBundleEvidenceItem(bundlePath)]
+  });
+
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_TOKEN_CONFLICT"),
+    false
+  );
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.info.main")?.value,
+    {
+      colorSpace: "srgb",
+      components: [0, 0.6745098039215687, 0.8274509803921568]
+    }
+  );
+  assert.deepEqual(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.color.success.main")?.value,
+    {
+      colorSpace: "srgb",
+      components: [0, 0.596078431372549, 0.39215686274509803]
+    }
+  );
+});
+
+test("buildStorybookThemeCatalog prefers MUI default foundations over story backfill while recovering missing fonts from argTypes", async () => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-story-backfill-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -482,18 +725,20 @@ test("buildStorybookThemeCatalog backfills missing classes from story args and a
     ]
   });
 
-  const spacingToken = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.stories.spacing");
+  const spacingToken = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base");
   assert.equal(spacingToken?.tokenType, "dimension");
   assert.equal(spacingToken?.completeness.isBackfilled, true);
   assert.deepEqual(spacingToken?.provenance, [
     {
-      type: "story_args",
+      type: "theme_bundle",
       reliability: "authoritative",
-      entryIds: ["story-1"],
-      entryType: "story",
-      keys: ["backgroundColor", "spacing"]
+      themeMarkers: ["createTheme"]
     }
   ]);
+  assert.equal(
+    catalog.tokenGraph.some((token) => token.path.join(".") === "theme.default.spacing.stories.spacing"),
+    false
+  );
 
   const fontAliasToken = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.font.family.brand-sans");
   assert.equal(fontAliasToken?.tokenType, "fontFamily");
@@ -505,7 +750,461 @@ test("buildStorybookThemeCatalog backfills missing classes from story args and a
   );
 });
 
-test("buildStorybookThemeCatalog rejects dynamic story backfill values and keeps the missing-class failure explicit", async () => {
+test("buildStorybookThemeCatalog resolves non-palette colorSchemes overrides for spacing, typography, shape, components, and zIndex", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-color-schemes-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-color-schemes.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = extendTheme({
+        spacing: 8,
+        shape: { borderRadius: 10 },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        },
+        components: {
+          MuiButton: {
+            styleOverrides: {
+              root: {
+                padding: "8px"
+              }
+            }
+          }
+        },
+        zIndex: { drawer: 1200 },
+        colorSchemes: {
+          light: {
+            palette: {
+              primary: { main: "#ff0000", contrastText: "#ffffff" },
+              text: { primary: "#222222" },
+              background: { default: "#ffffff", paper: "#ffffff" }
+            },
+            spacing: 12,
+            shape: { borderRadius: 18 },
+            typography: {
+              fontFamily: "Brand Sans",
+              body1: { fontSize: 18, lineHeight: 1.7 }
+            },
+            components: {
+              MuiButton: {
+                styleOverrides: {
+                  root: {
+                    padding: "12px"
+                  }
+                }
+              }
+            },
+            zIndex: { drawer: 1400 }
+          }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      {
+        ...createThemeBundleEvidenceItem(bundlePath),
+        summary: {
+          themeMarkers: ["extendTheme"]
+        }
+      }
+    ]
+  });
+
+  const spacingBase = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.light.spacing.base");
+  const typographyBody = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.light.typography.body1");
+  const radius = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.light.radius.shape.border-radius");
+  const buttonPadding = catalog.tokenGraph.find(
+    (token) => token.path.join(".") === "theme.light.spacing.components.mui-button.style-overrides.root.padding"
+  );
+  const drawerZIndex = catalog.tokenGraph.find((token) => token.path.join(".") === "theme.light.z-index.drawer");
+
+  assert.equal(JSON.stringify(spacingBase?.value), JSON.stringify({ value: 12, unit: "px" }));
+  assert.equal(JSON.stringify(typographyBody?.value), JSON.stringify({
+    fontFamily: "{font.family.brand-sans}",
+    fontSize: { value: 18, unit: "px" },
+    lineHeight: 1.7
+  }));
+  assert.equal(JSON.stringify(radius?.value), JSON.stringify({ value: 18, unit: "px" }));
+  assert.equal(JSON.stringify(buttonPadding?.value), JSON.stringify({ value: 12, unit: "px" }));
+  assert.equal(drawerZIndex?.value, 1400);
+});
+
+test("buildStorybookThemeCatalog fails closed when css and story backfill scope is ambiguous across theme bundles", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-ambiguous-scope-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundleOnePath = "assets/theme-one.js";
+  const bundleTwoPath = "assets/theme-two.js";
+  const stylesheetPath = "assets/theme.css";
+  const storyArgsBundlePath = "assets/story-args.js";
+
+  await writeFile(
+    path.join(buildDir, bundleOnePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#111111" },
+          background: { default: "#ffffff", paper: "#ffffff" }
+        },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, bundleTwoPath),
+    `
+      const theme = extendTheme({
+        colorSchemes: {
+          dark: {
+            palette: {
+              primary: { main: "#0000ff", contrastText: "#ffffff" },
+              text: { primary: "#222222" },
+              background: { default: "#111111", paper: "#222222" }
+            }
+          }
+        },
+        typography: {
+          fontFamily: "Brand Sans",
+          body1: { fontSize: 14, lineHeight: 1.5 }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, stylesheetPath),
+    `
+      :root {
+        --fi-space-base: 12px;
+      }
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, storyArgsBundlePath),
+    `
+      const meta = {
+        args: {
+          spacing: 12
+        }
+      };
+      export default meta;
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      createThemeBundleEvidenceItem(bundleOnePath),
+      createThemeBundleEvidenceItem(bundleTwoPath),
+      createCssEvidenceItem(stylesheetPath),
+      createStoryArgsEvidenceItem({
+        bundlePath: storyArgsBundlePath,
+        keys: ["spacing"]
+      })
+    ]
+  });
+
+  assert.equal(catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_CSS_THEME_SCOPE_AMBIGUOUS"), true);
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_BACKFILL_THEME_SCOPE_AMBIGUOUS"),
+    true
+  );
+  assert.equal(catalog.tokenGraph.some((token) => token.path.join(".") === "theme.light.spacing.base"), false);
+  assert.equal(
+    catalog.tokenGraph.some((token) => token.path.join(".").startsWith("theme.light.spacing.stories")),
+    false
+  );
+});
+
+test("buildStorybookThemeCatalog fails closed for CSS and story backfill when a single bundle yields multiple themes", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-single-bundle-ambiguous-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const bundlePath = "assets/theme-modes.js";
+  const stylesheetPath = "assets/theme.css";
+  const storyArgsBundlePath = "assets/story.js";
+  await writeFile(
+    path.join(buildDir, bundlePath),
+    `
+      const theme = extendTheme({
+        spacing: 8,
+        colorSchemes: {
+          light: {
+            palette: {
+              primary: { main: "#ff0000", contrastText: "#ffffff" },
+              text: { primary: "#444444" }
+            }
+          },
+          dark: {
+            palette: {
+              primary: { main: "#880000", contrastText: "#ffffff" },
+              text: { primary: "#f0f0f0" }
+            }
+          }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, stylesheetPath),
+    `
+      :root {
+        --fi-space-base: 12px;
+      }
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, storyArgsBundlePath),
+    `
+      const meta = {
+        args: {
+          spacing: 12
+        }
+      };
+      export default meta;
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      createThemeBundleEvidenceItem(bundlePath),
+      createCssEvidenceItem(stylesheetPath),
+      createStoryArgsEvidenceItem({
+        bundlePath: storyArgsBundlePath,
+        keys: ["spacing"]
+      })
+    ]
+  });
+
+  assert.equal(catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_CSS_THEME_SCOPE_AMBIGUOUS"), true);
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_BACKFILL_THEME_SCOPE_AMBIGUOUS"),
+    true
+  );
+  assert.equal(catalog.tokenGraph.some((token) => token.path.join(".").startsWith("theme.light.spacing.css")), false);
+  assert.equal(catalog.tokenGraph.some((token) => token.path.join(".").startsWith("theme.dark.spacing.css")), false);
+  assert.equal(catalog.tokenGraph.some((token) => token.path.join(".").startsWith("theme.light.spacing.stories")), false);
+  assert.equal(catalog.tokenGraph.some((token) => token.path.join(".").startsWith("theme.dark.spacing.stories")), false);
+});
+
+test("buildStorybookThemeCatalog emits conflict diagnostics for repeated story args with conflicting values", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-story-conflict-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const themeBundlePath = "assets/theme-base.js";
+  const storyArgsBundlePath = "assets/story-conflict.js";
+  await writeFile(
+    path.join(buildDir, themeBundlePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#222222" },
+          background: { default: "#ffffff", paper: "#ffffff" }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, storyArgsBundlePath),
+    `
+      const meta = {
+        args: {
+          spacing: 8
+        }
+      };
+      export const Variant = {
+        args: {
+          spacing: 12
+        }
+      };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      createThemeBundleEvidenceItem(themeBundlePath),
+      createStoryArgsEvidenceItem({
+        bundlePath: storyArgsBundlePath,
+        keys: ["spacing"]
+      })
+    ]
+  });
+
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_BACKFILL_VALUE_CONFLICT"),
+    true
+  );
+  assert.equal(
+    catalog.tokenGraph.some((token) => token.path.join(".") === "theme.default.spacing.stories.spacing"),
+    false
+  );
+  assert.equal(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base")?.tokenType,
+    "dimension"
+  );
+});
+
+test("buildStorybookThemeCatalog emits conflict diagnostics for repeated story argTypes defaults with conflicting values", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-argtypes-conflict-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const themeBundlePath = "assets/theme-base.js";
+  const storyArgTypesBundlePath = "assets/story-argtypes-conflict.js";
+  await writeFile(
+    path.join(buildDir, themeBundlePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#222222" },
+          background: { default: "#ffffff", paper: "#ffffff" }
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, storyArgTypesBundlePath),
+    `
+      const meta = {
+        argTypes: {
+          fontFamily: {
+            defaultValue: "Brand Sans"
+          }
+        }
+      };
+      export const Variant = {
+        argTypes: {
+          fontFamily: {
+            defaultValue: "Brand Serif"
+          }
+        }
+      };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      createThemeBundleEvidenceItem(themeBundlePath),
+      createStoryArgTypesEvidenceItem({
+        bundlePath: storyArgTypesBundlePath,
+        keys: ["fontFamily"]
+      })
+    ]
+  });
+
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_BACKFILL_VALUE_CONFLICT"),
+    true
+  );
+  assert.equal(
+    catalog.tokenGraph.some((token) => token.path.join(".") === "theme.default.font.family.brand-serif"),
+    false
+  );
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "MUI_THEME_TYPOGRAPHY_OR_FONT_MISSING"),
+    true
+  );
+});
+
+test("buildStorybookThemeCatalog ignores semantic color argType conflicts that are not tokenizable", async () => {
+  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-color-semantic-"));
+  const assetsDir = path.join(buildDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+
+  const themeBundlePath = "assets/theme-base.js";
+  const storyArgTypesBundlePath = "assets/story-argtypes-color-conflict.js";
+  await writeFile(
+    path.join(buildDir, themeBundlePath),
+    `
+      const theme = createTheme({
+        palette: {
+          primary: { main: "#ff0000", contrastText: "#ffffff" },
+          text: { primary: "#222222" }
+        },
+        spacing: 8,
+        typography: {
+          fontFamily: "Brand Sans"
+        }
+      });
+      export { theme };
+    `,
+    "utf8"
+  );
+  await writeFile(
+    path.join(buildDir, storyArgTypesBundlePath),
+    `
+      const meta = {
+        argTypes: {
+          color: {
+            defaultValue: "primary"
+          }
+        }
+      };
+      export const Variant = {
+        argTypes: {
+          color: {
+            defaultValue: "secondary"
+          }
+        }
+      };
+    `,
+    "utf8"
+  );
+
+  const catalog = await buildStorybookThemeCatalog({
+    buildDir,
+    evidenceItems: [
+      createThemeBundleEvidenceItem(themeBundlePath),
+      createStoryArgTypesEvidenceItem({
+        bundlePath: storyArgTypesBundlePath,
+        keys: ["color"]
+      })
+    ]
+  });
+
+  assert.equal(
+    catalog.diagnostics.some((diagnostic) => diagnostic.code === "STORYBOOK_BACKFILL_VALUE_CONFLICT"),
+    false
+  );
+});
+
+test("buildStorybookThemeCatalog rejects dynamic story backfill values while retaining MUI default spacing foundations", async () => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-story-dynamic-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -558,8 +1257,8 @@ test("buildStorybookThemeCatalog rejects dynamic story backfill values and keeps
     true
   );
   assert.equal(
-    catalog.diagnostics.some((diagnostic) => diagnostic.code === "MUI_THEME_SPACING_MISSING"),
-    true
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base")?.tokenType,
+    "dimension"
   );
 });
 
@@ -578,7 +1277,7 @@ test("buildStorybookThemeCatalog emits fatal diagnostics when no authoritative t
   );
 });
 
-test("buildStorybookThemeCatalog emits fatal diagnostics when required theme classes stay unresolved", async () => {
+test("buildStorybookThemeCatalog emits fatal diagnostics only for required theme classes that remain unresolved after MUI defaults", async () => {
   const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-theme-missing-required-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
@@ -606,7 +1305,11 @@ test("buildStorybookThemeCatalog emits fatal diagnostics when required theme cla
   assert.equal(catalog.themes.length, 1);
   assert.equal(
     catalog.diagnostics.some((diagnostic) => diagnostic.code === "MUI_THEME_SPACING_MISSING"),
-    true
+    false
+  );
+  assert.equal(
+    catalog.tokenGraph.find((token) => token.path.join(".") === "theme.default.spacing.base")?.tokenType,
+    "dimension"
   );
   assert.equal(
     catalog.diagnostics.some((diagnostic) => diagnostic.code === "MUI_THEME_TYPOGRAPHY_OR_FONT_MISSING"),

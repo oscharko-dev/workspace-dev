@@ -12,8 +12,22 @@
       "timedOut": false
     },
     "install": {
-      "status": "skipped",
-      "strategy": "skip_install"
+      "command": {
+        "args": [
+          "install",
+          "--frozen-lockfile",
+          "--reporter",
+          "append-only",
+          "--prefer-offline"
+        ],
+        "attempt": 1,
+        "command": "pnpm",
+        "outputCaptureKey": "validate.project.install",
+        "status": "passed",
+        "timedOut": false
+      },
+      "status": "completed",
+      "strategy": "existing_node_modules"
     },
     "lint": {
       "args": [
@@ -88,36 +102,36 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 18,
-          "match_unmatched": 14,
+          "match_ambiguous": 16,
+          "match_unmatched": 15,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 10,
+          "profile_import_missing": 11,
           "profile_import_resolved": 0
         },
         "byStatus": {
-          "mui_fallback_allowed": 10,
+          "mui_fallback_allowed": 11,
           "mui_fallback_denied": 0,
-          "not_applicable": 32,
+          "not_applicable": 31,
           "resolved_import": 0
         },
         "iconByReason": {
-          "match_ambiguous": 6,
+          "match_ambiguous": 11,
           "match_unmatched": 36,
           "not_icon_family": 28,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 0,
           "profile_icon_wrapper_allowed": 0,
-          "profile_icon_wrapper_denied": 10,
+          "profile_icon_wrapper_denied": 6,
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 6,
+          "ambiguous": 11,
           "not_applicable": 28,
           "resolved_import": 0,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
-          "wrapper_fallback_denied": 10
+          "wrapper_fallback_denied": 6
         }
       },
       "issueCount": 84,
@@ -277,14 +291,6 @@
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:39169",
-          "figmaFamilyName": "<Dynamic Typography> (headlines)",
-          "kind": "component",
-          "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
           "figmaFamilyKey": "component:1:38938",
           "figmaFamilyName": "<Icon>",
           "iconKey": "docs",
@@ -311,44 +317,53 @@
           "figmaFamilyName": "<IconButton>",
           "iconKey": "button",
           "kind": "icon",
-          "message": "icon 'button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
-          "profileFamily": "Components",
-          "reason": "profile_icon_wrapper_denied",
-          "status": "wrapper_fallback_denied",
-          "storybookTier": "Components"
+          "message": "icon 'button' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "children",
           "kind": "icon",
-          "message": "icon 'children' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
-          "profileFamily": "Components",
-          "reason": "profile_icon_wrapper_denied",
-          "status": "wrapper_fallback_denied",
-          "storybookTier": "Components"
+          "message": "icon 'children' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "iconKey": "color_default_size_small_state_enabled",
+          "kind": "icon",
+          "message": "icon 'color_default_size_small_state_enabled' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "display.button",
           "kind": "icon",
-          "message": "icon 'display.button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
-          "profileFamily": "Components",
-          "reason": "profile_icon_wrapper_denied",
-          "status": "wrapper_fallback_denied",
-          "storybookTier": "Components"
+          "message": "icon 'display.button' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "docs",
           "kind": "icon",
-          "message": "icon 'docs' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
-          "profileFamily": "Components",
-          "reason": "profile_icon_wrapper_denied",
-          "status": "wrapper_fallback_denied",
-          "storybookTier": "Components"
+          "message": "icon 'docs' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "kind": "component",
+          "message": "Figma family '<IconButton>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
         },
         {
           "figmaFamilyKey": "component:1:54308",
@@ -383,23 +398,7 @@
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:42583",
-          "figmaFamilyName": "<Stack>",
-          "kind": "component",
-          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
           "figmaFamilyKey": "component:1:42805",
-          "figmaFamilyName": "<Stack>",
-          "kind": "component",
-          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:62521",
           "figmaFamilyName": "<Stack>",
           "kind": "component",
           "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
@@ -451,6 +450,14 @@
           "figmaFamilyName": "<Stack3>(Nested)",
           "kind": "component",
           "message": "Figma family '<Stack3>(Nested)' is unmatched in component.match_report.",
+          "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
           "reason": "match_unmatched",
           "status": "not_applicable"
         },
@@ -875,22 +882,22 @@
       "status": "ok",
       "summary": {
         "bySource": {
-          "cache": 9,
-          "live": 0,
-          "localCatalog": 32
+          "cache": 0,
+          "live": 41,
+          "localCatalog": 0
         },
-        "cacheHit": 9,
-        "entriesWithOriginFileKey": 9,
-        "error": 0,
-        "offlineReused": 9,
-        "partial": 32,
-        "resolved": 9,
+        "cacheHit": 0,
+        "entriesWithOriginFileKey": 14,
+        "error": 27,
+        "offlineReused": 0,
+        "partial": 0,
+        "resolved": 14,
         "total": 41
       }
     },
     "status": "warn"
   },
-  "status": "failed",
+  "status": "warn",
   "storybook": {
     "artifacts": {
       "catalog": {
@@ -902,7 +909,8 @@
         "status": "ok"
       },
       "evidence": {
-        "status": "missing"
+        "filePath": "<fixture-root>/derived/storybook.evidence.json",
+        "status": "ok"
       },
       "themes": {
         "filePath": "<fixture-root>/derived/storybook.themes.json",
@@ -914,15 +922,15 @@
       }
     },
     "composition": {
-      "ambiguous": 18,
+      "ambiguous": 16,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 10,
+      "matched": 11,
       "totalFigmaFamilies": 42,
-      "unmatched": 14
+      "unmatched": 15
     },
     "requestedPath": "storybook-static/storybook-static",
-    "status": "failed"
+    "status": "ok"
   },
   "style": {
     "customerProfile": {
@@ -935,32 +943,491 @@
         "validatedComponentNames": []
       },
       "evidence": {
-        "authoritativeStylingEvidenceCount": 0,
-        "referenceOnlyEvidenceTypes": [],
-        "referenceOnlyStylingEvidenceCount": 0
+        "authoritativeStylingEvidenceCount": 151,
+        "referenceOnlyEvidenceTypes": [
+          "docs_image",
+          "docs_text",
+          "mdx_link",
+          "story_design_link"
+        ],
+        "referenceOnlyStylingEvidenceCount": 6297
       },
       "themes": {
-        "diagnosticCount": 0,
-        "diagnostics": [],
+        "diagnosticCount": 11,
+        "diagnostics": [
+          {
+            "code": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+            "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'maxRows' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          }
+        ],
         "errorCount": 0
       },
       "tokens": {
-        "diagnosticCount": 0,
-        "diagnostics": [],
+        "diagnosticCount": 11,
+        "diagnostics": [
+          {
+            "code": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+            "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'max' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+            "message": "Storybook args declared 'maxRows' without a static backfill value.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          },
+          {
+            "code": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+            "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+            "severity": "warning"
+          }
+        ],
         "errorCount": 0
       }
     },
-    "issueCount": 0,
-    "issues": [],
+    "issueCount": 40,
+    "issues": [
+      {
+        "category": "forbidden_inline_style",
+        "column": 31,
+        "componentName": "a",
+        "filePath": "src/App.tsx",
+        "line": 27,
+        "message": "Generated source must not use inline style={{...}} objects.",
+        "propName": "style",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 117,
+        "componentName": "Typography",
+        "filePath": "src/components/SeitenContentPattern1.tsx",
+        "line": 25,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 236,
+        "componentName": "Avatar",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 37,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
+        "propName": "bgcolor",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 156,
+        "componentName": "SvgIcon",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 44,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 101,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 145,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 301,
+        "componentName": "IconButton",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 260,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 386,
+        "componentName": "SvgIcon",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 260,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 101,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 327,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 101,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 399,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 261,
+        "componentName": "Chip",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 417,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
+        "propName": "bgcolor",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 100,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 499,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 97,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 500,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 308,
+        "componentName": "Button",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 521,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 46,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 145,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 49,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 326,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 46,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 327,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 49,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 398,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 46,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 399,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 45,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 499,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 42,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 500,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+        "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+        "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook args declared 'max' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook args declared 'maxRows' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'max' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.themes",
+        "category": "storybook_theme_diagnostic",
+        "diagnosticCode": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+        "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+        "message": "Skipped Storybook theme bundle 'assets/iframe-C6LG5DgH.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_THEME_BUNDLE_SKIPPED",
+        "message": "Skipped Storybook theme bundle 'assets/SelectableFITabelle-BtlbP9d6.js' because it produced fatal extraction diagnostics for an already-selected theme context.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook args declared 'max' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook args declared 'maxRows' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'margin' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'max' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'maxItems' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'minLength' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
+        "message": "Storybook argTypes declared 'spacing' without a static backfill value.",
+        "severity": "warning"
+      },
+      {
+        "artifact": "storybook.tokens",
+        "category": "storybook_token_diagnostic",
+        "diagnosticCode": "JS_EVAL_OBJECT_KEY_UNRESOLVED",
+        "message": "Unable to statically evaluate object key '[`.${lB.root}`]'.",
+        "severity": "warning"
+      }
+    ],
     "policy": "warn",
-    "status": "not_available",
+    "status": "warn",
     "storybook": {
       "componentMatchReport": {
         "filePath": "<fixture-root>/derived/component-match-report.json",
         "status": "ok"
       },
       "evidence": {
-        "status": "not_available"
+        "filePath": "<fixture-root>/derived/storybook.evidence.json",
+        "status": "ok"
       },
       "themes": {
         "filePath": "<fixture-root>/derived/storybook.themes.json",

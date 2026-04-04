@@ -12,7 +12,11 @@ import {
   isJsStaticStringValue,
   type JsStaticValue
 } from "./js-subset-evaluator.js";
-import { extractStaticObjectField, type StaticJsonValue } from "./static-object-field.js";
+import {
+  extractStaticObjectFieldDetails,
+  mergeStaticJsonRecords,
+  type StaticJsonValue
+} from "./static-object-field.js";
 import { extractTopLevelObjectKeys, normalizePosixPath, uniqueSorted } from "./text.js";
 import type {
   StorybookEvidenceItem,
@@ -63,6 +67,9 @@ interface ThemeBundleExtraction {
   tokenGraph: StorybookTokenGraphEntry[];
   diagnostics: StorybookThemeDiagnostic[];
   score: number;
+  themeMarkers: string[];
+  evidenceItems: StorybookEvidenceItem[];
+  foundationPresenceByThemeId: Map<string, { hasExplicitSpacing: boolean; hasExplicitShape: boolean }>;
 }
 
 interface StoryBackfillCandidate {
@@ -70,6 +77,12 @@ interface StoryBackfillCandidate {
   tokenType: StorybookTokenValueType;
   value: unknown;
   pathSuffix: string[];
+}
+
+interface StoryFieldStaticRecordResult {
+  staticRecord: Record<string, StaticJsonValue> | undefined;
+  conflictingKeys: string[];
+  conflictingValuesByKey: Record<string, StaticJsonValue[]>;
 }
 
 const pushDiagnostic = ({
@@ -99,6 +112,36 @@ const pushDiagnostic = ({
   });
 };
 
+const collectConflictingStaticValuesByKey = ({
+  records,
+  conflictingKeys
+}: {
+  records: Array<Record<string, StaticJsonValue>>;
+  conflictingKeys: string[];
+}): Record<string, StaticJsonValue[]> => {
+  const conflictingKeySet = new Set(conflictingKeys);
+  const valuesByKey = new Map<string, StaticJsonValue[]>();
+
+  for (const record of records) {
+    for (const [key, value] of Object.entries(record)) {
+      if (!conflictingKeySet.has(key)) {
+        continue;
+      }
+      const existing = valuesByKey.get(key) ?? [];
+      if (!existing.some((entry) => JSON.stringify(entry) === JSON.stringify(value))) {
+        existing.push(value);
+      }
+      valuesByKey.set(key, existing);
+    }
+  }
+
+  return Object.fromEntries(
+    [...valuesByKey.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, values]) => [key, values])
+  );
+};
+
 const buildStableId = (prefix: string, value: unknown): string => {
   const hash = createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
   return `${prefix}:${hash}`;
@@ -116,6 +159,47 @@ const normalizeNameSegment = (value: string): string => {
 
 const normalizeVariableName = (value: string): string => {
   return normalizeNameSegment(value.replace(/^--+/u, ""));
+};
+
+const resolveNormalizedBranchSegments = (keys: string[]): Map<string, string | undefined> => {
+  const groupedKeys = new Map<string, string[]>();
+  for (const key of keys) {
+    const normalizedKey = normalizeNameSegment(key);
+    const existing = groupedKeys.get(normalizedKey) ?? [];
+    existing.push(key);
+    groupedKeys.set(normalizedKey, existing);
+  }
+
+  const resolved = new Map<string, string | undefined>();
+  for (const [normalizedKey, groupedRawKeys] of groupedKeys.entries()) {
+    if (groupedRawKeys.length === 1) {
+      const [onlyKey] = groupedRawKeys;
+      if (!onlyKey) {
+        continue;
+      }
+      resolved.set(onlyKey, normalizedKey);
+      continue;
+    }
+
+    const canonicalKey = groupedRawKeys.find((rawKey) => rawKey === normalizedKey);
+    if (canonicalKey) {
+      resolved.set(canonicalKey, normalizedKey);
+      for (const rawKey of groupedRawKeys) {
+        if (rawKey !== canonicalKey) {
+          resolved.set(rawKey, undefined);
+        }
+      }
+      continue;
+    }
+
+    [...groupedRawKeys]
+      .sort((left, right) => left.localeCompare(right))
+      .forEach((rawKey, index) => {
+        resolved.set(rawKey, index === 0 ? normalizedKey : `${normalizedKey}-${index + 1}`);
+      });
+  }
+
+  return resolved;
 };
 
 const toPathKey = (segments: string[]): string => {
@@ -183,6 +267,32 @@ const compareThemes = (left: StorybookExtractedTheme, right: StorybookExtractedT
     return left.id.localeCompare(right.id);
   }
   return left.name.localeCompare(right.name);
+};
+
+const compareThemeExtractions = (left: ThemeBundleExtraction, right: ThemeBundleExtraction): number => {
+  const leftErrorCount = left.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+  const rightErrorCount = right.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+  if (leftErrorCount !== rightErrorCount) {
+    return leftErrorCount - rightErrorCount;
+  }
+
+  const leftBaseName = path.posix.basename(normalizePosixPath(left.bundlePath)).toLowerCase();
+  const rightBaseName = path.posix.basename(normalizePosixPath(right.bundlePath)).toLowerCase();
+  const leftIsIframeBundle = leftBaseName.startsWith("iframe");
+  const rightIsIframeBundle = rightBaseName.startsWith("iframe");
+  if (leftIsIframeBundle !== rightIsIframeBundle) {
+    return leftIsIframeBundle ? -1 : 1;
+  }
+
+  if (right.score !== left.score) {
+    return right.score - left.score;
+  }
+
+  if (right.themeMarkers.length !== left.themeMarkers.length) {
+    return right.themeMarkers.length - left.themeMarkers.length;
+  }
+
+  return compareBundlePaths({ left: left.bundlePath, right: right.bundlePath });
 };
 
 const collectBalancedObjectSegments = (source: string): string[] => {
@@ -613,6 +723,13 @@ const mergeTokenEntry = ({
     existing.tokenClass === entry.tokenClass &&
     JSON.stringify(existing.value) === JSON.stringify(entry.value);
   if (!isSameValue) {
+    if (existing.completeness.isBackfilled && !entry.completeness.isBackfilled) {
+      tokenGraphByPath.set(key, entry);
+      return;
+    }
+    if (!existing.completeness.isBackfilled && entry.completeness.isBackfilled) {
+      return;
+    }
     pushDiagnostic({
       diagnostics,
       severity: "error",
@@ -636,6 +753,69 @@ const mergeTokenEntry = ({
     isBackfilled: existing.completeness.isBackfilled && entry.completeness.isBackfilled,
     satisfiesRequiredClass:
       existing.completeness.satisfiesRequiredClass || entry.completeness.satisfiesRequiredClass
+  };
+};
+
+const isSameTokenValue = (left: StorybookTokenGraphEntry, right: StorybookTokenGraphEntry): boolean => {
+  return (
+    left.tokenType === right.tokenType &&
+    left.tokenClass === right.tokenClass &&
+    JSON.stringify(left.value) === JSON.stringify(right.value)
+  );
+};
+
+const findDuplicateThemeBundleConflicts = ({
+  extraction,
+  existingThemesById,
+  tokenGraphByPath
+}: {
+  extraction: ThemeBundleExtraction;
+  existingThemesById: Map<string, StorybookExtractedTheme>;
+  tokenGraphByPath: Map<string, StorybookTokenGraphEntry>;
+}): {
+  duplicateThemeIds: string[];
+  conflictingTokenPaths: string[];
+  hasDuplicateThemeErrors: boolean;
+} => {
+  const duplicateThemeIds = extraction.themes
+    .map((theme) => theme.id)
+    .filter((themeId, index, ids) => existingThemesById.has(themeId) && ids.indexOf(themeId) === index)
+    .sort((left, right) => left.localeCompare(right));
+
+  if (duplicateThemeIds.length === 0) {
+    return {
+      duplicateThemeIds,
+      conflictingTokenPaths: [],
+      hasDuplicateThemeErrors: false
+    };
+  }
+
+  const duplicateThemeIdSet = new Set(duplicateThemeIds);
+  const conflictingTokenPaths = extraction.tokenGraph
+    .filter((token) => duplicateThemeIdSet.has(token.themeId))
+    .flatMap((token) => {
+      const existing = tokenGraphByPath.get(toPathKey(token.path));
+      if (!existing || isSameTokenValue(existing, token)) {
+        return [];
+      }
+      return [toPathKey(token.path)];
+    })
+    .sort((left, right) => left.localeCompare(right));
+
+  const hasDuplicateThemeErrors = extraction.diagnostics.some((diagnostic) => {
+    if (diagnostic.severity !== "error") {
+      return false;
+    }
+    if (!diagnostic.themeId) {
+      return true;
+    }
+    return duplicateThemeIdSet.has(diagnostic.themeId);
+  });
+
+  return {
+    duplicateThemeIds,
+    conflictingTokenPaths,
+    hasDuplicateThemeErrors
   };
 };
 
@@ -1006,7 +1186,12 @@ const extractPaletteTokens = ({
     if (!isJsStaticObjectValue(value)) {
       return;
     }
+    const normalizedSegmentsByKey = resolveNormalizedBranchSegments([...value.properties.keys()]);
     for (const [key, nestedValue] of value.properties.entries()) {
+      const normalizedKey = normalizedSegmentsByKey.get(key);
+      if (!normalizedKey) {
+        continue;
+      }
       if (isJsStaticStringValue(nestedValue)) {
         const tokenValue = toColorTokenValue(nestedValue.value);
         if (!tokenValue) {
@@ -1016,7 +1201,7 @@ const extractPaletteTokens = ({
         addTokenEntry({
           tokenGraphByPath,
           themeId,
-          path: [THEME_CONTEXT_PREFIX, themeId, "color", ...pathSegments, normalizeNameSegment(key)],
+          path: [THEME_CONTEXT_PREFIX, themeId, "color", ...pathSegments, normalizedKey],
           tokenClass: "color",
           tokenType: "color",
           value: tokenValue,
@@ -1029,7 +1214,7 @@ const extractPaletteTokens = ({
       if (isJsStaticObjectValue(nestedValue)) {
         visitPaletteBranch({
           value: nestedValue,
-          pathSegments: [...pathSegments, normalizeNameSegment(key)]
+          pathSegments: [...pathSegments, normalizedKey]
         });
       }
     }
@@ -1610,6 +1795,198 @@ const extractComponentSurfaceTokens = ({
   return extractedCount;
 };
 
+const getThemeColorTokenValue = ({
+  tokenGraphByPath,
+  themeId,
+  pathSuffix
+}: {
+  tokenGraphByPath: ReadonlyMap<string, StorybookTokenGraphEntry>;
+  themeId: string;
+  pathSuffix: string[];
+}): unknown | undefined => {
+  const entry = tokenGraphByPath.get(toPathKey([THEME_CONTEXT_PREFIX, themeId, "color", ...pathSuffix]));
+  return entry?.tokenType === "color" ? entry.value : undefined;
+};
+
+const addDerivedBackgroundToken = ({
+  tokenGraphByPath,
+  themeId,
+  diagnostics,
+  evidenceItems,
+  slot,
+  candidatePaths,
+  description
+}: {
+  tokenGraphByPath: Map<string, StorybookTokenGraphEntry>;
+  themeId: string;
+  diagnostics: StorybookThemeDiagnostic[];
+  evidenceItems: StorybookEvidenceItem[];
+  slot: "default" | "paper";
+  candidatePaths: string[][];
+  description: string;
+}): boolean => {
+  const existingValue = getThemeColorTokenValue({
+    tokenGraphByPath,
+    themeId,
+    pathSuffix: ["background", slot]
+  });
+  if (existingValue !== undefined) {
+    return false;
+  }
+
+  for (const candidatePath of candidatePaths) {
+    const candidateValue = getThemeColorTokenValue({
+      tokenGraphByPath,
+      themeId,
+      pathSuffix: candidatePath
+    });
+    if (candidateValue === undefined) {
+      continue;
+    }
+    addTokenEntry({
+      tokenGraphByPath,
+      themeId,
+      path: [THEME_CONTEXT_PREFIX, themeId, "color", "background", slot],
+      tokenClass: "color",
+      tokenType: "color",
+      value: candidateValue,
+      evidenceItems,
+      diagnostics,
+      isBackfilled: false,
+      description
+    });
+    return true;
+  }
+
+  return false;
+};
+
+const extractDerivedBackgroundTokens = ({
+  tokenGraphByPath,
+  themeId,
+  diagnostics,
+  evidenceItems
+}: {
+  tokenGraphByPath: Map<string, StorybookTokenGraphEntry>;
+  themeId: string;
+  diagnostics: StorybookThemeDiagnostic[];
+  evidenceItems: StorybookEvidenceItem[];
+}): number => {
+  let extractedCount = 0;
+
+  if (
+    addDerivedBackgroundToken({
+      tokenGraphByPath,
+      themeId,
+      diagnostics,
+      evidenceItems,
+      slot: "default",
+      candidatePaths: [
+        ["components", "mui-css-baseline", "style-overrides", "body", "background-color"],
+        ["supplementary", "dark"],
+        ["supplementary", "main"],
+        ["background", "paper"]
+      ],
+      description: "Derived from authoritative Storybook surface defaults because palette.background.default was absent."
+    })
+  ) {
+    extractedCount += 1;
+  }
+
+  if (
+    addDerivedBackgroundToken({
+      tokenGraphByPath,
+      themeId,
+      diagnostics,
+      evidenceItems,
+      slot: "paper",
+      candidatePaths: [
+        ["supplementary", "light"],
+        ["weiss", "main"],
+        ["supplementary", "main"],
+        ["background", "default"]
+      ],
+      description: "Derived from authoritative Storybook surface defaults because palette.background.paper was absent."
+    })
+  ) {
+    extractedCount += 1;
+  }
+
+  return extractedCount;
+};
+
+const hasMuiThemeFactorySignal = ({
+  evidenceItems
+}: {
+  evidenceItems: StorybookEvidenceItem[];
+}): boolean => {
+  return evidenceItems.some((evidenceItem) => {
+    if (evidenceItem.type !== "theme_bundle") {
+      return false;
+    }
+    const themeMarkers = evidenceItem.summary.themeMarkers ?? [];
+    return themeMarkers.includes("createTheme") || themeMarkers.includes("extendTheme");
+  });
+};
+
+const extractMuiDefaultFoundationTokens = ({
+  tokenGraphByPath,
+  themeId,
+  diagnostics,
+  evidenceItems,
+  allowSpacingDefault,
+  allowShapeDefault
+}: {
+  tokenGraphByPath: Map<string, StorybookTokenGraphEntry>;
+  themeId: string;
+  diagnostics: StorybookThemeDiagnostic[];
+  evidenceItems: StorybookEvidenceItem[];
+  allowSpacingDefault: boolean;
+  allowShapeDefault: boolean;
+}): number => {
+  if (!hasMuiThemeFactorySignal({ evidenceItems })) {
+    return 0;
+  }
+
+  let extractedCount = 0;
+  if (allowSpacingDefault && !tokenGraphByPath.has(toPathKey([THEME_CONTEXT_PREFIX, themeId, "spacing", "base"]))) {
+    addTokenEntry({
+      tokenGraphByPath,
+      themeId,
+      path: [THEME_CONTEXT_PREFIX, themeId, "spacing", "base"],
+      tokenClass: "spacing",
+      tokenType: "dimension",
+      value: { value: 8, unit: "px" },
+      evidenceItems,
+      diagnostics,
+      isBackfilled: true,
+      description: "Derived from the MUI createTheme/extendTheme default spacing because theme.spacing was absent."
+    });
+    extractedCount += 1;
+  }
+
+  if (
+    allowShapeDefault &&
+    !tokenGraphByPath.has(toPathKey([THEME_CONTEXT_PREFIX, themeId, "radius", "shape", "border-radius"]))
+  ) {
+    addTokenEntry({
+      tokenGraphByPath,
+      themeId,
+      path: [THEME_CONTEXT_PREFIX, themeId, "radius", "shape", "border-radius"],
+      tokenClass: "radius",
+      tokenType: "dimension",
+      value: { value: 4, unit: "px" },
+      evidenceItems,
+      diagnostics,
+      isBackfilled: true,
+      description: "Derived from the MUI createTheme/extendTheme default shape.borderRadius because theme.shape was absent."
+    });
+    extractedCount += 1;
+  }
+
+  return extractedCount;
+};
+
 const summarizeThemeCategories = ({
   themeId,
   tokens
@@ -1653,6 +2030,18 @@ const scoreExtractedThemeGroup = ({
   return candidate.score * 1000 + tokens.length * 25 + themes.length * 250 + categoryCount * 40;
 };
 
+const resolveContextValue = ({
+  contextValue,
+  key,
+  baseValue
+}: {
+  contextValue: JsStaticValue;
+  key: string;
+  baseValue: JsStaticValue | undefined;
+}): JsStaticValue | undefined => {
+  return getObjectProperty(contextValue, key) ?? baseValue;
+};
+
 const extractThemeContexts = ({
   evaluatedTheme,
   themeName,
@@ -1665,9 +2054,14 @@ const extractThemeContexts = ({
   bundlePath: string;
   diagnostics: StorybookThemeDiagnostic[];
   evidenceItems: StorybookEvidenceItem[];
-}): { themes: StorybookExtractedTheme[]; tokens: StorybookTokenGraphEntry[] } => {
+}): {
+  themes: StorybookExtractedTheme[];
+  tokens: StorybookTokenGraphEntry[];
+  foundationPresenceByThemeId: Map<string, { hasExplicitSpacing: boolean; hasExplicitShape: boolean }>;
+} => {
   const tokenGraphByPath = new Map<string, StorybookTokenGraphEntry>();
   const themes: StorybookExtractedTheme[] = [];
+  const foundationPresenceByThemeId = new Map<string, { hasExplicitSpacing: boolean; hasExplicitShape: boolean }>();
   if (!isJsStaticObjectValue(evaluatedTheme)) {
     pushDiagnostic({
       diagnostics,
@@ -1676,7 +2070,7 @@ const extractThemeContexts = ({
       message: `Theme candidate '${themeName}' could not be statically evaluated into an object.`,
       bundlePath
     });
-    return { themes, tokens: [] };
+    return { themes, tokens: [], foundationPresenceByThemeId };
   }
 
   const colorSchemes = evaluatedTheme.properties.get("colorSchemes");
@@ -1694,7 +2088,36 @@ const extractThemeContexts = ({
 
   for (const [contextName, contextValue] of contexts) {
     const themeId = normalizeNameSegment(contextName);
-    const contextPalette = getObjectProperty(contextValue, "palette") ?? basePalette;
+    const contextPalette = resolveContextValue({
+      contextValue,
+      key: "palette",
+      baseValue: basePalette
+    });
+    const contextTypography = resolveContextValue({
+      contextValue,
+      key: "typography",
+      baseValue: baseTypography
+    });
+    const contextSpacing = resolveContextValue({
+      contextValue,
+      key: "spacing",
+      baseValue: baseSpacing
+    });
+    const contextShape = resolveContextValue({
+      contextValue,
+      key: "shape",
+      baseValue: baseShape
+    });
+    const contextComponents = resolveContextValue({
+      contextValue,
+      key: "components",
+      baseValue: baseComponents
+    });
+    const contextZIndex = resolveContextValue({
+      contextValue,
+      key: "zIndex",
+      baseValue: baseZIndex
+    });
 
     if (contextPalette) {
       extractPaletteTokens({
@@ -1707,7 +2130,7 @@ const extractThemeContexts = ({
       });
     }
     extractSpacingTokens({
-      spacingValue: baseSpacing,
+      spacingValue: contextSpacing,
       themeId,
       tokenGraphByPath,
       diagnostics,
@@ -1715,7 +2138,7 @@ const extractThemeContexts = ({
       evidenceItems
     });
     extractTypographyTokens({
-      typographyValue: baseTypography,
+      typographyValue: contextTypography,
       themeId,
       tokenGraphByPath,
       diagnostics,
@@ -1723,14 +2146,14 @@ const extractThemeContexts = ({
       evidenceItems
     });
     extractComponentSurfaceTokens({
-      componentsValue: baseComponents,
+      componentsValue: contextComponents,
       themeId,
       tokenGraphByPath,
       diagnostics,
       evidenceItems
     });
     extractFontFaceTokens({
-      componentsValue: baseComponents,
+      componentsValue: contextComponents,
       themeId,
       tokenGraphByPath,
       diagnostics,
@@ -1738,7 +2161,7 @@ const extractThemeContexts = ({
       evidenceItems
     });
     extractRadiusTokens({
-      shapeValue: baseShape,
+      shapeValue: contextShape,
       themeId,
       tokenGraphByPath,
       diagnostics,
@@ -1746,12 +2169,22 @@ const extractThemeContexts = ({
       evidenceItems
     });
     extractZIndexTokens({
-      zIndexValue: baseZIndex,
+      zIndexValue: contextZIndex,
       themeId,
       tokenGraphByPath,
       diagnostics,
       bundlePath,
       evidenceItems
+    });
+    extractDerivedBackgroundTokens({
+      tokenGraphByPath,
+      themeId,
+      diagnostics,
+      evidenceItems
+    });
+    foundationPresenceByThemeId.set(themeId, {
+      hasExplicitSpacing: contextSpacing !== undefined,
+      hasExplicitShape: contextShape !== undefined
     });
 
     const themeTokens = [...tokenGraphByPath.values()];
@@ -1772,7 +2205,8 @@ const extractThemeContexts = ({
 
   return {
     themes,
-    tokens: [...tokenGraphByPath.values()].sort((left, right) => left.id.localeCompare(right.id))
+    tokens: [...tokenGraphByPath.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    foundationPresenceByThemeId
   };
 };
 
@@ -1809,7 +2243,10 @@ const selectBestThemeBundleExtraction = async ({
           bundlePath: normalizedBundlePath
         }
       ],
-      score: 0
+      score: 0,
+      themeMarkers: uniqueSorted(evidenceItem.summary.themeMarkers ?? []),
+      evidenceItems: [evidenceItem],
+      foundationPresenceByThemeId: new Map<string, { hasExplicitSpacing: boolean; hasExplicitShape: boolean }>()
     };
   }
 
@@ -1853,7 +2290,10 @@ const selectBestThemeBundleExtraction = async ({
       themes: extracted.themes,
       tokenGraph: extracted.tokens,
       diagnostics: localDiagnostics,
-      score
+      score,
+      themeMarkers: uniqueSorted(evidenceItem.summary.themeMarkers ?? []),
+      evidenceItems: [evidenceItem],
+      foundationPresenceByThemeId: extracted.foundationPresenceByThemeId
     };
     if (!selected || candidateExtraction.score > selected.score) {
       selected = candidateExtraction;
@@ -1869,7 +2309,7 @@ const applyCssAliases = ({
 }: {
   definitions: Array<{ name: string; value: string }>;
   tokens: StorybookTokenGraphEntry[];
-}): void => {
+}): Set<string> => {
   const variableNamesByComparableValue = new Map<string, Set<string>>();
   for (const definition of definitions) {
     const key = toComparableTokenValue(
@@ -1886,6 +2326,7 @@ const applyCssAliases = ({
     variableNamesByComparableValue.set(key, existing);
   }
 
+  const matchedVariableNames = new Set<string>();
   for (const token of tokens) {
     const comparableValue = toComparableTokenValue(token.value);
     if (!comparableValue) {
@@ -1896,7 +2337,12 @@ const applyCssAliases = ({
       continue;
     }
     token.cssVariableNames = uniqueSorted([...(token.cssVariableNames ?? []), ...cssVariableNames]);
+    for (const cssVariableName of cssVariableNames) {
+      matchedVariableNames.add(cssVariableName);
+    }
   }
+
+  return matchedVariableNames;
 };
 
 const classifyCssDefinition = ({
@@ -2058,6 +2504,29 @@ const applyCssDirectTokens = ({
   }
 };
 
+const hasAmbiguousSupplementaryThemeScope = ({
+  themeCount,
+  diagnostics,
+  diagnosticCode,
+  message
+}: {
+  themeCount: number;
+  diagnostics: StorybookThemeDiagnostic[];
+  diagnosticCode: string;
+  message: string;
+}): boolean => {
+  if (themeCount <= 1) {
+    return false;
+  }
+  pushDiagnostic({
+    diagnostics,
+    severity: "error",
+    code: diagnosticCode,
+    message
+  });
+  return true;
+};
+
 const resolveThemeCategories = ({
   themes,
   tokens
@@ -2097,6 +2566,27 @@ const getMissingRequiredClasses = ({
     missing.add("font");
   }
   return missing;
+};
+
+const isPotentialStoryTokenField = ({
+  fieldName,
+  value
+}: {
+  fieldName: string;
+  value?: StaticJsonValue;
+}): boolean => {
+  if (value !== undefined) {
+    return classifyStoryField({ fieldName, value }).length > 0;
+  }
+
+  return (
+    isSpacingPropertyKey(fieldName) ||
+    fieldName === "palette" ||
+    fieldName === "fontFamily" ||
+    fieldName === "zIndex" ||
+    fieldName === "borderRadius" ||
+    isDimensionPropertyKey(fieldName)
+  );
 };
 
 const classifyStoryField = ({
@@ -2224,41 +2714,68 @@ const readStoryFieldStaticRecord = ({
 }: {
   bundleText: string;
   evidenceItem: StorybookEvidenceItem;
-}): Record<string, StaticJsonValue> | undefined => {
+}): StoryFieldStaticRecordResult => {
   if (evidenceItem.type === "story_args") {
-    return extractStaticObjectField({
+    const extraction = extractStaticObjectFieldDetails({
       bundleText,
       fieldName: "args"
     });
+    return {
+      staticRecord: extraction.mergeResult.record,
+      conflictingKeys: extraction.mergeResult.conflictingKeys,
+      conflictingValuesByKey: collectConflictingStaticValuesByKey({
+        records: extraction.records,
+        conflictingKeys: extraction.mergeResult.conflictingKeys
+      })
+    };
   }
 
   if (evidenceItem.type === "story_argTypes") {
-    const argTypes = extractStaticObjectField({
+    const extraction = extractStaticObjectFieldDetails({
       bundleText,
       fieldName: "argTypes"
     });
-    if (!argTypes) {
-      return undefined;
-    }
-
-    const normalized: Record<string, StaticJsonValue> = {};
-    for (const [key, value] of Object.entries(argTypes)) {
-      if (!isStaticJsonRecord(value)) {
-        continue;
-      }
-      if ("defaultValue" in value) {
-        normalized[key] = value.defaultValue;
-        continue;
-      }
-      const table = value.table;
-      if (isStaticJsonRecord(table) && isStaticJsonRecord(table.defaultValue) && typeof table.defaultValue.summary === "string") {
-        normalized[key] = table.defaultValue.summary;
-      }
-    }
-    return Object.keys(normalized).length > 0 ? normalized : undefined;
+    const normalizedArgTypeRecords = extraction.records
+      .map((argTypes) => {
+        const normalized: Record<string, StaticJsonValue> = {};
+        for (const [key, value] of Object.entries(argTypes)) {
+          if (!isStaticJsonRecord(value)) {
+            continue;
+          }
+          if ("defaultValue" in value) {
+            normalized[key] = value.defaultValue;
+            continue;
+          }
+          const table = value.table;
+          if (
+            isStaticJsonRecord(table) &&
+            isStaticJsonRecord(table.defaultValue) &&
+            typeof table.defaultValue.summary === "string"
+          ) {
+            normalized[key] = table.defaultValue.summary;
+          }
+        }
+        return normalized;
+      })
+      .filter((record) => Object.keys(record).length > 0);
+    const mergeResult = mergeStaticJsonRecords({
+      records: normalizedArgTypeRecords
+    });
+    return {
+      staticRecord: mergeResult.record,
+      conflictingKeys: uniqueSorted([...extraction.mergeResult.conflictingKeys, ...mergeResult.conflictingKeys]),
+      conflictingValuesByKey: collectConflictingStaticValuesByKey({
+        records: normalizedArgTypeRecords,
+        conflictingKeys: uniqueSorted([...extraction.mergeResult.conflictingKeys, ...mergeResult.conflictingKeys])
+      })
+    };
   }
 
-  return undefined;
+  return {
+    staticRecord: undefined,
+    conflictingKeys: [],
+    conflictingValuesByKey: {}
+  };
 };
 
 const applyStoryBackfillTokens = async ({
@@ -2283,20 +2800,57 @@ const applyStoryBackfillTokens = async ({
     }
 
     const bundleText = await readFile(path.join(buildDir, bundlePath), "utf8");
-    const staticRecord = readStoryFieldStaticRecord({
+    const storyFieldRecord = readStoryFieldStaticRecord({
       bundleText,
       evidenceItem
     });
+    const staticRecord = storyFieldRecord.staticRecord;
     const declaredKeys = new Set(evidenceItem.summary.keys ?? []);
     const extractedKeys = new Set(Object.keys(staticRecord ?? {}));
+    const conflictingKeys = new Set(storyFieldRecord.conflictingKeys);
+
+    for (const conflictingKey of [...conflictingKeys].sort((left, right) => left.localeCompare(right))) {
+      const representativeConflictValue = storyFieldRecord.conflictingValuesByKey[conflictingKey]?.find((value) => {
+        return classifyStoryField({
+          fieldName: conflictingKey,
+          value
+        }).length > 0;
+      });
+      if (
+        !isPotentialStoryTokenField({
+          fieldName: conflictingKey,
+          ...(representativeConflictValue !== undefined ? { value: representativeConflictValue } : {})
+        })
+      ) {
+        continue;
+      }
+      pushDiagnostic({
+        diagnostics,
+        severity: "error",
+        code: "STORYBOOK_BACKFILL_VALUE_CONFLICT",
+        message:
+          `Storybook ${evidenceItem.type === "story_args" ? "args" : "argTypes"} declared conflicting static values for ` +
+          `'${conflictingKey}'.`,
+        bundlePath,
+        tokenPath: [STORYBACKFILL_CONTEXT_PREFIX, normalizeNameSegment(conflictingKey)]
+      });
+    }
 
     for (const declaredKey of [...declaredKeys].sort((left, right) => left.localeCompare(right))) {
-      if (!extractedKeys.has(declaredKey) && (COLOR_PROPERTY_KEYS.has(declaredKey) || isSpacingPropertyKey(declaredKey) || declaredKey === "palette" || hasTypographyFieldsInStaticJson(staticRecord?.[declaredKey]))) {
+      if (
+        !conflictingKeys.has(declaredKey) &&
+        !extractedKeys.has(declaredKey) &&
+        isPotentialStoryTokenField({
+          fieldName: declaredKey,
+          ...(staticRecord?.[declaredKey] !== undefined ? { value: staticRecord[declaredKey] } : {})
+        })
+      ) {
         pushDiagnostic({
           diagnostics,
           severity: "warning",
           code: "STORYBOOK_BACKFILL_VALUE_UNRESOLVED",
-          message: `Storybook ${evidenceItem.type === "story_args" ? "args" : "argTypes"} declared '${declaredKey}' without a static backfill value.`
+          message: `Storybook ${evidenceItem.type === "story_args" ? "args" : "argTypes"} declared '${declaredKey}' without a static backfill value.`,
+          bundlePath
         });
       }
     }
@@ -2472,7 +3026,9 @@ export const buildStorybookThemeCatalog = async ({
 
   const tokenGraphByPath = new Map<string, StorybookTokenGraphEntry>();
   const themesById = new Map<string, StorybookExtractedTheme>();
-
+  const themeEvidenceItemsById = new Map<string, StorybookEvidenceItem[]>();
+  const themeFoundationPresenceById = new Map<string, { hasExplicitSpacing: boolean; hasExplicitShape: boolean }>();
+  const themeExtractions: ThemeBundleExtraction[] = [];
   for (const evidenceItem of themeBundleEvidenceItems) {
     const extraction = await selectBestThemeBundleExtraction({
       buildDir,
@@ -2481,8 +3037,54 @@ export const buildStorybookThemeCatalog = async ({
     if (!extraction) {
       continue;
     }
+    themeExtractions.push(extraction);
+  }
+
+  themeExtractions.sort(compareThemeExtractions);
+
+  for (const extraction of themeExtractions) {
+    const {
+      duplicateThemeIds,
+      conflictingTokenPaths,
+      hasDuplicateThemeErrors
+    } = findDuplicateThemeBundleConflicts({
+      extraction,
+      existingThemesById: themesById,
+      tokenGraphByPath
+    });
+
+    if (duplicateThemeIds.length > 0 && (hasDuplicateThemeErrors || conflictingTokenPaths.length > 0)) {
+      const conflictReason = hasDuplicateThemeErrors
+        ? "it produced fatal extraction diagnostics for an already-selected theme context"
+        : `it resolved conflicting values for token path(s): ${conflictingTokenPaths.join(", ")}`;
+      pushDiagnostic({
+        diagnostics,
+        severity: "warning",
+        code: "STORYBOOK_THEME_BUNDLE_SKIPPED",
+        message: `Skipped Storybook theme bundle '${extraction.bundlePath}' because ${conflictReason}.`,
+        bundlePath: extraction.bundlePath
+      });
+      continue;
+    }
+
     diagnostics.push(...extraction.diagnostics);
     for (const theme of extraction.themes) {
+      const existingEvidenceItems = themeEvidenceItemsById.get(theme.id) ?? [];
+      const mergedEvidenceItemsById = new Map<string, StorybookEvidenceItem>();
+      for (const item of [...existingEvidenceItems, ...extraction.evidenceItems]) {
+        mergedEvidenceItemsById.set(item.id, item);
+      }
+      themeEvidenceItemsById.set(theme.id, [...mergedEvidenceItemsById.values()]);
+      const extractionFoundationPresence = extraction.foundationPresenceByThemeId.get(theme.id);
+      if (extractionFoundationPresence) {
+        const existingFoundationPresence = themeFoundationPresenceById.get(theme.id);
+        themeFoundationPresenceById.set(theme.id, {
+          hasExplicitSpacing:
+            (existingFoundationPresence?.hasExplicitSpacing ?? false) || extractionFoundationPresence.hasExplicitSpacing,
+          hasExplicitShape:
+            (existingFoundationPresence?.hasExplicitShape ?? false) || extractionFoundationPresence.hasExplicitShape
+        });
+      }
       const existing = themesById.get(theme.id);
       if (!existing) {
         themesById.set(theme.id, theme);
@@ -2509,6 +3111,28 @@ export const buildStorybookThemeCatalog = async ({
     tokens: tokenGraph
   });
 
+  for (const theme of themes) {
+    const themeEvidenceItems = themeEvidenceItemsById.get(theme.id) ?? [];
+    const foundationPresence = themeFoundationPresenceById.get(theme.id) ?? {
+      hasExplicitSpacing: false,
+      hasExplicitShape: false
+    };
+    extractMuiDefaultFoundationTokens({
+      tokenGraphByPath,
+      themeId: theme.id,
+      diagnostics,
+      evidenceItems: themeEvidenceItems,
+      allowSpacingDefault: !foundationPresence.hasExplicitSpacing,
+      allowShapeDefault: !foundationPresence.hasExplicitShape
+    });
+  }
+
+  tokenGraph = [...tokenGraphByPath.values()];
+  themes = resolveThemeCategories({
+    themes: [...themesById.values()],
+    tokens: tokenGraph
+  });
+
   if (themes.length === 0) {
     pushDiagnostic({
       diagnostics,
@@ -2529,28 +3153,57 @@ export const buildStorybookThemeCatalog = async ({
     cssDefinitionsByPath.set(stylesheetPath, definitions);
   }
 
+  const matchedCssVariableNames = new Set<string>();
   for (const definitions of cssDefinitionsByPath.values()) {
-    applyCssAliases({
+    const matchedNames = applyCssAliases({
       definitions,
       tokens: tokenGraph
     });
+    for (const matchedName of matchedNames) {
+      matchedCssVariableNames.add(matchedName);
+    }
   }
 
-  applyCssDirectTokens({
-    themes,
-    cssEvidenceItems,
-    cssDefinitionsByPath,
-    tokenGraphByPath,
-    diagnostics
-  });
+  const hasAmbiguousCssDefinitions =
+    themes.length > 1 &&
+    [...cssDefinitionsByPath.values()].some((definitions) =>
+      definitions.some((definition) => classifyCssDefinition({ definition }) && !matchedCssVariableNames.has(definition.name))
+    );
 
-  await applyStoryBackfillTokens({
-    buildDir,
-    storyEvidenceItems,
-    themes,
-    tokenGraphByPath,
-    diagnostics
-  });
+  if (hasAmbiguousCssDefinitions) {
+    hasAmbiguousSupplementaryThemeScope({
+      themeCount: themes.length,
+      diagnostics,
+      diagnosticCode: "STORYBOOK_CSS_THEME_SCOPE_AMBIGUOUS",
+      message: "Authoritative CSS token sources cannot be scoped safely across multiple extracted theme contexts."
+    });
+  } else if (cssEvidenceItems.length > 0 && themes.length === 1) {
+    applyCssDirectTokens({
+      themes,
+      cssEvidenceItems,
+      cssDefinitionsByPath,
+      tokenGraphByPath,
+      diagnostics
+    });
+  }
+
+  if (
+    storyEvidenceItems.length > 0 &&
+    !hasAmbiguousSupplementaryThemeScope({
+      themeCount: themes.length,
+      diagnostics,
+      diagnosticCode: "STORYBOOK_BACKFILL_THEME_SCOPE_AMBIGUOUS",
+      message: "Story args/argTypes token backfill cannot be scoped safely across multiple extracted theme contexts."
+    })
+  ) {
+    await applyStoryBackfillTokens({
+      buildDir,
+      storyEvidenceItems,
+      themes,
+      tokenGraphByPath,
+      diagnostics
+    });
+  }
 
   tokenGraph = [...tokenGraphByPath.values()].sort((left, right) => left.id.localeCompare(right.id));
   themes = resolveThemeCategories({
