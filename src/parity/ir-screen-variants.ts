@@ -745,7 +745,7 @@ const deriveFamily = ({
   const screenById = new Map(memberScreens.map((screen) => [screen.id, screen] as const));
 
   for (const memberScreenId of group.frameIds) {
-    const memberScreen = memberScreens.find((candidate) => candidate.id === memberScreenId);
+    const memberScreen = screenById.get(memberScreenId);
     if (!memberScreen) {
       return undefined;
     }
