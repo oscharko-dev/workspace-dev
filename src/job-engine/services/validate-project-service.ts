@@ -1094,6 +1094,7 @@ export const createValidateProjectService = ({
         customerProfileStyleSummary = await validateGeneratedProjectStorybookStyles({
           generatedProjectDir,
           customerProfile: context.resolvedCustomerProfile,
+          isStorybookFirstRequested: Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir),
           ...(storybookEvidenceArtifact ? { storybookEvidenceArtifact } : {}),
           ...(storybookTokensArtifact ? { storybookTokensArtifact } : {}),
           ...(storybookThemesArtifact ? { storybookThemesArtifact } : {}),

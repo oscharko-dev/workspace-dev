@@ -1924,3 +1924,67 @@ test("validateCustomerProfileComponentApiComponentMatchReport fails when incompa
   assert.equal(result.counts.byReason.component_api_children_unsupported, 1);
   assert.equal(result.counts.byReason.component_api_signature_conflict, 1);
 });
+
+test("validateGeneratedProjectStorybookStyles populates diagnostics when isStorybookFirstRequested and artifacts are missing", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-missing-artifacts-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      isStorybookFirstRequested: true
+    });
+
+    assert.equal(summary.status, "not_available");
+    assert.equal(summary.issueCount, 0);
+    assert.equal(summary.diagnostics.tokens.diagnosticCount, 3);
+    assert.equal(summary.diagnostics.tokens.diagnostics.length, 3);
+    assert.equal(
+      summary.diagnostics.tokens.diagnostics.every((d) => d.code === "STORYBOOK_STYLE_ARTIFACT_MISSING"),
+      true
+    );
+    assert.equal(
+      summary.diagnostics.tokens.diagnostics.every((d) => d.severity === "warning"),
+      true
+    );
+    assert.equal(
+      summary.diagnostics.tokens.diagnostics.some((d) => d.message.includes("evidence")),
+      true
+    );
+    assert.equal(
+      summary.diagnostics.tokens.diagnostics.some((d) => d.message.includes("tokens")),
+      true
+    );
+    assert.equal(
+      summary.diagnostics.tokens.diagnostics.some((d) => d.message.includes("themes")),
+      true
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles returns empty diagnostics when isStorybookFirstRequested is false and artifacts are missing", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-not-requested-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      isStorybookFirstRequested: false
+    });
+
+    assert.equal(summary.status, "not_available");
+    assert.equal(summary.issueCount, 0);
+    assert.equal(summary.diagnostics.tokens.diagnosticCount, 0);
+    assert.equal(summary.diagnostics.tokens.diagnostics.length, 0);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
