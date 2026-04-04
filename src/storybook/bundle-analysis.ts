@@ -189,7 +189,7 @@ export const extractCssCustomPropertyDefinitions = (cssText: string): StorybookC
 
   for (const match of propertyMatches) {
     const propertyName = normalizeWhitespace(match[1] ?? "");
-    const propertyValue = normalizeWhitespace(match[2] ?? "");
+    const propertyValue = normalizeWhitespace((match[2] ?? "").replace(/\/\*[\s\S]*?\*\//gu, ""));
     if (propertyName.length === 0 || propertyValue.length === 0) {
       continue;
     }

@@ -119,3 +119,20 @@ test("theme analysis recognizes minified named theme factories without widening 
   assert.deepEqual(extractThemeMarkers(providerOnlyBundle), ["ThemeProvider"]);
   assert.equal(hasAuthoritativeThemeFactoryMarker(extractThemeMarkers(providerOnlyBundle)), false);
 });
+
+test("extractCssCustomPropertyDefinitions strips CSS comments from property values", () => {
+  const cssText = `
+    :root {
+      --brand-color: #ff0000 /* primary brand */;
+      --spacing-base: 8px /* default */ ;
+      --bg-color: white /* fallback color */;
+    }
+  `;
+  const definitions = extractCssCustomPropertyDefinitions(cssText);
+  const brandColor = definitions.find((d) => d.name === "--brand-color");
+  assert.equal(brandColor?.value, "#ff0000");
+  const spacingBase = definitions.find((d) => d.name === "--spacing-base");
+  assert.equal(spacingBase?.value, "8px");
+  const bgColor = definitions.find((d) => d.name === "--bg-color");
+  assert.equal(bgColor?.value, "white");
+});
