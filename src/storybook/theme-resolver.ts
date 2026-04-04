@@ -627,7 +627,12 @@ const resolveThemeScheme = ({
     }
   }
 
-  const primaryPalette = resolvePaletteColor({ tokensArtifact, themeId, paletteKey: "primary" });
+  const primaryContrastText = toCssColorString(
+    getResolvedTokenValue({
+      tokensArtifact,
+      pathSegments: ["theme", themeId, "color", "primary", "contrast-text"]
+    })
+  );
   const secondaryPalette = resolvePaletteColor({ tokensArtifact, themeId, paletteKey: "secondary" });
   const successPalette = resolvePaletteColor({ tokensArtifact, themeId, paletteKey: "success" });
   const warningPalette = resolvePaletteColor({ tokensArtifact, themeId, paletteKey: "warning" });
@@ -654,7 +659,7 @@ const resolveThemeScheme = ({
   const palette: ResolvedStorybookPalette = {
     primary: {
       main: primary,
-      ...(primaryPalette?.contrastText ? { contrastText: primaryPalette.contrastText } : {})
+      ...(primaryContrastText ? { contrastText: primaryContrastText } : {})
     },
     text: {
       primary: textPrimary,

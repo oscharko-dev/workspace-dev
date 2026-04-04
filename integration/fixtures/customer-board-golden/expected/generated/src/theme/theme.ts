@@ -15,7 +15,6 @@ export const appTheme = extendTheme({
       text: { primary: "#444444" }
     }
     }
-
   },
   shape: {
     borderRadius: 4

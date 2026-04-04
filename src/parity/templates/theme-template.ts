@@ -380,8 +380,7 @@ ${directionBlock}  colorSchemes: {
         mode: "light",
         palette: lightScheme.palette
       })}
-    }
-${darkScheme ? `,\n    dark: {\n      palette: ${renderStorybookPalette({ mode: "dark", palette: darkScheme.palette })}\n    }` : ""}
+    }${darkScheme ? `,\n    dark: {\n      palette: ${renderStorybookPalette({ mode: "dark", palette: darkScheme.palette })}\n    }` : ""}
   },
   shape: {
     borderRadius: ${Math.max(0, Math.round(lightScheme.borderRadius))}
@@ -456,8 +455,7 @@ export const appTheme = extendTheme({
 ${directionBlock}  colorSchemes: {
     light: {
       palette: ${toThemePaletteBlock({ mode: "light", palette: lightPalette })}
-    }
-${darkPalette ? `,\n    dark: {\n      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}\n    }` : ""}
+    }${darkPalette ? `,\n    dark: {\n      palette: ${toThemePaletteBlock({ mode: "dark", palette: darkPalette })}\n    }` : ""}
   },
   shape: {
     borderRadius: ${Math.max(0, Math.round(tokens.borderRadius))}

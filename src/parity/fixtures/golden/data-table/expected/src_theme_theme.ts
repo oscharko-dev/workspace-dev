@@ -24,7 +24,6 @@ export const appTheme = extendTheme({
       }
     }
     }
-
   },
   shape: {
     borderRadius: 14

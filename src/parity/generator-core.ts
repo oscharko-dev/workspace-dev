@@ -658,7 +658,7 @@ interface GenerateArtifactsBasePhase {
 }
 
 const parsePixelValue = (value: string | number | undefined): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
     return value;
   }
   if (typeof value !== "string") {
@@ -669,7 +669,7 @@ const parsePixelValue = (value: string | number | undefined): number | undefined
     return undefined;
   }
   const numeric = Number(normalized.slice(0, -2));
-  return Number.isFinite(numeric) ? numeric : undefined;
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : undefined;
 };
 
 const toThemeSxRecord = (
@@ -793,6 +793,7 @@ const toThemeComponentDefaultsFromResolvedStorybookTheme = ({
           ...(borderRadiusPx !== undefined ? { borderRadiusPx } : {})
         };
       }
+      continue;
     }
   }
 
