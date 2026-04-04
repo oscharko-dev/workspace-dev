@@ -177,10 +177,10 @@ const toCssColorString = (value: unknown): string | undefined => {
 };
 
 const toPxNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
     return value;
   }
-  if (!isPlainRecord(value) || value.unit !== "px" || typeof value.value !== "number" || !Number.isFinite(value.value)) {
+  if (!isPlainRecord(value) || value.unit !== "px" || typeof value.value !== "number" || !Number.isFinite(value.value) || value.value < 0) {
     return undefined;
   }
   return value.value;

@@ -1552,6 +1552,7 @@ export const validateCustomerProfileComponentApiComponentMatchReport = ({
 export const validateGeneratedProjectStorybookStyles = async ({
   generatedProjectDir,
   customerProfile,
+  isStorybookFirstRequested,
   storybookEvidenceArtifact,
   storybookTokensArtifact,
   storybookThemesArtifact,
@@ -1559,6 +1560,7 @@ export const validateGeneratedProjectStorybookStyles = async ({
 }: {
   generatedProjectDir: string;
   customerProfile: ResolvedCustomerProfile;
+  isStorybookFirstRequested?: boolean;
   storybookEvidenceArtifact?: StorybookEvidenceArtifact;
   storybookTokensArtifact?: StorybookPublicTokensArtifact;
   storybookThemesArtifact?: StorybookPublicThemesArtifact;
@@ -1566,6 +1568,32 @@ export const validateGeneratedProjectStorybookStyles = async ({
 }): Promise<CustomerProfileStyleValidationSummary> => {
   const diagnostics = createEmptyStyleDiagnostics();
   if (!storybookEvidenceArtifact || !storybookTokensArtifact || !storybookThemesArtifact) {
+    if (isStorybookFirstRequested) {
+      if (!storybookEvidenceArtifact) {
+        diagnostics.tokens.diagnostics.push({
+          severity: "warning",
+          code: "STORYBOOK_STYLE_ARTIFACT_MISSING",
+          message: "Storybook evidence artifact is missing; style validation cannot run."
+        });
+        diagnostics.tokens.diagnosticCount += 1;
+      }
+      if (!storybookTokensArtifact) {
+        diagnostics.tokens.diagnostics.push({
+          severity: "warning",
+          code: "STORYBOOK_STYLE_ARTIFACT_MISSING",
+          message: "Storybook tokens artifact is missing; style validation cannot run."
+        });
+        diagnostics.tokens.diagnosticCount += 1;
+      }
+      if (!storybookThemesArtifact) {
+        diagnostics.tokens.diagnostics.push({
+          severity: "warning",
+          code: "STORYBOOK_STYLE_ARTIFACT_MISSING",
+          message: "Storybook themes artifact is missing; style validation cannot run."
+        });
+        diagnostics.tokens.diagnosticCount += 1;
+      }
+    }
     return {
       status: "not_available",
       policy: customerProfile.strictness.token,

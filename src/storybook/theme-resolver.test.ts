@@ -469,3 +469,41 @@ test("resolveStorybookTheme fails hard on cyclic token alias references", () => 
     (error: Error & { code?: string }) => error.code === "E_STORYBOOK_THEME_ALIAS_CYCLE"
   );
 });
+
+test("resolveStorybookTheme rejects negative dimension values in spacing and border-radius", () => {
+  const tokensArtifact = createTokensArtifact({ includeDark: false });
+  tokensArtifact.theme["sparkasse-light"].spacing.base = {
+    $type: "dimension",
+    $value: { value: -8, unit: "px" }
+  };
+
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "sparkasse-light-only",
+        customerProfile: createCustomerProfile(),
+        tokensArtifact,
+        themesArtifact: createThemesArtifact({ includeDark: false })
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_MISSING" || error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_INVALID"
+  );
+
+  const tokensArtifact2 = createTokensArtifact({ includeDark: false });
+  tokensArtifact2.theme["sparkasse-light"].radius.shape["border-radius"] = {
+    $type: "dimension",
+    $value: { value: -4, unit: "px" }
+  };
+
+  assert.throws(
+    () =>
+      resolveStorybookTheme({
+        customerBrandId: "sparkasse-light-only",
+        customerProfile: createCustomerProfile(),
+        tokensArtifact: tokensArtifact2,
+        themesArtifact: createThemesArtifact({ includeDark: false })
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_MISSING" || error.code === "E_STORYBOOK_THEME_REQUIRED_TOKEN_INVALID"
+  );
+});
