@@ -79,15 +79,18 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
 
   const sidecarTargets = [
     {
-      relativePath: manifest.derived.storybookTokens,
+      targetPath: path.join(liveEnvironment.storybookBuildDir, "storybook.evidence.json")
+    },
+    {
+      targetPath: path.join(liveEnvironment.storybookBuildDir, "storybook.catalog.json")
+    },
+    {
       targetPath: path.join(liveEnvironment.storybookBuildDir, "tokens.json")
     },
     {
-      relativePath: manifest.derived.storybookThemes,
       targetPath: path.join(liveEnvironment.storybookBuildDir, "themes.json")
     },
     {
-      relativePath: manifest.derived.storybookComponents,
       targetPath: path.join(liveEnvironment.storybookBuildDir, "components.json")
     }
   ] as const;
@@ -115,13 +118,7 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
     );
   });
 
-  await Promise.all(
-    sidecarTargets.map(async (entry) => {
-      const fixtureFile = committedBundle.files.get(entry.relativePath);
-      assert.ok(fixtureFile, `Committed sidecar '${entry.relativePath}' must exist.`);
-      await writeFile(entry.targetPath, fixtureFile.content, "utf8");
-    })
-  );
+  await Promise.all(sidecarTargets.map(async (entry) => rm(entry.targetPath, { force: true })));
 
   const runtime = createCustomerBoardHybridLiveRuntimeSettings();
   assert.ok(
@@ -171,6 +168,7 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
   assert.ok(figmaJsonFile, "Completed customer-board live submission must emit a cleaned figma.json artifact.");
   const actualBundle = await buildCustomerBoardGoldenBundleFromFigmaInput({
     storybookBuildDir: liveEnvironment.storybookBuildDir,
+    storybookJobDir: String(status.artifacts.jobDir),
     figmaInput: JSON.parse(await readFile(String(figmaJsonFile), "utf8")) as Record<string, unknown>,
     figmaLibrarySeed: {
       fileKey: liveEnvironment.figmaFileKey,

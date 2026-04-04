@@ -12,14 +12,27 @@ import type { StorybookCssCustomPropertyDefinition } from "./types.js";
 
 const DOCS_IMAGE_EXTENSIONS = /\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#].*)?$/iu;
 
-const THEME_MARKER_PATTERNS: Array<{ marker: string; pattern: RegExp }> = [
-  { marker: "createTheme", pattern: /\bcreateTheme\s*\(/u },
-  { marker: "extendTheme", pattern: /\bextendTheme\s*\(/u },
+const THEME_PROVIDER_MARKER_PATTERNS: Array<{ marker: string; pattern: RegExp }> = [
   { marker: "ThemeProvider", pattern: /ThemeProvider\b/u },
   { marker: "CssVarsProvider", pattern: /\bCssVarsProvider\b/u },
   { marker: "McdThemeProvider", pattern: /\bMcdThemeProvider\b/u },
   { marker: "ThemeProviderWrapper", pattern: /ThemeProviderWrapper\b/u }
 ];
+
+const THEME_OBJECT_PRIMARY_FIELD_PATTERN = /\b(?:palette|colorSchemes)\s*:/u;
+const THEME_OBJECT_SUPPORTING_FIELD_PATTERN = /\b(?:components|typography|spacing|shape|zIndex)\s*:/u;
+const DIRECT_THEME_FACTORY_CALL_PATTERNS = {
+  createTheme: /\bcreateTheme\s*\(/u,
+  extendTheme: /\bextendTheme\s*\(/u
+} as const;
+const INDIRECT_THEME_FACTORY_REFERENCE_PATTERNS = {
+  createTheme: /\bcreateTheme\b/u,
+  extendTheme: /\bextendTheme\b/u
+} as const;
+const NAMED_THEME_FACTORY_WRAPPER_PATTERNS = {
+  createTheme: /["'`]create[A-Za-z0-9_$]*Theme["'`]/u,
+  extendTheme: /["'`]extend[A-Za-z0-9_$]*Theme["'`]/u
+} as const;
 
 const looksLikeDocsImageSource = (value: string): boolean => {
   return value.startsWith("static/assets/images/") || DOCS_IMAGE_EXTENSIONS.test(value);
@@ -117,11 +130,48 @@ export const extractMdxTextBlocks = (bundleText: string): string[] => {
   return uniqueSorted(textBlocks);
 };
 
+const hasMuiThemeObjectShape = (bundleText: string): boolean => {
+  return (
+    THEME_OBJECT_PRIMARY_FIELD_PATTERN.test(bundleText) && THEME_OBJECT_SUPPORTING_FIELD_PATTERN.test(bundleText)
+  );
+};
+
 export const extractThemeMarkers = (bundleText: string): string[] => {
   const strippedText = stripStringsAndComments(bundleText);
-  return THEME_MARKER_PATTERNS.filter(({ pattern }) => pattern.test(strippedText))
-    .map(({ marker }) => marker)
-    .sort((left, right) => left.localeCompare(right));
+  const markers = new Set<string>();
+
+  for (const [marker, pattern] of Object.entries(DIRECT_THEME_FACTORY_CALL_PATTERNS)) {
+    if (pattern.test(strippedText)) {
+      markers.add(marker);
+    }
+  }
+
+  const hasThemeObjectShape = hasMuiThemeObjectShape(strippedText);
+  if (hasThemeObjectShape) {
+    for (const [marker, pattern] of Object.entries(INDIRECT_THEME_FACTORY_REFERENCE_PATTERNS)) {
+      if (pattern.test(strippedText)) {
+        markers.add(marker);
+      }
+    }
+
+    for (const [marker, pattern] of Object.entries(NAMED_THEME_FACTORY_WRAPPER_PATTERNS)) {
+      if (pattern.test(bundleText)) {
+        markers.add(marker);
+      }
+    }
+  }
+
+  for (const { marker, pattern } of THEME_PROVIDER_MARKER_PATTERNS) {
+    if (pattern.test(strippedText)) {
+      markers.add(marker);
+    }
+  }
+
+  return [...markers].sort((left, right) => left.localeCompare(right));
+};
+
+export const hasAuthoritativeThemeFactoryMarker = (themeMarkers: string[]): boolean => {
+  return themeMarkers.includes("createTheme") || themeMarkers.includes("extendTheme");
 };
 
 export const extractCssCustomProperties = (cssText: string): string[] => {

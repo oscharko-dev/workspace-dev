@@ -8,7 +8,7 @@
       "brandTheme": "sparkasse",
       "id": "customer-board",
       "storybookThemes": {
-        "light": "customer-board-light"
+        "light": "default"
       }
     }
   ],

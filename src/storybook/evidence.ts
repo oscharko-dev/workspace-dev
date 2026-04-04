@@ -7,6 +7,7 @@ import {
   extractMdxLinks,
   extractMdxTextBlocks,
   extractStoryDesignUrls,
+  hasAuthoritativeThemeFactoryMarker,
   extractThemeMarkers,
   collectTopLevelFieldKeys
 } from "./bundle-analysis.js";
@@ -478,7 +479,7 @@ export const buildStorybookEvidenceArtifact = async ({
   for (const bundlePath of javascriptFiles) {
     const bundleText = await readFile(path.join(context.buildDir, bundlePath), "utf8");
     const themeMarkers = extractThemeMarkers(bundleText);
-    if (themeMarkers.length > 0) {
+    if (themeMarkers.length > 0 && hasAuthoritativeThemeFactoryMarker(themeMarkers)) {
       const source: StorybookEvidenceSource = {
         bundlePath
       };

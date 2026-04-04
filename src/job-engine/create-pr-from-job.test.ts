@@ -6,11 +6,12 @@ import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
+import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 180_000
+  timeoutMs = 300_000
 }: {
   getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
@@ -26,6 +27,10 @@ const waitForTerminalStatus = async ({
   }
   throw new Error("Timed out waiting for job status");
 };
+
+test.before(async () => {
+  await ensureTemplateValidationSeedNodeModules();
+});
 
 const createLocalFigmaPayload = () => ({
   name: "PR Test Board",

@@ -8,6 +8,7 @@ import {
   extractMdxLinks,
   extractMdxTextBlocks,
   extractStoryDesignUrls,
+  hasAuthoritativeThemeFactoryMarker,
   extractThemeMarkers
 } from "./bundle-analysis.js";
 
@@ -89,9 +90,32 @@ test("theme and css analysis only surfaces machine-readable runtime markers", ()
   `;
 
   assert.deepEqual(extractThemeMarkers(runtimeBundle), ["createTheme", "ThemeProvider"]);
+  assert.equal(hasAuthoritativeThemeFactoryMarker(extractThemeMarkers(runtimeBundle)), true);
+  assert.equal(hasAuthoritativeThemeFactoryMarker(["ThemeProvider"]), false);
   assert.deepEqual(extractCssCustomProperties(cssText), ["--fi-color-brand", "--fi-color-surface"]);
   assert.deepEqual(extractCssCustomPropertyDefinitions(cssText), [
     { name: "--fi-color-brand", value: "#ff0000" },
     { name: "--fi-color-surface", value: "#ffffff" }
   ]);
+});
+
+test("theme analysis recognizes minified named theme factories without widening provider-only bundles", () => {
+  const minifiedThemeBundle = `
+    const buildTheme = wrapper(() => helper({
+      components: { MuiCssBaseline: { styleOverrides: { body: { backgroundColor: "#f0f0f0" } } } },
+      palette: { primary: { main: "#ff0000" } },
+      typography: { fontFamily: "SparkasseRegular" }
+    }), "createCustomTheme");
+    const theme = buildTheme();
+    export const App = () => jsx(ThemeProvider, { theme, children: jsx("div", {}) });
+  `;
+  const providerOnlyBundle = `
+    const wrapTheme = wrapper(() => providerValue, "createCustomTheme");
+    export const App = () => jsx(ThemeProvider, { theme: providerTheme, children: jsx("div", {}) });
+  `;
+
+  assert.deepEqual(extractThemeMarkers(minifiedThemeBundle), ["createTheme", "ThemeProvider"]);
+  assert.equal(hasAuthoritativeThemeFactoryMarker(extractThemeMarkers(minifiedThemeBundle)), true);
+  assert.deepEqual(extractThemeMarkers(providerOnlyBundle), ["ThemeProvider"]);
+  assert.equal(hasAuthoritativeThemeFactoryMarker(extractThemeMarkers(providerOnlyBundle)), false);
 });

@@ -25,12 +25,18 @@ import {
   type CustomerProfileValidationSummary
 } from "../../customer-profile-validation.js";
 import {
-  STORYBOOK_PUBLIC_EXTENSION_KEY,
   type ComponentMatchReportArtifact,
   type StorybookEvidenceArtifact,
   type StorybookPublicThemesArtifact,
   type StorybookPublicTokensArtifact
 } from "../../storybook/types.js";
+import {
+  parseStorybookCatalogArtifact,
+  parseStorybookComponentsArtifact,
+  parseStorybookEvidenceArtifact,
+  parseStorybookThemesArtifact,
+  parseStorybookTokensArtifact
+} from "../../storybook/artifact-validation.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -68,7 +74,7 @@ interface ValidateProjectServiceDeps {
 type ValidationGateStatus = "ok" | "warn" | "failed" | "partial" | "not_available" | "not_requested";
 
 interface ValidationArtifactStatusSummary {
-  status: "ok" | "not_available" | "missing";
+  status: "ok" | "not_available" | "missing" | "invalid";
   filePath?: string;
 }
 
@@ -218,8 +224,102 @@ interface ValidationSummaryArtifact {
       }
     | {
         status: "not_available";
-      };
+  };
 }
+
+type StorybookArtifactKey = keyof ValidationStorybookArtifactSet;
+
+type StorybookArtifactDescriptor = {
+  key: StorybookArtifactKey;
+  label: string;
+};
+
+const STORYBOOK_ARTIFACT_DESCRIPTORS: StorybookArtifactDescriptor[] = [
+  {
+    key: "catalog",
+    label: "storybook.catalog"
+  },
+  {
+    key: "evidence",
+    label: "storybook.evidence"
+  },
+  {
+    key: "tokens",
+    label: "storybook.tokens"
+  },
+  {
+    key: "themes",
+    label: "storybook.themes"
+  },
+  {
+    key: "components",
+    label: "storybook.components"
+  }
+];
+
+const isFailedValidationArtifactStatus = (
+  status: ValidationArtifactStatusSummary["status"]
+): status is "missing" | "invalid" => {
+  return status === "missing" || status === "invalid";
+};
+
+const listFailedStorybookArtifacts = ({
+  artifacts
+}: {
+  artifacts: ValidationStorybookArtifactSet;
+}): Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }> => {
+  const failedArtifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }> = [];
+  for (const descriptor of STORYBOOK_ARTIFACT_DESCRIPTORS) {
+    const artifact = artifacts[descriptor.key];
+    if (!isFailedValidationArtifactStatus(artifact.status)) {
+      continue;
+    }
+    const status: "missing" | "invalid" = artifact.status;
+    failedArtifacts.push({
+      ...descriptor,
+      status,
+      ...(artifact.filePath ? { filePath: artifact.filePath } : {})
+    });
+  }
+  return failedArtifacts;
+};
+
+const buildStorybookGateMessage = ({
+  artifacts
+}: {
+  artifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid" }>;
+}): string => {
+  return (
+    "Storybook validation gate failed because required artifacts are missing or invalid: " +
+    artifacts.map((artifact) => `${artifact.label} (${artifact.status})`).join(", ") +
+    "."
+  );
+};
+
+const buildStorybookGateDiagnostics = ({
+  artifacts
+}: {
+  artifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }>;
+}) => {
+  return artifacts.map((artifact) => ({
+    code:
+      artifact.status === "invalid"
+        ? "STORYBOOK_STYLE_ARTIFACT_INVALID"
+        : "STORYBOOK_STYLE_ARTIFACT_MISSING",
+    message:
+      artifact.status === "invalid"
+        ? `Required Storybook artifact '${artifact.label}' is unreadable or malformed.`
+        : `Required Storybook artifact '${artifact.label}' is missing from validate.project inputs.`,
+    suggestion:
+      "Generate and persist the Storybook catalog, evidence, tokens, themes, and components artifacts before validate.project runs.",
+    stage: "validate.project" as const,
+    severity: "error" as const,
+    details: {
+      artifactKey: artifact.label,
+      ...(artifact.filePath ? { filePath: artifact.filePath } : {})
+    }
+  }));
+};
 
 const buildStorybookCompositionCoverage = ({
   artifact
@@ -510,64 +610,6 @@ const parseFigmaLibraryResolutionSummary = ({
   };
 };
 
-const parseStorybookEvidenceArtifact = ({
-  input
-}: {
-  input: string;
-}): StorybookEvidenceArtifact => {
-  const parsed: unknown = JSON.parse(input);
-  if (
-    !isRecord(parsed) ||
-    parsed.artifact !== "storybook.evidence" ||
-    !Array.isArray(parsed.evidence)
-  ) {
-    throw new Error("Expected a storybook.evidence artifact with an evidence array.");
-  }
-  return parsed as unknown as StorybookEvidenceArtifact;
-};
-
-const parseStorybookTokensArtifact = ({
-  input
-}: {
-  input: string;
-}): StorybookPublicTokensArtifact => {
-  const parsed: unknown = JSON.parse(input);
-  if (!isRecord(parsed)) {
-    throw new Error("Expected a storybook.tokens artifact object.");
-  }
-  const extensions = parsed.$extensions;
-  if (
-    !isRecord(extensions) ||
-    !isRecord(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]) ||
-    extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].artifact !== "storybook.tokens" ||
-    !Array.isArray(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics)
-  ) {
-    throw new Error("Expected a storybook.tokens artifact extension payload.");
-  }
-  return parsed as unknown as StorybookPublicTokensArtifact;
-};
-
-const parseStorybookThemesArtifact = ({
-  input
-}: {
-  input: string;
-}): StorybookPublicThemesArtifact => {
-  const parsed: unknown = JSON.parse(input);
-  if (!isRecord(parsed) || parsed.name !== "storybook.themes") {
-    throw new Error("Expected a storybook.themes artifact object.");
-  }
-  const extensions = parsed.$extensions;
-  if (
-    !isRecord(extensions) ||
-    !isRecord(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY]) ||
-    extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].artifact !== "storybook.themes" ||
-    !Array.isArray(extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics)
-  ) {
-    throw new Error("Expected a storybook.themes artifact extension payload.");
-  }
-  return parsed as unknown as StorybookPublicThemesArtifact;
-};
-
 const resolveSummaryStatus = ({
   generatedApp,
   uiA11y,
@@ -677,7 +719,8 @@ const buildValidationSummaryArtifact = async ({
   customerProfileMatchSummary,
   customerProfileComponentApiSummary,
   customerProfileStyleSummary,
-  componentMatchReportArtifact
+  componentMatchReportArtifact,
+  storybookArtifactStatusOverrides
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -687,6 +730,7 @@ const buildValidationSummaryArtifact = async ({
   customerProfileComponentApiSummary?: CustomerProfileComponentApiValidationSummary;
   customerProfileStyleSummary?: CustomerProfileStyleValidationSummary;
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
+  storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -700,7 +744,19 @@ const buildValidationSummaryArtifact = async ({
   });
 
   const requestedStorybookStaticDir = context.requestedStorybookStaticDir;
-  const toRequiredStorybookArtifactStatus = (filePath: string | undefined): ValidationArtifactStatusSummary => {
+  const toRequiredStorybookArtifactStatus = ({
+    filePath,
+    overrideStatus
+  }: {
+    filePath: string | undefined;
+    overrideStatus?: ValidationArtifactStatusSummary["status"];
+  }): ValidationArtifactStatusSummary => {
+    if (overrideStatus) {
+      return {
+        status: overrideStatus,
+        ...(filePath ? { filePath } : {})
+      };
+    }
     return filePath
       ? {
           status: "ok",
@@ -711,27 +767,46 @@ const buildValidationSummaryArtifact = async ({
         };
   };
   const storybookArtifacts: ValidationStorybookArtifactSet = {
-    catalog: toRequiredStorybookArtifactStatus(storybookCatalogFile),
-    evidence: toRequiredStorybookArtifactStatus(storybookEvidenceFile),
-    tokens: toRequiredStorybookArtifactStatus(storybookTokensFile),
-    themes: toRequiredStorybookArtifactStatus(storybookThemesFile),
-    components: toRequiredStorybookArtifactStatus(storybookComponentsFile)
+    catalog: toRequiredStorybookArtifactStatus({
+      filePath: storybookCatalogFile,
+      ...(storybookArtifactStatusOverrides?.catalog ? { overrideStatus: storybookArtifactStatusOverrides.catalog } : {})
+    }),
+    evidence: toRequiredStorybookArtifactStatus({
+      filePath: storybookEvidenceFile,
+      ...(storybookArtifactStatusOverrides?.evidence ? { overrideStatus: storybookArtifactStatusOverrides.evidence } : {})
+    }),
+    tokens: toRequiredStorybookArtifactStatus({
+      filePath: storybookTokensFile,
+      ...(storybookArtifactStatusOverrides?.tokens ? { overrideStatus: storybookArtifactStatusOverrides.tokens } : {})
+    }),
+    themes: toRequiredStorybookArtifactStatus({
+      filePath: storybookThemesFile,
+      ...(storybookArtifactStatusOverrides?.themes ? { overrideStatus: storybookArtifactStatusOverrides.themes } : {})
+    }),
+    components: toRequiredStorybookArtifactStatus({
+      filePath: storybookComponentsFile,
+      ...(storybookArtifactStatusOverrides?.components ? { overrideStatus: storybookArtifactStatusOverrides.components } : {})
+    })
   };
 
   const compositionCoverage = componentMatchReportArtifact
     ? buildStorybookCompositionCoverage({ artifact: componentMatchReportArtifact })
     : undefined;
+  const styleStorybookArtifacts = requestedStorybookStaticDir
+    ? {
+        evidence: storybookArtifacts.evidence,
+        tokens: storybookArtifacts.tokens,
+        themes: storybookArtifacts.themes
+      }
+    : {
+        evidence: toArtifactStatusSummary(storybookEvidenceFile),
+        tokens: toArtifactStatusSummary(storybookTokensFile),
+        themes: toArtifactStatusSummary(storybookThemesFile)
+      };
 
   const storybookSummary: ValidationSummaryArtifact["storybook"] = requestedStorybookStaticDir
     ? {
-        status:
-          storybookCatalogFile &&
-          storybookEvidenceFile &&
-          storybookTokensFile &&
-          storybookThemesFile &&
-          storybookComponentsFile
-            ? "ok"
-            : "failed",
+        status: listFailedStorybookArtifacts({ artifacts: storybookArtifacts }).length === 0 ? "ok" : "failed",
         requestedPath: requestedStorybookStaticDir,
         artifacts: storybookArtifacts,
         ...(compositionCoverage ? { composition: compositionCoverage } : {})
@@ -786,9 +861,9 @@ const buildValidationSummaryArtifact = async ({
           diagnostics: customerProfileStyleSummary.diagnostics,
           policy: customerProfileStyleSummary.policy,
           storybook: {
-            evidence: toArtifactStatusSummary(storybookEvidenceFile),
-            tokens: toArtifactStatusSummary(storybookTokensFile),
-            themes: toArtifactStatusSummary(storybookThemesFile),
+            evidence: styleStorybookArtifacts.evidence,
+            tokens: styleStorybookArtifacts.tokens,
+            themes: styleStorybookArtifacts.themes,
             componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
           },
           ...(context.resolvedCustomerProfile
@@ -826,9 +901,9 @@ const buildValidationSummaryArtifact = async ({
             }
           },
           storybook: {
-            evidence: toArtifactStatusSummary(storybookEvidenceFile),
-            tokens: toArtifactStatusSummary(storybookTokensFile),
-            themes: toArtifactStatusSummary(storybookThemesFile),
+            evidence: styleStorybookArtifacts.evidence,
+            tokens: styleStorybookArtifacts.tokens,
+            themes: styleStorybookArtifacts.themes,
             componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
           },
           ...(context.resolvedCustomerProfile
@@ -907,8 +982,17 @@ export const createValidateProjectService = ({
       let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
       let customerProfileComponentApiSummary: CustomerProfileComponentApiValidationSummary | undefined;
       let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
+      let storybookEvidenceArtifact: StorybookEvidenceArtifact | undefined;
+      let storybookTokensArtifact: StorybookPublicTokensArtifact | undefined;
+      let storybookThemesArtifact: StorybookPublicThemesArtifact | undefined;
 
       const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
+      const storybookCatalogPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
+      const storybookEvidencePath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
+      const storybookTokensPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
+      const storybookThemesPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
+      const storybookComponentsPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
+      const isStorybookRequested = Boolean(context.requestedStorybookStaticDir);
       if (componentMatchReportPath) {
         try {
           componentMatchReportArtifact = parseComponentMatchReportArtifact({
@@ -946,6 +1030,135 @@ export const createValidateProjectService = ({
             message:
               `Storybook composition: ${compositionCoverage.docsOnlyReferenceCount} matched familie(s) rely on ` +
               `docs-only references without authoritative evidence: ${compositionCoverage.docsOnlyFamilyNames.join(", ")}.`
+          });
+        }
+      }
+
+      if (isStorybookRequested) {
+        const storybookArtifactPaths: Record<StorybookArtifactKey, string | undefined> = {
+          catalog: storybookCatalogPath,
+          evidence: storybookEvidencePath,
+          tokens: storybookTokensPath,
+          themes: storybookThemesPath,
+          components: storybookComponentsPath
+        };
+        const persistAndThrowInvalidStorybookArtifact = async ({
+          artifactKey,
+          cause
+        }: {
+          artifactKey: StorybookArtifactKey;
+          cause: unknown;
+        }): Promise<never> => {
+          const summary = await buildValidationSummaryArtifact({
+            context,
+            validatedAt,
+            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
+            storybookArtifactStatusOverrides: {
+              [artifactKey]: "invalid"
+            }
+          });
+          await persistValidationSummaryArtifacts({
+            context,
+            summary
+          });
+          const failedArtifacts = listFailedStorybookArtifacts({
+            artifacts: summary.storybook.status === "not_requested" ? {
+              catalog: { status: "not_available" },
+              evidence: { status: "not_available" },
+              tokens: { status: "not_available" },
+              themes: { status: "not_available" },
+              components: { status: "not_available" }
+            } : summary.storybook.artifacts
+          });
+          throw createPipelineError({
+            code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
+            stage: "validate.project",
+            message: "Storybook artifacts are unreadable or malformed.",
+            cause,
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: buildStorybookGateDiagnostics({
+              artifacts: failedArtifacts
+            })
+          });
+        };
+        const parseStorybookArtifact = async <T>({
+          artifactKey,
+          filePath,
+          parse
+        }: {
+          artifactKey: StorybookArtifactKey;
+          filePath: string | undefined;
+          parse: ({ input }: { input: string }) => T;
+        }): Promise<T | undefined> => {
+          if (!filePath) {
+            return undefined;
+          }
+          try {
+            return parse({
+              input: await readFile(filePath, "utf8")
+            });
+          } catch (error) {
+            return persistAndThrowInvalidStorybookArtifact({
+              artifactKey,
+              cause: error
+            });
+          }
+        };
+        await parseStorybookArtifact({
+          artifactKey: "catalog",
+          filePath: storybookCatalogPath,
+          parse: parseStorybookCatalogArtifact
+        });
+        storybookEvidenceArtifact = await parseStorybookArtifact({
+          artifactKey: "evidence",
+          filePath: storybookEvidencePath,
+          parse: parseStorybookEvidenceArtifact
+        });
+        storybookTokensArtifact = await parseStorybookArtifact({
+          artifactKey: "tokens",
+          filePath: storybookTokensPath,
+          parse: parseStorybookTokensArtifact
+        });
+        storybookThemesArtifact = await parseStorybookArtifact({
+          artifactKey: "themes",
+          filePath: storybookThemesPath,
+          parse: parseStorybookThemesArtifact
+        });
+        await parseStorybookArtifact({
+          artifactKey: "components",
+          filePath: storybookComponentsPath,
+          parse: parseStorybookComponentsArtifact
+        });
+
+        const missingRequiredStorybookArtifacts = STORYBOOK_ARTIFACT_DESCRIPTORS.filter(
+          ({ key }) => !storybookArtifactPaths[key]
+        );
+        if (missingRequiredStorybookArtifacts.length > 0) {
+          const summary = await buildValidationSummaryArtifact({
+            context,
+            validatedAt,
+            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
+          });
+          await persistValidationSummaryArtifacts({
+            context,
+            summary
+          });
+          throw createPipelineError({
+            code: "E_STORYBOOK_VALIDATION_FAILED",
+            stage: "validate.project",
+            message: buildStorybookGateMessage({
+              artifacts: missingRequiredStorybookArtifacts.map((artifact) => ({
+                ...artifact,
+                status: "missing" as const
+              }))
+            }),
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: buildStorybookGateDiagnostics({
+              artifacts: missingRequiredStorybookArtifacts.map((artifact) => ({
+                ...artifact,
+                status: "missing" as const
+              }))
+            })
           });
         }
       }
@@ -1057,40 +1270,57 @@ export const createValidateProjectService = ({
 
       let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
       if (context.resolvedCustomerProfile) {
-        const storybookEvidencePath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
-        const storybookTokensPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
-        const storybookThemesPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
-
-        let storybookEvidenceArtifact: StorybookEvidenceArtifact | undefined;
-        let storybookTokensArtifact: StorybookPublicTokensArtifact | undefined;
-        let storybookThemesArtifact: StorybookPublicThemesArtifact | undefined;
-
-        try {
-          storybookEvidenceArtifact = storybookEvidencePath
-            ? parseStorybookEvidenceArtifact({
-                input: await readFile(storybookEvidencePath, "utf8")
-              })
-            : undefined;
-          storybookTokensArtifact = storybookTokensPath
-            ? parseStorybookTokensArtifact({
-                input: await readFile(storybookTokensPath, "utf8")
-              })
-            : undefined;
-          storybookThemesArtifact = storybookThemesPath
-            ? parseStorybookThemesArtifact({
-                input: await readFile(storybookThemesPath, "utf8")
-              })
-            : undefined;
-        } catch (error) {
-          throw createPipelineError({
-            code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
-            stage: "validate.project",
-            message: "Storybook style artifacts are unreadable or malformed.",
-            cause: error,
-            limits: context.runtime.pipelineDiagnosticLimits
-          });
+        if (!storybookEvidenceArtifact) {
+          try {
+            storybookEvidenceArtifact = storybookEvidencePath
+              ? parseStorybookEvidenceArtifact({
+                  input: await readFile(storybookEvidencePath, "utf8")
+                })
+              : undefined;
+          } catch (error) {
+            throw createPipelineError({
+              code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
+              stage: "validate.project",
+              message: "Storybook style artifacts are unreadable or malformed.",
+              cause: error,
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
         }
-
+        if (!storybookTokensArtifact) {
+          try {
+            storybookTokensArtifact = storybookTokensPath
+              ? parseStorybookTokensArtifact({
+                  input: await readFile(storybookTokensPath, "utf8")
+                })
+              : undefined;
+          } catch (error) {
+            throw createPipelineError({
+              code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
+              stage: "validate.project",
+              message: "Storybook style artifacts are unreadable or malformed.",
+              cause: error,
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
+        }
+        if (!storybookThemesArtifact) {
+          try {
+            storybookThemesArtifact = storybookThemesPath
+              ? parseStorybookThemesArtifact({
+                  input: await readFile(storybookThemesPath, "utf8")
+                })
+              : undefined;
+          } catch (error) {
+            throw createPipelineError({
+              code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
+              stage: "validate.project",
+              message: "Storybook style artifacts are unreadable or malformed.",
+              cause: error,
+              limits: context.runtime.pipelineDiagnosticLimits
+            });
+          }
+        }
         customerProfileStyleSummary = await validateGeneratedProjectStorybookStyles({
           generatedProjectDir,
           customerProfile: context.resolvedCustomerProfile,
@@ -1255,6 +1485,25 @@ export const createValidateProjectService = ({
         context,
         summary
       });
+      const failedStorybookArtifacts =
+        summary.storybook.status === "failed"
+          ? listFailedStorybookArtifacts({
+              artifacts: summary.storybook.artifacts
+            })
+          : [];
+      if (failedStorybookArtifacts.length > 0) {
+        throw createPipelineError({
+          code: "E_STORYBOOK_VALIDATION_FAILED",
+          stage: "validate.project",
+          message: buildStorybookGateMessage({
+            artifacts: failedStorybookArtifacts
+          }),
+          limits: context.runtime.pipelineDiagnosticLimits,
+          diagnostics: buildStorybookGateDiagnostics({
+            artifacts: failedStorybookArtifacts
+          })
+        });
+      }
 
       const diffContext = await context.artifactStore.requireValue<GenerationDiffContext>(
         STAGE_ARTIFACT_KEYS.generationDiffContext

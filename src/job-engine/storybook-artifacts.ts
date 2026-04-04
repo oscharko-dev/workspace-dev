@@ -18,7 +18,14 @@ import {
   writeStorybookPublicArtifacts
 } from "../storybook/public-extracts.js";
 import { getComponentMatchReportOutputFileName } from "../storybook/component-match-report.js";
-import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../storybook/types.js";
+import {
+  getFatalStorybookExtractionDiagnostics,
+  parseStorybookCatalogArtifact,
+  parseStorybookComponentsArtifact,
+  parseStorybookEvidenceArtifact,
+  parseStorybookThemesArtifact,
+  parseStorybookTokensArtifact
+} from "../storybook/artifact-validation.js";
 import type { StorybookCatalogArtifact, StorybookEvidenceArtifact, StorybookPublicArtifacts } from "../storybook/types.js";
 
 export interface JobStorybookArtifactPaths {
@@ -89,24 +96,38 @@ const loadPrecomputedStorybookArtifacts = async ({
     return undefined;
   }
 
-  const [catalogArtifact, evidenceArtifact, tokensArtifact, themesArtifact, componentsArtifact] = (await Promise.all([
-    readFile(sourcePaths.catalogFile, "utf8"),
-    readFile(sourcePaths.evidenceFile, "utf8"),
-    readFile(sourcePaths.tokensFile, "utf8"),
-    readFile(sourcePaths.themesFile, "utf8"),
-    readFile(sourcePaths.componentsFile, "utf8")
-  ])).map((content) => JSON.parse(content) as unknown);
+  try {
+    const [catalogArtifact, evidenceArtifact, tokensArtifact, themesArtifact, componentsArtifact] = await Promise.all([
+      readFile(sourcePaths.catalogFile, "utf8"),
+      readFile(sourcePaths.evidenceFile, "utf8"),
+      readFile(sourcePaths.tokensFile, "utf8"),
+      readFile(sourcePaths.themesFile, "utf8"),
+      readFile(sourcePaths.componentsFile, "utf8")
+    ]);
 
-  return {
-    sourcePaths,
-    catalogArtifact: catalogArtifact as StorybookCatalogArtifact,
-    evidenceArtifact: evidenceArtifact as StorybookEvidenceArtifact,
-    publicArtifacts: {
-      tokensArtifact: tokensArtifact as StorybookPublicArtifacts["tokensArtifact"],
-      themesArtifact: themesArtifact as StorybookPublicArtifacts["themesArtifact"],
-      componentsArtifact: componentsArtifact as StorybookPublicArtifacts["componentsArtifact"]
-    }
-  };
+    return {
+      sourcePaths,
+      catalogArtifact: parseStorybookCatalogArtifact({
+        input: catalogArtifact
+      }),
+      evidenceArtifact: parseStorybookEvidenceArtifact({
+        input: evidenceArtifact
+      }),
+      publicArtifacts: {
+        tokensArtifact: parseStorybookTokensArtifact({
+          input: tokensArtifact
+        }),
+        themesArtifact: parseStorybookThemesArtifact({
+          input: themesArtifact
+        }),
+        componentsArtifact: parseStorybookComponentsArtifact({
+          input: componentsArtifact
+        })
+      }
+    };
+  } catch {
+    return undefined;
+  }
 };
 const toMissingReusableArtifactError = ({
   artifactKey,
@@ -211,75 +232,81 @@ export const generateStorybookArtifactsForJob = async ({
     buildDir: storybookStaticDir
   });
   if (precomputedArtifacts) {
-    await Promise.all([
-      copyReusableArtifact({
-        sourcePath: precomputedArtifacts.sourcePaths.evidenceFile,
-        targetPath: artifactPaths.evidenceFile,
-        artifactKey: STAGE_ARTIFACT_KEYS.storybookEvidence,
-        sourceJobId: "storybook-build",
-        sourceRequestedStorybookStaticDir: storybookStaticDir
-      }),
-      copyReusableArtifact({
-        sourcePath: precomputedArtifacts.sourcePaths.catalogFile,
-        targetPath: artifactPaths.catalogFile,
-        artifactKey: STAGE_ARTIFACT_KEYS.storybookCatalog,
-        sourceJobId: "storybook-build",
-        sourceRequestedStorybookStaticDir: storybookStaticDir
-      }),
-      copyReusableArtifact({
-        sourcePath: precomputedArtifacts.sourcePaths.tokensFile,
-        targetPath: artifactPaths.tokensFile,
-        artifactKey: STAGE_ARTIFACT_KEYS.storybookTokens,
-        sourceJobId: "storybook-build",
-        sourceRequestedStorybookStaticDir: storybookStaticDir
-      }),
-      copyReusableArtifact({
-        sourcePath: precomputedArtifacts.sourcePaths.themesFile,
-        targetPath: artifactPaths.themesFile,
-        artifactKey: STAGE_ARTIFACT_KEYS.storybookThemes,
-        sourceJobId: "storybook-build",
-        sourceRequestedStorybookStaticDir: storybookStaticDir
-      }),
-      copyReusableArtifact({
-        sourcePath: precomputedArtifacts.sourcePaths.componentsFile,
-        targetPath: artifactPaths.componentsFile,
-        artifactKey: STAGE_ARTIFACT_KEYS.storybookComponents,
-        sourceJobId: "storybook-build",
-        sourceRequestedStorybookStaticDir: storybookStaticDir
-      })
-    ]);
-    await artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.storybookEvidence,
-      stage,
-      absolutePath: artifactPaths.evidenceFile
+    const fatalDiagnostics = getFatalStorybookExtractionDiagnostics({
+      tokensArtifact: precomputedArtifacts.publicArtifacts.tokensArtifact,
+      themesArtifact: precomputedArtifacts.publicArtifacts.themesArtifact
     });
-    await artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.storybookCatalog,
-      stage,
-      absolutePath: artifactPaths.catalogFile
-    });
-    await artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.storybookTokens,
-      stage,
-      absolutePath: artifactPaths.tokensFile
-    });
-    await artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.storybookThemes,
-      stage,
-      absolutePath: artifactPaths.themesFile
-    });
-    await artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.storybookComponents,
-      stage,
-      absolutePath: artifactPaths.componentsFile
-    });
+    if (fatalDiagnostics.length === 0) {
+      await Promise.all([
+        copyReusableArtifact({
+          sourcePath: precomputedArtifacts.sourcePaths.evidenceFile,
+          targetPath: artifactPaths.evidenceFile,
+          artifactKey: STAGE_ARTIFACT_KEYS.storybookEvidence,
+          sourceJobId: "storybook-build",
+          sourceRequestedStorybookStaticDir: storybookStaticDir
+        }),
+        copyReusableArtifact({
+          sourcePath: precomputedArtifacts.sourcePaths.catalogFile,
+          targetPath: artifactPaths.catalogFile,
+          artifactKey: STAGE_ARTIFACT_KEYS.storybookCatalog,
+          sourceJobId: "storybook-build",
+          sourceRequestedStorybookStaticDir: storybookStaticDir
+        }),
+        copyReusableArtifact({
+          sourcePath: precomputedArtifacts.sourcePaths.tokensFile,
+          targetPath: artifactPaths.tokensFile,
+          artifactKey: STAGE_ARTIFACT_KEYS.storybookTokens,
+          sourceJobId: "storybook-build",
+          sourceRequestedStorybookStaticDir: storybookStaticDir
+        }),
+        copyReusableArtifact({
+          sourcePath: precomputedArtifacts.sourcePaths.themesFile,
+          targetPath: artifactPaths.themesFile,
+          artifactKey: STAGE_ARTIFACT_KEYS.storybookThemes,
+          sourceJobId: "storybook-build",
+          sourceRequestedStorybookStaticDir: storybookStaticDir
+        }),
+        copyReusableArtifact({
+          sourcePath: precomputedArtifacts.sourcePaths.componentsFile,
+          targetPath: artifactPaths.componentsFile,
+          artifactKey: STAGE_ARTIFACT_KEYS.storybookComponents,
+          sourceJobId: "storybook-build",
+          sourceRequestedStorybookStaticDir: storybookStaticDir
+        })
+      ]);
+      await artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+        stage,
+        absolutePath: artifactPaths.evidenceFile
+      });
+      await artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.storybookCatalog,
+        stage,
+        absolutePath: artifactPaths.catalogFile
+      });
+      await artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.storybookTokens,
+        stage,
+        absolutePath: artifactPaths.tokensFile
+      });
+      await artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.storybookThemes,
+        stage,
+        absolutePath: artifactPaths.themesFile
+      });
+      await artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.storybookComponents,
+        stage,
+        absolutePath: artifactPaths.componentsFile
+      });
 
-    return {
-      paths: artifactPaths,
-      catalogArtifact: precomputedArtifacts.catalogArtifact,
-      evidenceArtifact: precomputedArtifacts.evidenceArtifact,
-      publicArtifacts: precomputedArtifacts.publicArtifacts
-    };
+      return {
+        paths: artifactPaths,
+        catalogArtifact: precomputedArtifacts.catalogArtifact,
+        evidenceArtifact: precomputedArtifacts.evidenceArtifact,
+        publicArtifacts: precomputedArtifacts.publicArtifacts
+      };
+    }
   }
   const buildContext = await loadStorybookBuildContext({
     buildDir: storybookStaticDir
@@ -299,9 +326,10 @@ export const generateStorybookArtifactsForJob = async ({
     evidenceArtifact,
     catalogArtifact
   });
-  const fatalDiagnostics = publicArtifacts.tokensArtifact.$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY].diagnostics.filter(
-    (diagnostic) => diagnostic.severity === "error"
-  );
+  const fatalDiagnostics = getFatalStorybookExtractionDiagnostics({
+    tokensArtifact: publicArtifacts.tokensArtifact,
+    themesArtifact: publicArtifacts.themesArtifact
+  });
   if (fatalDiagnostics.length > 0) {
     throw createPipelineError({
       code: "E_STORYBOOK_TOKEN_EXTRACTION_INVALID",
