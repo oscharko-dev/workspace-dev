@@ -13,11 +13,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -111,11 +106,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -203,11 +193,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -234,11 +219,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -281,11 +261,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '8e26e1153c3f052fe18bff56d3802a05af6d4241' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -330,11 +305,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '4754a2591b823963bf63c3cc8c7052453c128a72' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -374,11 +344,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -480,11 +445,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '6e99374fc7708f8d9226cbe8575212ba80f94b86' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -569,11 +529,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '290ec8d2964f3d827ab56b8a9c4b781092328db6' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -661,11 +616,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '9a4fa985303a81ffa4144d787f72543a43be1984' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -718,11 +668,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -774,11 +719,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -833,11 +773,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -890,11 +825,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '683ca71963a6efdc806651d53e03e8b7cc56369b' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -922,11 +852,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'ea64a1291d4fba6d4a845d263db73482975431fb' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -974,11 +899,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1009,11 +929,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1100,11 +1015,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1145,11 +1055,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '5add493da3b40cdb711f4444f933d0d7e25c2acb' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '5add493da3b40cdb711f4444f933d0d7e25c2acb' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1220,11 +1125,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '37294278bceb18ffb2a30c4161fafc08f86e8c14' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1297,11 +1197,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1359,11 +1254,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '765383815cc421926c0aed89191fd97f829ba396' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1561,11 +1451,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1591,11 +1476,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'bb8fa91a46daa5091a930960600f4bc86d708798' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1647,11 +1527,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '58c36fb2138d057ea2e87ee54859f85f71dad734' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1698,11 +1573,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '832a9533454b00d3463057dc1e140b8530be96db' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1742,11 +1612,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '3158d6bd65092cc526a20a67f94d00d1b86e7919' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1772,11 +1637,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'ba69ca5620a6cf229730e580c17e86fdd3793605' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'ba69ca5620a6cf229730e580c17e86fdd3793605' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1818,11 +1678,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '27028de27105923597aa8fb3fd2edac3082bf822' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '27028de27105923597aa8fb3fd2edac3082bf822' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -1875,11 +1730,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' in local_json mode.",
           "scope": "cache"
         }
       ],
@@ -2003,11 +1853,6 @@
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' was missing from the library-resolution cache entry.",
           "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' in local_json mode.",
-          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -2041,11 +1886,6 @@
         {
           "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
           "message": "Cached published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' was missing from the library-resolution cache entry.",
-          "scope": "cache"
-        },
-        {
-          "code": "E_LIBRARY_OFFLINE_CACHE_MISS",
-          "message": "No cached published component metadata is available for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' in local_json mode.",
           "scope": "cache"
         }
       ],

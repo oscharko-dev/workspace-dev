@@ -403,9 +403,7 @@ test("resolveFigmaLibraryResolutionArtifact reuses cached assets when only part 
   assert.equal(partialEntry?.status, "partial");
   assert.deepEqual(partialEntry?.issues?.map((issue) => issue.code).sort(), [
     "E_LIBRARY_CACHE_ENTRY_MISSING",
-    "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING",
-    "E_LIBRARY_OFFLINE_CACHE_MISS",
-    "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
+    "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING"
   ]);
   await rm(cacheDir, { recursive: true, force: true });
 });
@@ -470,7 +468,7 @@ test("resolveFigmaLibraryResolutionArtifact only persists successful live lookup
   assert.equal(offlineArtifact.entries[0]?.resolutionSource, "cache");
   assert.deepEqual(
     offlineArtifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
-    ["E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING", "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"]
+    ["E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING"]
   );
   await rm(cacheDir, { recursive: true, force: true });
 });
@@ -704,9 +702,7 @@ test("resolveFigmaLibraryResolutionArtifact reports partial local_json results w
     artifact.entries[0]?.issues?.map((issue) => issue.code).sort(),
     [
       "E_LIBRARY_CACHE_ENTRY_MISSING",
-      "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING",
-      "E_LIBRARY_OFFLINE_CACHE_MISS",
-      "E_LIBRARY_OFFLINE_COMPONENT_SET_CACHE_MISS"
+      "E_LIBRARY_COMPONENT_SET_CACHE_ENTRY_MISSING"
     ]
   );
   await rm(cacheDir, { recursive: true, force: true });
