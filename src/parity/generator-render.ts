@@ -236,7 +236,13 @@ export const isIconLikeNode = (element: ScreenElementIR): boolean => {
     loweredName.startsWith("icon/") ||
     loweredName.startsWith("icons/") ||
     loweredName.startsWith("icon-") ||
-    loweredName.startsWith("icon_")
+    loweredName.startsWith("icon_") ||
+    loweredName.startsWith("brand/") ||
+    loweredName.startsWith("brand_") ||
+    loweredName.startsWith("brand-") ||
+    loweredName.startsWith("semantic/") ||
+    loweredName.startsWith("semantic_") ||
+    loweredName.startsWith("semantic-")
   );
 };
 
@@ -820,6 +826,12 @@ export const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | un
         total += 6;
       }
       if (lowered.startsWith("icon/") || lowered.startsWith("icons/") || lowered.startsWith("icon-") || lowered.startsWith("icon_")) {
+        total += 5;
+      }
+      if (
+        lowered.startsWith("brand/") || lowered.startsWith("brand_") || lowered.startsWith("brand-") ||
+        lowered.startsWith("semantic/") || lowered.startsWith("semantic_") || lowered.startsWith("semantic-")
+      ) {
         total += 5;
       }
       if (lowered.includes("muisvgiconroot")) {

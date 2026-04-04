@@ -1083,8 +1083,8 @@ const buildFrameVariantGroups = ({
       const { baseGroupId, ...resolvedGroup } = group;
       void baseGroupId;
       return {
-        ...resolvedGroup,
-        groupId
+        groupId,
+        ...resolvedGroup
       };
     })
     .sort((left, right) => compareStrings(left.groupId, right.groupId));
