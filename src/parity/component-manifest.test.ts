@@ -337,3 +337,57 @@ test("buildComponentManifest does not cross-associate unrelated component and co
     ["src/components/BillingPattern1.tsx", "src/context/BillingPatternContext.tsx", "src/screens/Billing.tsx"]
   );
 });
+
+test("buildComponentManifest can associate scenario-only artifacts with a canonical emitted screen", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-component-manifest-family-"));
+  const screens: ScreenIR[] = [
+    createScreen({
+      id: "family-canonical",
+      name: "Pricing Netto",
+      children: [
+        createContainerElement({
+          id: "canonical-copy",
+          name: "Canonical Copy"
+        })
+      ]
+    })
+  ];
+
+  await writeProjectFile({
+    projectDir,
+    relativePath: "src/screens/PricingNetto.tsx",
+    content: [
+      `{/* @ir:start canonical-copy Canonical Copy FRAME */}`,
+      `<section />`,
+      `{/* @ir:end canonical-copy */}`,
+      ``
+    ].join("\n")
+  });
+  await writeProjectFile({
+    projectDir,
+    relativePath: "src/components/PricingModePattern.tsx",
+    content: [
+      `{/* @ir:start family-brutto-copy Brutto Copy FRAME extracted */}`,
+      `<article />`,
+      `{/* @ir:end family-brutto-copy */}`,
+      ``
+    ].join("\n")
+  });
+
+  const manifest = await buildComponentManifest({
+    projectDir,
+    screens,
+    associatedNodeIdsByScreenId: new Map([
+      [
+        "family-canonical",
+        new Set<string>(["family-canonical", "canonical-copy", "family-brutto", "family-brutto-copy"])
+      ]
+    ])
+  });
+
+  assert.equal(manifest.screens.length, 1);
+  assert.deepEqual(
+    manifest.screens[0]?.components.map((entry) => entry.file).sort(),
+    ["src/components/PricingModePattern.tsx", "src/screens/PricingNetto.tsx"]
+  );
+});

@@ -132,28 +132,28 @@ const stripAffectedScreenVariantFamilies = ({
       return [screen.id, nodeIds] as const;
     })
   );
-  const affectedFamilies = new Set<string>();
+  const affectedFamilyIndexes = new Set<number>();
 
-  for (const family of ir.screenVariantFamilies) {
+  for (const [familyIndex, family] of ir.screenVariantFamilies.entries()) {
     for (const memberScreenId of family.memberScreenIds) {
       const screenNodeIds = screenNodeIdsByScreenId.get(memberScreenId);
       if (!screenNodeIds) {
         continue;
       }
       if (overrideNodeIds.some((nodeId) => screenNodeIds.has(nodeId))) {
-        affectedFamilies.add(family.familyId);
+        affectedFamilyIndexes.add(familyIndex);
         break;
       }
     }
   }
 
-  if (affectedFamilies.size === 0) {
+  if (affectedFamilyIndexes.size === 0) {
     return ir;
   }
 
   return {
     ...ir,
-    screenVariantFamilies: ir.screenVariantFamilies.filter((family) => !affectedFamilies.has(family.familyId))
+    screenVariantFamilies: ir.screenVariantFamilies.filter((_, familyIndex) => !affectedFamilyIndexes.has(familyIndex))
   };
 };
 

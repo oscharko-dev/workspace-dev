@@ -628,13 +628,16 @@ export interface IRValidationError {
     | "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE"
     | "IR_SCREEN_APP_SHELL_NON_CONTIGUOUS_CONTENT_NODES"
     | "IR_INVALID_SCREEN_VARIANT_FAMILY"
+    | "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_ID"
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN"
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN"
+    | "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_MEMBER"
     | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_MEMBER"
     | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_COLLISION"
     | "IR_SCREEN_VARIANT_FAMILY_MEMBER_COLLISION"
     | "IR_SCREEN_VARIANT_FAMILY_EMPTY_AXES"
     | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS"
+    | "IR_SCREEN_VARIANT_FAMILY_MEMBER_NOT_IN_SCENARIOS"
     | "IR_INVALID_SCREEN_VARIANT_SCENARIO"
     | "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN"
     | "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN"
@@ -970,6 +973,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
 
       const memberScreenIdSet = new Set<string>();
       for (const memberScreenId of family.memberScreenIds) {
+        if (memberScreenIdSet.has(memberScreenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_MEMBER",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
+              "more than once within the same family."
+          });
+        }
         memberScreenIdSet.add(memberScreenId);
         if (!screenIdSet.has(memberScreenId)) {
           errors.push({
@@ -1115,14 +1126,37 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             "must have a corresponding entry in scenarios."
         });
       }
+
+      for (const memberScreenId of family.memberScreenIds) {
+        if (!seenScenarioScreenIds.has(memberScreenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_FAMILY_MEMBER_NOT_IN_SCENARIOS",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
+              "which must have a corresponding scenario entry."
+          });
+        }
+      }
     }
 
+    const familyIdToIndex = new Map<string, number>();
     const canonicalToFamilyIndex = new Map<string, number>();
     const memberToFamilyIndex = new Map<string, number>();
     for (let i = 0; i < raw.screenVariantFamilies.length; i++) {
       const family = raw.screenVariantFamilies[i];
-      if (!family || !family.canonicalScreenId || !Array.isArray(family.memberScreenIds)) {
+      if (!family || !family.familyId || !family.canonicalScreenId || !Array.isArray(family.memberScreenIds)) {
         continue;
+      }
+      const previousFamilyId = familyIdToIndex.get(family.familyId);
+      if (previousFamilyId !== undefined) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_ID",
+          message:
+            `DesignIR.screenVariantFamilies[${i}].familyId '${family.familyId}' ` +
+            `is already used by family index ${previousFamilyId}.`
+        });
+      } else {
+        familyIdToIndex.set(family.familyId, i);
       }
       const previousCanonical = canonicalToFamilyIndex.get(family.canonicalScreenId);
       if (previousCanonical !== undefined) {
