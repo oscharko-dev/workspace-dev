@@ -48,6 +48,21 @@ const ACTIONABLE_AXES: readonly ScreenVariantFamilyAxis[] = [
   "validation-state"
 ] as const;
 
+/**
+ * Maximum vertical distance a validation message label may sit above a form
+ * field's top edge while still being considered a candidate for pairing. Chosen
+ * to tolerate a standard form-row label/caption above the field.
+ */
+const VALIDATION_MESSAGE_ABOVE_FIELD_TOLERANCE_PX = 24;
+
+/**
+ * Maximum vertical distance a validation message may sit below a form field's
+ * bottom edge while still being considered a candidate for pairing. Tuned to
+ * allow for helper-text, inline error summaries, and related layout gaps that
+ * appear directly beneath the field.
+ */
+const VALIDATION_MESSAGE_BELOW_FIELD_TOLERANCE_PX = 160;
+
 const ACTIONABLE_AXIS_SET = new Set<string>(ACTIONABLE_AXES);
 const ERROR_TOKEN_SET = new Set(["error", "errors", "fehler", "fehlermeldung", "fehlermeldungen"]);
 const COLLAPSED_TOKEN_SET = new Set(["collapsed", "collapse", "eingeklappt"]);
@@ -573,7 +588,8 @@ const resolveFieldMessageAssociation = ({
   const fieldHeight = nearest.field.memberElement.height ?? nearest.field.canonicalElement.height ?? 0;
   const isInlineRange =
     candidateY === undefined ||
-    (candidateY >= fieldY - 24 && candidateY <= fieldY + fieldHeight + 160);
+    (candidateY >= fieldY - VALIDATION_MESSAGE_ABOVE_FIELD_TOLERANCE_PX &&
+      candidateY <= fieldY + fieldHeight + VALIDATION_MESSAGE_BELOW_FIELD_TOLERANCE_PX);
   if (!isInlineRange) {
     return undefined;
   }
@@ -689,8 +705,13 @@ const extractValidationOnlyDiffEvidence = ({
     });
     if (matchedField) {
       const existing = fieldErrorEvidenceByFieldKey.get(matchedField.fieldKey);
+      // First-wins: once a field already has a matched message, keep it.
+      if (existing && existing.message.length > 0) {
+        continue;
+      }
       fieldErrorEvidenceByFieldKey.set(matchedField.fieldKey, {
-        message: existing?.message || candidate.message,
+        ...(existing ? { ...existing } : {}),
+        message: candidate.message,
         visualError: true,
         sourceNodeId: candidate.element.id
       });

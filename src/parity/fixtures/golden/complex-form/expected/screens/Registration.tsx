@@ -35,6 +35,7 @@ function RegistrationScreenContent() {
                 error={Boolean(helperText)}
                 helperText={helperText}
                 aria-label={"First Name"}
+                aria-invalid={Boolean(helperText)}
                 aria-describedby={"muitextfieldroot_first_name_field-helper-text"}
           sx={{
             width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
@@ -44,7 +45,7 @@ function RegistrationScreenContent() {
           }}
 
                 slotProps={{
-                  htmlInput: { "aria-describedby": "muitextfieldroot_first_name_field-helper-text" },
+                  htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_first_name_field-helper-text" },
             formHelperText: { id: "muitextfieldroot_first_name_field-helper-text" }
                 }}
               />
@@ -72,6 +73,7 @@ function RegistrationScreenContent() {
                 error={Boolean(helperText)}
                 helperText={helperText}
                 aria-label={"Last Name"}
+                aria-invalid={Boolean(helperText)}
                 aria-describedby={"muitextfieldroot_last_name_field-helper-text"}
           sx={{
             width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
@@ -81,7 +83,7 @@ function RegistrationScreenContent() {
           }}
 
                 slotProps={{
-                  htmlInput: { "aria-describedby": "muitextfieldroot_last_name_field-helper-text" },
+                  htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_last_name_field-helper-text" },
             formHelperText: { id: "muitextfieldroot_last_name_field-helper-text" }
                 }}
               />
@@ -114,6 +116,7 @@ function RegistrationScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Email Address"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muitextfieldroot_email_field-helper-text"}
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
@@ -122,7 +125,7 @@ function RegistrationScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muitextfieldroot_email_field-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_email_field-helper-text" },
           formHelperText: { id: "muitextfieldroot_email_field-helper-text" }
               }}
             />

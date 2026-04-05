@@ -4650,7 +4650,14 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
             validationState: "error",
             expansionState: "expanded",
             pricingMode: "brutto"
-          }
+          },
+          screenLevelErrorEvidence: [
+            {
+              message: "Please correct the highlighted fields.",
+              severity: "error",
+              sourceNodeId: "family-variant-content"
+            }
+          ]
         }
       ]
     }
@@ -4841,7 +4848,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
   const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
   assert.ok(contextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
   assert.ok(contextContent.includes("validationMessagesOverride?: Record<string, string>;"));
-  assert.ok(contextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;"));
+  assert.ok(contextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };"));
   assert.ok(contextContent.includes("const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };"));
   assert.ok(contextContent.includes("if (overrideMessage && defaultMessage && fieldError === defaultMessage) {"));
 });
@@ -6320,7 +6327,7 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
   assert.ok(formContextContent.includes("export type LoanFormFormInput = z.input<typeof formSchema>;"));
   assert.ok(formContextContent.includes("export type LoanFormFormOutput = z.output<typeof formSchema>;"));
   assert.ok(formContextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
-  assert.ok(formContextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;"));
+  assert.ok(formContextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };"));
   assert.ok(
     formContextContent.includes(
       "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<LoanFormFormInput>({"
@@ -7348,7 +7355,7 @@ test("deterministic screen rendering infers required fields from star labels and
   assert.ok(block.includes('aria-describedby={"email_input_required_email-helper-text"}'));
   assert.ok(block.includes('"aria-required": "true"'));
   assert.ok(block.includes("slotProps={{"));
-  assert.ok(block.includes('htmlInput: { "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }'));
+  assert.ok(block.includes('htmlInput: { "aria-invalid": (Boolean((touchedFields["email_input_required_email"] ? fieldErrors["email_input_required_email"] : initialVisualErrors["email_input_required_email"]) ?? "")), "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }'));
   assert.ok(block.includes('formHelperText: { id: "email_input_required_email-helper-text" }'));
   assert.equal(block.includes("InputProps={{"), false);
   assert.equal(block.includes("InputLabelProps={{"), false);
@@ -7388,7 +7395,7 @@ test("deterministic screen rendering maps TextField suffix adornment via slotPro
   assert.ok(content.includes("InputAdornment"));
   assert.ok(block.includes("slotProps={{"));
   assert.ok(block.includes('input: { endAdornment: <InputAdornment position="end">{"€"}</InputAdornment> }'));
-  assert.ok(block.includes('htmlInput: { "aria-describedby": "amount_input_amount_input-helper-text" }'));
+  assert.ok(block.includes('htmlInput: { "aria-invalid": (Boolean((touchedFields["amount_input_amount_input"] ? fieldErrors["amount_input_amount_input"] : initialVisualErrors["amount_input_amount_input"]) ?? "")), "aria-describedby": "amount_input_amount_input-helper-text" }'));
   assert.ok(block.includes('formHelperText: { id: "amount_input_amount_input-helper-text" }'));
   assert.equal(block.includes("InputProps={{"), false);
   assert.equal(block.includes("InputLabelProps={{"), false);

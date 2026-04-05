@@ -641,7 +641,8 @@ export interface IRValidationError {
     | "IR_INVALID_SCREEN_VARIANT_SCENARIO"
     | "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN"
     | "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN"
-    | "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE";
+    | "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE"
+    | "IR_SCREEN_VARIANT_SCENARIO_ERROR_STATE_MISSING_EVIDENCE";
   readonly message: string;
 }
 
@@ -1071,13 +1072,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 Array.isArray(entry) ||
                 typeof entry.message !== "string" ||
                 typeof entry.visualError !== "boolean" ||
-                (entry.sourceNodeId !== undefined && typeof entry.sourceNodeId !== "string")
+                (entry.sourceNodeId !== undefined &&
+                  (typeof entry.sourceNodeId !== "string" || entry.sourceNodeId.trim().length === 0))
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey['${fieldKey}'] ` +
-                    "must contain a string message, boolean visualError, and optional string sourceNodeId."
+                    "must contain a string message, boolean visualError, and optional non-empty string sourceNodeId."
                 });
               }
             }
@@ -1101,16 +1103,34 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 Array.isArray(evidence) ||
                 typeof evidence.message !== "string" ||
                 evidence.severity !== "error" ||
-                (evidence.sourceNodeId !== undefined && typeof evidence.sourceNodeId !== "string")
+                (evidence.sourceNodeId !== undefined &&
+                  (typeof evidence.sourceNodeId !== "string" || evidence.sourceNodeId.trim().length === 0))
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence[${errorIndex}] ` +
-                    "must contain a string message, severity='error', and optional string sourceNodeId."
+                    "must contain a string message, severity='error', and optional non-empty string sourceNodeId."
                 });
               }
             }
+          }
+        }
+
+        if (scenario.initialState.validationState === "error") {
+          const hasFieldEvidence =
+            scenario.fieldErrorEvidenceByFieldKey !== undefined &&
+            Object.keys(scenario.fieldErrorEvidenceByFieldKey).length > 0;
+          const hasScreenEvidence =
+            Array.isArray(scenario.screenLevelErrorEvidence) &&
+            scenario.screenLevelErrorEvidence.length > 0;
+          if (!hasFieldEvidence && !hasScreenEvidence) {
+            errors.push({
+              code: "IR_SCREEN_VARIANT_SCENARIO_ERROR_STATE_MISSING_EVIDENCE",
+              message:
+                `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}] has validationState='error' ` +
+                "but provides neither fieldErrorEvidenceByFieldKey nor screenLevelErrorEvidence."
+            });
           }
         }
       }

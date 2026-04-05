@@ -36,6 +36,7 @@ function ValidationFormScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Company email"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muitextfieldroot_email_field-helper-text"}
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 1,
@@ -44,7 +45,7 @@ function ValidationFormScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muitextfieldroot_email_field-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_email_field-helper-text" },
           formHelperText: { id: "muitextfieldroot_email_field-helper-text" }
               }}
             />
@@ -73,6 +74,7 @@ function ValidationFormScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Approved amount"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muitextfieldroot_amount_field-helper-text"}
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 1,
@@ -82,7 +84,7 @@ function ValidationFormScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muitextfieldroot_amount_field-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_amount_field-helper-text" },
           formHelperText: { id: "muitextfieldroot_amount_field-helper-text" }
               }}
             />
@@ -110,6 +112,7 @@ function ValidationFormScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Approval code"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muitextfieldroot_code_field-helper-text"}
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 1,
@@ -119,7 +122,7 @@ function ValidationFormScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muitextfieldroot_code_field-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muitextfieldroot_code_field-helper-text" },
           formHelperText: { id: "muitextfieldroot_code_field-helper-text" }
               }}
             />
