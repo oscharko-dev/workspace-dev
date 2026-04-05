@@ -523,6 +523,7 @@ export interface AppShellIR {
   screenIds: string[];
   shellNodeIds: string[];
   slotIndex: number;
+  /** Diagnostic traceability — references FigmaAnalysisAppShellSignal ids that produced this shell. Not consumed by the generator. */
   signalIds: string[];
 }
 
@@ -610,10 +611,17 @@ export interface IRValidationError {
     | "IR_MISSING_SOURCE_NAME"
     | "IR_INVALID_APP_SHELL"
     | "IR_INVALID_SCREEN_APP_SHELL"
+    | "IR_APP_SHELL_DUPLICATE_ID"
     | "IR_APP_SHELL_MISSING_SOURCE_SCREEN"
     | "IR_APP_SHELL_MISSING_SCREEN"
+    | "IR_APP_SHELL_EMPTY_SCREEN_IDS"
     | "IR_APP_SHELL_EMPTY_SHELL_NODES"
+    | "IR_APP_SHELL_EMPTY_SIGNAL_IDS"
+    | "IR_APP_SHELL_DUPLICATE_SIGNAL_IDS"
     | "IR_APP_SHELL_INVALID_SHELL_NODE"
+    | "IR_APP_SHELL_SLOT_INDEX_MISMATCH"
+    | "IR_APP_SHELL_NON_CONTIGUOUS_SHELL_NODES"
+    | "IR_APP_SHELL_SCREEN_NOT_ATTACHED"
     | "IR_SCREEN_APP_SHELL_MISSING_DEFINITION"
     | "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH"
     | "IR_SCREEN_APP_SHELL_EMPTY_CONTENT"
@@ -694,6 +702,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   const appShellById = new Map<string, AppShellIR>();
 
   if (Array.isArray(raw.appShells)) {
+    const seenAppShellIds = new Set<string>();
     for (let i = 0; i < raw.appShells.length; i++) {
       const appShell = raw.appShells[i];
       if (
@@ -701,21 +710,40 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         !appShell.id ||
         !appShell.sourceScreenId ||
         !Array.isArray(appShell.screenIds) ||
-        !Array.isArray(appShell.shellNodeIds)
+        !Array.isArray(appShell.shellNodeIds) ||
+        !Array.isArray(appShell.signalIds) ||
+        typeof appShell.slotIndex !== "number"
       ) {
         errors.push({
           code: "IR_INVALID_APP_SHELL",
-          message: `DesignIR.appShells[${i}] must have id, sourceScreenId, screenIds array, and shellNodeIds array.`
+          message:
+            `DesignIR.appShells[${i}] must have id, sourceScreenId, screenIds array, shellNodeIds array, ` +
+            "signalIds array, and numeric slotIndex."
         });
         continue;
       }
 
-      appShellById.set(appShell.id, appShell);
+      if (seenAppShellIds.has(appShell.id)) {
+        errors.push({
+          code: "IR_APP_SHELL_DUPLICATE_ID",
+          message: `DesignIR.appShells[${i}].id '${appShell.id}' is duplicated across multiple appShell declarations.`
+        });
+      } else {
+        seenAppShellIds.add(appShell.id);
+        appShellById.set(appShell.id, appShell);
+      }
 
       if (!screenIdSet.has(appShell.sourceScreenId)) {
         errors.push({
           code: "IR_APP_SHELL_MISSING_SOURCE_SCREEN",
           message: `DesignIR.appShells[${i}].sourceScreenId '${appShell.sourceScreenId}' does not reference an existing screen.`
+        });
+      }
+
+      if (appShell.screenIds.length === 0) {
+        errors.push({
+          code: "IR_APP_SHELL_EMPTY_SCREEN_IDS",
+          message: `DesignIR.appShells[${i}].screenIds must include at least one screen id.`
         });
       }
 
@@ -728,11 +756,25 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         }
       }
 
+      if (appShell.signalIds.length === 0) {
+        errors.push({
+          code: "IR_APP_SHELL_EMPTY_SIGNAL_IDS",
+          message: `DesignIR.appShells[${i}].signalIds must include at least one signal id.`
+        });
+      } else if (new Set(appShell.signalIds).size !== appShell.signalIds.length) {
+        errors.push({
+          code: "IR_APP_SHELL_DUPLICATE_SIGNAL_IDS",
+          message: `DesignIR.appShells[${i}].signalIds must not contain duplicate signal ids.`
+        });
+      }
+
+      let shellNodesValid = true;
       if (appShell.shellNodeIds.length === 0) {
         errors.push({
           code: "IR_APP_SHELL_EMPTY_SHELL_NODES",
           message: `DesignIR.appShells[${i}].shellNodeIds must include at least one top-level source screen node id.`
         });
+        shellNodesValid = false;
       } else {
         const sourceScreen = screenById.get(appShell.sourceScreenId);
         if (sourceScreen) {
@@ -745,9 +787,39 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                   `DesignIR.appShells[${i}].shellNodeIds references '${shellNodeId}' ` +
                   `which is not a top-level node of source screen '${appShell.sourceScreenId}'.`
               });
+              shellNodesValid = false;
+            }
+          }
+
+          // Contiguity: shellNodeIds must match the leading `slotIndex` top-level
+          // children of the source screen in order. Only check when the per-node
+          // membership check above passed, to avoid duplicate errors.
+          if (shellNodesValid) {
+            const leadingIds = sourceScreen.children
+              .slice(0, appShell.slotIndex)
+              .map((child) => child.id);
+            const contiguous =
+              leadingIds.length === appShell.shellNodeIds.length &&
+              leadingIds.every((id, index) => id === appShell.shellNodeIds[index]);
+            if (!contiguous) {
+              errors.push({
+                code: "IR_APP_SHELL_NON_CONTIGUOUS_SHELL_NODES",
+                message:
+                  `DesignIR.appShells[${i}].shellNodeIds must equal the first ${appShell.slotIndex} top-level ` +
+                  `children of source screen '${appShell.sourceScreenId}' in order.`
+              });
             }
           }
         }
+      }
+
+      if (appShell.slotIndex !== appShell.shellNodeIds.length) {
+        errors.push({
+          code: "IR_APP_SHELL_SLOT_INDEX_MISMATCH",
+          message:
+            `DesignIR.appShells[${i}].slotIndex (${appShell.slotIndex}) must equal shellNodeIds.length ` +
+            `(${appShell.shellNodeIds.length}).`
+        });
       }
     }
   }
@@ -799,6 +871,36 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             message:
               `DesignIR.screens[${i}].appShell.contentNodeIds references '${contentNodeId}' ` +
               `which is not a top-level node of screen '${screen.id}'.`
+          });
+        }
+      }
+    }
+  }
+
+  // Bidirectional integrity: every screen referenced by an appShell must
+  // carry a matching `appShell` attachment on its ScreenIR. This catches
+  // shells whose `screenIds` drifted out of sync with the per-screen refs.
+  if (Array.isArray(raw.appShells)) {
+    for (let i = 0; i < raw.appShells.length; i++) {
+      const appShell = raw.appShells[i];
+      if (
+        !appShell ||
+        !appShell.id ||
+        !Array.isArray(appShell.screenIds)
+      ) {
+        continue;
+      }
+      for (const screenId of appShell.screenIds) {
+        const screen = screenById.get(screenId);
+        if (!screen) {
+          continue;
+        }
+        if (!screen.appShell || screen.appShell.id !== appShell.id) {
+          errors.push({
+            code: "IR_APP_SHELL_SCREEN_NOT_ATTACHED",
+            message:
+              `DesignIR.appShells[${i}].screenIds references '${screenId}' but that screen is not attached ` +
+              `to appShell '${appShell.id}'.`
           });
         }
       }

@@ -692,6 +692,252 @@ test("applyAppShellsToDesignIr skips shell extraction when screens would lose al
   assert.equal(result.screens.every((screen) => screen.appShell === undefined), true);
 });
 
+test("applyAppShellsToDesignIr skips single-frame variant groups (no deduplication possible)", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-1",
+        name: "Status A",
+        children: [
+          createContainerNode({ id: "shell-brand-1", name: "Markenbühne" }),
+          createTextNode({ id: "content-1", name: "SeitenContent", text: "Offen" })
+        ]
+      })
+    ]
+  });
+  const analysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "group-1",
+        frameIds: ["frame-1"],
+        frameNames: ["Status A"],
+        canonicalFrameId: "frame-1",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: [
+      {
+        signalId: "group-1-shell-1",
+        groupId: "group-1",
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-1"],
+        nodeIds: ["shell-brand-1"],
+        confidence: 1,
+        reasons: []
+      }
+    ]
+  });
+
+  const result = applyAppShellsToDesignIr({ ir, figmaAnalysis: analysis });
+
+  assert.equal(result.appShells, undefined);
+  assert.equal(result.screens.every((screen) => screen.appShell === undefined), true);
+});
+
+test("applyAppShellsToDesignIr skips groups when signal nodeIds are absent from screens", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-1",
+        name: "Status A",
+        children: [
+          createContainerNode({ id: "shell-brand-1", name: "Markenbühne" }),
+          createTextNode({ id: "content-1", name: "SeitenContent", text: "Offen" })
+        ]
+      }),
+      createScreen({
+        id: "frame-2",
+        name: "Status B",
+        children: [
+          createContainerNode({ id: "shell-brand-2", name: "Markenbühne" }),
+          createTextNode({ id: "content-2", name: "SeitenContent", text: "Fertig" })
+        ]
+      })
+    ]
+  });
+  const analysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "group-1",
+        frameIds: ["frame-1", "frame-2"],
+        frameNames: ["Status A", "Status B"],
+        canonicalFrameId: "frame-1",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: [
+      {
+        signalId: "group-1-shell-1",
+        groupId: "group-1",
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-1", "frame-2"],
+        nodeIds: ["missing-1", "missing-2"],
+        confidence: 1,
+        reasons: []
+      }
+    ]
+  });
+
+  const result = applyAppShellsToDesignIr({ ir, figmaAnalysis: analysis });
+
+  assert.equal(result.appShells, undefined);
+  assert.equal(result.screens.every((screen) => screen.appShell === undefined), true);
+});
+
+test("applyAppShellsToDesignIr skips variant groups with duplicate groupIds", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-1",
+        name: "Status A",
+        children: [
+          createContainerNode({ id: "shell-brand-1", name: "Markenbühne" }),
+          createTextNode({ id: "content-1", name: "SeitenContent", text: "Offen" })
+        ]
+      }),
+      createScreen({
+        id: "frame-2",
+        name: "Status B",
+        children: [
+          createContainerNode({ id: "shell-brand-2", name: "Markenbühne" }),
+          createTextNode({ id: "content-2", name: "SeitenContent", text: "Fertig" })
+        ]
+      }),
+      createScreen({
+        id: "frame-3",
+        name: "Status C",
+        children: [
+          createContainerNode({ id: "shell-brand-3", name: "Markenbühne" }),
+          createTextNode({ id: "content-3", name: "SeitenContent", text: "Offen" })
+        ]
+      }),
+      createScreen({
+        id: "frame-4",
+        name: "Status D",
+        children: [
+          createContainerNode({ id: "shell-brand-4", name: "Markenbühne" }),
+          createTextNode({ id: "content-4", name: "SeitenContent", text: "Fertig" })
+        ]
+      })
+    ]
+  });
+  const analysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "group-1",
+        frameIds: ["frame-1", "frame-2"],
+        frameNames: ["Status A", "Status B"],
+        canonicalFrameId: "frame-1",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      },
+      {
+        groupId: "group-1",
+        frameIds: ["frame-3", "frame-4"],
+        frameNames: ["Status C", "Status D"],
+        canonicalFrameId: "frame-3",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: [
+      {
+        signalId: "group-1-shell-1",
+        groupId: "group-1",
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-1", "frame-2"],
+        nodeIds: ["shell-brand-1", "shell-brand-2"],
+        confidence: 1,
+        reasons: []
+      },
+      {
+        signalId: "group-1-shell-2",
+        groupId: "group-1",
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-3", "frame-4"],
+        nodeIds: ["shell-brand-3", "shell-brand-4"],
+        confidence: 1,
+        reasons: []
+      }
+    ]
+  });
+
+  const result = applyAppShellsToDesignIr({ ir, figmaAnalysis: analysis });
+
+  assert.equal(result.appShells?.length, 1);
+  assert.equal(result.appShells?.[0]?.id, "group-1");
+  assert.deepEqual(result.appShells?.[0]?.screenIds, ["frame-1", "frame-2"]);
+});
+
+test("applyAppShellsToDesignIr skips groups when a signal has multiple matching top-level nodes in a screen", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-1",
+        name: "Status A",
+        children: [
+          createContainerNode({ id: "shell-a-1", name: "Markenbühne" }),
+          createContainerNode({ id: "shell-b-1", name: "Header + Titel" }),
+          createTextNode({ id: "content-1", name: "SeitenContent", text: "Offen" })
+        ]
+      }),
+      createScreen({
+        id: "frame-2",
+        name: "Status B",
+        children: [
+          createContainerNode({ id: "shell-a-2", name: "Markenbühne" }),
+          createTextNode({ id: "content-2", name: "SeitenContent", text: "Fertig" })
+        ]
+      })
+    ]
+  });
+  const analysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "group-1",
+        frameIds: ["frame-1", "frame-2"],
+        frameNames: ["Status A", "Status B"],
+        canonicalFrameId: "frame-1",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: [
+      {
+        signalId: "group-1-shell-1",
+        groupId: "group-1",
+        role: "frame",
+        fingerprint: "brand",
+        frameIds: ["frame-1", "frame-2"],
+        nodeIds: ["shell-a-1", "shell-b-1", "shell-a-2"],
+        confidence: 1,
+        reasons: []
+      }
+    ]
+  });
+
+  const result = applyAppShellsToDesignIr({ ir, figmaAnalysis: analysis });
+
+  assert.equal(result.appShells, undefined);
+  assert.equal(result.screens.every((screen) => screen.appShell === undefined), true);
+});
+
 // ---------------------------------------------------------------------------
 // validateDesignIR — appShell cross-reference validation
 // ---------------------------------------------------------------------------
@@ -887,6 +1133,285 @@ test("validateDesignIR accepts valid appShells with existing screen references",
   const result = validateDesignIR(ir);
 
   assert.equal(result.valid, true);
+});
+
+test("validateDesignIR rejects appShells with empty screenIds", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: [],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_EMPTY_SCREEN_IDS"));
+  }
+});
+
+test("validateDesignIR rejects appShells with empty signalIds", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: []
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_EMPTY_SIGNAL_IDS"));
+  }
+});
+
+test("validateDesignIR rejects appShells with duplicate signalIds", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s1", "s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_DUPLICATE_SIGNAL_IDS"));
+  }
+});
+
+test("validateDesignIR rejects appShells with slotIndex that does not match shellNodeIds length", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 5,
+      signalIds: ["s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_SLOT_INDEX_MISMATCH"));
+  }
+});
+
+test("validateDesignIR rejects appShells with non-contiguous shellNodeIds at start of source screen children", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "content", name: "Content", text: "Body" }),
+            createTextNode({ id: "shell", name: "Shell", text: "Header" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["content"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell"],
+      slotIndex: 1,
+      signalIds: ["s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_NON_CONTIGUOUS_SHELL_NODES"));
+  }
+});
+
+test("validateDesignIR rejects duplicate appShell ids", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s1"]
+    },
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s2"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_DUPLICATE_ID"));
+  }
+});
+
+test("validateDesignIR rejects appShells whose screenIds reference screens not attached to this shell", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n1", name: "N", text: "T" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["n1"]
+        }
+      },
+      createScreen({
+        id: "screen-2",
+        name: "Screen 2",
+        children: [createTextNode({ id: "n2", name: "N", text: "T" })]
+      })
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1", "screen-2"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_APP_SHELL_SCREEN_NOT_ATTACHED"));
+  }
 });
 
 test("validateDesignIR rejects non-string sourceNodeId in fieldErrorEvidenceByFieldKey", () => {

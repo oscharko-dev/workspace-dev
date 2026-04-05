@@ -999,6 +999,13 @@ const normalizeRelativeImportPath = ({ fromFilePath, toFilePath }: { fromFilePat
   return withoutExtension.startsWith(".") ? withoutExtension : `./${withoutExtension}`;
 };
 
+/**
+ * Assigns deterministic `AppShell1`, `AppShell2`, ... component names based on
+ * the sorted appShell ids. Names are stable for a fixed input set but are NOT
+ * stable across additions — inserting a new shell whose id sorts before an
+ * existing shell will renumber subsequent shells. Consumers MUST re-import via
+ * the generated manifest; do not hard-code `AppShellN` names in downstream code.
+ */
 const buildAppShellArtifactIdentities = (appShells: readonly AppShellIR[] | undefined): Map<string, AppShellArtifactIdentity> => {
   if (!appShells || appShells.length === 0) {
     return new Map<string, AppShellArtifactIdentity>();
@@ -1257,7 +1264,8 @@ export async function* generateArtifactsStreaming(
     const batchResults = batch.map((target) => {
       const screen = target.screen;
       const identity = identitiesByScreenId.get(screen.id);
-      const appShellIdentity = screen.appShell ? appShellIdentities.get(screen.appShell.id) : undefined;
+      const screenAppShell = screen.appShell;
+      const appShellIdentity = screenAppShell ? appShellIdentities.get(screenAppShell.id) : undefined;
       const truncationMetric = truncationByScreenId.get(screen.id);
       if (truncationMetric) {
         onLog(
@@ -1307,11 +1315,11 @@ export async function* generateArtifactsStreaming(
                   }
                 : {})
             })
-          : screen.appShell && appShellIdentity && identity?.filePath
+          : screenAppShell && appShellIdentity && identity?.filePath
           ? wrappedFallbackScreenFile({
               screen: {
                 ...screen,
-                children: screen.children.filter((child) => screen.appShell?.contentNodeIds.includes(child.id))
+                children: screen.children.filter((child) => screenAppShell.contentNodeIds.includes(child.id))
               },
               ...baseScreenFileInput,
               appShellComponentName: appShellIdentity.componentName,
