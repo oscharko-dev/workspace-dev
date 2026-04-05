@@ -1612,6 +1612,15 @@ export const parseCustomerProfileConfig = ({ input }: { input: unknown }): Resol
   return result.success ? result.config : undefined;
 };
 
+/**
+ * Soft-fail loader for customer-profile JSON files.
+ *
+ * @internal This helper is intended for CLI bootstrap and test helpers only.
+ * Production pipeline code MUST use `loadCustomerProfileActivationFromRequest`
+ * in `job-engine.ts`, which surfaces parse failures as structured pipeline
+ * errors. Wiring this function into submission or regeneration silently
+ * swallows parse errors and is a latent production risk.
+ */
 export const loadCustomerProfileConfigFile = async ({
   customerProfileFilePath,
   onLog

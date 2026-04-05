@@ -1245,6 +1245,7 @@ const createComponentMatchReportArtifactForStageServices = ({
           profile_icon_wrapper_allowed: 0,
           profile_icon_wrapper_denied: 0,
           profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0,
           not_icon_family: 1
@@ -3203,6 +3204,7 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
               profile_icon_wrapper_allowed: 0,
               profile_icon_wrapper_denied: 0,
               profile_icon_wrapper_missing: 0,
+              profile_family_unresolved: 0,
               match_ambiguous: 0,
               match_unmatched: 0,
               not_icon_family: 1
@@ -5058,6 +5060,7 @@ export default defineConfig({
       profile_icon_wrapper_allowed: 0,
       profile_icon_wrapper_denied: 1,
       profile_icon_wrapper_missing: 0,
+      profile_family_unresolved: 0,
       match_ambiguous: 0,
       match_unmatched: 0,
       not_icon_family: 0
@@ -6694,7 +6697,7 @@ test("ValidateProjectService marks mapping as ok when component.match_report is 
       },
       iconResolution: {
         byStatus: { resolved_import: 0, wrapper_fallback_allowed: 0, wrapper_fallback_denied: 0, unresolved: 0, ambiguous: 0, not_applicable: 0 },
-        byReason: { profile_icon_import_resolved: 0, profile_icon_import_missing: 0, profile_icon_wrapper_allowed: 0, profile_icon_wrapper_denied: 0, profile_icon_wrapper_missing: 0, match_ambiguous: 0, match_unmatched: 0, not_icon_family: 0 }
+        byReason: { profile_icon_import_resolved: 0, profile_icon_import_missing: 0, profile_icon_wrapper_allowed: 0, profile_icon_wrapper_denied: 0, profile_icon_wrapper_missing: 0, profile_family_unresolved: 0, match_ambiguous: 0, match_unmatched: 0, not_icon_family: 0 }
       }
     },
     entries: []

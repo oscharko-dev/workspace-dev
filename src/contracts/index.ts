@@ -395,7 +395,15 @@ export interface WorkspaceRegenerationOverrideEntry {
   value: string | number | boolean | { top: number; right: number; bottom: number; left: number };
 }
 
-/** Submission payload for regeneration from a completed source job with IR overrides. */
+/**
+ * Submission payload for regeneration from a completed source job with IR overrides.
+ *
+ * Customer profile handling: regeneration reuses the source job's persisted
+ * customer-profile snapshot (`STAGE_ARTIFACT_KEYS.customerProfileResolved`).
+ * This interface intentionally exposes no `customerProfilePath` field — the
+ * profile is not overridable at regeneration time. To regenerate against a
+ * different profile, submit a new job.
+ */
 export interface WorkspaceRegenerationInput {
   sourceJobId: string;
   overrides: WorkspaceRegenerationOverrideEntry[];

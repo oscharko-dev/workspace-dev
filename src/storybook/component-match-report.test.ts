@@ -1294,6 +1294,69 @@ test("buildComponentMatchReportArtifact treats unmatched ic_* families as unreso
   assert.equal(artifact.summary.iconResolution.byReason.match_unmatched, 1);
 });
 
+test("buildComponentMatchReportArtifact reports profile_family_unresolved for icon resolution when no customer profile is provided", () => {
+  const entries = [
+    createCatalogEntry({
+      id: "icons-mail--default",
+      title: "Assets/Icons/Icon",
+      name: "Mail",
+      familyId: "family-mail-icon",
+      assetKind: "icon",
+      assetKeys: ["mail"],
+      designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=5-9"]
+    })
+  ];
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "mail-icon-family",
+          familyName: "Icon",
+          variantProperties: [{ property: "Name", values: ["MailOutlined"] }]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries,
+      families: [
+        createCatalogFamily({
+          id: "family-mail-icon",
+          title: "Assets/Icons/Icon",
+          name: "Icon",
+          entryIds: ["icons-mail--default"],
+          storyEntryIds: ["icons-mail--default"],
+          assetKind: "icon",
+          assetKeys: ["mail"],
+          designUrls: ["https://www.figma.com/design/lib-file/Icon?node-id=5-9"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({
+      evidence: [
+        createEvidenceItem({
+          id: "mail-icon-design-link",
+          type: "story_design_link",
+          entryId: "icons-mail--default",
+          url: "https://www.figma.com/design/lib-file/Icon?node-id=5-9"
+        })
+      ]
+    }),
+    figmaLibraryResolutionArtifact: createLibraryResolutionArtifact({
+      familyKey: "mail-icon-family",
+      canonicalFamilyName: "Icon",
+      fileKey: "lib-file",
+      nodeId: "5:9",
+      variantProperties: [{ property: "Name", values: ["MailOutlined"] }]
+    })
+  });
+
+  assert.equal(artifact.entries[0]?.match.status, "matched");
+  assert.equal(artifact.entries[0]?.iconResolution?.byKey.mail?.status, "unresolved");
+  assert.equal(artifact.entries[0]?.iconResolution?.byKey.mail?.reason, "profile_family_unresolved");
+  assert.equal(artifact.summary.iconResolution.byStatus.unresolved, 1);
+  assert.equal(artifact.summary.iconResolution.byReason.profile_family_unresolved, 1);
+});
+
 test("buildComponentMatchReportArtifact marks allowed MUI fallbacks when profile imports are missing", () => {
   const entries = [
     createCatalogEntry({

@@ -5396,6 +5396,7 @@
         "match_ambiguous": 11,
         "match_unmatched": 36,
         "not_icon_family": 28,
+        "profile_family_unresolved": 0,
         "profile_icon_import_missing": 0,
         "profile_icon_import_resolved": 0,
         "profile_icon_wrapper_allowed": 0,

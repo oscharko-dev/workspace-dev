@@ -198,6 +198,7 @@ const COMPONENT_MATCH_ICON_RESOLUTION_REASONS = [
   "profile_icon_wrapper_allowed",
   "profile_icon_wrapper_denied",
   "profile_icon_wrapper_missing",
+  "profile_family_unresolved",
   "match_ambiguous",
   "match_unmatched",
   "not_icon_family"
@@ -214,7 +215,8 @@ const ISSUE_ICON_RESOLUTION_REASONS = new Set<ComponentMatchIconResolutionReason
   "match_unmatched",
   "profile_icon_import_missing",
   "profile_icon_wrapper_denied",
-  "profile_icon_wrapper_missing"
+  "profile_icon_wrapper_missing",
+  "profile_family_unresolved"
 ]);
 const COMPONENT_API_REASON_CODES = [
   "component_api_children_unsupported",

@@ -818,6 +818,7 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport keeps only sta
           profile_icon_wrapper_allowed: 0,
           profile_icon_wrapper_denied: 0,
           profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0,
           not_icon_family: 4
@@ -1145,6 +1146,7 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport excludes incom
           profile_icon_wrapper_allowed: 0,
           profile_icon_wrapper_denied: 0,
           profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0,
           not_icon_family: 3
@@ -1383,6 +1385,7 @@ test("toCustomerProfileDesignSystemConfigFromComponentMatchReport writes omitted
           profile_icon_wrapper_allowed: 0,
           profile_icon_wrapper_denied: 0,
           profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0,
           not_icon_family: 1

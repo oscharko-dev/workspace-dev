@@ -513,6 +513,7 @@ export type ComponentMatchIconResolutionReason =
   | "profile_icon_wrapper_allowed"
   | "profile_icon_wrapper_denied"
   | "profile_icon_wrapper_missing"
+  | "profile_family_unresolved"
   | "match_ambiguous"
   | "match_unmatched"
   | "not_icon_family";
