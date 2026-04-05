@@ -1354,4 +1354,16 @@ test("deterministic screen rendering assembles explicit card and accordion slots
   assert.ok(content.indexOf("<CardHeader") < content.indexOf("<CardMedia"));
   assert.ok(content.indexOf("<CardMedia") < content.indexOf("<CardContent>"));
   assert.ok(content.indexOf("<CardContent>") < content.indexOf("<CardActions>"));
+  assert.ok(
+    content.indexOf("<AccordionSummary") !== -1,
+    "Expected <AccordionSummary in output"
+  );
+  assert.ok(
+    content.indexOf("<AccordionDetails") !== -1,
+    "Expected <AccordionDetails in output"
+  );
+  assert.ok(
+    content.indexOf("<AccordionSummary") < content.indexOf("<AccordionDetails"),
+    "Expected AccordionSummary to precede AccordionDetails in output"
+  );
 });
