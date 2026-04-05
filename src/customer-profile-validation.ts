@@ -299,9 +299,11 @@ const TYPOGRAPHY_STYLE_PROPERTY_NAMES = new Set<string>([
 const IMPLICIT_ALLOWED_COMPONENT_PROP_NAMES = new Set<string>(["key", "ref"]);
 const HEX_COLOR_PATTERN = /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/iu;
 const COLOR_FUNCTION_PATTERN = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/iu;
+// CSS Color Level 4 named colors (148) + currentcolor + transparent.
 const NAMED_COLOR_PATTERN =
-  /^(?:aqua|beige|bisque|black|blue|brown|coral|cornsilk|crimson|cyan|darkblue|darkgray|darkgreen|darkgrey|darkred|dimgray|dimgrey|fuchsia|gold|goldenrod|gray|green|grey|hotpink|indigo|ivory|khaki|lavender|lime|limegreen|magenta|maroon|midnightblue|mintcream|navy|olive|orange|orangered|orchid|peru|pink|plum|purple|red|salmon|seagreen|sienna|silver|skyblue|slategray|slategrey|steelblue|tan|teal|tomato|turquoise|violet|wheat|white|yellow|yellowgreen|currentcolor|transparent)$/iu;
-const SPACING_UNIT_PATTERN = /^-?(?:\d+|\d*\.\d+)(?:px|rem|em|vh|vw)$/iu;
+  /^(?:aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|currentcolor|transparent)$/iu;
+const SPACING_UNIT_PATTERN =
+  /^-?(?:\d+|\d*\.\d+)(?:px|rem|em|ex|ch|pt|pc|in|cm|mm|vh|vw|vmin|vmax|fr|%|cqw|cqh|cqi|cqb|cqmin|cqmax)$/iu;
 const TYPOGRAPHY_KEYWORD_PATTERN = /^(?:inherit|initial|normal|revert|unset)$/iu;
 const TYPOGRAPHY_TOKEN_REFERENCE_PATTERN = /^(?:theme\.|tokens?\.|var\(--)/iu;
 
@@ -561,6 +563,9 @@ const isRawColorLiteral = ({
   typescriptModule: typeof TypeScript;
   expression: TypeScript.Expression;
 }): boolean => {
+  if (typescriptModule.isTemplateExpression(expression)) {
+    return true;
+  }
   const literalText = resolveLiteralText(typescriptModule, expression);
   if (!literalText) {
     return false;
@@ -584,9 +589,15 @@ const isRawSpacingLiteral = ({
   )) {
     return attributeName === "style";
   }
+  if (typescriptModule.isTemplateExpression(expression)) {
+    return true;
+  }
   const literalText = resolveLiteralText(typescriptModule, expression);
-  if (!literalText) {
+  if (literalText === undefined) {
     return false;
+  }
+  if (literalText === "0") {
+    return true;
   }
   return SPACING_UNIT_PATTERN.test(literalText);
 };
@@ -603,6 +614,10 @@ const isRawTypographyLiteral = ({
     expression.operator === typescriptModule.SyntaxKind.MinusToken &&
     typescriptModule.isNumericLiteral(expression.operand)
   )) {
+    return true;
+  }
+
+  if (typescriptModule.isTemplateExpression(expression)) {
     return true;
   }
 
