@@ -779,6 +779,94 @@ test("renderSemanticAccordion routes unmatched children to details slot", () => 
   assert.match(rendered, /"Orphan content"/);
 });
 
+test("renderSemanticAccordion renders Typography fallback when explicit _AccordionSummary slot has no children", () => {
+  const context = createRenderContext();
+  const rendered = renderSemanticAccordion(
+    makeNode({
+      id: "accordion-empty-summary",
+      type: "accordion",
+      name: "<Accordion>",
+      semanticType: "Accordion",
+      children: [
+        makeNode({
+          id: "accordion-empty-summary-slot",
+          type: "container",
+          name: "_<AccordionSummary>",
+          semanticType: "AccordionSummary",
+          children: []
+        }),
+        makeNode({
+          id: "accordion-empty-summary-details-slot",
+          type: "container",
+          name: "_<AccordionDetails>",
+          semanticType: "AccordionDetails",
+          children: [
+            makeNode({
+              id: "accordion-empty-summary-details-image",
+              type: "image",
+              name: "Preview",
+              width: 320,
+              height: 80
+            })
+          ]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<AccordionSummary/);
+  assert.match(rendered, /<Typography>\{"Accordion"\}<\/Typography>/);
+  assert.match(rendered, /<AccordionDetails/);
+  assert.equal(context.muiImports.has("Accordion"), true);
+  assert.equal(context.muiImports.has("AccordionSummary"), true);
+  assert.equal(context.muiImports.has("AccordionDetails"), true);
+  assert.equal(context.muiImports.has("Typography"), true);
+  assert.equal(context.muiImports.has("Box"), true);
+});
+
+test("renderSemanticAccordion uses heuristic path when no _Accordion* slot names are present", () => {
+  const context = createRenderContext();
+  const rendered = renderSemanticAccordion(
+    makeNode({
+      id: "heuristic-accordion",
+      type: "accordion",
+      name: "Faq Accordion",
+      semanticType: "Accordion",
+      children: [
+        makeNode({
+          id: "heuristic-accordion-header",
+          type: "container",
+          name: "Header Row",
+          width: 320,
+          height: 40
+        }),
+        makeNode({
+          id: "heuristic-accordion-body",
+          type: "container",
+          name: "Body Section",
+          width: 320,
+          height: 120,
+          y: 40
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<Accordion/);
+  assert.match(rendered, /<AccordionSummary/);
+  assert.match(rendered, /<AccordionDetails/);
+  assert.equal(context.muiImports.has("Accordion"), true);
+  assert.equal(context.muiImports.has("AccordionSummary"), true);
+  assert.equal(context.muiImports.has("AccordionDetails"), true);
+  assert.equal(context.muiImports.has("Box"), true);
+});
+
 test("renderCard assembles partial explicit slots alongside heuristic fallbacks", () => {
   const context = createRenderContext();
   const rendered = renderCard(
@@ -868,6 +956,155 @@ test("renderCard resolves nested image inside explicit media slot", () => {
   assert.match(rendered, /<CardContent>/);
   assert.match(rendered, /"Card body"/);
   assert.ok(rendered.indexOf("<CardMedia") < rendered.indexOf("<CardContent>"));
+});
+
+test("renderCard emits no CardHeader when explicit _CardHeader slot has zero children", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "empty-header-card",
+      type: "card",
+      name: "<Card>",
+      width: 320,
+      height: 200,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "empty-header-slot",
+          type: "container",
+          name: "_<CardHeader>",
+          semanticType: "CardHeader",
+          children: []
+        }),
+        makeText({ id: "empty-header-body-text", text: "Body copy", y: 40 })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<Card/);
+  assert.match(rendered, /<CardContent>/);
+  assert.match(rendered, /"Body copy"/);
+  assert.equal(rendered.includes("<CardHeader"), false);
+  assert.equal(context.muiImports.has("CardHeader"), false);
+});
+
+test("renderCard uses heuristic path when no _Card* slot names are present", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "heuristic-card",
+      type: "card",
+      name: "Info Card",
+      width: 320,
+      height: 260,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "heuristic-card-image",
+          type: "image",
+          name: "Hero Banner",
+          width: 320,
+          height: 140
+        }),
+        makeText({ id: "heuristic-card-body-text", text: "Plain body copy", y: 152 }),
+        makeNode({
+          id: "heuristic-card-button",
+          type: "button",
+          name: "Primary CTA",
+          y: 200,
+          children: [makeText({ id: "heuristic-card-button-label", text: "Open" })]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<Card/);
+  assert.match(rendered, /<CardMedia component="img"/);
+  assert.match(rendered, /<CardContent>/);
+  assert.match(rendered, /<CardActions>/);
+  assert.match(rendered, /"Plain body copy"/);
+  assert.equal(rendered.includes("<CardHeader"), false);
+  assert.equal(context.muiImports.has("Card"), true);
+  assert.equal(context.muiImports.has("CardMedia"), true);
+  assert.equal(context.muiImports.has("CardContent"), true);
+  assert.equal(context.muiImports.has("CardActions"), true);
+  assert.equal(context.muiImports.has("CardHeader"), false);
+});
+
+test("renderCard preserves Header -> Media -> Content -> Actions order regardless of Figma child order", () => {
+  const context = createRenderContext();
+  const rendered = renderCard(
+    makeNode({
+      id: "reversed-order-card",
+      type: "card",
+      name: "<Card>",
+      width: 320,
+      height: 280,
+      fillColor: "#ffffff",
+      children: [
+        makeNode({
+          id: "reversed-actions-slot",
+          type: "container",
+          name: "_<CardActions>",
+          semanticType: "CardActions",
+          y: 0,
+          children: [
+            makeNode({
+              id: "reversed-action-button",
+              type: "button",
+              name: "Reversed CTA",
+              children: [makeText({ id: "reversed-action-label", text: "Act" })]
+            })
+          ]
+        }),
+        makeNode({
+          id: "reversed-content-slot",
+          type: "container",
+          name: "_<CardContent>",
+          semanticType: "CardContent",
+          y: 40,
+          children: [makeText({ id: "reversed-content-text", text: "Reversed body" })]
+        }),
+        makeNode({
+          id: "reversed-media-slot",
+          type: "container",
+          name: "_<CardMedia>",
+          semanticType: "CardMedia",
+          y: 80,
+          width: 320,
+          height: 120
+        }),
+        makeNode({
+          id: "reversed-header-slot",
+          type: "container",
+          name: "_<CardHeader>",
+          semanticType: "CardHeader",
+          y: 200,
+          children: [makeText({ id: "reversed-header-title", text: "Reversed Title" })]
+        })
+      ]
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.ok(rendered);
+  assert.match(rendered, /<CardHeader/);
+  assert.match(rendered, /<CardMedia/);
+  assert.match(rendered, /<CardContent>/);
+  assert.match(rendered, /<CardActions>/);
+  assert.ok(rendered.indexOf("<CardHeader") < rendered.indexOf("<CardMedia"));
+  assert.ok(rendered.indexOf("<CardMedia") < rendered.indexOf("<CardContent>"));
+  assert.ok(rendered.indexOf("<CardContent>") < rendered.indexOf("<CardActions>"));
 });
 
 test("renderChip renders mapped variants and router links", () => {
