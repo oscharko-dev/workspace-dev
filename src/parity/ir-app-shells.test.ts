@@ -1054,6 +1054,44 @@ test("validateDesignIR rejects screen appShell contentNodeIds that are not top-l
   }
 });
 
+test("validateDesignIR rejects screen appShell contentNodeIds when they still include shell nodes", () => {
+  const ir = createIr({
+    screens: [
+      {
+        ...createScreen({
+          id: "screen-1",
+          name: "Screen 1",
+          children: [
+            createTextNode({ id: "shell-node", name: "Shell", text: "Header" }),
+            createTextNode({ id: "content-node", name: "Content", text: "Body" })
+          ]
+        }),
+        appShell: {
+          id: "shell-1",
+          contentNodeIds: ["shell-node", "content-node"]
+        }
+      }
+    ]
+  });
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["s1"]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_APP_SHELL_NON_CONTIGUOUS_CONTENT_NODES"));
+  }
+});
+
 test("validateDesignIR rejects appShells when shellNodeIds are not top-level source screen nodes", () => {
   const ir = createIr({
     screens: [
@@ -1110,7 +1148,10 @@ test("validateDesignIR accepts valid appShells with existing screen references",
         ...createScreen({
           id: "screen-2",
           name: "Screen 2",
-          children: [createTextNode({ id: "n2", name: "N", text: "T" })]
+          children: [
+            createTextNode({ id: "shell-node-2", name: "Shell", text: "Shared Shell" }),
+            createTextNode({ id: "n2", name: "N", text: "T" })
+          ]
         }),
         appShell: {
           id: "shell-1",

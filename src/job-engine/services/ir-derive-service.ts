@@ -14,6 +14,7 @@ import type { DesignIR, ScreenElementIR } from "../../parity/types-ir.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
+import type { StageRuntimeContext } from "../pipeline/context.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import {
@@ -154,6 +155,29 @@ const stripAffectedScreenVariantFamilies = ({
     ...ir,
     screenVariantFamilies: ir.screenVariantFamilies.filter((family) => !affectedFamilies.has(family.familyId))
   };
+};
+
+const logPostDerivationValidationWarnings = ({
+  context,
+  validation
+}: {
+  context: StageRuntimeContext;
+  validation: ReturnType<typeof validateDesignIR>;
+}): void => {
+  if (validation.valid) {
+    return;
+  }
+
+  const topErrors = validation.errors
+    .slice(0, 5)
+    .map((error) => `${error.code}: ${error.message}`)
+    .join("; ");
+  context.log({
+    level: "warn",
+    message:
+      `AppShell IR validation warnings after derivation: ${topErrors}` +
+      (validation.errors.length > 5 ? ` (+${validation.errors.length - 5} more)` : "")
+  });
 };
 
 export type IrDeriveStageInput = Pick<WorkspaceJobInput, "figmaFileKey" | "figmaAccessToken">;
@@ -363,6 +387,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       const regeneratedIr = stripAffectedScreenVariantFamilies({
         ir: overrideResult.ir,
         overrideNodeIds
+      });
+      logPostDerivationValidationWarnings({
+        context,
+        validation: validateDesignIR(regeneratedIr)
       });
 
       await writeFile(context.paths.designIrFile, `${JSON.stringify(regeneratedIr, null, 2)}\n`, "utf8");
@@ -744,19 +772,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           ir: cachedIrWithAppShells,
           figmaAnalysis: cachedAnalysis
         });
-        const cachedValidation = validateDesignIR(cachedIrWithFamilies);
-        if (!cachedValidation.valid) {
-          const topErrors = cachedValidation.errors
-            .slice(0, 5)
-            .map((e) => `${e.code}: ${e.message}`)
-            .join("; ");
-          context.log({
-            level: "warn",
-            message:
-              `AppShell IR validation warnings after derivation: ${topErrors}` +
-              (cachedValidation.errors.length > 5 ? ` (+${cachedValidation.errors.length - 5} more)` : "")
-          });
-        }
+        logPostDerivationValidationWarnings({
+          context,
+          validation: validateDesignIR(cachedIrWithFamilies)
+        });
         await writeFile(context.paths.designIrFile, `${JSON.stringify(cachedIrWithFamilies, null, 2)}\n`, "utf8");
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
         const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
@@ -834,19 +853,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       ir: derived,
       figmaAnalysis
     });
-    const derivedValidation = validateDesignIR(derived);
-    if (!derivedValidation.valid) {
-      const topErrors = derivedValidation.errors
-        .slice(0, 5)
-        .map((e) => `${e.code}: ${e.message}`)
-        .join("; ");
-      context.log({
-        level: "warn",
-        message:
-          `AppShell IR validation warnings after derivation: ${topErrors}` +
-          (derivedValidation.errors.length > 5 ? ` (+${derivedValidation.errors.length - 5} more)` : "")
-      });
-    }
+    logPostDerivationValidationWarnings({
+      context,
+      validation: validateDesignIR(derived)
+    });
     await writeFile(context.paths.designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
     await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
     const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({

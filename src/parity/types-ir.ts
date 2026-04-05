@@ -626,6 +626,7 @@ export interface IRValidationError {
     | "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH"
     | "IR_SCREEN_APP_SHELL_EMPTY_CONTENT"
     | "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE"
+    | "IR_SCREEN_APP_SHELL_NON_CONTIGUOUS_CONTENT_NODES"
     | "IR_INVALID_SCREEN_VARIANT_FAMILY"
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN"
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN"
@@ -864,6 +865,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       }
 
       const topLevelNodeIds = new Set(screen.children.map((child) => child.id));
+      let contentNodesValid = true;
       for (const contentNodeId of appShell.contentNodeIds) {
         if (!topLevelNodeIds.has(contentNodeId)) {
           errors.push({
@@ -871,6 +873,25 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             message:
               `DesignIR.screens[${i}].appShell.contentNodeIds references '${contentNodeId}' ` +
               `which is not a top-level node of screen '${screen.id}'.`
+          });
+          contentNodesValid = false;
+        }
+      }
+
+      if (declaredAppShell && contentNodesValid) {
+        const trailingContentNodeIds = screen.children
+          .slice(declaredAppShell.slotIndex)
+          .map((child) => child.id);
+        const isTrailingContentSegment =
+          trailingContentNodeIds.length === appShell.contentNodeIds.length &&
+          trailingContentNodeIds.every((id, index) => id === appShell.contentNodeIds[index]);
+
+        if (!isTrailingContentSegment) {
+          errors.push({
+            code: "IR_SCREEN_APP_SHELL_NON_CONTIGUOUS_CONTENT_NODES",
+            message:
+              `DesignIR.screens[${i}].appShell.contentNodeIds must equal all top-level children ` +
+              `after slotIndex ${declaredAppShell.slotIndex} for screen '${screen.id}' in order.`
           });
         }
       }
