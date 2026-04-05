@@ -161,6 +161,10 @@ interface ValidationSummaryArtifact {
         perfAssert?: ProjectValidationResult["perfAssert"];
       }
     | {
+        status: "failed";
+        failedCommand: string;
+      }
+    | {
         status: "not_available";
       };
   uiA11y: ValidationUiA11ySummary;
@@ -610,6 +614,29 @@ const parseFigmaLibraryResolutionSummary = ({
   };
 };
 
+const extractFailedCommandFromPipelineError = (error: unknown): string => {
+  if (!isRecord(error)) {
+    return "unknown";
+  }
+  const diagnostics = (error as { diagnostics?: unknown }).diagnostics;
+  if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
+    return "unknown";
+  }
+  const firstDiagnostic = diagnostics[0];
+  if (!isRecord(firstDiagnostic)) {
+    return "unknown";
+  }
+  const details = firstDiagnostic.details;
+  if (!isRecord(details)) {
+    return "unknown";
+  }
+  const command = details.command;
+  if (typeof command === "string" && command.trim().length > 0) {
+    return command;
+  }
+  return "unknown";
+};
+
 const resolveSummaryStatus = ({
   generatedApp,
   uiA11y,
@@ -715,6 +742,7 @@ const buildValidationSummaryArtifact = async ({
   context,
   validatedAt,
   validationResult,
+  generatedAppFailure,
   customerProfileImportSummary,
   customerProfileMatchSummary,
   customerProfileComponentApiSummary,
@@ -725,6 +753,7 @@ const buildValidationSummaryArtifact = async ({
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
   validationResult?: ProjectValidationResult;
+  generatedAppFailure?: { failedCommand: string };
   customerProfileImportSummary?: CustomerProfileValidationSummary;
   customerProfileMatchSummary?: CustomerProfileMatchValidationSummary;
   customerProfileComponentApiSummary?: CustomerProfileComponentApiValidationSummary;
@@ -938,9 +967,14 @@ const buildValidationSummaryArtifact = async ({
         ...(validationResult.validateUi ? { validateUi: validationResult.validateUi } : {}),
         ...(validationResult.perfAssert ? { perfAssert: validationResult.perfAssert } : {})
       }
-    : {
-        status: "not_available"
-      };
+    : generatedAppFailure
+      ? {
+          status: "failed",
+          failedCommand: generatedAppFailure.failedCommand
+        }
+      : {
+          status: "not_available"
+        };
   const uiA11ySummary = await buildUiA11ySummary({
     context,
     ...(validationResult ? { validationResult } : {})
@@ -1448,29 +1482,49 @@ export const createValidateProjectService = ({
           Object.keys(context.resolvedCustomerProfile.template.devDependencies).length > 0
         : false;
 
-      const validationResult = await runProjectValidationFn({
-        generatedProjectDir,
-        jobDir: context.paths.jobDir,
-        enableLintAutofix: isLintAutofixEnabledFn(),
-        enablePerfValidation: isPerfValidationEnabledFn(),
-        enableUiValidation: context.runtime.enableUiValidation,
-        enableUnitTestValidation: context.runtime.enableUnitTestValidation,
-        commandTimeoutMs: context.runtime.commandTimeoutMs,
-        commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,
-        commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
-        installPreferOffline: context.runtime.installPreferOffline,
-        skipInstall: context.runtime.skipInstall,
-        lockfileMutable: hasCustomerProfileDeps,
-        pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
-        seedNodeModulesDir: path.join(context.paths.templateRoot, "node_modules"),
-        abortSignal: context.abortSignal,
-        onLog: (message) => {
-          context.log({
-            level: "info",
-            message
-          });
-        }
-      });
+      let validationResult: ProjectValidationResult;
+      try {
+        validationResult = await runProjectValidationFn({
+          generatedProjectDir,
+          jobDir: context.paths.jobDir,
+          enableLintAutofix: isLintAutofixEnabledFn(),
+          enablePerfValidation: isPerfValidationEnabledFn(),
+          enableUiValidation: context.runtime.enableUiValidation,
+          enableUnitTestValidation: context.runtime.enableUnitTestValidation,
+          commandTimeoutMs: context.runtime.commandTimeoutMs,
+          commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,
+          commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
+          installPreferOffline: context.runtime.installPreferOffline,
+          skipInstall: context.runtime.skipInstall,
+          lockfileMutable: hasCustomerProfileDeps,
+          pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
+          seedNodeModulesDir: path.join(context.paths.templateRoot, "node_modules"),
+          abortSignal: context.abortSignal,
+          onLog: (message) => {
+            context.log({
+              level: "info",
+              message
+            });
+          }
+        });
+      } catch (error) {
+        const failedCommand = extractFailedCommandFromPipelineError(error);
+        const failureSummary = await buildValidationSummaryArtifact({
+          context,
+          validatedAt,
+          generatedAppFailure: { failedCommand },
+          ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
+          ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
+          ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
+          ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
+          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
+        });
+        await persistValidationSummaryArtifacts({
+          context,
+          summary: failureSummary
+        });
+        throw error;
+      }
       const summary = await buildValidationSummaryArtifact({
         context,
         validatedAt,
