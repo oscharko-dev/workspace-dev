@@ -5755,6 +5755,7 @@ test("generateArtifacts folds pre-resolved broad pattern warnings into mapping d
 
   assert.equal(result.mappingDiagnostics.broadPatternCount, 1);
   assert.equal(result.mappingWarnings.some((warning) => warning.code === "W_COMPONENT_MAPPING_BROAD_PATTERN"), true);
+  assert.ok(Array.isArray(result.iconWarnings));
 });
 
 test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fallback behavior", async () => {

@@ -348,6 +348,7 @@ interface GenerateArtifactsResult {
     broadPatternCount: number;
   };
   mappingWarnings: ComponentMappingWarning[];
+  iconWarnings: IconRenderWarning[];
 }
 
 
@@ -371,6 +372,20 @@ const dedupeMappingWarnings = (
   const seen = new Set<string>();
   return warnings.filter((warning) => {
     const key = `${warning.code}:${warning.message}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const dedupeIconWarnings = (
+  warnings: IconRenderWarning[]
+): IconRenderWarning[] => {
+  const seen = new Set<string>();
+  return warnings.filter((warning) => {
+    const key = `${warning.nodeId}:${warning.iconKey ?? "unknown"}`;
     if (seen.has(key)) {
       return false;
     }
@@ -1437,6 +1452,7 @@ export async function* generateArtifactsStreaming(
   onLog("Generated deterministic baseline artifacts (streaming)");
 
   const dedupedMappingWarnings = dedupeMappingWarnings(mappingWarnings);
+  const dedupedIconWarnings = dedupeIconWarnings(iconWarnings);
   onLog("LLM enhancement disabled in deterministic mode; deterministic output retained");
   return {
     generatedPaths: Array.from(generatedPaths),
@@ -1457,7 +1473,8 @@ export async function* generateArtifactsStreaming(
       disabledMappingCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_DISABLED").length,
       broadPatternCount: dedupedMappingWarnings.filter((w) => w.code === "W_COMPONENT_MAPPING_BROAD_PATTERN").length
     },
-    mappingWarnings: dedupedMappingWarnings
+    mappingWarnings: dedupedMappingWarnings,
+    iconWarnings: dedupedIconWarnings
   };
 }
 
