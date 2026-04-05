@@ -1401,12 +1401,13 @@ export async function* generateArtifactsStreaming(
     ...(routerMode !== undefined ? { routerMode } : {}),
     includeThemeModeToggle: resolvedStorybookTheme?.includeThemeModeToggle ?? (ir.themeAnalysis?.darkModeDetected ?? true)
   });
-  await runtimeAdapters.writeTextFile({
-    filePath: path.join(projectDir, "src", "App.tsx"),
+  const appFile = transformGeneratedFileWithDesignSystem({
+    path: "src/App.tsx",
     content: appContent
   });
-  generatedPaths.add("src/App.tsx");
-  yield { type: "app", file: { path: "src/App.tsx", content: appContent } };
+  await runtimeAdapters.writeGeneratedFile(projectDir, appFile);
+  generatedPaths.add(appFile.path);
+  yield { type: "app", file: appFile };
 
   // ── Phase 4: Metrics ──────────────────────────────────────────────────
   generationMetrics.prototypeNavigationRendered = prototypeNavigationRenderedCount;

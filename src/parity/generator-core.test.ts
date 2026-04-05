@@ -1736,7 +1736,7 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
   assert.ok(themeContent.includes('textTransform: "none"'));
   assert.equal(themeContent.includes("breakpoints: {"), false);
-  assert.ok(appContent.includes('import { useColorScheme } from "@mui/material/styles";'));
+  assert.ok(appContent.includes('import { styled, useColorScheme } from "@mui/material/styles";'));
   assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
   assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
   assert.ok(appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
@@ -3770,11 +3770,11 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
   assert.equal(runtimeCallCounts.loadIconResolver, 1);
   assert.ok(runtimeCallCounts.applyDesignSystemMappings > 0);
   assert.ok(runtimeCallCounts.mkdirRecursive >= 3);
-  assert.ok(runtimeCallCounts.writeTextFile >= 3);
-  assert.ok(runtimeCallCounts.writeGeneratedFile >= 4);
+  assert.ok(runtimeCallCounts.writeTextFile >= 2);
+  assert.ok(runtimeCallCounts.writeGeneratedFile >= 5);
   assert.equal(observedDesignSystemFilePath, designSystemFilePath);
   assert.equal(observedIconMapFilePath, iconMapFilePath);
-  assert.ok(writtenTextPaths.includes("src/App.tsx"));
+  assert.ok(writtenGeneratedPaths.includes("src/App.tsx"));
   assert.ok(writtenTextPaths.includes(path.join("src", "theme", "tokens.json")));
   assert.ok(writtenTextPaths.includes("generation-metrics.json"));
   assert.ok(writtenGeneratedPaths.includes(toDeterministicScreenPath("Runtime Adapter Screen")));
@@ -3902,12 +3902,12 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
   assert.deepEqual(injectedFirstRun.generatedPaths, injectedSecondRun.generatedPaths);
   assert.equal(injectedFirstRun.runtimeCallCounts.loadDesignSystemConfig, 1);
   assert.equal(injectedFirstRun.runtimeCallCounts.loadIconResolver, 1);
-  assert.ok(injectedFirstRun.runtimeCallCounts.writeTextFile >= 3);
-  assert.ok(injectedFirstRun.runtimeCallCounts.writeGeneratedFile >= 4);
+  assert.ok(injectedFirstRun.runtimeCallCounts.writeTextFile >= 2);
+  assert.ok(injectedFirstRun.runtimeCallCounts.writeGeneratedFile >= 5);
   assert.equal(injectedSecondRun.runtimeCallCounts.loadDesignSystemConfig, 1);
   assert.equal(injectedSecondRun.runtimeCallCounts.loadIconResolver, 1);
-  assert.ok(injectedSecondRun.runtimeCallCounts.writeTextFile >= 3);
-  assert.ok(injectedSecondRun.runtimeCallCounts.writeGeneratedFile >= 4);
+  assert.ok(injectedSecondRun.runtimeCallCounts.writeTextFile >= 2);
+  assert.ok(injectedSecondRun.runtimeCallCounts.writeGeneratedFile >= 5);
 });
 
 test("generateArtifacts applies design-system mappings to screen and extracted pattern component files", async () => {
@@ -6941,6 +6941,17 @@ test("createDeterministicAppFile uses lazy route-level loading for non-initial s
   assert.equal((appFile.content.match(/element={<ErrorBoundary></g) ?? []).length, 2);
 });
 
+test("createDeterministicAppFile keeps the skip link declarative", () => {
+  const ir = createIr();
+  const appFile = createDeterministicAppFile([ir.screens[0]]);
+
+  assert.ok(appFile.content.includes('Skip to main content'));
+  assert.ok(appFile.content.includes('styled("a")'));
+  assert.equal(appFile.content.includes("style={{"), false);
+  assert.equal(appFile.content.includes("onFocus={"), false);
+  assert.equal(appFile.content.includes("onBlur={"), false);
+});
+
 test("createDeterministicAppFile emits BrowserRouter basename resolver by default", () => {
   const ir = createIr();
   const appFile = createDeterministicAppFile([ir.screens[0]]);
@@ -8459,6 +8470,7 @@ test("generateArtifacts uses the resolved Storybook theme payload instead of IR-
   assert.equal(tokensContent.customerBrandId, "sparkasse-retail");
   assert.equal(tokensContent.light.spacingBase, 10);
   assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
+  assert.equal(appContent.includes("style={{"), false);
 });
 
 test("generateArtifacts keeps Storybook-first theme output pinned to public artifacts instead of legacy fallback tokens", async () => {

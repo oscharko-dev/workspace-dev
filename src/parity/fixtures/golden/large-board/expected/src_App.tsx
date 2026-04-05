@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 
+import { styled } from "@mui/material/styles";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ScreenSkeleton from "./components/ScreenSkeleton";
@@ -29,12 +30,39 @@ const resolveBrowserBasename = (): string | undefined => {
 
 const browserBasename = resolveBrowserBasename();
 
+const SkipLink = styled("a")(({ theme }) => ({
+  position: "absolute",
+  left: "-9999px",
+  top: "auto",
+  width: "1px",
+  height: "1px",
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  zIndex: theme.zIndex.modal + 1,
+  "&:focus-visible": {
+    position: "fixed",
+    left: theme.spacing(2),
+    top: theme.spacing(2),
+    width: "auto",
+    height: "auto",
+    overflow: "visible",
+    whiteSpace: "normal",
+    padding: theme.spacing(1, 2),
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor: theme.palette.background.paper,
+    color: theme.palette.text.primary,
+    outline: "2px solid " + theme.palette.primary.main,
+    outlineOffset: 2,
+    textDecoration: "none"
+  }
+}));
+
 
 
 export default function App() {
   return (
     <BrowserRouter basename={browserBasename}>
-      <a href="#main-content" style={{ position: "absolute", left: "-9999px", top: "auto", width: "1px", height: "1px", overflow: "hidden", zIndex: 9999 }} onFocus={(e) => { e.currentTarget.style.position = "static"; e.currentTarget.style.width = "auto"; e.currentTarget.style.height = "auto"; e.currentTarget.style.overflow = "visible"; }} onBlur={(e) => { e.currentTarget.style.position = "absolute"; e.currentTarget.style.left = "-9999px"; e.currentTarget.style.width = "1px"; e.currentTarget.style.height = "1px"; e.currentTarget.style.overflow = "hidden"; }}>Skip to main content</a>
+      <SkipLink href="#main-content">Skip to main content</SkipLink>
 
       <Suspense fallback={routeLoadingFallback}>
         <Routes>
