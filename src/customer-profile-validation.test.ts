@@ -1092,6 +1092,273 @@ export const App = () => (
   }
 });
 
+test("validateGeneratedProjectStorybookStyles flags extended CSS spacing units beyond px/rem/em/vh/vw", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-extended-spacing-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box
+    sx={{
+      margin: "12pt",
+      padding: "50%",
+      gap: "1fr",
+      columnGap: "1cqw",
+      rowGap: "2vmin",
+      fontSize: "3ex"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.filter((issue) => issue.category === "raw_spacing_literal").length,
+      5,
+      "Expected five raw spacing literal violations (12pt, 50%, 1fr, 1cqw, 2vmin)"
+    );
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "raw_typography_declaration"),
+      true,
+      "Expected raw typography declaration for fontSize: 3ex"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles flags bare \"0\" string in inline style attribute", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-bare-zero-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `export const App = () => <div style={{ margin: "0" }} />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "raw_spacing_literal"),
+      true,
+      "Expected raw_spacing_literal for bare \"0\" string"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles flags unlisted CSS Color Level 4 named colors", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-level4-colors-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+export const App = () => (
+  <Box
+    sx={{
+      color: "aliceblue",
+      backgroundColor: "deepskyblue",
+      borderColor: "rebeccapurple",
+      outlineColor: "lightsteelblue"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.filter((issue) => issue.category === "hard_coded_color_literal").length,
+      4,
+      "Expected four Color Level 4 named color violations (aliceblue, deepskyblue, rebeccapurple, lightsteelblue)"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles flags template literals with substitutions as raw style literals", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-template-literals-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: [
+        "import { Box } from \"@mui/material\";",
+        "",
+        "export const App = ({ hex, n, family }: { hex: string; n: number; family: string }) => (",
+        "  <Box",
+        "    sx={{",
+        "      color: `#${hex}`,",
+        "      margin: `${n}px`,",
+        "      fontFamily: `${family}, sans-serif`",
+        "    }}",
+        "  />",
+        ");",
+        ""
+      ].join("\n")
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "hard_coded_color_literal"),
+      true,
+      "Expected hard_coded_color_literal for template literal color"
+    );
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "raw_spacing_literal"),
+      true,
+      "Expected raw_spacing_literal for template literal margin"
+    );
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "raw_typography_declaration"),
+      true,
+      "Expected raw_typography_declaration for template literal fontFamily"
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles allows Storybook-derived theme outputs", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-theme-output-"));
   const customerProfile = createCustomerProfileForStyleValidation({
