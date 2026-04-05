@@ -955,12 +955,11 @@ test("resolveValidationBaselineScenario prefers the canonical scenario when mult
   assert.equal(errorScenario.contentScreenId, "canonical-default");
 });
 
-test("applyScreenVariantFamiliesToDesignIr treats a field removed in error variant as a non-validation-only diff", () => {
+test("applyScreenVariantFamiliesToDesignIr drops the family when an error variant has structural non-validation diffs", () => {
   // Canonical has two fields; error variant drops the second field. This
   // structural change should disqualify the pair from being treated as a
-  // validation-only diff — the family is still produced, but the error
-  // scenario's contentScreenId points at its own screen rather than being
-  // deduplicated against the canonical baseline.
+  // validation-only diff. The error variant still carries an explicit error
+  // token in the node tree so validationState resolves to "error".
   const ir = createIr({
     screens: [
       createScreen({
@@ -983,7 +982,7 @@ test("applyScreenVariantFamiliesToDesignIr treats a field removed in error varia
         children: [
           createContainerNode({
             id: "error-form",
-            name: "Form",
+            name: "Error Form",
             children: [
               createInputNode({
                 id: "error-email-field",
@@ -1006,6 +1005,11 @@ test("applyScreenVariantFamiliesToDesignIr treats a field removed in error varia
                     ]
                   })
                 ]
+              }),
+              createTextNode({
+                id: "error-summary",
+                name: "Error Summary",
+                text: "Please review the highlighted fields."
               })
               // password field intentionally removed
             ]
@@ -1038,17 +1042,8 @@ test("applyScreenVariantFamiliesToDesignIr treats a field removed in error varia
   });
 
   const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
-  const family = result.screenVariantFamilies?.[0];
-  assert.ok(family);
-  const errorScenario = family.scenarios.find((scenario) => scenario.screenId === "error");
-  assert.ok(errorScenario);
-  // The error variant has structural changes (field removed) so it cannot be
-  // collapsed to the canonical baseline — its contentScreenId should point
-  // at its own screen.
-  assert.equal(errorScenario.contentScreenId, "error");
-  // No validation-only field evidence should be derived because the diff
-  // is structural, not validation-only.
-  assert.equal(errorScenario.fieldErrorEvidenceByFieldKey, undefined);
+  assert.equal(result.screenVariantFamilies, undefined);
+  assert.equal(validateDesignIR(result).valid, true);
 });
 
 test("extractValidationOnlyDiffEvidence preserves first-matched message and sourceNodeId when multiple messages match the same field", () => {

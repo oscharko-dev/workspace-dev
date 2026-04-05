@@ -68,6 +68,19 @@ const ERROR_TOKEN_SET = new Set(["error", "errors", "fehler", "fehlermeldung", "
 const COLLAPSED_TOKEN_SET = new Set(["collapsed", "collapse", "eingeklappt"]);
 const EXPANDED_TOKEN_SET = new Set(["expanded", "expand", "expandedstate"]);
 
+const hasValidationEvidence = ({
+  fieldErrorEvidenceByFieldKey,
+  screenLevelErrorEvidence
+}: Pick<ValidationOnlyDiffEvidence, "fieldErrorEvidenceByFieldKey" | "screenLevelErrorEvidence">): boolean => {
+  const hasFieldEvidence =
+    fieldErrorEvidenceByFieldKey !== undefined &&
+    Object.keys(fieldErrorEvidenceByFieldKey).length > 0;
+  const hasScreenEvidence =
+    Array.isArray(screenLevelErrorEvidence) &&
+    screenLevelErrorEvidence.length > 0;
+  return hasFieldEvidence || hasScreenEvidence;
+};
+
 const normalizeNodeName = (value: string | undefined): string => {
   return (value ?? "")
     .trim()
@@ -908,12 +921,12 @@ const deriveFamily = ({
       canonicalScreenId: canonicalScreen.id
     });
     if (!baselineScenario) {
-      continue;
+      return undefined;
     }
     const baselineScreen = screenById.get(baselineScenario.screenId);
     const memberScreen = screenById.get(scenario.screenId);
     if (!baselineScreen || !memberScreen) {
-      continue;
+      return undefined;
     }
     const baselineContentRoots = screenContentRoots({ screen: baselineScreen, appShell });
     const memberContentRoots = screenContentRoots({ screen: memberScreen, appShell });
@@ -921,8 +934,11 @@ const deriveFamily = ({
       canonicalRoots: baselineContentRoots,
       memberRoots: memberContentRoots
     });
-    if (!validationOnlyDiffEvidence.isValidationOnly) {
-      continue;
+    if (!validationOnlyDiffEvidence.isValidationOnly || !hasValidationEvidence(validationOnlyDiffEvidence)) {
+      // This error scenario cannot be represented as a validation-only overlay
+      // while satisfying the ScreenVariantFamilyScenarioIR evidence contract.
+      // Abort family derivation so the screens fall back to independent output.
+      return undefined;
     }
     validationOverridesByScreenId.set(scenario.screenId, {
       contentScreenId: baselineScenario.contentScreenId,
