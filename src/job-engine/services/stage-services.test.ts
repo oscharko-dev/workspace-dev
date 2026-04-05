@@ -33,6 +33,7 @@ import { IrDeriveService } from "./ir-derive-service.js";
 import { ReproExportService } from "./repro-export-service.js";
 import { TemplatePrepareService } from "./template-prepare-service.js";
 import { createValidateProjectService } from "./validate-project-service.js";
+import { createPipelineError } from "../errors.js";
 
 const createLocalFigmaPayload = () => ({
   name: "Stage Service Board",
@@ -4696,6 +4697,197 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   );
 });
 
+test("ValidateProjectService persists failure summary with generatedApp.status='failed' when runProjectValidationFn throws for build failure", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-build-fail"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      throw createPipelineError({
+        code: "E_VALIDATE_PROJECT",
+        stage: "validate.project",
+        message: "build failed: simulated build error",
+        diagnostics: [
+          {
+            code: "E_VALIDATE_PROJECT",
+            message: "build failed.",
+            suggestion: "Resolve generated-project validation diagnostics and rerun the pipeline.",
+            stage: "validate.project",
+            severity: "error",
+            details: {
+              command: "build",
+              output: "simulated build error",
+              generatedProjectDir: executionContext.paths.generatedProjectDir
+            }
+          }
+        ]
+      });
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /build failed/
+  );
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    generatedApp?: { status?: string; failedCommand?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.generatedApp?.status, "failed");
+  assert.equal(summary?.generatedApp?.failedCommand, "build");
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
+    path.join(executionContext.paths.jobDir, "validation-summary.json")
+  );
+});
+
+test("ValidateProjectService captures typecheck failure in generatedApp.failedCommand", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-typecheck-fail"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      throw createPipelineError({
+        code: "E_VALIDATE_PROJECT",
+        stage: "validate.project",
+        message: "typecheck failed: TS2345",
+        diagnostics: [
+          {
+            code: "E_VALIDATE_PROJECT",
+            message: "typecheck failed.",
+            suggestion: "Resolve generated-project validation diagnostics and rerun the pipeline.",
+            stage: "validate.project",
+            severity: "error",
+            details: {
+              command: "typecheck",
+              output: "TS2345",
+              generatedProjectDir: executionContext.paths.generatedProjectDir
+            }
+          }
+        ]
+      });
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /typecheck failed/
+  );
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    generatedApp?: { status?: string; failedCommand?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.generatedApp?.status, "failed");
+  assert.equal(summary?.generatedApp?.failedCommand, "typecheck");
+});
+
+test("ValidateProjectService populates generatedApp.test when enableUnitTestValidation is enabled", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      enableUnitTestValidation: true
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-unit-test"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async (): Promise<ProjectValidationResult> => {
+      return {
+        attempts: 1,
+        install: {
+          status: "skipped",
+          strategy: "reused_seeded_node_modules"
+        },
+        lint: {
+          status: "passed",
+          command: "pnpm",
+          args: ["lint"],
+          attempt: 1,
+          timedOut: false
+        },
+        typecheck: {
+          status: "passed",
+          command: "pnpm",
+          args: ["typecheck"],
+          attempt: 1,
+          timedOut: false
+        },
+        build: {
+          status: "passed",
+          command: "pnpm",
+          args: ["build"],
+          attempt: 1,
+          timedOut: false
+        },
+        test: {
+          status: "passed",
+          command: "pnpm",
+          args: ["run", "test"],
+          attempt: 1,
+          timedOut: false
+        }
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    generatedApp?: {
+      status?: string;
+      typecheck?: { args?: string[] };
+      build?: { args?: string[] };
+      test?: { args?: string[] };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.generatedApp?.status, "ok");
+  assert.deepEqual(summary?.generatedApp?.typecheck?.args, ["typecheck"]);
+  assert.deepEqual(summary?.generatedApp?.build?.args, ["build"]);
+  assert.deepEqual(summary?.generatedApp?.test?.args, ["run", "test"]);
+});
+
 test("ValidateProjectService persists uiA11y summary when UI validation report is available", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     runtimeOverrides: {
@@ -6958,8 +7150,13 @@ test("ValidateProjectService failure preserves the previous successful diff base
     /lint failed/
   );
 
-  const summary = await executionContext.artifactStore.getValue<{ status: string }>(STAGE_ARTIFACT_KEYS.validationSummary);
-  assert.equal(summary, undefined);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    generatedApp?: { status?: string; failedCommand?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.generatedApp?.status, "failed");
+  assert.equal(summary?.generatedApp?.failedCommand, "unknown");
   const preservedSnapshot = await loadPreviousSnapshot({
     outputRoot: executionContext.resolvedPaths.outputRoot,
     boardKey: "test-board-abc1234567"
