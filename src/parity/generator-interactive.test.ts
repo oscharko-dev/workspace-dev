@@ -298,7 +298,7 @@ test("toListSecondaryActionExpression renders router-linked icon buttons and rej
       actionNode: makeNode({
         id: "iconless-action",
         type: "container",
-        name: "No icon"
+        name: "plain-action"
       }),
       context: createRenderContext()
     }),

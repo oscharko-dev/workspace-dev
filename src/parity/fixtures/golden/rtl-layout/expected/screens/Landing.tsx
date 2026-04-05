@@ -1,4 +1,5 @@
 import { Box, Container, Paper, Stack, Typography } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
 const sharedSxStyle1 = { color: "primary.main", textAlign: "right", whiteSpace: "pre-wrap" };
 const sharedSxStyle2 = { color: "secondary.main", textAlign: "right", whiteSpace: "pre-wrap" };
@@ -25,7 +26,7 @@ export default function LandingScreen() {
         </Stack>
         {/* @ir:end rtl-card1-text */}
         {/* @ir:start rtl-card1-icon Icon container */}
-        <Box data-ir-id="rtl-card1-icon" data-ir-name="Icon" aria-hidden="true" sx={{ width: "44px", height: "44px", bgcolor: "info.main", borderRadius: 1 }} />
+        <InfoOutlinedIcon data-ir-id="rtl-card1-icon" data-ir-name="Icon" aria-hidden="true" sx={{ fontSize: "40px", lineHeight: "1", color: "info.main", width: "44px", height: "44px", borderRadius: 1, display: "flex", alignItems: "center", justifyContent: "center" }} fontSize="inherit" />
         {/* @ir:end rtl-card1-icon */}
       </Box>
       {/* @ir:end rtl-card-1 */}
@@ -42,7 +43,7 @@ export default function LandingScreen() {
         </Stack>
         {/* @ir:end rtl-card2-text */}
         {/* @ir:start rtl-card2-icon Icon container */}
-        <Box data-ir-id="rtl-card2-icon" data-ir-name="Icon" aria-hidden="true" sx={{ width: "44px", height: "44px", bgcolor: "success.main", borderRadius: 1 }} />
+        <InfoOutlinedIcon data-ir-id="rtl-card2-icon" data-ir-name="Icon" aria-hidden="true" sx={{ fontSize: "40px", lineHeight: "1", color: "success.main", width: "44px", height: "44px", borderRadius: 1, display: "flex", alignItems: "center", justifyContent: "center" }} fontSize="inherit" />
         {/* @ir:end rtl-card2-icon */}
       </Box>
       {/* @ir:end rtl-card-2 */}

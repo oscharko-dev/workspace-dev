@@ -1,4 +1,5 @@
 import { Avatar, Badge, Box, Chip, Container, Divider, Stack, Typography } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { ProfilePattern1 } from "../components/ProfilePattern1";
 import { ProfilePatternContextProvider, type ProfilePatternContextState } from "../context/ProfilePatternContext";
 
@@ -59,7 +60,7 @@ function ProfileScreenContent() {
       {/* @ir:start badge-item MuiBadgeRoot badge */}
       <Badge data-ir-id="badge-item" data-ir-name="MuiBadgeRoot" badgeContent={"3"} color="primary" sx={{ position: "relative", width: "6%", maxWidth: "48px", minHeight: "48px" }}>
         {/* @ir:start badge-icon Icon container */}
-        <Box data-ir-id="badge-icon" data-ir-name="Icon" aria-hidden="true" sx={{ position: "absolute", left: "0px", top: "0px", width: "40px", height: "40px", bgcolor: "#d9d9d9" }} />
+        <InfoOutlinedIcon data-ir-id="badge-icon" data-ir-name="Icon" aria-hidden="true" sx={{ fontSize: "36px", lineHeight: "1", color: "#d9d9d9", position: "absolute", left: "0px", top: "0px", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }} fontSize="inherit" />
         {/* @ir:end badge-icon */}
         {/* @ir:start badge-count Badge badge */}
         <Badge data-ir-id="badge-count" data-ir-name="Badge" badgeContent={"3"} color="primary" sx={{ position: "absolute", left: "28px", top: "0px", width: "20px", minHeight: "20px" }}>
