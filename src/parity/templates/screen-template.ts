@@ -6692,11 +6692,12 @@ const buildStatefulScenarioModule = ({
     family: input.family,
     contentScreenId: screen.id
   });
+  const screenAppShell = screen.appShell;
   const scenarioScreen =
-    input.appShellComponentName && screen.appShell
+    input.appShellComponentName && screenAppShell
       ? {
           ...screen,
-          children: screen.children.filter((child) => screen.appShell?.contentNodeIds.includes(child.id))
+          children: screen.children.filter((child) => screenAppShell.contentNodeIds.includes(child.id))
         }
       : screen;
   const prepared = prepareFallbackScreenModel({

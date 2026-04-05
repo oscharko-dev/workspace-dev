@@ -15,25 +15,41 @@ interface DerivedGroupShellPlan {
   }>;
 }
 
+interface TopLevelSignalMatch {
+  nodeId: string;
+  index: number;
+}
+
 const toScreenWithoutAppShell = (screen: ScreenIR): ScreenIR => {
   if (!screen.appShell) return screen;
-  const copy = { ...screen };
-  delete copy.appShell;
-  return copy;
+  const { appShell: _discarded, ...rest } = screen;
+  void _discarded;
+  return rest;
 };
 
+/**
+ * Returns the index of the signal's matching top-level child in `screen`, if
+ * and only if exactly one of the signal's node ids appears among the screen's
+ * top-level children. Zero matches and multi-match cases both return
+ * `undefined` — multi-match indicates a data-integrity issue in the signal
+ * (a signal should resolve to at most one node per screen) and is treated
+ * defensively rather than logged, because this function must remain pure.
+ */
 const findTopLevelSignalMatch = ({
   screen,
   signal
 }: {
   screen: ScreenIR;
   signal: FigmaAnalysisAppShellSignal;
-}): { nodeId: string; index: number } | undefined => {
+}): TopLevelSignalMatch | undefined => {
   const matches = screen.children
     .map((child, index) => ({ child, index }))
     .filter(({ child }) => signal.nodeIds.includes(child.id));
 
   if (matches.length !== 1) {
+    // Defensive: zero matches = signal not present at top level; multi-match =
+    // malformed signal (multiple of its node ids appear as top-level children
+    // of the same screen). Both cases disqualify the signal from this screen.
     return undefined;
   }
 
@@ -41,6 +57,32 @@ const findTopLevelSignalMatch = ({
     nodeId: matches[0]!.child.id,
     index: matches[0]!.index
   };
+};
+
+/**
+ * Builds a single lookup map of `screenId -> signalId -> TopLevelSignalMatch`
+ * by scanning each screen once. Downstream checks (canonical resolution,
+ * contiguity, full coverage) reuse this map instead of re-scanning.
+ */
+const buildSignalMatchIndex = ({
+  screens,
+  signals
+}: {
+  screens: readonly ScreenIR[];
+  signals: readonly FigmaAnalysisAppShellSignal[];
+}): Map<string, Map<string, TopLevelSignalMatch>> => {
+  const index = new Map<string, Map<string, TopLevelSignalMatch>>();
+  for (const screen of screens) {
+    const perSignal = new Map<string, TopLevelSignalMatch>();
+    for (const signal of signals) {
+      const match = findTopLevelSignalMatch({ screen, signal });
+      if (match) {
+        perSignal.set(signal.signalId, match);
+      }
+    }
+    index.set(screen.id, perSignal);
+  }
+  return index;
 };
 
 const resolveGroupSignals = ({
@@ -54,16 +96,32 @@ const resolveGroupSignals = ({
   groupedScreens: ScreenIR[];
   canonicalScreen: ScreenIR;
 }): ResolvedGroupSignal[] | undefined => {
+  const groupFrameIdSet = new Set(group.frameIds);
+
+  // Scan every screen (canonical first, de-duplicated) exactly once to build
+  // a reusable signal-match index. This unifies what were previously three
+  // separate passes (canonical match, grouped-screen match, contiguity check).
+  const screensToScan: ScreenIR[] = [
+    canonicalScreen,
+    ...groupedScreens.filter((screen) => screen.id !== canonicalScreen.id)
+  ];
+  const matchIndex = buildSignalMatchIndex({ screens: screensToScan, signals });
+
+  const canonicalMatches = matchIndex.get(canonicalScreen.id);
+  if (!canonicalMatches) {
+    return undefined;
+  }
+
   const resolvedSignals = signals
     .map((signal) => {
-      const canonicalMatch = findTopLevelSignalMatch({ screen: canonicalScreen, signal });
+      const canonicalMatch = canonicalMatches.get(signal.signalId);
       if (!canonicalMatch) {
         return undefined;
       }
 
       for (const screen of groupedScreens) {
-        const match = findTopLevelSignalMatch({ screen, signal });
-        if (!match) {
+        const perSignal = matchIndex.get(screen.id);
+        if (!perSignal || !perSignal.has(signal.signalId)) {
           return undefined;
         }
       }
@@ -87,20 +145,26 @@ const resolveGroupSignals = ({
   }
 
   for (const screen of groupedScreens) {
-    const signalIndices = resolvedSignals.map((entry) => {
-      const match = findTopLevelSignalMatch({
-        screen,
-        signal: entry.signal
-      });
-      return match?.index;
+    const perSignal = matchIndex.get(screen.id);
+    if (!perSignal) {
+      return undefined;
+    }
+    const hasLeadingIndices = resolvedSignals.every((entry, signalIndex) => {
+      const match = perSignal.get(entry.signal.signalId);
+      return match !== undefined && match.index === signalIndex;
     });
-    const hasLeadingIndices = signalIndices.every((index, signalIndex) => index === signalIndex);
     if (!hasLeadingIndices) {
       return undefined;
     }
   }
 
-  const hasFullCoverage = resolvedSignals.every((entry) => entry.signal.frameIds.length === group.frameIds.length);
+  // Full coverage: every signal must reference exactly the group's frame ids
+  // (set equality — both direction checks are required).
+  const hasFullCoverage = resolvedSignals.every(
+    (entry) =>
+      entry.signal.frameIds.length === group.frameIds.length &&
+      entry.signal.frameIds.every((id) => groupFrameIdSet.has(id))
+  );
   if (!hasFullCoverage) {
     return undefined;
   }
@@ -126,7 +190,7 @@ const deriveGroupShellPlan = ({
     canonicalScreen
   });
 
-  if (!resolvedSignals || resolvedSignals.length === 0) {
+  if (!resolvedSignals) {
     return undefined;
   }
 
@@ -150,7 +214,7 @@ const deriveGroupShellPlan = ({
     appShell: {
       id: group.groupId,
       sourceScreenId: canonicalScreen.id,
-      screenIds: [...group.frameIds],
+      screenIds: groupedScreens.map((screen) => screen.id),
       shellNodeIds: resolvedSignals.map((entry) => entry.canonicalNodeId),
       slotIndex: shellNodeCount,
       signalIds: resolvedSignals.map((entry) => entry.signal.signalId)
@@ -169,10 +233,22 @@ export const applyAppShellsToDesignIr = ({
   const baseScreens = ir.screens.map(toScreenWithoutAppShell);
   const screenById = new Map(baseScreens.map((screen) => [screen.id, screen] as const));
   const derivedAppShells: AppShellIR[] = [];
+  const derivedAppShellIds = new Set<string>();
   const appShellByScreenId = new Map<string, ScreenAppShellIR>();
   const assignedScreenIds = new Set<string>();
 
   for (const group of figmaAnalysis.frameVariantGroups) {
+    // A single-frame variant group has nothing to deduplicate — extracting
+    // a shell from it would produce a one-screen AppShell that serves no
+    // purpose. Skip defensively.
+    if (group.frameIds.length < 2) {
+      continue;
+    }
+
+    if (derivedAppShellIds.has(group.groupId)) {
+      continue;
+    }
+
     if (group.frameIds.some((screenId) => assignedScreenIds.has(screenId))) {
       continue;
     }
@@ -189,8 +265,18 @@ export const applyAppShellsToDesignIr = ({
       continue;
     }
 
+    // Restrict to signals that belong to this specific group *and* whose frame
+    // references are fully contained in the group's frame set. The subset
+    // check hardens against malformed analyses where two variant groups share
+    // the same `groupId` but reference disjoint frames — without it, signals
+    // from one group would cross-pollute the other and cause both to fail
+    // signal resolution.
+    const groupFrameIdSet = new Set(group.frameIds);
     const groupSignals = figmaAnalysis.appShellSignals.filter(
-      (signal) => signal.groupId === group.groupId && signal.confidence === 1
+      (signal) =>
+        signal.groupId === group.groupId &&
+        signal.confidence === 1 &&
+        signal.frameIds.every((frameId) => groupFrameIdSet.has(frameId))
     );
     if (groupSignals.length === 0) {
       continue;
@@ -207,14 +293,15 @@ export const applyAppShellsToDesignIr = ({
     }
 
     derivedAppShells.push(plan.appShell);
+    derivedAppShellIds.add(plan.appShell.id);
     for (const screenShell of plan.screenShells) {
       appShellByScreenId.set(screenShell.screenId, screenShell.appShell);
       assignedScreenIds.add(screenShell.screenId);
     }
   }
 
-  const irWithoutAppShells = { ...ir };
-  delete irWithoutAppShells.appShells;
+  const { appShells: _discardedAppShells, ...irWithoutAppShells } = ir;
+  void _discardedAppShells;
   const screens = baseScreens.map((screen) => {
     const screenAppShell = appShellByScreenId.get(screen.id);
     return screenAppShell ? { ...screen, appShell: screenAppShell } : screen;

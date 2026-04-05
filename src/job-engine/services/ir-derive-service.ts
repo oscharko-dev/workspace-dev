@@ -9,6 +9,7 @@ import { applyAppShellsToDesignIr } from "../../parity/ir-app-shells.js";
 import { applyScreenVariantFamiliesToDesignIr } from "../../parity/ir-screen-variants.js";
 import { figmaToDesignIrWithOptions } from "../../parity/ir.js";
 import type { FigmaFile } from "../../parity/ir-helpers.js";
+import { validateDesignIR } from "../../parity/types-ir.js";
 import type { DesignIR, ScreenElementIR } from "../../parity/types-ir.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
@@ -743,6 +744,19 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           ir: cachedIrWithAppShells,
           figmaAnalysis: cachedAnalysis
         });
+        const cachedValidation = validateDesignIR(cachedIrWithFamilies);
+        if (!cachedValidation.valid) {
+          const topErrors = cachedValidation.errors
+            .slice(0, 5)
+            .map((e) => `${e.code}: ${e.message}`)
+            .join("; ");
+          context.log({
+            level: "warn",
+            message:
+              `AppShell IR validation warnings after derivation: ${topErrors}` +
+              (cachedValidation.errors.length > 5 ? ` (+${cachedValidation.errors.length - 5} more)` : "")
+          });
+        }
         await writeFile(context.paths.designIrFile, `${JSON.stringify(cachedIrWithFamilies, null, 2)}\n`, "utf8");
         await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(cachedAnalysis, null, 2)}\n`, "utf8");
         const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
@@ -820,6 +834,19 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       ir: derived,
       figmaAnalysis
     });
+    const derivedValidation = validateDesignIR(derived);
+    if (!derivedValidation.valid) {
+      const topErrors = derivedValidation.errors
+        .slice(0, 5)
+        .map((e) => `${e.code}: ${e.message}`)
+        .join("; ");
+      context.log({
+        level: "warn",
+        message:
+          `AppShell IR validation warnings after derivation: ${topErrors}` +
+          (derivedValidation.errors.length > 5 ? ` (+${derivedValidation.errors.length - 5} more)` : "")
+      });
+    }
     await writeFile(context.paths.designIrFile, `${JSON.stringify(derived, null, 2)}\n`, "utf8");
     await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
     const figmaLibraryResolutionArtifact = await persistFigmaLibraryResolutionIfAvailable({
