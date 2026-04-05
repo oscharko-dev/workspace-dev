@@ -272,6 +272,66 @@ describe("Banking-Input prioritisation (#693 AC-2)", () => {
     assert.ok(rendered.includes("<TextField"), "Expected generic TextField");
     assert.ok(!rendered.includes("aria-roledescription"), "Expected no banking-specific ARIA");
   });
+
+  it("banking inputs: fallback to generic TextField when customer profile denies MUI fallback and no specialized mapping exists", () => {
+    const context = createRenderContext({
+      muiFallbackDeniedSemanticKeys: new Set<string>(["InputIBAN"])
+    });
+    const element = makeInputElement({
+      id: "node-iban-denied",
+      name: "InputIBAN",
+      semanticType: "InputIBAN",
+      semanticSource: "board"
+    });
+    const rendered = renderSemanticInput(element, 3, rootParent, context);
+    assert.ok(rendered.includes("<TextField"), "Expected generic <TextField fallthrough when banking fallback is denied");
+    assert.ok(!rendered.includes("DE00 0000"), "Expected no IBAN placeholder (banking renderer must not fire)");
+    assert.ok(!rendered.includes("IBAN input"), "Expected no IBAN aria-roledescription (banking renderer must not fire)");
+    const mappingWarnings = context.mappingWarnings.filter(
+      (warning) => warning.code === "W_COMPONENT_MAPPING_MISSING" && warning.message.includes("InputIBAN")
+    );
+    assert.equal(mappingWarnings.length, 1, "Expected exactly one W_COMPONENT_MAPPING_MISSING warning mentioning InputIBAN");
+    assert.equal(mappingWarnings[0]?.nodeId, "node-iban-denied");
+  });
+
+  it("banking inputs: still render banking-styled TextField when customer profile explicitly allows MUI fallback", () => {
+    const context = createRenderContext({
+      muiFallbackDeniedSemanticKeys: undefined
+    });
+    const element = makeInputElement({
+      id: "node-iban-allowed",
+      name: "InputIBAN",
+      semanticType: "InputIBAN",
+      semanticSource: "board"
+    });
+    const rendered = renderSemanticInput(element, 3, rootParent, context);
+    assert.ok(rendered.includes("DE00 0000"), "Expected IBAN placeholder (banking renderer should fire)");
+    assert.ok(rendered.includes("IBAN input"), "Expected IBAN aria-roledescription (banking renderer should fire)");
+    const mappingWarnings = context.mappingWarnings.filter(
+      (warning) => warning.code === "W_COMPONENT_MAPPING_MISSING"
+    );
+    assert.equal(mappingWarnings.length, 0, "Expected no mapping warning when fallback is allowed");
+  });
+
+  it("DatePicker: falls through to generic TextField when customer profile denies MUI fallback and no provider is configured", () => {
+    const context = createRenderContext({
+      muiFallbackDeniedSemanticKeys: new Set<string>(["DatePicker"])
+    });
+    const element = makeInputElement({
+      id: "node-date-picker-denied",
+      name: "DatePicker",
+      semanticType: "DatePicker",
+      semanticSource: "board"
+    });
+    const rendered = renderSemanticInput(element, 3, rootParent, context);
+    assert.ok(!rendered.includes("<DatePicker"), "Expected no <DatePicker component when fallback is denied");
+    assert.ok(rendered.includes("<TextField"), "Expected generic <TextField fallthrough when DatePicker fallback is denied");
+    const mappingWarnings = context.mappingWarnings.filter(
+      (warning) => warning.code === "W_COMPONENT_MAPPING_MISSING" && warning.message.includes("DatePicker")
+    );
+    assert.ok(mappingWarnings.length >= 1, "Expected at least one W_COMPONENT_MAPPING_MISSING warning mentioning DatePicker");
+    assert.equal(mappingWarnings[0]?.nodeId, "node-date-picker-denied");
+  });
 });
 
 // ---------------------------------------------------------------------------

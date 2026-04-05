@@ -123,6 +123,7 @@ import type {
   FormGroupAssignment,
   IconRenderWarning
 } from "../generator-core.js";
+import { pushMappingWarning } from "../generator-render.js";
 import type { ComponentMatchReportIconResolutionRecord } from "../../storybook/types.js";
 import type { ResolvedStorybookTypographyStyle } from "../../storybook/theme-resolver.js";
 import {
@@ -1000,10 +1001,28 @@ export const renderSemanticInput = (
       })()
     : false;
   if (!hasSpecializedMapping && element.semanticType === "DatePicker") {
-    return renderDatePickerInput(element, depth, parent, context);
+    if (context.muiFallbackDeniedSemanticKeys?.has("DatePicker")) {
+      pushMappingWarning({
+        context,
+        code: "W_COMPONENT_MAPPING_MISSING",
+        nodeId: element.id,
+        message: `Customer profile denies MUI fallback for 'DatePicker' but no 'imports.components.DatePicker' mapping is configured. Configure the customer profile to provide a DatePicker mapping or set fallbacks.mui.components.DatePicker = 'allow'.`
+      });
+    } else {
+      return renderDatePickerInput(element, depth, parent, context);
+    }
   }
   if (!hasSpecializedMapping && element.semanticType && BANKING_INPUT_SEMANTIC_TYPES.has(element.semanticType)) {
-    return renderBankingInput(element, depth, parent, context);
+    if (context.muiFallbackDeniedSemanticKeys?.has(element.semanticType)) {
+      pushMappingWarning({
+        context,
+        code: "W_COMPONENT_MAPPING_MISSING",
+        nodeId: element.id,
+        message: `Customer profile denies MUI fallback for banking input '${element.semanticType}' but no 'imports.components.${element.semanticType}' mapping is configured. Configure the customer profile to provide a ${element.semanticType} mapping or set fallbacks.mui.components.${element.semanticType} = 'allow'.`
+      });
+    } else {
+      return renderBankingInput(element, depth, parent, context);
+    }
   }
 
   const indent = "  ".repeat(depth);
@@ -5470,6 +5489,7 @@ export interface FallbackScreenFileInput {
   };
   themeComponentDefaults?: ThemeComponentDefaults;
   datePickerProvider?: DatePickerProviderConfig;
+  muiFallbackDeniedSemanticKeys?: ReadonlySet<string> | undefined;
   specializedComponentMappings?: Partial<Record<string, SpecializedComponentMapping>>;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
@@ -5504,6 +5524,7 @@ export interface PreparedFallbackScreenModel {
   resolvedFormHandlingMode: ResolvedFormHandlingMode;
   resolvedThemeComponentDefaults: ThemeComponentDefaults | undefined;
   datePickerProvider?: DatePickerProviderConfig;
+  muiFallbackDeniedSemanticKeys?: ReadonlySet<string> | undefined;
   specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
@@ -5612,6 +5633,7 @@ export const prepareFallbackScreenModel = ({
   truncationMetric,
   themeComponentDefaults,
   datePickerProvider,
+  muiFallbackDeniedSemanticKeys,
   specializedComponentMappings = {},
   storybookFirstIconLookup,
   storybookTypographyVariants,
@@ -5689,6 +5711,7 @@ export const prepareFallbackScreenModel = ({
     resolvedFormHandlingMode,
     resolvedThemeComponentDefaults,
     ...(datePickerProvider ? { datePickerProvider } : {}),
+    ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
     specializedComponentMappings,
     ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
@@ -5725,6 +5748,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     typographyVariantByNodeId,
     resolvedThemeComponentDefaults,
     datePickerProvider,
+    muiFallbackDeniedSemanticKeys,
     specializedComponentMappings,
     storybookTypographyVariants,
     simplifiedChildren,
@@ -5786,6 +5810,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     ...(datePickerProvider ? { datePickerProvider } : {}),
+    ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
     usesDatePickerProvider: false,
     spacingBase: prepared.resolvedSpacingBase,
     ...(tokens ? { tokens } : {}),
