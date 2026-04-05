@@ -630,9 +630,14 @@ export interface IRValidationError {
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN"
     | "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN"
     | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_MEMBER"
+    | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_COLLISION"
+    | "IR_SCREEN_VARIANT_FAMILY_MEMBER_COLLISION"
+    | "IR_SCREEN_VARIANT_FAMILY_EMPTY_AXES"
+    | "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS"
     | "IR_INVALID_SCREEN_VARIANT_SCENARIO"
     | "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN"
-    | "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN";
+    | "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN"
+    | "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE";
   readonly message: string;
 }
 
@@ -927,6 +932,13 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         continue;
       }
 
+      if (family.axes.length === 0) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_EMPTY_AXES",
+          message: `DesignIR.screenVariantFamilies[${i}].axes must contain at least one axis.`
+        });
+      }
+
       if (!screenIdSet.has(family.canonicalScreenId)) {
         errors.push({
           code: "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN",
@@ -957,6 +969,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         });
       }
 
+      const seenScenarioScreenIds = new Set<string>();
       for (let scenarioIndex = 0; scenarioIndex < family.scenarios.length; scenarioIndex++) {
         const scenario = family.scenarios[scenarioIndex];
         if (
@@ -974,6 +987,16 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           });
           continue;
         }
+
+        if (seenScenarioScreenIds.has(scenario.screenId)) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenId '${scenario.screenId}' ` +
+              "is duplicated within the family."
+          });
+        }
+        seenScenarioScreenIds.add(scenario.screenId);
 
         if (!memberScreenIdSet.has(scenario.screenId) || !screenIdSet.has(scenario.screenId)) {
           errors.push({
@@ -1057,6 +1080,51 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               }
             }
           }
+        }
+      }
+
+      const hasCanonicalScenario = family.scenarios.some(
+        (candidate) => candidate.screenId === family.canonicalScreenId
+      );
+      if (!hasCanonicalScenario) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS",
+          message:
+            `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
+            "must have a corresponding entry in scenarios."
+        });
+      }
+    }
+
+    const canonicalToFamilyIndex = new Map<string, number>();
+    const memberToFamilyIndex = new Map<string, number>();
+    for (let i = 0; i < raw.screenVariantFamilies.length; i++) {
+      const family = raw.screenVariantFamilies[i];
+      if (!family || !family.canonicalScreenId || !Array.isArray(family.memberScreenIds)) {
+        continue;
+      }
+      const previousCanonical = canonicalToFamilyIndex.get(family.canonicalScreenId);
+      if (previousCanonical !== undefined) {
+        errors.push({
+          code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_COLLISION",
+          message:
+            `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
+            `is already the canonical screen of family index ${previousCanonical}.`
+        });
+      } else {
+        canonicalToFamilyIndex.set(family.canonicalScreenId, i);
+      }
+      for (const memberScreenId of family.memberScreenIds) {
+        const previousMember = memberToFamilyIndex.get(memberScreenId);
+        if (previousMember !== undefined && previousMember !== i) {
+          errors.push({
+            code: "IR_SCREEN_VARIANT_FAMILY_MEMBER_COLLISION",
+            message:
+              `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
+              `which already belongs to family index ${previousMember}.`
+          });
+        } else {
+          memberToFamilyIndex.set(memberScreenId, i);
         }
       }
     }

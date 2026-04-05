@@ -33,7 +33,7 @@ const variantScenarioConfig = {
       "expansionState": "collapsed",
       "validationState": "default",
       "accordionStateByKey": {
-        "accordion_state_collapsed_1_63230_accordion_1": false
+        "accordion_state_collapsed": false
       }
     },
     "shellTextOverrides": {
@@ -47,7 +47,7 @@ const variantScenarioConfig = {
       "expansionState": "expanded",
       "validationState": "default",
       "accordionStateByKey": {
-        "accordion_state_expanded_1_64644_accordion_1": true
+        "accordion_state_expanded": true
       }
     }
   },
@@ -58,7 +58,7 @@ const variantScenarioConfig = {
       "expansionState": "collapsed",
       "validationState": "default",
       "accordionStateByKey": {
-        "accordion_state_collapsed_1_66050_accordion_1": false
+        "accordion_state_collapsed": false
       }
     }
   },
@@ -69,7 +69,7 @@ const variantScenarioConfig = {
       "expansionState": "collapsed",
       "validationState": "default",
       "accordionStateByKey": {
-        "accordion_state_collapsed_1_67464_accordion_1": false
+        "accordion_state_collapsed": false
       }
     }
   },
@@ -80,7 +80,7 @@ const variantScenarioConfig = {
       "expansionState": "collapsed",
       "validationState": "error",
       "accordionStateByKey": {
-        "accordion_state_collapsed_1_68884_accordion_1": false
+        "accordion_state_collapsed": false
       }
     },
     "screenLevelErrorEvidence": [

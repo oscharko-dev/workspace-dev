@@ -1277,7 +1277,7 @@
             "validationState": "default",
             "expansionState": "collapsed",
             "accordionStateByKey": {
-              "accordion_state_collapsed_1_63230_accordion_1": false
+              "accordion_state_collapsed": false
             }
           },
           "shellTextOverrides": {
@@ -1292,7 +1292,7 @@
             "validationState": "default",
             "expansionState": "expanded",
             "accordionStateByKey": {
-              "accordion_state_expanded_1_64644_accordion_1": true
+              "accordion_state_expanded": true
             }
           }
         },
@@ -1304,7 +1304,7 @@
             "validationState": "default",
             "expansionState": "collapsed",
             "accordionStateByKey": {
-              "accordion_state_collapsed_1_66050_accordion_1": false
+              "accordion_state_collapsed": false
             }
           }
         },
@@ -1316,7 +1316,7 @@
             "validationState": "default",
             "expansionState": "collapsed",
             "accordionStateByKey": {
-              "accordion_state_collapsed_1_67464_accordion_1": false
+              "accordion_state_collapsed": false
             }
           }
         },
@@ -1328,7 +1328,7 @@
             "validationState": "error",
             "expansionState": "collapsed",
             "accordionStateByKey": {
-              "accordion_state_collapsed_1_68884_accordion_1": false
+              "accordion_state_collapsed": false
             }
           },
           "screenLevelErrorEvidence": [
