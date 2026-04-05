@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { parseCustomerProfileConfig } from "./customer-profile.js";
 import { applyCustomerProfileToTemplate } from "./customer-profile-template.js";
+import { createDeterministicAppFile } from "./parity/generator-core.js";
+import type { ScreenIR } from "./parity/types-ir.js";
 import {
   validateCustomerProfileComponentApiComponentMatchReport,
   validateCustomerProfileComponentMatchReport,
@@ -932,6 +934,197 @@ export const App = () => <Box sx={sharedSx} />;
   }
 });
 
+test("validateGeneratedProjectStorybookStyles resolves scalar aliases inside sx objects", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-scalar-aliases-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+const color = "#ffffff";
+const gap = "16px";
+const fontFamily = "Arial";
+
+export const App = () => <Box sx={{ color, gap, fontFamily }} />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_typography_declaration"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles scans sx arrays with locally analyzable entries", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-sx-array-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+import type { SxProps, Theme } from "@mui/material/styles";
+
+const rootSx = {
+  color: "#ffffff",
+  gap: "16px",
+  fontFamily: "Arial"
+} as const;
+
+export const App = ({ sx }: { sx?: SxProps<Theme> }) => <Box sx={[rootSx, sx]} />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_typography_declaration"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles scans conditional and logical style branches", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-conditional-branches-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Box } from "@mui/material";
+
+const alertColor = "#ffffff";
+
+export const App = ({
+  isAlert,
+  isCompact,
+  suppliedFont
+}: {
+  isAlert: boolean;
+  isCompact: boolean;
+  suppliedFont?: string;
+}) => (
+  <Box
+    sx={{
+      color: isAlert ? alertColor : undefined,
+      gap: isCompact && "16px",
+      fontFamily: suppliedFont ?? "Arial"
+    }}
+  />
+);
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_typography_declaration"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles fails when Storybook artifacts exist but component.match_report is missing", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-missing-match-report-"));
   const customerProfile = createCustomerProfileForStyleValidation({
@@ -1359,6 +1552,67 @@ test("validateGeneratedProjectStorybookStyles flags template literals with subst
   }
 });
 
+test("validateGeneratedProjectStorybookStyles scans styled callbacks that call theme.unstable_sx", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-styled-root-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Card } from "@mui/material";
+import { styled } from "@mui/material/styles";
+
+const StyledCard = styled(Card)(({ theme }) =>
+  theme.unstable_sx({
+    color: "#ffffff",
+    gap: "16px"
+  })
+);
+
+export const App = () => <StyledCard />;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+    assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles allows Storybook-derived theme outputs", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-theme-output-"));
   const customerProfile = createCustomerProfileForStyleValidation({
@@ -1422,6 +1676,70 @@ test("validateGeneratedProjectStorybookStyles allows Storybook-derived theme out
 
     assert.equal(summary.status, "ok");
     assert.equal(summary.issueCount, 0);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles accepts createDeterministicAppFile output", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-generated-app-file-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    const appFile = createDeterministicAppFile([
+      {
+        id: "screen-home",
+        name: "Home",
+        layoutMode: "VERTICAL",
+        gap: 0,
+        padding: {
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0
+        },
+        children: []
+      }
+    ] as ScreenIR[]);
+
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: appFile.content
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.issues.some((issue) => issue.category === "forbidden_inline_style"), false);
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });
   }
@@ -1529,6 +1847,222 @@ export const App = () => (
     );
     assert.equal(
       summary.issues.some((issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "sx"),
+      true
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles scans resolved customer component spreads", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-customer-spread-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { CustomerButton } from "@customer/components";
+
+const customerButtonProps = {
+  appearance: "primary",
+  sx: {
+    color: "#ffffff"
+  }
+} as const;
+
+export const App = () => <CustomerButton {...customerButtonProps}>{"Weiter"}</CustomerButton>;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "story-args-1",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "button--primary",
+              entryType: "story",
+              title: "Components/Button"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["appearance"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([
+        createMatchReportEntry({
+          familyKey: "button-primary",
+          familyName: "Button",
+          libraryResolution: {
+            status: "resolved_import",
+            reason: "profile_import_resolved",
+            storybookTier: "Components",
+            profileFamily: "Components",
+            componentKey: "Button",
+            import: {
+              package: "@customer/components",
+              exportName: "PrimaryButton",
+              localName: "CustomerButton"
+            }
+          },
+          resolvedApi: {
+            status: "resolved",
+            componentKey: "Button",
+            import: {
+              package: "@customer/components",
+              exportName: "PrimaryButton",
+              localName: "CustomerButton"
+            },
+            allowedProps: [{ name: "children", kind: "string" }],
+            defaultProps: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            diagnostics: []
+          },
+          resolvedProps: {
+            status: "resolved",
+            fallbackPolicy: "deny",
+            props: [],
+            omittedProps: [],
+            omittedDefaults: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            codegenCompatible: true,
+            diagnostics: []
+          }
+        })
+      ])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.some(
+        (issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "appearance"
+      ),
+      true
+    );
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "sx"),
+      true
+    );
+    assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles rejects unresolved customer component spreads", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-customer-unresolved-spread-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { CustomerButton } from "@customer/components";
+
+const buildCustomerButtonProps = (): Record<string, unknown> => ({
+  appearance: "primary"
+});
+
+export const App = () => <CustomerButton {...buildCustomerButtonProps()}>{"Weiter"}</CustomerButton>;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "story-args-1",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "button--primary",
+              entryType: "story",
+              title: "Components/Button"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["appearance"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([
+        createMatchReportEntry({
+          familyKey: "button-primary",
+          familyName: "Button",
+          libraryResolution: {
+            status: "resolved_import",
+            reason: "profile_import_resolved",
+            storybookTier: "Components",
+            profileFamily: "Components",
+            componentKey: "Button",
+            import: {
+              package: "@customer/components",
+              exportName: "PrimaryButton",
+              localName: "CustomerButton"
+            }
+          },
+          resolvedApi: {
+            status: "resolved",
+            componentKey: "Button",
+            import: {
+              package: "@customer/components",
+              exportName: "PrimaryButton",
+              localName: "CustomerButton"
+            },
+            allowedProps: [{ name: "children", kind: "string" }],
+            defaultProps: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            diagnostics: []
+          },
+          resolvedProps: {
+            status: "resolved",
+            fallbackPolicy: "deny",
+            props: [],
+            omittedProps: [],
+            omittedDefaults: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            codegenCompatible: true,
+            diagnostics: []
+          }
+        })
+      ])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "...spread"),
       true
     );
   } finally {

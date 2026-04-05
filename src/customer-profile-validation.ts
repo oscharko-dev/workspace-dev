@@ -781,26 +781,17 @@ const resolveObjectLiteralFromExpression = ({
   return resolvedObjectLiteral;
 };
 
-const resolveObjectLiteralInitializer = ({
+const resolveJsxExpressionInitializer = ({
   typescriptModule,
-  attribute,
-  sourceFile,
-  styleExpressionBindings
+  attribute
 }: {
   typescriptModule: typeof TypeScript;
   attribute: TypeScript.JsxAttribute;
-  sourceFile: TypeScript.SourceFile;
-  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
-}): TypeScript.ObjectLiteralExpression | undefined => {
+}): TypeScript.Expression | undefined => {
   if (!attribute.initializer || !typescriptModule.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) {
     return undefined;
   }
-  return resolveObjectLiteralFromExpression({
-    typescriptModule,
-    expression: attribute.initializer.expression,
-    styleExpressionBindings,
-    referencePosition: attribute.getStart(sourceFile)
-  });
+  return attribute.initializer.expression;
 };
 
 const isImplicitlyAllowedComponentProp = (propName: string): boolean => {
@@ -850,28 +841,382 @@ const toSourceLocation = ({
   };
 };
 
-const scanStyleObjectLiteral = ({
+const resolveExpressionFromStyleBinding = ({
+  typescriptModule,
+  expression,
+  styleExpressionBindings,
+  referencePosition,
+  seenBindingKeys = new Set<string>()
+}: {
+  typescriptModule: typeof TypeScript;
+  expression: TypeScript.Expression;
+  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
+  referencePosition: number;
+  seenBindingKeys?: Set<string>;
+}): TypeScript.Expression => {
+  const unwrappedExpression = unwrapStyleExpression({
+    typescriptModule,
+    expression
+  });
+  if (!typescriptModule.isIdentifier(unwrappedExpression)) {
+    return unwrappedExpression;
+  }
+
+  const styleExpressionBinding = resolveStyleExpressionBinding({
+    bindingsByIdentifier: styleExpressionBindings,
+    identifierName: unwrappedExpression.text,
+    referencePosition
+  });
+  if (!styleExpressionBinding) {
+    return unwrappedExpression;
+  }
+
+  const bindingKey = `${unwrappedExpression.text}:${styleExpressionBinding.position}`;
+  if (seenBindingKeys.has(bindingKey)) {
+    return unwrappedExpression;
+  }
+
+  seenBindingKeys.add(bindingKey);
+  const resolvedExpression = resolveExpressionFromStyleBinding({
+    typescriptModule,
+    expression: styleExpressionBinding.expression,
+    styleExpressionBindings,
+    referencePosition: styleExpressionBinding.position,
+    seenBindingKeys
+  });
+  seenBindingKeys.delete(bindingKey);
+  return resolvedExpression;
+};
+
+const isThemeUnstableSxCallExpression = (
+  typescriptModule: typeof TypeScript,
+  expression: TypeScript.Expression
+): expression is TypeScript.CallExpression => {
+  if (!typescriptModule.isCallExpression(expression)) {
+    return false;
+  }
+
+  return typescriptModule.isPropertyAccessExpression(expression.expression) && expression.expression.name.text === "unstable_sx";
+};
+
+const isStyledInvocationCallExpression = (
+  typescriptModule: typeof TypeScript,
+  expression: TypeScript.Expression
+): expression is TypeScript.CallExpression => {
+  if (!typescriptModule.isCallExpression(expression)) {
+    return false;
+  }
+
+  const callee = expression.expression;
+  return (
+    typescriptModule.isCallExpression(callee) &&
+    typescriptModule.isIdentifier(callee.expression) &&
+    callee.expression.text === "styled"
+  );
+};
+
+const scanStyleExpression = ({
   typescriptModule,
   sourceFile,
   relativeFilePath,
   attributeName,
   componentName,
-  objectLiteral,
+  expression,
   issues,
   seenIssueKeys,
   styleExpressionBindings,
-  activeStylePropertyName
+  activeStylePropertyName,
+  locationNode,
+  referencePosition,
+  seenBindingKeys = new Set<string>()
 }: {
   typescriptModule: typeof TypeScript;
   sourceFile: TypeScript.SourceFile;
   relativeFilePath: string;
   attributeName: string;
   componentName?: string;
-  objectLiteral: TypeScript.ObjectLiteralExpression;
+  expression: TypeScript.Expression;
   issues: CustomerProfileStyleValidationIssue[];
   seenIssueKeys: Set<string>;
   styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
   activeStylePropertyName?: string;
+  locationNode?: TypeScript.Node;
+  referencePosition?: number;
+  seenBindingKeys?: Set<string>;
+}): void => {
+  const resolvedExpression = resolveExpressionFromStyleBinding({
+    typescriptModule,
+    expression,
+    styleExpressionBindings,
+    referencePosition: referencePosition ?? expression.getStart(sourceFile),
+    seenBindingKeys
+  });
+
+  if (typescriptModule.isObjectLiteralExpression(resolvedExpression)) {
+    for (const property of resolvedExpression.properties) {
+      if (typescriptModule.isSpreadAssignment(property)) {
+        scanStyleExpression({
+          typescriptModule,
+          sourceFile,
+          relativeFilePath,
+          attributeName,
+          ...(componentName ? { componentName } : {}),
+          expression: property.expression,
+          issues,
+          seenIssueKeys,
+          styleExpressionBindings,
+          ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+          locationNode: property,
+          referencePosition: property.expression.getStart(sourceFile),
+          seenBindingKeys
+        });
+        continue;
+      }
+
+      if (!typescriptModule.isPropertyAssignment(property) && !typescriptModule.isShorthandPropertyAssignment(property)) {
+        continue;
+      }
+
+      const propertyName = typescriptModule.isShorthandPropertyAssignment(property)
+        ? property.name.text
+        : resolveObjectPropertyName(typescriptModule, property.name);
+      if (!propertyName) {
+        continue;
+      }
+
+      const nextStylePropertyName =
+        COLOR_STYLE_PROPERTY_NAMES.has(propertyName) ||
+        SPACING_STYLE_PROPERTY_NAMES.has(propertyName) ||
+        TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(propertyName)
+          ? propertyName
+          : activeStylePropertyName;
+      const propertyValue = typescriptModule.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
+
+      scanStyleExpression({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        attributeName,
+        ...(componentName ? { componentName } : {}),
+        expression: propertyValue,
+        issues,
+        seenIssueKeys,
+        styleExpressionBindings,
+        ...(nextStylePropertyName ? { activeStylePropertyName: nextStylePropertyName } : {}),
+        locationNode: property,
+        referencePosition: propertyValue.getStart(sourceFile),
+        seenBindingKeys
+      });
+    }
+    return;
+  }
+
+  if (typescriptModule.isArrayLiteralExpression(resolvedExpression)) {
+    for (const element of resolvedExpression.elements) {
+      if (!typescriptModule.isExpression(element)) {
+        continue;
+      }
+      scanStyleExpression({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        attributeName,
+        ...(componentName ? { componentName } : {}),
+        expression: element,
+        issues,
+        seenIssueKeys,
+        styleExpressionBindings,
+        ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+        locationNode: element,
+        referencePosition: element.getStart(sourceFile),
+        seenBindingKeys
+      });
+    }
+    return;
+  }
+
+  if (typescriptModule.isConditionalExpression(resolvedExpression)) {
+    scanStyleExpression({
+      typescriptModule,
+      sourceFile,
+      relativeFilePath,
+      attributeName,
+      ...(componentName ? { componentName } : {}),
+      expression: resolvedExpression.whenTrue,
+      issues,
+      seenIssueKeys,
+      styleExpressionBindings,
+      ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+      locationNode: locationNode ?? resolvedExpression,
+      referencePosition: resolvedExpression.whenTrue.getStart(sourceFile),
+      seenBindingKeys
+    });
+    scanStyleExpression({
+      typescriptModule,
+      sourceFile,
+      relativeFilePath,
+      attributeName,
+      ...(componentName ? { componentName } : {}),
+      expression: resolvedExpression.whenFalse,
+      issues,
+      seenIssueKeys,
+      styleExpressionBindings,
+      ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+      locationNode: locationNode ?? resolvedExpression,
+      referencePosition: resolvedExpression.whenFalse.getStart(sourceFile),
+      seenBindingKeys
+    });
+    return;
+  }
+
+  if (
+    typescriptModule.isBinaryExpression(resolvedExpression) &&
+    (resolvedExpression.operatorToken.kind === typescriptModule.SyntaxKind.AmpersandAmpersandToken ||
+      resolvedExpression.operatorToken.kind === typescriptModule.SyntaxKind.BarBarToken ||
+      resolvedExpression.operatorToken.kind === typescriptModule.SyntaxKind.QuestionQuestionToken)
+  ) {
+    scanStyleExpression({
+      typescriptModule,
+      sourceFile,
+      relativeFilePath,
+      attributeName,
+      ...(componentName ? { componentName } : {}),
+      expression: resolvedExpression.left,
+      issues,
+      seenIssueKeys,
+      styleExpressionBindings,
+      ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+      locationNode: locationNode ?? resolvedExpression,
+      referencePosition: resolvedExpression.left.getStart(sourceFile),
+      seenBindingKeys
+    });
+    scanStyleExpression({
+      typescriptModule,
+      sourceFile,
+      relativeFilePath,
+      attributeName,
+      ...(componentName ? { componentName } : {}),
+      expression: resolvedExpression.right,
+      issues,
+      seenIssueKeys,
+      styleExpressionBindings,
+      ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+      locationNode: locationNode ?? resolvedExpression,
+      referencePosition: resolvedExpression.right.getStart(sourceFile),
+      seenBindingKeys
+    });
+    return;
+  }
+
+  if (isThemeUnstableSxCallExpression(typescriptModule, resolvedExpression)) {
+    const [styleArgument] = resolvedExpression.arguments;
+    if (styleArgument) {
+      scanStyleExpression({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        attributeName,
+        ...(componentName ? { componentName } : {}),
+        expression: styleArgument,
+        issues,
+        seenIssueKeys,
+        styleExpressionBindings,
+        ...(activeStylePropertyName ? { activeStylePropertyName } : {}),
+        locationNode: locationNode ?? styleArgument,
+        referencePosition: styleArgument.getStart(sourceFile),
+        seenBindingKeys
+      });
+    }
+    return;
+  }
+
+  if (!activeStylePropertyName) {
+    return;
+  }
+
+  const issueLocationNode = locationNode ?? resolvedExpression;
+  const location = toSourceLocation({
+    sourceFile,
+    node: issueLocationNode
+  });
+  if (COLOR_STYLE_PROPERTY_NAMES.has(activeStylePropertyName) && isRawColorLiteral({ typescriptModule, expression: resolvedExpression })) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "hard_coded_color_literal",
+        severity: "error",
+        message:
+          `Generated source must reference Storybook theme tokens instead of hard-coded color literals ` +
+          `for '${activeStylePropertyName}'.`,
+        filePath: relativeFilePath,
+        ...location,
+        ...(componentName ? { componentName } : {}),
+        propName: activeStylePropertyName
+      }
+    });
+  }
+
+  if (
+    SPACING_STYLE_PROPERTY_NAMES.has(activeStylePropertyName) &&
+    isRawSpacingLiteral({ typescriptModule, expression: resolvedExpression, attributeName })
+  ) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "raw_spacing_literal",
+        severity: "error",
+        message:
+          `Generated source must avoid raw spacing literals for '${activeStylePropertyName}' ` +
+          `outside Storybook-derived theme tokens.`,
+        filePath: relativeFilePath,
+        ...location,
+        ...(componentName ? { componentName } : {}),
+        propName: activeStylePropertyName
+      }
+    });
+  }
+
+  if (TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(activeStylePropertyName) && isRawTypographyLiteral({ typescriptModule, expression: resolvedExpression })) {
+    pushStyleIssue({
+      issues,
+      seenIssueKeys,
+      issue: {
+        category: "raw_typography_declaration",
+        severity: "error",
+        message:
+          `Generated source must keep typography declarations in Storybook-derived theme outputs; ` +
+          `found raw '${activeStylePropertyName}' styling.`,
+        filePath: relativeFilePath,
+        ...location,
+        ...(componentName ? { componentName } : {}),
+        propName: activeStylePropertyName
+      }
+    });
+  }
+};
+
+const scanCustomerComponentPropObjectLiteral = ({
+  typescriptModule,
+  sourceFile,
+  relativeFilePath,
+  componentName,
+  customerComponent,
+  objectLiteral,
+  issues,
+  seenIssueKeys,
+  styleExpressionBindings
+}: {
+  typescriptModule: typeof TypeScript;
+  sourceFile: TypeScript.SourceFile;
+  relativeFilePath: string;
+  componentName: string;
+  customerComponent: StyleValidationCustomerComponentContract;
+  objectLiteral: TypeScript.ObjectLiteralExpression;
+  issues: CustomerProfileStyleValidationIssue[];
+  seenIssueKeys: Set<string>;
+  styleExpressionBindings: Map<string, StyleExpressionBinding[]>;
 }): void => {
   for (const property of objectLiteral.properties) {
     if (typescriptModule.isSpreadAssignment(property)) {
@@ -881,22 +1226,43 @@ const scanStyleObjectLiteral = ({
         styleExpressionBindings,
         referencePosition: property.expression.getStart(sourceFile)
       });
-      if (spreadObjectLiteral) {
-        scanStyleObjectLiteral({
-          typescriptModule,
+      if (!spreadObjectLiteral) {
+        const location = toSourceLocation({
           sourceFile,
-          relativeFilePath,
-          attributeName,
-          ...(componentName ? { componentName } : {}),
-          objectLiteral: spreadObjectLiteral,
+          node: property
+        });
+        pushStyleIssue({
           issues,
           seenIssueKeys,
-          styleExpressionBindings,
-          ...(activeStylePropertyName ? { activeStylePropertyName } : {})
+          issue: {
+            category: "disallowed_customer_component_prop",
+            severity: "error",
+            message:
+              `Generated source forwarded unresolved spread props to customer component '${componentName}'.`,
+            filePath: relativeFilePath,
+            ...location,
+            componentName,
+            propName: "...spread",
+            artifact: "component.match_report"
+          }
         });
+        continue;
       }
+
+      scanCustomerComponentPropObjectLiteral({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        componentName,
+        customerComponent,
+        objectLiteral: spreadObjectLiteral,
+        issues,
+        seenIssueKeys,
+        styleExpressionBindings
+      });
       continue;
     }
+
     if (!typescriptModule.isPropertyAssignment(property) && !typescriptModule.isShorthandPropertyAssignment(property)) {
       continue;
     }
@@ -908,101 +1274,63 @@ const scanStyleObjectLiteral = ({
       continue;
     }
 
-    const stylePropertyName =
-      COLOR_STYLE_PROPERTY_NAMES.has(propertyName) ||
-      SPACING_STYLE_PROPERTY_NAMES.has(propertyName) ||
-      TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(propertyName)
-        ? propertyName
-        : activeStylePropertyName;
-
-    const propertyValue = typescriptModule.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
-    const nestedObjectLiteral = resolveObjectLiteralFromExpression({
-      typescriptModule,
-      expression: propertyValue,
-      styleExpressionBindings,
-      referencePosition: propertyValue.getStart(sourceFile)
-    });
-    if (nestedObjectLiteral) {
-      scanStyleObjectLiteral({
-        typescriptModule,
-        sourceFile,
-        relativeFilePath,
-        attributeName,
-        ...(componentName ? { componentName } : {}),
-        objectLiteral: nestedObjectLiteral,
-        issues,
-        seenIssueKeys,
-        styleExpressionBindings,
-        ...(stylePropertyName ? { activeStylePropertyName: stylePropertyName } : {})
-      });
-      continue;
-    }
-
     const location = toSourceLocation({
       sourceFile,
       node: property
     });
-    if (stylePropertyName && COLOR_STYLE_PROPERTY_NAMES.has(stylePropertyName) && isRawColorLiteral({ typescriptModule, expression: propertyValue })) {
+    if (!customerComponent.allowedProps.has(propertyName) && !isImplicitlyAllowedComponentProp(propertyName)) {
       pushStyleIssue({
         issues,
         seenIssueKeys,
         issue: {
-          category: "hard_coded_color_literal",
+          category: "disallowed_customer_component_prop",
           severity: "error",
           message:
-            `Generated source must reference Storybook theme tokens instead of hard-coded color literals ` +
-            `for '${stylePropertyName}'.`,
+            `Generated source forwarded disallowed prop '${propertyName}' to customer component ` +
+            `'${componentName}'.`,
           filePath: relativeFilePath,
           ...location,
-          ...(componentName ? { componentName } : {}),
-          propName: stylePropertyName
+          componentName,
+          propName: propertyName,
+          artifact: "component.match_report"
         }
       });
     }
 
-    if (
-      stylePropertyName &&
-      SPACING_STYLE_PROPERTY_NAMES.has(stylePropertyName) &&
-      isRawSpacingLiteral({ typescriptModule, expression: propertyValue, attributeName })
-    ) {
+    const propertyValue = typescriptModule.isShorthandPropertyAssignment(property) ? property.name : property.initializer;
+    if (propertyName === "style") {
       pushStyleIssue({
         issues,
         seenIssueKeys,
         issue: {
-          category: "raw_spacing_literal",
+          category: "forbidden_inline_style",
           severity: "error",
-          message:
-            `Generated source must avoid raw spacing literals for '${stylePropertyName}' ` +
-            `outside Storybook-derived theme tokens.`,
+          message: "Generated source must not use inline style={{...}} objects.",
           filePath: relativeFilePath,
           ...location,
-          ...(componentName ? { componentName } : {}),
-          propName: stylePropertyName
+          componentName,
+          propName: "style"
         }
       });
     }
 
-    if (
-      stylePropertyName &&
-      TYPOGRAPHY_STYLE_PROPERTY_NAMES.has(stylePropertyName) &&
-      isRawTypographyLiteral({ typescriptModule, expression: propertyValue })
-    ) {
-      pushStyleIssue({
-        issues,
-        seenIssueKeys,
-        issue: {
-          category: "raw_typography_declaration",
-          severity: "error",
-          message:
-            `Generated source must keep typography declarations in Storybook-derived theme outputs; ` +
-            `found raw '${stylePropertyName}' styling.`,
-          filePath: relativeFilePath,
-          ...location,
-          ...(componentName ? { componentName } : {}),
-          propName: stylePropertyName
-        }
-      });
+    if (propertyName !== "style" && propertyName !== "sx") {
+      continue;
     }
+
+    scanStyleExpression({
+      typescriptModule,
+      sourceFile,
+      relativeFilePath,
+      attributeName: propertyName,
+      componentName,
+      expression: propertyValue,
+      issues,
+      seenIssueKeys,
+      styleExpressionBindings,
+      locationNode: property,
+      referencePosition: propertyValue.getStart(sourceFile)
+    });
   }
 };
 
@@ -1037,12 +1365,109 @@ const scanGeneratedSourceFileForStyleIssues = ({
       sourceFile
     });
 
+    const scanStyledCallbackBody = ({
+      expression,
+      componentName
+    }: {
+      expression: TypeScript.Expression;
+      componentName?: string;
+    }): void => {
+      scanStyleExpression({
+        typescriptModule,
+        sourceFile,
+        relativeFilePath,
+        attributeName: "sx",
+        ...(componentName ? { componentName } : {}),
+        expression,
+        issues,
+        seenIssueKeys,
+        styleExpressionBindings,
+        locationNode: expression,
+        referencePosition: expression.getStart(sourceFile)
+      });
+    };
+
+    const scanStyledCallbackFunction = ({
+      functionLike,
+      componentName
+    }: {
+      functionLike: TypeScript.ArrowFunction | TypeScript.FunctionExpression;
+      componentName?: string;
+    }): void => {
+      if (typescriptModule.isBlock(functionLike.body)) {
+        const visitBlock = (node: TypeScript.Node): void => {
+          if (typescriptModule.isReturnStatement(node) && node.expression) {
+            scanStyledCallbackBody({
+              expression: node.expression,
+              ...(componentName ? { componentName } : {})
+            });
+          }
+          typescriptModule.forEachChild(node, visitBlock);
+        };
+        visitBlock(functionLike.body);
+        return;
+      }
+
+      scanStyledCallbackBody({
+        expression: functionLike.body,
+        ...(componentName ? { componentName } : {})
+      });
+    };
+
     const visit = (node: TypeScript.Node): void => {
       if (typescriptModule.isJsxOpeningElement(node) || typescriptModule.isJsxSelfClosingElement(node)) {
         const componentName = typescriptModule.isIdentifier(node.tagName) ? node.tagName.text : undefined;
         const customerComponent = componentName ? customerComponents.get(componentName) : undefined;
 
         for (const attribute of node.attributes.properties) {
+          if (typescriptModule.isJsxSpreadAttribute(attribute)) {
+            if (!customerComponent || !componentName) {
+              continue;
+            }
+
+            const spreadObjectLiteral = resolveObjectLiteralFromExpression({
+              typescriptModule,
+              expression: attribute.expression,
+              styleExpressionBindings,
+              referencePosition: attribute.expression.getStart(sourceFile)
+            });
+            if (!spreadObjectLiteral) {
+              const location = toSourceLocation({
+                sourceFile,
+                node: attribute
+              });
+              pushStyleIssue({
+                issues,
+                seenIssueKeys,
+                issue: {
+                  category: "disallowed_customer_component_prop",
+                  severity: "error",
+                  message:
+                    `Generated source forwarded unresolved spread props to customer component '${componentName}'.`,
+                  filePath: relativeFilePath,
+                  ...location,
+                  componentName,
+                  propName: "...spread",
+                  artifact: "component.match_report"
+                }
+              });
+              continue;
+            }
+
+            scanCustomerComponentPropObjectLiteral({
+              typescriptModule,
+              sourceFile,
+              relativeFilePath,
+              componentName,
+              customerComponent,
+              objectLiteral: spreadObjectLiteral,
+              issues,
+              seenIssueKeys,
+              styleExpressionBindings
+            });
+            continue;
+          }
+
           if (!typescriptModule.isJsxAttribute(attribute)) {
             continue;
           }
@@ -1094,27 +1519,60 @@ const scanGeneratedSourceFileForStyleIssues = ({
             continue;
           }
 
-          const objectLiteral = resolveObjectLiteralInitializer({
+          const styleExpression = resolveJsxExpressionInitializer({
             typescriptModule,
-            attribute,
-            sourceFile,
-            styleExpressionBindings
+            attribute
           });
-          if (!objectLiteral) {
+          if (!styleExpression) {
             continue;
           }
 
-          scanStyleObjectLiteral({
+          scanStyleExpression({
             typescriptModule,
             sourceFile,
             relativeFilePath,
             attributeName,
             ...(componentName ? { componentName } : {}),
-            objectLiteral,
+            expression: styleExpression,
             issues,
             seenIssueKeys,
-            styleExpressionBindings
+            styleExpressionBindings,
+            locationNode: attribute,
+            referencePosition: styleExpression.getStart(sourceFile)
           });
+        }
+      }
+
+      if (typescriptModule.isCallExpression(node)) {
+        if (isThemeUnstableSxCallExpression(typescriptModule, node)) {
+          const [styleArgument] = node.arguments;
+          if (styleArgument) {
+            scanStyleExpression({
+              typescriptModule,
+              sourceFile,
+              relativeFilePath,
+              attributeName: "sx",
+              expression: styleArgument,
+              issues,
+              seenIssueKeys,
+              styleExpressionBindings,
+              locationNode: styleArgument,
+              referencePosition: styleArgument.getStart(sourceFile)
+            });
+          }
+        }
+
+        if (isStyledInvocationCallExpression(typescriptModule, node)) {
+          const [styleFactoryArgument] = node.arguments;
+          if (styleFactoryArgument && (typescriptModule.isArrowFunction(styleFactoryArgument) || typescriptModule.isFunctionExpression(styleFactoryArgument))) {
+            scanStyledCallbackFunction({
+              functionLike: styleFactoryArgument
+            });
+          } else if (styleFactoryArgument) {
+            scanStyledCallbackBody({
+              expression: styleFactoryArgument
+            });
+          }
         }
       }
 
