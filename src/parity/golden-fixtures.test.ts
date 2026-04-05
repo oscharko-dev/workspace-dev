@@ -231,6 +231,12 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
           `Deterministic rerun mismatch for fixture '${fixture.id}', artifact '${artifact.name}' (${artifact.actual}).`
         );
 
+        if (artifact.actual === "src/App.tsx") {
+          assert.equal(normalizedActual.includes("style={{"), false, `Golden App.tsx for fixture '${fixture.id}' still uses inline style.`);
+          assert.equal(normalizedActual.includes("onFocus={"), false, `Golden App.tsx for fixture '${fixture.id}' still uses DOM style mutation handlers.`);
+          assert.equal(normalizedActual.includes("onBlur={"), false, `Golden App.tsx for fixture '${fixture.id}' still uses DOM style mutation handlers.`);
+        }
+
         const expectedPath = path.join(GOLDEN_ROOT, artifact.expected);
 
         if (approveMode) {
