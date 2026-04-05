@@ -2381,6 +2381,44 @@ test("IrDeriveService regeneration strips affected screenVariantFamilies when ov
   assert.equal(regeneratedIr.screenVariantFamilies?.length ?? 0, 0);
 });
 
+test("IrDeriveService regeneration logs validation warnings for invalid carried-forward appShell IR", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-invalid-app-shell-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-invalid-app-shell-analysis.json");
+  const sourceIr = createMinimalIr();
+  sourceIr.appShells = [
+    {
+      id: "app-shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["missing-shell-node"],
+      slotIndex: 1,
+      signalIds: ["signal-1"]
+    }
+  ];
+  await writeFile(sourceIrPath, `${JSON.stringify(sourceIr, null, 2)}\n`, "utf8");
+  await writeFile(sourceAnalysisPath, `${JSON.stringify({ artifactVersion: 1, sourceName: "test" }, null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  assert.equal(
+    executionContext.job.logs.some((entry) =>
+      entry.level === "warn" &&
+      entry.message.includes("AppShell IR validation warnings after derivation:") &&
+      entry.message.includes("IR_APP_SHELL_INVALID_SHELL_NODE")
+    ),
+    true
+  );
+});
+
 test("IrDeriveService regeneration emits fallback figma.analysis when source analysis is invalid", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     mode: "regeneration"

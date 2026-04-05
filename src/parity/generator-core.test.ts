@@ -5198,6 +5198,69 @@ test("generateArtifacts fails fast on malformed screen appShell cross references
   );
 });
 
+test("generateArtifacts fails fast when screen appShell contentNodeIds are not the trailing content segment", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-invalid-content-segment-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "screen-1",
+      name: "Invalid Shell Content",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      appShell: {
+        id: "shell-1",
+        contentNodeIds: ["shell-node", "content-node"]
+      },
+      children: [
+        {
+          id: "shell-node",
+          name: "Header",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Shared Header"
+        },
+        {
+          id: "content-node",
+          name: "Content",
+          nodeType: "TEXT",
+          type: "text" as const,
+          text: "Body"
+        }
+      ]
+    }
+  ];
+  ir.appShells = [
+    {
+      id: "shell-1",
+      sourceScreenId: "screen-1",
+      screenIds: ["screen-1"],
+      shellNodeIds: ["shell-node"],
+      slotIndex: 1,
+      signalIds: ["signal-1"]
+    }
+  ];
+
+  await assert.rejects(
+    () =>
+      generateArtifacts({
+        projectDir,
+        ir,
+        llmCodegenMode: "deterministic",
+        llmModelName: "deterministic",
+        onLog: () => {
+          // no-op
+        }
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /IR validation failed/);
+      assert.match(error.message, /contentNodeIds must equal all top-level children after slotIndex 1/);
+      return true;
+    }
+  );
+});
+
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"));
   const ir = createIr();
