@@ -1001,6 +1001,7 @@ export interface RenderContext {
   prototypeNavigationRenderedCount: number;
   mappedImports: MappedImportSpec[];
   specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
+  muiFallbackDeniedSemanticKeys?: ReadonlySet<string> | undefined;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>> | undefined;
   datePickerProvider?: DatePickerProviderConfig | undefined;
   datePickerProviderResolvedImports?: {
@@ -1066,7 +1067,7 @@ const toComponentIdentifier = (rawName: string): string => {
   return isValidJsIdentifier(normalized) ? normalized : "MappedComponent";
 };
 
-const pushMappingWarning = ({
+export const pushMappingWarning = ({
   context,
   code,
   nodeId,

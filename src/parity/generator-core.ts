@@ -27,6 +27,7 @@ import {
 } from "../design-system.js";
 import {
   collectCustomerProfileImportIssuesFromSource,
+  isCustomerProfileMuiFallbackAllowed,
   resolveCustomerProfileDatePickerProvider,
   toCustomerProfileDesignSystemConfig,
   type ResolvedCustomerProfile
@@ -1157,6 +1158,18 @@ export async function* generateArtifactsStreaming(
   const datePickerProvider = toDatePickerProviderConfig({
     customerProfile
   });
+  const muiFallbackDeniedSemanticKeys = (() => {
+    if (!customerProfile) {
+      return undefined;
+    }
+    const denied = new Set<string>();
+    for (const semanticKey of ["DatePicker", "InputCurrency", "InputIBAN", "InputTAN"] as const) {
+      if (!isCustomerProfileMuiFallbackAllowed({ profile: customerProfile, componentKey: semanticKey })) {
+        denied.add(semanticKey);
+      }
+    }
+    return denied.size > 0 ? denied : undefined;
+  })();
   const storybookTypographyVariants = resolvedStorybookTheme?.light.typography.variants;
 
   for (const [appShellId, identity] of appShellIdentities) {
@@ -1184,6 +1197,7 @@ export async function* generateArtifactsStreaming(
       formHandlingMode: resolvedFormHandlingMode,
       ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
       ...(datePickerProvider ? { datePickerProvider } : {}),
+      ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
       ...(Object.keys(specializedComponentMappings).length > 0
         ? { specializedComponentMappings }
         : {}),
@@ -1247,6 +1261,7 @@ export async function* generateArtifactsStreaming(
         formHandlingMode: resolvedFormHandlingMode,
         ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
         ...(datePickerProvider ? { datePickerProvider } : {}),
+        ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
         ...(Object.keys(specializedComponentMappings).length > 0
           ? { specializedComponentMappings }
           : {}),
