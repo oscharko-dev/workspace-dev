@@ -129,6 +129,14 @@ describe("isIconLikeNodeName", () => {
   it("rejects non-icon names", () => {
     assert.equal(isIconLikeNodeName("imageholder"), false);
   });
+
+  it("recognizes underscore-adjacent icon names", () => {
+    assert.equal(isIconLikeNodeName("my_icon"), true);
+    assert.equal(isIconLikeNodeName("nav_icon_primary"), true);
+    assert.equal(isIconLikeNodeName("close_icon_v2"), true);
+    assert.equal(isIconLikeNodeName("iconography"), false);
+    assert.equal(isIconLikeNodeName("microphone"), false);
+  });
 });
 
 // ---------------------------------------------------------------------------

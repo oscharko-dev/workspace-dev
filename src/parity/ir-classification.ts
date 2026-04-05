@@ -207,7 +207,7 @@ export const isIconLikeNodeName = (value: string): boolean => {
     normalizedValue.startsWith("semantic/") ||
     normalizedValue.startsWith("semantic_") ||
     normalizedValue.startsWith("semantic-") ||
-    hasAnyWord(normalizedValue, ["icon"])
+    /(?:^|[^a-z0-9])icon(?:$|[^a-z0-9])/i.test(normalizedValue)
   );
 };
 
