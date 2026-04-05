@@ -89,11 +89,13 @@ export function parseIrMarkersFromSource(
 export async function buildComponentManifest({
   projectDir,
   screens,
-  identitiesByScreenId
+  identitiesByScreenId,
+  associatedNodeIdsByScreenId
 }: {
   projectDir: string;
   screens: ScreenIR[];
   identitiesByScreenId?: Map<string, ScreenArtifactIdentity>;
+  associatedNodeIdsByScreenId?: ReadonlyMap<string, ReadonlySet<string>>;
 }): Promise<ComponentManifest> {
   const identities = identitiesByScreenId ?? buildScreenArtifactIdentities(screens);
   const result: ScreenManifestEntry[] = [];
@@ -124,6 +126,7 @@ export async function buildComponentManifest({
 
     const screenFile = identity.filePath;
     const components: ComponentManifestEntry[] = [];
+    const associatedNodeIds = associatedNodeIdsByScreenId?.get(screen.id) ?? collectNodeIdsForScreen(screen);
 
     // Gather entries from the screen file itself
     const screenEntries = entriesByFile.get(screenFile);
@@ -134,9 +137,8 @@ export async function buildComponentManifest({
     // Gather entries from associated component files (extracted patterns)
     for (const [file, entries] of entriesByFile) {
       if (isAssociatedArtifactFile({ file, screenFile })) {
-        // Check if any entries reference children of this screen
         for (const entry of entries) {
-          if (hasNodeInScreen(screen, entry.irNodeId)) {
+          if (associatedNodeIds.has(entry.irNodeId)) {
             components.push(entry);
           }
         }
@@ -172,18 +174,17 @@ function isAssociatedArtifactFile({
   return GENERATED_ARTIFACT_ROOTS.some((root) => file.startsWith(root));
 }
 
-function hasNodeInScreen(screen: ScreenIR, nodeId: string): boolean {
+function collectNodeIdsForScreen(screen: ScreenIR): ReadonlySet<string> {
+  const nodeIds = new Set<string>([screen.id]);
   const stack = [...screen.children];
   while (stack.length > 0) {
     const node = stack.pop()!;
-    if (node.id === nodeId) {
-      return true;
-    }
+    nodeIds.add(node.id);
     if ("children" in node && Array.isArray(node.children)) {
       stack.push(...node.children);
     }
   }
-  return false;
+  return nodeIds;
 }
 
 async function collectTsxFiles(dir: string): Promise<string[]> {

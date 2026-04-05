@@ -2381,6 +2381,148 @@ test("IrDeriveService regeneration strips affected screenVariantFamilies when ov
   assert.equal(regeneratedIr.screenVariantFamilies?.length ?? 0, 0);
 });
 
+test("IrDeriveService regeneration strips only the affected family when duplicate family ids are carried forward", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    mode: "regeneration"
+  });
+  const sourceIrPath = path.join(executionContext.paths.jobDir, "source-duplicate-family-id-ir.json");
+  const sourceAnalysisPath = path.join(executionContext.paths.jobDir, "source-duplicate-family-id-analysis.json");
+  const sourceIr = createMinimalIr();
+  sourceIr.screens = [
+    {
+      id: "family-a-member",
+      name: "Family A Member",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-a-member-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Family A Member"
+        }
+      ]
+    },
+    {
+      id: "family-a-canonical",
+      name: "Family A Canonical",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-a-canonical-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Family A Canonical"
+        }
+      ]
+    },
+    {
+      id: "family-b-member",
+      name: "Family B Member",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-b-member-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Family B Member"
+        }
+      ]
+    },
+    {
+      id: "family-b-canonical",
+      name: "Family B Canonical",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "family-b-canonical-copy",
+          name: "Copy",
+          nodeType: "TEXT",
+          type: "text",
+          text: "Family B Canonical"
+        }
+      ]
+    }
+  ];
+  sourceIr.screenVariantFamilies = [
+    {
+      familyId: "family-duplicate",
+      canonicalScreenId: "family-a-canonical",
+      memberScreenIds: ["family-a-member", "family-a-canonical"],
+      axes: ["pricing-mode"],
+      scenarios: [
+        {
+          screenId: "family-a-member",
+          contentScreenId: "family-a-canonical",
+          initialState: {
+            pricingMode: "member"
+          }
+        },
+        {
+          screenId: "family-a-canonical",
+          contentScreenId: "family-a-canonical",
+          initialState: {
+            pricingMode: "canonical"
+          }
+        }
+      ]
+    },
+    {
+      familyId: "family-duplicate",
+      canonicalScreenId: "family-b-canonical",
+      memberScreenIds: ["family-b-member", "family-b-canonical"],
+      axes: ["pricing-mode"],
+      scenarios: [
+        {
+          screenId: "family-b-member",
+          contentScreenId: "family-b-canonical",
+          initialState: {
+            pricingMode: "member"
+          }
+        },
+        {
+          screenId: "family-b-canonical",
+          contentScreenId: "family-b-canonical",
+          initialState: {
+            pricingMode: "canonical"
+          }
+        }
+      ]
+    }
+  ];
+  await writeFile(sourceIrPath, `${JSON.stringify(sourceIr, null, 2)}\n`, "utf8");
+  await writeFile(sourceAnalysisPath, `${JSON.stringify({ artifactVersion: 1, sourceName: "test" }, null, 2)}\n`, "utf8");
+  await seedRegenerationArtifacts({
+    executionContext,
+    sourceJobId: "source-job",
+    sourceIrFile: sourceIrPath,
+    sourceAnalysisFile: sourceAnalysisPath,
+    overrides: [
+      {
+        nodeId: "family-a-member-copy",
+        field: "fontSize",
+        value: 18
+      }
+    ]
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const regeneratedIr = JSON.parse(await readFile(executionContext.paths.designIrFile, "utf8")) as DesignIR;
+  assert.equal(regeneratedIr.screenVariantFamilies?.length ?? 0, 1);
+  assert.equal(regeneratedIr.screenVariantFamilies?.[0]?.canonicalScreenId, "family-b-canonical");
+});
+
 test("IrDeriveService regeneration logs validation warnings for invalid carried-forward appShell IR", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     mode: "regeneration"
@@ -2709,14 +2851,16 @@ test("CodegenGenerateService builds the component manifest from emitted canonica
 
   let manifestScreenIds: string[] = [];
   let manifestIdentityKeys: string[] = [];
+  let associatedNodeIdsByScreenId: ReadonlyMap<string, ReadonlySet<string>> | undefined;
   const service = createCodegenGenerateService({
     exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
     generateArtifactsStreamingFn: async function* () {
       return { generatedPaths: [] };
     },
-    buildComponentManifestFn: async ({ screens, identitiesByScreenId }) => {
+    buildComponentManifestFn: async ({ screens, identitiesByScreenId, associatedNodeIdsByScreenId: associatedNodeIds }) => {
       manifestScreenIds = screens.map((screen) => screen.id);
       manifestIdentityKeys = [...(identitiesByScreenId?.keys() ?? [])];
+      associatedNodeIdsByScreenId = associatedNodeIds;
       return { screens: [] };
     }
   });
@@ -2730,6 +2874,14 @@ test("CodegenGenerateService builds the component manifest from emitted canonica
 
   assert.deepEqual(manifestScreenIds, ["family-canonical", "standalone"]);
   assert.deepEqual(manifestIdentityKeys.sort(), ["family-canonical", "standalone"]);
+  assert.deepEqual(
+    [...(associatedNodeIdsByScreenId?.get("family-canonical") ?? [])].sort(),
+    ["family-brutto", "family-canonical"]
+  );
+  assert.deepEqual(
+    [...(associatedNodeIdsByScreenId?.get("standalone") ?? [])].sort(),
+    ["standalone"]
+  );
 });
 
 test("CodegenGenerateService accepts all streaming artifact event variants without special-case handling", async () => {

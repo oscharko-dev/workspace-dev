@@ -357,6 +357,67 @@ const isValidationMessageCandidate = (element: ScreenElementIR): boolean => {
   ) && resolveNodeMessageText(element) !== undefined;
 };
 
+const isPathWithinSubtree = ({ ancestorPath, candidatePath }: { ancestorPath: string; candidatePath: string }): boolean => {
+  return candidatePath === ancestorPath || candidatePath.startsWith(`${ancestorPath}/`);
+};
+
+const resolveValidationMessageCandidatesFromAddedRecord = ({
+  record,
+  memberRecords
+}: {
+  record: IndexedNodeRecord;
+  memberRecords: readonly IndexedNodeRecord[];
+}): ValidationMessageCandidate[] | undefined => {
+  if (isValidationMessageCandidate(record.element)) {
+    const message = resolveNodeMessageText(record.element);
+    return message
+      ? [
+          {
+            element: record.element,
+            path: record.path,
+            message
+          }
+        ]
+      : undefined;
+  }
+
+  const subtreeRecords = memberRecords.filter((candidate) =>
+    isPathWithinSubtree({ ancestorPath: record.path, candidatePath: candidate.path })
+  );
+  const descendantCandidates = subtreeRecords
+    .filter((candidate) => candidate.path !== record.path)
+    .filter((candidate) => isValidationMessageCandidate(candidate.element))
+    .map((candidate) => {
+      const message = resolveNodeMessageText(candidate.element);
+      return message
+        ? {
+            element: candidate.element,
+            path: candidate.path,
+            message
+          }
+        : undefined;
+    })
+    .filter((candidate): candidate is ValidationMessageCandidate => candidate !== undefined);
+
+  if (descendantCandidates.length === 0) {
+    return undefined;
+  }
+
+  const candidatePaths = descendantCandidates.map((candidate) => candidate.path);
+  const subtreeIsMessageOnly = subtreeRecords.every((candidate) => {
+    if (candidate.path === record.path) {
+      return true;
+    }
+    return candidatePaths.some(
+      (candidatePath) =>
+        isPathWithinSubtree({ ancestorPath: candidate.path, candidatePath }) ||
+        isPathWithinSubtree({ ancestorPath: candidatePath, candidatePath: candidate.path })
+    );
+  });
+
+  return subtreeIsMessageOnly ? descendantCandidates : undefined;
+};
+
 const sharesFieldContainer = ({ fieldPath, messagePath }: { fieldPath: string; messagePath: string }): boolean => {
   const fieldParentPath = toParentPath(fieldPath);
   const messageParentPath = toParentPath(messagePath);
@@ -593,22 +654,16 @@ const extractValidationOnlyDiffEvidence = ({
     .filter((record) => canonicalPaths.has(toParentPath(record.path)) || !memberPaths.has(toParentPath(record.path)))
     .sort((left, right) => left.path.localeCompare(right.path));
   for (const record of topLevelAddedRecords) {
-    if (!isValidationMessageCandidate(record.element)) {
-      return {
-        isValidationOnly: false
-      };
-    }
-    const message = resolveNodeMessageText(record.element);
-    if (!message) {
-      return {
-        isValidationOnly: false
-      };
-    }
-    messageCandidates.push({
-      element: record.element,
-      path: record.path,
-      message
+    const candidates = resolveValidationMessageCandidatesFromAddedRecord({
+      record,
+      memberRecords
     });
+    if (!candidates) {
+      return {
+        isValidationOnly: false
+      };
+    }
+    messageCandidates.push(...candidates);
   }
 
   if (messageCandidates.length === 0 && changedFields.size === 0) {

@@ -40,6 +40,54 @@ interface CodegenGenerateServiceDeps {
   resolveStorybookThemeFn: typeof resolveStorybookTheme;
 }
 
+const collectScreenNodeIds = (screen: Pick<DesignIR["screens"][number], "id" | "children">): ReadonlySet<string> => {
+  const nodeIds = new Set<string>([screen.id]);
+  const stack = [...screen.children];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) {
+      continue;
+    }
+    nodeIds.add(node.id);
+    if (Array.isArray(node.children) && node.children.length > 0) {
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        stack.push(node.children[index]!);
+      }
+    }
+  }
+  return nodeIds;
+};
+
+const buildManifestAssociationNodeIdsByScreenId = ({
+  ir,
+  emittedScreenResolution
+}: {
+  ir: DesignIR;
+  emittedScreenResolution: ReturnType<typeof resolveEmittedScreenTargets>;
+}): Map<string, ReadonlySet<string>> => {
+  const nodeIdsByScreenId = new Map(
+    ir.screens.map((screen) => [screen.id, collectScreenNodeIds(screen)] as const)
+  );
+
+  return new Map(
+    emittedScreenResolution.emittedTargets.map((target) => {
+      const associatedNodeIds = new Set<string>(nodeIdsByScreenId.get(target.screen.id) ?? []);
+      if (target.family) {
+        for (const memberScreenId of target.family.memberScreenIds) {
+          const memberNodeIds = nodeIdsByScreenId.get(memberScreenId);
+          if (!memberNodeIds) {
+            continue;
+          }
+          for (const nodeId of memberNodeIds) {
+            associatedNodeIds.add(nodeId);
+          }
+        }
+      }
+      return [target.emittedScreenId, associatedNodeIds] as const;
+    })
+  );
+};
+
 const normalizeOptionalString = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -508,7 +556,11 @@ export const createCodegenGenerateService = ({
         const manifest = await buildComponentManifestFn({
           projectDir: context.paths.generatedProjectDir,
           screens: emittedScreenResolution.emittedScreens,
-          identitiesByScreenId: emittedScreenResolution.emittedIdentitiesByScreenId
+          identitiesByScreenId: emittedScreenResolution.emittedIdentitiesByScreenId,
+          associatedNodeIdsByScreenId: buildManifestAssociationNodeIdsByScreenId({
+            ir,
+            emittedScreenResolution
+          })
         });
         const manifestPath = path.join(context.paths.generatedProjectDir, "component-manifest.json");
         await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

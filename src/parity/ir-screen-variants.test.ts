@@ -318,6 +318,125 @@ test("applyScreenVariantFamiliesToDesignIr collapses validation-only field error
   assert.equal(scenario.screenLevelErrorEvidence, undefined);
 });
 
+test("applyScreenVariantFamiliesToDesignIr collapses wrapped validation-only messages into field evidence", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "frame-default",
+        name: "Default",
+        children: [
+          createContainerNode({
+            id: "form-root-default",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-default",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-default",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-default",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#9ca3af"
+                      }
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      }),
+      createScreen({
+        id: "frame-error",
+        name: "Error",
+        children: [
+          createContainerNode({
+            id: "form-root-error",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-error",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-error",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-error",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  }),
+                  createContainerNode({
+                    id: "email-error-wrapper",
+                    name: "Helper Wrapper",
+                    children: [
+                      createTextNode({
+                        id: "email-error-text",
+                        name: "Error Text",
+                        text: "Please enter a valid email address."
+                      })
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "validation-family",
+        frameIds: ["frame-default", "frame-error"],
+        frameNames: ["Default", "Error"],
+        canonicalFrameId: "frame-default",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+  const scenario = result.screenVariantFamilies?.[0]?.scenarios.find((entry) => entry.screenId === "frame-error");
+  assert.ok(scenario);
+  assert.equal(scenario.contentScreenId, "frame-default");
+  assert.deepEqual(scenario.fieldErrorEvidenceByFieldKey, {
+    email_field_email_field_default: {
+      message: "Please enter a valid email address.",
+      visualError: true,
+      sourceNodeId: "email-error-text"
+    }
+  });
+  assert.equal(scenario.screenLevelErrorEvidence, undefined);
+});
+
 test("applyScreenVariantFamiliesToDesignIr keeps ambiguous validation copy at screen level", () => {
   const ir = createIr({
     screens: [
@@ -945,6 +1064,29 @@ test("validateDesignIR rejects duplicate scenario.screenId within a family", () 
   }
 });
 
+test("validateDesignIR rejects families whose memberScreenIds contain duplicates", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    createFamily({
+      familyId: "family-duplicate-member",
+      canonicalScreenId: "s1",
+      memberScreenIds: ["s1", "s2", "s2"]
+    })
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_MEMBER"));
+  }
+});
+
 test("validateDesignIR rejects families whose canonicalScreenId has no corresponding scenario", () => {
   const ir = createIr({
     screens: [
@@ -969,5 +1111,53 @@ test("validateDesignIR rejects families whose canonicalScreenId has no correspon
   assert.equal(result.valid, false);
   if (!result.valid) {
     assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS"));
+  }
+});
+
+test("validateDesignIR rejects families whose members do not all have corresponding scenarios", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-missing-member-scenario",
+      canonicalScreenId: "s1",
+      memberScreenIds: ["s1", "s2"],
+      axes: ["validation-state"],
+      scenarios: [
+        { screenId: "s1", contentScreenId: "s1", initialState: { validationState: "default" } }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_MEMBER_NOT_IN_SCENARIOS"));
+  }
+});
+
+test("validateDesignIR rejects duplicate family ids across families", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] }),
+      createScreen({ id: "s3", name: "S3", children: [createTextNode({ id: "t3", name: "T", text: "C" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    createFamily({ familyId: "family-duplicate-id", canonicalScreenId: "s1", memberScreenIds: ["s1", "s2"] }),
+    createFamily({ familyId: "family-duplicate-id", canonicalScreenId: "s3", memberScreenIds: ["s3"] })
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_ID"));
   }
 });
