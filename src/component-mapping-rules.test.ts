@@ -134,6 +134,7 @@ const createResolverComponentMatchReport = ({
           profile_icon_wrapper_allowed: 0,
           profile_icon_wrapper_denied: 0,
           profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
           match_ambiguous: 0,
           match_unmatched: 0,
           not_icon_family: includeSecondFamily ? 2 : 1

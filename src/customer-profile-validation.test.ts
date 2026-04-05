@@ -676,6 +676,7 @@ const createMatchReportArtifact = (entries: ComponentMatchReportEntry[]): Compon
         profile_icon_wrapper_allowed: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_allowed").length,
         profile_icon_wrapper_denied: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_denied").length,
         profile_icon_wrapper_missing: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_icon_wrapper_missing").length,
+        profile_family_unresolved: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "profile_family_unresolved").length,
         match_ambiguous: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "match_ambiguous").length,
         match_unmatched: entries.flatMap((entry) => Object.values(entry.iconResolution?.byKey ?? {})).filter((item) => item.reason === "match_unmatched").length,
         not_icon_family: entries.filter((entry) => !entry.iconResolution).length

@@ -517,6 +517,11 @@ const resolveGenerateArtifactsPhase = async ({
   const resolvedFormHandlingMode = resolveFormHandlingMode({
     requestedMode: formHandlingMode
   });
+  // Prefer the pre-derived design-system config passed from the Storybook-first
+  // codegen path (derived from the component match report, which incorporates
+  // catalog-aware resolution). Fall back to deriving directly from the profile
+  // for non-Storybook-first runs. Both derivations must produce compatible
+  // configs for the same profile.
   const customerProfileConfig =
     customerProfileDesignSystemConfig ??
     (customerProfile ? toCustomerProfileDesignSystemConfig({ profile: customerProfile }) : undefined);

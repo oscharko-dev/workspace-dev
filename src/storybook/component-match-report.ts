@@ -93,6 +93,7 @@ const COMPONENT_MATCH_ICON_RESOLUTION_REASONS = [
   "profile_icon_wrapper_allowed",
   "profile_icon_wrapper_denied",
   "profile_icon_wrapper_missing",
+  "profile_family_unresolved",
   "match_ambiguous",
   "match_unmatched",
   "not_icon_family"
@@ -1425,7 +1426,7 @@ const resolveIconResolution = ({
       resolution = {
         iconKey,
         status: "unresolved",
-        reason: "profile_icon_import_missing"
+        reason: "profile_family_unresolved"
       };
     } else {
       const resolvedImport = resolveCustomerProfileIconImport({
