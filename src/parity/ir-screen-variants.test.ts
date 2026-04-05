@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import type { FigmaAnalysis, FigmaAnalysisAppShellSignal, FigmaAnalysisFrameVariantGroup } from "./figma-analysis.js";
 import { resolveEmittedScreenTargets } from "./emitted-screen-targets.js";
 import { applyScreenVariantFamiliesToDesignIr } from "./ir-screen-variants.js";
-import type { DesignIR, ScreenElementIR, ScreenIR } from "./types-ir.js";
+import { validateDesignIR } from "./types-ir.js";
+import type { DesignIR, ScreenElementIR, ScreenIR, ScreenVariantFamilyIR } from "./types-ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -715,4 +716,258 @@ test("resolveEmittedScreenTargets emits one canonical screen target and preserve
     ]
   );
   assert.equal(resolution.emittedIdentitiesByScreenId.get("family-canonical")?.filePath.includes("Family_Canonical"), true);
+});
+
+test("applyScreenVariantFamiliesToDesignIr skips single-frame variant groups", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "solo-frame",
+        name: "Solo Frame",
+        children: [createTextNode({ id: "solo-text", name: "Label", text: "Hello" })]
+      })
+    ]
+  });
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "solo-group",
+        frameIds: ["solo-frame"],
+        frameNames: ["Solo Frame"],
+        canonicalFrameId: "solo-frame",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: []
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+
+  assert.equal(result.screenVariantFamilies, undefined);
+});
+
+test("resolveValidationBaselineScenario prefers the canonical scenario when multiple non-error candidates match", () => {
+  // Build a family with one error scenario and two non-error scenarios that
+  // share the same non-error signature. The canonical scenario should win.
+  const buildField = ({
+    id,
+    strokeColor
+  }: {
+    id: string;
+    strokeColor?: string;
+  }): ScreenElementIR =>
+    createInputNode({
+      id,
+      name: "Email Field",
+      x: 0,
+      y: 0,
+      ...(strokeColor ? { strokeColor } : {}),
+      children: [
+        createContainerNode({
+          id: `${id}-outline`,
+          name: "MuiOutlinedInputRoot",
+          children: [
+            {
+              id: `${id}-border`,
+              name: "MuiNotchedOutlined",
+              nodeType: "FRAME",
+              type: "divider",
+              ...(strokeColor ? { strokeColor } : {})
+            }
+          ]
+        })
+      ]
+    });
+
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "first-default",
+        name: "First Default",
+        children: [buildField({ id: "first-default-field" })]
+      }),
+      createScreen({
+        id: "canonical-default",
+        name: "Canonical Default",
+        children: [buildField({ id: "canonical-default-field" })]
+      }),
+      createScreen({
+        id: "canonical-error",
+        name: "Canonical Error",
+        children: [buildField({ id: "canonical-error-field", strokeColor: "#d32f2f" })]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "family-canonical-preference",
+        frameIds: ["first-default", "canonical-default", "canonical-error"],
+        frameNames: ["First Default", "Canonical Default", "Canonical Error"],
+        canonicalFrameId: "canonical-default",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+
+  const errorScenario = result.screenVariantFamilies?.[0]?.scenarios.find(
+    (scenario) => scenario.screenId === "canonical-error"
+  );
+  assert.ok(errorScenario);
+  // The error scenario's `contentScreenId` should point at the canonical
+  // scenario's content (canonical-default), not at the earlier first-default,
+  // because canonical preference breaks the tie deterministically.
+  assert.equal(errorScenario.contentScreenId, "canonical-default");
+});
+
+// ---------------------------------------------------------------------------
+// validateDesignIR — screenVariantFamilies cross-family / axis / scenario checks
+// ---------------------------------------------------------------------------
+
+const createFamily = (overrides: Partial<ScreenVariantFamilyIR> & { canonicalScreenId: string; memberScreenIds: string[] }): ScreenVariantFamilyIR => ({
+  familyId: "family-1",
+  axes: ["validation-state"],
+  scenarios: overrides.memberScreenIds.map((screenId) => ({
+    screenId,
+    contentScreenId: screenId,
+    initialState: { validationState: "default" }
+  })),
+  ...overrides
+});
+
+test("validateDesignIR rejects two families sharing the same canonicalScreenId", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    createFamily({ familyId: "family-a", canonicalScreenId: "s1", memberScreenIds: ["s1", "s2"] }),
+    createFamily({ familyId: "family-b", canonicalScreenId: "s1", memberScreenIds: ["s1"] })
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_CANONICAL_COLLISION"));
+  }
+});
+
+test("validateDesignIR rejects the same screen appearing as a member in two families", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] }),
+      createScreen({ id: "s3", name: "S3", children: [createTextNode({ id: "t3", name: "T", text: "C" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    createFamily({ familyId: "family-a", canonicalScreenId: "s1", memberScreenIds: ["s1", "s2"] }),
+    createFamily({ familyId: "family-b", canonicalScreenId: "s3", memberScreenIds: ["s3", "s2"] })
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_MEMBER_COLLISION"));
+  }
+});
+
+test("validateDesignIR rejects families with an empty axes array", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    createFamily({
+      familyId: "family-empty-axes",
+      canonicalScreenId: "s1",
+      memberScreenIds: ["s1", "s2"],
+      axes: []
+    })
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_EMPTY_AXES"));
+  }
+});
+
+test("validateDesignIR rejects duplicate scenario.screenId within a family", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-duplicates",
+      canonicalScreenId: "s1",
+      memberScreenIds: ["s1", "s2"],
+      axes: ["validation-state"],
+      scenarios: [
+        { screenId: "s1", contentScreenId: "s1", initialState: { validationState: "default" } },
+        { screenId: "s2", contentScreenId: "s2", initialState: { validationState: "default" } },
+        { screenId: "s2", contentScreenId: "s2", initialState: { validationState: "error" } }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE"));
+  }
+});
+
+test("validateDesignIR rejects families whose canonicalScreenId has no corresponding scenario", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({ id: "s1", name: "S1", children: [createTextNode({ id: "t1", name: "T", text: "A" })] }),
+      createScreen({ id: "s2", name: "S2", children: [createTextNode({ id: "t2", name: "T", text: "B" })] })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-missing-canonical-scenario",
+      canonicalScreenId: "s1",
+      memberScreenIds: ["s1", "s2"],
+      axes: ["validation-state"],
+      scenarios: [
+        { screenId: "s2", contentScreenId: "s2", initialState: { validationState: "default" } }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS"));
+  }
 });

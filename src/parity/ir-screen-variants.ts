@@ -68,9 +68,9 @@ const normalizeValueToken = (value: string | undefined): string => {
     .replace(/[^a-z0-9]+/g, "");
 };
 
-const createAccordionStateKey = (element: ScreenElementIR): string => {
-  const sanitizedName = element.name.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase();
-  return `${sanitizedName}_${element.id.replace(/[^a-zA-Z0-9]+/g, "_")}`;
+const createAccordionStateKey = (element: ScreenElementIR, occurrenceIndex: number): string => {
+  const sanitizedName = element.name.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase() || "accordion";
+  return occurrenceIndex === 0 ? sanitizedName : `${sanitizedName}_${occurrenceIndex}`;
 };
 
 const collectScreenElements = (roots: readonly ScreenElementIR[]): ScreenElementIR[] => {
@@ -163,6 +163,7 @@ const resolveInitialState = ({
 }): ScreenVariantFamilyInitialStateIR => {
   const tokens = collectNormalizedTokens(screen);
   const accordions = collectScreenElements(screen.children).filter((element) => element.type === "accordion");
+  const occurrenceCountByName = new Map<string, number>();
   const accordionStateByKey = Object.fromEntries(
     accordions
       .map((accordion) => {
@@ -170,7 +171,10 @@ const resolveInitialState = ({
         if (expanded === undefined) {
           return undefined;
         }
-        return [createAccordionStateKey(accordion), expanded] as const;
+        const sanitized = accordion.name.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase() || "accordion";
+        const occurrenceIndex = occurrenceCountByName.get(sanitized) ?? 0;
+        occurrenceCountByName.set(sanitized, occurrenceIndex + 1);
+        return [createAccordionStateKey(accordion, occurrenceIndex), expanded] as const;
       })
       .filter((entry): entry is readonly [string, boolean] => entry !== undefined)
   );
@@ -260,7 +264,7 @@ const localStructureFingerprint = (element: ScreenElementIR): string => {
     nodeType: element.nodeType,
     type: element.type,
     semanticType: element.semanticType,
-    text: isTextElement(element) ? element.text : element.text,
+    text: isTextElement(element) ? element.text : undefined,
     layoutMode: element.layoutMode,
     gap: element.gap,
     padding: element.padding,
@@ -364,6 +368,13 @@ const sharesFieldContainer = ({ fieldPath, messagePath }: { fieldPath: string; m
   return fieldGrandParentPath.length > 0 && fieldGrandParentPath === messageGrandParentPath;
 };
 
+/**
+ * Serializes a scenario's `initialState` into a stable signature for matching
+ * scenarios across a family. `validationState` is deliberately excluded —
+ * this signature is used by `resolveValidationBaselineScenario` to find the
+ * non-error counterpart of an error scenario, so including it would prevent
+ * the baseline match from ever succeeding.
+ */
 const resolveInitialStateSignature = ({
   initialState
 }: {
@@ -704,26 +715,44 @@ const resolveFamilyAppShell = ({
   return ir.appShells?.find((candidate) => candidate.id === appShellId);
 };
 
+/**
+ * Resolves the non-error baseline scenario against which an error scenario's
+ * diff should be measured. Prefers (a) a canonical signature match, then (b)
+ * any signature match, then (c) the canonical fallback, then (d) any non-error
+ * candidate. The canonical preference ensures determinism across input orderings.
+ */
 const resolveValidationBaselineScenario = ({
   scenarios,
-  scenario
+  scenario,
+  canonicalScreenId
 }: {
   scenarios: readonly ScreenVariantFamilyScenarioIR[];
   scenario: ScreenVariantFamilyScenarioIR;
+  canonicalScreenId: string;
 }): ScreenVariantFamilyScenarioIR | undefined => {
   const scenarioStateSignature = resolveInitialStateSignature({
     initialState: scenario.initialState
   });
-  const matchingScenario = scenarios.find(
+  const candidates = scenarios.filter(
     (candidate) =>
       candidate.screenId !== scenario.screenId &&
-      candidate.initialState.validationState !== "error" &&
-      resolveInitialStateSignature({ initialState: candidate.initialState }) === scenarioStateSignature
+      candidate.initialState.validationState !== "error"
   );
-  if (matchingScenario) {
-    return matchingScenario;
+  const signatureMatches = candidates.filter(
+    (candidate) => resolveInitialStateSignature({ initialState: candidate.initialState }) === scenarioStateSignature
+  );
+  const canonicalSignatureMatch = signatureMatches.find((candidate) => candidate.screenId === canonicalScreenId);
+  if (canonicalSignatureMatch) {
+    return canonicalSignatureMatch;
   }
-  return scenarios.find((candidate) => candidate.initialState.validationState !== "error");
+  if (signatureMatches.length > 0) {
+    return signatureMatches[0];
+  }
+  const canonicalFallback = candidates.find((candidate) => candidate.screenId === canonicalScreenId);
+  if (canonicalFallback) {
+    return canonicalFallback;
+  }
+  return candidates[0];
 };
 
 const deriveFamily = ({
@@ -758,6 +787,10 @@ const deriveFamily = ({
         appShell
       });
       if (shellTextOverrides === undefined) {
+        // Shell structure differs between this member and canonical — the family
+        // cannot be safely deduplicated because the shell itself has structural
+        // differences that cannot be represented as text overrides. Abort family
+        // derivation so the screens fall back to independent generation.
         return undefined;
       }
     }
@@ -783,13 +816,20 @@ const deriveFamily = ({
     });
   }
 
+  const validationOverridesByScreenId = new Map<string, {
+    contentScreenId: string;
+    fieldErrorEvidenceByFieldKey?: Record<string, ScreenVariantFieldErrorEvidenceIR>;
+    screenLevelErrorEvidence?: ScreenVariantScreenLevelErrorEvidenceIR[];
+  }>();
+
   for (const scenario of scenarios) {
     if (scenario.initialState.validationState !== "error") {
       continue;
     }
     const baselineScenario = resolveValidationBaselineScenario({
       scenarios,
-      scenario
+      scenario,
+      canonicalScreenId: canonicalScreen.id
     });
     if (!baselineScenario) {
       continue;
@@ -808,21 +848,36 @@ const deriveFamily = ({
     if (!validationOnlyDiffEvidence.isValidationOnly) {
       continue;
     }
-    scenario.contentScreenId = baselineScenario.contentScreenId;
-    if (validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey) {
-      scenario.fieldErrorEvidenceByFieldKey = validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey;
-    }
-    if (validationOnlyDiffEvidence.screenLevelErrorEvidence) {
-      scenario.screenLevelErrorEvidence = validationOnlyDiffEvidence.screenLevelErrorEvidence;
-    }
+    validationOverridesByScreenId.set(scenario.screenId, {
+      contentScreenId: baselineScenario.contentScreenId,
+      ...(validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey
+        ? { fieldErrorEvidenceByFieldKey: validationOnlyDiffEvidence.fieldErrorEvidenceByFieldKey }
+        : {}),
+      ...(validationOnlyDiffEvidence.screenLevelErrorEvidence
+        ? { screenLevelErrorEvidence: validationOnlyDiffEvidence.screenLevelErrorEvidence }
+        : {})
+    });
   }
+
+  const finalScenarios: ScreenVariantFamilyScenarioIR[] = scenarios.map((scenario) => {
+    const override = validationOverridesByScreenId.get(scenario.screenId);
+    if (!override) {
+      return scenario;
+    }
+    return {
+      ...scenario,
+      contentScreenId: override.contentScreenId,
+      ...(override.fieldErrorEvidenceByFieldKey ? { fieldErrorEvidenceByFieldKey: override.fieldErrorEvidenceByFieldKey } : {}),
+      ...(override.screenLevelErrorEvidence ? { screenLevelErrorEvidence: override.screenLevelErrorEvidence } : {})
+    };
+  });
 
   return {
     familyId: group.groupId,
     canonicalScreenId: canonicalScreen.id,
     memberScreenIds: [...group.frameIds],
     axes,
-    scenarios
+    scenarios: finalScenarios
   };
 };
 
