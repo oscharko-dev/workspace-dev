@@ -2805,8 +2805,8 @@ test("CodegenGenerateService resolves and forwards Storybook-first theme payload
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(
     componentMatchReportPath,
     `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
@@ -3052,6 +3052,99 @@ test("CodegenGenerateService fails hard before generation when Storybook-first t
   assert.equal(generationStarted, false);
 });
 
+test("CodegenGenerateService rejects structurally invalid storybook theme artifacts before resolver execution", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  let generationStarted = false;
+  let resolverStarted = false;
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(
+    themesPath,
+    `${JSON.stringify(
+      {
+        ...createStorybookThemesArtifactForStageServices(),
+        $extensions: {
+          [STORYBOOK_PUBLIC_EXTENSION_KEY]: {
+            ...createStorybookThemesArtifactForStageServices().$extensions[STORYBOOK_PUBLIC_EXTENSION_KEY],
+            version: 2
+          }
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createIssue693CustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    generateArtifactsStreamingFn: async function* () {
+      generationStarted = true;
+      throw new Error("generateArtifactsStreamingFn must not run when Storybook theme artifacts are invalid.");
+    },
+    resolveStorybookThemeFn: () => {
+      resolverStarted = true;
+      throw new Error("resolveStorybookThemeFn must not run when Storybook theme artifacts are invalid.");
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(
+        {
+          boardKeySeed: "storybook-theme-artifact-invalid"
+        },
+        stageContextFor("codegen.generate")
+      );
+    },
+    (error: Error & { code?: string }) => {
+      assert.equal(error.code, "E_STORYBOOK_THEME_ARTIFACT_INVALID");
+      assert.equal(error.message, "Storybook theme artifacts are unreadable or malformed.");
+      return true;
+    }
+  );
+
+  assert.equal(resolverStarted, false);
+  assert.equal(generationStarted, false);
+});
+
 test("CodegenGenerateService derives storybook-first customer profile mappings from component.match_report", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createMinimalIr();
@@ -3065,8 +3158,8 @@ test("CodegenGenerateService derives storybook-first customer profile mappings f
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(
     componentMatchReportPath,
     `${JSON.stringify(
@@ -3353,8 +3446,8 @@ test("CodegenGenerateService resolves pattern componentMappings into exact node 
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(
     figmaAnalysisPath,
     `${JSON.stringify(
@@ -3804,8 +3897,8 @@ test("CodegenGenerateService generates Issue #693 customer form specializations 
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(
     componentMatchReportPath,
     `${JSON.stringify(createIssue693ComponentMatchReportArtifactForStageServices(), null, 2)}\n`,
@@ -4006,8 +4099,8 @@ test("CodegenGenerateService treats requestedStorybookStaticDir as storybook-fir
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(componentMatchReportPath, `${JSON.stringify(createComponentMatchReportArtifactForStageServices(), null, 2)}\n`, "utf8");
   await executionContext.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.storybookTokens,
@@ -4168,8 +4261,8 @@ test("CodegenGenerateService excludes incompatible storybook-first mappings from
     stage: "ir.derive",
     absolutePath: executionContext.paths.designIrFile
   });
-  await writeFile(tokensPath, "{}\n", "utf8");
-  await writeFile(themesPath, "{}\n", "utf8");
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
   await writeFile(
     componentMatchReportPath,
     `${JSON.stringify(

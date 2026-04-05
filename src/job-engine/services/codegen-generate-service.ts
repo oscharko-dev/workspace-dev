@@ -14,6 +14,7 @@ import type { FigmaAnalysis } from "../../parity/figma-analysis.js";
 import type { ComponentMappingWarning } from "../../parity/types-mapping.js";
 import type { DesignIR } from "../../parity/types-ir.js";
 import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
+import { parseStorybookThemesArtifact, parseStorybookTokensArtifact } from "../../storybook/artifact-validation.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
 import type {
   ComponentMatchReportIconResolutionRecord,
@@ -285,8 +286,12 @@ export const createCodegenGenerateService = ({
         let tokensArtifact: StorybookPublicTokensArtifact;
         let themesArtifact: StorybookPublicThemesArtifact;
         try {
-          tokensArtifact = JSON.parse(await readFile(storybookTokensPath, "utf8")) as StorybookPublicTokensArtifact;
-          themesArtifact = JSON.parse(await readFile(storybookThemesPath, "utf8")) as StorybookPublicThemesArtifact;
+          tokensArtifact = parseStorybookTokensArtifact({
+            input: await readFile(storybookTokensPath, "utf8")
+          });
+          themesArtifact = parseStorybookThemesArtifact({
+            input: await readFile(storybookThemesPath, "utf8")
+          });
         } catch (error) {
           throw createPipelineError({
             code: "E_STORYBOOK_THEME_ARTIFACT_INVALID",
