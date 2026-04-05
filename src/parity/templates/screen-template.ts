@@ -1140,6 +1140,7 @@ ${indent}          label={${literal(field.label)}}
 ${indent}          value={controllerField.value}
 ${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
 ${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-invalid={Boolean(helperText)}
 ${indent}          aria-describedby={${literal(helperTextId)}}
 ${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
 ${selectSxProp}
@@ -1165,6 +1166,7 @@ ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-invalid={${fieldErrorExpression}}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${selectSxProp}
@@ -1196,13 +1198,16 @@ ${indent}</FormControl>`;
   const typeProp = field.inputType ? `${indent}  type={${literal(field.inputType)}}\n` : "";
   const autoCompleteProp = field.autoComplete ? `${indent}  autoComplete={${literal(field.autoComplete)}}\n` : "";
   const textFieldRequiredProp = field.required ? `${indent}  required\n` : "";
-  const slotPropsEntries = [
-    endAdornment ? `input: { ${endAdornment} }` : "",
-    `htmlInput: { "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`,
-    `formHelperText: { id: ${literal(helperTextId)} }`
-  ]
-    .filter((entry) => entry.length > 0)
-    .join(`,\n${indent}    `);
+  const buildSlotPropsEntries = (ariaInvalidExpression: string): string =>
+    [
+      endAdornment ? `input: { ${endAdornment} }` : "",
+      `htmlInput: { "aria-invalid": ${ariaInvalidExpression}, "aria-describedby": ${literal(helperTextId)}${field.required ? ', "aria-required": "true"' : ""} }`,
+      `formHelperText: { id: ${literal(helperTextId)} }`
+    ]
+      .filter((entry) => entry.length > 0)
+      .join(`,\n${indent}    `);
+  const controllerSlotPropsEntries = buildSlotPropsEntries("Boolean(helperText)");
+  const inlineStateSlotPropsEntries = buildSlotPropsEntries(fieldErrorExpression);
   const textFieldSxEntries = [
     fieldSx,
     inputRootStyle ? `"& .MuiOutlinedInput-root": { ${inputRootStyle} }` : undefined,
@@ -1268,21 +1273,23 @@ ${indent}  }}\n`
       context.requiresChangeEventTypeImport = true;
     }
 
-    const slotPropsExpression = `{
-${indent}    ${slotPropsEntries}
+    const buildSlotPropsExpression = (slotPropsEntriesValue: string): string => `{
+${indent}    ${slotPropsEntriesValue}
 ${indent}  }`;
     const renderMappedComponent = ({
       valueExpression,
       onChangeExpression,
       onBlurExpression,
       errorExpression,
-      helperTextExpression
+      helperTextExpression,
+      slotPropsExpression
     }: {
       valueExpression: string;
       onChangeExpression: string;
       onBlurExpression: string;
       errorExpression: string;
       helperTextExpression: string;
+      slotPropsExpression: string;
     }): string => {
       const propLines: string[] = [];
       appendMappedPropLine({
@@ -1412,7 +1419,8 @@ ${indent}      ${renderMappedComponent({
   onChangeExpression,
   onBlurExpression: "controllerField.onBlur",
   errorExpression: "Boolean(helperText)",
-  helperTextExpression: "helperText"
+  helperTextExpression: "helperText",
+  slotPropsExpression: buildSlotPropsExpression(controllerSlotPropsEntries)
 })}
 ${indent}    );
 ${indent}  }}
@@ -1428,7 +1436,8 @@ ${indent}/>`;
       onChangeExpression,
       onBlurExpression: `() => handleFieldBlur(${literal(field.key)})`,
       errorExpression: fieldErrorExpression,
-      helperTextExpression: fieldHelperTextExpression
+      helperTextExpression: fieldHelperTextExpression,
+      slotPropsExpression: buildSlotPropsExpression(inlineStateSlotPropsEntries)
     });
   }
 
@@ -1457,10 +1466,11 @@ ${indent}        onBlur={controllerField.onBlur}
 ${indent}        error={Boolean(helperText)}
 ${indent}        helperText={helperText}
 ${indent}        aria-label={${literal(field.label)}}
+${indent}        aria-invalid={Boolean(helperText)}
 ${indent}        aria-describedby={${literal(helperTextId)}}
 ${textFieldSxProp}
 ${indent}        slotProps={{
-${indent}          ${slotPropsEntries}
+${indent}          ${controllerSlotPropsEntries}
 ${indent}        }}
 ${indent}      />
 ${indent}    );
@@ -1475,10 +1485,11 @@ ${indent}  onBlur={() => handleFieldBlur(${literal(field.key)})}
 ${indent}  error={${fieldErrorExpression}}
 ${indent}  helperText={${fieldHelperTextExpression}}
 ${indent}  aria-label={${literal(field.label)}}
+${indent}  aria-invalid={${fieldErrorExpression}}
 ${indent}  aria-describedby={${literal(helperTextId)}}
 ${textFieldSxProp}
 ${indent}  slotProps={{
-${indent}    ${slotPropsEntries}
+${indent}    ${inlineStateSlotPropsEntries}
 ${indent}  }}
 ${indent}/>`;
 };
@@ -4291,6 +4302,7 @@ ${indent}          label={${literal(field.label)}}
 ${indent}          value={controllerField.value}
 ${indent}          onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
 ${indent}          onBlur={controllerField.onBlur}
+${indent}          aria-invalid={Boolean(helperText)}
 ${indent}          aria-describedby={${literal(helperTextId)}}
 ${field.required ? `${indent}          aria-required="true"\n` : ""}${indent}          aria-label={${literal(field.label)}}
 ${indent}        >
@@ -4315,6 +4327,7 @@ ${indent}    label={${literal(field.label)}}
 ${indent}    value={formValues[${literal(field.key)}] ?? ""}
 ${indent}    onChange={(event: SelectChangeEvent<string>) => updateFieldValue(${literal(field.key)}, event.target.value)}
 ${indent}    onBlur={() => handleFieldBlur(${literal(field.key)})}
+${indent}    aria-invalid={${fieldErrorExpression}}
 ${indent}    aria-describedby={${literal(helperTextId)}}
 ${ariaRequiredProp}${indent}    aria-label={${literal(field.label)}}
 ${indent}  >

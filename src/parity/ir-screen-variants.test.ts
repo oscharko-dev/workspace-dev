@@ -955,6 +955,229 @@ test("resolveValidationBaselineScenario prefers the canonical scenario when mult
   assert.equal(errorScenario.contentScreenId, "canonical-default");
 });
 
+test("applyScreenVariantFamiliesToDesignIr treats a field removed in error variant as a non-validation-only diff", () => {
+  // Canonical has two fields; error variant drops the second field. This
+  // structural change should disqualify the pair from being treated as a
+  // validation-only diff — the family is still produced, but the error
+  // scenario's contentScreenId points at its own screen rather than being
+  // deduplicated against the canonical baseline.
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "canonical",
+        name: "Default",
+        children: [
+          createContainerNode({
+            id: "canonical-form",
+            name: "Form",
+            children: [
+              createInputNode({ id: "canonical-email-field", name: "Email Field", x: 0, y: 0 }),
+              createInputNode({ id: "canonical-password-field", name: "Password Field", x: 0, y: 120 })
+            ]
+          })
+        ]
+      }),
+      createScreen({
+        id: "error",
+        name: "Error",
+        children: [
+          createContainerNode({
+            id: "error-form",
+            name: "Form",
+            children: [
+              createInputNode({
+                id: "error-email-field",
+                name: "Email Field",
+                x: 0,
+                y: 0,
+                strokeColor: "#d32f2f",
+                children: [
+                  createContainerNode({
+                    id: "error-email-outline",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "error-email-border",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  })
+                ]
+              })
+              // password field intentionally removed
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "field-removal-family",
+        frameIds: ["canonical", "error"],
+        frameNames: ["Default", "Error"],
+        canonicalFrameId: "canonical",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+  const family = result.screenVariantFamilies?.[0];
+  assert.ok(family);
+  const errorScenario = family.scenarios.find((scenario) => scenario.screenId === "error");
+  assert.ok(errorScenario);
+  // The error variant has structural changes (field removed) so it cannot be
+  // collapsed to the canonical baseline — its contentScreenId should point
+  // at its own screen.
+  assert.equal(errorScenario.contentScreenId, "error");
+  // No validation-only field evidence should be derived because the diff
+  // is structural, not validation-only.
+  assert.equal(errorScenario.fieldErrorEvidenceByFieldKey, undefined);
+});
+
+test("extractValidationOnlyDiffEvidence preserves first-matched message and sourceNodeId when multiple messages match the same field", () => {
+  // Build a family where the error variant adds TWO error text nodes next to
+  // the same field. The sort order (by path) determines which wins. The test
+  // asserts that the first-in-sort-order message wins for BOTH the message
+  // text AND the sourceNodeId — previously sourceNodeId was last-wins.
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "multi-default",
+        name: "Default",
+        children: [
+          createContainerNode({
+            id: "form-root-default",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-default",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-default",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-default",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#9ca3af"
+                      }
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      }),
+      createScreen({
+        id: "multi-error",
+        name: "Error",
+        children: [
+          createContainerNode({
+            id: "form-root-error",
+            name: "Form Root",
+            children: [
+              createInputNode({
+                id: "email-field-error",
+                name: "Email Field",
+                x: 0,
+                y: 24,
+                children: [
+                  createContainerNode({
+                    id: "email-outline-error",
+                    name: "MuiOutlinedInputRoot",
+                    children: [
+                      {
+                        id: "email-border-error",
+                        name: "MuiNotchedOutlined",
+                        nodeType: "FRAME",
+                        type: "divider",
+                        strokeColor: "#d32f2f"
+                      }
+                    ]
+                  }),
+                  createTextNode({
+                    id: "email-error-text-a",
+                    name: "Error Text A",
+                    text: "Please enter a valid email address."
+                  }),
+                  createTextNode({
+                    id: "email-error-text-b",
+                    name: "Error Text B",
+                    text: "Email is required."
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
+  const figmaAnalysis = createAnalysis({
+    frameVariantGroups: [
+      {
+        groupId: "multi-message-family",
+        frameIds: ["multi-default", "multi-error"],
+        frameNames: ["Default", "Error"],
+        canonicalFrameId: "multi-default",
+        confidence: 1,
+        similarityReasons: [],
+        fallbackReasons: [],
+        variantAxes: [
+          {
+            axis: "validation-state",
+            values: ["default", "error"],
+            source: "text"
+          }
+        ]
+      }
+    ],
+    appShellSignals: []
+  });
+
+  const result = applyScreenVariantFamiliesToDesignIr({ ir, figmaAnalysis });
+  const errorScenario = result.screenVariantFamilies?.[0]?.scenarios.find(
+    (scenario) => scenario.screenId === "multi-error"
+  );
+  assert.ok(errorScenario);
+  const fieldEvidence = errorScenario.fieldErrorEvidenceByFieldKey;
+  assert.ok(fieldEvidence);
+  const entries = Object.values(fieldEvidence);
+  assert.equal(entries.length, 1);
+  const entry = entries[0];
+  assert.ok(entry);
+  // First in sort order wins for BOTH message text and sourceNodeId. This is
+  // the regression guard for audit finding F-01 — `sourceNodeId` used to be
+  // last-wins while `message` was first-wins, producing inconsistent
+  // traceability when multiple messages associated with the same field.
+  assert.equal(entry.message, "Please enter a valid email address.");
+  assert.equal(entry.sourceNodeId, "email-error-text-a");
+});
+
 // ---------------------------------------------------------------------------
 // validateDesignIR — screenVariantFamilies cross-family / axis / scenario checks
 // ---------------------------------------------------------------------------
@@ -1159,5 +1382,107 @@ test("validateDesignIR rejects duplicate family ids across families", () => {
   assert.equal(result.valid, false);
   if (!result.valid) {
     assert.ok(result.errors.some((e) => e.code === "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_ID"));
+  }
+});
+
+test("validateDesignIR rejects fieldErrorEvidence with empty sourceNodeId", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "screen-1",
+        name: "Screen 1",
+        children: [createInputNode({ id: "field-1", name: "Email" })]
+      }),
+      createScreen({
+        id: "screen-2",
+        name: "Screen 2",
+        children: [createInputNode({ id: "field-2", name: "Email" })]
+      })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "screen-1",
+      memberScreenIds: ["screen-1", "screen-2"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "screen-1",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "default" }
+        },
+        {
+          screenId: "screen-2",
+          contentScreenId: "screen-2",
+          initialState: { validationState: "error" },
+          fieldErrorEvidenceByFieldKey: {
+            email: {
+              message: "Invalid email",
+              visualError: true,
+              sourceNodeId: "   "
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.code === "IR_INVALID_SCREEN_VARIANT_SCENARIO" &&
+          error.message.includes("fieldErrorEvidenceByFieldKey")
+      )
+    );
+  }
+});
+
+test("validateDesignIR rejects error-state scenarios with no evidence", () => {
+  const ir = createIr({
+    screens: [
+      createScreen({
+        id: "screen-1",
+        name: "Screen 1",
+        children: [createInputNode({ id: "field-1", name: "Email" })]
+      }),
+      createScreen({
+        id: "screen-2",
+        name: "Screen 2",
+        children: [createInputNode({ id: "field-2", name: "Email" })]
+      })
+    ]
+  });
+  ir.screenVariantFamilies = [
+    {
+      familyId: "family-1",
+      canonicalScreenId: "screen-1",
+      memberScreenIds: ["screen-1", "screen-2"],
+      axes: ["validation-state"],
+      scenarios: [
+        {
+          screenId: "screen-1",
+          contentScreenId: "screen-1",
+          initialState: { validationState: "default" }
+        },
+        {
+          screenId: "screen-2",
+          contentScreenId: "screen-2",
+          initialState: { validationState: "error" }
+          // deliberately no fieldErrorEvidenceByFieldKey, no screenLevelErrorEvidence
+        }
+      ]
+    }
+  ];
+
+  const result = validateDesignIR(ir);
+
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.some((error) => error.code === "IR_SCREEN_VARIANT_SCENARIO_ERROR_STATE_MISSING_EVIDENCE"));
   }
 });

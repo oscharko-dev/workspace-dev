@@ -31,6 +31,7 @@ function SearchScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Search"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muiformcontrolroot_search_field-helper-text"}
         sx={{
           width: "91.8%", maxWidth: "358px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.5,
@@ -38,7 +39,7 @@ function SearchScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muiformcontrolroot_search_field-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muiformcontrolroot_search_field-helper-text" },
           formHelperText: { id: "muiformcontrolroot_search_field-helper-text" }
               }}
             />

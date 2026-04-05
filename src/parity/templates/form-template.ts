@@ -47,7 +47,7 @@ export const buildInlineLegacyFormStateBlock = ({
     ? `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = ${JSON.stringify(validationRulesMap, null, 2)};\n`
     : `\nconst fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = {};\n`;
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
+const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `{ ...initialVisualErrors, ...(${initialVisualErrorsOverrideExpression} ?? {}) }` : "initialVisualErrors"};
 const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
 const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
 const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
@@ -250,7 +250,8 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
 };
 
 const validateForm = (values: Record<string, string>): Record<string, string> => {
-  return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+  const fieldKeys = new Set<string>([...Object.keys(values), ...Object.keys(requiredFields)]);
+  return [...fieldKeys].reduce<Record<string, string>>((nextErrors, fieldKey) => {
     nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
     return nextErrors;
   }, {});
@@ -335,7 +336,7 @@ export interface ${providerPropsTypeName} {
 
 export function ${providerName}({ children, initialVisualErrorsOverride, validationMessagesOverride }: ${providerPropsTypeName}) {
   const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };
   const requiredFields: Record<string, boolean> = ${JSON.stringify(requiredFieldMap, null, 2)};
   const fieldValidationTypes: Record<string, string> = ${JSON.stringify(validationTypeMap, null, 2)};
   const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
@@ -465,7 +466,8 @@ export function ${providerName}({ children, initialVisualErrorsOverride, validat
   };
 
   const validateForm = (values: Record<string, string>): Record<string, string> => {
-    return Object.keys(values).reduce<Record<string, string>>((nextErrors, fieldKey) => {
+    const fieldKeys = new Set<string>([...Object.keys(values), ...Object.keys(requiredFields)]);
+    return [...fieldKeys].reduce<Record<string, string>>((nextErrors, fieldKey) => {
       nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
       return nextErrors;
     }, {});
@@ -680,7 +682,7 @@ export const buildInlineReactHookFormStateBlock = ({
 `
     : "";
   return `${selectOptionsDeclaration}const initialVisualErrors: Record<string, string> = ${JSON.stringify(initialVisualErrorsMap, null, 2)};
-const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `${initialVisualErrorsOverrideExpression} ?? initialVisualErrors` : "initialVisualErrors"};
+const resolvedInitialVisualErrors: Record<string, string> = ${initialVisualErrorsOverrideExpression ? `{ ...initialVisualErrors, ...(${initialVisualErrorsOverrideExpression} ?? {}) }` : "initialVisualErrors"};
 const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
 const resolvedValidationMessages: Record<string, string> = ${
   validationMessagesOverrideExpression
@@ -1367,7 +1369,7 @@ export interface ${providerPropsTypeName} {
 
 export function ${providerName}({ children, initialVisualErrorsOverride, validationMessagesOverride }: ${providerPropsTypeName}) {
   const defaultValues: ${formInputTypeName} = ${JSON.stringify(initialValues, null, 2)};
-  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };
   const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<${formInputTypeName}>({${useFormModeLine}

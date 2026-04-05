@@ -32,6 +32,7 @@ function LoginScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Email"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muiformcontrolroot_login_email-helper-text"}
         sx={{
           width: "87.7%", maxWidth: "342px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.5,
@@ -39,7 +40,7 @@ function LoginScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muiformcontrolroot_login_email-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muiformcontrolroot_login_email-helper-text" },
           formHelperText: { id: "muiformcontrolroot_login_email-helper-text" }
               }}
             />
@@ -69,6 +70,7 @@ function LoginScreenContent() {
               error={Boolean(helperText)}
               helperText={helperText}
               aria-label={"Password"}
+              aria-invalid={Boolean(helperText)}
               aria-describedby={"muiformcontrolroot_login_password-helper-text"}
         sx={{
           width: "87.7%", maxWidth: "342px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.5,
@@ -76,7 +78,7 @@ function LoginScreenContent() {
         }}
 
               slotProps={{
-                htmlInput: { "aria-describedby": "muiformcontrolroot_login_password-helper-text" },
+                htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "muiformcontrolroot_login_password-helper-text" },
           formHelperText: { id: "muiformcontrolroot_login_password-helper-text" }
               }}
             />

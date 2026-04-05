@@ -349,7 +349,7 @@ export function ValidationFormFormContextProvider({ children, initialVisualError
   "muitextfieldroot_amount_field": "250",
   "muitextfieldroot_code_field": "AB12CD"
 };
-  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };
   const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<ValidationFormFormInput>({
