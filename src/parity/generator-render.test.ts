@@ -9,6 +9,7 @@ import {
   createEmptySimplificationStats,
   detectCssGridLayout,
   detectGridLikeContainerLayout,
+  isIconLikeNode,
   loadIconFallbackResolver,
   parseIconFallbackMapFile,
   renderMappedElement,
@@ -331,6 +332,57 @@ test("pickBestIconNode prefers vector-backed icon candidates and smaller areas o
   );
 
   assert.equal(best?.id, "best-candidate");
+});
+
+test("isIconLikeNode recognizes word-boundary icon names and prefix variants without degrading generic containers", () => {
+  assert.equal(
+    isIconLikeNode(makeNode({ id: "search-icon", type: "container", name: "search_icon" })),
+    true
+  );
+  assert.equal(
+    isIconLikeNode(makeNode({ id: "close-icon", type: "container", name: "close icon" })),
+    true
+  );
+  assert.equal(
+    isIconLikeNode(makeNode({ id: "brand-check", type: "container", name: "brand/check" })),
+    true
+  );
+  assert.equal(
+    isIconLikeNode(makeNode({ id: "semantic-success", type: "container", name: "semantic-success" })),
+    true
+  );
+  assert.equal(
+    isIconLikeNode(makeNode({ id: "generic-box", type: "container", name: "my-box" })),
+    false
+  );
+});
+
+test("pickBestIconNode scores word-boundary icon names above unrelated candidates and below explicit prefixes", () => {
+  const wordBoundaryWinner = pickBestIconNode(
+    makeNode({
+      id: "host-word",
+      type: "container",
+      name: "Frame 1",
+      children: [
+        makeNode({ id: "search-icon", type: "container", name: "search_icon" }),
+        makeNode({ id: "unrelated-box", type: "container", name: "unrelated_box" })
+      ]
+    })
+  );
+  assert.equal(wordBoundaryWinner?.id, "search-icon");
+
+  const prefixWinner = pickBestIconNode(
+    makeNode({
+      id: "host-prefix",
+      type: "container",
+      name: "Frame 2",
+      children: [
+        makeNode({ id: "ic-home", type: "container", name: "ic_home" }),
+        makeNode({ id: "search-icon", type: "container", name: "search_icon" })
+      ]
+    })
+  );
+  assert.equal(prefixWinner?.id, "ic-home");
 });
 
 test("loadIconFallbackResolver bootstraps missing maps and falls back on invalid or malformed files", async () => {

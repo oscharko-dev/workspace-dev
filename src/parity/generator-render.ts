@@ -242,7 +242,8 @@ export const isIconLikeNode = (element: ScreenElementIR): boolean => {
     loweredName.startsWith("brand-") ||
     loweredName.startsWith("semantic/") ||
     loweredName.startsWith("semantic_") ||
-    loweredName.startsWith("semantic-")
+    loweredName.startsWith("semantic-") ||
+    /(?:^|[^a-z0-9])icon(?:$|[^a-z0-9])/i.test(loweredName)
   );
 };
 
@@ -838,6 +839,9 @@ export const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | un
         total += 4;
       }
       if (lowered.includes("iconcomponent")) {
+        total += 2;
+      }
+      if (/(?:^|[^a-z0-9])icon(?:$|[^a-z0-9])/i.test(lowered)) {
         total += 2;
       }
       if (collectVectorPaths(candidate).length > 0) {

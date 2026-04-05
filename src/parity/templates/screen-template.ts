@@ -182,7 +182,7 @@ import {
   buildReactHookFormContextFile
 } from "./form-template.js";
 
-const ISSUE_693_BANKING_INPUT_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
+const BANKING_INPUT_SEMANTIC_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
 
 const toTypographyWeightNumber = (value: number | string | undefined): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -756,12 +756,6 @@ export const renderText = (element: TextElementIR, depth: number, parent: Virtua
 };
 
 // ---------------------------------------------------------------------------
-// Banking-input semantic types that receive prioritised rendering over
-// generic TextField when the board classification matches.
-// ---------------------------------------------------------------------------
-const BANKING_INPUT_SEMANTIC_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
-
-// ---------------------------------------------------------------------------
 // DynamicTypography Storybook variant catalog.
 // Maps Figma typography style tokens (from variant properties or node name
 // suffixes) to customer-specific MUI Typography variants derived from the
@@ -1211,7 +1205,7 @@ ${indent}  }}\n`
       });
       return mapping && context.datePickerProvider ? mapping : undefined;
     }
-    if (ISSUE_693_BANKING_INPUT_TYPES.has(element.semanticType ?? "")) {
+    if (BANKING_INPUT_SEMANTIC_TYPES.has(element.semanticType ?? "")) {
       return resolveSpecializedComponentMapping({
         context,
         semanticType: element.semanticType
