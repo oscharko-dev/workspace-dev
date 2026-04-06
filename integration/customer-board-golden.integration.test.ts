@@ -180,6 +180,10 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     "IconButton",
     "Typography"
   ]);
+  assert.equal((validationSummary.style?.diagnostics?.tokens?.diagnosticCount ?? 0) > 0, true);
+  assert.equal((validationSummary.style?.diagnostics?.themes?.diagnosticCount ?? 0) > 0, true);
+  assert.equal(validationSummary.style?.issueCount ?? 0, 0);
+  assert.deepEqual(validationSummary.style?.issues ?? [], []);
   assert.equal(validationSummary.import?.customerProfile?.import?.issueCount ?? 0, 0);
   assert.equal(validationSummary.generatedApp?.install?.status, "completed");
   assert.equal(validationSummary.generatedApp?.status, "ok");
@@ -244,6 +248,10 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true,
     "Generated pattern context file must still expose the pattern context provider."
   );
-  assert.equal(screenFile?.includes('import { Chip, Divider, IconButton } from "@customer/ui";'), true);
+  assert.equal(screenFile?.includes('import { Chip, Divider, IconButton } from "@customer/ui";'), false);
+  assert.equal(
+    screenFile?.includes("import { Alert, Avatar, Button, Card, CardContent, Chip, Container, Divider"),
+    true
+  );
   assert.equal(screenFile?.includes("SeitenContentPatternContextProvider"), true);
 });

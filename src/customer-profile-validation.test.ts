@@ -1854,6 +1854,104 @@ export const App = () => (
   }
 });
 
+test("validateGeneratedProjectStorybookStyles ignores MUI imports that share customer component names", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-mui-name-collision-"));
+  const customerProfile = createCustomerProfileForStyleValidation({
+    tokenPolicy: "error"
+  });
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `import { Typography } from "@mui/material";
+
+export const App = () => <Typography variant="h4">{"Overview"}</Typography>;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile,
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "story-args-1",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "typography--default",
+              entryType: "story",
+              title: "Components/Typography"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["variant"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture(),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture(),
+      componentMatchReportArtifact: createMatchReportArtifact([
+        createMatchReportEntry({
+          familyKey: "typography-primary",
+          familyName: "Typography",
+          libraryResolution: {
+            status: "resolved_import",
+            reason: "profile_import_resolved",
+            storybookTier: "Typography",
+            profileFamily: "Typography",
+            componentKey: "Typography",
+            import: {
+              package: "@customer/ui",
+              exportName: "Typography",
+              localName: "Typography"
+            }
+          },
+          resolvedApi: {
+            status: "resolved",
+            componentKey: "Typography",
+            import: {
+              package: "@customer/ui",
+              exportName: "Typography",
+              localName: "Typography"
+            },
+            allowedProps: [{ name: "children", kind: "string" }],
+            defaultProps: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            diagnostics: []
+          },
+          resolvedProps: {
+            status: "resolved",
+            fallbackPolicy: "deny",
+            props: [],
+            omittedProps: [],
+            omittedDefaults: [],
+            children: { policy: "supported" },
+            slots: { policy: "not_used", props: [] },
+            codegenCompatible: true,
+            diagnostics: []
+          }
+        })
+      ])
+    });
+
+    assert.equal(
+      summary.issues.some((issue) => issue.category === "disallowed_customer_component_prop"),
+      false
+    );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
 test("validateGeneratedProjectStorybookStyles scans resolved customer component spreads", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-customer-spread-"));
   const customerProfile = createCustomerProfileForStyleValidation({
@@ -2065,6 +2163,178 @@ export const App = () => <CustomerButton {...buildCustomerButtonProps()}>{"Weite
       summary.issues.some((issue) => issue.category === "disallowed_customer_component_prop" && issue.propName === "...spread"),
       true
     );
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles keeps warning-only Storybook diagnostics out of issues", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-warning-only-storybook-"));
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `export const App = () => <div>{"Overview"}</div>;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile: createCustomerProfileForStyleValidation({
+        tokenPolicy: "error"
+      }),
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture({
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "W_STORYBOOK_TOKEN_WARNING",
+            message: "Token warning"
+          }
+        ]
+      }),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture({
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "W_STORYBOOK_THEME_WARNING",
+            message: "Theme warning"
+          }
+        ]
+      }),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "ok");
+    assert.equal(summary.issueCount, 0);
+    assert.equal(summary.issues.some((issue) => issue.category === "storybook_token_diagnostic"), false);
+    assert.equal(summary.issues.some((issue) => issue.category === "storybook_theme_diagnostic"), false);
+    assert.equal(summary.diagnostics.tokens?.diagnosticCount, 1);
+    assert.equal(summary.diagnostics.tokens?.errorCount, 0);
+    assert.equal(summary.diagnostics.themes?.diagnosticCount, 1);
+    assert.equal(summary.diagnostics.themes?.errorCount, 0);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test("validateGeneratedProjectStorybookStyles promotes only error-severity Storybook diagnostics into issues", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-style-validation-error-storybook-"));
+
+  try {
+    await seedGeneratedProject({
+      generatedProjectDir,
+      sourceContent: `export const App = () => <div>{"Overview"}</div>;
+`
+    });
+
+    const summary = await validateGeneratedProjectStorybookStyles({
+      generatedProjectDir,
+      customerProfile: createCustomerProfileForStyleValidation({
+        tokenPolicy: "error"
+      }),
+      storybookEvidenceArtifact: createStorybookEvidenceArtifactFixture({
+        evidence: [
+          {
+            id: "theme-bundle-1",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          }
+        ]
+      }),
+      storybookTokensArtifact: createStorybookTokensArtifactFixture({
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "W_STORYBOOK_TOKEN_WARNING",
+            message: "Token warning"
+          },
+          {
+            severity: "error",
+            code: "E_STORYBOOK_TOKEN_ERROR",
+            message: "Token error"
+          }
+        ]
+      }),
+      storybookThemesArtifact: createStorybookThemesArtifactFixture({
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "W_STORYBOOK_THEME_WARNING",
+            message: "Theme warning"
+          },
+          {
+            severity: "error",
+            code: "E_STORYBOOK_THEME_ERROR",
+            message: "Theme error"
+          }
+        ]
+      }),
+      componentMatchReportArtifact: createMatchReportArtifact([])
+    });
+
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.issueCount, 2);
+    assert.deepEqual(
+      summary.issues.map((issue) => ({
+        category: issue.category,
+        severity: issue.severity,
+        diagnosticCode: issue.diagnosticCode,
+        message: issue.message
+      })),
+      [
+        {
+          category: "storybook_theme_diagnostic",
+          severity: "error",
+          diagnosticCode: "E_STORYBOOK_THEME_ERROR",
+          message: "Theme error"
+        },
+        {
+          category: "storybook_token_diagnostic",
+          severity: "error",
+          diagnosticCode: "E_STORYBOOK_TOKEN_ERROR",
+          message: "Token error"
+        }
+      ]
+    );
+    assert.equal(summary.diagnostics.tokens?.diagnosticCount, 2);
+    assert.equal(summary.diagnostics.tokens?.errorCount, 1);
+    assert.equal(summary.diagnostics.themes?.diagnosticCount, 2);
+    assert.equal(summary.diagnostics.themes?.errorCount, 1);
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });
   }
