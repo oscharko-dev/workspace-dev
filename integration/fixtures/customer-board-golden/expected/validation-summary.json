@@ -402,17 +402,17 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 15,
+          "match_ambiguous": 10,
           "match_unmatched": 13,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 3,
+          "profile_import_missing": 8,
           "profile_import_resolved": 11
         },
         "byStatus": {
-          "mui_fallback_allowed": 3,
+          "mui_fallback_allowed": 8,
           "mui_fallback_denied": 0,
-          "not_applicable": 28,
+          "not_applicable": 23,
           "resolved_import": 11
         },
         "iconByReason": {
@@ -435,7 +435,7 @@
           "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 80,
+      "issueCount": 75,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -506,14 +506,6 @@
           "storybookTier": "Components"
         },
         {
-          "figmaFamilyKey": "component:1:62629",
-          "figmaFamilyName": "<Button>",
-          "kind": "component",
-          "message": "Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
           "figmaFamilyKey": "component:1:62821",
           "figmaFamilyName": "<Button>",
           "iconKey": "button",
@@ -580,14 +572,6 @@
           "figmaFamilyName": "<Divider>",
           "kind": "component",
           "message": "Figma family '<Divider>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:39153",
-          "figmaFamilyName": "<Dynamic Typography> (headlines)",
-          "kind": "component",
-          "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
         },
@@ -670,30 +654,6 @@
           "figmaFamilyName": "<Radio>",
           "kind": "component",
           "message": "Figma family '<Radio>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:45038",
-          "figmaFamilyName": "<Select>",
-          "kind": "component",
-          "message": "Figma family '<Select>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:45150",
-          "figmaFamilyName": "<Select>",
-          "kind": "component",
-          "message": "Figma family '<Select>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:42805",
-          "figmaFamilyName": "<Stack>",
-          "kind": "component",
-          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
         },
@@ -1197,10 +1157,10 @@
       }
     },
     "composition": {
-      "ambiguous": 15,
+      "ambiguous": 10,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 14,
+      "matched": 19,
       "totalFigmaFamilies": 42,
       "unmatched": 13
     },

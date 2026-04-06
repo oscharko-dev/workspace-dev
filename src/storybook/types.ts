@@ -433,7 +433,8 @@ export type ComponentMatchEvidenceClass =
   | "semantic_type"
   | "variant_or_prop_overlap"
   | "component_path_present"
-  | "reference_only_docs";
+  | "reference_only_docs"
+  | "customer_profile_tier_priority";
 
 export type ComponentMatchEvidenceRole = "candidate_selection" | "story_variant_selection" | "tie_breaker";
 
@@ -450,6 +451,7 @@ export type ComponentMatchFallbackReason =
   | "used_semantic_bucket"
   | "used_file_key_design_link"
   | "used_reference_only_docs_tiebreaker"
+  | "used_customer_profile_tier_priority"
   | "used_customer_profile_tier_priority_tiebreaker"
   | "selected_variant_by_overlap"
   | "selected_variant_by_attached_story_tiebreak"

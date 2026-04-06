@@ -2086,8 +2086,8 @@ test("buildComponentMatchReportArtifact resolves sanitized component APIs across
 
   const datePickerEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "DatePicker");
   assert.notEqual(datePickerEntry, undefined);
-  assert.equal(datePickerEntry?.match.status, "ambiguous");
-  assert.equal(datePickerEntry?.match.confidence, "none");
+  assert.equal(datePickerEntry?.match.status, "matched");
+  assert.equal(datePickerEntry?.match.confidence, "low");
 
   const accordionEntry = artifact.entries.find((entry) => entry.storybookFamily?.name === "Accordion");
   assert.notEqual(accordionEntry, undefined);
@@ -2215,5 +2215,15 @@ test("buildComponentMatchReportArtifact uses customer profile tierPriority as ti
     cardEntry?.fallbackReasons.includes("used_customer_profile_tier_priority_tiebreaker"),
     true,
     "Expected tier priority tiebreaker to be recorded in fallback reasons"
+  );
+  assert.equal(
+    cardEntry?.fallbackReasons.includes("used_customer_profile_tier_priority"),
+    true,
+    "Expected tier priority score bonus to be recorded in fallback reasons"
+  );
+  assert.equal(
+    cardEntry?.match.status,
+    "matched",
+    "Tier priority resolution should promote tied candidates to matched status"
   );
 });
