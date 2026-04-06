@@ -337,6 +337,24 @@ export const resolveDeterministicColorSample = (values: Array<string | undefined
   return candidates[0];
 };
 
+const MUI_GREY_SCALE: ReadonlyArray<readonly [string, string]> = [
+  ["grey.50", "#fafafa"],
+  ["grey.100", "#f5f5f5"],
+  ["grey.200", "#eeeeee"],
+  ["grey.300", "#e0e0e0"],
+  ["grey.400", "#bdbdbd"],
+  ["grey.500", "#9e9e9e"],
+  ["grey.600", "#757575"],
+  ["grey.700", "#616161"],
+  ["grey.800", "#424242"],
+  ["grey.900", "#212121"],
+] as const;
+
+const isNeutralGrey = (rgba: RgbaColor): boolean => {
+  const delta = Math.max(rgba.r, rgba.g, rgba.b) - Math.min(rgba.r, rgba.g, rgba.b);
+  return delta <= 16;
+};
+
 export const withOmittedSxKeys = ({
   entries,
   keys
@@ -370,6 +388,7 @@ export const toThemePaletteLiteral = ({
     return undefined;
   }
 
+  // Tier 1: Exact palette matches
   const exactMatches: Array<[string, string | undefined]> = [
     ["primary.main", tokens.palette.primary],
     ["secondary.main", tokens.palette.secondary],
@@ -379,7 +398,13 @@ export const toThemePaletteLiteral = ({
     ["info.main", tokens.palette.info],
     ["background.default", tokens.palette.background],
     ["text.primary", tokens.palette.text],
-    ["divider", tokens.palette.divider]
+    ["divider", tokens.palette.divider],
+    ["action.active", tokens.palette.action.active],
+    ["action.hover", tokens.palette.action.hover],
+    ["action.selected", tokens.palette.action.selected],
+    ["action.disabled", tokens.palette.action.disabled],
+    ["action.disabledBackground", tokens.palette.action.disabledBackground],
+    ["action.focus", tokens.palette.action.focus],
   ];
 
   for (const [tokenPath, tokenColor] of exactMatches) {
@@ -387,6 +412,49 @@ export const toThemePaletteLiteral = ({
       return tokenPath;
     }
   }
+
+  // Tier 2: MUI standard grey scale exact matches
+  for (const [tokenPath, greyHex] of MUI_GREY_SCALE) {
+    if (normalizeHexColor(greyHex) === normalizedColor) {
+      return tokenPath;
+    }
+  }
+
+  // Tier 3: Nearest neutral grey semantic match
+  const inputRgba = toRgbaColor(normalizedColor);
+  if (!inputRgba || !isNeutralGrey(inputRgba)) {
+    return undefined;
+  }
+
+  const bgRgba = toRgbaColor(tokens.palette.background);
+  const textSecondaryR = bgRgba ? Math.round(bgRgba.r * 0.4) : undefined;
+  const textSecondaryG = bgRgba ? Math.round(bgRgba.g * 0.4) : undefined;
+  const textSecondaryB = bgRgba ? Math.round(bgRgba.b * 0.4) : undefined;
+
+  const semanticCandidates: Array<[string, RgbaColor]> = [];
+  if (textSecondaryR !== undefined && textSecondaryG !== undefined && textSecondaryB !== undefined) {
+    semanticCandidates.push(["text.secondary", { r: textSecondaryR, g: textSecondaryG, b: textSecondaryB, a: 1 }]);
+  }
+  semanticCandidates.push(["background.paper", { r: 255, g: 255, b: 255, a: 1 }]);
+
+  let bestPath: string | undefined;
+  let bestMaxDelta = Infinity;
+
+  for (const [tokenPath, candidateRgba] of semanticCandidates) {
+    const dr = Math.abs(inputRgba.r - candidateRgba.r);
+    const dg = Math.abs(inputRgba.g - candidateRgba.g);
+    const db = Math.abs(inputRgba.b - candidateRgba.b);
+    const maxDelta = Math.max(dr, dg, db);
+    if (maxDelta < bestMaxDelta) {
+      bestMaxDelta = maxDelta;
+      bestPath = tokenPath;
+    }
+  }
+
+  if (bestMaxDelta <= 16 && bestPath !== undefined) {
+    return bestPath;
+  }
+
   return undefined;
 };
 
