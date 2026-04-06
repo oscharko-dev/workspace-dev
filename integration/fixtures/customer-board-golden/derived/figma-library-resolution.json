@@ -52,31 +52,34 @@
       ]
     },
     {
-      "canonicalFamilyName": "<Typography>",
-      "canonicalFamilyNameSource": "analysis",
+      "canonicalFamilyName": "Variant=label04, Color=Default",
+      "canonicalFamilyNameSource": "published_component",
       "componentId": "1:38313",
       "componentKey": "d6f0a0d97000e5a52322a698fee226141918c8df",
       "familyKey": "component:1:38313",
       "heuristicFamilyName": "<Typography>",
-      "issues": [
-        {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'd6f0a0d97000e5a52322a698fee226141918c8df' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
-        }
-      ],
       "localComponent": {
         "componentSetId": "1:38294",
         "key": "d6f0a0d97000e5a52322a698fee226141918c8df",
         "name": "Variant=label04, Color=Default",
         "remote": true
       },
+      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "publishedComponent": {
+        "containingFrameName": "Mobile/Light",
+        "createdAt": "2025-04-09T07:31:36.705Z",
+        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+        "key": "d6f0a0d97000e5a52322a698fee226141918c8df",
+        "name": "Variant=label04, Color=Default",
+        "nodeId": "7841:103569",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/uMY/I1Y/rpbtSmT6BXDYMKfp/7841_103569.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=c3dc0cfd4eb213f8d7707c150726d1945a5f987010aabb7402e9e7bfdef0c1fa",
+        "updatedAt": "2026-03-25T09:59:07.984Z"
+      },
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870;9445:28813;9445:29996"
       ],
       "resolutionSource": "live",
-      "status": "error",
+      "status": "resolved",
       "variantProperties": [
         {
           "property": "color",
@@ -113,7 +116,7 @@
         "key": "216a6629dde88e0e729cd2a2015db3508d7ec3ef",
         "name": "Variant=label04Light, Color=Default",
         "nodeId": "13351:55640",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Tom/gDQ/sZ47YZT5U88zwfVi/13351_55640.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=8609e5442d7271059c7fc96e31195757ff8650f4aaa866fb47aa25a8269f1a61",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Tom/gDQ/sZ47YZT5U88zwfVi/13351_55640.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=e13eef68971e4e175f6b097bef3fcd0997f2c78200a6740983ead836446ca2c0",
         "updatedAt": "2026-03-25T09:59:06.944Z"
       },
       "referringNodeIds": [
@@ -209,25 +212,28 @@
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "<Icon>",
-      "canonicalFamilyNameSource": "analysis",
+      "canonicalFamilyName": "Size=Medium, Color=Action",
+      "canonicalFamilyNameSource": "published_component",
       "componentId": "1:38938",
       "componentKey": "f0835abcb6d444c3be7f72a5edbe327d3a84c4c6",
       "familyKey": "component:1:38938",
       "heuristicFamilyName": "<Icon>",
-      "issues": [
-        {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
-        }
-      ],
       "localComponent": {
         "componentSetId": "1:38934",
         "key": "f0835abcb6d444c3be7f72a5edbe327d3a84c4c6",
         "name": "Size=Medium, Color=Action",
         "remote": true
+      },
+      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "publishedComponent": {
+        "containingFrameName": "Icon",
+        "createdAt": "2025-04-09T07:30:38.907Z",
+        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+        "key": "f0835abcb6d444c3be7f72a5edbe327d3a84c4c6",
+        "name": "Size=Medium, Color=Action",
+        "nodeId": "1288:87606",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/35d/TPJ/BDKSAemjaLBZ1W16/1288_87606.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=5ee9a88b9623920d9900df03166c26eb51b8c4c414f359121f2881332822e537",
+        "updatedAt": "2026-01-13T14:50:14.650Z"
       },
       "referringNodeIds": [
         "I1:65798;5213:6541",
@@ -235,7 +241,7 @@
         "I1:65868;9445:28917"
       ],
       "resolutionSource": "live",
-      "status": "error",
+      "status": "resolved",
       "variantProperties": [
         {
           "property": "color",
@@ -296,31 +302,34 @@
       ]
     },
     {
-      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
-      "canonicalFamilyNameSource": "analysis",
+      "canonicalFamilyName": "Variant=headline03, Color=Default",
+      "canonicalFamilyNameSource": "published_component",
       "componentId": "1:39153",
       "componentKey": "4754a2591b823963bf63c3cc8c7052453c128a72",
       "familyKey": "component:1:39153",
       "heuristicFamilyName": "<Dynamic Typography> (headlines)",
-      "issues": [
-        {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
-        }
-      ],
       "localComponent": {
         "componentSetId": "1:39136",
         "key": "4754a2591b823963bf63c3cc8c7052453c128a72",
         "name": "Variant=headline03, Color=Default",
         "remote": true
       },
+      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "publishedComponent": {
+        "containingFrameName": "Mobile/Light",
+        "createdAt": "2025-04-09T07:31:00.935Z",
+        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+        "key": "4754a2591b823963bf63c3cc8c7052453c128a72",
+        "name": "Variant=headline03, Color=Default",
+        "nodeId": "15753:46098",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/SFW/iQJ/HaL96al5VorsbVV3/15753_46098.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7c5a0350839588ed1323ea2ba612692ee82b4b135a88c86b238648edf016bb4b",
+        "updatedAt": "2026-03-25T09:58:06.344Z"
+      },
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870;9445:28797"
       ],
       "resolutionSource": "live",
-      "status": "error",
+      "status": "resolved",
       "variantProperties": [
         {
           "property": "color",
@@ -337,28 +346,25 @@
       ]
     },
     {
-      "canonicalFamilyName": "Variant=headline05, Color=Default",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:39169",
       "componentKey": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
       "familyKey": "component:1:39169",
       "heuristicFamilyName": "<Dynamic Typography> (headlines)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_ASSET_HTTP",
+          "message": "Published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+          "retriable": true,
+          "scope": "component"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:39136",
         "key": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
         "name": "Variant=headline05, Color=Default",
         "remote": true
-      },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile/Light",
-        "createdAt": "2025-04-09T07:31:00.986Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
-        "name": "Variant=headline05, Color=Default",
-        "nodeId": "15753:46114",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Nu5/RAX/Sn4P74odA21q1tgX/15753_46114.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=120bd74b76a4d374e385a1420b41211b1b37020a0f2a5fb91644fde6023d3e24",
-        "updatedAt": "2026-03-25T09:58:06.247Z"
       },
       "referringNodeIds": [
         "I1:65798;5213:6557",
@@ -366,7 +372,7 @@
         "I1:65868;9445:28933"
       ],
       "resolutionSource": "live",
-      "status": "resolved",
+      "status": "error",
       "variantProperties": [
         {
           "property": "color",
@@ -488,7 +494,7 @@
         "key": "1ffbd8c3fc07be8a4a6bcd74e1f2394614faa8fa",
         "name": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
         "nodeId": "1302:97713",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/q3V/l8d/Db8sdOrJuNJo1bSv/1302_97713.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=8b463bb13f08feb466d15b3864f51b0c2825c0dac894d623425aea193437b062",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/q3V/l8d/Db8sdOrJuNJo1bSv/1302_97713.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=5ebb465cad54e4f5c566da7c4722746297e726086c90b23bd7935f63d41c2916",
         "updatedAt": "2026-01-13T14:53:29.447Z"
       },
       "referringNodeIds": [
@@ -524,25 +530,28 @@
       ]
     },
     {
-      "canonicalFamilyName": "<Stack2>(Nested)",
-      "canonicalFamilyNameSource": "analysis",
+      "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
+      "canonicalFamilyNameSource": "published_component",
       "componentId": "1:41763",
       "componentKey": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
       "familyKey": "component:1:41763",
       "heuristicFamilyName": "<Stack2>(Nested)",
-      "issues": [
-        {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
-        }
-      ],
       "localComponent": {
         "componentSetId": "1:41642",
         "key": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
         "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "remote": true
+      },
+      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+      "publishedComponent": {
+        "containingFrameName": "<Stack2>(Nested)",
+        "createdAt": "2025-04-09T07:31:49.210Z",
+        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+        "key": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
+        "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
+        "nodeId": "9445:27853",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/XLy/xoG/cVXzRGJObZa24ARf/9445_27853.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=de39ae2ecbfd536f1d0444990dd03611b51d5a0990869727e3fdbdf2cd4d09bd",
+        "updatedAt": "2026-01-13T18:33:57.247Z"
       },
       "referringNodeIds": [
         "1:65838",
@@ -552,7 +561,7 @@
         "I1:65764;4919:306280"
       ],
       "resolutionSource": "live",
-      "status": "error",
+      "status": "resolved",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -734,7 +743,7 @@
         "key": "1bd04847b0d2f322a6f3f03085adafb41ba4198b",
         "name": "Direction=Column, Divider=false, alignItems=Start, Direction-S=column",
         "nodeId": "4917:180959",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/UcM/p4r/ukZOB5uzUW1gCngw/4917_180959.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=1d1050db6278fd1dba317d2a6a6d9332b3a25bde33f276c4690c56a22f74f748",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/UcM/p4r/ukZOB5uzUW1gCngw/4917_180959.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=f2d365bff8502ca836c772b62eec122dd91652d84b02b3dd730f6261afa69148",
         "updatedAt": "2026-01-13T18:33:41.351Z"
       },
       "referringNodeIds": [
@@ -853,34 +862,31 @@
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "Color=Default, Size=Small, State=Enabled",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<IconButton>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:43449",
       "componentKey": "ea64a1291d4fba6d4a845d263db73482975431fb",
       "familyKey": "component:1:43449",
       "heuristicFamilyName": "<IconButton>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_ASSET_HTTP",
+          "message": "Published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+          "retriable": true,
+          "scope": "component"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:43340",
         "key": "ea64a1291d4fba6d4a845d263db73482975431fb",
         "name": "Color=Default, Size=Small, State=Enabled",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile/Light",
-        "createdAt": "2025-04-09T07:29:43.444Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "ea64a1291d4fba6d4a845d263db73482975431fb",
-        "name": "Color=Default, Size=Small, State=Enabled",
-        "nodeId": "11940:107547",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Wfm/sg7/ui5FEwZVgRkJvVnw/11940_107547.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=2e3fa97fa7199a5745a5b6e45e040e16bdf86ca3e474f82155283b2b77a273fc",
-        "updatedAt": "2026-01-13T14:49:42.464Z"
-      },
       "referringNodeIds": [
         "I1:65879;9445:27856"
       ],
       "resolutionSource": "live",
-      "status": "resolved",
+      "status": "error",
       "variantProperties": [
         {
           "property": "color",
@@ -936,34 +942,30 @@
     },
     {
       "canonicalFamilyName": "ic_radio_selected_s 🔥",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:43500",
       "componentKey": "a1bd6dfc60bdd4d557d0d23635689355969b0398",
       "familyKey": "component:1:43500",
       "heuristicFamilyName": "ic_radio_selected_s 🔥",
+      "issues": [
+        {
+          "code": "E_LIBRARY_ASSET_HTTP",
+          "message": "Published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+          "retriable": true,
+          "scope": "component"
+        }
+      ],
       "localComponent": {
         "description": "RADIO_SELECTED_S",
         "key": "a1bd6dfc60bdd4d557d0d23635689355969b0398",
         "name": "ic_radio_selected_s 🔥",
         "remote": true
       },
-      "originFileKey": "aF8QEt4HOW6I5aGnmV9hAa",
-      "publishedComponent": {
-        "containingFrameName": "R-Icons",
-        "createdAt": "2022-09-30T16:05:00.703Z",
-        "description": "RADIO_SELECTED_S",
-        "fileKey": "aF8QEt4HOW6I5aGnmV9hAa",
-        "key": "a1bd6dfc60bdd4d557d0d23635689355969b0398",
-        "name": "ic_radio_selected_s 🔥",
-        "nodeId": "63:6792",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/9Ly/j12/1JuMj4e50AOrQQBp/63_6792.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7463608d39c2967ba7aa7638d12b46e46113f4ba1daba585592e6172c7aaf85e",
-        "updatedAt": "2025-10-30T12:25:10.111Z"
-      },
       "referringNodeIds": [
         "I1:65879;9445:27870;9445:32106;5646:54691;5908:49316"
       ],
       "resolutionSource": "live",
-      "status": "resolved",
+      "status": "error",
       "variantProperties": []
     },
     {
@@ -987,7 +989,7 @@
         "key": "04ddd87c8c56f2622c43c045e5303b45dd18f3b0",
         "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "nodeId": "9445:32105",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/vFR/aB6/3LVhpBdNe4jgktSF/9445_32105.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=9e73667956d67a6c9319b5ed994a3d1a0208b8133f34b76ec7155f2618f07d36",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/vFR/aB6/3LVhpBdNe4jgktSF/9445_32105.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=d2e4d5e7519270429c812d17048d914431cec2923af16f6eb8116686125d6410",
         "updatedAt": "2026-01-13T18:33:57.193Z"
       },
       "referringNodeIds": [
@@ -1324,7 +1326,7 @@
         "key": "17b74e3916ec4140abed02ec6ce2cddfe22a5f4e",
         "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
         "nodeId": "2736:207711",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Rff/4JQ/YLAfMhWVPIlcCHkO/2736_207711.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=88dc1f01d9f193f47ce2e3077db3e71e5f13a3e32b2ab98f149186ddbae07555",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Rff/4JQ/YLAfMhWVPIlcCHkO/2736_207711.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=32bd7b19092482e660e123047bd7602526250c86cc13cb4a15457563fb1beab1",
         "updatedAt": "2026-03-20T15:02:42.873Z"
       },
       "referringNodeIds": [
@@ -1406,7 +1408,7 @@
         "key": "0a9c11a816f4e4492dd41e75276aa2fd35f029b3",
         "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
         "nodeId": "10796:42262",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/3u7/PIJ/BMQDO3lSrPFqYDFZ/10796_42262.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=952db2f8ee1cba43ffe38aaf82ea33dfe3df5bec67d7e6d4536c0f758fd685f2",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/3u7/PIJ/BMQDO3lSrPFqYDFZ/10796_42262.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7cb19d50cd2658cbc0060b08a3f4aed439e6e3b284708e9824710f44e3f767dd",
         "updatedAt": "2026-03-20T15:02:42.778Z"
       },
       "referringNodeIds": [
@@ -1493,28 +1495,25 @@
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "State=Enabled, Checked=False, Size=Medium",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Radio>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:54308",
       "componentKey": "bb8fa91a46daa5091a930960600f4bc86d708798",
       "familyKey": "component:1:54308",
       "heuristicFamilyName": "<Radio>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_ASSET_HTTP",
+          "message": "Published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+          "retriable": true,
+          "scope": "component"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:54307",
         "key": "bb8fa91a46daa5091a930960600f4bc86d708798",
         "name": "State=Enabled, Checked=False, Size=Medium",
         "remote": true
-      },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Light Mode",
-        "createdAt": "2025-04-09T07:32:21.836Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "bb8fa91a46daa5091a930960600f4bc86d708798",
-        "name": "State=Enabled, Checked=False, Size=Medium",
-        "nodeId": "5908:49258",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/E7X/mE8/h6EiRyFuy16sUCF7/5908_49258.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=0710ffda37a0be8f8c11afa4a5c36f8ed24186576e6f0caed956d102b0a6075f",
-        "updatedAt": "2026-01-13T14:52:17.933Z"
       },
       "referringNodeIds": [
         "I1:65838;9445:27870;9445:32106;5646:54691",
@@ -1524,7 +1523,7 @@
         "I1:65940;9445:27870;9445:32122;5646:54691"
       ],
       "resolutionSource": "live",
-      "status": "resolved",
+      "status": "error",
       "variantProperties": [
         {
           "property": "checked",
@@ -1547,34 +1546,31 @@
       ]
     },
     {
-      "canonicalFamilyName": "State=Enabled, Checked=True, Size=Medium",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Radio>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:54316",
       "componentKey": "58c36fb2138d057ea2e87ee54859f85f71dad734",
       "familyKey": "component:1:54316",
       "heuristicFamilyName": "<Radio>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_ASSET_HTTP",
+          "message": "Published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+          "retriable": true,
+          "scope": "component"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:54307",
         "key": "58c36fb2138d057ea2e87ee54859f85f71dad734",
         "name": "State=Enabled, Checked=True, Size=Medium",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Light Mode",
-        "createdAt": "2025-04-09T07:32:21.893Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "58c36fb2138d057ea2e87ee54859f85f71dad734",
-        "name": "State=Enabled, Checked=True, Size=Medium",
-        "nodeId": "5908:49314",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/vVH/YLB/7HWyTbiHYZ4ltNRg/5908_49314.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=de73e856358534fabd3e16d5f9ee10e038d1253ab3cc3d3880d5fa6a562dd193",
-        "updatedAt": "2026-01-13T14:52:17.716Z"
-      },
       "referringNodeIds": [
         "I1:65879;9445:27870;9445:32106;5646:54691"
       ],
       "resolutionSource": "live",
-      "status": "resolved",
+      "status": "error",
       "variantProperties": [
         {
           "property": "checked",
@@ -1656,7 +1652,7 @@
         "key": "3158d6bd65092cc526a20a67f94d00d1b86e7919",
         "name": "ic_coin_stack_s",
         "nodeId": "63:6080",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/9xq/BLC/Yqww2O6pbzZokuSY/63_6080.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=3606d53999313b129e9c18028dce2ac85e56e170026d639b557c7c13a1f50a11",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/9xq/BLC/Yqww2O6pbzZokuSY/63_6080.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=3e7f05d3992fb3216d799293d52b1dca69ddb6db668f1441fdf326ef6c624c9e",
         "updatedAt": "2025-10-27T14:52:10.219Z"
       },
       "referringNodeIds": [
@@ -1729,7 +1725,7 @@
         "key": "27028de27105923597aa8fb3fd2edac3082bf822",
         "name": "Direction=Row, Divider=false, alignItems=Center, Direction-S=column",
         "nodeId": "23570:19636",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/EYT/Ivy/m6pqyw6xh3eSvmKk/23570_19636.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=a127f5efb378db5cf309e0fc5c725c99ef26ff5bf927fa546c9bf8442495772a",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/EYT/Ivy/m6pqyw6xh3eSvmKk/23570_19636.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=4e8c5f7dd4227bda515407ecd2aa6b369d905816220f36eac7dc9ae57eda2c79",
         "updatedAt": "2026-01-13T18:33:41.358Z"
       },
       "referringNodeIds": [
@@ -1845,7 +1841,7 @@
         "key": "02d0a33a6341854a09df126bbe73a6319450faa2",
         "name": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
         "nodeId": "9403:23050",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/gjL/h6M/Ecfz4JrjcVzeO2et/9403_23050.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260402%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260402T000000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=4c6ec81f0faea709793052ff3c8d3d292ba006e2209ea1e9938246a06d3e41f3",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/gjL/h6M/Ecfz4JrjcVzeO2et/9403_23050.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWC7U5UDNUM%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=03340f1e9fed8e5dc4d4a8405091dfd87062c01a2957ad4c00adf6d99b5ad79c",
         "updatedAt": "2026-03-10T14:13:51.019Z"
       },
       "referringNodeIds": [
@@ -1924,24 +1920,28 @@
     },
     {
       "canonicalFamilyName": "ic_down_s 🔥",
-      "canonicalFamilyNameSource": "analysis",
+      "canonicalFamilyNameSource": "published_component",
       "componentId": "1:636",
       "componentKey": "994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6",
       "familyKey": "component:1:636",
       "heuristicFamilyName": "ic_down_s 🔥",
-      "issues": [
-        {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
-        }
-      ],
       "localComponent": {
         "description": "DOWN_S",
         "key": "994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6",
         "name": "ic_down_s 🔥",
         "remote": true
+      },
+      "originFileKey": "aF8QEt4HOW6I5aGnmV9hAa",
+      "publishedComponent": {
+        "containingFrameName": "D-Icons",
+        "createdAt": "2022-09-30T16:04:47.748Z",
+        "description": "DOWN_S",
+        "fileKey": "aF8QEt4HOW6I5aGnmV9hAa",
+        "key": "994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6",
+        "name": "ic_down_s 🔥",
+        "nodeId": "63:6173",
+        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/eib/s2G/ppSLNF6QzbszQhid/63_6173.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=ed1507ea31555727e0ce65ff32e55743fd7fa15785e803ea78744a862217ff06",
+        "updatedAt": "2025-10-27T06:37:39.635Z"
       },
       "referringNodeIds": [
         "I1:65807;16712:36388;1288:87615",
@@ -1949,7 +1949,7 @@
         "I1:65898;16712:36388;1288:87615"
       ],
       "resolutionSource": "live",
-      "status": "error",
+      "status": "resolved",
       "variantProperties": []
     }
   ],

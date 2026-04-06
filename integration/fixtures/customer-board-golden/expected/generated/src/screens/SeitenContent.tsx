@@ -88,6 +88,7 @@ function SeitenContentScreenContent() {
                         value={controllerField.value}
                         onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
                         onBlur={controllerField.onBlur}
+                        aria-invalid={Boolean(helperText)}
                         aria-describedby={"_select__1_65807-helper-text"}
                         aria-label={"Person"}
                       >
@@ -138,6 +139,7 @@ function SeitenContentScreenContent() {
                       error={Boolean(helperText)}
                       helperText={helperText}
                       aria-label={"Konkrete Bezeichnung des Investitionsobjekts"}
+                      aria-invalid={Boolean(helperText)}
                       aria-describedby={"_textfield__1_65827-helper-text"}
                 sx={{
                   width: "95.8%", maxWidth: "918px", minHeight: "72px", display: "flex", flexDirection: "column", gap: 1,
@@ -145,7 +147,7 @@ function SeitenContentScreenContent() {
                 }}
 
                       slotProps={{
-                        htmlInput: { "aria-describedby": "_textfield__1_65827-helper-text" },
+                        htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "_textfield__1_65827-helper-text" },
                   formHelperText: { id: "_textfield__1_65827-helper-text" }
                       }}
                     />
@@ -176,6 +178,7 @@ function SeitenContentScreenContent() {
                         value={controllerField.value}
                         onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
                         onBlur={controllerField.onBlur}
+                        aria-invalid={Boolean(helperText)}
                         aria-describedby={"_select__1_65828-helper-text"}
                         aria-label={"Art des Investitionsobjekts"}
                       >
@@ -319,6 +322,7 @@ function SeitenContentScreenContent() {
                       error={Boolean(helperText)}
                       helperText={helperText}
                       aria-label={"Höhe des Kaufpreises (Netto)"}
+                      aria-invalid={Boolean(helperText)}
                       aria-describedby={"_textfield__1_65897-helper-text"}
                 sx={{
                   width: "95.8%", maxWidth: "918px", minHeight: "72px", display: "flex", flexDirection: "column", gap: 1,
@@ -327,7 +331,7 @@ function SeitenContentScreenContent() {
                 }}
 
                       slotProps={{
-                        htmlInput: { "aria-describedby": "_textfield__1_65897-helper-text" },
+                        htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "_textfield__1_65897-helper-text" },
                   formHelperText: { id: "_textfield__1_65897-helper-text" }
                       }}
                     />
@@ -358,6 +362,7 @@ function SeitenContentScreenContent() {
                         value={controllerField.value}
                         onChange={(event: SelectChangeEvent<string>) => controllerField.onChange(event.target.value)}
                         onBlur={controllerField.onBlur}
+                        aria-invalid={Boolean(helperText)}
                         aria-describedby={"_select__1_65898-helper-text"}
                         aria-label={"Anfallender MwSt.-Satz bei Kauf"}
                       >
@@ -391,6 +396,7 @@ function SeitenContentScreenContent() {
                       error={Boolean(helperText)}
                       helperText={helperText}
                       aria-label={"Höhe der Nebenkosten (Brutto)"}
+                      aria-invalid={Boolean(helperText)}
                       aria-describedby={"_textfield__1_65899-helper-text"}
                 sx={{
                   width: "95.8%", maxWidth: "918px", minHeight: "72px", display: "flex", flexDirection: "column", gap: 1,
@@ -399,7 +405,7 @@ function SeitenContentScreenContent() {
                 }}
 
                       slotProps={{
-                        htmlInput: { "aria-describedby": "_textfield__1_65899-helper-text" },
+                        htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "_textfield__1_65899-helper-text" },
                   formHelperText: { id: "_textfield__1_65899-helper-text" }
                       }}
                     />
@@ -492,6 +498,7 @@ function SeitenContentScreenContent() {
                   error={Boolean(helperText)}
                   helperText={helperText}
                   aria-label={"Interner Vermerk"}
+                  aria-invalid={Boolean(helperText)}
                   aria-describedby={"_textfield__I2_656_4919_305782-helper-text"}
             sx={{
               width: "95.8%", maxWidth: "920px", minHeight: "96px", display: "flex", flexDirection: "column", gap: 1,
@@ -500,7 +507,7 @@ function SeitenContentScreenContent() {
             }}
 
                   slotProps={{
-                    htmlInput: { "aria-describedby": "_textfield__I2_656_4919_305782-helper-text" },
+                    htmlInput: { "aria-invalid": Boolean(helperText), "aria-describedby": "_textfield__I2_656_4919_305782-helper-text" },
               formHelperText: { id: "_textfield__I2_656_4919_305782-helper-text" }
                   }}
                 />
