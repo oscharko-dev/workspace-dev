@@ -302,6 +302,28 @@ const toCanonicalAnalysisFamilyName = (value: string | undefined): string => {
   return firstChunk;
 };
 
+const isVariantAssignmentSignature = (value: string | undefined): boolean => {
+  const normalized = (value ?? "").trim().replace(/\s+/gu, " ");
+  if (!normalized) {
+    return false;
+  }
+
+  const segments = normalized.split(",").map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return false;
+  }
+
+  return segments.every((segment) => {
+    const separatorIndex = segment.indexOf("=");
+    if (separatorIndex <= 0 || separatorIndex >= segment.length - 1) {
+      return false;
+    }
+    const key = segment.slice(0, separatorIndex).trim();
+    const normalizedKey = normalizeVariantKey(key) ?? normalizeComparableText(key);
+    return normalizedKey.length > 0;
+  });
+};
+
 const toComparableTokens = (value: string | undefined): string[] => {
   const normalized = normalizeComparableText(value);
   if (!normalized) {
@@ -580,14 +602,16 @@ const inferFigmaResolution = ({
     })
   };
 
-  const canonicalFamilyName =
-    selectedEntry.canonicalFamilyNameSource === "analysis"
-      ? toCanonicalAnalysisFamilyName(selectedEntry.canonicalFamilyName)
-      : selectedEntry.canonicalFamilyName;
-  const fallbackReasons: ComponentMatchFallbackReason[] =
-    selectedEntry.canonicalFamilyNameSource === "analysis"
-      ? ["used_figma_analysis_family_name"]
-      : ["used_library_resolution_canonical_name"];
+  const libraryCanonicalFamilyName = toCanonicalAnalysisFamilyName(selectedEntry.canonicalFamilyName);
+  const heuristicCanonicalFamilyName = toCanonicalAnalysisFamilyName(selectedEntry.heuristicFamilyName);
+  const shouldUseHeuristicFamilyName =
+    selectedEntry.canonicalFamilyNameSource === "analysis" || isVariantAssignmentSignature(selectedEntry.canonicalFamilyName);
+  const canonicalFamilyName = shouldUseHeuristicFamilyName
+    ? heuristicCanonicalFamilyName || libraryCanonicalFamilyName
+    : libraryCanonicalFamilyName || selectedEntry.canonicalFamilyName;
+  const fallbackReasons: ComponentMatchFallbackReason[] = shouldUseHeuristicFamilyName
+    ? ["used_figma_analysis_family_name"]
+    : ["used_library_resolution_canonical_name"];
 
   return {
     ...(canonicalFamilyName ? { canonicalFamilyName } : {}),
