@@ -72,8 +72,53 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const MAX_NODE_NAME_PATTERN_LENGTH = 256;
+const MAX_QUANTIFIER_COUNT = 3;
+const MAX_BRACE_REPEAT = 1000;
 const NESTED_QUANTIFIER_PATTERN = /(\+|\*|\{)\)?(\+|\*|\{)/;
 const ALTERNATION_QUANTIFIER_PATTERN = /\([^)]*\|[^)]*\)[+*{]/;
+
+const countQuantifiersOutsideCharClass = (pattern: string): number => {
+  let count = 0;
+  let inCharClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === "\\" && !inCharClass) {
+      i++;
+      continue;
+    }
+    if (char === "[" && !inCharClass) {
+      inCharClass = true;
+      continue;
+    }
+    if (char === "]" && inCharClass) {
+      inCharClass = false;
+      continue;
+    }
+    if (inCharClass) {
+      continue;
+    }
+    if (char === "+" || char === "*") {
+      count++;
+    }
+    if (char === "{" && i + 1 < pattern.length && /\d/.test(pattern[i + 1]!)) {
+      count++;
+    }
+  }
+  return count;
+};
+
+const exceedsBraceRepeatLimit = (pattern: string): boolean => {
+  const bracePattern = /\{(\d+)(?:,(\d*))?\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = bracePattern.exec(pattern)) !== null) {
+    const min = Number(match[1]);
+    const max = match[2] !== undefined && match[2] !== "" ? Number(match[2]) : undefined;
+    if (min > MAX_BRACE_REPEAT || (max !== undefined && max > MAX_BRACE_REPEAT)) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const normalizeOptionalString = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
@@ -388,6 +433,22 @@ export const validateComponentMappingRule = ({
         message: "nodeNamePattern must not contain alternation groups followed by quantifiers (potential ReDoS)."
       };
     }
+    if (countQuantifiersOutsideCharClass(normalizedRule.nodeNamePattern) > MAX_QUANTIFIER_COUNT) {
+      return {
+        ok: false,
+        normalizedRule,
+        field: "nodeNamePattern",
+        message: `nodeNamePattern must not contain more than ${MAX_QUANTIFIER_COUNT} quantifiers (potential ReDoS).`
+      };
+    }
+    if (exceedsBraceRepeatLimit(normalizedRule.nodeNamePattern)) {
+      return {
+        ok: false,
+        normalizedRule,
+        field: "nodeNamePattern",
+        message: `nodeNamePattern brace quantifier repeat count must not exceed ${MAX_BRACE_REPEAT}.`
+      };
+    }
     try {
       nodeNameRegex = new RegExp(normalizedRule.nodeNamePattern, "iu");
     } catch {
@@ -640,6 +701,16 @@ export const resolveComponentMappingRules = ({
       continue;
     }
 
+    if (!validation.normalizedRule.enabled) {
+      mappingWarnings.push({
+        code: "W_COMPONENT_MAPPING_DISABLED",
+        message:
+          `Pattern component mapping rule ${ruleDescription} matched ${matchedNodeContexts.length} node(s) ` +
+          "but is disabled; deterministic fallback used"
+      });
+      continue;
+    }
+
     const matchedFamilyKeys = new Set(matchedNodeContexts.map((entry) => entry.familyKey));
     if (matchedFamilyKeys.size > 1) {
       mappingWarnings.push({
@@ -647,16 +718,6 @@ export const resolveComponentMappingRules = ({
         message:
           `Pattern component mapping rule ${ruleDescription} matched ${matchedFamilyKeys.size} component families; ` +
           "narrow the selectors before applying the override"
-      });
-      continue;
-    }
-
-    if (!validation.normalizedRule.enabled) {
-      mappingWarnings.push({
-        code: "W_COMPONENT_MAPPING_DISABLED",
-        message:
-          `Pattern component mapping rule ${ruleDescription} matched ${matchedNodeContexts.length} node(s) ` +
-          "but is disabled; deterministic fallback used"
       });
       continue;
     }

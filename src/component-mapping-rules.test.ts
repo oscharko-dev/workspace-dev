@@ -663,3 +663,72 @@ test("component mapping rules reject rules with neither nodeId nor pattern selec
     assert.match(result.message, /must define at least one selector/);
   }
 });
+
+test("component mapping rules reject nodeNamePattern with excessive quantifiers", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "\\d+\\d+\\d+\\d+"
+    })
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.ok(result.message.includes("quantifiers"));
+    assert.equal(result.field, "nodeNamePattern");
+  }
+});
+
+test("component mapping rules accept nodeNamePattern with up to 3 quantifiers", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "Button/\\w+/\\w+/\\d+"
+    })
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test("component mapping rules reject nodeNamePattern with excessive brace repeat count", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "a{2000}"
+    })
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.ok(result.message.includes("brace quantifier"));
+    assert.equal(result.field, "nodeNamePattern");
+  }
+});
+
+test("component mapping rules accept nodeNamePattern with reasonable brace repeat count", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "a{5,10}"
+    })
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test("resolveComponentMappingRules emits W_COMPONENT_MAPPING_DISABLED for disabled broad-pattern rule", () => {
+  const resolved = resolveComponentMappingRules({
+    componentMappings: [
+      createRule({
+        storybookTier: "Components",
+        semanticType: "button",
+        componentName: "DisabledBroadButton",
+        enabled: false
+      })
+    ],
+    ir: createResolverIr({ includeSecondFamily: true }),
+    figmaAnalysis: createResolverFigmaAnalysis({ includeSecondFamily: true }),
+    componentMatchReportArtifact: createResolverComponentMatchReport({ includeSecondFamily: true })
+  });
+
+  assert.equal(resolved.componentMappings.length, 0);
+  assert.equal(resolved.mappingWarnings.length, 1);
+  assert.equal(resolved.mappingWarnings[0]?.code, "W_COMPONENT_MAPPING_DISABLED");
+  assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /disabled/);
+});
