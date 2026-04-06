@@ -1,5 +1,4 @@
 import { Container, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
-import { DashboardPattern1 } from "../components/DashboardPattern1";
 import { DashboardPatternContextProvider, type DashboardPatternContextState } from "../context/DashboardPatternContext";
 
 const patternContextInitialState: DashboardPatternContextState = {

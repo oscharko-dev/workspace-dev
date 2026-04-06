@@ -437,6 +437,12 @@ const sanitizeValidationSummaryForFixture = ({
     delete styleEvidence.filePath;
   }
 
+  const generatedApp = isPlainRecord(output.generatedApp) ? output.generatedApp : undefined;
+  const install = isPlainRecord(generatedApp?.install) ? generatedApp.install : undefined;
+  if (install && typeof install.strategy === "string") {
+    install.strategy = "normalized";
+  }
+
   return output;
 };
 

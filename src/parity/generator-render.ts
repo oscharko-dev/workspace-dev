@@ -1030,6 +1030,7 @@ export interface RenderContext {
   themeSxSampleCollector?: ThemeSxSampleCollector;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
+  consumedExtractionComponentNames: Set<string>;
   currentFormGroupId?: string | undefined;
   usesDatePicker?: boolean | undefined;
   requiresChangeEventTypeImport: boolean;

@@ -1,9 +1,9 @@
-import { Alert, Avatar, Button, Card, CardContent, Chip, Container, Divider, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Radio, Select, Stack, SvgIcon, TextField } from "@mui/material";
-import type { SelectChangeEvent } from "@mui/material/Select";
 import type { ChangeEvent } from "react";
 import { Controller } from "react-hook-form";
-import { SeitenContentFormContextProvider, useSeitenContentFormContext } from "../context/SeitenContentFormContext";
+import type { SelectChangeEvent } from "@mui/material/Select";
+import { Alert, Avatar, Button, Card, CardContent, Chip, Container, Divider, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Radio, Select, Stack, SvgIcon, TextField } from "@mui/material";
 import { SeitenContentPatternContextProvider, type SeitenContentPatternContextState } from "../context/SeitenContentPatternContext";
+import { SeitenContentFormContextProvider, useSeitenContentFormContext } from "../context/SeitenContentFormContext";
 
 const patternContextInitialState: SeitenContentPatternContextState = {
   "SeitenContentPattern1": {

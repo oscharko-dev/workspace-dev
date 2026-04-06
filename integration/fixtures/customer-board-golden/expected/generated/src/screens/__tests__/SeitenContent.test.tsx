@@ -1,6 +1,6 @@
-import { ThemeProvider } from "@mui/material/styles";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ThemeProvider } from "@mui/material/styles";
 import { axe } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import { appTheme } from "../../theme/theme";
