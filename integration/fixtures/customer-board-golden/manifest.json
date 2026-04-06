@@ -5,7 +5,7 @@
     "figmaLibraryResolution": "derived/figma-library-resolution.json",
     "storybookCatalog": "derived/storybook.catalog.json",
     "storybookComponents": "derived/storybook.components.json",
-    "storybookEvidence": "derived/storybook.evidence.json",
+    "storybookEvidenceHints": "derived/storybook.evidence-hints.json",
     "storybookThemes": "derived/storybook.themes.json",
     "storybookTokens": "derived/storybook.tokens.json"
   },
@@ -55,5 +55,5 @@
     "customerProfile": "inputs/customer-profile.json",
     "figma": "inputs/figma.json"
   },
-  "version": 1
+  "version": 2
 }

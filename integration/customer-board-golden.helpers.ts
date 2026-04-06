@@ -57,6 +57,12 @@ import {
 } from "../src/storybook/public-extracts.js";
 import { resolveStorybookTheme } from "../src/storybook/theme-resolver.js";
 import {
+  type StorybookEntryType,
+  type StorybookEvidenceReliability,
+  type StorybookEvidenceStats,
+  type StorybookEvidenceSummary,
+  type StorybookEvidenceType,
+  type StorybookEvidenceUsage,
   type StorybookPublicComponentsArtifact
 } from "../src/storybook/types.js";
 
@@ -125,15 +131,49 @@ export interface CustomerBoardGoldenGeneratedArtifactSpec {
   expected: string;
 }
 
-export interface CustomerBoardGoldenManifest {
+export interface CustomerBoardStorybookEvidenceHintsArtifact {
+  artifact: "customer-board.storybook_evidence_hints";
   version: 1;
+  stats: StorybookEvidenceStats;
+  evidence: CustomerBoardStorybookEvidenceHintItem[];
+}
+
+export interface CustomerBoardStorybookEvidenceHintItem {
+  id: string;
+  type: StorybookEvidenceType;
+  reliability: StorybookEvidenceReliability;
+  usage: StorybookEvidenceUsage;
+  source: CustomerBoardStorybookEvidenceHintSource;
+  summary: CustomerBoardStorybookEvidenceHintSummary;
+}
+
+export interface CustomerBoardStorybookEvidenceHintSource {
+  entryId?: string;
+  entryIds?: string[];
+  entryType?: StorybookEntryType;
+  title?: string;
+}
+
+export interface CustomerBoardStorybookEvidenceHintSummary {
+  componentPath?: string;
+  keys?: string[];
+  url?: string;
+  linkTarget?: string;
+  imagePath?: string;
+  text?: string;
+  themeMarkers?: string[];
+  customProperties?: string[];
+}
+
+export interface CustomerBoardGoldenManifest {
+  version: 2;
   fixtureId: "customer-board-golden";
   inputs: {
     figma: string;
     customerProfile: string;
   };
   derived: {
-    storybookEvidence: string;
+    storybookEvidenceHints: string;
     storybookCatalog: string;
     storybookTokens: string;
     storybookThemes: string;
@@ -224,8 +264,8 @@ const parseManifest = ({
   if (fixtureId !== "customer-board-golden") {
     throw new Error("customer-board manifest fixtureId must be 'customer-board-golden'.");
   }
-  if (parsed.version !== 1) {
-    throw new Error("customer-board manifest version must be 1.");
+  if (parsed.version !== 2) {
+    throw new Error("customer-board manifest version must be 2.");
   }
 
   const inputs = parsed.inputs;
@@ -241,14 +281,14 @@ const parseManifest = ({
   }
 
   const output: CustomerBoardGoldenManifest = {
-    version: 1,
+    version: 2,
     fixtureId: "customer-board-golden",
     inputs: {
       figma: assertAllowedFixturePath(String(inputs.figma ?? "")),
       customerProfile: assertAllowedFixturePath(String(inputs.customerProfile ?? ""))
     },
     derived: {
-      storybookEvidence: assertAllowedFixturePath(String(derived.storybookEvidence ?? "")),
+      storybookEvidenceHints: assertAllowedFixturePath(String(derived.storybookEvidenceHints ?? "")),
       storybookCatalog: assertAllowedFixturePath(String(derived.storybookCatalog ?? "")),
       storybookTokens: assertAllowedFixturePath(String(derived.storybookTokens ?? "")),
       storybookThemes: assertAllowedFixturePath(String(derived.storybookThemes ?? "")),
@@ -368,6 +408,36 @@ export const normalizeCustomerBoardFixtureValue = ({
   };
 
   return visit({ current: value });
+};
+
+const sanitizeValidationSummaryForFixture = ({
+  value
+}: {
+  value: unknown;
+}): unknown => {
+  if (!isPlainRecord(value)) {
+    return value;
+  }
+
+  const output = structuredClone(value) as Record<string, unknown>;
+  const storybook = isPlainRecord(output.storybook) ? output.storybook : undefined;
+  if (storybook) {
+    delete storybook.requestedPath;
+    const storybookArtifacts = isPlainRecord(storybook.artifacts) ? storybook.artifacts : undefined;
+    const evidenceArtifact = isPlainRecord(storybookArtifacts?.evidence) ? storybookArtifacts.evidence : undefined;
+    if (evidenceArtifact) {
+      delete evidenceArtifact.filePath;
+    }
+  }
+
+  const style = isPlainRecord(output.style) ? output.style : undefined;
+  const styleStorybook = isPlainRecord(style?.storybook) ? style.storybook : undefined;
+  const styleEvidence = isPlainRecord(styleStorybook?.evidence) ? styleStorybook.evidence : undefined;
+  if (styleEvidence) {
+    delete styleEvidence.filePath;
+  }
+
+  return output;
 };
 
 const collectForbiddenArtifactLeaks = ({
@@ -612,6 +682,160 @@ const sanitizeComponentsArtifact = ({
     value: sanitized
   });
   return sanitized;
+};
+
+const createEmptyStorybookEvidenceStats = (): StorybookEvidenceStats => ({
+  entryCount: 0,
+  evidenceCount: 0,
+  byType: {
+    story_componentPath: 0,
+    story_argTypes: 0,
+    story_args: 0,
+    story_design_link: 0,
+    theme_bundle: 0,
+    css: 0,
+    mdx_link: 0,
+    docs_image: 0,
+    docs_text: 0
+  },
+  byReliability: {
+    authoritative: 0,
+    reference_only: 0,
+    derived: 0
+  }
+});
+
+const toUniqueSortedStrings = (values: readonly string[] | undefined): string[] | undefined => {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+  const normalized = [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))].sort(compareStrings);
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const sanitizeStorybookEvidenceSummaryForHints = ({
+  summary
+}: {
+  summary: StorybookEvidenceSummary;
+}): CustomerBoardStorybookEvidenceHintSummary => {
+  return {
+    ...(typeof summary.componentPath === "string" ? { componentPath: summary.componentPath } : {}),
+    ...(toUniqueSortedStrings(summary.keys) ? { keys: toUniqueSortedStrings(summary.keys) } : {}),
+    ...(typeof summary.url === "string" ? { url: summary.url } : {}),
+    ...(typeof summary.linkTarget === "string" ? { linkTarget: summary.linkTarget } : {}),
+    ...(typeof summary.imagePath === "string" ? { imagePath: summary.imagePath } : {}),
+    ...(typeof summary.text === "string" ? { text: summary.text } : {}),
+    ...(toUniqueSortedStrings(summary.themeMarkers) ? { themeMarkers: toUniqueSortedStrings(summary.themeMarkers) } : {}),
+    ...(toUniqueSortedStrings(summary.customProperties)
+      ? { customProperties: toUniqueSortedStrings(summary.customProperties) }
+      : {})
+  };
+};
+
+const collectStorybookEvidenceStats = ({
+  evidence
+}: {
+  evidence: readonly Pick<CustomerBoardStorybookEvidenceHintItem, "type" | "reliability" | "source">[];
+}): StorybookEvidenceStats => {
+  const stats = createEmptyStorybookEvidenceStats();
+  const entryIds = new Set<string>();
+
+  for (const item of evidence) {
+    stats.evidenceCount += 1;
+    stats.byType[item.type] += 1;
+    stats.byReliability[item.reliability] += 1;
+    const sourceEntryIds = [
+      ...(typeof item.source.entryId === "string" ? [item.source.entryId] : []),
+      ...(item.source.entryIds ?? [])
+    ];
+    for (const entryId of sourceEntryIds) {
+      const normalizedEntryId = entryId.trim();
+      if (normalizedEntryId.length > 0) {
+        entryIds.add(normalizedEntryId);
+      }
+    }
+  }
+
+  stats.entryCount = entryIds.size;
+  return stats;
+};
+
+export const createCustomerBoardStorybookEvidenceHintsArtifact = ({
+  artifact
+}: {
+  artifact: StorybookEvidenceArtifact;
+}): CustomerBoardStorybookEvidenceHintsArtifact => {
+  const evidence = artifact.evidence.map((item) => ({
+    id: item.id,
+    type: item.type,
+    reliability: item.reliability,
+    usage: item.usage,
+    source: {
+      ...(typeof item.source.entryId === "string" ? { entryId: item.source.entryId } : {}),
+      ...(toUniqueSortedStrings(item.source.entryIds) ? { entryIds: toUniqueSortedStrings(item.source.entryIds) } : {}),
+      ...(typeof item.source.entryType === "string" ? { entryType: item.source.entryType } : {}),
+      ...(typeof item.source.title === "string" ? { title: item.source.title } : {})
+    },
+    summary: sanitizeStorybookEvidenceSummaryForHints({
+      summary: item.summary
+    })
+  }));
+
+  const hintsArtifact: CustomerBoardStorybookEvidenceHintsArtifact = {
+    artifact: "customer-board.storybook_evidence_hints",
+    version: 1,
+    stats: collectStorybookEvidenceStats({
+      evidence
+    }),
+    evidence
+  };
+
+  assertCustomerBoardPublicArtifactSanitized({
+    label: "customer-board.storybook_evidence_hints",
+    value: hintsArtifact
+  });
+
+  return hintsArtifact;
+};
+
+export const materializeCustomerBoardRuntimeStorybookEvidenceArtifact = ({
+  hintsArtifact
+}: {
+  hintsArtifact: CustomerBoardStorybookEvidenceHintsArtifact;
+}): StorybookEvidenceArtifact => {
+  const evidence = hintsArtifact.evidence.map((item) => ({
+    id: item.id,
+    type: item.type,
+    reliability: item.reliability,
+    usage: item.usage,
+    source: {
+      ...(typeof item.source.entryId === "string" ? { entryId: item.source.entryId } : {}),
+      ...(item.source.entryIds ? { entryIds: item.source.entryIds } : {}),
+      ...(typeof item.source.entryType === "string" ? { entryType: item.source.entryType } : {}),
+      ...(typeof item.source.title === "string" ? { title: item.source.title } : {})
+    },
+    summary: {
+      ...(typeof item.summary.componentPath === "string" ? { componentPath: item.summary.componentPath } : {}),
+      ...(item.summary.keys ? { keys: item.summary.keys } : {}),
+      ...(typeof item.summary.url === "string" ? { url: item.summary.url } : {}),
+      ...(typeof item.summary.linkTarget === "string" ? { linkTarget: item.summary.linkTarget } : {}),
+      ...(typeof item.summary.imagePath === "string" ? { imagePath: item.summary.imagePath } : {}),
+      ...(typeof item.summary.text === "string" ? { text: item.summary.text } : {}),
+      ...(item.summary.themeMarkers ? { themeMarkers: item.summary.themeMarkers } : {}),
+      ...(item.summary.customProperties ? { customProperties: item.summary.customProperties } : {})
+    }
+  }));
+
+  return {
+    artifact: "storybook.evidence",
+    version: 1,
+    buildRoot: ".customer-board-runtime",
+    iframeBundlePath: "assets/iframe.fixture.js",
+    stats: collectStorybookEvidenceStats({
+      evidence
+    }),
+    evidence
+  };
 };
 
 const sanitizeFigmaInputForFixture = ({
@@ -1190,7 +1414,22 @@ const seedFixtureArtifacts = async ({
   };
 
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookCatalog, manifest.derived.storybookCatalog);
-  await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookEvidence, manifest.derived.storybookEvidence);
+  const storybookEvidenceHintsArtifact = await readJsonFile<CustomerBoardStorybookEvidenceHintsArtifact>({
+    filePath: derivedPathFor(manifest.derived.storybookEvidenceHints)
+  });
+  const runtimeStorybookEvidenceArtifact = materializeCustomerBoardRuntimeStorybookEvidenceArtifact({
+    hintsArtifact: storybookEvidenceHintsArtifact
+  });
+  const runtimeStorybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.runtime.json");
+  await writeJsonFixtureFile({
+    filePath: runtimeStorybookEvidencePath,
+    value: runtimeStorybookEvidenceArtifact
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "ir.derive",
+    absolutePath: runtimeStorybookEvidencePath
+  });
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookTokens, manifest.derived.storybookTokens);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookThemes, manifest.derived.storybookThemes);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookComponents, manifest.derived.storybookComponents);
@@ -1297,15 +1536,20 @@ export const collectCustomerBoardFixtureOutputsFromPaths = async ({
   const validationSummary = await readJsonFile<unknown>({
     filePath: path.join(jobDir, "validation-summary.json")
   });
+  const sanitizedValidationSummary = normalizeCustomerBoardFixtureValue({
+    value: sanitizeValidationSummaryForFixture({
+      value: validationSummary
+    }),
+    jobDir,
+    fixtureRoot
+  });
+  assertCustomerBoardPublicArtifactSanitized({
+    label: "validation.summary",
+    value: sanitizedValidationSummary
+  });
   outputs.set(
     manifest.expected.validationSummary,
-    toStableJsonString(
-      normalizeCustomerBoardFixtureValue({
-        value: validationSummary,
-        jobDir,
-        fixtureRoot
-      })
-    )
+    toStableJsonString(sanitizedValidationSummary)
   );
   return outputs;
 };
@@ -1569,15 +1813,19 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
           })
         });
 
+    const storybookEvidenceHintsArtifact = createCustomerBoardStorybookEvidenceHintsArtifact({
+      artifact: evidenceArtifact
+    });
+
     const manifestBase: CustomerBoardGoldenManifest = {
-      version: 1,
+      version: 2,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
         customerProfile: "inputs/customer-profile.json"
       },
       derived: {
-        storybookEvidence: "derived/storybook.evidence.json",
+        storybookEvidenceHints: "derived/storybook.evidence-hints.json",
         storybookCatalog: "derived/storybook.catalog.json",
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
@@ -1594,8 +1842,8 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
 
     const tempDerivedRoot = path.join(tempFixtureRoot, "derived");
     await writeJsonFixtureFile({
-      filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookEvidence),
-      value: evidenceArtifact
+      filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookEvidenceHints),
+      value: storybookEvidenceHintsArtifact
     });
     await writeJsonFixtureFile({
       filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookCatalog),
@@ -1671,9 +1919,8 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     });
     addBundleJson({
       files,
-      relativePath: manifest.derived.storybookEvidence,
-      value: evidenceArtifact,
-      sanitize: false
+      relativePath: manifest.derived.storybookEvidenceHints,
+      value: storybookEvidenceHintsArtifact
     });
     addBundleJson({
       files,
@@ -1771,7 +2018,7 @@ export const readCommittedCustomerBoardGoldenBundle = async ({
     manifest.inputs.figma,
     manifest.inputs.customerProfile,
     manifest.derived.storybookCatalog,
-    manifest.derived.storybookEvidence,
+    manifest.derived.storybookEvidenceHints,
     manifest.derived.storybookTokens,
     manifest.derived.storybookThemes,
     manifest.derived.storybookComponents,

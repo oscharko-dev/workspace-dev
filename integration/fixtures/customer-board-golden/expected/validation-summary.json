@@ -103,39 +103,39 @@
       "counts": {
         "byReason": {
           "match_ambiguous": 16,
-          "match_unmatched": 14,
+          "match_unmatched": 13,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 12,
+          "profile_import_missing": 13,
           "profile_import_resolved": 0
         },
         "byStatus": {
-          "mui_fallback_allowed": 12,
+          "mui_fallback_allowed": 13,
           "mui_fallback_denied": 0,
-          "not_applicable": 30,
+          "not_applicable": 29,
           "resolved_import": 0
         },
         "iconByReason": {
-          "match_ambiguous": 8,
+          "match_ambiguous": 6,
           "match_unmatched": 36,
           "not_icon_family": 28,
           "profile_family_unresolved": 0,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 0,
           "profile_icon_wrapper_allowed": 0,
-          "profile_icon_wrapper_denied": 9,
+          "profile_icon_wrapper_denied": 10,
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 8,
+          "ambiguous": 6,
           "not_applicable": 28,
           "resolved_import": 0,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
-          "wrapper_fallback_denied": 9
+          "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 83,
+      "issueCount": 81,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -284,6 +284,14 @@
           "status": "not_applicable"
         },
         {
+          "figmaFamilyKey": "component:1:39153",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "kind": "component",
+          "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
           "figmaFamilyKey": "component:1:39169",
           "figmaFamilyName": "<Dynamic Typography> (headlines)",
           "kind": "component",
@@ -296,26 +304,11 @@
           "figmaFamilyName": "<Icon>",
           "iconKey": "docs",
           "kind": "icon",
-          "message": "icon 'docs' in Figma family '<Icon>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:38938",
-          "figmaFamilyName": "<Icon>",
-          "iconKey": "size_medium_color_action",
-          "kind": "icon",
-          "message": "icon 'size_medium_color_action' in Figma family '<Icon>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:38938",
-          "figmaFamilyName": "<Icon>",
-          "kind": "component",
-          "message": "Figma family '<Icon>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
+          "message": "icon 'docs' in Figma family '<Icon>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:39046",
@@ -449,14 +442,6 @@
           "figmaFamilyName": "<Stack3>(Nested)",
           "kind": "component",
           "message": "Figma family '<Stack3>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
           "reason": "match_unmatched",
           "status": "not_applicable"
         },
@@ -908,7 +893,6 @@
         "status": "ok"
       },
       "evidence": {
-        "filePath": "<fixture-root>/derived/storybook.evidence.json",
         "status": "ok"
       },
       "themes": {
@@ -924,11 +908,10 @@
       "ambiguous": 16,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 12,
+      "matched": 13,
       "totalFigmaFamilies": 42,
-      "unmatched": 14
+      "unmatched": 13
     },
-    "requestedPath": "storybook-static/storybook-static",
     "status": "ok"
   },
   "style": {
@@ -1415,7 +1398,6 @@
         "status": "ok"
       },
       "evidence": {
-        "filePath": "<fixture-root>/derived/storybook.evidence.json",
         "status": "ok"
       },
       "themes": {

@@ -179,6 +179,13 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
     actual: actualBundle,
     expected: committedBundle
   });
+  assert.equal(actualBundle.files.has("derived/storybook.evidence.json"), false);
+  const evidenceHintsEntry = actualBundle.files.get(manifest.derived.storybookEvidenceHints);
+  assert.ok(evidenceHintsEntry, "Live parity bundle must emit curated storybook evidence hints.");
+  assertCustomerBoardPublicArtifactSanitized({
+    label: manifest.derived.storybookEvidenceHints,
+    value: JSON.parse(evidenceHintsEntry.content) as unknown
+  });
 
   const jobDir = String(status.artifacts.jobDir);
   const artifactStore = new StageArtifactStore({
@@ -260,4 +267,7 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
       value: JSON.parse(await readFile(artifactPath, "utf8")) as unknown
     });
   }
+
+  const runtimeEvidencePath = await artifactStore.requirePath(STAGE_ARTIFACT_KEYS.storybookEvidence);
+  assert.ok(runtimeEvidencePath.includes("storybook.evidence"), "Runtime storybook evidence should remain internal-only.");
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertCustomerBoardPublicArtifactSanitized,
   collectActualFixtureOutputs,
   deriveCustomerBoardDesignIrAndAnalysis,
   executeCustomerBoardFixture,
@@ -22,6 +23,13 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   const committedFigmaAnalysis = committedBundle.files.get(manifest.derived.figmaAnalysis);
   assert.ok(committedFigmaAnalysis, "Committed figma.analysis fixture must exist.");
   assert.deepEqual(JSON.parse(committedFigmaAnalysis.content), figmaAnalysis);
+  assert.equal(committedBundle.files.has("derived/storybook.evidence.json"), false);
+  const committedEvidenceHints = committedBundle.files.get(manifest.derived.storybookEvidenceHints);
+  assert.ok(committedEvidenceHints, "Committed storybook evidence hints fixture must exist.");
+  assertCustomerBoardPublicArtifactSanitized({
+    label: manifest.derived.storybookEvidenceHints,
+    value: JSON.parse(committedEvidenceHints.content) as unknown
+  });
 
   const first = await executeCustomerBoardFixture({
     manifest
@@ -100,9 +108,12 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(validationSummary.storybook?.artifacts?.tokens?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.themes?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.components?.status, "ok");
+  assert.equal("requestedPath" in (validationSummary.storybook ?? {}), false);
+  assert.equal("filePath" in (validationSummary.storybook?.artifacts?.evidence ?? {}), false);
   assert.equal(validationSummary.mapping?.figmaLibraryResolution?.status, "ok");
   assert.equal(validationSummary.mapping?.componentMatchReport?.status, "ok");
   assert.notEqual(validationSummary.mapping?.customerProfileMatch?.status, "not_available");
+  assert.equal("filePath" in (validationSummary.style?.storybook?.evidence ?? {}), false);
   assert.equal(validationSummary.style?.storybook?.tokens?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.themes?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.componentMatchReport?.status, "ok");
