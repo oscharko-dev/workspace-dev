@@ -116,7 +116,31 @@
     }
   ],
   "imports": {
-    "components": {},
+    "components": {
+      "Chip": {
+        "family": "Components",
+        "package": "@mui/material",
+        "export": "Chip"
+      },
+      "Divider": {
+        "family": "Components",
+        "package": "@mui/material",
+        "export": "Divider"
+      },
+      "IconButton": {
+        "family": "Components",
+        "package": "@mui/material",
+        "export": "IconButton"
+      },
+      "Typography": {
+        "family": "Components",
+        "package": "@mui/material",
+        "export": "Typography",
+        "propMappings": {
+          "variant": "variant"
+        }
+      }
+    },
     "icons": {}
   },
   "strictness": {
