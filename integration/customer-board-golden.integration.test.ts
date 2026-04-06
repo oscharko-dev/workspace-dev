@@ -10,6 +10,26 @@ import {
   readCommittedCustomerBoardGoldenBundle
 } from "./customer-board-golden.helpers.js";
 
+const assertAttemptOneStage = (
+  stage: { attempt?: number; outputCaptureKey?: string; status?: string } | undefined,
+  label: string,
+  expectedStatus: string
+): void => {
+  assert.ok(stage, `${label} must be present`);
+  assert.equal(stage?.attempt, 1, `${label} must run on attempt 1`);
+  assert.equal(stage?.status, expectedStatus, `${label} must report status '${expectedStatus}'`);
+  assert.ok(stage?.outputCaptureKey?.includes("attempt-1"), `${label} must reference attempt-1 in outputCaptureKey`);
+};
+
+const getExpectedOutput = (
+  manifest: { expected: { generated: Array<{ actual: string; expected: string }> } },
+  actualPath: string
+): string => {
+  const artifact = manifest.expected.generated.find((entry) => entry.actual === actualPath);
+  assert.ok(artifact, `Expected manifest entry for '${actualPath}' to exist.`);
+  return artifact.expected;
+};
+
 test("customer-board golden offline fixture reproduces committed derived artifacts and generated outputs deterministically", async () => {
   const manifest = await loadCustomerBoardGoldenManifest();
   const committedBundle = await readCommittedCustomerBoardGoldenBundle();
@@ -62,6 +82,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   }
 
   const validationSummary = JSON.parse(firstOutputs.get(manifest.expected.validationSummary) ?? "null") as {
+    generatedApp?: {
+      attempts?: number;
+      install?: {
+        command?: { attempt?: number; outputCaptureKey?: string; status?: string };
+        status?: string;
+      };
+      lintAutofix?: { attempt?: number; outputCaptureKey?: string; status?: string };
+      lint?: { attempt?: number; outputCaptureKey?: string; status?: string };
+      build?: { attempt?: number; outputCaptureKey?: string; status?: string };
+      typecheck?: { attempt?: number; outputCaptureKey?: string; status?: string };
+      status?: string;
+    };
     storybook?: {
       status?: string;
       artifacts?: {
@@ -110,6 +142,15 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(validationSummary.storybook?.artifacts?.components?.status, "ok");
   assert.equal("requestedPath" in (validationSummary.storybook ?? {}), false);
   assert.equal("filePath" in (validationSummary.storybook?.artifacts?.evidence ?? {}), false);
+  assert.ok(validationSummary.generatedApp, "validation-summary.generatedApp must be present");
+  assert.equal(validationSummary.generatedApp?.attempts, 1);
+  assert.equal(validationSummary.generatedApp?.status, "ok");
+  assertAttemptOneStage(validationSummary.generatedApp?.lintAutofix, "validation-summary.generatedApp.lintAutofix", "completed");
+  assertAttemptOneStage(validationSummary.generatedApp?.lint, "validation-summary.generatedApp.lint", "passed");
+  assertAttemptOneStage(validationSummary.generatedApp?.build, "validation-summary.generatedApp.build", "passed");
+  assertAttemptOneStage(validationSummary.generatedApp?.typecheck, "validation-summary.generatedApp.typecheck", "passed");
+  assert.equal(validationSummary.generatedApp?.install?.command?.attempt, 1);
+  assert.equal(validationSummary.generatedApp?.install?.status, "completed");
   assert.equal(validationSummary.mapping?.figmaLibraryResolution?.status, "ok");
   assert.equal(validationSummary.mapping?.componentMatchReport?.status, "ok");
   assert.notEqual(validationSummary.mapping?.customerProfileMatch?.status, "not_available");
@@ -122,4 +163,35 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true
   );
   assert.equal((validationSummary.import?.customerProfile?.import?.issueCount ?? 0) >= 0, true);
+
+  const screenFile = firstOutputs.get(getExpectedOutput(manifest, "src/screens/SeitenContent.tsx"));
+  const patternContextFile = firstOutputs.get(getExpectedOutput(manifest, "src/context/SeitenContentPatternContext.tsx"));
+  assert.ok(screenFile, "Generated SeitenContent screen must exist.");
+  assert.ok(patternContextFile, "Generated pattern context file must exist.");
+  assert.equal(
+    screenFile?.includes("import { SeitenContentPattern1 }"),
+    false,
+    "Generated SeitenContent screen must not import the unused extracted component."
+  );
+  assert.equal(
+    screenFile?.includes("SeitenContentPatternContextProvider"),
+    true,
+    "Generated SeitenContent screen must still use the pattern context provider."
+  );
+  assert.equal(
+    screenFile?.includes("type SeitenContentPatternContextState"),
+    true,
+    "Generated SeitenContent screen must still import the pattern context state type."
+  );
+  assert.equal(
+    patternContextFile?.includes("SeitenContentPattern1State"),
+    true,
+    "Generated pattern context file must still define the extracted pattern state."
+  );
+  assert.equal(
+    patternContextFile?.includes("SeitenContentPatternContextProvider"),
+    true,
+    "Generated pattern context file must still expose the pattern context provider."
+  );
+  assert.equal(JSON.stringify(validationSummary.generatedApp).includes("attempt-2"), false);
 });
