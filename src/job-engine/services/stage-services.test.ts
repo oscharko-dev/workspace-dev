@@ -3848,6 +3848,183 @@ test("CodegenGenerateService resolves pattern componentMappings into exact node 
   assert.equal(await readFile(componentMatchReportPath, "utf8"), componentMatchReportContent);
 });
 
+test("CodegenGenerateService marks empty Storybook-first customer profile configs as authoritative", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = {
+    ...createMinimalIr(),
+    screens: [
+      {
+        id: "screen-1",
+        name: "Screen 1",
+        route: "/",
+        layoutMode: "VERTICAL" as const,
+        gap: 8,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        children: [
+          {
+            id: "instance-1",
+            name: "Primary CTA",
+            nodeType: "FRAME",
+            type: "button" as const,
+            semanticType: "button",
+            text: "Weiter",
+            children: []
+          }
+        ]
+      }
+    ]
+  } as DesignIR;
+  const tokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const themesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const figmaAnalysisPath = path.join(executionContext.paths.jobDir, "figma.analysis.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  const componentMatchReportArtifact = {
+    ...createComponentMatchReportArtifactForStageServices(),
+    entries: [
+      {
+        ...createComponentMatchReportArtifactForStageServices().entries[0],
+        resolvedProps: {
+          ...createComponentMatchReportArtifactForStageServices().entries[0].resolvedProps,
+          status: "incompatible" as const,
+          fallbackPolicy: "allow" as const,
+          codegenCompatible: false
+        }
+      }
+    ]
+  };
+
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+  await writeFile(tokensPath, `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(themesPath, `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`, "utf8");
+  await writeFile(figmaAnalysisPath, `${JSON.stringify({ artifactVersion: 1, componentFamilies: [] }, null, 2)}\n`, "utf8");
+  await writeFile(componentMatchReportPath, `${JSON.stringify(componentMatchReportArtifact, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: tokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: themesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+    stage: "ir.derive",
+    absolutePath: figmaAnalysisPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+  executionContext.resolvedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedCustomerBrandId = "sparkasse";
+  executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices();
+
+  const service = createCodegenGenerateService({
+    resolveStorybookThemeFn: ({ customerBrandId }) =>
+      ({
+        customerBrandId: customerBrandId ?? "sparkasse",
+        brandMappingId: "sparkasse",
+        includeThemeModeToggle: false,
+        light: {
+          themeId: "sparkasse-light",
+          palette: {
+            primary: { main: "#dd0000" },
+            text: { primary: "#111111" },
+            background: { default: "#f8f8f8", paper: "#ffffff" }
+          },
+          spacingBase: 8,
+          borderRadius: 12,
+          typography: {
+            fontFamily: "Brand Sans",
+            base: { fontFamily: "Brand Sans" },
+            variants: {}
+          },
+          components: {}
+        },
+        tokensDocument: {
+          customerBrandId: customerBrandId ?? "sparkasse",
+          brandMappingId: "sparkasse",
+          includeThemeModeToggle: false,
+          light: {
+            themeId: "sparkasse-light",
+            palette: {
+              primary: { main: "#dd0000" },
+              text: { primary: "#111111" },
+              background: { default: "#f8f8f8", paper: "#ffffff" }
+            },
+            spacingBase: 8,
+            borderRadius: 12,
+            typography: {
+              fontFamily: "Brand Sans",
+              base: { fontFamily: "Brand Sans" },
+              variants: {}
+            },
+            components: {}
+          }
+        }
+      }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
+    generateArtifactsStreamingFn: async function* (input) {
+      assert.deepEqual(input.customerProfileDesignSystemConfig, {
+        library: "__customer_profile__",
+        mappings: {}
+      });
+      assert.equal(input.customerProfileDesignSystemConfigSource, "storybook_first");
+      return {
+        generatedPaths: [],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 0,
+          fallbackNodes: 0,
+          totalCandidateNodes: 0
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0,
+          broadPatternCount: 0
+        },
+        mappingWarnings: []
+      };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "storybook-first-empty"
+    },
+    stageContextFor("codegen.generate")
+  );
+});
+
 test("CodegenGenerateService warns on componentMappings boardKey mismatches but still applies exact overrides", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     input: {
@@ -4591,7 +4768,10 @@ test("CodegenGenerateService excludes incompatible storybook-first mappings from
         }
       }) as ReturnType<typeof import("../../storybook/theme-resolver.js").resolveStorybookTheme>,
     generateArtifactsStreamingFn: async function* (input) {
-      assert.equal(input.customerProfileDesignSystemConfig, undefined);
+      assert.deepEqual(input.customerProfileDesignSystemConfig, {
+        library: "__customer_profile__",
+        mappings: {}
+      });
       return {
         generatedPaths: [],
         generationMetrics: {

@@ -490,6 +490,7 @@ const normalizeStyleDiagnosticEntry = ({
 interface StyleValidationCustomerComponentContract {
   componentKey: string;
   allowedProps: ReadonlySet<string>;
+  modulePaths: ReadonlySet<string>;
 }
 
 const collectCustomerComponentContracts = ({
@@ -503,9 +504,11 @@ const collectCustomerComponentContracts = ({
     if (entry.libraryResolution.status !== "resolved_import" || entry.resolvedApi?.status !== "resolved") {
       continue;
     }
-    const localName = entry.libraryResolution.import?.localName.trim();
+    const resolvedImport = entry.libraryResolution.import;
+    const localName = resolvedImport?.localName.trim();
+    const importPackage = resolvedImport?.package?.trim();
     const componentKey = entry.libraryResolution.componentKey?.trim() ?? entry.resolvedApi.componentKey?.trim();
-    if (!localName || !componentKey) {
+    if (!localName || !componentKey || !importPackage) {
       continue;
     }
 
@@ -514,13 +517,62 @@ const collectCustomerComponentContracts = ({
       ...(existing ? existing.allowedProps : []),
       ...entry.resolvedApi.allowedProps.map((prop) => prop.name)
     ]);
+    const modulePaths = new Set<string>([
+      ...(existing ? existing.modulePaths : []),
+      importPackage
+    ]);
     byComponentName.set(localName, {
       componentKey,
-      allowedProps: allowedPropNames
+      allowedProps: allowedPropNames,
+      modulePaths
     });
   }
 
   return byComponentName;
+};
+
+const collectImportedModulePathsByLocalName = ({
+  typescriptModule,
+  sourceFile
+}: {
+  typescriptModule: typeof TypeScript;
+  sourceFile: TypeScript.SourceFile;
+}): Map<string, string> => {
+  const byLocalName = new Map<string, string>();
+
+  for (const statement of sourceFile.statements) {
+    if (!typescriptModule.isImportDeclaration(statement)) {
+      continue;
+    }
+    const moduleSpecifier = statement.moduleSpecifier;
+    if (!typescriptModule.isStringLiteralLike(moduleSpecifier)) {
+      continue;
+    }
+    const modulePath = moduleSpecifier.text.trim();
+    if (!modulePath) {
+      continue;
+    }
+
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+    if (importClause.name) {
+      byLocalName.set(importClause.name.text, modulePath);
+    }
+    if (!importClause.namedBindings || !typescriptModule.isNamedImports(importClause.namedBindings)) {
+      continue;
+    }
+    for (const element of importClause.namedBindings.elements) {
+      const localName = element.name.text.trim();
+      if (!localName) {
+        continue;
+      }
+      byLocalName.set(localName, modulePath);
+    }
+  }
+
+  return byLocalName;
 };
 
 const resolveObjectPropertyName = (
@@ -1364,6 +1416,10 @@ const scanGeneratedSourceFileForStyleIssues = ({
       typescriptModule,
       sourceFile
     });
+    const importedModulePathsByLocalName = collectImportedModulePathsByLocalName({
+      typescriptModule,
+      sourceFile
+    });
 
     const scanStyledCallbackBody = ({
       expression,
@@ -1417,7 +1473,17 @@ const scanGeneratedSourceFileForStyleIssues = ({
     const visit = (node: TypeScript.Node): void => {
       if (typescriptModule.isJsxOpeningElement(node) || typescriptModule.isJsxSelfClosingElement(node)) {
         const componentName = typescriptModule.isIdentifier(node.tagName) ? node.tagName.text : undefined;
-        const customerComponent = componentName ? customerComponents.get(componentName) : undefined;
+        const importedModulePath = componentName ? importedModulePathsByLocalName.get(componentName) : undefined;
+        const customerComponent =
+          componentName && importedModulePath
+            ? (() => {
+                const contract = customerComponents.get(componentName);
+                if (!contract || !contract.modulePaths.has(importedModulePath)) {
+                  return undefined;
+                }
+                return contract;
+              })()
+            : undefined;
 
         for (const attribute of node.attributes.properties) {
           if (typescriptModule.isJsxSpreadAttribute(attribute)) {
@@ -2157,6 +2223,9 @@ export const validateGeneratedProjectStorybookStyles = async ({
   };
 
   for (const diagnostic of diagnostics.tokens.diagnostics) {
+    if (diagnostic.severity !== "error") {
+      continue;
+    }
     pushStyleIssue({
       issues,
       seenIssueKeys,
@@ -2172,6 +2241,9 @@ export const validateGeneratedProjectStorybookStyles = async ({
     });
   }
   for (const diagnostic of diagnostics.themes.diagnostics) {
+    if (diagnostic.severity !== "error") {
+      continue;
+    }
     pushStyleIssue({
       issues,
       seenIssueKeys,
