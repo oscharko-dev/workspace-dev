@@ -378,7 +378,8 @@ const createThemeDerivationRenderContext = ({
     requiresChangeEventTypeImport: false,
     ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
     ...(themeSxSampleCollector ? { themeSxSampleCollector } : {}),
-    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
+    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>(),
+    consumedExtractionComponentNames: new Set<string>()
   };
   if (tokens) {
     baseContext.tokens = tokens;

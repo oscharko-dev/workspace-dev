@@ -900,7 +900,8 @@ const buildExtractedComponentFile = ({
     requiresChangeEventTypeImport: false,
     ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
     ...(responsiveTopLevelLayoutOverrides ? { responsiveTopLevelLayoutOverrides } : {}),
-    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>()
+    extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>(),
+    consumedExtractionComponentNames: new Set<string>()
   };
 
   const renderedRoot = renderElement(prototypeRoot, 2, cluster.prototype.parent, componentRenderContext);

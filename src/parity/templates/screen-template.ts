@@ -4984,6 +4984,7 @@ export const renderElement = (
   try {
     const extractionInvocation = context.extractionInvocationByNodeId.get(element.id);
     if (extractionInvocation) {
+      context.consumedExtractionComponentNames.add(extractionInvocation.componentName);
       const indent = "  ".repeat(depth);
       const sx = toElementSx({
         element,
@@ -5839,6 +5840,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     pageBackgroundColorNormalized,
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
+    consumedExtractionComponentNames: new Set<string>(),
     requiresChangeEventTypeImport: false,
     ...(screen.responsive?.topLevelLayoutOverrides
       ? { responsiveTopLevelLayoutOverrides: screen.responsive.topLevelLayoutOverrides }
@@ -6254,6 +6256,7 @@ const ${dialogCloseHandlerVar} = (): void => {
     )
     .join("\n");
   const extractedComponentImports = extractionPlan.componentImports
+    .filter((componentImport) => renderContext.consumedExtractionComponentNames.has(componentImport.componentName))
     .map((componentImport) => `import { ${componentImport.componentName} } from "${componentImport.importPath}";`)
     .join("\n");
   const patternContextFileSpec = extractionPlan.patternStatePlan.contextFileSpec;
