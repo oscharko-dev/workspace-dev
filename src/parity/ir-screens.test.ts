@@ -4,6 +4,7 @@ import type { FigmaNode, MetricsAccumulator } from "./ir-helpers.js";
 import {
   buildTopLevelLayoutMatchMap,
   collectSectionScreens,
+  analyzeElementsForBudgeting,
   hasMeaningfulTextContent,
   hasVisualSubstance,
   indexScreenNodeIds,
@@ -13,8 +14,10 @@ import {
   normalizeComparableWidthRatio,
   resolveAdaptiveBudget,
   resolveLayoutOverride,
+  resolveElementBasePriority,
   resolveResponsiveBreakpointFromWidth,
   resolveScreenGroupKey,
+  resolveTruncationPriority,
   toComparableElementLayout,
   toComparableRootLayout,
   toResponsiveMatchElementName,
@@ -293,6 +296,34 @@ test("adaptive budgets only scale when the base budget is large enough and inter
   );
 });
 
+test("accordion receives interactive priority and is counted as interactive", () => {
+  const accordion = makeElement({
+    id: "accordion",
+    type: "accordion",
+    children: [
+      makeElement({
+        id: "accordion-summary",
+        type: "text",
+        text: "Details"
+      } as ScreenElementIR)
+    ]
+  });
+
+  assert.equal(resolveElementBasePriority("accordion"), 100);
+
+  const priority = resolveTruncationPriority(accordion);
+  assert.deepEqual(priority, {
+    score: 102,
+    mustKeep: true
+  });
+
+  const analysis = analyzeElementsForBudgeting([accordion]);
+  assert.equal(analysis.totalCount, 2);
+  assert.equal(analysis.interactiveCount, 1);
+  assert.equal(analysis.truncationCandidates[0]?.score, 102);
+  assert.equal(analysis.truncationCandidates[0]?.mustKeep, true);
+});
+
 test("truncateElementsToBudget handles empty, passthrough, and selected subtree scenarios", () => {
   const root = makeElement({
     id: "root",
@@ -381,6 +412,30 @@ test("truncateElementsToBudget handles empty, passthrough, and selected subtree 
   assert.equal(truncated.retainedCount, 2);
   assert.equal(truncated.droppedTypeCounts.button, 1);
   assert.deepEqual(truncated.elements[0]?.children?.map((child) => child.id), ["keep-text"]);
+});
+
+test("accordion truncation priority stays ahead of container-like elements", () => {
+  const accordion = makeElement({
+    id: "accordion",
+    type: "accordion",
+    children: [
+      makeElement({
+        id: "accordion-summary",
+        type: "text",
+        text: "Details"
+      } as ScreenElementIR)
+    ]
+  });
+  const container = makeElement({
+    id: "container",
+    type: "container"
+  });
+
+  const accordionPriority = resolveTruncationPriority(accordion);
+  const containerPriority = resolveTruncationPriority(container);
+
+  assert.equal(accordionPriority.mustKeep, true);
+  assert.ok(accordionPriority.score > containerPriority.score);
 });
 
 test("responsive grouping helpers normalize widths, breakpoints, and layout overrides", () => {

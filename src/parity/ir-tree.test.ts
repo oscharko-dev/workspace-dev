@@ -55,6 +55,7 @@ test("DEPTH_SEMANTIC_TYPES contains expected element types", () => {
   assert.ok(DEPTH_SEMANTIC_TYPES.has("text"));
   assert.ok(DEPTH_SEMANTIC_TYPES.has("button"));
   assert.ok(DEPTH_SEMANTIC_TYPES.has("input"));
+  assert.ok(DEPTH_SEMANTIC_TYPES.has("accordion"));
   assert.ok(!DEPTH_SEMANTIC_TYPES.has("container"));
 });
 
@@ -167,6 +168,14 @@ test("isDepthSemanticNode returns false for generic container", () => {
   assert.ok(!isDepthSemanticNode(n, stubDetermineElementType));
 });
 
+test("isDepthSemanticNode returns true for accordion element without name hint", () => {
+  const n = node("1:1", "FRAME", { name: "FAQ Section" });
+  assert.ok(
+    isDepthSemanticNode(n, () => "accordion"),
+    "Accordion should be treated as depth-semantic even when its name does not include the hint"
+  );
+});
+
 // ── Unit: analyzeDepthPressure ───────────────────────────────────────────────
 
 test("analyzeDepthPressure builds depth maps", () => {
@@ -264,6 +273,26 @@ test("shouldTruncateChildrenByDepth preserves semantic nodes beyond max depth wi
       node: n,
       depth: DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
       elementType: "text",
+      context
+    })
+  );
+});
+
+test("shouldTruncateChildrenByDepth preserves accordion nodes beyond max depth with remaining budget", () => {
+  const n = node("1:1", "FRAME", {
+    name: "FAQ Section",
+    children: [node("1:2", "FRAME", { name: "FAQ Item" })]
+  });
+  const context = makeContext({
+    subtreeHasSemanticById: new Map([["1:1", true]]),
+    nodeCountByDepth: new Map([[DEFAULT_SCREEN_ELEMENT_MAX_DEPTH + 1, 5]])
+  });
+
+  assert.ok(
+    !shouldTruncateChildrenByDepth({
+      node: n,
+      depth: DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
+      elementType: "accordion",
       context
     })
   );
