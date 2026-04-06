@@ -209,6 +209,11 @@ const buildTokenNode = (token: StorybookTokenGraphEntry): Record<string, unknown
   };
 };
 
+const isExposableComponentPath = (componentPath: string): boolean => {
+  const trimmed = componentPath.trim();
+  return trimmed.length > 0 && !trimmed.startsWith("./") && !trimmed.startsWith("/") && !trimmed.includes("src/");
+};
+
 const buildComponentsArtifact = ({
   entryCount,
   catalogArtifact
@@ -227,7 +232,7 @@ const buildComponentsArtifact = ({
         }),
         name: family.name,
         title: family.title,
-        componentPath: family.componentPath,
+        ...(isExposableComponentPath(family.componentPath) ? { componentPath: family.componentPath } : {}),
         propKeys: family.propKeys,
         storyCount: family.storyCount,
         hasDesignReference: family.hasDesignReference
