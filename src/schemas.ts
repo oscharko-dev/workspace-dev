@@ -286,8 +286,8 @@ function parseComponentMappingRuleEntry({
 
   const validation = validateComponentMappingRule({ rule });
   if (!validation.ok) {
-    const validationPath = validation.message.includes("nodeNamePattern")
-      ? [...path, "nodeNamePattern"]
+    const validationPath = validation.field
+      ? [...path, validation.field]
       : path;
     pushIssue(issues, validationPath, validation.message);
     return { success: false, error: { issues } };

@@ -494,6 +494,34 @@ test("schema: submit request rejects componentMappings with nested quantifier pa
   }
 });
 
+test("schema: submit request rejects componentMappings with alternation quantifier patterns (ReDoS)", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: [
+      {
+        boardKey: "board-1",
+        nodeNamePattern: "(a|a)+",
+        componentName: "AltReDoSRule",
+        importPath: "@redos/ui",
+        priority: 0,
+        source: "local_override",
+        enabled: true
+      }
+    ]
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["componentMappings", 0, "nodeNamePattern"],
+        message: "nodeNamePattern must not contain alternation groups followed by quantifiers (potential ReDoS)."
+      }
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // WorkspaceStatusSchema
 // ---------------------------------------------------------------------------
@@ -674,7 +702,7 @@ test("schema: regeneration request rejects invalid componentMappings", () => {
   if (!result.success) {
     assert.deepEqual(result.error.issues, [
       {
-        path: ["componentMappings", 0, "nodeNamePattern"],
+        path: ["componentMappings", 0],
         message:
           "pattern component mapping rules must define at least one selector: nodeNamePattern, canonicalComponentName, storybookTier, figmaLibrary, or semanticType."
       }

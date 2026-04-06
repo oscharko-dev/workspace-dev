@@ -59,6 +59,7 @@ type ComponentMappingRuleValidationResult =
       ok: false;
       normalizedRule: NormalizedComponentMappingRule;
       message: string;
+      field?: string;
     };
 
 export interface ResolveComponentMappingRulesResult {
@@ -72,6 +73,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const MAX_NODE_NAME_PATTERN_LENGTH = 256;
 const NESTED_QUANTIFIER_PATTERN = /(\+|\*|\{)\)?(\+|\*|\{)/;
+const ALTERNATION_QUANTIFIER_PATTERN = /\([^)]*\|[^)]*\)[+*{]/;
 
 const normalizeOptionalString = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
@@ -366,6 +368,7 @@ export const validateComponentMappingRule = ({
       return {
         ok: false,
         normalizedRule,
+        field: "nodeNamePattern",
         message: `nodeNamePattern must not exceed ${MAX_NODE_NAME_PATTERN_LENGTH} characters.`
       };
     }
@@ -373,7 +376,16 @@ export const validateComponentMappingRule = ({
       return {
         ok: false,
         normalizedRule,
+        field: "nodeNamePattern",
         message: "nodeNamePattern must not contain nested quantifiers (potential ReDoS)."
+      };
+    }
+    if (ALTERNATION_QUANTIFIER_PATTERN.test(normalizedRule.nodeNamePattern)) {
+      return {
+        ok: false,
+        normalizedRule,
+        field: "nodeNamePattern",
+        message: "nodeNamePattern must not contain alternation groups followed by quantifiers (potential ReDoS)."
       };
     }
     try {
@@ -382,6 +394,7 @@ export const validateComponentMappingRule = ({
       return {
         ok: false,
         normalizedRule,
+        field: "nodeNamePattern",
         message: "nodeNamePattern must be a valid regular expression source."
       };
     }
@@ -573,6 +586,13 @@ export const resolveComponentMappingRules = ({
     }
 
     if (validation.kind === "exact") {
+      if (!validation.normalizedRule.enabled) {
+        mappingWarnings.push({
+          code: "W_COMPONENT_MAPPING_DISABLED",
+          message: `Exact component mapping rule ${ruleDescription} is disabled; deterministic fallback used`
+        });
+        continue;
+      }
       const nodeId = validation.normalizedRule.nodeId;
       if (!nodeId || resolvedMappingsByNodeId.has(nodeId)) {
         continue;

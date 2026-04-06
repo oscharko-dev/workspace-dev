@@ -490,6 +490,27 @@ test("resolveComponentMappingRules warns when a pattern rule is disabled", () =>
   assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /disabled/);
 });
 
+test("resolveComponentMappingRules emits W_COMPONENT_MAPPING_DISABLED for exact rules with enabled: false", () => {
+  const resolved = resolveComponentMappingRules({
+    componentMappings: [
+      createRule({
+        nodeId: "button-node-1",
+        componentName: "DisabledExactButton",
+        enabled: false
+      })
+    ],
+    ir: createResolverIr(),
+    figmaAnalysis: createResolverFigmaAnalysis(),
+    componentMatchReportArtifact: createResolverComponentMatchReport()
+  });
+
+  assert.equal(resolved.componentMappings.length, 0);
+  assert.equal(resolved.mappingWarnings.length, 1);
+  assert.equal(resolved.mappingWarnings[0]?.code, "W_COMPONENT_MAPPING_DISABLED");
+  assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /disabled/);
+  assert.match(String(resolved.mappingWarnings[0]?.message ?? ""), /Exact/);
+});
+
 test("resolveComponentMappingRules matches nodeNamePattern regex against node names", () => {
   const resolved = resolveComponentMappingRules({
     componentMappings: [
@@ -518,6 +539,51 @@ test("component mapping rules reject nested quantifier patterns (ReDoS)", () => 
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.match(result.message, /nested quantifiers/);
+    assert.equal(result.field, "nodeNamePattern");
+  }
+});
+
+test("component mapping rules reject alternation group followed by quantifier (ReDoS)", () => {
+  const result1 = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "(a|a)+"
+    })
+  });
+  assert.equal(result1.ok, false);
+  if (!result1.ok) {
+    assert.match(result1.message, /alternation groups followed by quantifiers/);
+    assert.equal(result1.field, "nodeNamePattern");
+  }
+
+  const result2 = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "(foo|fo)+"
+    })
+  });
+  assert.equal(result2.ok, false);
+  if (!result2.ok) {
+    assert.match(result2.message, /alternation groups followed by quantifiers/);
+  }
+});
+
+test("component mapping rules accept alternation groups without trailing quantifier", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "(a|b)"
+    })
+  });
+  assert.equal(result.ok, true);
+});
+
+test("component mapping rules reject non-capturing alternation groups with quantifier (ReDoS)", () => {
+  const result = validateComponentMappingRule({
+    rule: createRule({
+      nodeNamePattern: "(?:a|b)+"
+    })
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /alternation groups followed by quantifiers/);
   }
 });
 
