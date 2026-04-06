@@ -184,6 +184,50 @@ const makeSpecializedMapping = ({
   defaultProps: {}
 });
 
+const makePromoCard = ({
+  id,
+  title,
+  body,
+  imageId,
+  y
+}: {
+  id: string;
+  title: string;
+  body: string;
+  imageId: string;
+  y: number;
+}): ScreenElementIR =>
+  makeNode({
+    id,
+    type: "card",
+    name: "Promo Card",
+    layoutMode: "VERTICAL",
+    x: 0,
+    y,
+    width: 320,
+    height: 220,
+    children: [
+      makeNode({
+        id: imageId,
+        type: "image",
+        name: "Hero Image",
+        width: 320,
+        height: 120,
+        y: 0
+      }),
+      makeText({
+        id: `${id}-title`,
+        text: title,
+        y: 136
+      }),
+      makeText({
+        id: `${id}-body`,
+        text: body,
+        y: 168
+      })
+    ]
+  });
+
 test("renderText skips consumed labels and styles link-like text with contrast warnings", () => {
   const skippedContext = createRenderContext();
   skippedContext.consumedFieldLabelNodeIds?.add("consumed-label");
@@ -2019,6 +2063,69 @@ test("fallbackScreenFile wraps specialized date pickers with a single configured
     generated.file.content,
     /<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<AppointmentSetupScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>/
   );
+});
+
+test("assembleFallbackDependencies only emits extracted component imports that were consumed during render", () => {
+  const roots = [
+    makePromoCard({
+      id: "promo-1",
+      title: "Premium Checking",
+      body: "Open an account in minutes.",
+      imageId: "promo-image-1",
+      y: 0
+    }),
+    makePromoCard({
+      id: "promo-2",
+      title: "Travel Rewards",
+      body: "Collect miles on every purchase.",
+      imageId: "promo-image-2",
+      y: 240
+    }),
+    makePromoCard({
+      id: "promo-3",
+      title: "Mortgage Advice",
+      body: "Talk to an expert about rates.",
+      imageId: "promo-image-3",
+      y: 480
+    })
+  ];
+  const screen: ScreenIR = {
+    id: "screen-patterns",
+    name: "Catalog",
+    layoutMode: "VERTICAL",
+    width: 390,
+    height: 844,
+    children: roots
+  };
+
+  const prepared = prepareFallbackScreenModel({
+    screen,
+    mappingByNodeId: new Map(),
+    enablePatternExtraction: true,
+    formHandlingMode: "react_hook_form"
+  });
+  const renderState = buildFallbackRenderState({ prepared });
+  const extractedComponentName = prepared.extractionPlan.componentImports[0]?.componentName;
+
+  if (!extractedComponentName) {
+    throw new Error("Expected the pattern extraction plan to emit at least one component import.");
+  }
+
+  assert.equal(renderState.renderContext.consumedExtractionComponentNames.has(extractedComponentName), true);
+
+  renderState.renderContext.consumedExtractionComponentNames.clear();
+  const withoutConsumedExtraction = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  assert.equal(withoutConsumedExtraction.extractedComponentImports, "");
+
+  renderState.renderContext.consumedExtractionComponentNames.add(extractedComponentName);
+  const withConsumedExtraction = assembleFallbackDependencies({
+    prepared,
+    renderState
+  });
+  assert.match(withConsumedExtraction.extractedComponentImports, new RegExp(`import \\{ ${extractedComponentName} \\} from `));
 });
 
 test("fallbackScreenFile keeps DatePicker on the MUI DatePicker fallback path when no provider configuration is available", () => {
