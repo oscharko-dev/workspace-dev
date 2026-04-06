@@ -58,7 +58,8 @@ export const DEPTH_SEMANTIC_TYPES: Set<ScreenElementIR["type"]> = new Set<Screen
   "stepper",
   "table",
   "alert",
-  "snackbar"
+  "snackbar",
+  "accordion"
 ]);
 
 export const DEPTH_SEMANTIC_NAME_HINTS: string[] = [
