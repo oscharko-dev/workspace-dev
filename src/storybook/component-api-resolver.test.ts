@@ -699,7 +699,6 @@ test("resolveComponentApiContract finds public component via componentsArtifact"
         id: "pub-btn",
         name: "Button",
         title: "Components/Button",
-        componentPath: "./src/Button.tsx",
         propKeys: ["variant", "size", "color", "disabled", "children"],
         storyCount: 3,
         hasDesignReference: true

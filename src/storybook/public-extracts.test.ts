@@ -257,6 +257,7 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(serializedComponents.includes("bundlePath"), false);
   assert.equal(serializedComponents.includes("iframeBundlePath"), false);
   assert.equal(serializedComponents.includes("buildRoot"), false);
+  assert.equal(serializedComponents.includes("componentPath"), false);
   assert.equal(serializedTokens.includes("bundlePath"), false);
   assert.equal(serializedTokens.includes("importPath"), false);
   assert.equal(serializedTokens.includes("buildRoot"), false);
