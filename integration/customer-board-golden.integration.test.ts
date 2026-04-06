@@ -144,11 +144,26 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       };
     };
   };
+  const componentMatchReport = JSON.parse(committedBundle.files.get(manifest.derived.componentMatchReport)?.content ?? "null") as {
+    entries?: Array<{
+      figma?: {
+        familyKey?: string;
+        familyName?: string;
+      };
+      match?: {
+        status?: string;
+      };
+      storybookFamily?: {
+        title?: string;
+      };
+    }>;
+  };
 
   assert.ok(validationSummary.storybook, "validation-summary.storybook must be present");
   assert.ok(validationSummary.mapping, "validation-summary.mapping must be present");
   assert.ok(validationSummary.style, "validation-summary.style must be present");
   assert.ok(validationSummary.import, "validation-summary.import must be present");
+  assert.ok(componentMatchReport.entries, "component-match-report entries must be present");
   assert.equal(validationSummary.storybook?.artifacts?.catalog?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.tokens?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.themes?.status, "ok");
@@ -254,4 +269,28 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true
   );
   assert.equal(screenFile?.includes("SeitenContentPatternContextProvider"), true);
+
+  const issue783Families = new Map(
+    (componentMatchReport.entries ?? [])
+      .filter((entry) =>
+        entry.figma?.familyName === "<Button>" ||
+        entry.figma?.familyName === "<Divider>" ||
+        entry.figma?.familyName === "<Dynamic Typography> (headlines)"
+      )
+      .map((entry) => [
+        entry.figma?.familyKey ?? "unknown",
+        {
+          familyName: entry.figma?.familyName,
+          status: entry.match?.status,
+          storybookTitle: entry.storybookFamily?.title
+        }
+      ])
+  );
+
+  assert.equal(issue783Families.size, 5, "Expected customer-board fixture to include all Issue #783 family entries.");
+  assert.deepEqual(
+    [...issue783Families.values()].map((entry) => entry.status),
+    ["matched", "matched", "matched", "matched", "matched"],
+    "Issue #783 families must no longer remain ambiguous in the customer-board fixture."
+  );
 });

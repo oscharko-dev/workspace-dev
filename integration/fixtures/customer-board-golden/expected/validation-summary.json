@@ -89,12 +89,12 @@
         "byReason": {
           "component_api_children_unsupported": 4,
           "component_api_missing": 0,
-          "component_api_prop_unsupported": 26,
+          "component_api_prop_unsupported": 7,
           "component_api_signature_conflict": 0,
           "component_api_slot_unsupported": 0
         }
       },
-      "issueCount": 30,
+      "issueCount": 11,
       "issues": [
         {
           "code": "component_api_prop_unsupported",
@@ -105,6 +105,16 @@
           "severity": "warning",
           "sourceProp": "state",
           "targetProp": "state"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:38908",
+          "figmaFamilyName": "<Divider>",
+          "message": "Resolved component 'Divider' does not expose prop 'textalign' (mapped from 'textalign').",
+          "severity": "warning",
+          "sourceProp": "textalign",
+          "targetProp": "textalign"
         },
         {
           "code": "component_api_children_unsupported",
@@ -134,206 +144,6 @@
           "severity": "warning",
           "sourceProp": "state",
           "targetProp": "state"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:42583",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
-          "severity": "warning",
-          "sourceProp": "alignitems",
-          "targetProp": "alignitems"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:42583",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
-          "severity": "warning",
-          "sourceProp": "direction",
-          "targetProp": "direction"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:42583",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
-          "severity": "warning",
-          "sourceProp": "directionS",
-          "targetProp": "directionS"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:42583",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
-          "severity": "warning",
-          "sourceProp": "divider",
-          "targetProp": "divider"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:62521",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
-          "severity": "warning",
-          "sourceProp": "alignitems",
-          "targetProp": "alignitems"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:62521",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
-          "severity": "warning",
-          "sourceProp": "direction",
-          "targetProp": "direction"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:62521",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
-          "severity": "warning",
-          "sourceProp": "directionS",
-          "targetProp": "directionS"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:62521",
-          "figmaFamilyName": "<Stack>",
-          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
-          "severity": "warning",
-          "sourceProp": "divider",
-          "targetProp": "divider"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
-          "severity": "warning",
-          "sourceProp": "alignitems",
-          "targetProp": "alignitems"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
-          "severity": "warning",
-          "sourceProp": "direction",
-          "targetProp": "direction"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
-          "severity": "warning",
-          "sourceProp": "directionS",
-          "targetProp": "directionS"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
-          "severity": "warning",
-          "sourceProp": "divider",
-          "targetProp": "divider"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
-          "severity": "warning",
-          "sourceProp": "alignitems",
-          "targetProp": "alignitems"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
-          "severity": "warning",
-          "sourceProp": "direction",
-          "targetProp": "direction"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
-          "severity": "warning",
-          "sourceProp": "directionS",
-          "targetProp": "directionS"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:40054",
-          "figmaFamilyName": "<Stack4>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
-          "severity": "warning",
-          "sourceProp": "divider",
-          "targetProp": "divider"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
-          "severity": "warning",
-          "sourceProp": "alignitems",
-          "targetProp": "alignitems"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
-          "severity": "warning",
-          "sourceProp": "direction",
-          "targetProp": "direction"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
-          "severity": "warning",
-          "sourceProp": "directionS",
-          "targetProp": "directionS"
-        },
-        {
-          "code": "component_api_prop_unsupported",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
-          "severity": "warning",
-          "sourceProp": "divider",
-          "targetProp": "divider"
         },
         {
           "code": "component_api_children_unsupported",
@@ -402,40 +212,40 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 10,
+          "match_ambiguous": 8,
           "match_unmatched": 13,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 8,
-          "profile_import_resolved": 11
+          "profile_import_missing": 14,
+          "profile_import_resolved": 7
         },
         "byStatus": {
-          "mui_fallback_allowed": 8,
+          "mui_fallback_allowed": 14,
           "mui_fallback_denied": 0,
-          "not_applicable": 23,
-          "resolved_import": 11
+          "not_applicable": 21,
+          "resolved_import": 7
         },
         "iconByReason": {
-          "match_ambiguous": 6,
+          "match_ambiguous": 0,
           "match_unmatched": 36,
-          "not_icon_family": 28,
+          "not_icon_family": 29,
           "profile_family_unresolved": 0,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 0,
           "profile_icon_wrapper_allowed": 0,
-          "profile_icon_wrapper_denied": 10,
+          "profile_icon_wrapper_denied": 13,
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 6,
-          "not_applicable": 28,
+          "ambiguous": 0,
+          "not_applicable": 29,
           "resolved_import": 0,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
-          "wrapper_fallback_denied": 10
+          "wrapper_fallback_denied": 13
         }
       },
-      "issueCount": 75,
+      "issueCount": 70,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -451,14 +261,6 @@
           "kind": "component",
           "message": "Figma family '_<InputAdornment>' is unmatched in component.match_report.",
           "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:54808",
-          "figmaFamilyName": "<Alert>",
-          "kind": "component",
-          "message": "Figma family '<Alert>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
           "status": "not_applicable"
         },
         {
@@ -486,9 +288,9 @@
         {
           "figmaFamilyKey": "component:1:41120",
           "figmaFamilyName": "<Avatar>",
-          "iconKey": "data_size_medium_variant_circular_content_icon_data_color",
+          "iconKey": "circular_mit_icon",
           "kind": "icon",
-          "message": "icon 'data_size_medium_variant_circular_content_icon_data_color' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "message": "icon 'circular_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
           "profileFamily": "Components",
           "reason": "profile_icon_wrapper_denied",
           "status": "wrapper_fallback_denied",
@@ -497,83 +299,46 @@
         {
           "figmaFamilyKey": "component:1:41120",
           "figmaFamilyName": "<Avatar>",
-          "iconKey": "docs",
+          "iconKey": "display.avatar.avatar",
           "kind": "icon",
-          "message": "icon 'docs' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "message": "icon 'display.avatar.avatar' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
           "profileFamily": "Components",
           "reason": "profile_icon_wrapper_denied",
           "status": "wrapper_fallback_denied",
           "storybookTier": "Components"
         },
         {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "button",
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "logo_mit_icon",
           "kind": "icon",
-          "message": "icon 'button' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'logo_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "children",
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "rounded_mit_icon",
           "kind": "icon",
-          "message": "icon 'children' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'rounded_mit_icon' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "display.button",
+          "figmaFamilyKey": "component:1:41120",
+          "figmaFamilyName": "<Avatar>",
+          "iconKey": "the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by",
           "kind": "icon",
-          "message": "icon 'display.button' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "docs",
-          "kind": "icon",
-          "message": "icon 'docs' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "space_around",
-          "kind": "icon",
-          "message": "icon 'space_around' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "iconKey": "variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around",
-          "kind": "icon",
-          "message": "icon 'variant_outlined_size_large_state_enabled_fullwidth_false_color_secondary_data_variant_space_around' in Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:62821",
-          "figmaFamilyName": "<Button>",
-          "kind": "component",
-          "message": "Figma family '<Button>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:38908",
-          "figmaFamilyName": "<Divider>",
-          "kind": "component",
-          "message": "Figma family '<Divider>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
+          "message": "icon 'the_shape_of_the_avatar_square_variant_will_be_automatically_overwritten_by' in Figma family '<Avatar>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:38938",
@@ -682,6 +447,14 @@
           "status": "not_applicable"
         },
         {
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack2>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
           "figmaFamilyKey": "component:1:42114",
           "figmaFamilyName": "<Stack3>(Nested)",
           "kind": "component",
@@ -698,18 +471,18 @@
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
           "kind": "component",
-          "message": "Figma family '<TextField>' remains ambiguous in component.match_report.",
+          "message": "Figma family '<Stack4>(Nested)' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
           "kind": "component",
-          "message": "Figma family '<TextField>' remains ambiguous in component.match_report.",
+          "message": "Figma family '<Stack6>(Nested)' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
         },
@@ -1157,10 +930,10 @@
       }
     },
     "composition": {
-      "ambiguous": 10,
+      "ambiguous": 8,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 19,
+      "matched": 21,
       "totalFigmaFamilies": 42,
       "unmatched": 13
     },

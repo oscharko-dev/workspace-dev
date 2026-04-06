@@ -1776,6 +1776,102 @@ test("buildComponentMatchReportArtifact uses MUI fallback when Storybook tier is
   assert.equal(entry?.libraryResolution.componentKey, "Card");
 });
 
+test("buildComponentMatchReportArtifact falls back to the heuristic family name when published component names are variant signatures", () => {
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis: createFigmaAnalysis({
+      componentFamilies: [
+        createFigmaFamily({
+          familyKey: "divider-family",
+          familyName: "<Divider>",
+          variantProperties: [
+            {
+              property: "orientation",
+              values: ["Horizontal"]
+            }
+          ]
+        })
+      ]
+    }),
+    catalogArtifact: createCatalogArtifact({
+      entries: [
+        createCatalogEntry({
+          id: "divider--default",
+          title: "Components/Display/Divider",
+          name: "Default",
+          familyId: "family-divider",
+          designUrls: ["https://www.figma.com/design/lib-file/Divider?node-id=10-20"],
+          args: {
+            orientation: "Horizontal"
+          }
+        }),
+        createCatalogEntry({
+          id: "stack--default",
+          title: "Components/Layout/Stack",
+          name: "Default",
+          familyId: "family-stack",
+          designUrls: ["https://www.figma.com/design/lib-file/Stack?node-id=20-30"],
+          args: {
+            orientation: "Horizontal"
+          }
+        })
+      ],
+      families: [
+        createCatalogFamily({
+          id: "family-divider",
+          title: "Components/Display/Divider",
+          name: "Divider",
+          entryIds: ["divider--default"],
+          storyEntryIds: ["divider--default"],
+          designUrls: ["https://www.figma.com/design/lib-file/Divider?node-id=10-20"]
+        }),
+        createCatalogFamily({
+          id: "family-stack",
+          title: "Components/Layout/Stack",
+          name: "Stack",
+          entryIds: ["stack--default"],
+          storyEntryIds: ["stack--default"],
+          designUrls: ["https://www.figma.com/design/lib-file/Stack?node-id=20-30"]
+        })
+      ]
+    }),
+    evidenceArtifact: createEvidenceArtifact({ evidence: [] }),
+    figmaLibraryResolutionArtifact: {
+      artifact: "figma.library_resolution",
+      version: 1,
+      entries: [
+        {
+          componentId: "divider-family-component",
+          componentSetId: "divider-family-set",
+          familyKey: "divider-family",
+          status: "resolved",
+          heuristicFamilyName: "<Divider>",
+          canonicalFamilyName: "Orientation=Horizontal, TextAlign=-",
+          canonicalFamilyNameSource: "published_component",
+          variantProperties: [
+            {
+              property: "orientation",
+              values: ["Horizontal"]
+            }
+          ],
+          publishedComponent: {
+            fileKey: "lib-file",
+            nodeId: "1:2",
+            name: "Orientation=Horizontal, TextAlign=-"
+          }
+        }
+      ]
+    }
+  });
+
+  const entry = artifact.entries[0];
+  assert.equal(entry?.figma.canonicalFamilyName, undefined);
+  assert.equal(entry?.match.status, "matched");
+  assert.equal(entry?.storybookFamily?.title, "Components/Display/Divider");
+  assert.equal(entry?.usedEvidence.some((evidence) => evidence.class === "canonical_family_name"), true);
+  assert.equal(entry?.fallbackReasons.includes("used_figma_analysis_family_name"), true);
+  assert.equal(entry?.fallbackReasons.includes("used_library_resolution_canonical_name"), false);
+});
+
 test("buildComponentMatchReportArtifact produces unmatched when no Storybook families exist", () => {
   const figmaAnalysis = createFigmaAnalysis({
     componentFamilies: [
