@@ -212,6 +212,7 @@ export const resolveElementBasePriority = (type: ScreenElementIR["type"]): numbe
     case "breadcrumbs":
     case "navigation":
     case "stepper":
+    case "accordion":
       return 100;
     case "text":
     case "list":
@@ -337,7 +338,7 @@ export const pruneElementToSelection = ({
 
 export const INTERACTIVE_ELEMENT_TYPES: ReadonlySet<ScreenElementIR["type"]> = new Set([
   "button", "input", "select", "switch", "checkbox", "radio", "slider", "rating",
-  "tab", "drawer", "breadcrumbs", "navigation", "stepper"
+  "tab", "drawer", "breadcrumbs", "navigation", "stepper", "accordion"
 ]);
 
 export interface ElementTraversalAnalysis {
