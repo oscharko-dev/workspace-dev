@@ -1,13 +1,13 @@
 {
   "generatedApp": {
-    "attempts": 2,
+    "attempts": 1,
     "build": {
       "args": [
         "build"
       ],
-      "attempt": 2,
+      "attempt": 1,
       "command": "pnpm",
-      "outputCaptureKey": "validate.project.attempt-2.build",
+      "outputCaptureKey": "validate.project.attempt-1.build",
       "status": "passed",
       "timedOut": false
     },
@@ -27,15 +27,15 @@
         "timedOut": false
       },
       "status": "completed",
-      "strategy": "existing_node_modules"
+      "strategy": "normalized"
     },
     "lint": {
       "args": [
         "lint"
       ],
-      "attempt": 2,
+      "attempt": 1,
       "command": "pnpm",
-      "outputCaptureKey": "validate.project.attempt-2.lint",
+      "outputCaptureKey": "validate.project.attempt-1.lint",
       "status": "passed",
       "timedOut": false
     },
@@ -44,10 +44,13 @@
         "lint",
         "--fix"
       ],
-      "attempt": 2,
-      "changedFiles": [],
+      "attempt": 1,
+      "changedFiles": [
+        "src/context/SeitenContentPatternContext.tsx",
+        "src/screens/__tests__/SeitenContent.test.tsx"
+      ],
       "command": "pnpm",
-      "outputCaptureKey": "validate.project.attempt-2.lint-autofix",
+      "outputCaptureKey": "validate.project.attempt-1.lint-autofix",
       "status": "completed",
       "timedOut": false
     },
@@ -56,9 +59,9 @@
       "args": [
         "typecheck"
       ],
-      "attempt": 2,
+      "attempt": 1,
       "command": "pnpm",
-      "outputCaptureKey": "validate.project.attempt-2.typecheck",
+      "outputCaptureKey": "validate.project.attempt-1.typecheck",
       "status": "passed",
       "timedOut": false
     }
@@ -1074,7 +1077,7 @@
         "column": 236,
         "componentName": "Avatar",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 37,
+        "line": 36,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
         "propName": "bgcolor",
         "severity": "error"
@@ -1084,7 +1087,7 @@
         "column": 156,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 44,
+        "line": 43,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1094,7 +1097,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 147,
+        "line": 146,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1104,7 +1107,7 @@
         "column": 301,
         "componentName": "IconButton",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 263,
+        "line": 262,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1114,7 +1117,7 @@
         "column": 386,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 263,
+        "line": 262,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1124,7 +1127,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 331,
+        "line": 330,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1134,7 +1137,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 405,
+        "line": 404,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1144,7 +1147,7 @@
         "column": 261,
         "componentName": "Chip",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 423,
+        "line": 422,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
         "propName": "bgcolor",
         "severity": "error"
@@ -1154,7 +1157,7 @@
         "column": 100,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 506,
+        "line": 505,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1164,7 +1167,7 @@
         "column": 97,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 507,
+        "line": 506,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1174,7 +1177,7 @@
         "column": 308,
         "componentName": "Button",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 528,
+        "line": 527,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1184,7 +1187,7 @@
         "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 147,
+        "line": 146,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1192,6 +1195,16 @@
       {
         "category": "raw_typography_declaration",
         "column": 49,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 329,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
+        "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 330,
@@ -1201,17 +1214,17 @@
       },
       {
         "category": "raw_typography_declaration",
-        "column": 46,
+        "column": 49,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 331,
+        "line": 403,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
       },
       {
         "category": "raw_typography_declaration",
-        "column": 49,
+        "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 404,
@@ -1221,20 +1234,10 @@
       },
       {
         "category": "raw_typography_declaration",
-        "column": 46,
-        "componentName": "TextField",
-        "filePath": "src/screens/SeitenContent.tsx",
-        "line": 405,
-        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
-        "propName": "fontFamily",
-        "severity": "error"
-      },
-      {
-        "category": "raw_typography_declaration",
         "column": 45,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 506,
+        "line": 505,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1244,7 +1247,7 @@
         "column": 42,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 507,
+        "line": 506,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"

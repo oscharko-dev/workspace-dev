@@ -1,5 +1,4 @@
 import { Box, Container, List, ListItem, ListItemText, Table, TableBody, TableCell, TableHead, TableRow } from "@mui/material";
-import { HomeDesktopPattern1 } from "../components/HomeDesktopPattern1";
 import { HomeDesktopPatternContextProvider, type HomeDesktopPatternContextState } from "../context/HomeDesktopPatternContext";
 
 const patternContextInitialState: HomeDesktopPatternContextState = {
