@@ -6,8 +6,10 @@ import test from "node:test";
 import {
   assertCustomerBoardBundlesEqual,
   assertCustomerBoardPublicArtifactSanitized,
+  createCustomerBoardStorybookEvidenceHintsArtifact,
   createCustomerBoardHybridLiveRuntimeSettings,
   loadCustomerBoardGoldenManifest,
+  materializeCustomerBoardRuntimeStorybookEvidenceArtifact,
   normalizeCustomerBoardFixtureValue
 } from "./customer-board-golden.helpers.js";
 
@@ -18,14 +20,14 @@ test("customer-board helper rejects unsupported generated artifact kinds in the 
     manifestPath,
     JSON.stringify(
       {
-        version: 1,
+        version: 2,
         fixtureId: "customer-board-golden",
         inputs: {
           figma: "inputs/figma.json",
           customerProfile: "inputs/customer-profile.json"
         },
         derived: {
-          storybookEvidence: "derived/storybook.evidence.json",
+          storybookEvidenceHints: "derived/storybook.evidence-hints.json",
           storybookCatalog: "derived/storybook.catalog.json",
           storybookTokens: "derived/storybook.tokens.json",
           storybookThemes: "derived/storybook.themes.json",
@@ -71,14 +73,14 @@ test("customer-board helper rejects manifest paths that leak forbidden fixture s
     manifestPath,
     JSON.stringify(
       {
-        version: 1,
+        version: 2,
         fixtureId: "customer-board-golden",
         inputs: {
           figma: "inputs/figma.json",
           customerProfile: "storybook-static/customer-profile.json"
         },
         derived: {
-          storybookEvidence: "derived/storybook.evidence.json",
+          storybookEvidenceHints: "derived/storybook.evidence-hints.json",
           storybookCatalog: "derived/storybook.catalog.json",
           storybookTokens: "derived/storybook.tokens.json",
           storybookThemes: "derived/storybook.themes.json",
@@ -176,6 +178,78 @@ test("customer-board helper rejects public artifact leaks for internal Storybook
   );
 });
 
+test("customer-board helper materializes runtime storybook evidence from curated hints without leaking build paths", () => {
+  const hintsArtifact = createCustomerBoardStorybookEvidenceHintsArtifact({
+    artifact: {
+      artifact: "storybook.evidence",
+      version: 1,
+      buildRoot: "storybook-static/storybook-static",
+      iframeBundlePath: "assets/iframe-C6LG5DgH.js",
+      stats: {
+        entryCount: 1,
+        evidenceCount: 1,
+        byType: {
+          story_componentPath: 0,
+          story_argTypes: 0,
+          story_args: 0,
+          story_design_link: 0,
+          theme_bundle: 0,
+          css: 0,
+          mdx_link: 1,
+          docs_image: 0,
+          docs_text: 0
+        },
+        byReliability: {
+          authoritative: 0,
+          reference_only: 1,
+          derived: 0
+        }
+      },
+      evidence: [
+        {
+          id: "docs-link",
+          type: "mdx_link",
+          reliability: "reference_only",
+          source: {
+            entryId: "docs-entry",
+            entryIds: ["docs-entry"],
+            entryType: "docs",
+            title: "Docs/Colors"
+          },
+          usage: {
+            canDriveTokens: false,
+            canDriveProps: false,
+            canDriveImports: false,
+            canDriveStyling: false,
+            canProvideMatchHints: true
+          },
+          summary: {
+            linkTarget: "/docs/colors--docs",
+            text: "Colors docs"
+          }
+        }
+      ]
+    }
+  });
+
+  assertCustomerBoardPublicArtifactSanitized({
+    label: "customer-board.storybook_evidence_hints",
+    value: hintsArtifact
+  });
+
+  const runtimeArtifact = materializeCustomerBoardRuntimeStorybookEvidenceArtifact({
+    hintsArtifact
+  });
+
+  assert.equal(runtimeArtifact.artifact, "storybook.evidence");
+  assert.equal(runtimeArtifact.buildRoot, ".customer-board-runtime");
+  assert.equal(runtimeArtifact.iframeBundlePath, "assets/iframe.fixture.js");
+  assert.equal(runtimeArtifact.stats.entryCount, 1);
+  assert.equal(runtimeArtifact.stats.evidenceCount, 1);
+  assert.equal(runtimeArtifact.evidence[0]?.source.entryId, "docs-entry");
+  assert.equal(runtimeArtifact.evidence[0]?.summary.linkTarget, "/docs/colors--docs");
+});
+
 test("customer-board helper configures hybrid live runtime with MCP enrichment loader", () => {
   const runtime = createCustomerBoardHybridLiveRuntimeSettings();
 
@@ -188,14 +262,14 @@ test("customer-board helper configures hybrid live runtime with MCP enrichment l
 test("customer-board bundle equality ignores volatile figma library resolution live metadata", async () => {
   const expected = {
     manifest: {
-      version: 1,
+      version: 2,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
         customerProfile: "inputs/customer-profile.json"
       },
       derived: {
-        storybookEvidence: "derived/storybook.evidence.json",
+        storybookEvidenceHints: "derived/storybook.evidence-hints.json",
         storybookCatalog: "derived/storybook.catalog.json",
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
@@ -338,14 +412,14 @@ test("customer-board bundle equality ignores volatile figma library resolution l
 test("customer-board bundle equality ignores volatile component match report evidence derived from live library lookups", async () => {
   const expected = {
     manifest: {
-      version: 1,
+      version: 2,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
         customerProfile: "inputs/customer-profile.json"
       },
       derived: {
-        storybookEvidence: "derived/storybook.evidence.json",
+        storybookEvidenceHints: "derived/storybook.evidence-hints.json",
         storybookCatalog: "derived/storybook.catalog.json",
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
