@@ -1019,6 +1019,7 @@ export interface RenderContext {
     message: string;
   }>;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
+  profileIconImportsByKey?: ReadonlyMap<string, { package: string; exportName: string; localName: string }> | undefined;
   iconWarnings?: IconRenderWarning[] | undefined;
   consumedFieldLabelNodeIds?: Set<string> | undefined;
   textOverrideExpressionByNodeId?: Map<string, string> | undefined;

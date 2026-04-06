@@ -5522,6 +5522,7 @@ export interface FallbackScreenFileInput {
   muiFallbackDeniedSemanticKeys?: ReadonlySet<string> | undefined;
   specializedComponentMappings?: Partial<Record<string, SpecializedComponentMapping>>;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
+  profileIconImportsByKey?: ReadonlyMap<string, { package: string; exportName: string; localName: string }>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   componentNameOverride?: string;
   filePathOverride?: string;
@@ -5557,6 +5558,7 @@ export interface PreparedFallbackScreenModel {
   muiFallbackDeniedSemanticKeys?: ReadonlySet<string> | undefined;
   specializedComponentMappings: Partial<Record<string, SpecializedComponentMapping>>;
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
+  profileIconImportsByKey?: ReadonlyMap<string, { package: string; exportName: string; localName: string }>;
   storybookTypographyVariants?: Readonly<Record<string, ResolvedStorybookTypographyStyle>>;
   simplificationStats: SimplificationMetrics;
   simplifiedChildren: ScreenElementIR[];
@@ -5666,6 +5668,7 @@ export const prepareFallbackScreenModel = ({
   muiFallbackDeniedSemanticKeys,
   specializedComponentMappings = {},
   storybookFirstIconLookup,
+  profileIconImportsByKey,
   storybookTypographyVariants,
   componentNameOverride,
   filePathOverride,
@@ -5744,6 +5747,7 @@ export const prepareFallbackScreenModel = ({
     ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
     specializedComponentMappings,
     ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
+    ...(profileIconImportsByKey ? { profileIconImportsByKey } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     simplificationStats,
     simplifiedChildren,
@@ -5791,6 +5795,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     tokens,
     mappingByNodeId,
     storybookFirstIconLookup,
+    profileIconImportsByKey,
     pageBackgroundColorNormalized,
     extractionPlan
   } = prepared;
@@ -5838,6 +5843,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     mappedImports: [],
     specializedComponentMappings,
     ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
+    ...(profileIconImportsByKey ? { profileIconImportsByKey } : {}),
     ...(storybookTypographyVariants ? { storybookTypographyVariants } : {}),
     ...(datePickerProvider ? { datePickerProvider } : {}),
     ...(muiFallbackDeniedSemanticKeys ? { muiFallbackDeniedSemanticKeys } : {}),
