@@ -5576,6 +5576,50 @@ test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig ov
   assert.ok(screenContent.includes("<Button"));
 });
 
+test("generateArtifacts keeps Storybook-first runs on MUI fallback when no compatible customer-profile mappings remain", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-empty-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "storybook-first-empty-screen",
+      name: "Storybook First Empty",
+      layoutMode: "VERTICAL" as const,
+      gap: 16,
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+      children: [
+        {
+          id: "storybook-first-empty-button",
+          name: "Primary CTA",
+          nodeType: "FRAME",
+          type: "button" as const,
+          text: "Weiter"
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createCustomerProfileForGeneratorTests(),
+    customerProfileDesignSystemConfigSource: "storybook_first",
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Storybook First Empty")),
+    "utf8"
+  );
+  assert.equal(screenContent.includes('from "@customer/components";'), false);
+  assert.equal(screenContent.includes("CustomerButton"), false);
+  assert.ok(screenContent.includes('from "@mui/material";'));
+  assert.ok(screenContent.includes("<Button"));
+});
+
 test("generateArtifacts keeps node-level componentMappings precedence over customer profile imports", async () => {
   const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-priority-"));
   const ir = createIr();

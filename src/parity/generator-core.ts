@@ -265,6 +265,7 @@ interface GenerateArtifactsInput {
   initialMappingWarnings?: ComponentMappingWarning[];
   customerProfile?: ResolvedCustomerProfile;
   customerProfileDesignSystemConfig?: DesignSystemConfig;
+  customerProfileDesignSystemConfigSource?: "storybook_first";
   storybookFirstIconLookup?: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord>;
   resolvedStorybookTheme?: ResolvedStorybookTheme;
   iconMapFilePath?: string;
@@ -498,6 +499,7 @@ const resolveGenerateArtifactsPhase = async ({
   designSystemFilePath,
   customerProfile,
   customerProfileDesignSystemConfig,
+  customerProfileDesignSystemConfigSource,
   onLog
 }: {
   input: GenerateArtifactsInput;
@@ -508,6 +510,7 @@ const resolveGenerateArtifactsPhase = async ({
   designSystemFilePath: string;
   customerProfile: ResolvedCustomerProfile | undefined;
   customerProfileDesignSystemConfig: DesignSystemConfig | undefined;
+  customerProfileDesignSystemConfigSource?: "storybook_first";
   onLog: (message: string) => void;
 }): Promise<GenerateArtifactsResolvedPhase> => {
   void llmModelName;
@@ -540,7 +543,14 @@ const resolveGenerateArtifactsPhase = async ({
   // configs for the same profile.
   const customerProfileConfig =
     customerProfileDesignSystemConfig ??
-    (customerProfile ? toCustomerProfileDesignSystemConfig({ profile: customerProfile }) : undefined);
+    (customerProfileDesignSystemConfigSource === "storybook_first"
+      ? {
+          library: "__customer_profile__",
+          mappings: {}
+        }
+      : customerProfile
+        ? toCustomerProfileDesignSystemConfig({ profile: customerProfile })
+        : undefined);
   const designSystemConfig = await runtimeAdapters.loadDesignSystemConfig({
     designSystemFilePath,
     onLog
@@ -1100,6 +1110,7 @@ export async function* generateArtifactsStreaming(
     initialMappingWarnings,
     customerProfile,
     customerProfileDesignSystemConfig,
+    customerProfileDesignSystemConfigSource,
     storybookFirstIconLookup,
     resolvedStorybookTheme,
     iconMapFilePath = path.join(projectDir, ICON_FALLBACK_FILE_NAME),
@@ -1128,6 +1139,7 @@ export async function* generateArtifactsStreaming(
     designSystemFilePath,
     customerProfile: customerProfile ?? input.context?.config.customerProfile,
     customerProfileDesignSystemConfig,
+    ...(customerProfileDesignSystemConfigSource ? { customerProfileDesignSystemConfigSource } : {}),
     onLog
   });
   const {

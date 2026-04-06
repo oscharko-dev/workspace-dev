@@ -31,6 +31,7 @@ export interface CodegenGenerateStageInput {
   figmaAccessToken?: string;
   boardKeySeed: string;
   componentMappings?: WorkspaceComponentMappingRule[];
+  customerProfileDesignSystemConfigSource?: "storybook_first";
 }
 
 interface CodegenGenerateServiceDeps {
@@ -304,6 +305,7 @@ export const createCodegenGenerateService = ({
       let customerProfileDesignSystemConfig:
         | ReturnType<typeof toCustomerProfileDesignSystemConfigFromComponentMatchReport>["config"]
         | undefined;
+      let customerProfileDesignSystemConfigSource: "storybook_first" | undefined;
       let storybookFirstIconLookup: ReadonlyMap<string, ComponentMatchReportIconResolutionRecord> | undefined;
       let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
       let figmaLibraryResolutionArtifact: FigmaLibraryResolutionArtifact | undefined;
@@ -403,7 +405,12 @@ export const createCodegenGenerateService = ({
         const matchReportDesignSystemConfig = toCustomerProfileDesignSystemConfigFromComponentMatchReport({
           artifact: componentMatchReportArtifact
         });
-        customerProfileDesignSystemConfig = matchReportDesignSystemConfig.config;
+        customerProfileDesignSystemConfig =
+          matchReportDesignSystemConfig.config ?? {
+            library: "__customer_profile__",
+            mappings: {}
+          };
+        customerProfileDesignSystemConfigSource = "storybook_first";
         storybookFirstIconLookup = buildStorybookFirstIconLookup({
           artifact: componentMatchReportArtifact
         });
@@ -502,7 +509,17 @@ export const createCodegenGenerateService = ({
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
         ...(context.resolvedCustomerProfile ? { customerProfile: context.resolvedCustomerProfile } : {}),
-        ...(customerProfileDesignSystemConfig ? { customerProfileDesignSystemConfig } : {}),
+        ...(customerProfileDesignSystemConfigSource === "storybook_first"
+          ? {
+              customerProfileDesignSystemConfig: customerProfileDesignSystemConfig ?? {
+                library: "__customer_profile__",
+                mappings: {}
+              }
+            }
+          : customerProfileDesignSystemConfig
+            ? { customerProfileDesignSystemConfig }
+            : {}),
+        ...(customerProfileDesignSystemConfigSource ? { customerProfileDesignSystemConfigSource } : {}),
         ...(storybookFirstIconLookup ? { storybookFirstIconLookup } : {}),
         ...(resolvedStorybookTheme ? { resolvedStorybookTheme } : {}),
         ...(Object.keys(imageAssetMap).length > 0 ? { imageAssetMap } : {}),
