@@ -103,39 +103,39 @@
       "counts": {
         "byReason": {
           "match_ambiguous": 16,
-          "match_unmatched": 15,
+          "match_unmatched": 14,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 11,
+          "profile_import_missing": 12,
           "profile_import_resolved": 0
         },
         "byStatus": {
-          "mui_fallback_allowed": 11,
+          "mui_fallback_allowed": 12,
           "mui_fallback_denied": 0,
-          "not_applicable": 31,
+          "not_applicable": 30,
           "resolved_import": 0
         },
         "iconByReason": {
-          "match_ambiguous": 11,
+          "match_ambiguous": 8,
           "match_unmatched": 36,
           "not_icon_family": 28,
           "profile_family_unresolved": 0,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 0,
           "profile_icon_wrapper_allowed": 0,
-          "profile_icon_wrapper_denied": 6,
+          "profile_icon_wrapper_denied": 9,
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 11,
+          "ambiguous": 8,
           "not_applicable": 28,
           "resolved_import": 0,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
-          "wrapper_fallback_denied": 6
+          "wrapper_fallback_denied": 9
         }
       },
-      "issueCount": 84,
+      "issueCount": 83,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -284,7 +284,7 @@
           "status": "not_applicable"
         },
         {
-          "figmaFamilyKey": "component:1:39153",
+          "figmaFamilyKey": "component:1:39169",
           "figmaFamilyName": "<Dynamic Typography> (headlines)",
           "kind": "component",
           "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
@@ -296,11 +296,26 @@
           "figmaFamilyName": "<Icon>",
           "iconKey": "docs",
           "kind": "icon",
-          "message": "icon 'docs' in Figma family '<Icon>' is denied generic customer icon wrapper fallback.",
-          "profileFamily": "Components",
-          "reason": "profile_icon_wrapper_denied",
-          "status": "wrapper_fallback_denied",
-          "storybookTier": "Components"
+          "message": "icon 'docs' in Figma family '<Icon>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:38938",
+          "figmaFamilyName": "<Icon>",
+          "iconKey": "size_medium_color_action",
+          "kind": "icon",
+          "message": "icon 'size_medium_color_action' in Figma family '<Icon>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "ambiguous"
+        },
+        {
+          "figmaFamilyKey": "component:1:38938",
+          "figmaFamilyName": "<Icon>",
+          "kind": "component",
+          "message": "Figma family '<Icon>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
         },
         {
           "figmaFamilyKey": "component:1:39046",
@@ -318,53 +333,44 @@
           "figmaFamilyName": "<IconButton>",
           "iconKey": "button",
           "kind": "icon",
-          "message": "icon 'button' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "children",
           "kind": "icon",
-          "message": "icon 'children' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:43449",
-          "figmaFamilyName": "<IconButton>",
-          "iconKey": "color_default_size_small_state_enabled",
-          "kind": "icon",
-          "message": "icon 'color_default_size_small_state_enabled' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'children' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "display.button",
           "kind": "icon",
-          "message": "icon 'display.button' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
+          "message": "icon 'display.button' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:43449",
           "figmaFamilyName": "<IconButton>",
           "iconKey": "docs",
           "kind": "icon",
-          "message": "icon 'docs' in Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:43449",
-          "figmaFamilyName": "<IconButton>",
-          "kind": "component",
-          "message": "Figma family '<IconButton>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
+          "message": "icon 'docs' in Figma family '<IconButton>' is denied generic customer icon wrapper fallback.",
+          "profileFamily": "Components",
+          "reason": "profile_icon_wrapper_denied",
+          "status": "wrapper_fallback_denied",
+          "storybookTier": "Components"
         },
         {
           "figmaFamilyKey": "component:1:54308",
@@ -428,14 +434,6 @@
           "kind": "component",
           "message": "Figma family '<Stack> FormControlLabel Radio' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack2>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
           "status": "not_applicable"
         },
         {
@@ -926,9 +924,9 @@
       "ambiguous": 16,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 11,
+      "matched": 12,
       "totalFigmaFamilies": 42,
-      "unmatched": 15
+      "unmatched": 14
     },
     "requestedPath": "storybook-static/storybook-static",
     "status": "ok"
@@ -1076,18 +1074,8 @@
         "errorCount": 0
       }
     },
-    "issueCount": 40,
+    "issueCount": 39,
     "issues": [
-      {
-        "category": "forbidden_inline_style",
-        "column": 31,
-        "componentName": "a",
-        "filePath": "src/App.tsx",
-        "line": 27,
-        "message": "Generated source must not use inline style={{...}} objects.",
-        "propName": "style",
-        "severity": "error"
-      },
       {
         "category": "hard_coded_color_literal",
         "column": 117,
@@ -1123,7 +1111,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 145,
+        "line": 147,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1133,7 +1121,7 @@
         "column": 301,
         "componentName": "IconButton",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 260,
+        "line": 263,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1143,7 +1131,7 @@
         "column": 386,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 260,
+        "line": 263,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1153,7 +1141,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 327,
+        "line": 331,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1163,7 +1151,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 399,
+        "line": 405,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1173,7 +1161,7 @@
         "column": 261,
         "componentName": "Chip",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 417,
+        "line": 423,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
         "propName": "bgcolor",
         "severity": "error"
@@ -1183,7 +1171,7 @@
         "column": 100,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 499,
+        "line": 506,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1193,7 +1181,7 @@
         "column": 97,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 500,
+        "line": 507,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1203,7 +1191,7 @@
         "column": 308,
         "componentName": "Button",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 521,
+        "line": 528,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1213,7 +1201,7 @@
         "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 145,
+        "line": 147,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1223,7 +1211,7 @@
         "column": 49,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 326,
+        "line": 330,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1233,7 +1221,7 @@
         "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 327,
+        "line": 331,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1243,7 +1231,7 @@
         "column": 49,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 398,
+        "line": 404,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1253,7 +1241,7 @@
         "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 399,
+        "line": 405,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1263,7 +1251,7 @@
         "column": 45,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 499,
+        "line": 506,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1273,7 +1261,7 @@
         "column": 42,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 500,
+        "line": 507,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"

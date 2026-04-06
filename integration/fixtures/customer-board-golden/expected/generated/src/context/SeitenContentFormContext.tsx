@@ -391,7 +391,7 @@ export function SeitenContentFormContextProvider({ children, initialVisualErrors
   "_textfield__1_65899": "EUR",
   "_textfield__I2_656_4919_305782": "10000"
 };
-  const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrorsOverride ?? initialVisualErrors;
+  const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };
   const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
 
   const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<SeitenContentFormInput>({
