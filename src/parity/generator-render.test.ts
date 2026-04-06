@@ -784,6 +784,85 @@ test("renderFallbackIconExpression emits a warning and falls back to heuristic M
   assert.equal(context.iconWarnings?.[0]?.code, "W_STORYBOOK_ICON_HEURISTIC_FALLBACK");
 });
 
+test("renderFallbackIconExpression uses direct customer-profile icon imports when storybookFirstIconLookup has no match", () => {
+  const context = createRenderContext();
+  context.storybookFirstIconLookup = new Map([
+    [
+      "other",
+      {
+        iconKey: "other",
+        status: "resolved_import",
+        reason: "profile_icon_import_resolved",
+        import: {
+          package: "@customer/icons",
+          exportName: "OtherIcon",
+          localName: "CustomerOtherIcon"
+        }
+      }
+    ]
+  ]);
+  context.profileIconImportsByKey = new Map([
+    [
+      "mail",
+      {
+        iconKey: "mail",
+        package: "@customer/icons",
+        exportName: "MailIcon",
+        localName: "CustomerMailIcon"
+      }
+    ]
+  ]);
+
+  const rendered = renderFallbackIconExpression({
+    element: makeNode({
+      id: "mail-icon",
+      type: "container",
+      name: "Icon",
+      semanticName: "Mail"
+    }),
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("<CustomerMailIcon"), true);
+  assert.deepEqual(context.mappedImports, [
+    {
+      localName: "CustomerMailIcon",
+      modulePath: "@customer/icons",
+      importMode: "named",
+      importedName: "MailIcon"
+    }
+  ]);
+});
+
+test("renderFallbackIconExpression uses profile icon imports even without storybookFirstIconLookup", () => {
+  const context = createRenderContext();
+  context.profileIconImportsByKey = new Map([
+    [
+      "search",
+      {
+        iconKey: "search",
+        package: "@customer/icons",
+        exportName: "SearchIcon",
+        localName: "CustomerSearchIcon"
+      }
+    ]
+  ]);
+
+  const rendered = renderFallbackIconExpression({
+    element: makeNode({
+      id: "search-icon",
+      type: "container",
+      name: "Icon",
+      semanticName: "Search"
+    }),
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("<CustomerSearchIcon"), true);
+});
+
 test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering branches", () => {
   const matrixLayout = detectGridLikeContainerLayout(
     makeNode({

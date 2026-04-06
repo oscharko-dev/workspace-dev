@@ -275,7 +275,9 @@ const resolveStorybookFirstIconSpec = ({
   context: RenderContext;
 }): ResolvedStorybookFirstIconSpec | undefined => {
   const iconLookup = context.storybookFirstIconLookup;
-  if (!iconLookup || iconLookup.size === 0) {
+  const profileIconImports = context.profileIconImportsByKey;
+
+  if ((!iconLookup || iconLookup.size === 0) && (!profileIconImports || profileIconImports.size === 0)) {
     return undefined;
   }
 
@@ -289,54 +291,84 @@ const resolveStorybookFirstIconSpec = ({
       element.asset?.alt
     ]
   });
-  const matchedIconKey = iconKeys.find((iconKey) => iconLookup.has(iconKey));
-  if (!matchedIconKey) {
-    if (iconKeys.length > 0) {
-      pushIconRenderWarning({
-        context,
-        element,
-        ...(iconKeys[0] ? { iconKey: iconKeys[0] } : {}),
-        message: `Storybook-first icon '${iconKeys[0]}' has no customer-profile icon mapping; falling back to heuristic MUI icon resolution.`
-      });
+
+  // 1. Check storybook-first lookup (match-report derived, profile-aware)
+  if (iconLookup && iconLookup.size > 0) {
+    const matchedIconKey = iconKeys.find((iconKey) => iconLookup.has(iconKey));
+    if (matchedIconKey) {
+      const resolution = iconLookup.get(matchedIconKey);
+      if (resolution) {
+        if (resolution.status === "resolved_import" && resolution.import) {
+          return {
+            componentName: registerNamedMappedImport({
+              context,
+              importedName: resolution.import.exportName,
+              modulePath: resolution.import.package,
+              localName: resolution.import.localName
+            }),
+            additionalProps: []
+          };
+        }
+        if (resolution.status === "wrapper_fallback_allowed" && resolution.wrapper) {
+          return {
+            componentName: registerNamedMappedImport({
+              context,
+              importedName: resolution.wrapper.exportName,
+              modulePath: resolution.wrapper.package,
+              localName: resolution.wrapper.localName
+            }),
+            additionalProps: [`${resolution.wrapper.iconPropName}={${literal(matchedIconKey)}}`]
+          };
+        }
+        // Match found in storybook lookup but unresolvable (wrapper_fallback_denied, unresolved, etc.)
+        // Profile was already consulted during match report building — do NOT override.
+        pushIconRenderWarning({
+          context,
+          element,
+          iconKey: matchedIconKey,
+          message:
+            `Storybook-first icon '${matchedIconKey}' resolved to '${resolution.status}' in component.match_report; ` +
+            "falling back to heuristic MUI icon resolution."
+        });
+        return undefined;
+      }
     }
-    return undefined;
   }
 
-  const resolution = iconLookup.get(matchedIconKey);
-  if (!resolution) {
-    return undefined;
-  }
-  if (resolution.status === "resolved_import" && resolution.import) {
-    return {
-      componentName: registerNamedMappedImport({
-        context,
-        importedName: resolution.import.exportName,
-        modulePath: resolution.import.package,
-        localName: resolution.import.localName
-      }),
-      additionalProps: []
-    };
-  }
-  if (resolution.status === "wrapper_fallback_allowed" && resolution.wrapper) {
-    return {
-      componentName: registerNamedMappedImport({
-        context,
-        importedName: resolution.wrapper.exportName,
-        modulePath: resolution.wrapper.package,
-        localName: resolution.wrapper.localName
-      }),
-      additionalProps: [`${resolution.wrapper.iconPropName}={${literal(matchedIconKey)}}`]
-    };
+  // 2. Check direct profile icon imports for keys NOT covered by the storybook match report
+  if (profileIconImports && profileIconImports.size > 0) {
+    const matchedProfileKey = iconKeys.find((key) => {
+      // Skip keys already handled by the storybook lookup (resolved or not)
+      if (iconLookup && iconLookup.has(key)) {
+        return false;
+      }
+      return profileIconImports.has(key);
+    });
+    if (matchedProfileKey) {
+      const profileImport = profileIconImports.get(matchedProfileKey);
+      if (profileImport) {
+        return {
+          componentName: registerNamedMappedImport({
+            context,
+            importedName: profileImport.exportName,
+            modulePath: profileImport.package,
+            localName: profileImport.localName
+          }),
+          additionalProps: []
+        };
+      }
+    }
   }
 
-  pushIconRenderWarning({
-    context,
-    element,
-    iconKey: matchedIconKey,
-    message:
-      `Storybook-first icon '${matchedIconKey}' resolved to '${resolution.status}' in component.match_report; ` +
-      "falling back to heuristic MUI icon resolution."
-  });
+  // No match — warn and fall back to heuristic catalog
+  if (iconKeys.length > 0 && ((iconLookup && iconLookup.size > 0) || (profileIconImports && profileIconImports.size > 0))) {
+    pushIconRenderWarning({
+      context,
+      element,
+      ...(iconKeys[0] ? { iconKey: iconKeys[0] } : {}),
+      message: `Icon '${iconKeys[0]}' has no customer-profile icon mapping; falling back to heuristic MUI icon resolution.`
+    });
+  }
   return undefined;
 };
 
