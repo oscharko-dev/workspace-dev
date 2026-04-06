@@ -185,6 +185,22 @@ import {
 
 const BANKING_INPUT_SEMANTIC_TYPES = new Set(["InputCurrency", "InputIBAN", "InputTAN"]);
 
+const isRedundantFontFamily = (fontFamily: string | undefined, themeFontFamily: string | undefined): boolean => {
+  if (!fontFamily || !themeFontFamily) {
+    return false;
+  }
+  const extractRoot = (value: string): string =>
+    (value.split(",")[0] ?? "").trim().replace(/['"]/g, "").toLowerCase().replace(/\s+/g, "");
+  const fieldRoot = extractRoot(fontFamily);
+  const themeRoot = extractRoot(themeFontFamily);
+  if (!fieldRoot || !themeRoot) {
+    return false;
+  }
+  // Match if roots share the same prefix (at least 8 chars, e.g. "sparkasse")
+  const prefixLen = Math.min(8, fieldRoot.length, themeRoot.length);
+  return prefixLen >= 4 && fieldRoot.slice(0, prefixLen) === themeRoot.slice(0, prefixLen);
+};
+
 const toTypographyWeightNumber = (value: number | string | undefined): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -1070,11 +1086,11 @@ export const renderSemanticInput = (
           })
         : undefined
     ],
-    ["fontFamily", field.valueFontFamily ? literal(field.valueFontFamily) : undefined],
+    ["fontFamily", field.valueFontFamily && !isRedundantFontFamily(field.valueFontFamily, context.tokens?.fontFamily) ? literal(field.valueFontFamily) : undefined],
     ["color", toThemeColorLiteral({ color: field.valueColor, tokens: context.tokens })]
   ]);
   const inputLabelStyle = sxString([
-    ["fontFamily", field.labelFontFamily ? literal(field.labelFontFamily) : undefined],
+    ["fontFamily", field.labelFontFamily && !isRedundantFontFamily(field.labelFontFamily, context.tokens?.fontFamily) ? literal(field.labelFontFamily) : undefined],
     ["color", toThemeColorLiteral({ color: field.labelColor, tokens: context.tokens })]
   ]);
   const outlineStyle = sxString([["borderColor", toThemeColorLiteral({ color: outlineStrokeColor, tokens: context.tokens })]]);
