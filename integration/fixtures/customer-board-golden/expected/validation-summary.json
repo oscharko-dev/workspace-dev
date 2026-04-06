@@ -109,14 +109,14 @@
           "match_unmatched": 13,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 13,
-          "profile_import_resolved": 0
+          "profile_import_missing": 3,
+          "profile_import_resolved": 10
         },
         "byStatus": {
-          "mui_fallback_allowed": 13,
+          "mui_fallback_allowed": 3,
           "mui_fallback_denied": 0,
           "not_applicable": 29,
-          "resolved_import": 0
+          "resolved_import": 10
         },
         "iconByReason": {
           "match_ambiguous": 6,
@@ -924,8 +924,13 @@
     },
     "diagnostics": {
       "componentMatchReport": {
-        "resolvedCustomerComponentCount": 0,
-        "validatedComponentNames": []
+        "resolvedCustomerComponentCount": 4,
+        "validatedComponentNames": [
+          "Chip",
+          "Divider",
+          "IconButton",
+          "Typography"
+        ]
       },
       "evidence": {
         "authoritativeStylingEvidenceCount": 151,
@@ -1060,16 +1065,248 @@
         "errorCount": 0
       }
     },
-    "issueCount": 39,
+    "issueCount": 58,
     "issues": [
       {
-        "category": "hard_coded_color_literal",
-        "column": 117,
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 41,
         "componentName": "Typography",
-        "filePath": "src/components/SeitenContentPattern1.tsx",
-        "line": 25,
-        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "filePath": "src/components/ErrorBoundary.tsx",
+        "line": 38,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
         "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 21,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 8,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 44,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 8,
+        "message": "Generated source forwarded disallowed prop 'maxWidth' to customer component 'Typography'.",
+        "propName": "maxWidth",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 27,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 53,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 27,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 62,
+        "message": "Generated source forwarded disallowed prop 'fontWeight' to customer component 'Typography'.",
+        "propName": "fontWeight",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 27,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 63,
+        "message": "Generated source forwarded disallowed prop 'fontWeight' to customer component 'Typography'.",
+        "propName": "fontWeight",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 15,
+        "componentName": "Chip",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 22,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Chip'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 33,
+        "componentName": "Chip",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 22,
+        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
+        "propName": "label",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 71,
+        "componentName": "Chip",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 22,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Chip'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 21,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 44,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'maxWidth' to customer component 'Typography'.",
+        "propName": "maxWidth",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 29,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 45,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 34,
+        "componentName": "Divider",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 63,
+        "message": "Generated source forwarded disallowed prop 'flexItem' to customer component 'Divider'.",
+        "propName": "flexItem",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 66,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 74,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 15,
+        "componentName": "Chip",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Chip'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 31,
+        "componentName": "Chip",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
+        "propName": "label",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 50,
+        "componentName": "Chip",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Chip'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 21,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 44,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'maxWidth' to customer component 'Typography'.",
+        "propName": "maxWidth",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 44,
+        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 78,
+        "componentName": "Chip",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 423,
+        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
+        "propName": "label",
         "severity": "error"
       },
       {
@@ -1077,7 +1314,7 @@
         "column": 236,
         "componentName": "Avatar",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 36,
+        "line": 37,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
         "propName": "bgcolor",
         "severity": "error"
@@ -1087,7 +1324,7 @@
         "column": 156,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 43,
+        "line": 44,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1097,27 +1334,17 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 146,
+        "line": 147,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
       },
       {
         "category": "hard_coded_color_literal",
-        "column": 301,
-        "componentName": "IconButton",
-        "filePath": "src/screens/SeitenContent.tsx",
-        "line": 262,
-        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
-        "propName": "color",
-        "severity": "error"
-      },
-      {
-        "category": "hard_coded_color_literal",
-        "column": 386,
+        "column": 193,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 262,
+        "line": 263,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1127,7 +1354,7 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 330,
+        "line": 331,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1137,19 +1364,9 @@
         "column": 101,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 404,
+        "line": 405,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
-        "severity": "error"
-      },
-      {
-        "category": "hard_coded_color_literal",
-        "column": 261,
-        "componentName": "Chip",
-        "filePath": "src/screens/SeitenContent.tsx",
-        "line": 422,
-        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
-        "propName": "bgcolor",
         "severity": "error"
       },
       {
@@ -1157,7 +1374,7 @@
         "column": 100,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 505,
+        "line": 506,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1167,7 +1384,7 @@
         "column": 97,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 506,
+        "line": 507,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1177,7 +1394,7 @@
         "column": 308,
         "componentName": "Button",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 527,
+        "line": 528,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
         "severity": "error"
@@ -1187,7 +1404,7 @@
         "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 146,
+        "line": 147,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1195,16 +1412,6 @@
       {
         "category": "raw_typography_declaration",
         "column": 49,
-        "componentName": "TextField",
-        "filePath": "src/screens/SeitenContent.tsx",
-        "line": 329,
-        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
-        "propName": "fontFamily",
-        "severity": "error"
-      },
-      {
-        "category": "raw_typography_declaration",
-        "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 330,
@@ -1214,17 +1421,17 @@
       },
       {
         "category": "raw_typography_declaration",
-        "column": 49,
+        "column": 46,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 403,
+        "line": 331,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
       },
       {
         "category": "raw_typography_declaration",
-        "column": 46,
+        "column": 49,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 404,
@@ -1234,10 +1441,20 @@
       },
       {
         "category": "raw_typography_declaration",
+        "column": 46,
+        "componentName": "TextField",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 405,
+        "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
+        "propName": "fontFamily",
+        "severity": "error"
+      },
+      {
+        "category": "raw_typography_declaration",
         "column": 45,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 505,
+        "line": 506,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"
@@ -1247,7 +1464,7 @@
         "column": 42,
         "componentName": "TextField",
         "filePath": "src/screens/SeitenContent.tsx",
-        "line": 506,
+        "line": 507,
         "message": "Generated source must keep typography declarations in Storybook-derived theme outputs; found raw 'fontFamily' styling.",
         "propName": "fontFamily",
         "severity": "error"

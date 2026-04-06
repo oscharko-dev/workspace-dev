@@ -871,9 +871,14 @@
       },
       "libraryResolution": {
         "componentKey": "Chip",
+        "import": {
+          "exportName": "Chip",
+          "localName": "Chip",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -883,33 +888,85 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "boolean",
+            "name": "deletable"
+          },
+          {
+            "kind": "enum",
+            "name": "size"
+          },
+          {
+            "kind": "enum",
+            "name": "variant"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "optional"
         },
+        "componentKey": "Chip",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Chip",
+          "localName": "Chip",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "optional"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "hasLeadingIcon",
+            "targetProp": "hasLeadingIcon"
+          },
+          {
+            "sourceProp": "state",
+            "targetProp": "state"
+          }
+        ],
+        "props": [
+          {
+            "kind": "boolean",
+            "sourceProp": "deletable",
+            "targetProp": "deletable",
+            "values": [
+              false
+            ]
+          },
+          {
+            "kind": "enum",
+            "sourceProp": "size",
+            "targetProp": "size",
+            "values": [
+              "Medium"
+            ]
+          },
+          {
+            "kind": "enum",
+            "sourceProp": "variant",
+            "targetProp": "variant",
+            "values": [
+              "Filled"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:b31e3f5e703497e5",
@@ -1653,9 +1710,14 @@
       },
       "libraryResolution": {
         "componentKey": "IconButton",
+        "import": {
+          "exportName": "IconButton",
+          "localName": "IconButton",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -1665,33 +1727,69 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "size"
+          },
+          {
+            "kind": "enum",
+            "name": "variant"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "optional"
         },
+        "componentKey": "IconButton",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "IconButton",
+          "localName": "IconButton",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "optional"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "state",
+            "targetProp": "state"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "size",
+            "targetProp": "size",
+            "values": [
+              "Medium"
+            ]
+          },
+          {
+            "kind": "enum",
+            "sourceProp": "variant",
+            "targetProp": "variant",
+            "values": [
+              "Filled"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:79b93d8ab4a3b4b6",
@@ -2295,9 +2393,14 @@
       },
       "libraryResolution": {
         "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -2307,33 +2410,57 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "orientation"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
+        "componentKey": "Divider",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "divider",
+            "targetProp": "divider"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "direction",
+            "targetProp": "orientation",
+            "values": [
+              "column"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:456ad848bd366d33",
@@ -2544,9 +2671,14 @@
       },
       "libraryResolution": {
         "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -2556,33 +2688,57 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "orientation"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
+        "componentKey": "Divider",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "divider",
+            "targetProp": "divider"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "direction",
+            "targetProp": "orientation",
+            "values": [
+              "column"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:456ad848bd366d33",
@@ -2961,9 +3117,14 @@
       },
       "libraryResolution": {
         "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -2973,33 +3134,57 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "orientation"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
+        "componentKey": "Divider",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "divider",
+            "targetProp": "divider"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "direction",
+            "targetProp": "orientation",
+            "values": [
+              "column"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:456ad848bd366d33",
@@ -3334,9 +3519,14 @@
       },
       "libraryResolution": {
         "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -3346,33 +3536,57 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "orientation"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
+        "componentKey": "Divider",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "divider",
+            "targetProp": "divider"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "direction",
+            "targetProp": "orientation",
+            "values": [
+              "column"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:456ad848bd366d33",
@@ -3463,9 +3677,14 @@
       },
       "libraryResolution": {
         "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -3475,33 +3694,57 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "orientation"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
+        "componentKey": "Divider",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@mui/material"
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "never"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "divider",
+            "targetProp": "divider"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "direction",
+            "targetProp": "orientation",
+            "values": [
+              "column"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:456ad848bd366d33",
@@ -3896,9 +4139,17 @@
       },
       "libraryResolution": {
         "componentKey": "Typography",
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -3908,33 +4159,60 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "variant"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
+        "componentKey": "Typography",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "state",
+            "targetProp": "state"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "variant",
+            "targetProp": "variant",
+            "values": [
+              "label03"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:551261f1f5319081",
@@ -4019,9 +4297,17 @@
       },
       "libraryResolution": {
         "componentKey": "Typography",
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -4031,33 +4317,60 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "variant"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
+        "componentKey": "Typography",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "state",
+            "targetProp": "state"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "variant",
+            "targetProp": "variant",
+            "values": [
+              "label04"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:551261f1f5319081",
@@ -4142,9 +4455,17 @@
       },
       "libraryResolution": {
         "componentKey": "Typography",
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
         "storybookTier": "Components"
       },
       "match": {
@@ -4154,33 +4475,60 @@
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "kind": "enum",
+            "name": "variant"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
+        "componentKey": "Typography",
         "defaultProps": [],
         "diagnostics": [],
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@mui/material",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "always"
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "state",
+            "targetProp": "state"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "variant",
+            "targetProp": "variant",
+            "values": [
+              "label04Light"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "storybookFamily": {
         "familyId": "family:551261f1f5319081",
@@ -4228,9 +4576,9 @@
       ],
       "figma": {
         "familyKey": "component:1:38926",
-        "familyName": "ic_arrow_subitem_s 🔥",
+        "familyName": "ic_arrow_subitem_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_arrow_subitem_s 🔥",
+          "canonicalFamilyName": "ic_arrow_subitem_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -4486,9 +4834,9 @@
       ],
       "figma": {
         "familyKey": "component:1:43496",
-        "familyName": "ic_circle_s 🔥",
+        "familyName": "ic_circle_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_circle_s 🔥",
+          "canonicalFamilyName": "ic_circle_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -4743,9 +5091,9 @@
       ],
       "figma": {
         "familyKey": "component:1:636",
-        "familyName": "ic_down_s 🔥",
+        "familyName": "ic_down_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_down_s 🔥",
+          "canonicalFamilyName": "ic_down_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -4872,9 +5220,9 @@
       ],
       "figma": {
         "familyKey": "component:1:43307",
-        "familyName": "ic_info_circle_s 🔥",
+        "familyName": "ic_info_circle_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_info_circle_s 🔥",
+          "canonicalFamilyName": "ic_info_circle_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -5001,9 +5349,9 @@
       ],
       "figma": {
         "familyKey": "component:1:43500",
-        "familyName": "ic_radio_selected_s 🔥",
+        "familyName": "ic_radio_selected_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_radio_selected_s 🔥",
+          "canonicalFamilyName": "ic_radio_selected_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -5259,9 +5607,9 @@
       ],
       "figma": {
         "familyKey": "component:1:40602",
-        "familyName": "ic_user_s 🔥",
+        "familyName": "ic_user_s \ud83d\udd25",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "ic_user_s 🔥",
+          "canonicalFamilyName": "ic_user_s \ud83d\udd25",
           "canonicalFamilyNameSource": "analysis",
           "designLinks": [],
           "issues": [
@@ -5411,14 +5759,14 @@
         "match_unmatched": 13,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 13,
-        "profile_import_resolved": 0
+        "profile_import_missing": 3,
+        "profile_import_resolved": 10
       },
       "byStatus": {
-        "mui_fallback_allowed": 13,
+        "mui_fallback_allowed": 3,
         "mui_fallback_denied": 0,
         "not_applicable": 29,
-        "resolved_import": 0
+        "resolved_import": 10
       }
     },
     "matched": 13,
