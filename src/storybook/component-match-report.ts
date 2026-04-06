@@ -65,6 +65,7 @@ const MATCHED_PRIMARY_THRESHOLD = 35;
 const MATCHED_TOTAL_THRESHOLD = 45;
 const AMBIGUOUS_PRIMARY_MIN = 20;
 const PRIMARY_LEAD_THRESHOLD = 8;
+const MAX_TIER_PRIORITY_SCORE = 10;
 const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
   "resolved_import",
   "mui_fallback_allowed",
@@ -879,6 +880,19 @@ const scoreReferenceOnlyDocs = ({
   return Math.min(MAX_REFERENCE_ONLY_DOCS_SCORE, overlapCount);
 };
 
+const scoreTierPriority = ({
+  storybookFamily,
+  tierPriorityByAlias
+}: {
+  storybookFamily: StorybookCatalogFamily;
+  tierPriorityByAlias: ReadonlyMap<string, number>;
+}): number => {
+  if (tierPriorityByAlias.size === 0) return 0;
+  const priority = tierPriorityByAlias.get(storybookFamily.tier.toLowerCase());
+  if (priority === undefined) return 0;
+  return MAX_TIER_PRIORITY_SCORE;
+};
+
 const toReliabilityForEvidenceClass = (value: ComponentMatchEvidenceClass): StorybookEvidenceReliability => {
   switch (value) {
     case "reference_only_docs":
@@ -886,6 +900,7 @@ const toReliabilityForEvidenceClass = (value: ComponentMatchEvidenceClass): Stor
     case "design_link":
     case "canonical_family_name":
     case "semantic_type":
+    case "customer_profile_tier_priority":
       return "derived";
     case "variant_or_prop_overlap":
     case "component_path_present":
@@ -916,11 +931,13 @@ const toUniqueUsedEvidence = (values: ComponentMatchReportUsedEvidence[]): Compo
 const scoreCandidateFamily = ({
   figmaFamily,
   storybookFamily,
-  lookup
+  lookup,
+  tierPriorityByAlias
 }: {
   figmaFamily: ResolvedFigmaFamily;
   storybookFamily: StorybookCatalogFamily;
   lookup: StorybookLookup;
+  tierPriorityByAlias: ReadonlyMap<string, number>;
 }): CandidateScore => {
   const usedEvidence: ComponentMatchReportUsedEvidence[] = [];
   const fallbackReasons = new Set<ComponentMatchFallbackReason>();
@@ -990,15 +1007,30 @@ const scoreCandidateFamily = ({
     });
   }
 
-  const primaryScore =
+  const basePrimaryScore =
     designLinkScore.score +
     canonicalNameScore.score +
     semanticScore +
     variantOrPropScore +
     componentPathScore;
 
+  const tierPriorityScore =
+    basePrimaryScore >= AMBIGUOUS_PRIMARY_MIN
+      ? scoreTierPriority({ storybookFamily, tierPriorityByAlias })
+      : 0;
+  if (tierPriorityScore > 0) {
+    usedEvidence.push({
+      class: "customer_profile_tier_priority",
+      reliability: toReliabilityForEvidenceClass("customer_profile_tier_priority"),
+      role: "candidate_selection"
+    });
+    fallbackReasons.add("used_customer_profile_tier_priority");
+  }
+
+  const primaryScore = basePrimaryScore + tierPriorityScore;
+
   const referenceOnlyDocsScore =
-    primaryScore > 0
+    basePrimaryScore > 0
       ? scoreReferenceOnlyDocs({
           figmaFamily,
           storybookFamily,
@@ -1068,10 +1100,12 @@ const toConfidence = (totalScore: number): ComponentMatchConfidence => {
 
 const resolveMatchStatus = ({
   topCandidate,
-  runnerUp
+  runnerUp,
+  tierPriorityResolved = false
 }: {
   topCandidate: CandidateScore | undefined;
   runnerUp: CandidateScore | undefined;
+  tierPriorityResolved?: boolean;
 }): {
   status: ComponentMatchStatus;
   rejectionReasons: ComponentMatchRejectionReason[];
@@ -1087,7 +1121,7 @@ const resolveMatchStatus = ({
   if (
     topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD &&
     topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD &&
-    primaryLead >= PRIMARY_LEAD_THRESHOLD
+    (primaryLead >= PRIMARY_LEAD_THRESHOLD || tierPriorityResolved)
   ) {
     return {
       status: "matched",
@@ -1570,28 +1604,36 @@ export const buildComponentMatchReportArtifact = ({
           scoreCandidateFamily({
             figmaFamily: resolvedFigmaFamily,
             storybookFamily,
-            lookup
+            lookup,
+            tierPriorityByAlias
           })
         )
         .sort(buildCompareCandidateScores({ tierPriorityByAlias }));
       const topCandidate = candidates[0];
       const runnerUp = candidates[1];
+      let tierPriorityResolved = false;
       if (
         topCandidate &&
         runnerUp &&
-        topCandidate.totalScore === runnerUp.totalScore &&
-        topCandidate.primaryScore === runnerUp.primaryScore &&
         tierPriorityByAlias.size > 0
       ) {
         const topPriority = tierPriorityByAlias.get(topCandidate.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
         const runnerUpPriority = tierPriorityByAlias.get(runnerUp.family.tier.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
-        if (topPriority !== runnerUpPriority) {
+        if (
+          topCandidate.totalScore === runnerUp.totalScore &&
+          topCandidate.primaryScore === runnerUp.primaryScore &&
+          topPriority !== runnerUpPriority
+        ) {
           topCandidate.fallbackReasons.push("used_customer_profile_tier_priority_tiebreaker");
+        }
+        if (topPriority < runnerUpPriority) {
+          tierPriorityResolved = true;
         }
       }
       const match = resolveMatchStatus({
         topCandidate,
-        runnerUp
+        runnerUp,
+        tierPriorityResolved
       });
 
       const selectedFamily =
