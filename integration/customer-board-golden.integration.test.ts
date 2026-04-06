@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   assertCustomerBoardPublicArtifactSanitized,
@@ -107,7 +108,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       status?: string;
       figmaLibraryResolution?: { status?: string };
       componentMatchReport?: { status?: string };
-      customerProfileMatch?: { status?: string; issueCount?: number };
+      customerProfileMatch?: {
+        counts?: {
+          byReason?: {
+            profile_import_resolved?: number;
+          };
+          byStatus?: {
+            resolved_import?: number;
+          };
+        };
+        status?: string;
+        issueCount?: number;
+      };
     };
     style?: {
       status?: string;
@@ -119,6 +131,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       diagnostics?: {
         componentMatchReport?: {
           resolvedCustomerComponentCount?: number;
+          validatedComponentNames?: string[];
         };
       };
     };
@@ -154,20 +167,58 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(validationSummary.mapping?.figmaLibraryResolution?.status, "ok");
   assert.equal(validationSummary.mapping?.componentMatchReport?.status, "ok");
   assert.notEqual(validationSummary.mapping?.customerProfileMatch?.status, "not_available");
+  assert.equal((validationSummary.mapping?.customerProfileMatch?.counts?.byReason?.profile_import_resolved ?? 0) > 0, true);
+  assert.equal((validationSummary.mapping?.customerProfileMatch?.counts?.byStatus?.resolved_import ?? 0) > 0, true);
   assert.equal("filePath" in (validationSummary.style?.storybook?.evidence ?? {}), false);
   assert.equal(validationSummary.style?.storybook?.tokens?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.themes?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.componentMatchReport?.status, "ok");
+  assert.equal((validationSummary.style?.diagnostics?.componentMatchReport?.resolvedCustomerComponentCount ?? 0) > 0, true);
+  assert.deepEqual(validationSummary.style?.diagnostics?.componentMatchReport?.validatedComponentNames ?? [], [
+    "Chip",
+    "Divider",
+    "IconButton",
+    "Typography"
+  ]);
+  assert.equal(validationSummary.import?.customerProfile?.import?.issueCount ?? 0, 0);
+  assert.equal(validationSummary.generatedApp?.install?.status, "completed");
+  assert.equal(validationSummary.generatedApp?.status, "ok");
+  assert.equal(validationSummary.generatedApp?.attempts, 1);
+  assert.equal(JSON.stringify(validationSummary.generatedApp).includes("attempt-2"), false);
   assert.equal(
-    (validationSummary.style?.diagnostics?.componentMatchReport?.resolvedCustomerComponentCount ?? 0) >= 0,
+    validationSummary.generatedApp?.install?.command?.outputCaptureKey?.includes("validate.project") ?? false,
     true
   );
-  assert.equal((validationSummary.import?.customerProfile?.import?.issueCount ?? 0) >= 0, true);
+
+  const resolvedComponentNames = new Set(
+    validationSummary.style?.diagnostics?.componentMatchReport?.validatedComponentNames ?? []
+  );
+  for (const name of ["Chip", "Divider", "IconButton", "Typography"]) {
+    assert.equal(resolvedComponentNames.has(name), true, `Expected validated component names to include '${name}'.`);
+  }
 
   const screenFile = firstOutputs.get(getExpectedOutput(manifest, "src/screens/SeitenContent.tsx"));
   const patternContextFile = firstOutputs.get(getExpectedOutput(manifest, "src/context/SeitenContentPatternContext.tsx"));
+  const generatedPackageJson = JSON.parse(
+    await readFile(`${first.executionContext.paths.generatedProjectDir}/package.json`, "utf8")
+  ) as {
+    dependencies?: Record<string, string>;
+  };
+  const generatedTsconfig = JSON.parse(
+    await readFile(`${first.executionContext.paths.generatedProjectDir}/tsconfig.json`, "utf8")
+  ) as {
+    compilerOptions?: {
+      baseUrl?: string;
+      paths?: Record<string, string[]>;
+    };
+  };
+  const generatedViteConfig = await readFile(`${first.executionContext.paths.generatedProjectDir}/vite.config.ts`, "utf8");
   assert.ok(screenFile, "Generated SeitenContent screen must exist.");
   assert.ok(patternContextFile, "Generated pattern context file must exist.");
+  assert.equal(generatedPackageJson.dependencies?.["@customer/ui"], "npm:@mui/material@^7.3.9");
+  assert.equal(generatedTsconfig.compilerOptions?.baseUrl, ".");
+  assert.deepEqual(generatedTsconfig.compilerOptions?.paths?.["@customer/ui"], ["@mui/material"]);
+  assert.equal(generatedViteConfig.includes('"@customer/ui": "@mui/material"'), true);
   assert.equal(
     screenFile?.includes("import { SeitenContentPattern1 }"),
     false,
@@ -193,5 +244,6 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true,
     "Generated pattern context file must still expose the pattern context provider."
   );
-  assert.equal(JSON.stringify(validationSummary.generatedApp).includes("attempt-2"), false);
+  assert.equal(screenFile?.includes('import { Chip, Divider, IconButton } from "@customer/ui";'), true);
+  assert.equal(screenFile?.includes("SeitenContentPatternContextProvider"), true);
 });

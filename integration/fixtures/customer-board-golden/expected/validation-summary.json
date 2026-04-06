@@ -15,7 +15,7 @@
       "command": {
         "args": [
           "install",
-          "--frozen-lockfile",
+          "--ignore-scripts",
           "--reporter",
           "append-only",
           "--prefer-offline"
@@ -87,16 +87,313 @@
     "componentApi": {
       "counts": {
         "byReason": {
-          "component_api_children_unsupported": 0,
+          "component_api_children_unsupported": 4,
           "component_api_missing": 0,
-          "component_api_prop_unsupported": 0,
+          "component_api_prop_unsupported": 26,
           "component_api_signature_conflict": 0,
           "component_api_slot_unsupported": 0
         }
       },
-      "issueCount": 0,
-      "issues": [],
-      "status": "ok"
+      "issueCount": 30,
+      "issues": [
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Chip",
+          "figmaFamilyKey": "component:1:48552",
+          "figmaFamilyName": "<Chip>",
+          "message": "Resolved component 'Chip' does not expose prop 'state' (mapped from 'state').",
+          "severity": "warning",
+          "sourceProp": "state",
+          "targetProp": "state"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39169",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39169",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "IconButton",
+          "figmaFamilyKey": "component:1:43449",
+          "figmaFamilyName": "<IconButton>",
+          "message": "Resolved component 'IconButton' does not expose prop 'state' (mapped from 'state').",
+          "severity": "warning",
+          "sourceProp": "state",
+          "targetProp": "state"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:42583",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
+          "severity": "warning",
+          "sourceProp": "alignitems",
+          "targetProp": "alignitems"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:42583",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
+          "severity": "warning",
+          "sourceProp": "direction",
+          "targetProp": "direction"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:42583",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
+          "severity": "warning",
+          "sourceProp": "directionS",
+          "targetProp": "directionS"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:42583",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
+          "severity": "warning",
+          "sourceProp": "divider",
+          "targetProp": "divider"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:62521",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
+          "severity": "warning",
+          "sourceProp": "alignitems",
+          "targetProp": "alignitems"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:62521",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
+          "severity": "warning",
+          "sourceProp": "direction",
+          "targetProp": "direction"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:62521",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
+          "severity": "warning",
+          "sourceProp": "directionS",
+          "targetProp": "directionS"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:62521",
+          "figmaFamilyName": "<Stack>",
+          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
+          "severity": "warning",
+          "sourceProp": "divider",
+          "targetProp": "divider"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
+          "severity": "warning",
+          "sourceProp": "alignitems",
+          "targetProp": "alignitems"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
+          "severity": "warning",
+          "sourceProp": "direction",
+          "targetProp": "direction"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
+          "severity": "warning",
+          "sourceProp": "directionS",
+          "targetProp": "directionS"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
+          "severity": "warning",
+          "sourceProp": "divider",
+          "targetProp": "divider"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
+          "severity": "warning",
+          "sourceProp": "alignitems",
+          "targetProp": "alignitems"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
+          "severity": "warning",
+          "sourceProp": "direction",
+          "targetProp": "direction"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
+          "severity": "warning",
+          "sourceProp": "directionS",
+          "targetProp": "directionS"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:40054",
+          "figmaFamilyName": "<Stack4>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
+          "severity": "warning",
+          "sourceProp": "divider",
+          "targetProp": "divider"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'alignitems' (mapped from 'alignitems').",
+          "severity": "warning",
+          "sourceProp": "alignitems",
+          "targetProp": "alignitems"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'direction' (mapped from 'direction').",
+          "severity": "warning",
+          "sourceProp": "direction",
+          "targetProp": "direction"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'directionS' (mapped from 'directionS').",
+          "severity": "warning",
+          "sourceProp": "directionS",
+          "targetProp": "directionS"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "message": "Resolved component 'Divider' does not expose prop 'divider' (mapped from 'divider').",
+          "severity": "warning",
+          "sourceProp": "divider",
+          "targetProp": "divider"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38311",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38311",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38313",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38313",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38329",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:38329",
+          "figmaFamilyName": "<Typography>",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        }
+      ],
+      "status": "warn"
     },
     "componentMatchReport": {
       "filePath": "<fixture-root>/derived/component-match-report.json",
@@ -105,18 +402,18 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 16,
+          "match_ambiguous": 15,
           "match_unmatched": 13,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
           "profile_import_missing": 3,
-          "profile_import_resolved": 10
+          "profile_import_resolved": 11
         },
         "byStatus": {
           "mui_fallback_allowed": 3,
           "mui_fallback_denied": 0,
-          "not_applicable": 29,
-          "resolved_import": 10
+          "not_applicable": 28,
+          "resolved_import": 11
         },
         "iconByReason": {
           "match_ambiguous": 6,
@@ -138,7 +435,7 @@
           "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 81,
+      "issueCount": 80,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -288,14 +585,6 @@
         },
         {
           "figmaFamilyKey": "component:1:39153",
-          "figmaFamilyName": "<Dynamic Typography> (headlines)",
-          "kind": "component",
-          "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:39169",
           "figmaFamilyName": "<Dynamic Typography> (headlines)",
           "kind": "component",
           "message": "Figma family '<Dynamic Typography> (headlines)' remains ambiguous in component.match_report.",
@@ -908,10 +1197,10 @@
       }
     },
     "composition": {
-      "ambiguous": 16,
+      "ambiguous": 15,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 13,
+      "matched": 14,
       "totalFigmaFamilies": 42,
       "unmatched": 13
     },
@@ -1065,17 +1354,39 @@
         "errorCount": 0
       }
     },
-    "issueCount": 58,
+    "issueCount": 74,
     "issues": [
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
-        "column": 41,
+        "column": 25,
         "componentName": "Typography",
         "filePath": "src/components/ErrorBoundary.tsx",
         "line": 38,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 111,
+        "componentName": "Typography",
+        "filePath": "src/components/SeitenContentPattern1.tsx",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Typography'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 91,
+        "componentName": "Typography",
+        "filePath": "src/components/SeitenContentPattern1.tsx",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1084,9 +1395,9 @@
         "column": 21,
         "componentName": "Typography",
         "filePath": "src/routes/CheckoutRoute.tsx",
-        "line": 8,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "line": 7,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1103,12 +1414,56 @@
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
+        "column": 59,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 8,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 50,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
         "column": 27,
         "componentName": "Typography",
         "filePath": "src/routes/CheckoutRoute.tsx",
+        "line": 52,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 50,
+        "componentName": "Typography",
+        "filePath": "src/routes/CheckoutRoute.tsx",
         "line": 53,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1136,28 +1491,6 @@
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
-        "column": 15,
-        "componentName": "Chip",
-        "filePath": "src/routes/HomeRoute.tsx",
-        "line": 22,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Chip'.",
-        "propName": "color",
-        "severity": "error"
-      },
-      {
-        "artifact": "component.match_report",
-        "category": "disallowed_customer_component_prop",
-        "column": 33,
-        "componentName": "Chip",
-        "filePath": "src/routes/HomeRoute.tsx",
-        "line": 22,
-        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
-        "propName": "label",
-        "severity": "error"
-      },
-      {
-        "artifact": "component.match_report",
-        "category": "disallowed_customer_component_prop",
         "column": 71,
         "componentName": "Chip",
         "filePath": "src/routes/HomeRoute.tsx",
@@ -1172,9 +1505,9 @@
         "column": 21,
         "componentName": "Typography",
         "filePath": "src/routes/HomeRoute.tsx",
-        "line": 24,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "line": 23,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1191,34 +1524,56 @@
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
+        "column": 59,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 24,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
         "column": 29,
         "componentName": "Typography",
         "filePath": "src/routes/HomeRoute.tsx",
-        "line": 45,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "line": 44,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
-        "column": 34,
-        "componentName": "Divider",
+        "column": 52,
+        "componentName": "Typography",
         "filePath": "src/routes/HomeRoute.tsx",
-        "line": 63,
-        "message": "Generated source forwarded disallowed prop 'flexItem' to customer component 'Divider'.",
-        "propName": "flexItem",
+        "line": 45,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
         "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
+        "line": 65,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 48,
         "componentName": "Typography",
         "filePath": "src/routes/HomeRoute.tsx",
         "line": 66,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1227,31 +1582,20 @@
         "column": 25,
         "componentName": "Typography",
         "filePath": "src/routes/HomeRoute.tsx",
+        "line": 73,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 48,
+        "componentName": "Typography",
+        "filePath": "src/routes/HomeRoute.tsx",
         "line": 74,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
-        "severity": "error"
-      },
-      {
-        "artifact": "component.match_report",
-        "category": "disallowed_customer_component_prop",
-        "column": 15,
-        "componentName": "Chip",
-        "filePath": "src/routes/OverviewRoute.tsx",
-        "line": 24,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Chip'.",
-        "propName": "color",
-        "severity": "error"
-      },
-      {
-        "artifact": "component.match_report",
-        "category": "disallowed_customer_component_prop",
-        "column": 31,
-        "componentName": "Chip",
-        "filePath": "src/routes/OverviewRoute.tsx",
-        "line": 24,
-        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
-        "propName": "label",
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1271,9 +1615,9 @@
         "column": 21,
         "componentName": "Typography",
         "filePath": "src/routes/OverviewRoute.tsx",
-        "line": 26,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "line": 25,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
@@ -1290,23 +1634,121 @@
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
-        "column": 25,
+        "column": 59,
         "componentName": "Typography",
         "filePath": "src/routes/OverviewRoute.tsx",
-        "line": 44,
-        "message": "Generated source forwarded disallowed prop 'color' to customer component 'Typography'.",
-        "propName": "color",
+        "line": 26,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
         "severity": "error"
       },
       {
         "artifact": "component.match_report",
         "category": "disallowed_customer_component_prop",
-        "column": 78,
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 43,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 48,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 44,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 25,
+        "componentName": "Typography",
+        "filePath": "src/routes/OverviewRoute.tsx",
+        "line": 50,
+        "message": "Generated source forwarded disallowed prop 'variant' to customer component 'Typography'.",
+        "propName": "variant",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 98,
+        "componentName": "Divider",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 32,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Divider'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 98,
+        "componentName": "Divider",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 53,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Divider'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 91,
+        "componentName": "Divider",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 199,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Divider'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 128,
+        "componentName": "IconButton",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 263,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'IconButton'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 89,
+        "componentName": "Divider",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 418,
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Divider'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "artifact": "component.match_report",
+        "category": "disallowed_customer_component_prop",
+        "column": 126,
         "componentName": "Chip",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 423,
-        "message": "Generated source forwarded disallowed prop 'label' to customer component 'Chip'.",
-        "propName": "label",
+        "message": "Generated source forwarded disallowed prop 'sx' to customer component 'Chip'.",
+        "propName": "sx",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 117,
+        "componentName": "Typography",
+        "filePath": "src/components/SeitenContentPattern1.tsx",
+        "line": 26,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
         "severity": "error"
       },
       {
@@ -1341,7 +1783,17 @@
       },
       {
         "category": "hard_coded_color_literal",
-        "column": 193,
+        "column": 301,
+        "componentName": "IconButton",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 263,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
+        "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 386,
         "componentName": "SvgIcon",
         "filePath": "src/screens/SeitenContent.tsx",
         "line": 263,
@@ -1367,6 +1819,16 @@
         "line": 405,
         "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'color'.",
         "propName": "color",
+        "severity": "error"
+      },
+      {
+        "category": "hard_coded_color_literal",
+        "column": 261,
+        "componentName": "Chip",
+        "filePath": "src/screens/SeitenContent.tsx",
+        "line": 423,
+        "message": "Generated source must reference Storybook theme tokens instead of hard-coded color literals for 'bgcolor'.",
+        "propName": "bgcolor",
         "severity": "error"
       },
       {

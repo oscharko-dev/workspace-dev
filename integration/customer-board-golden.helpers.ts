@@ -543,104 +543,43 @@ const resolvePrimaryStorybookThemeId = ({
   throw new Error("Customer-board fixture generation could not resolve an extracted Storybook theme id.");
 };
 
-const createCustomerBoardCustomerProfileInput = ({
+export const loadCustomerBoardCustomerProfileInput = async ({
+  fixtureRoot = FIXTURE_ROOT,
   storybookThemeId
 }: {
+  fixtureRoot?: string;
   storybookThemeId: string;
-}): Record<string, unknown> => {
-  return {
-    version: 1,
-    families: [
-      {
-        id: "Components",
-        tierPriority: 10,
-        aliases: {
-          figma: ["Components"],
-          storybook: ["components"],
-          code: ["@customer/components"]
-        }
-      },
-      {
-        id: "ReactUI",
-        tierPriority: 20,
-        aliases: {
-          figma: ["ReactUI"],
-          storybook: ["reactui"],
-          code: ["@customer/reactui"]
-        }
-      },
-      {
-        id: "Reactlib",
-        tierPriority: 30,
-        aliases: {
-          figma: ["Reactlib"],
-          storybook: ["reactlib"],
-          code: ["@customer/reactlib"]
-        }
-      },
-      {
-        id: "IF-Components",
-        tierPriority: 40,
-        aliases: {
-          figma: ["IF-Components"],
-          storybook: ["if-components"],
-          code: ["@customer/if-components"]
-        }
-      },
-      {
-        id: "OSPlus_neo-Components",
-        tierPriority: 50,
-        aliases: {
-          figma: ["OSPlus_neo-Components"],
-          storybook: ["osplus_neo-components", "osplus-neo-components"],
-          code: ["@customer/osplus-neo-components"]
-        }
-      },
-      {
-        id: "Base",
-        tierPriority: 60,
-        aliases: {
-          figma: ["Base"],
-          storybook: ["base"],
-          code: ["@customer/base"]
-        }
-      }
-    ],
-    brandMappings: [
-      {
-        id: CUSTOMER_BOARD_BRAND_ID,
-        aliases: [CUSTOMER_BOARD_BRAND_ID, "sparkasse"],
-        brandTheme: "sparkasse",
-        storybookThemes: {
-          light: storybookThemeId
-        }
-      }
-    ],
-    imports: {
-      components: {},
-      icons: {}
-    },
-    fallbacks: {
-      mui: {
-        defaultPolicy: "allow",
-        components: {}
-      },
-      icons: {
-        defaultPolicy: "deny",
-        icons: {}
-      }
-    },
-    template: {
-      dependencies: {},
-      devDependencies: {},
-      importAliases: {}
-    },
-    strictness: {
-      match: "warn",
-      token: "warn",
-      import: "error"
-    }
-  };
+}): Promise<Record<string, unknown>> => {
+  const customerProfileInput = await readJsonFile<Record<string, unknown>>({
+    filePath: path.join(fixtureRoot, "inputs", "customer-profile.json")
+  });
+
+  const brandMappings = customerProfileInput.brandMappings;
+  if (!Array.isArray(brandMappings)) {
+    throw new Error("Customer-board fixture customer profile must define brandMappings.");
+  }
+
+  const customerBrandMapping = brandMappings.find(
+    (entry): entry is Record<string, unknown> =>
+      isPlainRecord(entry) && entry.id === CUSTOMER_BOARD_BRAND_ID
+  );
+  if (!customerBrandMapping) {
+    throw new Error(`Customer-board fixture customer profile must define a '${CUSTOMER_BOARD_BRAND_ID}' brand mapping.`);
+  }
+
+  const storybookThemes = customerBrandMapping.storybookThemes;
+  if (!isPlainRecord(storybookThemes)) {
+    throw new Error("Customer-board fixture customer profile must define storybookThemes for the customer brand mapping.");
+  }
+
+  if (storybookThemes.light !== storybookThemeId) {
+    customerBrandMapping.storybookThemes = {
+      ...storybookThemes,
+      light: storybookThemeId
+    };
+  }
+
+  return customerProfileInput;
 };
 
 const sanitizeCatalogArtifact = ({
@@ -1694,13 +1633,15 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   storybookJobDir,
   figmaInput,
   figmaLibrarySeed,
-  files = createBundleFiles()
+  files = createBundleFiles(),
+  fixtureRoot = FIXTURE_ROOT
 }: {
   storybookBuildDir: string;
   storybookJobDir?: string;
   figmaInput: Record<string, unknown>;
   figmaLibrarySeed?: CustomerBoardFigmaLibrarySeedInput;
   files?: Map<string, CustomerBoardBundleFile>;
+  fixtureRoot?: string;
 }): Promise<CustomerBoardGoldenBundle> => {
   const { designIr, figmaAnalysis } = deriveCustomerBoardDesignIrAndAnalysis({
     figmaInput
@@ -1754,7 +1695,8 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   const storybookThemeId = resolvePrimaryStorybookThemeId({
     publicArtifacts
   });
-  const customerProfileInput = createCustomerBoardCustomerProfileInput({
+  const customerProfileInput = await loadCustomerBoardCustomerProfileInput({
+    fixtureRoot,
     storybookThemeId
   });
   const customerProfile = parseCustomerProfileFromInput({

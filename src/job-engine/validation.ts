@@ -105,12 +105,14 @@ const prepareValidationNodeModules = async ({
   generatedProjectDir,
   seedNodeModulesDir,
   skipInstall,
+  lockfileMutable,
   onLog,
   pipelineDiagnosticLimits
 }: {
   generatedProjectDir: string;
   seedNodeModulesDir?: string;
   skipInstall: boolean;
+  lockfileMutable: boolean;
   onLog: (message: string) => void;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
 }): Promise<{
@@ -150,6 +152,14 @@ const prepareValidationNodeModules = async ({
   }
 
   if (!seedNodeModulesDir) {
+    return {
+      installRequired: true,
+      strategy: "fresh_install"
+    };
+  }
+
+  if (lockfileMutable) {
+    onLog("Skipping seeded node_modules reuse because lockfileMutable=true requires a generated-project install.");
     return {
       installRequired: true,
       strategy: "fresh_install"
@@ -498,6 +508,7 @@ export const runProjectValidationWithDeps = async ({
   const nodeModulesPreparation = await prepareValidationNodeModules({
     generatedProjectDir,
     skipInstall,
+    lockfileMutable,
     onLog,
     ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
     ...(seedNodeModulesDir ? { seedNodeModulesDir } : {})
