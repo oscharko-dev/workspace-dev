@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +8,9 @@ import {
   assertCustomerBoardPublicArtifactSanitized,
   createCustomerBoardStorybookEvidenceHintsArtifact,
   createCustomerBoardHybridLiveRuntimeSettings,
+  loadCustomerBoardCustomerProfileInput,
   loadCustomerBoardGoldenManifest,
+  readCommittedCustomerBoardGoldenBundle,
   materializeCustomerBoardRuntimeStorybookEvidenceArtifact,
   normalizeCustomerBoardFixtureValue
 } from "./customer-board-golden.helpers.js";
@@ -150,6 +152,58 @@ test("customer-board helper normalization strips volatile runtime metadata and p
     status: "ok",
     submittedAt: "<timestamp>"
   });
+});
+
+test("customer-board helper preserves curated customer imports and template config while normalizing the runtime theme id", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-profile-"));
+  const fixtureRoot = path.join(tempRoot, "fixture-root");
+  const inputsRoot = path.join(fixtureRoot, "inputs");
+  await mkdir(inputsRoot, { recursive: true });
+
+  try {
+    const committedBundle = await readCommittedCustomerBoardGoldenBundle();
+    const committedCustomerProfile = committedBundle.files.get("inputs/customer-profile.json");
+    assert.ok(committedCustomerProfile, "Committed customer profile fixture must exist.");
+
+    const originalProfile = JSON.parse(committedCustomerProfile.content) as {
+      brandMappings?: Array<{
+        id?: string;
+        storybookThemes?: {
+          light?: string;
+        };
+      }>;
+      imports?: unknown;
+      template?: unknown;
+    };
+    const profileOnDisk = {
+      ...originalProfile,
+      brandMappings: [
+        {
+          ...originalProfile.brandMappings?.[0],
+          storybookThemes: {
+            ...originalProfile.brandMappings?.[0]?.storybookThemes,
+            light: "stale-theme-id"
+          }
+        }
+      ]
+    };
+
+    await writeFile(path.join(inputsRoot, "customer-profile.json"), JSON.stringify(profileOnDisk, null, 2), "utf8");
+
+    const loadedProfile = await loadCustomerBoardCustomerProfileInput({
+      fixtureRoot,
+      storybookThemeId: "runtime-theme-id"
+    });
+
+    assert.equal(
+      (loadedProfile.brandMappings as Array<{ storybookThemes?: { light?: string } }>)?.[0]?.storybookThemes?.light,
+      "runtime-theme-id"
+    );
+    assert.deepEqual(loadedProfile.imports, originalProfile.imports);
+    assert.deepEqual(loadedProfile.template, originalProfile.template);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("customer-board helper rejects public artifact leaks for internal Storybook paths and embedded payloads", () => {

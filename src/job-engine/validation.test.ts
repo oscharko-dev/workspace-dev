@@ -228,6 +228,55 @@ test("runProjectValidationWithDeps reuses seeded node_modules and cleans up the 
   }
 });
 
+test("runProjectValidationWithDeps skips seeded node_modules reuse when lockfileMutable is true", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-mutable-"));
+  const seedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-mutable-root-"));
+  const seedNodeModulesDir = path.join(seedRoot, "node_modules");
+  const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
+  const calls: string[] = [];
+
+  await mkdir(seedNodeModulesDir, { recursive: true });
+
+  try {
+    await writeValidationFeedbackProject({ generatedProjectDir });
+    await linkLocalTypescript({ generatedProjectDir });
+
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      seedNodeModulesDir,
+      lockfileMutable: true,
+      onLog: () => {
+        // no-op
+      },
+      deps: {
+        runCommand: async ({ command, args }) => {
+          calls.push(`${command} ${args.join(" ")}`);
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    const nodeModulesMetadata = await lstat(nodeModulesDir);
+    assert.equal(nodeModulesMetadata.isSymbolicLink(), false);
+    assert.deepEqual(calls, [
+      "pnpm install --ignore-scripts --reporter append-only --prefer-offline",
+      "pnpm lint --fix",
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm build"
+    ]);
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+    await rm(seedRoot, { recursive: true, force: true });
+  }
+});
+
 test("runProjectValidationWithDeps replaces a preexisting node_modules file before seeding dependencies", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-file-"));
   const seedRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seeded-file-root-"));

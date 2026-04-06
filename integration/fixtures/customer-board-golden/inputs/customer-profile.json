@@ -26,7 +26,8 @@
     {
       "aliases": {
         "code": [
-          "@customer/components"
+          "@customer/components",
+          "@customer/ui"
         ],
         "figma": [
           "Components"
@@ -118,24 +119,24 @@
   "imports": {
     "components": {
       "Chip": {
+        "export": "Chip",
         "family": "Components",
-        "package": "@mui/material",
-        "export": "Chip"
+        "package": "@customer/ui"
       },
       "Divider": {
+        "export": "Divider",
         "family": "Components",
-        "package": "@mui/material",
-        "export": "Divider"
+        "package": "@customer/ui"
       },
       "IconButton": {
+        "export": "IconButton",
         "family": "Components",
-        "package": "@mui/material",
-        "export": "IconButton"
+        "package": "@customer/ui"
       },
       "Typography": {
-        "family": "Components",
-        "package": "@mui/material",
         "export": "Typography",
+        "family": "Components",
+        "package": "@customer/ui",
         "propMappings": {
           "variant": "variant"
         }
@@ -149,9 +150,13 @@
     "token": "warn"
   },
   "template": {
-    "dependencies": {},
+    "dependencies": {
+      "@customer/ui": "npm:@mui/material@^7.3.9"
+    },
     "devDependencies": {},
-    "importAliases": {}
+    "importAliases": {
+      "@customer/ui": "@mui/material"
+    }
   },
   "version": 1
 }
