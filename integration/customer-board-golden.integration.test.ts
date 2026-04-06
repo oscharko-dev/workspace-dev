@@ -93,6 +93,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       lint?: { attempt?: number; outputCaptureKey?: string; status?: string };
       build?: { attempt?: number; outputCaptureKey?: string; status?: string };
       typecheck?: { attempt?: number; outputCaptureKey?: string; status?: string };
+      test?: { args?: string[]; attempt?: number; outputCaptureKey?: string; status?: string };
       status?: string;
     };
     storybook?: {
@@ -142,6 +143,9 @@ test("customer-board golden offline fixture reproduces committed derived artifac
           issueCount?: number;
         };
       };
+    };
+    uiA11y?: {
+      status?: string;
     };
   };
   const componentMatchReport = JSON.parse(committedBundle.files.get(manifest.derived.componentMatchReport)?.content ?? "null") as {
@@ -209,6 +213,26 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true
   );
 
+  // #784 — uiA11y gate: the offline fixture runs with enableUiValidation=false
+  // (UI validation requires a browser environment unavailable in the offline fixture).
+  // Assert the gate is structurally present with status "not_requested" so any
+  // accidental activation or schema change is caught as a regression.
+  assert.ok(validationSummary.uiA11y, "validation-summary.uiA11y must be present");
+  assert.equal(
+    validationSummary.uiA11y?.status,
+    "not_requested",
+    "validation-summary.uiA11y.status must be 'not_requested' when enableUiValidation is false"
+  );
+
+  // #784 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=false
+  // (running generated unit tests would require the generated project's full test bootstrap).
+  // Assert the gate is absent so any accidental activation or schema change is caught.
+  assert.equal(
+    validationSummary.generatedApp?.test,
+    undefined,
+    "validation-summary.generatedApp.test must be undefined when enableUnitTestValidation is false"
+  );
+
   const resolvedComponentNames = new Set(
     validationSummary.style?.diagnostics?.componentMatchReport?.validatedComponentNames ?? []
   );
@@ -269,6 +293,31 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true
   );
   assert.equal(screenFile?.includes("SeitenContentPatternContextProvider"), true);
+
+  // #784 — Verify the generated test file's content is structurally correct.
+  // The file exists in the golden bundle but was never content-verified before.
+  const generatedTestFile = firstOutputs.get(getExpectedOutput(manifest, "src/screens/__tests__/SeitenContent.test.tsx"));
+  assert.ok(generatedTestFile, "Generated SeitenContent.test.tsx must exist in fixture outputs.");
+  assert.equal(
+    generatedTestFile?.includes('import { axe } from "jest-axe"'),
+    true,
+    "Generated test must import axe from jest-axe for accessibility testing."
+  );
+  assert.equal(
+    generatedTestFile?.includes("toHaveNoViolations"),
+    true,
+    "Generated test must assert toHaveNoViolations for accessibility coverage."
+  );
+  assert.equal(
+    generatedTestFile?.includes('describe("SeitenContentScreen"'),
+    true,
+    "Generated test must contain the SeitenContentScreen describe block."
+  );
+  assert.equal(
+    generatedTestFile?.includes("has no detectable accessibility violations"),
+    true,
+    "Generated test must include the accessibility violation test case."
+  );
 
   const issue783Families = new Map(
     (componentMatchReport.entries ?? [])
