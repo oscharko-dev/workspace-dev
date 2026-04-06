@@ -24,6 +24,16 @@ const createMiniStorybookBuild = async (): Promise<string> => {
         tags: ["dev", "test"],
         componentPath: "./src/core/Tooltip/Tooltip.tsx"
       },
+      "mui-button--default": {
+        id: "mui-button--default",
+        title: "Mui/Button",
+        name: "Default",
+        importPath: "./src/mui/Button/stories/Button.stories.tsx",
+        storiesImports: [],
+        type: "story",
+        tags: ["dev", "test"],
+        componentPath: "@mui/material"
+      },
       "base-colors--docs": {
         id: "base-colors--docs",
         title: "Base/Colors/Color Tokens",
@@ -58,7 +68,8 @@ const createMiniStorybookBuild = async (): Promise<string> => {
     const gq0 = {
       "./docs/IF-Components/Button.mdx": n(() => c0(() => import("./if-button-test.js"), true ? __vite__mapDeps([3]) : void 0, import.meta.url), "./docs/IF-Components/Button.mdx"),
       "./docs/Base/Colors/colors.mdx": n(() => c0(() => import("./colors-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./docs/Base/Colors/colors.mdx"),
-      "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([2]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
+      "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([2]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx"),
+      "./src/mui/Button/stories/Button.stories.tsx": n(() => c0(() => import("./MuiButton.stories-test.js"), true ? __vite__mapDeps([4]) : void 0, import.meta.url), "./src/mui/Button/stories/Button.stories.tsx")
     };
   `;
 
@@ -95,6 +106,18 @@ const createMiniStorybookBuild = async (): Promise<string> => {
     function content() {
       return e.jsx(p, { children: "IF Button docs" });
     }
+  `;
+
+  const muiButtonBundle = `
+    const meta = {
+      title: "Mui/Button",
+      parameters: {
+        design: {
+          type: "figma",
+          url: "https://www.figma.com/design/demo"
+        }
+      }
+    };
   `;
 
   const themeBundle = `
@@ -145,6 +168,7 @@ const createMiniStorybookBuild = async (): Promise<string> => {
   await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
   await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
   await writeFile(path.join(assetsDir, "Tooltip.stories-test.js"), storyBundle, "utf8");
+  await writeFile(path.join(assetsDir, "MuiButton.stories-test.js"), muiButtonBundle, "utf8");
   await writeFile(path.join(assetsDir, "colors-test.js"), docsBundle, "utf8");
   await writeFile(path.join(assetsDir, "if-button-test.js"), docsOnlyBundle, "utf8");
   await writeFile(path.join(assetsDir, "shared-theme.js"), themeBundle, "utf8");
@@ -244,10 +268,19 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
     }
   });
 
-  assert.equal(artifacts.componentsArtifact.stats.componentCount, 1);
-  assert.equal(artifacts.componentsArtifact.stats.componentWithDesignReferenceCount, 1);
-  assert.equal(artifacts.componentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
-  assert.deepEqual(artifacts.componentsArtifact.components[0]?.propKeys, ["infos", "title"]);
+  assert.equal(artifacts.componentsArtifact.stats.componentCount, 2);
+  assert.equal(artifacts.componentsArtifact.stats.componentWithDesignReferenceCount, 2);
+  const tooltipComponent = artifacts.componentsArtifact.components.find((component) => component.title === "ReactUI/Core/Tooltip");
+  const muiComponent = artifacts.componentsArtifact.components.find((component) => component.title === "Mui/Button");
+
+  assert.ok(tooltipComponent);
+  assert.deepEqual(tooltipComponent.propKeys, ["infos", "title"]);
+  assert.equal(tooltipComponent.componentPath, undefined);
+  assert.ok(muiComponent);
+  assert.equal(
+    muiComponent.componentPath,
+    "@mui/material"
+  );
 
   const serializedTokens = JSON.stringify(artifacts.tokensArtifact);
   const serializedThemes = JSON.stringify(artifacts.themesArtifact);
@@ -257,7 +290,8 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(serializedComponents.includes("bundlePath"), false);
   assert.equal(serializedComponents.includes("iframeBundlePath"), false);
   assert.equal(serializedComponents.includes("buildRoot"), false);
-  assert.equal(serializedComponents.includes("componentPath"), false);
+  assert.equal(serializedComponents.includes("src/core/Tooltip/Tooltip.tsx"), false);
+  assert.equal(serializedComponents.includes("@mui/material"), true);
   assert.equal(serializedTokens.includes("bundlePath"), false);
   assert.equal(serializedTokens.includes("importPath"), false);
   assert.equal(serializedTokens.includes("buildRoot"), false);
@@ -266,4 +300,5 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(serializedThemes.includes("bundlePath"), false);
   assert.equal(serializedThemes.includes("importPath"), false);
   assert.equal(serializedThemes.includes("buildRoot"), false);
+  assert.equal(serializedComponents.includes("@mui/material"), true);
 });
