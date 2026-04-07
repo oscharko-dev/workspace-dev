@@ -6,7 +6,7 @@ import { SearchFormContextProvider, useSearchFormContext } from "../context/Sear
 function SearchScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useSearchFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.paper", px: 1, py: 1 }}>
       {/* @ir:start search-title Title text */}
       <Typography data-ir-id="search-title" data-ir-name="Title" variant="h3" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Search"}</Typography>
       {/* @ir:end search-title */}
@@ -35,7 +35,7 @@ function SearchScreenContent() {
               aria-describedby={"muiformcontrolroot_search_field-helper-text"}
         sx={{
           width: "91.8%", maxWidth: "358px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.5,
-          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#666b75" }
+          "& .MuiInputLabel-root": { color: "text.secondary" }
         }}
 
               slotProps={{

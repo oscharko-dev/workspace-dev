@@ -18,12 +18,12 @@ export default function SettingsScreen() {
     setTabValue1(newValue);
   };
   return (
-    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 784px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
+    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 784px)", bgcolor: "background.paper", px: 1.6, py: 1.6 }}>
       {/* @ir:start settings-title Title text */}
       <Typography data-ir-id="settings-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Settings"}</Typography>
       {/* @ir:end settings-title */}
       {/* @ir:start tabs-container MuiTabsRoot tab */}
-      <Tabs data-ir-id="tabs-container" data-ir-name="MuiTabsRoot" value={tabValue1} onChange={handleTabChange1} aria-label={"General"} sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", bgcolor: "#ffffff" }}>
+      <Tabs data-ir-id="tabs-container" data-ir-name="MuiTabsRoot" value={tabValue1} onChange={handleTabChange1} aria-label={"General"} sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", bgcolor: "background.paper" }}>
         <Tab key={"tab-general"} id={"tab-1-0"} value={0} label={"General"} />
         <Tab key={"tab-notifications"} id={"tab-1-1"} value={1} label={"Notifications"} />
         <Tab key={"tab-security"} id={"tab-1-2"} value={2} label={"Security"} />
@@ -36,7 +36,7 @@ export default function SettingsScreen() {
         disableGutters
         elevation={0}
         square
-        sx={{ width: "96%", maxWidth: "768px", minHeight: "300px", display: "flex", flexDirection: "column", bgcolor: "#ffffff", borderRadius: 1, boxShadow: "none", "&::before": { display: "none" } }}
+        sx={{ width: "96%", maxWidth: "768px", minHeight: "300px", display: "flex", flexDirection: "column", bgcolor: "background.paper", borderRadius: 1, boxShadow: "none", "&::before": { display: "none" } }}
       >
         <AccordionSummary id={"accordion-header-muiaccordionroot_accordion_section"} aria-controls={"accordion-panel-muiaccordionroot_accordion_section"} expandIcon={<ExpandMoreIcon fontSize="small" />} sx={{ minHeight: "56px" }}>
           <Box sx={{ width: "100%", position: "relative", minHeight: "56px" }}>
@@ -53,7 +53,7 @@ export default function SettingsScreen() {
       </Accordion>
       {/* @ir:end accordion-section */}
       {/* @ir:start dialog-trigger MuiDialogRoot table */}
-      <Box data-ir-id="dialog-trigger" data-ir-name="MuiDialogRoot" sx={{ position: "relative", width: "50%", maxWidth: "400px", minHeight: "300px", bgcolor: "#ffffff", borderRadius: 1.5 }}>
+      <Box data-ir-id="dialog-trigger" data-ir-name="MuiDialogRoot" sx={{ position: "relative", width: "50%", maxWidth: "400px", minHeight: "300px", bgcolor: "background.paper", borderRadius: 1.5 }}>
         {/* @ir:start dialog-title Dialog Title text */}
         <Typography data-ir-id="dialog-title" data-ir-name="Dialog Title" variant="h2" component="h2" sx={{ position: "absolute", left: "24px", top: "24px", color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Confirm Changes"}</Typography>
         {/* @ir:end dialog-title */}
@@ -68,7 +68,7 @@ export default function SettingsScreen() {
           {/* @ir:start dialog-confirm Confirm Button paper */}
           <Paper data-ir-id="dialog-confirm" data-ir-name="Confirm Button" sx={{ position: "relative", width: "25.1%", maxWidth: "88px", minHeight: "40px", bgcolor: "secondary.main", borderRadius: 1 }}>
             {/* @ir:start confirm-label Label text */}
-            <Typography data-ir-id="confirm-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "18px", top: "10px", fontWeight: 600, color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Confirm"}</Typography>
+            <Typography data-ir-id="confirm-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "18px", top: "10px", fontWeight: 600, color: "background.paper", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Confirm"}</Typography>
             {/* @ir:end confirm-label */}
           </Paper>
           {/* @ir:end dialog-confirm */}

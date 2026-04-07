@@ -28,7 +28,7 @@ const patternContextInitialState: DashboardPatternContextState = {
 
 function DashboardScreenContent() {
   return (
-    <Container id="main-content" maxWidth="lg" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 660px)", bgcolor: "#f5f7fa", px: 0.667, py: 0.667 }}>
+    <Container id="main-content" maxWidth="lg" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 660px)", bgcolor: "background.paper", px: 0.667, py: 0.667 }}>
       {/* @ir:start dash-title Title text */}
       <Typography data-ir-id="dash-title" data-ir-name="Title" variant="h2" component="h4" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Dashboard Overview"}</Typography>
       {/* @ir:end dash-title */}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SyntheticEvent } from "react";
 import { Box, Container, Tab, Tabs, Typography } from "@mui/material";
 
-const sharedSxStyle1 = { fontWeight: 600, color: "#666b75", textAlign: "left", whiteSpace: "pre-wrap" };
+const sharedSxStyle1 = { fontWeight: 600, color: "text.secondary", textAlign: "left", whiteSpace: "pre-wrap" };
 
 export default function UserListScreen() {
   const [tabValue1, setTabValue1] = useState<number>(0);
@@ -17,12 +17,12 @@ export default function UserListScreen() {
     setTabValue2(newValue);
   };
   return (
-    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 2, py: 2 }}>
+    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.paper", px: 2, py: 2 }}>
       {/* @ir:start table-title Title text */}
       <Typography data-ir-id="table-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Users"}</Typography>
       {/* @ir:end table-title */}
       {/* @ir:start table-header Table Header table */}
-      <Box data-ir-id="table-header" data-ir-name="Table Header" component="header" role="banner" sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", bgcolor: "#f5f5f7" }}>
+      <Box data-ir-id="table-header" data-ir-name="Table Header" component="header" role="banner" sx={{ width: "96%", maxWidth: "768px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", bgcolor: "background.paper" }}>
         {/* @ir:start header-name Header Name text */}
         <Typography data-ir-id="header-name" data-ir-name="Header Name" variant="body1" sx={sharedSxStyle1}>{"Name"}</Typography>
         {/* @ir:end header-name */}

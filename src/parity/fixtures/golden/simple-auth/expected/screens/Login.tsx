@@ -6,7 +6,7 @@ import { LoginFormContextProvider, useLoginFormContext } from "../context/LoginF
 function LoginScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useLoginFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#fafafc", px: 1.6, py: 1.6 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.paper", px: 1.6, py: 1.6 }}>
       {/* @ir:start login-title Title text */}
       <Typography data-ir-id="login-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Welcome Back"}</Typography>
       {/* @ir:end login-title */}
@@ -36,7 +36,7 @@ function LoginScreenContent() {
               aria-describedby={"muiformcontrolroot_email_field-helper-text"}
         sx={{
           width: "91.8%", maxWidth: "358px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.8,
-          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#3d424d" }
+          "& .MuiInputLabel-root": { color: "#3d424d" }
         }}
 
               slotProps={{
@@ -51,7 +51,7 @@ function LoginScreenContent() {
       {/* @ir:start submit-button Primary Button paper */}
       <Paper data-ir-id="submit-button" data-ir-name="Primary Button" sx={{ position: "relative", width: "56.4%", maxWidth: "220px", minHeight: "48px", bgcolor: "primary.main" }}>
         {/* @ir:start submit-button-label Label text */}
-        <Typography data-ir-id="submit-button-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "68px", top: "13px", color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Sign In"}</Typography>
+        <Typography data-ir-id="submit-button-label" data-ir-name="Label" variant="body1" sx={{ position: "absolute", left: "68px", top: "13px", color: "background.paper", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Sign In"}</Typography>
         {/* @ir:end submit-button-label */}
       </Paper>
       {/* @ir:end submit-button */}
