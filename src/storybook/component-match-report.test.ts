@@ -2323,3 +2323,284 @@ test("buildComponentMatchReportArtifact uses customer profile tierPriority as ti
     "Tier priority resolution should promote tied candidates to matched status"
   );
 });
+
+test("buildComponentMatchReportArtifact resolves match via tier-priority-elevated path when total score is below threshold", () => {
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({
+        familyKey: "radio-family",
+        familyName: "Radio"
+      })
+    ]
+  });
+  const entries = [
+    createCatalogEntry({
+      id: "components-radio--default",
+      title: "Components/Inputs/Radio",
+      name: "Default",
+      familyId: "family-components-radio",
+      componentPath: "./src/components/Radio.tsx"
+    }),
+    createCatalogEntry({
+      id: "reactui-radio--default",
+      title: "ReactUI/Inputs/Radio",
+      name: "Default",
+      familyId: "family-reactui-radio",
+      componentPath: "./src/reactui/Radio.tsx"
+    })
+  ];
+  const catalogArtifact = createCatalogArtifact({
+    entries,
+    families: [
+      createCatalogFamily({
+        id: "family-components-radio",
+        title: "Components/Inputs/Radio",
+        name: "Radio",
+        entryIds: ["components-radio--default"],
+        storyEntryIds: ["components-radio--default"],
+        componentPath: "./src/components/Radio.tsx"
+      }),
+      createCatalogFamily({
+        id: "family-reactui-radio",
+        title: "ReactUI/Inputs/Radio",
+        name: "Radio",
+        entryIds: ["reactui-radio--default"],
+        storyEntryIds: ["reactui-radio--default"],
+        componentPath: "./src/reactui/Radio.tsx"
+      })
+    ]
+  });
+  const evidenceArtifact = createEvidenceArtifact({
+    evidence: [
+      createEvidenceItem({
+        id: "ev-components-radio-componentpath",
+        type: "story_componentPath",
+        entryId: "components-radio--default"
+      }),
+      createEvidenceItem({
+        id: "ev-reactui-radio-componentpath",
+        type: "story_componentPath",
+        entryId: "reactui-radio--default"
+      })
+    ]
+  });
+  const componentsArtifact = createComponentsArtifact({
+    components: [
+      { name: "Radio", title: "Components/Inputs/Radio", componentPath: "./src/components/Radio.tsx", propKeys: [] },
+      { name: "Radio", title: "ReactUI/Inputs/Radio", componentPath: "./src/reactui/Radio.tsx", propKeys: [] }
+    ]
+  });
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 5,
+          aliases: { figma: ["Components"], storybook: ["components"], code: ["@customer/components"] }
+        },
+        {
+          id: "ReactUI",
+          tierPriority: 20,
+          aliases: { figma: ["ReactUI"], storybook: ["reactui"], code: ["@customer/reactui"] }
+        }
+      ],
+      brandMappings: [
+        { id: "sparkasse", aliases: ["sparkasse"], brandTheme: "sparkasse", storybookThemes: { light: "sparkasse-light" } }
+      ],
+      imports: { components: {}, icons: {} },
+      fallbacks: { mui: { defaultPolicy: "deny" }, icons: { defaultPolicy: "deny" } },
+      template: { dependencies: {} },
+      strictness: { match: "warn", token: "off", import: "error" }
+    }
+  });
+  assert.notEqual(customerProfile, undefined);
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact,
+    evidenceArtifact,
+    componentsArtifact,
+    resolvedCustomerProfile: customerProfile!,
+    resolvedStorybookTheme: createResolvedStorybookThemeFixture()
+  });
+
+  const radioEntry = artifact.entries.find((entry) => entry.figma.familyName === "Radio");
+  assert.notEqual(radioEntry, undefined);
+  assert.equal(
+    radioEntry?.storybookFamily?.tier,
+    "Components",
+    "Components (tierPriority 5) should win over ReactUI (tierPriority 20)"
+  );
+  assert.equal(
+    radioEntry?.match.status,
+    "matched",
+    "Tier-priority-elevated path should resolve match when total score is below MATCHED_TOTAL_THRESHOLD"
+  );
+  assert.equal(
+    radioEntry?.fallbackReasons.includes("used_secondary_match_resolution"),
+    true,
+    "Expected secondary match resolution fallback reason"
+  );
+});
+
+test("buildComponentMatchReportArtifact resolves match via multi-evidence convergence when primary lead is narrow", () => {
+  const figmaFileKey = "TestFileKey123";
+  const figmaAnalysis = createFigmaAnalysis({
+    componentFamilies: [
+      createFigmaFamily({
+        familyKey: "divider-family",
+        familyName: "NestedPanel2",
+        variantProperties: [
+          { property: "divider", values: ["enabled"] }
+        ]
+      })
+    ]
+  });
+  const entries = [
+    createCatalogEntry({
+      id: "components-divider--default",
+      title: "Components/Display/Divider",
+      name: "Default",
+      familyId: "family-components-divider",
+      componentPath: "./src/components/Divider.tsx",
+      designUrls: [`https://www.figma.com/design/${figmaFileKey}/TestFile`],
+      args: { direction: "horizontal", divider: true }
+    }),
+    createCatalogEntry({
+      id: "components-stack--default",
+      title: "Components/Layout/Stack",
+      name: "Default",
+      familyId: "family-components-stack",
+      componentPath: "./src/components/Stack.tsx",
+      designUrls: [`https://www.figma.com/design/${figmaFileKey}/TestFile`],
+      args: { spacing: 2 }
+    })
+  ];
+  const catalogArtifact = createCatalogArtifact({
+    entries,
+    families: [
+      createCatalogFamily({
+        id: "family-components-divider",
+        title: "Components/Display/Divider",
+        name: "Divider",
+        entryIds: ["components-divider--default"],
+        storyEntryIds: ["components-divider--default"],
+        componentPath: "./src/components/Divider.tsx",
+        designUrls: [`https://www.figma.com/design/${figmaFileKey}/TestFile`]
+      }),
+      createCatalogFamily({
+        id: "family-components-stack",
+        title: "Components/Layout/Stack",
+        name: "Stack",
+        entryIds: ["components-stack--default"],
+        storyEntryIds: ["components-stack--default"],
+        componentPath: "./src/components/Stack.tsx",
+        designUrls: [`https://www.figma.com/design/${figmaFileKey}/TestFile`]
+      })
+    ]
+  });
+  const evidenceArtifact = createEvidenceArtifact({
+    evidence: [
+      createEvidenceItem({
+        id: "ev-divider-componentpath",
+        type: "story_componentPath",
+        entryId: "components-divider--default"
+      }),
+      createEvidenceItem({
+        id: "ev-stack-componentpath",
+        type: "story_componentPath",
+        entryId: "components-stack--default"
+      })
+    ]
+  });
+  const componentsArtifact = createComponentsArtifact({
+    components: [
+      { name: "Divider", title: "Components/Display/Divider", componentPath: "./src/components/Divider.tsx", propKeys: ["direction", "divider"] },
+      { name: "Stack", title: "Components/Layout/Stack", componentPath: "./src/components/Stack.tsx", propKeys: ["spacing"] }
+    ]
+  });
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: { figma: ["Components"], storybook: ["components"], code: ["@customer/components"] }
+        }
+      ],
+      brandMappings: [
+        { id: "sparkasse", aliases: ["sparkasse"], brandTheme: "sparkasse", storybookThemes: { light: "sparkasse-light" } }
+      ],
+      imports: { components: {}, icons: {} },
+      fallbacks: { mui: { defaultPolicy: "deny" }, icons: { defaultPolicy: "deny" } },
+      template: { dependencies: {} },
+      strictness: { match: "warn", token: "off", import: "error" }
+    }
+  });
+  assert.notEqual(customerProfile, undefined);
+
+  const figmaLibraryResolutionArtifact: FigmaLibraryResolutionArtifact = {
+    artifact: "figma.library_resolution",
+    version: 1,
+    figmaSourceMode: "local_json",
+    fingerprint: "fixture",
+    fileKey: figmaFileKey,
+    summary: {
+      total: 1,
+      resolved: 1,
+      partial: 0,
+      error: 0,
+      cacheHit: 0,
+      offlineReused: 0
+    },
+    entries: [
+      {
+        status: "resolved",
+        componentId: "divider-family-component",
+        componentSetId: "divider-family-set",
+        familyKey: "divider-family",
+        heuristicFamilyName: "NestedPanel2",
+        canonicalFamilyName: "NestedPanel2",
+        canonicalFamilyNameSource: "published_component",
+        resolutionSource: "live",
+        referringNodeIds: ["divider-family-node"],
+        variantProperties: [
+          { property: "divider", values: ["enabled"] }
+        ],
+        originFileKey: figmaFileKey,
+        publishedComponent: {
+          key: "divider-published-key",
+          fileKey: figmaFileKey,
+          nodeId: "1:100",
+          name: "NestedPanel2"
+        },
+        issues: []
+      }
+    ]
+  };
+
+  const artifact = buildComponentMatchReportArtifact({
+    figmaAnalysis,
+    catalogArtifact,
+    evidenceArtifact,
+    componentsArtifact,
+    resolvedCustomerProfile: customerProfile!,
+    resolvedStorybookTheme: createResolvedStorybookThemeFixture(),
+    figmaLibraryResolutionArtifact
+  });
+
+  const dividerEntry = artifact.entries.find((entry) => entry.figma.familyName === "NestedPanel2");
+  assert.notEqual(dividerEntry, undefined);
+  assert.equal(
+    dividerEntry?.match.status,
+    "matched",
+    "Multi-evidence convergence (design_link + variant_or_prop_overlap) should resolve match with narrow lead"
+  );
+  assert.equal(
+    dividerEntry?.fallbackReasons.includes("used_secondary_match_resolution"),
+    true,
+    "Expected secondary match resolution fallback reason for multi-evidence convergence"
+  );
+});

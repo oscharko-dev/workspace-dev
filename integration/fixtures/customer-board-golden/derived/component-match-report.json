@@ -2115,7 +2115,8 @@
         "used_customer_profile_tier_priority",
         "used_customer_profile_tier_priority_tiebreaker",
         "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker"
+        "used_reference_only_docs_tiebreaker",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "component:1:54308",
@@ -2158,18 +2159,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Radio",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "none",
         "confidenceScore": 36,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -2233,7 +2234,8 @@
         "used_customer_profile_tier_priority",
         "used_customer_profile_tier_priority_tiebreaker",
         "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker"
+        "used_reference_only_docs_tiebreaker",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "component:1:54316",
@@ -2276,18 +2278,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Radio",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "none",
         "confidenceScore": 36,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3043,7 +3045,8 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker"
+        "used_reference_only_docs_tiebreaker",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "name:stack",
@@ -3052,17 +3055,18 @@
         "variantProperties": []
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Stack",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "none",
         "confidenceScore": 36,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3127,6 +3131,7 @@
         "used_family_name_token_overlap",
         "used_figma_analysis_family_name",
         "used_reference_only_docs_tiebreaker",
+        "used_secondary_match_resolution",
         "used_semantic_bucket"
       ],
       "figma": {
@@ -3158,18 +3163,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Button-Combination",
+        "profileFamily": "IF-Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "IF-Components"
       },
       "match": {
         "confidence": "none",
         "confidenceScore": 37,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3237,7 +3242,8 @@
         "used_customer_profile_tier_priority",
         "used_family_name_token_overlap",
         "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker"
+        "used_reference_only_docs_tiebreaker",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "component:1:54341",
@@ -3268,18 +3274,18 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "FormControl",
+        "profileFamily": "Components",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "none",
         "confidenceScore": 39,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead",
-        "insufficient_total_score"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3346,7 +3352,8 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "used_file_key_design_link",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "component:1:41763",
@@ -3394,17 +3401,23 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@customer/ui"
+        },
+        "profileFamily": "Components",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "medium",
         "confidenceScore": 55,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -3832,7 +3845,8 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "used_file_key_design_link",
+        "used_secondary_match_resolution"
       ],
       "figma": {
         "familyKey": "component:1:43658",
@@ -3880,17 +3894,23 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
-        "status": "not_applicable"
+        "componentKey": "Divider",
+        "import": {
+          "exportName": "Divider",
+          "localName": "Divider",
+          "package": "@customer/ui"
+        },
+        "profileFamily": "Components",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
+        "storybookTier": "Components"
       },
       "match": {
         "confidence": "medium",
         "confidenceScore": 55,
-        "status": "ambiguous"
+        "status": "matched"
       },
-      "rejectionReasons": [
-        "insufficient_primary_lead"
-      ],
+      "rejectionReasons": [],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -6064,7 +6084,7 @@
     }
   ],
   "summary": {
-    "ambiguous": 7,
+    "ambiguous": 0,
     "iconResolution": {
       "byReason": {
         "match_ambiguous": 0,
@@ -6088,21 +6108,21 @@
     },
     "libraryResolution": {
       "byReason": {
-        "match_ambiguous": 7,
+        "match_ambiguous": 0,
         "match_unmatched": 14,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 15,
-        "profile_import_resolved": 6
+        "profile_import_missing": 20,
+        "profile_import_resolved": 8
       },
       "byStatus": {
-        "mui_fallback_allowed": 15,
+        "mui_fallback_allowed": 20,
         "mui_fallback_denied": 0,
-        "not_applicable": 21,
-        "resolved_import": 6
+        "not_applicable": 14,
+        "resolved_import": 8
       }
     },
-    "matched": 21,
+    "matched": 28,
     "storybookEntryCount": 499,
     "storybookFamilyCount": 289,
     "totalFigmaFamilies": 42,

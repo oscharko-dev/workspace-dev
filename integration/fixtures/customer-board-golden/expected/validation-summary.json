@@ -89,13 +89,13 @@
       "counts": {
         "byReason": {
           "component_api_children_unsupported": 3,
-          "component_api_missing": 0,
+          "component_api_missing": 2,
           "component_api_prop_unsupported": 6,
           "component_api_signature_conflict": 0,
           "component_api_slot_unsupported": 0
         }
       },
-      "issueCount": 9,
+      "issueCount": 11,
       "issues": [
         {
           "code": "component_api_prop_unsupported",
@@ -126,6 +126,22 @@
           "severity": "warning",
           "sourceProp": "state",
           "targetProp": "state"
+        },
+        {
+          "code": "component_api_missing",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "message": "Resolved component 'Divider' is not codegen-compatible.",
+          "severity": "warning"
+        },
+        {
+          "code": "component_api_missing",
+          "componentKey": "Divider",
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "message": "Resolved component 'Divider' is not codegen-compatible.",
+          "severity": "warning"
         },
         {
           "code": "component_api_children_unsupported",
@@ -194,18 +210,18 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 7,
+          "match_ambiguous": 0,
           "match_unmatched": 14,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 15,
-          "profile_import_resolved": 6
+          "profile_import_missing": 20,
+          "profile_import_resolved": 8
         },
         "byStatus": {
-          "mui_fallback_allowed": 15,
+          "mui_fallback_allowed": 20,
           "mui_fallback_denied": 0,
-          "not_applicable": 21,
-          "resolved_import": 6
+          "not_applicable": 14,
+          "resolved_import": 8
         },
         "iconByReason": {
           "match_ambiguous": 0,
@@ -227,7 +243,7 @@
           "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 67,
+      "issueCount": 60,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -356,54 +372,6 @@
           "storybookTier": "Components"
         },
         {
-          "figmaFamilyKey": "component:1:54308",
-          "figmaFamilyName": "<Radio>",
-          "kind": "component",
-          "message": "Figma family '<Radio>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:54316",
-          "figmaFamilyName": "<Radio>",
-          "kind": "component",
-          "message": "Figma family '<Radio>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "name:stack",
-          "figmaFamilyName": "<Stack>",
-          "kind": "component",
-          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:63214",
-          "figmaFamilyName": "<Stack> ButtonCombination",
-          "kind": "component",
-          "message": "Figma family '<Stack> ButtonCombination' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:54341",
-          "figmaFamilyName": "<Stack> FormControlLabel Radio",
-          "kind": "component",
-          "message": "Figma family '<Stack> FormControlLabel Radio' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack2>(Nested)' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
           "figmaFamilyKey": "component:1:42114",
           "figmaFamilyName": "<Stack3>(Nested)",
           "kind": "component",
@@ -425,14 +393,6 @@
           "kind": "component",
           "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
           "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "kind": "component",
-          "message": "Figma family '<Stack6>(Nested)' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
           "status": "not_applicable"
         },
         {
@@ -879,10 +839,15 @@
       }
     },
     "composition": {
-      "ambiguous": 7,
-      "docsOnlyFamilyNames": [],
-      "docsOnlyReferenceCount": 0,
-      "matched": 21,
+      "ambiguous": 0,
+      "docsOnlyFamilyNames": [
+        "<Radio>",
+        "<Radio>",
+        "<Stack>",
+        "<Stack> ButtonCombination"
+      ],
+      "docsOnlyReferenceCount": 4,
+      "matched": 28,
       "totalFigmaFamilies": 42,
       "unmatched": 14
     },
