@@ -622,7 +622,7 @@ const extractFailedCommandFromPipelineError = (error: unknown): string => {
   if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
     return "unknown";
   }
-  const firstDiagnostic = diagnostics[0];
+  const firstDiagnostic: unknown = diagnostics[0];
   if (!isRecord(firstDiagnostic)) {
     return "unknown";
   }

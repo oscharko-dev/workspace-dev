@@ -6053,7 +6053,7 @@ export const assembleFallbackDependencies = ({
         .map((field) => {
           const variantEvidenceClassification = resolveVariantEvidenceClassification(field.key);
           const validationType = field.validationType ?? variantEvidenceClassification?.validationType;
-          return validationType ? ([field.key, validationType as ValidationFieldType] as const) : undefined;
+          return validationType ? ([field.key, validationType] as const) : undefined;
         })
         .filter((entry): entry is readonly [string, ValidationFieldType] => entry !== undefined)
     ),

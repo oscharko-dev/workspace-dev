@@ -1954,7 +1954,7 @@ const getThemeColorTokenValue = ({
   tokenGraphByPath: ReadonlyMap<string, StorybookTokenGraphEntry>;
   themeId: string;
   pathSuffix: string[];
-}): unknown | undefined => {
+}): unknown => {
   const entry = tokenGraphByPath.get(toPathKey([THEME_CONTEXT_PREFIX, themeId, "color", ...pathSuffix]));
   return entry?.tokenType === "color" ? entry.value : undefined;
 };
