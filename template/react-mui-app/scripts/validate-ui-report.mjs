@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { runA11yChecks, runInteractionChecks } from "./validate-ui-report-lib.mjs";
 
 const SOURCE_EXTENSIONS = new Set([".tsx", ".ts", ".jsx", ".js"]);
 
@@ -140,56 +141,6 @@ const readJsonIfExists = async (filePath) => {
 const signatureOf = (content) => {
   const normalized = content.replace(/\r/g, "").trim();
   return createHash("sha256").update(normalized).digest("hex");
-};
-
-const toOccurrenceCount = (content, regex) => {
-  return content.match(regex)?.length ?? 0;
-};
-
-const runA11yChecks = (relativePath, content) => {
-  const findings = [];
-  const addFinding = (rule, occurrences) => {
-    if (occurrences <= 0) {
-      return;
-    }
-    findings.push({
-      file: relativePath,
-      rule,
-      occurrences
-    });
-  };
-
-  addFinding("IconButton requires aria-label", toOccurrenceCount(content, /<IconButton(?![^>]*aria-label=)[^>]*>/g));
-  addFinding("img requires alt", toOccurrenceCount(content, /<img(?![^>]*\salt=)[^>]*>/g));
-  addFinding(
-    "form controls require aria-label or aria-labelledby",
-    toOccurrenceCount(content, /<(?:input|select|textarea)(?![^>]*(?:aria-label|aria-labelledby)=)[^>]*>/g)
-  );
-
-  return findings;
-};
-
-const runInteractionChecks = (relativePath, content) => {
-  const findings = [];
-  const addFinding = (rule, occurrences) => {
-    if (occurrences <= 0) {
-      return;
-    }
-    findings.push({
-      file: relativePath,
-      rule,
-      occurrences
-    });
-  };
-
-  addFinding("button requires explicit type", toOccurrenceCount(content, /<button(?![^>]*\btype=)[^>]*>/g));
-  addFinding("anchor requires href", toOccurrenceCount(content, /<a(?![^>]*\bhref=)[^>]*>/g));
-  addFinding(
-    "clickable non-semantic element needs keyboard support",
-    toOccurrenceCount(content, /<(?:div|span)(?=[^>]*onClick=)(?![^>]*(?:onKeyDown|onKeyUp|onKeyPress|role=|tabIndex=))[^>]*>/g)
-  );
-
-  return findings;
 };
 
 const toCheckStatus = (count) => {

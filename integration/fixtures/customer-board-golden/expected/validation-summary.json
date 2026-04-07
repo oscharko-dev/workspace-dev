@@ -99,14 +99,14 @@
     "componentApi": {
       "counts": {
         "byReason": {
-          "component_api_children_unsupported": 3,
-          "component_api_missing": 2,
-          "component_api_prop_unsupported": 6,
+          "component_api_children_unsupported": 5,
+          "component_api_missing": 0,
+          "component_api_prop_unsupported": 8,
           "component_api_signature_conflict": 0,
           "component_api_slot_unsupported": 0
         }
       },
-      "issueCount": 11,
+      "issueCount": 13,
       "issues": [
         {
           "code": "component_api_prop_unsupported",
@@ -129,6 +129,44 @@
           "targetProp": "textalign"
         },
         {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39153",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39153",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
+          "code": "component_api_children_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39169",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+          "severity": "warning",
+          "targetProp": "children"
+        },
+        {
+          "code": "component_api_prop_unsupported",
+          "componentKey": "Typography",
+          "figmaFamilyKey": "component:1:39169",
+          "figmaFamilyName": "<Dynamic Typography> (headlines)",
+          "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+          "severity": "warning",
+          "sourceProp": "variant",
+          "targetProp": "variant"
+        },
+        {
           "code": "component_api_prop_unsupported",
           "componentKey": "IconButton",
           "figmaFamilyKey": "component:1:43449",
@@ -137,22 +175,6 @@
           "severity": "warning",
           "sourceProp": "state",
           "targetProp": "state"
-        },
-        {
-          "code": "component_api_missing",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:41763",
-          "figmaFamilyName": "<Stack2>(Nested)",
-          "message": "Resolved component 'Divider' is not codegen-compatible.",
-          "severity": "warning"
-        },
-        {
-          "code": "component_api_missing",
-          "componentKey": "Divider",
-          "figmaFamilyKey": "component:1:43658",
-          "figmaFamilyName": "<Stack6>(Nested)",
-          "message": "Resolved component 'Divider' is not codegen-compatible.",
-          "severity": "warning"
         },
         {
           "code": "component_api_children_unsupported",
@@ -221,17 +243,17 @@
     "customerProfileMatch": {
       "counts": {
         "byReason": {
-          "match_ambiguous": 0,
+          "match_ambiguous": 3,
           "match_unmatched": 14,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 20,
+          "profile_import_missing": 17,
           "profile_import_resolved": 8
         },
         "byStatus": {
-          "mui_fallback_allowed": 20,
+          "mui_fallback_allowed": 17,
           "mui_fallback_denied": 0,
-          "not_applicable": 14,
+          "not_applicable": 17,
           "resolved_import": 8
         },
         "iconByReason": {
@@ -254,7 +276,7 @@
           "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 60,
+      "issueCount": 63,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -383,6 +405,22 @@
           "storybookTier": "Components"
         },
         {
+          "figmaFamilyKey": "name:stack",
+          "figmaFamilyName": "<Stack>",
+          "kind": "component",
+          "message": "Figma family '<Stack>' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:41763",
+          "figmaFamilyName": "<Stack2>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack2>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
+          "status": "not_applicable"
+        },
+        {
           "figmaFamilyKey": "component:1:42114",
           "figmaFamilyName": "<Stack3>(Nested)",
           "kind": "component",
@@ -404,6 +442,14 @@
           "kind": "component",
           "message": "Figma family '<Stack4>(Nested)' is unmatched in component.match_report.",
           "reason": "match_unmatched",
+          "status": "not_applicable"
+        },
+        {
+          "figmaFamilyKey": "component:1:43658",
+          "figmaFamilyName": "<Stack6>(Nested)",
+          "kind": "component",
+          "message": "Figma family '<Stack6>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
           "status": "not_applicable"
         },
         {
@@ -816,11 +862,11 @@
           "localCatalog": 0
         },
         "cacheHit": 0,
-        "entriesWithOriginFileKey": 13,
-        "error": 28,
+        "entriesWithOriginFileKey": 14,
+        "error": 27,
         "offlineReused": 0,
         "partial": 0,
-        "resolved": 13,
+        "resolved": 14,
         "total": 41
       }
     },
@@ -850,15 +896,14 @@
       }
     },
     "composition": {
-      "ambiguous": 0,
+      "ambiguous": 3,
       "docsOnlyFamilyNames": [
         "<Radio>",
         "<Radio>",
-        "<Stack>",
         "<Stack> ButtonCombination"
       ],
-      "docsOnlyReferenceCount": 4,
-      "matched": 28,
+      "docsOnlyReferenceCount": 3,
+      "matched": 25,
       "totalFigmaFamilies": 42,
       "unmatched": 14
     },
@@ -1035,7 +1080,7 @@
     }
   },
   "uiA11y": {
-    "a11yViolationCount": 2,
+    "a11yViolationCount": 0,
     "artifacts": [
       "<job-dir>/ui-gate/changed-surfaces-resolved.json",
       "<job-dir>/ui-gate/ui-gate-visual-diffs.json",
@@ -1051,10 +1096,10 @@
         "status": "passed"
       },
       {
-        "count": 2,
+        "count": 0,
         "details": "Static accessibility checks over 26 source files",
         "name": "a11y-static",
-        "status": "failed"
+        "status": "passed"
       },
       {
         "count": 0,
@@ -1065,8 +1110,8 @@
     ],
     "interactionViolationCount": 0,
     "reportPath": "<job-dir>/ui-gate/ui-gate-report.json",
-    "status": "warn",
-    "summary": "UI gate evaluated 26 source file(s): visual=0, a11y=2, interaction=0",
+    "status": "ok",
+    "summary": "UI gate evaluated 26 source file(s): visual=0, a11y=0, interaction=0",
     "visualDiffCount": 0
   },
   "validatedAt": "<timestamp>"

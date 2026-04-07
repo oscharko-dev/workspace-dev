@@ -260,19 +260,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   // #812 — uiA11y gate: the offline fixture runs with enableUiValidation=true.
   // The validate-ui-report.mjs script performs static analysis (no browser required)
   // and produces a report with a11y, interaction, and visual-diff checks.
-  // Known: 2 a11y violations from generated IconButton components missing aria-label
-  // (tracked as generator-level follow-up, not a fixture concern).
   assert.ok(validationSummary.uiA11y, "validation-summary.uiA11y must be present");
-  assert.notEqual(
-    validationSummary.uiA11y?.status,
-    "not_requested",
-    "validation-summary.uiA11y.status must not be 'not_requested' — the gate must execute"
-  );
+  assert.equal(validationSummary.uiA11y?.status, "ok", "validation-summary.uiA11y.status must be 'ok'");
+  assert.equal(validationSummary.uiA11y?.a11yViolationCount, 0, "Expected zero accessibility violations");
   assert.equal(validationSummary.uiA11y?.interactionViolationCount, 0, "Expected zero interaction violations");
   assert.equal(validationSummary.uiA11y?.visualDiffCount, 0, "Expected zero visual diffs on first run");
   assert.ok(
     Array.isArray(validationSummary.uiA11y?.checks) && validationSummary.uiA11y.checks.length > 0,
     "Expected uiA11y.checks to be a non-empty array"
+  );
+  assert.ok(
+    validationSummary.uiA11y?.checks?.every((check) => check.status === "passed"),
+    "Expected every uiA11y check to pass"
   );
   assert.ok(
     typeof validationSummary.uiA11y?.a11yViolationCount === "number",
