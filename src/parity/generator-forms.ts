@@ -117,13 +117,11 @@ export const classifyValidationEvidence = (evidenceMessage: string): ValidationE
   // Email
   if (/e[\s-]?mail/i.test(lower)) {
     classification.validationType ??= "email";
-    classification.validationRules.push({ type: "pattern", value: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", message: trimmed });
   }
 
   // IBAN
   if (/\biban\b/.test(lower)) {
     classification.validationType ??= "iban";
-    classification.validationRules.push({ type: "pattern", value: "^[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}([A-Z0-9]?){0,16}$", message: trimmed });
   }
 
   // BIC / SWIFT
@@ -134,19 +132,16 @@ export const classifyValidationEvidence = (evidenceMessage: string): ValidationE
   // PLZ (German postal code)
   if (/\b(?:plz|postleitzahl)\b/.test(lower)) {
     classification.validationType ??= "plz";
-    classification.validationRules.push({ type: "pattern", value: "^\\d{5}$", message: trimmed });
   }
 
   // Phone / Telefon
   if (/(?:telefon|phone|rufnummer)/.test(lower)) {
     classification.validationType ??= "tel";
-    classification.validationRules.push({ type: "pattern", value: "^[+]?[0-9\\s\\-()]{6,20}$", message: trimmed });
   }
 
   // Date / Datum
   if (/\b(?:datum|date)\b/.test(lower)) {
     classification.validationType ??= "date";
-    classification.validationRules.push({ type: "pattern", value: "^\\d{2}\\.\\d{2}\\.\\d{4}$", message: trimmed });
   }
 
   return classification;

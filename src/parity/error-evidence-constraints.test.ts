@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inferValidationRulesFromEvidence } from "./generator-core.js";
+import { classifyValidationEvidence } from "./generator-forms.js";
 
 // ---------------------------------------------------------------------------
 // Required field patterns
@@ -42,34 +43,45 @@ test("inferValidationRulesFromEvidence: case insensitive 'PFLICHTFELD' → minLe
   assert.equal(rules[0].value, 1);
 });
 
+test("classifyValidationEvidence: 'Email is required' keeps required semantics", () => {
+  const classification = classifyValidationEvidence("Email is required");
+  assert.equal(classification.required, true);
+  assert.equal(classification.validationType, "email");
+  assert.deepEqual(classification.validationRules, [
+    { type: "minLength", value: 1, message: "Email is required" }
+  ]);
+});
+
+test("classifyValidationEvidence: 'E-Mail ist erforderlich' keeps required semantics", () => {
+  const classification = classifyValidationEvidence("E-Mail ist erforderlich");
+  assert.equal(classification.required, true);
+  assert.equal(classification.validationType, "email");
+  assert.deepEqual(classification.validationRules, [
+    { type: "minLength", value: 1, message: "E-Mail ist erforderlich" }
+  ]);
+});
+
 // ---------------------------------------------------------------------------
 // Email patterns
 // ---------------------------------------------------------------------------
 
-test("inferValidationRulesFromEvidence: 'Ungültige E-Mail-Adresse' → email pattern", () => {
+test("inferValidationRulesFromEvidence: 'Ungültige E-Mail-Adresse' → no direct rules for semantic email validation", () => {
   const rules = inferValidationRulesFromEvidence("Ungültige E-Mail-Adresse");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
-  assert.equal(typeof rules[0].value, "string");
-  assert.ok(new RegExp(rules[0].value as string).test("test@example.com"));
-  assert.ok(!new RegExp(rules[0].value as string).test("invalid"));
+  assert.equal(rules.length, 0);
 });
 
-test("inferValidationRulesFromEvidence: 'Invalid email address' → email pattern", () => {
+test("inferValidationRulesFromEvidence: 'Invalid email address' → no direct rules for semantic email validation", () => {
   const rules = inferValidationRulesFromEvidence("Invalid email address");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
+  assert.equal(rules.length, 0);
 });
 
 // ---------------------------------------------------------------------------
 // IBAN / BIC patterns
 // ---------------------------------------------------------------------------
 
-test("inferValidationRulesFromEvidence: 'IBAN ungültig' → IBAN pattern", () => {
+test("inferValidationRulesFromEvidence: 'IBAN ungültig' → no direct rules for semantic IBAN validation", () => {
   const rules = inferValidationRulesFromEvidence("IBAN ungültig");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
-  assert.ok(new RegExp(rules[0].value as string).test("DE89370400440532013000"));
+  assert.equal(rules.length, 0);
 });
 
 test("inferValidationRulesFromEvidence: 'BIC/SWIFT ungültig' → BIC pattern", () => {
@@ -79,30 +91,38 @@ test("inferValidationRulesFromEvidence: 'BIC/SWIFT ungültig' → BIC pattern", 
   assert.ok(new RegExp(rules[0].value as string).test("COBADEFFXXX"));
 });
 
+test("classifyValidationEvidence: 'BIC/SWIFT ungültig' remains regex-only", () => {
+  const classification = classifyValidationEvidence("BIC/SWIFT ungültig");
+  assert.equal(classification.required, false);
+  assert.equal(classification.validationType, undefined);
+  assert.equal(classification.validationRules.length, 1);
+  assert.equal(classification.validationRules[0].type, "pattern");
+});
+
 // ---------------------------------------------------------------------------
 // PLZ / Phone / Date patterns
 // ---------------------------------------------------------------------------
 
-test("inferValidationRulesFromEvidence: 'PLZ ungültig' → PLZ pattern", () => {
+test("inferValidationRulesFromEvidence: 'PLZ ungültig' → no direct rules for semantic PLZ validation", () => {
   const rules = inferValidationRulesFromEvidence("PLZ ungültig");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
-  assert.ok(new RegExp(rules[0].value as string).test("12345"));
-  assert.ok(!new RegExp(rules[0].value as string).test("1234"));
+  assert.equal(rules.length, 0);
 });
 
-test("inferValidationRulesFromEvidence: 'Ungültige Telefonnummer' → phone pattern", () => {
+test("inferValidationRulesFromEvidence: 'Ungültige Telefonnummer' → no direct rules for semantic phone validation", () => {
   const rules = inferValidationRulesFromEvidence("Ungültige Telefonnummer");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
-  assert.ok(new RegExp(rules[0].value as string).test("+49 170 1234567"));
+  assert.equal(rules.length, 0);
 });
 
 test("inferValidationRulesFromEvidence: 'Ungültiges Datum' → date pattern", () => {
   const rules = inferValidationRulesFromEvidence("Ungültiges Datum");
-  assert.equal(rules.length, 1);
-  assert.equal(rules[0].type, "pattern");
-  assert.ok(new RegExp(rules[0].value as string).test("01.01.2024"));
+  assert.equal(rules.length, 0);
+});
+
+test("classifyValidationEvidence: 'Ungültiges Datum' infers semantic date validation", () => {
+  const classification = classifyValidationEvidence("Ungültiges Datum");
+  assert.equal(classification.required, false);
+  assert.equal(classification.validationType, "date");
+  assert.deepEqual(classification.validationRules, []);
 });
 
 // ---------------------------------------------------------------------------
