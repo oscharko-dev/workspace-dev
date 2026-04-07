@@ -506,7 +506,7 @@ const collectCustomerComponentContracts = ({
     }
     const resolvedImport = entry.libraryResolution.import;
     const localName = resolvedImport?.localName.trim();
-    const importPackage = resolvedImport?.package?.trim();
+    const importPackage = resolvedImport?.package.trim();
     const componentKey = entry.libraryResolution.componentKey?.trim() ?? entry.resolvedApi.componentKey?.trim();
     if (!localName || !componentKey || !importPackage) {
       continue;
