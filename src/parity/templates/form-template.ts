@@ -86,10 +86,17 @@ const parseLocalizedNumber = (rawValue: string): number | undefined => {
 
 const validateFieldValue = (fieldKey: string, value: string): string => {
   const trimmed = value.trim();
-  if (requiredFields[fieldKey] && trimmed.length === 0) {
-    return "This field is required.";
-  }
+  const rules = fieldValidationRules[fieldKey];
+  const requiredRule = rules?.find(
+    (rule) => rule.type === "minLength" && typeof rule.value === "number" && rule.value === 1
+  );
   if (trimmed.length === 0) {
+    if (requiredRule) {
+      return requiredRule.message;
+    }
+    if (requiredFields[fieldKey]) {
+      return "This field is required.";
+    }
     return "";
   }
 
@@ -203,7 +210,6 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
   }
 
   // Advanced validation rules (min, max, minLength, maxLength, pattern)
-  const rules = fieldValidationRules[fieldKey];
   if (rules && rules.length > 0) {
     for (const rule of rules) {
       switch (rule.type) {
@@ -250,7 +256,11 @@ const validateFieldValue = (fieldKey: string, value: string): string => {
 };
 
 const validateForm = (values: Record<string, string>): Record<string, string> => {
-  const fieldKeys = new Set<string>([...Object.keys(values), ...Object.keys(requiredFields)]);
+  const fieldKeys = new Set<string>([
+    ...Object.keys(values),
+    ...Object.keys(requiredFields),
+    ...Object.keys(fieldValidationRules)
+  ]);
   return [...fieldKeys].reduce<Record<string, string>>((nextErrors, fieldKey) => {
     nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
     return nextErrors;
@@ -297,7 +307,8 @@ export const buildLegacyFormContextFile = ({
   validationTypeMap,
   validationMessageMap,
   initialVisualErrorsMap,
-  selectOptionsMap
+  selectOptionsMap,
+  validationRulesMap = {}
 }: {
   screenComponentName: string;
   initialValues: Record<string, string>;
@@ -306,6 +317,7 @@ export const buildLegacyFormContextFile = ({
   validationMessageMap: Record<string, string>;
   initialVisualErrorsMap: Record<string, string>;
   selectOptionsMap: Record<string, string[]>;
+  validationRulesMap?: Record<string, ValidationRule[]>;
 }): FormContextFileSpec => {
   const providerName = toFormContextProviderName(screenComponentName);
   const hookName = toFormContextHookName(screenComponentName);
@@ -342,6 +354,7 @@ export function ${providerName}({ children, initialVisualErrorsOverride, validat
   const defaultValidationMessages: Record<string, string> = ${JSON.stringify(validationMessageMap, null, 2)};
   const fieldValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };
   const selectOptions: Record<string, string[]> = ${JSON.stringify(selectOptionsMap, null, 2)};
+  const fieldValidationRules: Record<string, Array<{ type: string; value: number | string; message: string }>> = ${JSON.stringify(validationRulesMap, null, 2)};
   const [formValues, setFormValues] = useState<Record<string, string>>(${JSON.stringify(initialValues, null, 2)});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
@@ -371,10 +384,17 @@ export function ${providerName}({ children, initialVisualErrorsOverride, validat
 
   const validateFieldValue = (fieldKey: string, value: string): string => {
     const trimmed = value.trim();
-    if (requiredFields[fieldKey] && trimmed.length === 0) {
-      return "This field is required.";
-    }
+    const rules = fieldValidationRules[fieldKey];
+    const requiredRule = rules?.find(
+      (rule) => rule.type === "minLength" && typeof rule.value === "number" && rule.value === 1
+    );
     if (trimmed.length === 0) {
+      if (requiredRule) {
+        return requiredRule.message;
+      }
+      if (requiredFields[fieldKey]) {
+        return "This field is required.";
+      }
       return "";
     }
 
@@ -466,7 +486,11 @@ export function ${providerName}({ children, initialVisualErrorsOverride, validat
   };
 
   const validateForm = (values: Record<string, string>): Record<string, string> => {
-    const fieldKeys = new Set<string>([...Object.keys(values), ...Object.keys(requiredFields)]);
+    const fieldKeys = new Set<string>([
+      ...Object.keys(values),
+      ...Object.keys(requiredFields),
+      ...Object.keys(fieldValidationRules)
+    ]);
     return [...fieldKeys].reduce<Record<string, string>>((nextErrors, fieldKey) => {
       nextErrors[fieldKey] = validateFieldValue(fieldKey, values[fieldKey] ?? "");
       return nextErrors;
@@ -744,11 +768,19 @@ type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] 
 const createFieldSchema = <TSpec extends FieldSchemaSpec>({ spec }: { spec: TSpec }) => {
   return z.string().superRefine((rawValue, issueContext) => {
     const trimmed = rawValue.trim();
-    if (spec.required && trimmed.length === 0) {
-      issueContext.addIssue({ code: "custom", message: "This field is required." });
-      return;
-    }
+    const rules = spec.validationRules ?? [];
+    const requiredRule = rules.find(
+      (rule) => rule.type === "minLength" && typeof rule.value === "number" && rule.value === 1
+    );
     if (trimmed.length === 0) {
+      if (requiredRule) {
+        issueContext.addIssue({ code: "custom", message: requiredRule.message });
+        return;
+      }
+      if (spec.required) {
+        issueContext.addIssue({ code: "custom", message: "This field is required." });
+        return;
+      }
       return;
     }
 
@@ -866,7 +898,6 @@ ${selectMembershipValidationBlock}    const validationType = spec.validationType
     }
 
     // Advanced validation rules (min, max, minLength, maxLength, pattern)
-    const rules = spec.validationRules ?? [];
     if (rules.length > 0) {
       for (const rule of rules) {
         switch (rule.type) {
