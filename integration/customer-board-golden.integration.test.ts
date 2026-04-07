@@ -117,6 +117,12 @@ test("customer-board golden offline fixture reproduces committed derived artifac
           byStatus?: {
             resolved_import?: number;
           };
+          iconByReason?: {
+            profile_icon_import_resolved?: number;
+          };
+          iconByStatus?: {
+            resolved_import?: number;
+          };
         };
         status?: string;
         issueCount?: number;
@@ -154,6 +160,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
         familyKey?: string;
         familyName?: string;
       };
+      iconResolution?: {
+        byKey?: Record<
+          string,
+          {
+            status?: string;
+            import?: {
+              localName?: string;
+              package?: string;
+            };
+          }
+        >;
+      };
       match?: {
         status?: string;
       };
@@ -188,6 +206,11 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.notEqual(validationSummary.mapping?.customerProfileMatch?.status, "not_available");
   assert.equal((validationSummary.mapping?.customerProfileMatch?.counts?.byReason?.profile_import_resolved ?? 0) > 0, true);
   assert.equal((validationSummary.mapping?.customerProfileMatch?.counts?.byStatus?.resolved_import ?? 0) > 0, true);
+  assert.equal(
+    (validationSummary.mapping?.customerProfileMatch?.counts?.iconByReason?.profile_icon_import_resolved ?? 0) > 0,
+    true
+  );
+  assert.equal((validationSummary.mapping?.customerProfileMatch?.counts?.iconByStatus?.resolved_import ?? 0) > 0, true);
   assert.equal("filePath" in (validationSummary.style?.storybook?.evidence ?? {}), false);
   assert.equal(validationSummary.style?.storybook?.tokens?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.themes?.status, "ok");
@@ -258,9 +281,12 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   const generatedViteConfig = await readFile(`${first.executionContext.paths.generatedProjectDir}/vite.config.ts`, "utf8");
   assert.ok(screenFile, "Generated SeitenContent screen must exist.");
   assert.ok(patternContextFile, "Generated pattern context file must exist.");
+  assert.equal(generatedPackageJson.dependencies?.["@customer/icons"], "npm:@mui/icons-material@^7.3.9");
   assert.equal(generatedPackageJson.dependencies?.["@customer/ui"], "npm:@mui/material@^7.3.9");
   assert.equal(generatedTsconfig.compilerOptions?.baseUrl, ".");
+  assert.deepEqual(generatedTsconfig.compilerOptions?.paths?.["@customer/icons"], ["@mui/icons-material"]);
   assert.deepEqual(generatedTsconfig.compilerOptions?.paths?.["@customer/ui"], ["@mui/material"]);
+  assert.equal(generatedViteConfig.includes('"@customer/icons": "@mui/icons-material"'), true);
   assert.equal(generatedViteConfig.includes('"@customer/ui": "@mui/material"'), true);
   assert.equal(
     screenFile?.includes("import { SeitenContentPattern1 }"),
@@ -293,6 +319,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     true
   );
   assert.equal(screenFile?.includes("SeitenContentPatternContextProvider"), true);
+
+  const resolvedCustomerIcons = (componentMatchReport.entries ?? []).flatMap((entry) =>
+    Object.values(entry.iconResolution?.byKey ?? {}).filter(
+      (resolution) => resolution.status === "resolved_import" && resolution.import?.package === "@customer/icons"
+    )
+  );
+  assert.equal(resolvedCustomerIcons.length > 0, true, "Expected customer-board fixture to resolve at least one exact customer icon import.");
+  assert.equal(
+    resolvedCustomerIcons.some((resolution) => resolution.import?.localName === "CustomerDocsIcon"),
+    true,
+    "Expected customer-board fixture to resolve the docs icon via CustomerDocsIcon."
+  );
 
   // #784 — Verify the generated test file's content is structurally correct.
   // The file exists in the golden bundle but was never content-verified before.

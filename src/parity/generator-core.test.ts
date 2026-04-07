@@ -183,6 +183,79 @@ const createCustomerProfileForGeneratorTests = () => {
   return customerProfile;
 };
 
+const createCustomerProfileWithIconImportsForGeneratorTests = () => {
+  const customerProfile = parseCustomerProfileConfig({
+    input: {
+      version: 1,
+      families: [
+        {
+          id: "Components",
+          tierPriority: 10,
+          aliases: {
+            figma: ["Components"],
+            storybook: ["components"],
+            code: ["@customer/components"]
+          }
+        }
+      ],
+      brandMappings: [
+        {
+          id: "sparkasse",
+          aliases: ["sparkasse"],
+          brandTheme: "sparkasse",
+          storybookThemes: {
+            light: "sparkasse-light",
+            dark: "sparkasse-dark"
+          }
+        }
+      ],
+      imports: {
+        components: {
+          Button: {
+            family: "Components",
+            package: "@customer/components",
+            export: "PrimaryButton",
+            importAlias: "CustomerButton",
+            propMappings: {
+              variant: "appearance"
+            }
+          }
+        },
+        icons: {
+          mail: {
+            package: "@customer/icons",
+            export: "MailIcon",
+            importAlias: "CustomerMailIcon"
+          }
+        }
+      },
+      fallbacks: {
+        mui: {
+          defaultPolicy: "deny",
+          components: {
+            Card: "allow"
+          }
+        }
+      },
+      template: {
+        dependencies: {
+          "@customer/components": "^1.2.3",
+          "@customer/icons": "^4.5.6"
+        }
+      },
+      strictness: {
+        match: "warn",
+        token: "off",
+        import: "error"
+      }
+    }
+  });
+  if (!customerProfile) {
+    throw new Error("Failed to create customer profile icon generator test fixture.");
+  }
+  return customerProfile;
+};
+
 const createIssue693CustomerProfileForGeneratorTests = () => {
   const customerProfile = parseCustomerProfileConfig({
     input: {
@@ -5530,6 +5603,65 @@ test("generateArtifacts omits sx from storybook-first customer profile mappings 
   assert.ok(screenContent.includes("<CustomerButton"));
   assert.ok(screenContent.includes("appearance="));
   assert.equal(/<CustomerButton[\s\S]*?\ssx=\{\{/.test(screenContent), false);
+});
+
+test("generateArtifacts emits customer profile icon imports when storybook-first lookup has no key match", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-profile-icon-import-"));
+  const ir = createIr();
+  ir.screens = [
+    {
+      id: "profile-icon-screen",
+      name: "Profile Icon",
+      layoutMode: "NONE" as const,
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "profile-icon-node",
+          name: "icon/mail",
+          nodeType: "INSTANCE",
+          type: "container" as const,
+          x: 0,
+          y: 0,
+          width: 24,
+          height: 24,
+          children: []
+        }
+      ]
+    }
+  ];
+
+  await generateArtifacts({
+    projectDir,
+    ir,
+    customerProfile: createCustomerProfileWithIconImportsForGeneratorTests(),
+    storybookFirstIconLookup: new Map([
+      [
+        "other",
+        {
+          iconKey: "other",
+          status: "resolved_import",
+          reason: "profile_icon_import_resolved",
+          import: {
+            package: "@customer/icons",
+            exportName: "OtherIcon",
+            localName: "CustomerOtherIcon"
+          }
+        }
+      ]
+    ]),
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    }
+  });
+
+  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Profile Icon"));
+  const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
+  assert.ok(generatedScreenContent.includes('import { MailIcon as CustomerMailIcon } from "@customer/icons";'));
+  assert.ok(generatedScreenContent.includes("<CustomerMailIcon"));
+  assert.equal(generatedScreenContent.includes("@mui/icons-material/Mail"), false);
 });
 
 test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig over the full customer profile mapping", async () => {
