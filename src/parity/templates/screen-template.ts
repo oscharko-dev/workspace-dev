@@ -6106,16 +6106,12 @@ export const assembleFallbackDependencies = ({
           const explicitRules = field.validationRules ?? [];
           const variantEvidenceClassification = resolveVariantEvidenceClassification(field.key);
           const inferredRules = variantEvidenceClassification?.validationRules ?? [];
-          const explicitTypes = new Set(explicitRules.map((rule) => rule.type));
           const mergedRulesByKey = new Map<string, ValidationRule>();
           for (const rule of explicitRules) {
             mergedRulesByKey.set(`${rule.type}:${String(rule.value)}`, rule);
           }
           for (const rule of inferredRules) {
             if (variantEvidenceClassification?.validationType !== undefined && rule.type === "pattern") {
-              continue;
-            }
-            if (explicitTypes.has(rule.type)) {
               continue;
             }
             const ruleKey = `${rule.type}:${String(rule.value)}`;
@@ -6187,7 +6183,8 @@ export const assembleFallbackDependencies = ({
           validationTypeMap,
           validationMessageMap,
           initialVisualErrorsMap,
-          selectOptionsMap
+          selectOptionsMap,
+          validationRulesMap
         })
     : undefined;
   const formContextHookFields = usesReactHookForm
