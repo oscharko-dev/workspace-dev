@@ -65,6 +65,17 @@
       "outputCaptureKey": "validate.project.attempt-1.typecheck",
       "status": "passed",
       "timedOut": false
+    },
+    "validateUi": {
+      "args": [
+        "run",
+        "validate:ui"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.validate-ui",
+      "status": "passed",
+      "timedOut": false
     }
   },
   "import": {
@@ -1024,7 +1035,39 @@
     }
   },
   "uiA11y": {
-    "status": "not_requested"
+    "a11yViolationCount": 2,
+    "artifacts": [
+      "<job-dir>/ui-gate/changed-surfaces-resolved.json",
+      "<job-dir>/ui-gate/ui-gate-visual-diffs.json",
+      "<job-dir>/ui-gate/ui-gate-a11y-findings.json",
+      "<job-dir>/ui-gate/ui-gate-interaction-findings.json",
+      "<job-dir>/ui-gate/ui-gate-visual-baseline.json"
+    ],
+    "checks": [
+      {
+        "count": 0,
+        "details": "Visual baseline created from current surfaces",
+        "name": "visual-baseline",
+        "status": "passed"
+      },
+      {
+        "count": 2,
+        "details": "Static accessibility checks over 26 source files",
+        "name": "a11y-static",
+        "status": "failed"
+      },
+      {
+        "count": 0,
+        "details": "Keyboard and semantic interaction checks over 26 source files",
+        "name": "interaction-static",
+        "status": "passed"
+      }
+    ],
+    "interactionViolationCount": 0,
+    "reportPath": "<job-dir>/ui-gate/ui-gate-report.json",
+    "status": "warn",
+    "summary": "UI gate evaluated 26 source file(s): visual=0, a11y=2, interaction=0",
+    "visualDiffCount": 0
   },
   "validatedAt": "<timestamp>"
 }
