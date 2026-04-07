@@ -10,10 +10,9 @@
       "heuristicFamilyName": "<Typography>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -34,8 +33,8 @@
         "I1:65940;9445:27870;9445:32106;5646:54709",
         "I1:65940;9445:27870;9445:32122;5646:54709"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -60,10 +59,9 @@
       "heuristicFamilyName": "<Typography>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'd6f0a0d97000e5a52322a698fee226141918c8df' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'd6f0a0d97000e5a52322a698fee226141918c8df' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -75,8 +73,8 @@
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870;9445:28813;9445:29996"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -93,34 +91,30 @@
       ]
     },
     {
-      "canonicalFamilyName": "Variant=label04Light, Color=Default",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Typography>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:38329",
       "componentKey": "216a6629dde88e0e729cd2a2015db3508d7ec3ef",
       "familyKey": "component:1:38329",
       "heuristicFamilyName": "<Typography>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:38294",
         "key": "216a6629dde88e0e729cd2a2015db3508d7ec3ef",
         "name": "Variant=label04Light, Color=Default",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile/Light",
-        "createdAt": "2025-04-09T07:31:36.768Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "216a6629dde88e0e729cd2a2015db3508d7ec3ef",
-        "name": "Variant=label04Light, Color=Default",
-        "nodeId": "13351:55640",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Tom/gDQ/sZ47YZT5U88zwfVi/13351_55640.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=e13eef68971e4e175f6b097bef3fcd0997f2c78200a6740983ead836446ca2c0",
-        "updatedAt": "2026-03-25T09:59:06.944Z"
-      },
       "referringNodeIds": [
         "I1:65838;9445:27855"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -145,10 +139,9 @@
       "heuristicFamilyName": "<Divider>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'de7b4a8bdc076d5c8847ff120d5510a1802b2885' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'de7b4a8bdc076d5c8847ff120d5510a1802b2885' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -163,8 +156,8 @@
         "I1:65764;4919:305782",
         "I1:65764;4919:306286"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "orientation",
@@ -189,10 +182,9 @@
       "heuristicFamilyName": "ic_arrow_subitem_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -204,8 +196,8 @@
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870;9445:28813;9445:29980;1288:87615"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
@@ -217,10 +209,9 @@
       "heuristicFamilyName": "<Icon>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -234,8 +225,8 @@
         "I1:65819;9445:29980",
         "I1:65868;9445:28917"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -260,10 +251,9 @@
       "heuristicFamilyName": "<Icon>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -278,8 +268,8 @@
         "I1:65828;16712:36149",
         "I1:65898;16712:36388"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -304,10 +294,9 @@
       "heuristicFamilyName": "<Dynamic Typography> (headlines)",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -319,8 +308,8 @@
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870;9445:28797"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -337,36 +326,32 @@
       ]
     },
     {
-      "canonicalFamilyName": "Variant=headline05, Color=Default",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:39169",
       "componentKey": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
       "familyKey": "component:1:39169",
       "heuristicFamilyName": "<Dynamic Typography> (headlines)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:39136",
         "key": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
         "name": "Variant=headline05, Color=Default",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile/Light",
-        "createdAt": "2025-04-09T07:31:00.986Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b",
-        "name": "Variant=headline05, Color=Default",
-        "nodeId": "15753:46114",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Nu5/RAX/Sn4P74odA21q1tgX/15753_46114.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=f470bec3ba44455f703ce384daed310ef864f5ee0135ab9707b9f80b22c669e8",
-        "updatedAt": "2026-03-25T09:58:06.247Z"
-      },
       "referringNodeIds": [
         "I1:65798;5213:6557",
         "I1:65819;9445:29996",
         "I1:65868;9445:28933"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -383,36 +368,32 @@
       ]
     },
     {
-      "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Stack4>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:40054",
       "componentKey": "a730c81c659413cf3d1326ed87c5d1e18684b1fc",
       "familyKey": "component:1:40054",
       "heuristicFamilyName": "<Stack4>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'a730c81c659413cf3d1326ed87c5d1e18684b1fc' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:39933",
         "key": "a730c81c659413cf3d1326ed87c5d1e18684b1fc",
         "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Stack4>(Nested)",
-        "createdAt": "2025-04-09T07:29:25.847Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "a730c81c659413cf3d1326ed87c5d1e18684b1fc",
-        "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-        "nodeId": "9445:29979",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/1hx/zVd/IjWfiOKro89SeFJQ/9445_29979.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=8cf61b6b6ae0c63c07490128c2fa04bdc881dac81713e5740f24e6821c33581f",
-        "updatedAt": "2026-01-13T18:32:36.626Z"
-      },
       "referringNodeIds": [
         "1:65819",
         "I1:65764;4919:306280;9445:27870;9445:28813",
         "I1:65901;9445:27854"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -449,10 +430,9 @@
       "heuristicFamilyName": "ic_user_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -464,17 +444,24 @@
       "referringNodeIds": [
         "I1:65798;5213:6541;1288:87607"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Avatar>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:41120",
       "componentKey": "1ffbd8c3fc07be8a4a6bcd74e1f2394614faa8fa",
       "familyKey": "component:1:41120",
       "heuristicFamilyName": "<Avatar>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '1ffbd8c3fc07be8a4a6bcd74e1f2394614faa8fa' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:40618",
         "description": "<Avatar>\n  <ic_icon_s/>\n</Avatar>",
@@ -482,23 +469,11 @@
         "name": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Avatar>",
-        "createdAt": "2025-04-09T07:31:59.568Z",
-        "description": "<Avatar>\n  <ic_icon_s/>\n</Avatar>",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "1ffbd8c3fc07be8a4a6bcd74e1f2394614faa8fa",
-        "name": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
-        "nodeId": "1302:97713",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/q3V/l8d/Db8sdOrJuNJo1bSv/1302_97713.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=5ebb465cad54e4f5c566da7c4722746297e726086c90b23bd7935f63d41c2916",
-        "updatedAt": "2026-01-13T14:53:29.447Z"
-      },
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27854"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -527,28 +502,24 @@
       ]
     },
     {
-      "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Stack2>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:41763",
       "componentKey": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
       "familyKey": "component:1:41763",
       "heuristicFamilyName": "<Stack2>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:41642",
         "key": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
         "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "remote": true
-      },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Stack2>(Nested)",
-        "createdAt": "2025-04-09T07:31:49.210Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "290ec8d2964f3d827ab56b8a9c4b781092328db6",
-        "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-        "nodeId": "9445:27853",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/XLy/xoG/cVXzRGJObZa24ARf/9445_27853.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=de39ae2ecbfd536f1d0444990dd03611b51d5a0990869727e3fdbdf2cd4d09bd",
-        "updatedAt": "2026-01-13T18:33:57.247Z"
       },
       "referringNodeIds": [
         "1:65838",
@@ -557,8 +528,8 @@
         "1:65940",
         "I1:65764;4919:306280"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -595,10 +566,9 @@
       "heuristicFamilyName": "ic_chart_upward_s 1",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '41016ac98a47d6dbf915c75e969a256866bdb16b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '41016ac98a47d6dbf915c75e969a256866bdb16b' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -609,8 +579,8 @@
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27854;24755:10564"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
@@ -622,10 +592,9 @@
       "heuristicFamilyName": "<Stack3>(Nested)",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -637,8 +606,8 @@
       "referringNodeIds": [
         "I1:65764;4919:306280;9445:27870"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -675,10 +644,9 @@
       "heuristicFamilyName": "<Stack3>(Nested)",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -690,8 +658,8 @@
       "referringNodeIds": [
         "1:65868"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -720,35 +688,31 @@
       ]
     },
     {
-      "canonicalFamilyName": "Direction=Column, Divider=false, alignItems=Start, Direction-S=column",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Stack>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:42583",
       "componentKey": "1bd04847b0d2f322a6f3f03085adafb41ba4198b",
       "familyKey": "component:1:42583",
       "heuristicFamilyName": "<Stack>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:42582",
         "key": "1bd04847b0d2f322a6f3f03085adafb41ba4198b",
         "name": "Direction=Column, Divider=false, alignItems=Start, Direction-S=column",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Stack>",
-        "createdAt": "2025-04-09T07:31:26.902Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "1bd04847b0d2f322a6f3f03085adafb41ba4198b",
-        "name": "Direction=Column, Divider=false, alignItems=Start, Direction-S=column",
-        "nodeId": "4917:180959",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/UcM/p4r/ukZOB5uzUW1gCngw/4917_180959.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=f2d365bff8502ca836c772b62eec122dd91652d84b02b3dd730f6261afa69148",
-        "updatedAt": "2026-01-13T18:33:41.351Z"
-      },
       "referringNodeIds": [
         "1:65764",
         "2:656"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -785,10 +749,9 @@
       "heuristicFamilyName": "<Stack>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -800,8 +763,8 @@
       "referringNodeIds": [
         "1:65798"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -838,10 +801,9 @@
       "heuristicFamilyName": "ic_info_circle_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -854,39 +816,35 @@
         "I1:65879;9445:27856;11940:107548",
         "I1:65896;1857:134907"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "Color=Default, Size=Small, State=Enabled",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<IconButton>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:43449",
       "componentKey": "ea64a1291d4fba6d4a845d263db73482975431fb",
       "familyKey": "component:1:43449",
       "heuristicFamilyName": "<IconButton>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:43340",
         "key": "ea64a1291d4fba6d4a845d263db73482975431fb",
         "name": "Color=Default, Size=Small, State=Enabled",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile/Light",
-        "createdAt": "2025-04-09T07:29:43.444Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "ea64a1291d4fba6d4a845d263db73482975431fb",
-        "name": "Color=Default, Size=Small, State=Enabled",
-        "nodeId": "11940:107547",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Wfm/sg7/ui5FEwZVgRkJvVnw/11940_107547.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=aee8a177b2274f574ebf78745f3215f1958fc6627f827b8efe56ba53ea536568",
-        "updatedAt": "2026-01-13T14:49:42.464Z"
-      },
       "referringNodeIds": [
         "I1:65879;9445:27856"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -917,10 +875,9 @@
       "heuristicFamilyName": "ic_circle_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -936,8 +893,8 @@
         "I1:65940;9445:27870;9445:32106;5646:54691;5908:49260",
         "I1:65940;9445:27870;9445:32122;5646:54691;5908:49260"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
@@ -949,10 +906,9 @@
       "heuristicFamilyName": "ic_radio_selected_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -964,41 +920,37 @@
       "referringNodeIds": [
         "I1:65879;9445:27870;9445:32106;5646:54691;5908:49316"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Stack6>(Nested)",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:43658",
       "componentKey": "04ddd87c8c56f2622c43c045e5303b45dd18f3b0",
       "familyKey": "component:1:43658",
       "heuristicFamilyName": "<Stack6>(Nested)",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '04ddd87c8c56f2622c43c045e5303b45dd18f3b0' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:43537",
         "key": "04ddd87c8c56f2622c43c045e5303b45dd18f3b0",
         "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Stack6>(Nested)",
-        "createdAt": "2025-04-09T07:32:21.981Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "04ddd87c8c56f2622c43c045e5303b45dd18f3b0",
-        "name": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-        "nodeId": "9445:32105",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/vFR/aB6/3LVhpBdNe4jgktSF/9445_32105.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=d2e4d5e7519270429c812d17048d914431cec2923af16f6eb8116686125d6410",
-        "updatedAt": "2026-01-13T18:33:57.193Z"
-      },
       "referringNodeIds": [
         "I1:65838;9445:27870",
         "I1:65879;9445:27870",
         "I1:65940;9445:27870"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -1035,10 +987,9 @@
       "heuristicFamilyName": "_<InputAdornment>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_NOT_FOUND",
-          "message": "Published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was not found. Component not found.",
-          "retriable": false,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1051,8 +1002,8 @@
         "I1:65897;26925:38678",
         "I1:65899;26925:38678"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "adornment type",
@@ -1069,34 +1020,30 @@
       ]
     },
     {
-      "canonicalFamilyName": "State=Enabled, Has Value=False, Placeholder=False, Data-Variant=Default, Size=Medium, AutoWidth=False, Disabled=False",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Select>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:45038",
       "componentKey": "5add493da3b40cdb711f4444f933d0d7e25c2acb",
       "familyKey": "component:1:45038",
       "heuristicFamilyName": "<Select>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '5add493da3b40cdb711f4444f933d0d7e25c2acb' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:45037",
         "key": "5add493da3b40cdb711f4444f933d0d7e25c2acb",
         "name": "State=Enabled, Has Value=False, Placeholder=False, Data-Variant=Default, Size=Medium, AutoWidth=False, Disabled=False",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Mobile Light",
-        "createdAt": "2025-04-09T07:29:42.549Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "5add493da3b40cdb711f4444f933d0d7e25c2acb",
-        "name": "State=Enabled, Has Value=False, Placeholder=False, Data-Variant=Default, Size=Medium, AutoWidth=False, Disabled=False",
-        "nodeId": "772:75810",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/6os/QHV/z9QQDcgqWCdkyHF2/772_75810.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=9497ab3f5b0cda4ee0d61dce19b5939e8d4d1e7f9c0563467ba8acd2c207559e",
-        "updatedAt": "2026-03-20T15:01:32.333Z"
-      },
       "referringNodeIds": [
         "1:65828"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "autowidth",
@@ -1151,10 +1098,9 @@
       "heuristicFamilyName": "<Select>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1167,8 +1113,8 @@
         "1:65807",
         "1:65898"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "autowidth",
@@ -1223,10 +1169,9 @@
       "heuristicFamilyName": "<Chip>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1238,8 +1183,8 @@
       "referringNodeIds": [
         "I1:65901;9445:27870"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "clickable",
@@ -1282,10 +1227,9 @@
       "heuristicFamilyName": "_<CharacterCount>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_NOT_FOUND",
-          "message": "Published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was not found. Component not found.",
-          "retriable": false,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1297,8 +1241,8 @@
       "referringNodeIds": [
         "I2:656;4919:305782;10861:42763"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "state",
@@ -1309,36 +1253,32 @@
       ]
     },
     {
-      "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<TextField>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:51269",
       "componentKey": "17b74e3916ec4140abed02ec6ce2cddfe22a5f4e",
       "familyKey": "component:1:51269",
       "heuristicFamilyName": "<TextField>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '17b74e3916ec4140abed02ec6ce2cddfe22a5f4e' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:49972",
         "key": "17b74e3916ec4140abed02ec6ce2cddfe22a5f4e",
         "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, date-variant=default, Multiline=False, Disabled=False, (Password)=None",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<TextField>",
-        "createdAt": "2025-04-09T07:30:45.630Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "17b74e3916ec4140abed02ec6ce2cddfe22a5f4e",
-        "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
-        "nodeId": "2736:207711",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/Rff/4JQ/YLAfMhWVPIlcCHkO/2736_207711.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=32bd7b19092482e660e123047bd7602526250c86cc13cb4a15457563fb1beab1",
-        "updatedAt": "2026-03-20T15:02:42.873Z"
-      },
       "referringNodeIds": [
         "1:65827",
         "1:65897",
         "1:65899"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "(password)",
@@ -1391,34 +1331,30 @@
       ]
     },
     {
-      "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<TextField>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:53140",
       "componentKey": "0a9c11a816f4e4492dd41e75276aa2fd35f029b3",
       "familyKey": "component:1:53140",
       "heuristicFamilyName": "<TextField>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '0a9c11a816f4e4492dd41e75276aa2fd35f029b3' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:49972",
         "key": "0a9c11a816f4e4492dd41e75276aa2fd35f029b3",
         "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, date-variant=default, Multiline=True, Disabled=False, (Password)=None",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<TextField>",
-        "createdAt": "2025-04-09T07:30:46.339Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "0a9c11a816f4e4492dd41e75276aa2fd35f029b3",
-        "name": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
-        "nodeId": "10796:42262",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/3u7/PIJ/BMQDO3lSrPFqYDFZ/10796_42262.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=7cb19d50cd2658cbc0060b08a3f4aed439e6e3b284708e9824710f44e3f767dd",
-        "updatedAt": "2026-03-20T15:02:42.778Z"
-      },
       "referringNodeIds": [
         "I2:656;4919:305782"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "(password)",
@@ -1479,10 +1415,9 @@
       "heuristicFamilyName": "ic_shopping_cart_s",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1493,8 +1428,8 @@
       "referringNodeIds": [
         "I1:65819;9445:29980;1288:87607"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
@@ -1506,10 +1441,9 @@
       "heuristicFamilyName": "<Radio>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1525,8 +1459,8 @@
         "I1:65940;9445:27870;9445:32106;5646:54691",
         "I1:65940;9445:27870;9445:32122;5646:54691"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "checked",
@@ -1557,10 +1491,9 @@
       "heuristicFamilyName": "<Radio>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1572,8 +1505,8 @@
       "referringNodeIds": [
         "I1:65879;9445:27870;9445:32106;5646:54691"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "checked",
@@ -1604,10 +1537,9 @@
       "heuristicFamilyName": "<Stack> FormControlLabel Radio",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1624,8 +1556,8 @@
         "I1:65940;9445:27870;9445:32106",
         "I1:65940;9445:27870;9445:32122"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "disabled",
@@ -1644,10 +1576,9 @@
       "heuristicFamilyName": "ic_coin_stack_s",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1658,17 +1589,24 @@
       "referringNodeIds": [
         "I1:65868;9445:28917;1288:87607"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     },
     {
-      "canonicalFamilyName": "Severity*=Info*, variant=filled",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Alert>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:54808",
       "componentKey": "ba69ca5620a6cf229730e580c17e86fdd3793605",
       "familyKey": "component:1:54808",
       "heuristicFamilyName": "<Alert>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'ba69ca5620a6cf229730e580c17e86fdd3793605' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:54759",
         "description": "<Alert severity=\"information\"></Alert>",
@@ -1676,23 +1614,11 @@
         "name": "Severity*=Info*, variant=filled",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Alert",
-        "createdAt": "2025-04-09T07:30:39.242Z",
-        "description": "<Alert severity=\"information\"></Alert>",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "ba69ca5620a6cf229730e580c17e86fdd3793605",
-        "name": "Severity*=Info*, variant=filled",
-        "nodeId": "1857:134905",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/fLs/394/MFhemnExgGTFBPpc/1857_134905.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=4a5faebbf9840e8789a491075879ff949de6684143f92e827540f020e62fc2e2",
-        "updatedAt": "2026-01-13T14:50:14.469Z"
-      },
       "referringNodeIds": [
         "1:65896"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "severity",
@@ -1709,34 +1635,30 @@
       ]
     },
     {
-      "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Center, Direction-S=column",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Stack>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:62521",
       "componentKey": "27028de27105923597aa8fb3fd2edac3082bf822",
       "familyKey": "component:1:62521",
       "heuristicFamilyName": "<Stack>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '27028de27105923597aa8fb3fd2edac3082bf822' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:62156",
         "key": "27028de27105923597aa8fb3fd2edac3082bf822",
         "name": "Direction=Row, Divider=false, alignItems=Center, Direction-S=column",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "<Stack>",
-        "createdAt": "2025-04-09T07:31:26.984Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "27028de27105923597aa8fb3fd2edac3082bf822",
-        "name": "Direction=Row, Divider=false, alignItems=Center, Direction-S=column",
-        "nodeId": "23570:19636",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/EYT/Ivy/m6pqyw6xh3eSvmKk/23570_19636.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=4e8c5f7dd4227bda515407ecd2aa6b369d905816220f36eac7dc9ae57eda2c79",
-        "updatedAt": "2026-01-13T18:33:41.358Z"
-      },
       "referringNodeIds": [
         "I1:67080;32:73283"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "alignitems",
@@ -1773,10 +1695,9 @@
       "heuristicFamilyName": "<Button>",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1788,8 +1709,8 @@
       "referringNodeIds": [
         "I1:67080;32:73283;23570:19653"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -1825,34 +1746,30 @@
       ]
     },
     {
-      "canonicalFamilyName": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
-      "canonicalFamilyNameSource": "published_component",
+      "canonicalFamilyName": "<Button>",
+      "canonicalFamilyNameSource": "analysis",
       "componentId": "1:62821",
       "componentKey": "02d0a33a6341854a09df126bbe73a6319450faa2",
       "familyKey": "component:1:62821",
       "heuristicFamilyName": "<Button>",
+      "issues": [
+        {
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '02d0a33a6341854a09df126bbe73a6319450faa2' was missing from the library-resolution cache entry.",
+          "scope": "cache"
+        }
+      ],
       "localComponent": {
         "componentSetId": "1:62628",
         "key": "02d0a33a6341854a09df126bbe73a6319450faa2",
         "name": "Variant=Outlined, Size=Large, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
         "remote": true
       },
-      "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-      "publishedComponent": {
-        "containingFrameName": "Button Light",
-        "createdAt": "2025-04-09T07:31:26.281Z",
-        "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-        "key": "02d0a33a6341854a09df126bbe73a6319450faa2",
-        "name": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
-        "nodeId": "9403:23050",
-        "thumbnailUrl": "https://s3-alpha.figma.com/checkpoints/gjL/h6M/Ecfz4JrjcVzeO2et/9403_23050.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260405%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260405T120000Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=1970fe6f05cc0ff036bae9004702d05c7e004426659e91a9dc36c433ccdeb047",
-        "updatedAt": "2026-03-10T14:13:51.019Z"
-      },
       "referringNodeIds": [
         "I1:67080;32:73283;23570:19637"
       ],
-      "resolutionSource": "live",
-      "status": "resolved",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "color",
@@ -1896,10 +1813,9 @@
       "heuristicFamilyName": "<Stack> ButtonCombination",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1911,8 +1827,8 @@
       "referringNodeIds": [
         "1:67080"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": [
         {
           "property": "small screen",
@@ -1931,10 +1847,9 @@
       "heuristicFamilyName": "ic_down_s 🔥",
       "issues": [
         {
-          "code": "E_LIBRARY_ASSET_HTTP",
-          "message": "Published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-          "retriable": true,
-          "scope": "component"
+          "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+          "message": "Cached published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' was missing from the library-resolution cache entry.",
+          "scope": "cache"
         }
       ],
       "localComponent": {
@@ -1948,19 +1863,19 @@
         "I1:65828;16712:36149;1288:87615",
         "I1:65898;16712:36388;1288:87615"
       ],
-      "resolutionSource": "live",
-      "status": "error",
+      "resolutionSource": "local_catalog",
+      "status": "partial",
       "variantProperties": []
     }
   ],
-  "figmaSourceMode": "hybrid",
+  "figmaSourceMode": "local_json",
   "fingerprint": "5fe636c0d8674835f724bd0d578aeaaba132471bef3ca23aa5122afe3188cf06",
   "summary": {
     "cacheHit": 0,
-    "error": 27,
+    "error": 0,
     "offlineReused": 0,
-    "partial": 0,
-    "resolved": 14,
+    "partial": 41,
+    "resolved": 0,
     "total": 41
   },
   "version": 1

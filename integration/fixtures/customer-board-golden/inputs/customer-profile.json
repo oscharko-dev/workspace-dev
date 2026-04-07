@@ -142,7 +142,13 @@
         }
       }
     },
-    "icons": {}
+    "icons": {
+      "docs": {
+        "export": "Description",
+        "importAlias": "CustomerDocsIcon",
+        "package": "@customer/icons"
+      }
+    }
   },
   "strictness": {
     "import": "error",
@@ -151,10 +157,12 @@
   },
   "template": {
     "dependencies": {
+      "@customer/icons": "npm:@mui/icons-material@^7.3.9",
       "@customer/ui": "npm:@mui/material@^7.3.9"
     },
     "devDependencies": {},
     "importAliases": {
+      "@customer/icons": "@mui/icons-material",
       "@customer/ui": "@mui/material"
     }
   },

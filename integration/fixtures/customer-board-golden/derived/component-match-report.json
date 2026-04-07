@@ -15,14 +15,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_NOT_FOUND",
-              "message": "Published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was not found. Component not found.",
-              "retriable": false,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '765383815cc421926c0aed89191fd97f829ba396' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -107,14 +106,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_NOT_FOUND",
-              "message": "Published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was not found. Component not found.",
-              "retriable": false,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '2434eef7c50cb6b858d5ba4201dd739cd6fa49de' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 2,
         "variantProperties": [
@@ -202,25 +200,24 @@
         "selected_variant_by_entry_id_tiebreak",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:54808",
         "familyName": "<Alert>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Severity*=Info*, variant=filled",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Alert>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "1857:134905"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ba69ca5620a6cf229730e580c17e86fdd3793605' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -246,8 +243,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -303,11 +300,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -324,25 +316,24 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:41120",
         "familyName": "<Avatar>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "data-size=Medium, variant=Circular, Content=Icon, data-color=Default",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Avatar>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "1302:97713"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '1ffbd8c3fc07be8a4a6bcd74e1f2394614faa8fa' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -436,8 +427,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -493,11 +484,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -531,14 +517,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'abbd12d3f87051b3723b2a6fcf90a9e03e1e1f7f' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -666,7 +651,6 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -674,18 +658,18 @@
         "familyKey": "component:1:62821",
         "familyName": "<Button>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Variant=Outlined, Size=Large*, State=Enabled, Fullwidth=false, Color=Secondary, Data-variant=SpaceAround",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Button>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9403:23050"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '02d0a33a6341854a09df126bbe73a6319450faa2' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -730,8 +714,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 86,
+        "confidence": "low",
+        "confidenceScore": 51,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -787,11 +771,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -830,14 +809,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '6cba90e81933d73aa1ba5e3bb36d9e17c749a71c' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -1096,14 +1074,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'de7b4a8bdc076d5c8847ff120d5510a1802b2885' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'de7b4a8bdc076d5c8847ff120d5510a1802b2885' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 4,
         "variantProperties": [
@@ -1293,14 +1270,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '4754a2591b823963bf63c3cc8c7052453c128a72' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -1406,31 +1382,28 @@
     },
     {
       "fallbackReasons": [
-        "selected_variant_by_entry_id_tiebreak",
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_family_name_token_overlap",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
-        "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
         "familyKey": "component:1:39169",
         "familyName": "<Dynamic Typography> (headlines)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Variant=headline05, Color=Default",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Dynamic Typography> (headlines)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "15753:46114"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -1449,132 +1422,57 @@
         ]
       },
       "libraryResolution": {
-        "componentKey": "Typography",
-        "import": {
-          "exportName": "Typography",
-          "localName": "Typography",
-          "package": "@customer/ui",
-          "propMappings": {
-            "variant": "variant"
-          }
-        },
-        "profileFamily": "Components",
-        "reason": "profile_import_resolved",
-        "status": "resolved_import",
-        "storybookTier": "Components"
+        "componentKey": "DynamicTypography",
+        "profileFamily": "Reactlib",
+        "reason": "profile_import_missing",
+        "status": "mui_fallback_allowed",
+        "storybookTier": "Reactlib"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 76,
+        "confidence": "low",
+        "confidenceScore": 50,
         "status": "matched"
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [
-          {
-            "allowedValues": [
-              "attention",
-              "default",
-              "disabled",
-              "error",
-              "info",
-              "primary",
-              "secondary",
-              "success",
-              "warning"
-            ],
-            "kind": "enum",
-            "name": "color"
-          }
-        ],
+        "allowedProps": [],
         "children": {
-          "policy": "unsupported"
+          "policy": "unknown"
         },
-        "componentKey": "Typography",
         "defaultProps": [],
-        "diagnostics": [
-          {
-            "code": "component_api_children_unsupported",
-            "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
-            "severity": "warning",
-            "targetProp": "children"
-          },
-          {
-            "code": "component_api_prop_unsupported",
-            "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
-            "severity": "warning",
-            "sourceProp": "variant",
-            "targetProp": "variant"
-          }
-        ],
-        "import": {
-          "exportName": "Typography",
-          "localName": "Typography",
-          "package": "@customer/ui",
-          "propMappings": {
-            "variant": "variant"
-          }
-        },
+        "diagnostics": [],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "resolved"
+        "status": "not_applicable"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unsupported"
+          "policy": "unknown"
         },
-        "codegenCompatible": false,
-        "diagnostics": [
-          {
-            "code": "component_api_children_unsupported",
-            "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
-            "severity": "warning",
-            "targetProp": "children"
-          },
-          {
-            "code": "component_api_prop_unsupported",
-            "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
-            "severity": "warning",
-            "sourceProp": "variant",
-            "targetProp": "variant"
-          }
-        ],
+        "codegenCompatible": true,
+        "diagnostics": [],
         "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [
-          {
-            "sourceProp": "variant",
-            "targetProp": "variant"
-          }
-        ],
-        "props": [
-          {
-            "kind": "enum",
-            "sourceProp": "color",
-            "targetProp": "color",
-            "values": [
-              "default"
-            ]
-          }
-        ],
+        "omittedProps": [],
+        "props": [],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "incompatible"
+        "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:551261f1f5319081",
-        "name": "Typography",
-        "storyCount": 42,
-        "tier": "Components",
-        "title": "Components/Display/Typography"
+        "familyId": "family:b5aee49ef09bcb1a",
+        "name": "DynamicTypography",
+        "storyCount": 1,
+        "tier": "Reactlib",
+        "title": "Reactlib/DynamicTypography"
       },
       "storyVariant": {
-        "entryId": "components-display-typography--h-5",
-        "storyName": "headline05"
+        "entryId": "reactlib-dynamictypography--default",
+        "storyName": "Default"
       },
       "usedEvidence": [
         {
@@ -1583,19 +1481,14 @@
           "role": "candidate_selection"
         },
         {
+          "class": "component_path_present",
+          "reliability": "authoritative",
+          "role": "candidate_selection"
+        },
+        {
           "class": "customer_profile_tier_priority",
           "reliability": "derived",
           "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "reference_only_docs",
-          "reliability": "reference_only",
-          "role": "tie_breaker"
         },
         {
           "class": "semantic_type",
@@ -1630,14 +1523,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'f0835abcb6d444c3be7f72a5edbe327d3a84c4c6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -1660,16 +1552,21 @@
         "byKey": {
           "docs": {
             "iconKey": "docs",
-            "reason": "profile_icon_wrapper_denied",
-            "status": "wrapper_fallback_denied"
+            "import": {
+              "exportName": "Description",
+              "localName": "CustomerDocsIcon",
+              "package": "@customer/icons"
+            },
+            "reason": "profile_icon_import_resolved",
+            "status": "resolved_import"
           }
         },
         "counts": {
           "ambiguous": 0,
-          "exactImportResolved": 0,
+          "exactImportResolved": 1,
           "unresolved": 0,
           "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 1
+          "wrapperFallbackDenied": 0
         },
         "iconKeys": [
           "docs"
@@ -1772,14 +1669,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '8e26e1153c3f052fe18bff56d3802a05af6d4241' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 4,
         "variantProperties": [
@@ -1802,16 +1698,21 @@
         "byKey": {
           "docs": {
             "iconKey": "docs",
-            "reason": "profile_icon_wrapper_denied",
-            "status": "wrapper_fallback_denied"
+            "import": {
+              "exportName": "Description",
+              "localName": "CustomerDocsIcon",
+              "package": "@customer/icons"
+            },
+            "reason": "profile_icon_import_resolved",
+            "status": "resolved_import"
           }
         },
         "counts": {
           "ambiguous": 0,
-          "exactImportResolved": 0,
+          "exactImportResolved": 1,
           "unresolved": 0,
           "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 1
+          "wrapperFallbackDenied": 0
         },
         "iconKeys": [
           "docs"
@@ -1903,7 +1804,6 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -1911,18 +1811,18 @@
         "familyKey": "component:1:43449",
         "familyName": "<IconButton>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Color=Default, Size=Small, State=Enabled",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<IconButton>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "11940:107547"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -1966,16 +1866,21 @@
           },
           "docs": {
             "iconKey": "docs",
-            "reason": "profile_icon_wrapper_denied",
-            "status": "wrapper_fallback_denied"
+            "import": {
+              "exportName": "Description",
+              "localName": "CustomerDocsIcon",
+              "package": "@customer/icons"
+            },
+            "reason": "profile_icon_import_resolved",
+            "status": "resolved_import"
           }
         },
         "counts": {
           "ambiguous": 0,
-          "exactImportResolved": 0,
+          "exactImportResolved": 1,
           "unresolved": 0,
           "wrapperFallbackAllowed": 0,
-          "wrapperFallbackDenied": 4
+          "wrapperFallbackDenied": 3
         },
         "iconKeys": [
           "button",
@@ -1997,8 +1902,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 92,
+        "confidence": "medium",
+        "confidenceScore": 57,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -2150,11 +2055,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -2193,14 +2093,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'bb8fa91a46daa5091a930960600f4bc86d708798' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 5,
         "variantProperties": [
@@ -2311,14 +2210,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -2416,26 +2314,26 @@
       "fallbackReasons": [
         "selected_variant_by_entry_id_tiebreak",
         "used_customer_profile_tier_priority",
+        "used_customer_profile_tier_priority_tiebreaker",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:45038",
         "familyName": "<Select>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "State=Enabled, Has Value=False, Placeholder=False, Data-Variant=Default, Size=Medium, AutoWidth=False, Disabled=False",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Select>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "772:75810"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '5add493da3b40cdb711f4444f933d0d7e25c2acb' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -2491,8 +2389,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -2548,11 +2446,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -2581,14 +2474,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 2,
         "variantProperties": [
@@ -2716,25 +2608,24 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:42583",
         "familyName": "<Stack>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Column, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "4917:180959"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '1bd04847b0d2f322a6f3f03085adafb41ba4198b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 2,
         "variantProperties": [
@@ -2772,8 +2663,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -2829,11 +2720,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -2860,14 +2746,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'bd03b49c68e44dcf904036c7ce77ceab1de62f14' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -2977,25 +2862,24 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:62521",
         "familyName": "<Stack>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Center, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "23570:19636"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '27028de27105923597aa8fb3fd2edac3082bf822' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -3033,8 +2917,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -3086,11 +2970,6 @@
         },
         {
           "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -3205,14 +3084,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -3315,14 +3193,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '832a9533454b00d3463057dc1e140b8530be96db' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 6,
         "variantProperties": [
@@ -3411,26 +3288,26 @@
     },
     {
       "fallbackReasons": [
-        "used_customer_profile_tier_priority",
-        "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
       ],
       "figma": {
         "familyKey": "component:1:41763",
         "familyName": "<Stack2>(Nested)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack2>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9445:27853"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 5,
         "variantProperties": [
@@ -3461,16 +3338,17 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
+        "reason": "match_unmatched",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 55,
-        "status": "ambiguous"
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
       },
       "rejectionReasons": [
-        "insufficient_primary_lead"
+        "insufficient_primary_score",
+        "insufficient_total_score"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -3501,31 +3379,31 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:456ad848bd366d33",
-        "name": "Divider",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Divider"
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
       },
       "storyVariant": {
-        "entryId": "components-display-divider--default",
+        "entryId": "reactlib-player--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
         }
       ]
     },
@@ -3544,14 +3422,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '9a4fa985303a81ffa4144d787f72543a43be1984' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -3666,14 +3543,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -3775,26 +3651,26 @@
     },
     {
       "fallbackReasons": [
-        "used_customer_profile_tier_priority",
-        "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
       ],
       "figma": {
         "familyKey": "component:1:40054",
         "familyName": "<Stack4>(Nested)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack4>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9445:29979"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'a730c81c659413cf3d1326ed87c5d1e18684b1fc' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -3825,16 +3701,17 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
+        "reason": "match_unmatched",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 55,
-        "status": "ambiguous"
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
       },
       "rejectionReasons": [
-        "insufficient_primary_lead"
+        "insufficient_primary_score",
+        "insufficient_total_score"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -3865,56 +3742,56 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:456ad848bd366d33",
-        "name": "Divider",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Divider"
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
       },
       "storyVariant": {
-        "entryId": "components-display-divider--default",
+        "entryId": "reactlib-player--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
         }
       ]
     },
     {
       "fallbackReasons": [
-        "used_customer_profile_tier_priority",
-        "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
       ],
       "figma": {
         "familyKey": "component:1:43658",
         "familyName": "<Stack6>(Nested)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack6>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9445:32105"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '04ddd87c8c56f2622c43c045e5303b45dd18f3b0' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -3945,16 +3822,17 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
+        "reason": "match_unmatched",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 55,
-        "status": "ambiguous"
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
       },
       "rejectionReasons": [
-        "insufficient_primary_lead"
+        "insufficient_primary_score",
+        "insufficient_total_score"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -3985,31 +3863,31 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:456ad848bd366d33",
-        "name": "Divider",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Divider"
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
       },
       "storyVariant": {
-        "entryId": "components-display-divider--default",
+        "entryId": "reactlib-player--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
         }
       ]
     },
@@ -4018,7 +3896,6 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -4026,18 +3903,18 @@
         "familyKey": "component:1:51269",
         "familyName": "<TextField>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=False, Disabled=False, (Password)=None",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<TextField>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "2736:207711"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '17b74e3916ec4140abed02ec6ce2cddfe22a5f4e' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -4091,19 +3968,56 @@
           }
         ]
       },
+      "iconResolution": {
+        "assetKind": "icon",
+        "byKey": {
+          "mit_icons": {
+            "iconKey": "mit_icons",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "react_ui.core.text_field": {
+            "iconKey": "react_ui.core.text_field",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "src.core.text_field.text_field_tsx": {
+            "iconKey": "src.core.text_field.text_field_tsx",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "text_field": {
+            "iconKey": "text_field",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          }
+        },
+        "counts": {
+          "ambiguous": 4,
+          "exactImportResolved": 0,
+          "unresolved": 0,
+          "wrapperFallbackAllowed": 0,
+          "wrapperFallbackDenied": 0
+        },
+        "iconKeys": [
+          "mit_icons",
+          "react_ui.core.text_field",
+          "src.core.text_field.text_field_tsx",
+          "text_field"
+        ]
+      },
       "libraryResolution": {
-        "componentKey": "TextField",
-        "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Components"
+        "reason": "match_ambiguous",
+        "status": "not_applicable"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 92,
-        "status": "matched"
+        "confidence": "medium",
+        "confidenceScore": 62,
+        "status": "ambiguous"
       },
-      "rejectionReasons": [],
+      "rejectionReasons": [
+        "insufficient_primary_lead"
+      ],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -4123,7 +4037,6 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -4134,15 +4047,15 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:54ebf974864973f0",
+        "familyId": "family:07d620820cf5c051",
         "name": "TextField",
-        "storyCount": 4,
-        "tier": "Components",
-        "title": "Components/Inputs/TextField"
+        "storyCount": 2,
+        "tier": "ReactUI",
+        "title": "ReactUI/Core/TextField"
       },
       "storyVariant": {
-        "entryId": "components-inputs-textfield--medium",
-        "storyName": "Medium"
+        "entryId": "reactui-core-textfield--default",
+        "storyName": "Default"
       },
       "usedEvidence": [
         {
@@ -4151,12 +4064,12 @@
           "role": "candidate_selection"
         },
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
+          "class": "customer_profile_tier_priority",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -4187,7 +4100,6 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -4195,18 +4107,18 @@
         "familyKey": "component:1:53140",
         "familyName": "<TextField>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Has Value=false, Placeholder=false, State=Enabled, Size=Medium, data-variant=default, Multiline=True, Disabled=False, (Password)=None",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<TextField>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "10796:42262"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '0a9c11a816f4e4492dd41e75276aa2fd35f029b3' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -4260,19 +4172,56 @@
           }
         ]
       },
+      "iconResolution": {
+        "assetKind": "icon",
+        "byKey": {
+          "mit_icons": {
+            "iconKey": "mit_icons",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "react_ui.core.text_field": {
+            "iconKey": "react_ui.core.text_field",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "src.core.text_field.text_field_tsx": {
+            "iconKey": "src.core.text_field.text_field_tsx",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          },
+          "text_field": {
+            "iconKey": "text_field",
+            "reason": "match_ambiguous",
+            "status": "ambiguous"
+          }
+        },
+        "counts": {
+          "ambiguous": 4,
+          "exactImportResolved": 0,
+          "unresolved": 0,
+          "wrapperFallbackAllowed": 0,
+          "wrapperFallbackDenied": 0
+        },
+        "iconKeys": [
+          "mit_icons",
+          "react_ui.core.text_field",
+          "src.core.text_field.text_field_tsx",
+          "text_field"
+        ]
+      },
       "libraryResolution": {
-        "componentKey": "TextField",
-        "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Components"
+        "reason": "match_ambiguous",
+        "status": "not_applicable"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 92,
-        "status": "matched"
+        "confidence": "medium",
+        "confidenceScore": 62,
+        "status": "ambiguous"
       },
-      "rejectionReasons": [],
+      "rejectionReasons": [
+        "insufficient_primary_lead"
+      ],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -4292,7 +4241,6 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -4303,15 +4251,15 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:54ebf974864973f0",
+        "familyId": "family:07d620820cf5c051",
         "name": "TextField",
-        "storyCount": 4,
-        "tier": "Components",
-        "title": "Components/Inputs/TextField"
+        "storyCount": 2,
+        "tier": "ReactUI",
+        "title": "ReactUI/Core/TextField"
       },
       "storyVariant": {
-        "entryId": "components-inputs-textfield--medium",
-        "storyName": "Medium"
+        "entryId": "reactui-core-textfield--default",
+        "storyName": "Default"
       },
       "usedEvidence": [
         {
@@ -4320,12 +4268,12 @@
           "role": "candidate_selection"
         },
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
+          "class": "customer_profile_tier_priority",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -4369,14 +4317,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '3501d3db5ebd2a302d7cafb5d8bfc97681710979' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 10,
         "variantProperties": [
@@ -4573,14 +4520,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'd6f0a0d97000e5a52322a698fee226141918c8df' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'd6f0a0d97000e5a52322a698fee226141918c8df' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -4764,7 +4710,6 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -4772,18 +4717,18 @@
         "familyKey": "component:1:38329",
         "familyName": "<Typography>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Variant=label04Light, Color=Default",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Typography>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "13351:55640"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '216a6629dde88e0e729cd2a2015db3508d7ec3ef' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-          "resolutionSource": "live",
-          "status": "resolved"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -4817,8 +4762,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 91,
+        "confidence": "medium",
+        "confidenceScore": 56,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -4941,11 +4886,6 @@
           "role": "candidate_selection"
         },
         {
-          "class": "design_link",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -4981,14 +4921,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'ba2e5c961c037095c8e5ca8bf9e325bd4e7d9450' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -5110,14 +5049,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '41016ac98a47d6dbf915c75e969a256866bdb16b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '41016ac98a47d6dbf915c75e969a256866bdb16b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -5239,14 +5177,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 5,
         "variantProperties": []
@@ -5368,14 +5305,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '3158d6bd65092cc526a20a67f94d00d1b86e7919' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -5497,14 +5433,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '994b4de2bd1cf7e1a5f8fdc0683cf47e219f98e6' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 3,
         "variantProperties": []
@@ -5626,14 +5561,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '683ca71963a6efdc806651d53e03e8b7cc56369b' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 2,
         "variantProperties": []
@@ -5755,14 +5689,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -5884,14 +5817,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '4781fef603b4b5a340940a3dd2a62f3f27cfdcbf' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -6013,14 +5945,13 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "code": "E_LIBRARY_CACHE_ENTRY_MISSING",
+              "message": "Cached published component metadata for '6e99374fc7708f8d9226cbe8575212ba80f94b86' was missing from the library-resolution cache entry.",
+              "scope": "cache"
             }
           ],
-          "resolutionSource": "live",
-          "status": "error"
+          "resolutionSource": "local_catalog",
+          "status": "partial"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -6130,49 +6061,49 @@
     }
   ],
   "summary": {
-    "ambiguous": 8,
+    "ambiguous": 7,
     "iconResolution": {
       "byReason": {
-        "match_ambiguous": 0,
+        "match_ambiguous": 8,
         "match_unmatched": 36,
-        "not_icon_family": 29,
+        "not_icon_family": 27,
         "profile_family_unresolved": 0,
         "profile_icon_import_missing": 0,
-        "profile_icon_import_resolved": 0,
+        "profile_icon_import_resolved": 3,
         "profile_icon_wrapper_allowed": 0,
-        "profile_icon_wrapper_denied": 13,
+        "profile_icon_wrapper_denied": 10,
         "profile_icon_wrapper_missing": 0
       },
       "byStatus": {
-        "ambiguous": 0,
-        "not_applicable": 29,
-        "resolved_import": 0,
+        "ambiguous": 8,
+        "not_applicable": 27,
+        "resolved_import": 3,
         "unresolved": 36,
         "wrapper_fallback_allowed": 0,
-        "wrapper_fallback_denied": 13
+        "wrapper_fallback_denied": 10
       }
     },
     "libraryResolution": {
       "byReason": {
-        "match_ambiguous": 8,
-        "match_unmatched": 13,
+        "match_ambiguous": 7,
+        "match_unmatched": 16,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 14,
-        "profile_import_resolved": 7
+        "profile_import_missing": 13,
+        "profile_import_resolved": 6
       },
       "byStatus": {
-        "mui_fallback_allowed": 14,
+        "mui_fallback_allowed": 13,
         "mui_fallback_denied": 0,
-        "not_applicable": 21,
-        "resolved_import": 7
+        "not_applicable": 23,
+        "resolved_import": 6
       }
     },
-    "matched": 21,
+    "matched": 19,
     "storybookEntryCount": 499,
     "storybookFamilyCount": 289,
     "totalFigmaFamilies": 42,
-    "unmatched": 13
+    "unmatched": 16
   },
   "version": 1
 }
