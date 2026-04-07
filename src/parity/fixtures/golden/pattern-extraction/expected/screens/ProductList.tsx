@@ -1,12 +1,12 @@
 import { Box, Container, List, ListItem, ListItemText, Typography } from "@mui/material";
 
-const sharedSxStyle1 = { width: "91.8%", maxWidth: "358px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "#ffffff", borderRadius: 1 };
+const sharedSxStyle1 = { width: "91.8%", maxWidth: "358px", minHeight: "100px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1, bgcolor: "background.paper", borderRadius: 1 };
 const sharedSxStyle2 = { width: "76px", height: "76px", objectFit: "cover", display: "block" };
 const sharedSxStyle3 = { width: "67%", maxWidth: "240px", minHeight: "76px", display: "flex", flexDirection: "column", gap: 0.333 };
 
 export default function ProductListScreen() {
   return (
-    <Container id="main-content" maxWidth="sm" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 704px)", bgcolor: "#f5f7fa", px: 1.333, py: 1.333 }}>
+    <Container id="main-content" maxWidth="sm" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 704px)", bgcolor: "background.paper", px: 1.333, py: 1.333 }}>
       {/* @ir:start list-title Title text */}
       <Typography data-ir-id="list-title" data-ir-name="Title" variant="h1" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Products"}</Typography>
       {/* @ir:end list-title */}

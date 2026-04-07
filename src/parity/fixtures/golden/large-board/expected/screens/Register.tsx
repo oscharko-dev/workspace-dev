@@ -6,7 +6,7 @@ import { RegisterFormContextProvider, useRegisterFormContext } from "../context/
 function RegisterScreenContent() {
   const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitted } = useRegisterFormContext();
   return (
-    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "#ffffff", px: 1, py: 1 }}>
+    <Container id="main-content" maxWidth="sm" role="main" component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)", bgcolor: "background.paper", px: 1, py: 1 }}>
       {/* @ir:start reg-title Title text */}
       <Typography data-ir-id="reg-title" data-ir-name="Title" variant="h2" component="h1" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Create Account"}</Typography>
       {/* @ir:end reg-title */}
@@ -34,7 +34,7 @@ function RegisterScreenContent() {
               aria-describedby={"muiformcontrolroot_reg_name-helper-text"}
         sx={{
           width: "87.7%", maxWidth: "342px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 0.5,
-          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "#666b75" }
+          "& .MuiInputLabel-root": { color: "text.secondary" }
         }}
 
               slotProps={{

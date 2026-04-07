@@ -39,9 +39,9 @@ function RegistrationScreenContent() {
                 aria-describedby={"muitextfieldroot_first_name_field-helper-text"}
           sx={{
             width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
-            "& .MuiOutlinedInput-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "primary.main" },
+            "& .MuiOutlinedInput-root": { color: "primary.main" },
             "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
-            "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
+            "& .MuiInputLabel-root": { color: "secondary.main" }
           }}
 
                 slotProps={{
@@ -77,9 +77,9 @@ function RegistrationScreenContent() {
                 aria-describedby={"muitextfieldroot_last_name_field-helper-text"}
           sx={{
             width: "48.4%", maxWidth: "180px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
-            "& .MuiOutlinedInput-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "primary.main" },
+            "& .MuiOutlinedInput-root": { color: "primary.main" },
             "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
-            "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
+            "& .MuiInputLabel-root": { color: "secondary.main" }
           }}
 
                 slotProps={{
@@ -121,7 +121,7 @@ function RegistrationScreenContent() {
         sx={{
           width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "column", gap: 0.667,
           "& .MuiOutlinedInput-notchedOutline": { borderColor: "#bfc4cc" },
-          "& .MuiInputLabel-root": { fontFamily: "Inter, Roboto, Arial, sans-serif", color: "secondary.main" }
+          "& .MuiInputLabel-root": { color: "secondary.main" }
         }}
 
               slotProps={{

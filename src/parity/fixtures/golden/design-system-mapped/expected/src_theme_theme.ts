@@ -63,7 +63,6 @@ export const appTheme = extendTheme({
     MuiTextField: {
       styleOverrides: {
         root: {
-          backgroundColor: "#ffffff",
           borderRadius: 0.75
         }
       }

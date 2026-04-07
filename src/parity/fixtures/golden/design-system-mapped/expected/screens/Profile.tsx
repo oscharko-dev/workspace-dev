@@ -22,7 +22,7 @@ const patternContextInitialState: ProfilePatternContextState = {
 
 function ProfileScreenContent() {
   return (
-    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 401px)", bgcolor: "#f7f7fa", px: 2, py: 2 }}>
+    <Container id="main-content" maxWidth="md" role="main" sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 401px)", bgcolor: "background.paper", px: 2, py: 2 }}>
       {/* @ir:start profile-title Title text */}
       <Typography data-ir-id="profile-title" data-ir-name="Title" variant="h2" component="h4" sx={{ color: "primary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"User Profile"}</Typography>
       {/* @ir:end profile-title */}
@@ -65,7 +65,7 @@ function ProfileScreenContent() {
         {/* @ir:start badge-count Badge badge */}
         <Badge data-ir-id="badge-count" data-ir-name="Badge" badgeContent={"3"} color="primary" sx={{ position: "absolute", left: "28px", top: "0px", width: "20px", minHeight: "20px" }}>
           {/* @ir:start badge-text Count text */}
-          <Typography data-ir-id="badge-text" data-ir-name="Count" variant="caption" sx={{ position: "absolute", left: "6px", top: "2px", color: "#ffffff", textAlign: "center", whiteSpace: "pre-wrap" }}>{"3"}</Typography>
+          <Typography data-ir-id="badge-text" data-ir-name="Count" variant="caption" sx={{ position: "absolute", left: "6px", top: "2px", color: "background.paper", textAlign: "center", whiteSpace: "pre-wrap" }}>{"3"}</Typography>
           {/* @ir:end badge-text */}
         </Badge>
         {/* @ir:end badge-count */}
@@ -75,7 +75,7 @@ function ProfileScreenContent() {
   );
 }
 
-const sharedSxStyle1 = { width: "30%", maxWidth: "240px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1, bgcolor: "#ffffff", borderRadius: 0.75 };
+const sharedSxStyle1 = { width: "30%", maxWidth: "240px", minHeight: "120px", display: "flex", flexDirection: "column", gap: 1, bgcolor: "background.paper", borderRadius: 0.75 };
 
 export default function ProfileScreen() {
   return (
