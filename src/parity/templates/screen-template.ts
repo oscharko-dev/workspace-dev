@@ -100,13 +100,15 @@ import {
   buildTabPanelA11yId,
   buildAccordionHeaderA11yId,
   buildAccordionPanelA11yId,
-  isRtlLocale
+  isRtlLocale,
+  inferValidationRulesFromEvidence
 } from "../generator-core.js";
 import type {
   RenderContext,
   VirtualParent,
   AccessibilityWarning,
   ValidationFieldType,
+  ValidationRule,
   ResolvedFormHandlingMode,
   HeadingComponent,
   InteractiveFieldModel,
@@ -6044,8 +6046,21 @@ export const assembleFallbackDependencies = ({
     }),
     validationRulesMap: Object.fromEntries(
       fields
-        .filter((field) => field.validationRules && field.validationRules.length > 0)
-        .map((field) => [field.key, field.validationRules!])
+        .map((field) => {
+          const explicitRules = field.validationRules ?? [];
+          const variantEvidence = variantFieldEvidenceByFieldKey[field.key];
+          const evidenceMessage = variantEvidence?.message?.trim() ?? "";
+          const inferredRules = evidenceMessage.length > 0
+            ? inferValidationRulesFromEvidence(evidenceMessage)
+            : [];
+          const explicitTypes = new Set(explicitRules.map((rule) => rule.type));
+          const mergedRules = [
+            ...explicitRules,
+            ...inferredRules.filter((rule) => !explicitTypes.has(rule.type))
+          ];
+          return mergedRules.length > 0 ? [field.key, mergedRules] : undefined;
+        })
+        .filter((entry): entry is [string, ValidationRule[]] => entry !== undefined)
     )
   });
 

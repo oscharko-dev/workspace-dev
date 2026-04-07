@@ -60,6 +60,82 @@ export interface ValidationRule {
   message: string;
 }
 
+/**
+ * Infer typed Zod validation rules from an error frame evidence message.
+ *
+ * Parses common German/English error message patterns and returns
+ * `ValidationRule[]` that drive actual Zod constraints. Returns an empty
+ * array when the message does not match any known pattern.
+ */
+export const inferValidationRulesFromEvidence = (evidenceMessage: string): ValidationRule[] => {
+  const trimmed = evidenceMessage.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+  const lower = trimmed.toLowerCase();
+
+  // --- Specific format patterns (check before generic "required") ----------
+
+  // Min-length extraction: "mindestens N Zeichen" / "at least N characters" / "minimum N characters"
+  const minLengthMatch = lower.match(/(?:mindestens|at\s+least|minimum)\s+(\d+)\s+(?:zeichen|characters?)/);
+  if (minLengthMatch) {
+    return [{ type: "minLength", value: Number(minLengthMatch[1]), message: trimmed }];
+  }
+
+  // Max-length extraction: "maximal N Zeichen" / "at most N characters" / "maximum N characters"
+  const maxLengthMatch = lower.match(/(?:maximal|at\s+most|maximum|höchstens|max\.?)\s+(\d+)\s+(?:zeichen|characters?)/);
+  if (maxLengthMatch) {
+    return [{ type: "maxLength", value: Number(maxLengthMatch[1]), message: trimmed }];
+  }
+
+  // Email
+  if (/e[\s-]?mail/i.test(lower)) {
+    return [{ type: "pattern", value: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", message: trimmed }];
+  }
+
+  // IBAN
+  if (/\biban\b/.test(lower)) {
+    return [{ type: "pattern", value: "^[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}([A-Z0-9]?){0,16}$", message: trimmed }];
+  }
+
+  // BIC / SWIFT
+  if (/\b(?:bic|swift)\b/.test(lower)) {
+    return [{ type: "pattern", value: "^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$", message: trimmed }];
+  }
+
+  // PLZ (German postal code)
+  if (/\b(?:plz|postleitzahl)\b/.test(lower)) {
+    return [{ type: "pattern", value: "^\\d{5}$", message: trimmed }];
+  }
+
+  // Phone / Telefon
+  if (/(?:telefon|phone|rufnummer)/.test(lower)) {
+    return [{ type: "pattern", value: "^[+]?[0-9\\s\\-()]{6,20}$", message: trimmed }];
+  }
+
+  // Date / Datum
+  if (/\b(?:datum|date)\b/.test(lower)) {
+    return [{ type: "pattern", value: "^\\d{2}\\.\\d{2}\\.\\d{4}$", message: trimmed }];
+  }
+
+  // --- Generic "required" patterns (checked last) -------------------------
+
+  const requiredPatterns = [
+    "pflichtfeld",
+    "required",
+    "dieses feld ist erforderlich",
+    "bitte füllen sie dieses feld aus",
+    "dieses feld muss ausgefüllt werden",
+    "this field is required",
+    "eingabe erforderlich"
+  ];
+  if (requiredPatterns.some((pattern) => lower.includes(pattern))) {
+    return [{ type: "minLength", value: 1, message: trimmed }];
+  }
+
+  return [];
+};
+
 export interface FormContextFileSpec {
   file: GeneratedFile;
   providerName: string;
