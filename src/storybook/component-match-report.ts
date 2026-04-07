@@ -66,6 +66,12 @@ const MATCHED_TOTAL_THRESHOLD = 45;
 const AMBIGUOUS_PRIMARY_MIN = 20;
 const PRIMARY_LEAD_THRESHOLD = 8;
 const MAX_TIER_PRIORITY_SCORE = 10;
+const MATCH_QUALITY_EVIDENCE_CLASSES: ReadonlySet<string> = new Set([
+  "canonical_family_name",
+  "design_link",
+  "semantic_type",
+  "variant_or_prop_overlap"
+]);
 const COMPONENT_MATCH_LIBRARY_RESOLUTION_STATUSES = [
   "resolved_import",
   "mui_fallback_allowed",
@@ -1125,11 +1131,13 @@ const toConfidence = (totalScore: number): ComponentMatchConfidence => {
 const resolveMatchStatus = ({
   topCandidate,
   runnerUp,
-  tierPriorityResolved = false
+  tierPriorityResolved = false,
+  matchEvidenceCount = 0
 }: {
   topCandidate: CandidateScore | undefined;
   runnerUp: CandidateScore | undefined;
   tierPriorityResolved?: boolean;
+  matchEvidenceCount?: number;
 }): {
   status: ComponentMatchStatus;
   rejectionReasons: ComponentMatchRejectionReason[];
@@ -1146,6 +1154,27 @@ const resolveMatchStatus = ({
     topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD &&
     topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD &&
     (primaryLead >= PRIMARY_LEAD_THRESHOLD || tierPriorityResolved)
+  ) {
+    return {
+      status: "matched",
+      rejectionReasons: []
+    };
+  }
+
+  if (
+    tierPriorityResolved &&
+    topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD
+  ) {
+    return {
+      status: "matched",
+      rejectionReasons: []
+    };
+  }
+
+  if (
+    matchEvidenceCount >= 2 &&
+    topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD &&
+    primaryLead > 0
   ) {
     return {
       status: "matched",
@@ -1654,11 +1683,30 @@ export const buildComponentMatchReportArtifact = ({
           tierPriorityResolved = true;
         }
       }
+      const matchEvidenceCount = topCandidate
+        ? new Set(
+            topCandidate.usedEvidence
+              .filter((e) => MATCH_QUALITY_EVIDENCE_CLASSES.has(e.class))
+              .map((e) => e.class)
+          ).size
+        : 0;
       const match = resolveMatchStatus({
         topCandidate,
         runnerUp,
-        tierPriorityResolved
+        tierPriorityResolved,
+        matchEvidenceCount
       });
+
+      if (match.status === "matched" && topCandidate) {
+        const matchPrimaryLead = topCandidate.primaryScore - (runnerUp?.primaryScore ?? 0);
+        const wouldHaveMatchedStrict =
+          topCandidate.primaryScore >= MATCHED_PRIMARY_THRESHOLD &&
+          topCandidate.totalScore >= MATCHED_TOTAL_THRESHOLD &&
+          (matchPrimaryLead >= PRIMARY_LEAD_THRESHOLD || tierPriorityResolved);
+        if (!wouldHaveMatchedStrict) {
+          topCandidate.fallbackReasons.push("used_secondary_match_resolution");
+        }
+      }
 
       const selectedFamily =
         topCandidate && topCandidate.totalScore > 0

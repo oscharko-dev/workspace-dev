@@ -452,6 +452,7 @@ export type ComponentMatchFallbackReason =
   | "used_reference_only_docs_tiebreaker"
   | "used_customer_profile_tier_priority"
   | "used_customer_profile_tier_priority_tiebreaker"
+  | "used_secondary_match_resolution"
   | "selected_variant_by_overlap"
   | "selected_variant_by_attached_story_tiebreak"
   | "selected_variant_by_entry_id_tiebreak"
