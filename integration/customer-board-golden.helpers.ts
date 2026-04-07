@@ -97,7 +97,7 @@ export const resolveCustomerBoardLiveRuntimeSettings = () =>
   resolveRuntimeSettings({
     enablePreview: false,
     skipInstall: false,
-    enableUiValidation: false,
+    enableUiValidation: true,
     enableUnitTestValidation: false,
     figmaRequestTimeoutMs: 30_000,
     figmaMaxRetries: 4,
@@ -1201,7 +1201,7 @@ const createExecutionContext = async ({
   const runtime = resolveRuntimeSettings({
     enablePreview: false,
     skipInstall: false,
-    enableUiValidation: false,
+    enableUiValidation: true,
     enableUnitTestValidation: false,
     figmaMaxRetries: 1,
     figmaRequestTimeoutMs: 1_000,
