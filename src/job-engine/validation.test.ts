@@ -265,7 +265,7 @@ test("runProjectValidationWithDeps skips seeded node_modules reuse when lockfile
     const nodeModulesMetadata = await lstat(nodeModulesDir);
     assert.equal(nodeModulesMetadata.isSymbolicLink(), false);
     assert.deepEqual(calls, [
-      "pnpm install --ignore-scripts --reporter append-only --prefer-offline",
+      "pnpm install --ignore-scripts --no-frozen-lockfile --reporter append-only --prefer-offline",
       "pnpm lint --fix",
       "pnpm lint",
       "pnpm typecheck",
@@ -1692,7 +1692,7 @@ test("runProjectValidation forwards optional seed and abort settings to the shar
   }
 });
 
-test("#698 lockfileMutable uses --ignore-scripts instead of --frozen-lockfile", async () => {
+test("#698 lockfileMutable disables frozen-lockfile enforcement for generated-project installs", async () => {
   const generatedProjectDir = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-validation-lockfile-mutable-")
   );
@@ -1717,6 +1717,11 @@ test("#698 lockfileMutable uses --ignore-scripts instead of --frozen-lockfile", 
     const installCall = calls.find((call) => call.startsWith("pnpm install"));
     assert.ok(installCall, "Expected a pnpm install call");
     assert.match(installCall, /--ignore-scripts/, "Expected --ignore-scripts in mutable lockfile install");
+    assert.match(
+      installCall,
+      /--no-frozen-lockfile/,
+      "Expected --no-frozen-lockfile in mutable lockfile install"
+    );
     assert.ok(
       !installCall.includes("--frozen-lockfile"),
       "Expected no --frozen-lockfile in mutable lockfile install"

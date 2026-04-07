@@ -16,6 +16,7 @@
         "args": [
           "install",
           "--ignore-scripts",
+          "--no-frozen-lockfile",
           "--reporter",
           "append-only",
           "--prefer-offline"

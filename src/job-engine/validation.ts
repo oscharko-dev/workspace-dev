@@ -499,7 +499,7 @@ export const runProjectValidationWithDeps = async ({
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
   const installArgs = lockfileMutable
-    ? ["install", "--ignore-scripts", "--reporter", "append-only"]
+    ? ["install", "--ignore-scripts", "--no-frozen-lockfile", "--reporter", "append-only"]
     : ["install", "--frozen-lockfile", "--reporter", "append-only"];
   if (installPreferOffline) {
     installArgs.push("--prefer-offline");
