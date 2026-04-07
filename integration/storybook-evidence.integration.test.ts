@@ -262,7 +262,6 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
     };
     components: Array<{
       title: string;
-      componentPath?: string;
       propKeys: string[];
     }>;
   };
@@ -310,17 +309,7 @@ test("storybook public artifact integration: CLI generates deterministic sanitiz
   assert.equal(firstComponentsArtifact.components[0]?.title, "ReactUI/Core/Tooltip");
   assert.deepEqual(firstComponentsArtifact.components[0]?.propKeys, ["infos", "title"]);
   assert.equal(firstComponentsBytes.includes("src/core/Tooltip/Tooltip.tsx"), false);
-  for (const component of firstComponentsArtifact.components) {
-    if (typeof component.componentPath !== "string") {
-      continue;
-    }
-
-    const normalizedComponentPath = component.componentPath.trim();
-    assert.ok(normalizedComponentPath.length > 0);
-    assert.equal(normalizedComponentPath.startsWith("./"), false);
-    assert.equal(normalizedComponentPath.startsWith("/"), false);
-    assert.equal(normalizedComponentPath.includes("src/"), false);
-  }
+  assert.equal(firstComponentsBytes.includes("componentPath"), false);
 
   const secondSummary = await runGenerator();
   const secondCatalogBytes = await readFile(path.join(buildDir, catalogFileName), "utf8");

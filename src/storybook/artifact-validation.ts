@@ -126,9 +126,7 @@ export const parseStorybookComponentsArtifact = ({
       !isStringArray(component.propKeys) ||
       !isNonNegativeNumber(component.storyCount) ||
       typeof component.hasDesignReference !== "boolean" ||
-      ("componentPath" in component &&
-        component.componentPath !== undefined &&
-        typeof component.componentPath !== "string")
+      ("componentPath" in component && component.componentPath !== undefined)
     ) {
       throw new Error("Expected storybook.components entries to contain valid component metadata.");
     }

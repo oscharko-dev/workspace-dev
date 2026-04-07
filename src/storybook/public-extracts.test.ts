@@ -275,12 +275,9 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
 
   assert.ok(tooltipComponent);
   assert.deepEqual(tooltipComponent.propKeys, ["infos", "title"]);
-  assert.equal(tooltipComponent.componentPath, undefined);
+  assert.equal("componentPath" in tooltipComponent, false);
   assert.ok(muiComponent);
-  assert.equal(
-    muiComponent.componentPath,
-    "@mui/material"
-  );
+  assert.equal("componentPath" in muiComponent, false);
 
   const serializedTokens = JSON.stringify(artifacts.tokensArtifact);
   const serializedThemes = JSON.stringify(artifacts.themesArtifact);
@@ -291,7 +288,8 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(serializedComponents.includes("iframeBundlePath"), false);
   assert.equal(serializedComponents.includes("buildRoot"), false);
   assert.equal(serializedComponents.includes("src/core/Tooltip/Tooltip.tsx"), false);
-  assert.equal(serializedComponents.includes("@mui/material"), true);
+  assert.equal(serializedComponents.includes("componentPath"), false);
+  assert.equal(serializedComponents.includes("@mui/material"), false);
   assert.equal(serializedTokens.includes("bundlePath"), false);
   assert.equal(serializedTokens.includes("importPath"), false);
   assert.equal(serializedTokens.includes("buildRoot"), false);
@@ -300,5 +298,5 @@ test("buildStorybookPublicArtifacts extracts DTCG-aligned tokens, themes, and sa
   assert.equal(serializedThemes.includes("bundlePath"), false);
   assert.equal(serializedThemes.includes("importPath"), false);
   assert.equal(serializedThemes.includes("buildRoot"), false);
-  assert.equal(serializedComponents.includes("@mui/material"), true);
+  assert.equal(serializedComponents.includes("@mui/material"), false);
 });
