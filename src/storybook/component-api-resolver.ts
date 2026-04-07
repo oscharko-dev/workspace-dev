@@ -301,19 +301,8 @@ const findPublicComponent = ({
   if (!family || !componentsArtifact) {
     return undefined;
   }
-  return (
-    componentsArtifact.components.find(
-      (component) =>
-        component.title === family.title &&
-        component.name === family.name &&
-        component.componentPath === family.componentPath
-    ) ??
-    componentsArtifact.components.find(
-      (component) => component.title === family.title && component.name === family.name
-    ) ??
-    componentsArtifact.components.find(
-      (component) => component.componentPath === family.componentPath && component.name === family.name
-    )
+  return componentsArtifact.components.find(
+    (component) => component.title === family.title && component.name === family.name
   );
 };
 

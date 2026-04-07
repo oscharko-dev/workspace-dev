@@ -337,7 +337,6 @@ export interface StorybookPublicComponent {
   id: string;
   name: string;
   title: string;
-  componentPath?: string;
   propKeys: string[];
   storyCount: number;
   hasDesignReference: boolean;
