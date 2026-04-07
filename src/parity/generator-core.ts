@@ -147,7 +147,8 @@ export {
   inferValidationMode,
   buildSemanticInputModel,
   toFormContextProviderName,
-  toFormContextHookName
+  toFormContextHookName,
+  inferValidationRulesFromEvidence
 } from "./generator-forms.js";
 export type {
   ValidationFieldType,
