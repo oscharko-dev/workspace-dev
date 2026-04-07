@@ -2,7 +2,6 @@
   "artifact": "storybook.components",
   "components": [
     {
-      "componentPath": "@mui/material",
       "hasDesignReference": true,
       "id": "component:a3e9c46a86aa4f97",
       "name": "Tooltip",
@@ -21,7 +20,6 @@
       "title": "Components/Display/Tooltip"
     },
     {
-      "componentPath": "@finanzinformatik/cpl-module-reactlib",
       "hasDesignReference": false,
       "id": "component:8abace4519137db3",
       "name": "BrandIcon",
@@ -33,7 +31,6 @@
       "title": "Reactlib/BrandIcon"
     },
     {
-      "componentPath": "@finanzinformatik/cpl-module-reactlib",
       "hasDesignReference": false,
       "id": "component:9c904f7ed95b6b35",
       "name": "DynamicTypography",
@@ -48,7 +45,6 @@
       "title": "Reactlib/DynamicTypography"
     },
     {
-      "componentPath": "@finanzinformatik/cpl-module-reactlib",
       "hasDesignReference": false,
       "id": "component:42938285fdfc72ec",
       "name": "Player",

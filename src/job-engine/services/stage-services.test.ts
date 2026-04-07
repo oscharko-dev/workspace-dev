@@ -6916,6 +6916,146 @@ test("ValidateProjectService rejects malformed storybook.components artifacts", 
   assert.equal(summary?.storybook?.artifacts?.components?.filePath, storybookComponentsPath);
 });
 
+test("ValidateProjectService rejects storybook.components artifacts that expose componentPath", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.requestedStorybookStaticDir = path.join(executionContext.resolvedWorkspaceRoot, "storybook-static");
+  executionContext.resolvedStorybookStaticDir = executionContext.requestedStorybookStaticDir;
+
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify({ name: "generated-app", private: true }, null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify({ compilerOptions: { strict: true }, include: ["src"] }, null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"), "export const App = () => null;\n", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-storybook-component-path"
+    } satisfies GenerationDiffContext
+  });
+
+  const storybookCatalogPath = path.join(executionContext.paths.jobDir, "storybook.catalog.json");
+  const storybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.json");
+  const storybookTokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const storybookThemesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const storybookComponentsPath = path.join(executionContext.paths.jobDir, "storybook.components.json");
+  await writeFile(
+    storybookCatalogPath,
+    `${JSON.stringify(createStorybookCatalogArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookEvidencePath,
+    `${JSON.stringify(createStorybookEvidenceArtifactForStageServices({ evidence: [] }), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookTokensPath,
+    `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookThemesPath,
+    `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookComponentsPath,
+    `${JSON.stringify(
+      {
+        ...createStorybookComponentsArtifactForStageServices(),
+        stats: {
+          entryCount: 1,
+          componentCount: 1,
+          componentWithDesignReferenceCount: 1,
+          propKeyCount: 0
+        },
+        components: [
+          {
+            id: "component:button",
+            name: "Button",
+            title: "Button",
+            propKeys: [],
+            storyCount: 1,
+            hasDesignReference: true,
+            componentPath: "@customer/ui/Button"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookCatalog,
+    stage: "ir.derive",
+    absolutePath: storybookCatalogPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "ir.derive",
+    absolutePath: storybookEvidencePath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "ir.derive",
+    absolutePath: storybookTokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "ir.derive",
+    absolutePath: storybookThemesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookComponents,
+    stage: "ir.derive",
+    absolutePath: storybookComponentsPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.execute(undefined, stageContextFor("validate.project"));
+    },
+    /Storybook artifacts are unreadable or malformed/
+  );
+
+  assert.equal(validationInvoked, false);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    storybook?: {
+      status?: string;
+      artifacts?: {
+        components?: { status?: string; filePath?: string };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.storybook?.status, "failed");
+  assert.equal(summary?.storybook?.artifacts?.components?.status, "invalid");
+  assert.equal(summary?.storybook?.artifacts?.components?.filePath, storybookComponentsPath);
+});
+
 test("ValidateProjectService reports style.status as not_available for non-Storybook validation runs", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({
