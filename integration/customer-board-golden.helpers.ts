@@ -55,6 +55,7 @@ import {
   buildStorybookPublicArtifacts,
   type StorybookPublicArtifacts
 } from "../src/storybook/public-extracts.js";
+import { parseStorybookComponentsArtifact } from "../src/storybook/artifact-validation.js";
 import { resolveStorybookTheme } from "../src/storybook/theme-resolver.js";
 import {
   type StorybookEntryType,
@@ -477,6 +478,12 @@ const collectForbiddenArtifactLeaks = ({
   );
 };
 
+const isStorybookComponentsArtifactValue = (
+  value: unknown
+): value is { artifact: "storybook.components"; components: unknown[] } => {
+  return isPlainRecord(value) && value.artifact === "storybook.components" && Array.isArray(value.components);
+};
+
 export const assertCustomerBoardPublicArtifactSanitized = ({
   label,
   value
@@ -487,6 +494,16 @@ export const assertCustomerBoardPublicArtifactSanitized = ({
   const leaks = collectForbiddenArtifactLeaks({ value });
   if (leaks.length > 0) {
     throw new Error(`${label} contains forbidden public artifact leakage at: ${leaks.join(", ")}`);
+  }
+  if (isStorybookComponentsArtifactValue(value)) {
+    try {
+      parseStorybookComponentsArtifact({
+        input: JSON.stringify(value)
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${label} contains invalid public component metadata: ${message}`);
+    }
   }
 };
 
@@ -609,19 +626,13 @@ const sanitizeComponentsArtifact = ({
   const sanitized = {
     ...artifact,
     components: artifact.components.map((component) => {
-      const { componentPath, ...rest } = component;
-      const normalizedComponentPath = componentPath?.trim();
-      return {
-        ...rest,
-        ...(normalizedComponentPath &&
-        !normalizedComponentPath.startsWith("./") &&
-        !normalizedComponentPath.startsWith("/") &&
-        !normalizedComponentPath.includes("src/")
-          ? { componentPath: normalizedComponentPath }
-          : {})
-      };
+      const { componentPath: _componentPath, ...rest } = component as typeof component & { componentPath?: string };
+      return rest;
     })
   } satisfies StorybookPublicComponentsArtifact;
+  parseStorybookComponentsArtifact({
+    input: JSON.stringify(sanitized)
+  });
   assertCustomerBoardPublicArtifactSanitized({
     label: "storybook.components",
     value: sanitized

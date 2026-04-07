@@ -192,6 +192,12 @@
     "registry": "https://registry.npmjs.org/",
     "provenance": true
   },
+  "pnpm": {
+    "overrides": {
+      "flatted": "^3.4.2",
+      "vitest>picomatch": "^4.0.4"
+    }
+  },
   "keywords": [
     "figma",
     "workspace",

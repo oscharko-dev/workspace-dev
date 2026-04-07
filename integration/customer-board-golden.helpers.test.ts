@@ -232,6 +232,38 @@ test("customer-board helper rejects public artifact leaks for internal Storybook
   );
 });
 
+test("customer-board helper rejects storybook.components artifacts that retain componentPath", () => {
+  assert.throws(
+    () => {
+      assertCustomerBoardPublicArtifactSanitized({
+        label: "storybook.components",
+        value: {
+          artifact: "storybook.components",
+          version: 1,
+          stats: {
+            entryCount: 1,
+            componentCount: 1,
+            componentWithDesignReferenceCount: 0,
+            propKeyCount: 0
+          },
+          components: [
+            {
+              id: "component:button",
+              name: "Button",
+              title: "Button",
+              propKeys: [],
+              storyCount: 1,
+              hasDesignReference: false,
+              componentPath: "@customer/ui/Button"
+            }
+          ]
+        }
+      });
+    },
+    /invalid public component metadata/
+  );
+});
+
 test("customer-board helper materializes runtime storybook evidence from curated hints without leaking build paths", () => {
   const hintsArtifact = createCustomerBoardStorybookEvidenceHintsArtifact({
     artifact: {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { parseStorybookComponentsArtifact } from "../src/storybook/artifact-validation.js";
 import {
   assertCustomerBoardPublicArtifactSanitized,
   collectActualFixtureOutputs,
@@ -50,6 +51,20 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assertCustomerBoardPublicArtifactSanitized({
     label: manifest.derived.storybookEvidenceHints,
     value: JSON.parse(committedEvidenceHints.content) as unknown
+  });
+  const committedComponents = committedBundle.files.get(manifest.derived.storybookComponents);
+  assert.ok(committedComponents, "Committed storybook components fixture must exist.");
+  assert.equal(
+    committedComponents.content.includes('"componentPath"'),
+    false,
+    "Committed storybook components fixture must not expose componentPath."
+  );
+  assertCustomerBoardPublicArtifactSanitized({
+    label: manifest.derived.storybookComponents,
+    value: JSON.parse(committedComponents.content) as unknown
+  });
+  parseStorybookComponentsArtifact({
+    input: committedComponents.content
   });
 
   const first = await executeCustomerBoardFixture({

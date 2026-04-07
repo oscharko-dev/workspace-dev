@@ -16,6 +16,7 @@
         "args": [
           "install",
           "--ignore-scripts",
+          "--no-frozen-lockfile",
           "--reporter",
           "append-only",
           "--prefer-offline"
@@ -194,22 +195,22 @@
       "counts": {
         "byReason": {
           "match_ambiguous": 7,
-          "match_unmatched": 16,
+          "match_unmatched": 14,
           "profile_family_unresolved": 0,
           "profile_import_family_mismatch": 0,
-          "profile_import_missing": 13,
+          "profile_import_missing": 15,
           "profile_import_resolved": 6
         },
         "byStatus": {
-          "mui_fallback_allowed": 13,
+          "mui_fallback_allowed": 15,
           "mui_fallback_denied": 0,
-          "not_applicable": 23,
+          "not_applicable": 21,
           "resolved_import": 6
         },
         "iconByReason": {
-          "match_ambiguous": 8,
+          "match_ambiguous": 0,
           "match_unmatched": 36,
-          "not_icon_family": 27,
+          "not_icon_family": 29,
           "profile_family_unresolved": 0,
           "profile_icon_import_missing": 0,
           "profile_icon_import_resolved": 3,
@@ -218,15 +219,15 @@
           "profile_icon_wrapper_missing": 0
         },
         "iconByStatus": {
-          "ambiguous": 8,
-          "not_applicable": 27,
+          "ambiguous": 0,
+          "not_applicable": 29,
           "resolved_import": 3,
           "unresolved": 36,
           "wrapper_fallback_allowed": 0,
           "wrapper_fallback_denied": 10
         }
       },
-      "issueCount": 77,
+      "issueCount": 67,
       "issues": [
         {
           "figmaFamilyKey": "component:1:49959",
@@ -398,8 +399,8 @@
           "figmaFamilyKey": "component:1:41763",
           "figmaFamilyName": "<Stack2>(Nested)",
           "kind": "component",
-          "message": "Figma family '<Stack2>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
+          "message": "Figma family '<Stack2>(Nested)' remains ambiguous in component.match_report.",
+          "reason": "match_ambiguous",
           "status": "not_applicable"
         },
         {
@@ -430,95 +431,7 @@
           "figmaFamilyKey": "component:1:43658",
           "figmaFamilyName": "<Stack6>(Nested)",
           "kind": "component",
-          "message": "Figma family '<Stack6>(Nested)' is unmatched in component.match_report.",
-          "reason": "match_unmatched",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "mit_icons",
-          "kind": "icon",
-          "message": "icon 'mit_icons' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "react_ui.core.text_field",
-          "kind": "icon",
-          "message": "icon 'react_ui.core.text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "src.core.text_field.text_field_tsx",
-          "kind": "icon",
-          "message": "icon 'src.core.text_field.text_field_tsx' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "text_field",
-          "kind": "icon",
-          "message": "icon 'text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:51269",
-          "figmaFamilyName": "<TextField>",
-          "kind": "component",
-          "message": "Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "not_applicable"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "mit_icons",
-          "kind": "icon",
-          "message": "icon 'mit_icons' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "react_ui.core.text_field",
-          "kind": "icon",
-          "message": "icon 'react_ui.core.text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "src.core.text_field.text_field_tsx",
-          "kind": "icon",
-          "message": "icon 'src.core.text_field.text_field_tsx' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "iconKey": "text_field",
-          "kind": "icon",
-          "message": "icon 'text_field' in Figma family '<TextField>' remains ambiguous in component.match_report.",
-          "reason": "match_ambiguous",
-          "status": "ambiguous"
-        },
-        {
-          "figmaFamilyKey": "component:1:53140",
-          "figmaFamilyName": "<TextField>",
-          "kind": "component",
-          "message": "Figma family '<TextField>' remains ambiguous in component.match_report.",
+          "message": "Figma family '<Stack6>(Nested)' remains ambiguous in component.match_report.",
           "reason": "match_ambiguous",
           "status": "not_applicable"
         },
@@ -928,15 +841,15 @@
       "summary": {
         "bySource": {
           "cache": 0,
-          "live": 0,
-          "localCatalog": 41
+          "live": 41,
+          "localCatalog": 0
         },
         "cacheHit": 0,
-        "entriesWithOriginFileKey": 0,
-        "error": 0,
+        "entriesWithOriginFileKey": 13,
+        "error": 28,
         "offlineReused": 0,
-        "partial": 41,
-        "resolved": 0,
+        "partial": 0,
+        "resolved": 13,
         "total": 41
       }
     },
@@ -969,9 +882,9 @@
       "ambiguous": 7,
       "docsOnlyFamilyNames": [],
       "docsOnlyReferenceCount": 0,
-      "matched": 19,
+      "matched": 21,
       "totalFigmaFamilies": 42,
-      "unmatched": 16
+      "unmatched": 14
     },
     "status": "ok"
   },

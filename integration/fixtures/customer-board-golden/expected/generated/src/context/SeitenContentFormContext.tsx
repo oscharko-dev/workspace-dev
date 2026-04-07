@@ -120,11 +120,19 @@ type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] 
 const createFieldSchema = <TSpec extends FieldSchemaSpec>({ spec }: { spec: TSpec }) => {
   return z.string().superRefine((rawValue, issueContext) => {
     const trimmed = rawValue.trim();
-    if (spec.required && trimmed.length === 0) {
-      issueContext.addIssue({ code: "custom", message: "This field is required." });
-      return;
-    }
+    const rules = spec.validationRules ?? [];
+    const requiredRule = rules.find(
+      (rule) => rule.type === "minLength" && typeof rule.value === "number" && rule.value === 1
+    );
     if (trimmed.length === 0) {
+      if (requiredRule) {
+        issueContext.addIssue({ code: "custom", message: requiredRule.message });
+        return;
+      }
+      if (spec.required) {
+        issueContext.addIssue({ code: "custom", message: "This field is required." });
+        return;
+      }
       return;
     }
 
@@ -249,7 +257,6 @@ const createFieldSchema = <TSpec extends FieldSchemaSpec>({ spec }: { spec: TSpe
     }
 
     // Advanced validation rules (min, max, minLength, maxLength, pattern)
-    const rules = spec.validationRules ?? [];
     if (rules.length > 0) {
       for (const rule of rules) {
         switch (rule.type) {
