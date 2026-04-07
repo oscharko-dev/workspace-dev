@@ -100,9 +100,11 @@ import {
   buildTabPanelA11yId,
   buildAccordionHeaderA11yId,
   buildAccordionPanelA11yId,
-  isRtlLocale,
-  inferValidationRulesFromEvidence
+  isRtlLocale
 } from "../generator-core.js";
+import {
+  classifyValidationEvidence
+} from "../generator-forms.js";
 import type {
   RenderContext,
   VirtualParent,
@@ -5617,6 +5619,7 @@ export interface FallbackDependencyAssembly {
 
 interface VariantFieldEvidenceAggregate {
   message?: string;
+  messages: string[];
   visualError: boolean;
 }
 
@@ -5642,9 +5645,14 @@ const collectVariantFieldEvidenceByContentScreen = ({
   for (const scenario of scenarios) {
     for (const [fieldKey, evidence] of Object.entries(scenario.fieldErrorEvidenceByFieldKey ?? {})) {
       const existing = aggregate.get(fieldKey);
-      const nextMessage = existing?.message ?? (evidence.message.trim().length > 0 ? evidence.message : undefined);
+      const trimmedMessage = evidence.message.trim();
+      const messages = [...(existing?.messages ?? [])];
+      if (trimmedMessage.length > 0 && !messages.includes(trimmedMessage)) {
+        messages.push(trimmedMessage);
+      }
       aggregate.set(fieldKey, {
-        ...(nextMessage ? { message: nextMessage } : {}),
+        ...(existing?.message ? { message: existing.message } : trimmedMessage.length > 0 ? { message: trimmedMessage } : {}),
+        messages,
         visualError: (existing?.visualError ?? false) || evidence.visualError
       });
     }
@@ -5991,15 +5999,63 @@ export const assembleFallbackDependencies = ({
   } = renderState;
   const preferVariantMessageInBaseMaps = validationMessagesOverrideExpression === undefined;
 
+  const resolveVariantEvidenceClassification = (
+    fieldKey: string
+  ): {
+    required: boolean;
+    validationType?: ValidationFieldType;
+    validationRules: ValidationRule[];
+  } | undefined => {
+    const variantEvidence = variantFieldEvidenceByFieldKey[fieldKey];
+    const messages = variantEvidence?.messages ?? (variantEvidence?.message ? [variantEvidence.message] : []);
+    if (messages.length === 0) {
+      return undefined;
+    }
+    const seenRules = new Map<string, ValidationRule>();
+    let required = false;
+    let validationType: ValidationFieldType | undefined;
+    for (const message of messages) {
+      const classification = classifyValidationEvidence(message);
+      required = required || classification.required;
+      if (validationType === undefined && classification.validationType !== undefined) {
+        validationType = classification.validationType;
+      }
+      for (const rule of classification.validationRules) {
+        if (classification.validationType !== undefined && rule.type === "pattern") {
+          continue;
+        }
+        const ruleKey = `${rule.type}:${String(rule.value)}`;
+        if (!seenRules.has(ruleKey)) {
+          seenRules.set(ruleKey, rule);
+        }
+      }
+    }
+    return {
+      required,
+      ...(validationType ? { validationType } : {}),
+      validationRules: [...seenRules.values()]
+    };
+  };
+
   const buildFieldMaps = (fields: InteractiveFieldModel[]) => ({
     initialValues: Object.fromEntries(fields.map((field) => [field.key, field.defaultValue])),
     requiredFieldMap: Object.fromEntries(
-      fields.filter((field) => field.required).map((field) => [field.key, true])
+      fields
+        .map((field) => {
+          const variantEvidenceClassification = resolveVariantEvidenceClassification(field.key);
+          const required = field.required === true || variantEvidenceClassification?.required === true;
+          return required ? ([field.key, true] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, true] => entry !== undefined)
     ),
     validationTypeMap: Object.fromEntries(
       fields
-        .filter((field) => field.validationType)
-        .map((field) => [field.key, field.validationType as ValidationFieldType])
+        .map((field) => {
+          const variantEvidenceClassification = resolveVariantEvidenceClassification(field.key);
+          const validationType = field.validationType ?? variantEvidenceClassification?.validationType;
+          return validationType ? ([field.key, validationType as ValidationFieldType] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, ValidationFieldType] => entry !== undefined)
     ),
     validationMessageMap: Object.fromEntries(
       fields
@@ -6048,17 +6104,27 @@ export const assembleFallbackDependencies = ({
       fields
         .map((field) => {
           const explicitRules = field.validationRules ?? [];
-          const variantEvidence = variantFieldEvidenceByFieldKey[field.key];
-          const evidenceMessage = variantEvidence?.message?.trim() ?? "";
-          const inferredRules = evidenceMessage.length > 0
-            ? inferValidationRulesFromEvidence(evidenceMessage)
-            : [];
+          const variantEvidenceClassification = resolveVariantEvidenceClassification(field.key);
+          const inferredRules = variantEvidenceClassification?.validationRules ?? [];
           const explicitTypes = new Set(explicitRules.map((rule) => rule.type));
-          const mergedRules = [
-            ...explicitRules,
-            ...inferredRules.filter((rule) => !explicitTypes.has(rule.type))
-          ];
-          return mergedRules.length > 0 ? [field.key, mergedRules] : undefined;
+          const mergedRulesByKey = new Map<string, ValidationRule>();
+          for (const rule of explicitRules) {
+            mergedRulesByKey.set(`${rule.type}:${String(rule.value)}`, rule);
+          }
+          for (const rule of inferredRules) {
+            if (variantEvidenceClassification?.validationType !== undefined && rule.type === "pattern") {
+              continue;
+            }
+            if (explicitTypes.has(rule.type)) {
+              continue;
+            }
+            const ruleKey = `${rule.type}:${String(rule.value)}`;
+            if (!mergedRulesByKey.has(ruleKey)) {
+              mergedRulesByKey.set(ruleKey, rule);
+            }
+          }
+          const orderedRules = [...mergedRulesByKey.values()];
+          return orderedRules.length > 0 ? [field.key, orderedRules] : undefined;
         })
         .filter((entry): entry is [string, ValidationRule[]] => entry !== undefined)
     )
